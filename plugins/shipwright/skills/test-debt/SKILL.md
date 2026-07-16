@@ -93,7 +93,7 @@ For each flagged milestone, list the tasks with ≥2 corrective commits and thei
 
 Free-text recommendations for the next roadmap run based on the root-cause classification. Examples:
 - "M3 canary tasks had 5 corrections due to missing `TEST_TARGET_URL` wiring — add an explicit canary-wiring infra task to M1 in future roadmaps"
-- "T-042 had 3 fix commits — the 6-service fan-out was correct but the verification command didn't account for the shared auth fixture; update the task template"
+- "T-042 had 3 fix commits — the verification command didn't account for the shared auth fixture across the 6 service tasks; update the task template"
 
 ## Process
 

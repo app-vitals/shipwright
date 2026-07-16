@@ -107,11 +107,17 @@ This format is designed to be consumed by `shipwright /dev-task` as a queue.
 2. **Single concern** — one functional unit per task. A task touching auth middleware AND a user factory AND two smoke tests is three tasks. **Single concern ≠ one operation repeated across N services.** Applying the same change to N services is N tasks — each service has its own files, its own verification command, and its own PR surface area.
 3. **Hard cap: ~1000 lines changed.** Larger PRs slow review, increase merge conflict risk, and reduce the agent's confidence in its own output. If a task exceeds this, break it at a natural seam — usually by layer (infra task, then unit task, then integration task) or by feature area.
 
-**Fan-out rule for refactor and migration tasks (non-negotiable):** Never emit a single task that touches more than one service or primary file as a refactor or migration. Apply deterministically:
-
-- **One service/file per refactor or migration task** — hard cap, no exceptions.
-- **N-service refactors become N child tasks** under a single parent summary task. The parent (`P-NNN`) carries the title (e.g., "Migrate auth middleware across all services") with no verification command of its own — it closes when all N children close. Each child (`T-NNN`) targets one service, lists its own files, and has its own verification command.
-- Emit the parent task first, then its children in sequence, each marked `depends_on: P-NNN`.
+**N-service refactors are N flat tasks, wired with real dependencies (non-negotiable):**
+Building on rule 2 above — one operation repeated across N services is N tasks, not one — each
+of those N tasks is emitted as its own independently-titled row in the task list (section 5),
+with its own files, its own verification command, and its own PR surface area. There is no
+parent/summary task and no synthetic "closes when its children close" row: task-store has no
+structural parent/child field, only `dependencies`, and encoding "parent closes when children
+close" as free text has broken in production. Wire the N tasks together with real
+`dependencies` entries only where genuine technical ordering exists between them (e.g. one
+task's output is literally imported by another) — never merely because they touch "the same"
+logical refactor. If no such ordering exists, the tasks are fully independent and each carries
+an empty `dependencies` array; do not invent a dependency just to show the field is used.
 
 **Example — 6-service auth middleware refactor:**
 
@@ -122,19 +128,16 @@ T-042 | M2 | services/*/src/middleware/auth.ts (6 files) | infra | rebuild
       | bun test --filter auth
 ```
 
-Emit a parent and 6 children:
+Emit 6 flat, independently-titled tasks — one per service, no parent/P-NNN row:
 ```
-P-042 | M2 | —                                              | infra | rebuild
-      | Migrate auth middleware to new token format (6 services)
-      | (closes when T-042a–T-042f all close)
-
 T-042a | M2 | services/payments/src/middleware/auth.ts      | infra | rebuild
-       | Migrate auth middleware — payments
+       | Migrate auth middleware — payments (introduces shared validateToken() helper)
        | bun test --filter payments/auth
 
 T-042b | M2 | services/users/src/middleware/auth.ts         | infra | rebuild
-       | Migrate auth middleware — users
+       | Migrate auth middleware — users (imports validateToken() from payments)
        | bun test --filter users/auth
+       | depends_on: T-042a
 
 T-042c | M2 | services/notifications/src/middleware/auth.ts | infra | rebuild
        | Migrate auth middleware — notifications
@@ -153,7 +156,15 @@ T-042f | M2 | services/search/src/middleware/auth.ts        | infra | rebuild
        | bun test --filter search/auth
 ```
 
-The fan-out rule is not advisory — do not emit the oversized task and place it in Open risks. Apply the split during task generation. Open risks is for genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
+Here, `payments` is the first service migrated and introduces a shared `validateToken()`
+helper that `users`' middleware genuinely imports — so `T-042b`'s row carries a
+`depends_on: T-042a` annotation (test-fix's Step 2.3 parses this and Step 5.4 computes the
+task-store `dependencies` array from it). The remaining four services (`notifications`,
+`billing`, `catalog`, `search`) have no real ordering dependency on any other service's
+migration, so their rows carry no `depends_on:` annotation and they end up with an empty
+`dependencies` array, running in parallel. This is not advisory — do not emit the oversized
+task and place it in Open risks. Apply the split during task generation. Open risks is for
+genuinely ambiguous human calls, not for tasks the sizing algorithm knows are too large.
 
 ### 6. Open risks
 
@@ -204,13 +215,15 @@ Anything the audit couldn't determine without a human call. Common entries:
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
-7. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
+7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
+8. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill. Write to `docs/test-readiness/test-readiness-plan.md`.
 
 ## Failure modes to avoid
 
 - **Don't sequence Milestone 5 (cleanup) before Milestone 2 (critical-path).** Deleting a "redundant" test before its canonical owner exists creates a coverage hole. Always build before deleting.
 - **Don't skip the speed delta.** It's the most actionable single number for "are we converging."
 - **Don't write a roadmap that's a copy of the migration table.** The roadmap is sequenced and milestone-gated; the migration is unsorted bucketing. The synthesis is the value.
+- **The plugin feedback collector task must not create a per-repo log inside the plugin.** `plugins/shipwright/` is repo-agnostic and ships publicly (see root `CLAUDE.md`) — a file that names the target repo and accumulates dated, repo-specific entries (e.g. `references/pipeline-learnings.md`) bakes private/internal repo names into the OSS package as soon as a second repo runs the pipeline. Route real feedback through `learning-capture`'s existing mechanism instead: a generalized, repo-agnostic instruction edited directly into the relevant skill/doc, or — for autonomous agents, which don't use `learning-capture` interactively — a `# Harness TODO` entry for the dream job to fold in per its normal routing. Never a new narrative file under the plugin's own `references/`.
 - **Don't restart T-NNN numbering at T-001 on a repo with a prior cycle.** Always run the
   step 4 task-store query first. Skipping it silently collides with `test-fix`'s
   `test-t-{nnn}-{repo-slug}` IDs from an earlier cycle and produces a roadmap that

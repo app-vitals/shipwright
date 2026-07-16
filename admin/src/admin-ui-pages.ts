@@ -238,7 +238,6 @@ export interface TaskItem {
   complexity?: number | null;
   hitl?: boolean | null;
   hours?: number | null;
-  addedAt?: string | null;
   startedAt?: string | null;
   completedAt?: string | null;
   blockedAt?: string | null;
@@ -1900,7 +1899,7 @@ export function renderTaskDetailPage(
     .join("\n");
 
   const datesRows = [
-    dateField("Added", task.addedAt),
+    dateField("Added", task.createdAt),
     dateField("Started", task.startedAt),
     dateField("Claimed", task.claimedAt),
     dateField("Last Heartbeat", task.heartbeatAt),
@@ -1985,10 +1984,170 @@ const SESSION_CLOSED_STATUSES = new Set([
   "cancelled",
 ]);
 
+/** Mirrors the ready/in_progress/blocked/closed taxonomy used by the Tasks
+ * page's state tabs — see task-store's TaskService.listReady/listBlocked:
+ * closed = terminal status; in_progress = {in_progress, pr_open, approved};
+ * blocked = explicit status "blocked", or "pending" with unresolved
+ * dependencies; ready = "pending" with none. `blockedBy` is computed
+ * server-side by the task-store's computeBlockedBy and passed through as-is
+ * on each TaskItem — this only classifies, it doesn't resolve dependencies
+ * itself. Shared by the session task table and the dependency graph card
+ * below so both use the same grouping.
+ */
+type TaskState = "ready" | "in_progress" | "blocked" | "closed";
+
+function classifyTaskState(t: TaskItem): TaskState {
+  if (SESSION_CLOSED_STATUSES.has(t.status)) return "closed";
+  if (
+    t.status === "in_progress" ||
+    t.status === "pr_open" ||
+    t.status === "approved"
+  ) {
+    return "in_progress";
+  }
+  if (t.status === "blocked") return "blocked";
+  return (t.blockedBy?.length ?? 0) > 0 ? "blocked" : "ready";
+}
+
+const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
+  { key: "ready", label: "Ready" },
+  { key: "in_progress", label: "In Progress" },
+  { key: "blocked", label: "Blocked" },
+  { key: "closed", label: "Closed" },
+];
+
+interface DependencyNode {
+  id: string;
+  title: string;
+  status: string;
+  branch: string | null;
+  dependsOn: string[];
+  state: TaskState;
+}
+
+/**
+ * Selects the session's tasks that participate in a dependency edge —
+ * either they declare a dependency, or another task in the session declares
+ * them as one — and buckets them by the same ready/in_progress/blocked/
+ * closed states shown on the Tasks page, so the card answers "what can I
+ * work on now" rather than an abstract structural order. Tasks with no
+ * relationship are noise here and stay visible in the plain task table
+ * above. Dependency ids outside the session (unknown to this task list)
+ * aren't session tasks and have no status to classify by, so they never get
+ * their own node — they still show up in a participating task's `dependsOn`
+ * list, just unlinked (see `renderDependencyGraph`).
+ */
+function computeDependencyGroups(
+  tasks: TaskItem[],
+): Map<TaskState, DependencyNode[]> {
+  const referencedIds = new Set<string>();
+  for (const t of tasks) {
+    for (const dep of t.dependencies ?? []) referencedIds.add(dep);
+  }
+
+  const groups = new Map<TaskState, DependencyNode[]>();
+  for (const t of tasks) {
+    if ((t.dependencies?.length ?? 0) === 0 && !referencedIds.has(t.id)) {
+      continue;
+    }
+    const node: DependencyNode = {
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      branch: t.branch ?? null,
+      dependsOn: t.dependencies ?? [],
+      state: classifyTaskState(t),
+    };
+    const bucket = groups.get(node.state);
+    if (bucket) bucket.push(node);
+    else groups.set(node.state, [node]);
+  }
+  for (const bucket of groups.values()) {
+    bucket.sort((a, b) => a.id.localeCompare(b.id));
+  }
+  return groups;
+}
+
+// Fixed palette for branch chips — a stable hash picks a color per branch
+// name so tasks bundled onto the same branch/PR are visually correlated
+// even when they land in different state groups (a task and its dependent
+// are often shipped together on one branch, e.g. AGY-1.1 + AGY-1.2).
+const BRANCH_COLORS = [
+  "#6366f1",
+  "#059669",
+  "#d97706",
+  "#db2777",
+  "#0891b2",
+  "#7c3aed",
+];
+
+function branchColor(branch: string): string {
+  let hash = 0;
+  for (let i = 0; i < branch.length; i++) {
+    hash = (hash * 31 + branch.charCodeAt(i)) >>> 0;
+  }
+  return BRANCH_COLORS[hash % BRANCH_COLORS.length];
+}
+
+/**
+ * Renders the Ready/In Progress/Blocked/Closed groups as stacked rows of
+ * cards, skipping empty groups. Each card gets a color-coded left
+ * border/chip when its task has a branch (bundle), and its `dependsOn`
+ * list links to sibling session tasks while leaving ids outside the
+ * session as plain unlinked text.
+ */
+function renderDependencyGraph(
+  tasks: TaskItem[],
+  groups: Map<TaskState, DependencyNode[]>,
+): string {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+
+  const nodeCard = (n: DependencyNode): string => {
+    const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
+    const statusHtml = `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`;
+    const titleHtml = `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`;
+    const dependsOnHtml =
+      n.dependsOn.length > 0
+        ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">needs ${n.dependsOn
+            .map((d) =>
+              byId.has(d)
+                ? `<a href="/admin/tasks/${escapeHtml(d)}" style="color:inherit;text-decoration:underline">${escapeHtml(d)}</a>`
+                : escapeHtml(d),
+            )
+            .join(", ")}</div>`
+        : "";
+    const branchHtml =
+      n.branch !== null
+        ? `<div style="font-size:10px;margin-top:4px" class="mono"><span style="color:${branchColor(n.branch)}">⎇ ${escapeHtml(n.branch)}</span></div>`
+        : "";
+    const borderLeft =
+      n.branch !== null
+        ? `border-left:3px solid ${branchColor(n.branch)};`
+        : "";
+    return `<div style="border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;min-width:150px;background:#fff">
+        <div>${idHtml}${statusHtml}</div>
+        ${titleHtml}
+        ${dependsOnHtml}
+        ${branchHtml}
+      </div>`;
+  };
+
+  return TASK_STATE_GROUPS.map(({ key, label }) => {
+    const nodes = groups.get(key);
+    if (!nodes || nodes.length === 0) return "";
+    return `<div style="margin-bottom:14px">
+      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label} (${nodes.length})</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">${nodes.map(nodeCard).join("")}</div>
+    </div>`;
+  })
+    .filter(Boolean)
+    .join("");
+}
+
 /**
  * Renders the session detail page: stat cards (total tasks, est. hours,
- * distinct layers), an open/closed summary, a task table with a Status
- * column, and a distinct dependency list — sourced from a live
+ * distinct layers), a ready/in_progress/blocked/closed summary, a task table
+ * grouped the same way, and a dependency graph — sourced from a live
  * `/tasks?session=` fetch (no plan-time snapshot).
  */
 export function renderSessionDetailPage(
@@ -2007,14 +2166,15 @@ export function renderSessionDetailPage(
     tasks.map((t) => t.layer).filter((l): l is string => !!l),
   ).size;
 
-  const openTasks = tasks.filter((t) => !SESSION_CLOSED_STATUSES.has(t.status));
-  const closedTasks = tasks.filter((t) =>
-    SESSION_CLOSED_STATUSES.has(t.status),
-  );
+  const tasksByState = new Map<TaskState, TaskItem[]>();
+  for (const t of tasks) {
+    const state = classifyTaskState(t);
+    const bucket = tasksByState.get(state);
+    if (bucket) bucket.push(t);
+    else tasksByState.set(state, [t]);
+  }
 
-  const dependencyIds = [
-    ...new Set(tasks.flatMap((t) => t.dependencies ?? [])),
-  ];
+  const dependencyGroups = computeDependencyGroups(tasks);
 
   function taskRow(t: TaskItem): string {
     return `<tr>
@@ -2030,24 +2190,19 @@ export function renderSessionDetailPage(
   const tableRows =
     tasks.length === 0
       ? `<tr><td colspan="6" class="empty-state">No tasks found for this session.</td></tr>`
-      : [
-          openTasks.length > 0
-            ? `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">Open (${openTasks.length})</td></tr>${openTasks.map(taskRow).join("\n")}`
-            : "",
-          closedTasks.length > 0
-            ? `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">Closed (${closedTasks.length})</td></tr>${closedTasks.map(taskRow).join("\n")}`
-            : "",
-        ]
+      : TASK_STATE_GROUPS.map(({ key, label }) => {
+          const group = tasksByState.get(key);
+          if (!group || group.length === 0) return "";
+          return `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
+        })
           .filter(Boolean)
           .join("\n");
 
   const depsSection =
-    dependencyIds.length > 0
+    dependencyGroups.size > 0
       ? `<div class="card" style="margin-bottom:16px">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em">Dependencies</div>
-      <ul style="margin:0;padding-left:16px">
-        ${dependencyIds.map((id) => `<li style="font-size:13px;margin-bottom:4px" class="mono">${escapeHtml(id)}</li>`).join("")}
-      </ul>
+      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
+      ${renderDependencyGraph(tasks, dependencyGroups)}
     </div>`
       : "";
 
@@ -2084,7 +2239,10 @@ export function renderSessionDetailPage(
       ${statCard("Layers", String(distinctLayers))}
     </div>
     <div style="font-size:13px;color:#374151;margin-bottom:12px">
-      <strong>${openTasks.length}</strong> open / <strong>${closedTasks.length}</strong> closed
+      ${TASK_STATE_GROUPS.map(
+        ({ key, label }) =>
+          `<strong>${tasksByState.get(key)?.length ?? 0}</strong> ${escapeHtml(label.toLowerCase())}`,
+      ).join(" / ")}
     </div>
     <div class="card">
       <div class="data-table-wrapper">
@@ -2466,7 +2624,12 @@ export function renderCronLogsPage(opts: {
   function row(r: CronRunItem): string {
     const outcomeLabel = cronRunOutcomeLabel(r);
     const badgeStyle = cronOutcomeStyle(outcomeLabel);
-    const badgeTitle = r.skipped && r.skipReason ? r.skipReason : outcomeLabel;
+    const badgeTitle =
+      r.skipped && r.skipReason
+        ? r.skipReason
+        : !r.skipped && r.error
+          ? r.error
+          : outcomeLabel;
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
@@ -2548,7 +2711,10 @@ export function renderCronLogsPage(opts: {
   }).join("\n");
 
   // Pagination — mirrors renderPrsPage's pattern.
-  const totalPages = Math.max(1, Math.ceil(pagination.total / pagination.limit));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(pagination.total / pagination.limit),
+  );
   const page = pagination.page;
   const makePageUrl = (p: number) => {
     const params = new URLSearchParams();

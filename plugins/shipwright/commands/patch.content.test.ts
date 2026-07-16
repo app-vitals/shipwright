@@ -10,6 +10,47 @@ beforeAll(() => {
   content = readFileSync(PATCH_MD_PATH, "utf-8");
 });
 
+describe("patch.md — explicit-target-only argument contract (WLS-3.3)", () => {
+  it("frontmatter declares argument-hint as required (angle brackets, not optional brackets)", () => {
+    const frontmatterEnd = content.indexOf("---", 3);
+    const frontmatter = content.slice(0, frontmatterEnd);
+    expect(frontmatter).toContain('argument-hint: "<org/repo#number>"');
+    expect(frontmatter).not.toContain('argument-hint: "[org/repo#number]"');
+  });
+
+  it("states the org/repo#number argument is required in prose", () => {
+    expect(content).toMatch(/org\/repo#number.{0,60}required|required.{0,60}org\/repo#number/is);
+  });
+
+  it("no-argument invocation responds [silent] and stops with no GitHub scan", () => {
+    expect(content).toContain("If `$ARGUMENTS` is empty");
+    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
+    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
+    expect(step0Idx).toBeGreaterThan(-1);
+    expect(step1Idx).toBeGreaterThan(-1);
+    const step0Section = content.slice(step0Idx, step1Idx);
+    expect(step0Section).toContain("[silent]");
+  });
+
+  it("removes the multi-repo self-scan (gh pr list --author across configured repos)", () => {
+    expect(content).not.toContain("Discover Own Open PRs");
+    expect(content).not.toContain("Otherwise (no arguments)");
+    expect(content).not.toContain(
+      'gh pr list --state open --repo {org}/{repo} \\\n  --author "$CURRENT_USER"',
+    );
+    expect(content).not.toContain("No own open PRs found.");
+  });
+
+  it("Step 2 fetches the single target PR via gh pr view instead of scanning", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    expect(step2Idx).toBeGreaterThan(-1);
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+    expect(step2Section).toContain("gh pr view {number} --repo {org}/{repo}");
+    expect(step2Section).toContain("author.login != CURRENT_USER");
+  });
+});
+
 describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
   it("Step 4 (merge conflicts): claims the PR (phase: patch) before dispatching the conflict-resolution subagent", () => {
     const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");

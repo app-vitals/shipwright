@@ -1,14 +1,14 @@
 ---
 name: test-fix
-description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue. Includes a one-time --backfill-from-github mode that migrates already-published GitHub issues into task-store tasks and closes them.
+description: Read docs/test-readiness/test-readiness-plan.md and queue its flat T-NNN task list as task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish skill's dashboard with a task-store queue.
 ---
 
 # Test Fix
 
 Read the latest `docs/test-readiness/test-readiness-plan.md` and queue its flat task list as
-task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links, `P-NNN`
-fan-out parents) are written as task-store `dependencies` arrays, so task-store's own
-`ready:true` query computes readiness directly. Findings are never turned into direct PRs;
+task-store tasks — one task per `T-NNN` row. Dependency edges (predecessor links) are written
+as task-store `dependencies` arrays, so task-store's own `ready:true` query computes readiness
+directly. Findings are never turned into direct PRs;
 they always become task-store tasks that `dev-task` (or a human, for HITL tasks) picks up
 later.
 
@@ -28,8 +28,6 @@ Before starting, check for flags:
 
 - `--dry-run` — print what would be queued (including hitl classification) without querying
   the task store for dedup and without writing anything.
-- `--backfill-from-github [--repo owner/name]` — a separate, one-time migration mode. See the
-  dedicated **Backfill Mode** section below. It does not run the regular flow (Steps 1–7).
 
 > **Note:** Queueing is the only mode for the regular flow. There is no PR mode and no
 > `--queue` flag — every regular run queues tasks. `--dry-run` shows a preview and stops
@@ -53,19 +51,14 @@ Before starting, check for flags:
 
 1. Parse the `## 5. Task list` section's flat rows, format `T-NNN | M# | files | layer |
    bucket | outcome | verify` (per `test-roadmap/SKILL.md` section 5).
-2. Parse `P-NNN` parent / `T-NNNa`..`T-NNNf`-style child fan-out groups per the same section's
-   fan-out rule. A parent row carries no verification command of its own — record it anyway
-   (it becomes a dependency target for its children) but note it closes only when every child
-   closes.
-3. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
+2. Parse any **audit-decision-row** tables (`## 5. Task list` → "Audit task decision rows",
    also rendered per-task in `issue.md.tmpl`'s "Audit decisions" section) attached to tasks
    marked `[audit: N items]` in the expected-outcome column. Keep each table's rows verbatim —
    they're needed for Step 5's description field and for the M5 HITL rule (rule c below).
-4. Parse `depends_on` / predecessor links: a child's `depends_on: P-NNN` per the fan-out
-   convention, and any other explicit predecessor references in a row's outcome or the
-   Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
+3. Parse `depends_on` / predecessor links: any explicit `depends_on:` annotation on a row, and
+   the Repo Configuration tasks' pairing (`depends_on` the paired workflow task, per
    `repo-config/SKILL.md`'s pairing rule).
-5. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
+4. If the task list is empty or malformed (rows don't match the `T-NNN | M# | ...` shape),
    print:
    ```
    No parseable T-NNN task rows found in test-readiness-plan.md. Nothing to queue.
@@ -314,8 +307,8 @@ line rather than guessing a broken link.
 ### 5.4 Compute `dependencies`
 
 `dependencies` is an array of task-store IDs (`test-{t-nnn}-{repo-slug}` form) — one entry
-per predecessor `T-NNN` this row's `depends_on` / fan-out-parent / pairing-rule reference
-names (parsed in Step 2.4). Map each predecessor `T-NNN` to its task-store ID using the same
+per predecessor `T-NNN` this row's `depends_on` / pairing-rule reference names (parsed in
+Step 2.3). Map each predecessor `T-NNN` to its task-store ID using the same
 `{t-nnn}-{repo-slug}` derivation used for this task's own `id`.
 
 This is what makes task-store's own `ready:true` query correctly compute readiness for these
@@ -413,23 +406,6 @@ Stop after printing — this is the sole final output for the regular flow.
 
 ---
 
-## Backfill Mode (`--backfill-from-github [--repo owner/name]`)
-
-A genuinely separate, one-time migration path — it does not run Steps 1–7 above (the regular
-plan-parsing flow). It operates purely off existing GitHub issue state, since a fresh
-`test-readiness-plan.md` may not exist in the target repo, or may have since diverged from
-what was originally published by the former GitHub-issue publish skill.
-
-Use this once, per repo, to migrate issues the former GitHub-issue publish skill already
-created into task-store tasks, then retire the GitHub side of those specific issues (closing
-them with a link back to the task store). Ordinary tasks going forward come from the regular
-flow (Steps 1–7) against a current `test-readiness-plan.md`.
-
-Full procedure (repo detection, issue parsing, predecessor-ordering, task creation, closing,
-and the summary block): see `references/backfill-from-github.md`.
-
----
-
 ## Error Handling
 
 - **`test-readiness-plan.md` missing** (regular flow): handled in Step 1 — print the message
@@ -440,9 +416,6 @@ and the summary block): see `references/backfill-from-github.md`.
 - **Bulk append fails** (`/tasks/bulk` non-2xx, Step 7.1): log the response body and
   stop. Do not retry blindly; re-running the regular flow is idempotent because the dedup
   check (Step 4) skips already-queued rows.
-- **Backfill-specific failures** (auth, unreachable repo, missing task-id marker, partial
-  bulk-append reruns): see `references/backfill-from-github.md`'s "Error Handling
-  (Backfill-Specific)" section.
 
 ---
 
@@ -465,17 +438,11 @@ and the summary block): see `references/backfill-from-github.md`.
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
   owner). No file-count, line-count, or milestone-number threshold ever forces the
   classification on its own.
-- **Backfill is one-time and separate** — `--backfill-from-github` never runs the regular
-  Steps 1–7, and the regular flow never reads GitHub issue state. The two modes do not share
-  logic beyond the field-mapping conventions of Step 5 (which backfill explicitly reuses,
-  per B5).
-- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3 / B1) so
+- **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is
   scheduled. The plan document is Phase 4's output and is not checked off, annotated, or
   rewritten by this skill.
 - **No interactive confirmation** — matches entropy-fix/error-fix: queue-only skills don't
   gate on user confirmation for regular-flow task-store writes, since they're internal and
-  correctable. Backfill mode's `gh issue close` calls are the one externally-visible action
-  in this skill, and they only happen after the corresponding task-store task already exists
-  (B5 before B6) — never the reverse.
+  correctable.

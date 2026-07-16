@@ -10,6 +10,60 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.405] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.405 triggered by release tag(s): `admin-v0.202.0`, `agent-v0.189.0`, `agent-v0.195.0`, `agent-v0.197.0`, `chat-v0.45.0`, `metrics-v0.159.0`, `task-store-v0.99.0`
+
+## [1.6.404] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.404 triggered by release tag(s): `admin-v0.202.0`, `admin-v0.204.1`, `agent-v0.189.0`, `agent-v0.195.0`, `agent-v0.196.0`, `chat-v0.45.0`, `chat-v0.46.0`, `metrics-v0.159.0`, `metrics-v0.160.0`, `task-store-v0.101.0`, `task-store-v0.99.0`
+
+## [1.6.403] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.403 triggered by release tag(s): `admin-v0.202.0`, `admin-v0.204.0`, `agent-v0.189.0`, `agent-v0.195.0`, `chat-v0.45.0`, `metrics-v0.159.0`, `task-store-v0.99.0`
+
+## [1.6.402] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.402 triggered by release tag(s): `admin-v0.202.0`, `admin-v0.203.0`, `agent-v0.189.0`, `agent-v0.195.0`, `chat-v0.45.0`, `metrics-v0.159.0`, `task-store-v0.100.0`, `task-store-v0.99.0`
+
+## [1.6.401] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.401 triggered by release tag(s): `admin-v0.201.0`, `agent-v0.189.0`, `agent-v0.194.1`, `chat-v0.44.0`, `metrics-v0.158.0`, `task-store-v0.98.0`
+
+## [1.6.400] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.400 triggered by release tag(s): `agent-v0.189.0`, `agent-v0.194.0`
+
+## [1.6.399] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.399 triggered by release tag(s): `agent-v0.189.0`, `agent-v0.193.1`
+
+## [1.6.398] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.398 triggered by release tag(s): `agent-v0.189.0`, `agent-v0.193.0`
+
+## [1.6.397] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.397 triggered by release tag(s): `agent-v0.189.0`, `agent-v0.192.0`
+
 ## [1.6.396] - 2026-07-16
 
 ### Changed
