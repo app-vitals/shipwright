@@ -120,6 +120,32 @@ describe("initSentry — SENTRY_DSN set", () => {
     expect(Array.isArray(options.integrations)).toBe(true);
     expect(options.integrations.length).toBeGreaterThan(0);
   });
+
+  test("agent_id tag is included in initialScope.tags when agentId is passed", () => {
+    process.env.SENTRY_DSN = "https://example@o0.ingest.sentry.io/0";
+    const fakeClient = createFakeSentryClient();
+
+    initSentry({ service: "agent", agentId: "test-agent-123" }, fakeClient);
+
+    expect(fakeClient.calls.length).toBe(1);
+    const options = fakeClient.calls[0] as {
+      initialScope: { tags: Record<string, string> };
+    };
+    expect(options.initialScope.tags.agent_id).toBe("test-agent-123");
+  });
+
+  test("agent_id tag is absent when agentId is not passed", () => {
+    process.env.SENTRY_DSN = "https://example@o0.ingest.sentry.io/0";
+    const fakeClient = createFakeSentryClient();
+
+    initSentry({ service: "metrics" }, fakeClient);
+
+    expect(fakeClient.calls.length).toBe(1);
+    const options = fakeClient.calls[0] as {
+      initialScope: { tags: Record<string, unknown> };
+    };
+    expect(options.initialScope.tags).not.toHaveProperty("agent_id");
+  });
 });
 
 describe("scrubEvent — header stripping", () => {

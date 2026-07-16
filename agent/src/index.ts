@@ -87,7 +87,7 @@ for (const level of ["log", "warn", "error"] as const) {
 // wraps on top of it — this captures clean log args in Sentry while local
 // output keeps its timestamp prefix.
 
-initSentry({ service: "agent" });
+initSentry({ service: "agent", agentId });
 
 // ─── Step 1: Agent home ───────────────────────────────────────────────────────
 
