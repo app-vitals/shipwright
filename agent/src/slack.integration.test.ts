@@ -15,6 +15,7 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
@@ -106,7 +107,14 @@ class MockApp {
   }
 }
 
-const mockTracker = mock((_event: unknown) => {});
+// ─── Fake sentry client — captures errors instead of asserting on a tracker ──
+
+let capturedErrors: unknown[] = [];
+const fakeSentryClient: ErrorCapturingClient = {
+  captureException: (err: unknown) => {
+    capturedErrors.push(err);
+  },
+};
 
 // Wrap with test deps so all tests call createSlackApp() with no args
 function createSlackApp(
@@ -130,9 +138,10 @@ function createSlackApp(
     getSessionFn?: (key: string) => string | undefined;
     blocksConverter?: typeof markdownToBlocks;
     chatTokenReporter?: ChatTokenReporter;
+    sentryClient?: ErrorCapturingClient;
   } = {},
 ) {
-  mockTracker.mockClear();
+  capturedErrors = [];
   return _createSlackApp(
     mockRunClaude,
     mockMarkdownToSlack,
@@ -140,7 +149,7 @@ function createSlackApp(
     // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
     (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
     mockSlackConfig,
-    mockTracker,
+    overrides.sentryClient ?? fakeSentryClient,
     overrides.fileDownloaderFn ?? (async () => null),
     overrides.voiceConfig ?? {},
     overrides.transcribeAudioFn ?? (async () => null),
@@ -465,22 +474,16 @@ describe("message handler — DM routing", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("tracks message event on success", async () => {
+  test("does not call sentryClient.captureException on success", async () => {
     await invokeDM({ channel: "D1", ts: "1.1", text: "hello" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("message");
-    expect(event.sessionKey).toBe("D1:1.1");
-    expect(typeof event.durationMs).toBe("number");
+    expect(capturedErrors.length).toBe(0);
   });
 
-  test("tracks error event when runClaude throws", async () => {
+  test("calls sentryClient.captureException when runClaude throws", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("boom"));
     await invokeDM({ channel: "D1", ts: "1.1" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("error");
-    expect(event.error).toBe("boom");
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toBe("boom");
   });
 });
 
@@ -945,21 +948,16 @@ describe("app_mention handler", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("tracks mention event on success", async () => {
+  test("does not call sentryClient.captureException on mention success", async () => {
     await invokeMention({ channel: "C1", ts: "2.2", text: "@bot help" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("mention");
-    expect(typeof event.durationMs).toBe("number");
+    expect(capturedErrors.length).toBe(0);
   });
 
-  test("tracks error event when mention handler throws", async () => {
+  test("calls sentryClient.captureException when mention handler throws", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("oops"));
     await invokeMention({ channel: "C1", ts: "2.2" });
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("error");
-    expect(event.error).toBe("oops");
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toBe("oops");
   });
 
   test("app_mention in active thread: runClaude not called when session exists", async () => {
@@ -1178,13 +1176,6 @@ describe("marker dispatch — DM message handler", () => {
       thread_ts: "1.1",
       status: "",
     });
-  });
-
-  test("[silent] — still tracks analytics event", async () => {
-    await invokeDMWithResult("[silent]");
-    expect(mockTracker).toHaveBeenCalledTimes(1);
-    const event = mockTracker.mock.calls[0][0] as Record<string, unknown>;
-    expect(event.type).toBe("message");
   });
 
   test("[silent] with content — DM ignores silent and posts anyway", async () => {

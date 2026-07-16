@@ -25,13 +25,16 @@ export interface SentryClient {
 }
 
 /**
- * Narrowed to the one method callers need to report unhandled errors, so tests
- * can inject a fake without mock.module(). Mirrors the SentryClient pattern —
- * the real `Sentry` from `@sentry/bun` satisfies this shape via its
- * `captureException` export.
+ * Narrowed to the methods callers need to report unhandled errors and
+ * expected-but-notable events, so tests can inject a fake without
+ * mock.module(). Mirrors the SentryClient pattern — the real `Sentry` from
+ * `@sentry/bun` satisfies this shape via its `captureException`/
+ * `captureMessage` exports. `captureMessage` is optional so existing fakes
+ * that only implement `captureException` keep type-checking.
  */
 export interface ErrorCapturingClient {
   captureException: (err: unknown) => void;
+  captureMessage?: (message: string) => void;
 }
 
 /** Max depth walked when scrubbing, so a pathological/deeply-nested object can't hang scrubbing. */
