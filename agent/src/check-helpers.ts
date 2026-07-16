@@ -21,7 +21,6 @@
  * - gh CLI execution helper
  */
 
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
@@ -528,49 +527,60 @@ export async function mapReposTolerant<T>(
  * Run a gh CLI command and return the parsed JSON output.
  * Throws on non-zero exit.
  */
-export function ghJson<T>(args: string[]): T {
-  const result = spawnSync("gh", args, {
-    encoding: "utf-8",
+export async function ghJson<T>(args: string[]): Promise<T> {
+  const proc = Bun.spawn(["gh", ...args], {
     env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (result.status !== 0) {
-    throw new Error(
-      `gh ${args.join(" ")} failed (exit ${result.status}): ${result.stderr}`,
-    );
+  const [stdout, stderr, status] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (status !== 0) {
+    throw new Error(`gh ${args.join(" ")} failed (exit ${status}): ${stderr}`);
   }
-  return JSON.parse(result.stdout) as T;
+  return JSON.parse(stdout) as T;
 }
 
 /**
  * Run a gh CLI command without parsing output.
  * Throws on non-zero exit.
  */
-export function ghRun(args: string[]): void {
-  const result = spawnSync("gh", args, {
-    encoding: "utf-8",
+export async function ghRun(args: string[]): Promise<void> {
+  const proc = Bun.spawn(["gh", ...args], {
     env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (result.status !== 0) {
-    throw new Error(
-      `gh ${args.join(" ")} failed (exit ${result.status}): ${result.stderr}`,
-    );
+  const [stderr, status] = await Promise.all([
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (status !== 0) {
+    throw new Error(`gh ${args.join(" ")} failed (exit ${status}): ${stderr}`);
   }
 }
 
 /**
  * Run a gh API graphql command and return the raw response.
  */
-export function ghGraphql<T>(query: string): T {
-  const result = spawnSync("gh", ["api", "graphql", "-f", `query=${query}`], {
-    encoding: "utf-8",
+export async function ghGraphql<T>(query: string): Promise<T> {
+  const proc = Bun.spawn(["gh", "api", "graphql", "-f", `query=${query}`], {
     env: process.env,
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (result.status !== 0) {
-    throw new Error(
-      `gh api graphql failed (exit ${result.status}): ${result.stderr}`,
-    );
+  const [stdout, stderr, status] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+  if (status !== 0) {
+    throw new Error(`gh api graphql failed (exit ${status}): ${stderr}`);
   }
-  return JSON.parse(result.stdout) as T;
+  return JSON.parse(stdout) as T;
 }
 
 /**
@@ -584,8 +594,8 @@ export function ghGraphql<T>(query: string): T {
  * pr.author.login (and gh pr list --author) use "app/name", so we convert
  * here once so every call-site sees a consistent format.
  */
-export function getCurrentUser(): string {
-  const result = ghGraphql<{ data: { viewer: { login: string } } }>(
+export async function getCurrentUser(): Promise<string> {
+  const result = await ghGraphql<{ data: { viewer: { login: string } } }>(
     "query { viewer { login } }",
   );
   const login = result.data.viewer.login;

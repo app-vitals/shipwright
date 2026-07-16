@@ -46,7 +46,7 @@ function makeDeps(
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
-    getCurrentUser: () => currentUser,
+    getCurrentUser: async () => currentUser,
     isSelfReviewAllowed,
   };
 }
@@ -204,7 +204,7 @@ describe("getReviewCandidates", () => {
       ): Promise<PrRecord | null> => {
         throw new Error("Network error");
       },
-      getCurrentUser: () => "bodhi-agent",
+      getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: false,
     };
     const result = await getReviewCandidates(deps);

@@ -496,31 +496,31 @@ describe("getCurrentUser", () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test("returns login as-is for a regular PAT user", () => {
+  test("returns login as-is for a regular PAT user", async () => {
     writeFakeGhBinary(tmpDir, "dmcaulay");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = getCurrentUser();
+    const result = await getCurrentUser();
     expect(result).toBe("dmcaulay");
   });
 
-  test("normalises [bot] suffix to app/ prefix for GitHub App identity", () => {
+  test("normalises [bot] suffix to app/ prefix for GitHub App identity", async () => {
     writeFakeGhBinary(tmpDir, "my-app[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = getCurrentUser();
+    const result = await getCurrentUser();
     expect(result).toBe("app/my-app");
   });
 
-  test("handles hyphenated app name in [bot] normalisation", () => {
+  test("handles hyphenated app name in [bot] normalisation", async () => {
     writeFakeGhBinary(tmpDir, "example-repo-agent[bot]");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    const result = getCurrentUser();
+    const result = await getCurrentUser();
     expect(result).toBe("app/example-repo-agent");
   });
 
-  test("throws when gh exits non-zero", () => {
+  test("throws when gh exits non-zero", async () => {
     writeFailingGhBinary(tmpDir, 1, "not authenticated");
     process.env.PATH = `${tmpDir}:${savedPath}`;
-    expect(() => getCurrentUser()).toThrow("gh api graphql failed");
+    expect(getCurrentUser()).rejects.toThrow("gh api graphql failed");
   });
 });
 

@@ -905,7 +905,7 @@ describe("buildReviewStateProductionDeps", () => {
 
   test("claimTtlMs falls back to the default when the env var is unset", () => {
     const deps = buildReviewStateProductionDeps({
-      ghGraphql: <T>() => ({}) as T,
+      ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
     });
 
     expect(deps.claimTtlMs).toBe(2_100_000);
@@ -915,7 +915,7 @@ describe("buildReviewStateProductionDeps", () => {
     process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = "60000";
 
     const deps = buildReviewStateProductionDeps({
-      ghGraphql: <T>() => ({}) as T,
+      ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
     });
 
     expect(deps.claimTtlMs).toBe(60_000);

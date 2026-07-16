@@ -53,7 +53,7 @@ function makeDeps({
   taskStatus = {},
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
-    getCurrentUser: () => currentUser,
+    getCurrentUser: async () => currentUser,
     isSelfReviewAllowed,
     repos,
     fetchActiveDeployRuns: async () => [],
@@ -342,7 +342,7 @@ describe("getDeployCandidates", () => {
     };
 
     const deps: CheckDeployDeps = {
-      getCurrentUser: () => "bodhi-agent",
+      getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/failing-repo", "acme/example-repo"],
       fetchActiveDeployRuns: async () => [],
@@ -428,7 +428,7 @@ describe("getDeployCandidates", () => {
       reviewDecision: "APPROVED",
     });
     const deps: CheckDeployDeps = {
-      getCurrentUser: () => "bodhi-agent",
+      getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: true,
       repos: ["acme/busy-repo", "acme/free-repo"],
       fetchActiveDeployRuns: async (_org, repo) =>

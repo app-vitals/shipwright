@@ -70,7 +70,7 @@ export interface PrRecord {
 }
 
 export interface CheckDeployDeps {
-  getCurrentUser: () => string;
+  getCurrentUser: () => Promise<string>;
   isSelfReviewAllowed: boolean;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
@@ -287,7 +287,7 @@ interface GhWorkflowRunsJson {
 }
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
+  ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: typeof fetch;
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
@@ -301,11 +301,11 @@ export async function buildProductionDeps(opts: {
     repos: allRepos,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
-      const inProgress = ghJson<GhWorkflowRunsJson>([
+      const inProgress = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
       ]);
-      const queued = ghJson<GhWorkflowRunsJson>([
+      const queued = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
       ]);
@@ -318,7 +318,7 @@ export async function buildProductionDeps(opts: {
         }));
     },
     listOpenPrs: async (repo: string) => {
-      return ghJson<GhPrListJson[]>([
+      return await ghJson<GhPrListJson[]>([
         "pr",
         "list",
         "--state",
@@ -330,7 +330,7 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
-      const data = ghJson<GhPrReviewsJson>([
+      const data = await ghJson<GhPrReviewsJson>([
         "pr",
         "view",
         String(pr),
@@ -342,7 +342,7 @@ export async function buildProductionDeps(opts: {
       return data.reviews;
     },
     fetchCiRuns: async (org: string, repo: string, headSha: string) => {
-      const data = ghJson<GhWorkflowRunsJson>([
+      const data = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
       ]);

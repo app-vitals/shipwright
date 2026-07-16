@@ -53,7 +53,7 @@ interface MakeDepsOptions {
   ciStatusByPr?: Record<number, CiCheckStatus>;
   mergeStatusByPr?: Record<number, MergeStatusInfo>;
   listPrCommits?: (_prNumber: number) => Promise<CommitInfo[]>;
-  getCurrentUser?: () => string;
+  getCurrentUser?: () => Promise<string>;
 }
 
 function makeDeps({
@@ -62,7 +62,7 @@ function makeDeps({
   ciStatusByPr = {},
   mergeStatusByPr = {},
   listPrCommits = async () => [],
-  getCurrentUser = () => "the-agent",
+  getCurrentUser = async () => "the-agent",
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -654,7 +654,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -688,7 +688,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => commits,
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -725,7 +725,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -757,7 +757,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -791,7 +791,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => commits,
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -823,7 +823,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -855,7 +855,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -885,7 +885,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -922,7 +922,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -952,7 +952,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -993,7 +993,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -1032,7 +1032,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -1067,7 +1067,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -1115,7 +1115,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -1154,7 +1154,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => [],
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);
@@ -1197,7 +1197,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => commits,
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toEqual([]);
@@ -1232,7 +1232,7 @@ describe("getPatchCandidates", () => {
         ciStatusByPr: {},
         mergeStatusByPr: {},
         listPrCommits: async () => commits,
-        getCurrentUser: () => "the-agent",
+        getCurrentUser: async () => "the-agent",
       }),
     );
     expect(result).toHaveLength(1);

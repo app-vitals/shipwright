@@ -562,7 +562,7 @@ interface TaskListResponseJson {
 }
 
 export function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
+  ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }): PrStateReconcilerDeps {
   const workspacePath = resolveWorkspacePath();
@@ -596,7 +596,7 @@ export function buildProductionDeps(opts: {
     },
     patchPrRecord: makePatchPrRecord({ baseUrl, headers, doFetch }),
     ghViewPr: async (repo: string, prNumber: number) => {
-      return ghJson<GhPrView>([
+      return await ghJson<GhPrView>([
         "pr",
         "view",
         String(prNumber),
@@ -628,7 +628,7 @@ export function buildProductionDeps(opts: {
       }
     },
     ghListMergedPrsForBranch: async (repo: string, branch: string) => {
-      return ghJson<Array<{ number: number }>>([
+      return await ghJson<Array<{ number: number }>>([
         "pr",
         "list",
         "--head",
@@ -660,7 +660,7 @@ export function buildProductionDeps(opts: {
  * are unrelated to `reconcilePrState()`'s (`state=open` list + `gh pr view`).
  */
 export function buildReviewStateProductionDeps(opts: {
-  ghGraphql: <T>(query: string) => T;
+  ghGraphql: <T>(query: string) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;
 }): PrReviewStateReconcilerDeps {
@@ -738,7 +738,7 @@ export function buildReviewStateProductionDeps(opts: {
     }
   }
 }`;
-      const response = ghGraphql<ReviewGraphqlResponse>(query);
+      const response = await ghGraphql<ReviewGraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
   };
