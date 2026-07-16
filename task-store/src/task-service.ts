@@ -153,8 +153,16 @@ export class TaskService implements TaskServiceLike {
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
 
-    // Load all tasks for dependency resolution (computeBlockedBy needs the full graph).
-    const [pageTasks, total, allTasks] = await this.prisma.$transaction([
+    // pageTasks + total are the only two queries that share the `where`
+    // filter, so batching them in a transaction is what actually mattered
+    // here — the old third whole-table findMany() depended on nothing else
+    // in the array and gained no consistency guarantee from sharing a
+    // transaction with it (Postgres already gives each individual query its
+    // own consistent snapshot). Splitting it out lets us compute depIds from
+    // the real pageTasks result first, then scope the dependency lookup by
+    // id — mirroring get()'s `where: { id: { in: task.dependencies } }`
+    // pattern — instead of always pulling every row in the table.
+    const [pageTasks, total] = await this.prisma.$transaction([
       this.prisma.task.findMany({
         where,
         orderBy: { createdAt: filters.sort ?? "asc" },
@@ -162,8 +170,14 @@ export class TaskService implements TaskServiceLike {
         skip: offset,
       }),
       this.prisma.task.count({ where }),
-      this.prisma.task.findMany(),
     ]);
+
+    const depIds = [
+      ...new Set(pageTasks.flatMap((t: Task) => t.dependencies ?? [])),
+    ];
+    const allTasks = depIds.length
+      ? await this.prisma.task.findMany({ where: { id: { in: depIds } } })
+      : [];
 
     const tasks: TaskWithBlockedBy[] = pageTasks.map((t: Task) => ({
       ...t,
