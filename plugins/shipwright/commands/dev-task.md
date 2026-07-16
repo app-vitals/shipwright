@@ -248,25 +248,26 @@ against the task's acceptance criteria before deciding how to proceed:
    correct" — treat it the same as the incomplete/stale case below.
 
 **Complete and correct** (diff satisfies every acceptance criterion, and CI is green if a PR
-exists): skip destructive recovery — do not close the PR or delete the branch.
-- **Local-only case** (branch exists, no PR yet): rebase is enough — no PATCH of `branch` or
-  `pr` is needed since neither changed; still refresh `heartbeatAt` (Step 5b already does
-  this before dispatch). Continue to the standard "branch DOES exist on remote" flow below
-  (or, if the branch is local-only and never pushed, treat it as already checked out and
-  skip straight to Step 5 — no worktree recreation needed against a fresh `origin/main`
-  base).
-- **PR case**: resume from the existing PR rather than rebuilding it. PATCH the task store to
-  match reality so downstream steps (Step 9, Step 9b, Step 10a) see the correct state:
+exists): skip destructive recovery — do not close the PR or delete the branch. Both shortcuts
+below bypass Step 4's `worktree add` block, so each must bind `{worktree-path}` itself
+(reuse an on-disk worktree if the prior session left one, else create it) before handing off.
+- **Local-only** (branch exists, no PR, remote branch present): rebase is enough — no PATCH
+  needed; still refresh `heartbeatAt` (Step 5b). Continue to the "branch DOES exist on
+  remote" flow below, which binds `{worktree-path}` via the tracking-branch `worktree add`.
+  - **Never pushed** (no remote branch): reuse the on-disk worktree, or
+    `worktree add {worktree-path} {branch}` (no `-b`/`origin/main` — branch exists locally).
+    Bind `{worktree-path}`, go straight to Step 5.
+- **PR case**: resume from the existing PR. PATCH the task store to match reality:
   ```bash
   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
     -d "{\"status\": \"pr_open\", \"pr\": {existing-pr-number}}" | jq .
   ```
-  Then skip Step 5 (implementation) entirely and continue from Step 6 (Simplify) using the
-  existing PR's branch, or — if Step 6 onward were already fully done too (CI green, nothing
-  left to verify) — skip straight to Step 10 (Handoff) since the task is effectively already
-  shipped. Print:
+  Reuse the on-disk worktree, or fetch + tracking-add one for the PR branch (same pair as
+  "branch DOES exist on remote" below). Bind `{worktree-path}` — Step 6's diff/Edit work
+  runs from it. Skip Step 5, continue from Step 6 on the PR's branch — or go straight to
+  Step 10 if Step 6+ was already done (CI green). Print:
   ```
   ↩ {branch} already has complete, correct work ({If PR: "PR #{number}, CI green" | "local branch, no PR yet"}).
   Resuming from existing state — skipping destructive recovery.
@@ -297,10 +298,25 @@ The reality check above already ran `git pull` and `git ls-remote --heads origin
 for the local/remote signals — reuse that same remote-branch result here (indicates a
 bundled task joining an existing PR) rather than re-querying:
 
-**If the branch does NOT exist on remote** (new task, standard flow):
-```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
-```
+**If the branch does NOT exist on remote** (new task, standard flow) — but first check
+whether a local branch `{branch}` already exists (from the reality check's `branch --list`
+result above). This happens when the branch was pushed then deleted externally between
+sessions (a remote-absent edge case, distinct from the never-pushed local-only case already
+handled above under "Complete and correct"):
+- **Local branch exists, remote does not** (pushed-then-deleted): do not run `origin/main -b
+  {branch}` — it fails because the local branch already exists. Treat this as a fresh start
+  from the local branch's current state: delete the stale local branch first, then create
+  fresh from `origin/main`:
+  ```bash
+  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}
+  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
+  ```
+  (If a worktree for `{branch}` already exists on disk, remove it first per the same
+  worktree-before-branch-delete ordering used in the incomplete/stale cleanup above.)
+- **Local branch does not exist either** (genuinely new): standard flow.
+  ```bash
+  git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
+  ```
 
 **If the branch DOES exist on remote** (bundled task — joining an existing branch/PR):
 
