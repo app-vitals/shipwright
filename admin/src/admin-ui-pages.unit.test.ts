@@ -4029,3 +4029,162 @@ describe("renderSessionDetailPage", () => {
     expect(html).toContain(">1<"); // 1 total task
   });
 });
+
+// ─── renderSessionDetailPage — dependency graph ──────────────────────────────
+
+describe("renderSessionDetailPage dependency graph", () => {
+  const SESSION_ID = "session-graph";
+
+  // Isolates the graph card from the task table above it — both can contain
+  // the same task ids, so plain html.toContain() can't tell them apart.
+  function graphSection(html: string): string {
+    const idx = html.indexOf("Dependency graph");
+    expect(idx).toBeGreaterThan(-1);
+    return html.slice(idx);
+  }
+
+  test("chains tasks into topological waves and annotates what each needs", () => {
+    const a: TaskItem = {
+      id: "TASK-A",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+    };
+    const b: TaskItem = {
+      id: "TASK-B",
+      title: "Depends on A",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-A"],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
+    const section = graphSection(html);
+    expect(section).toContain("Wave 1");
+    expect(section).toContain("Wave 2");
+    expect(section).toContain("TASK-A");
+    expect(section).toContain("needs TASK-A");
+  });
+
+  test("a task outside the session (unknown id) renders without a link or status, marked outside session", () => {
+    const c: TaskItem = {
+      id: "TASK-C",
+      title: "Needs an external dep",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["EXTERNAL-1"],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [c], USER_NAME);
+    const section = graphSection(html);
+    expect(section).toContain("EXTERNAL-1");
+    expect(section).not.toContain('href="/admin/tasks/EXTERNAL-1"');
+    expect(section).toContain("outside session");
+  });
+
+  test("tasks with no dependency relationship at all are excluded from the graph", () => {
+    const unrelated: TaskItem = {
+      id: "TASK-LONER",
+      title: "No relationships",
+      status: "pending",
+      session: SESSION_ID,
+    };
+    const dependent: TaskItem = {
+      id: "TASK-DEP",
+      title: "Depends on root",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+    };
+    const root: TaskItem = {
+      id: "TASK-ROOT",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [unrelated, dependent, root],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+    expect(section).toContain("TASK-DEP");
+    expect(section).toContain("TASK-ROOT");
+    expect(section).not.toContain("TASK-LONER");
+  });
+
+  test("same-branch tasks get a matching branch color even across different waves (bundle)", () => {
+    const first: TaskItem = {
+      id: "TASK-1",
+      title: "models + migration",
+      status: "pending",
+      session: SESSION_ID,
+      branch: "feat/bundle",
+    };
+    const second: TaskItem = {
+      id: "TASK-2",
+      title: "admin endpoint",
+      status: "pending",
+      session: SESSION_ID,
+      branch: "feat/bundle",
+      dependencies: ["TASK-1"],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [first, second],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+    const colors = [
+      ...section.matchAll(/border-left:3px solid (#[0-9a-f]{6})/g),
+    ].map((m) => m[1]);
+    expect(colors.length).toBe(2);
+    expect(colors[0]).toBe(colors[1]);
+  });
+
+  test("session with zero dependency edges omits the dependency graph card entirely", () => {
+    const solo: TaskItem = {
+      id: "TASK-SOLO",
+      title: "Independent",
+      status: "pending",
+      session: SESSION_ID,
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [solo], USER_NAME);
+    expect(html).not.toContain("Dependency graph");
+  });
+
+  test("a dependency cycle doesn't hang rendering — remaining nodes dump into a final wave", () => {
+    const x: TaskItem = {
+      id: "TASK-X",
+      title: "X",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-Y"],
+    };
+    const y: TaskItem = {
+      id: "TASK-Y",
+      title: "Y",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-X"],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [x, y], USER_NAME);
+    const section = graphSection(html);
+    expect(section).toContain("TASK-X");
+    expect(section).toContain("TASK-Y");
+  });
+
+  test("escapes task ids, titles, and branch names in the graph to avoid XSS", () => {
+    const xss: TaskItem = {
+      id: "TASK-XSS",
+      title: "<img src=x onerror=alert(1)>",
+      status: "pending",
+      session: SESSION_ID,
+      branch: "<script>evil()</script>",
+      dependencies: ["<b>dep</b>"],
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [xss], USER_NAME);
+    const section = graphSection(html);
+    expect(section).not.toContain("<img src=x onerror=alert(1)>");
+    expect(section).not.toContain("<script>evil()</script>");
+    expect(section).not.toContain("<b>dep</b>");
+  });
+});
