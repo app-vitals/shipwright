@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { createAgentReposRef } from "./agent-repos-ref.ts";
+import { agentReposRef, createAgentReposRef } from "./agent-repos-ref.ts";
 
 describe("createAgentReposRef", () => {
   it("initial get() before any set() returns an empty/safe default", () => {
@@ -46,5 +46,16 @@ describe("createAgentReposRef", () => {
 
     ref.set([]);
     expect(ref.get()).toEqual([]);
+  });
+});
+
+describe("agentReposRef (process-wide singleton)", () => {
+  it("is a working ref that reflects set() through get(), independent of createAgentReposRef() instances", () => {
+    const independent = createAgentReposRef();
+    independent.set(["org/should-not-leak"]);
+
+    agentReposRef.set(["org/scoped-repo"]);
+    expect(agentReposRef.get()).toEqual(["org/scoped-repo"]);
+    expect(independent.get()).toEqual(["org/should-not-leak"]);
   });
 });
