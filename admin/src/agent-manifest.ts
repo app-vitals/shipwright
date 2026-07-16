@@ -389,16 +389,20 @@ export function buildAgentDeploymentManifest(
                 initialDelaySeconds: 15,
                 periodSeconds: 30,
                 // Explicit, not the 1s k8s default — the health server shares
-                // its process with claude -p child spawns and GitHub API
-                // calls, which can transiently delay a response past 1s.
-                timeoutSeconds: 5,
+                // its process with claude -p child spawns and check-helpers.ts's
+                // spawnSync("gh", ...) calls, which block the whole process for
+                // the duration of the gh CLI call (network round-trip to GitHub,
+                // not just local CPU work). 15s is a bridge until SIO-1.2 converts
+                // those to async spawn; no fixed timeout is truly safe against a
+                // slow gh response, so this isn't a permanent fix.
+                timeoutSeconds: 15,
                 failureThreshold: 3,
               },
               readinessProbe: {
                 httpGet: { path: "/health", port: AGENT_HEALTH_PORT },
                 initialDelaySeconds: 10,
                 periodSeconds: 10,
-                timeoutSeconds: 5,
+                timeoutSeconds: 15,
                 failureThreshold: 3,
               },
               securityContext: {

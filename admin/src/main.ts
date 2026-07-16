@@ -5,7 +5,8 @@
  * Runs migrations, creates services, and mounts all admin + runtime routes.
  *
  * Route mount order (important — avoids shadowing):
- *   GET  /health                 — health check (no auth)
+ *   GET  /health                 — liveness check (no auth, DB-independent)
+ *   GET  /health/ready           — readiness check (no auth, DB-aware)
  *   *    /agents/*               — runtime API  (admin key | per-agent bearer | session JWT)
  *                                  + admin CRUD API (admin key | per-agent bearer | session JWT)
  *   *    /admin/*                — admin UI       (session JWT)
@@ -257,6 +258,30 @@ export function buildDeletionClients(env: NodeJS.ProcessEnv): {
   return { taskStore, chatService };
 }
 
+// ─── Readiness check ──────────────────────────────────────────────────────────
+
+/**
+ * DB-aware readiness check backing GET /health/ready. Runs a lightweight
+ * `SELECT 1` and reports whether Postgres is actually reachable — unlike
+ * GET /health (liveness), which stays DB-independent so a transient DB blip
+ * never triggers a liveness-driven pod restart. Takes only the `$queryRaw`
+ * slice of PrismaClient so it's unit-testable with a mocked/injected client,
+ * no real I/O.
+ */
+export async function checkDbReady(prisma: {
+  $queryRaw: (
+    query: TemplateStringsArray,
+    ...values: unknown[]
+  ) => Promise<unknown>;
+}): Promise<boolean> {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Server entry ─────────────────────────────────────────────────────────────
 
 const DEFAULT_PORT = 3000;
@@ -369,8 +394,18 @@ async function startServer(): Promise<void> {
     root.use("*", sentry(root, sentryInitOptions));
   }
 
-  // 1. Health check — no auth
+  // 1. Health checks — no auth
+  //    /health       — liveness: process-alive only, independent of DB state.
+  //                    A transient DB blip must never trigger a
+  //                    liveness-driven restart.
+  //    /health/ready — readiness: DB-aware. Used by the chart's readinessProbe
+  //                    so Kubernetes doesn't route traffic to this pod before
+  //                    the Cloud SQL proxy sidecar has finished connecting.
   root.get("/health", (c) => c.json({ status: "ok" }));
+  root.get("/health/ready", async (c) => {
+    const ready = await checkDbReady(prisma);
+    return c.json({ status: ready ? "ok" : "unavailable" }, ready ? 200 : 503);
+  });
 
   // Redirect bare root to the login page — no handler exists at "/" otherwise.
   root.get("/", (c) => c.redirect("/admin/login", 302));

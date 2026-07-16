@@ -60,7 +60,7 @@ import {
 } from "./check-review.ts";
 import type { ClaudeRunResult } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { buildTokenPayload } from "./cron-handler.ts";
+import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
@@ -146,6 +146,7 @@ export function createLoopOrchestrator(
    */
   async function dispatch(phase: LoopPhase, itemId: string): Promise<void> {
     const command = `${PHASE_COMMANDS[phase]} ${itemId}`;
+    const message = formatCronMessage(loopCronId, command);
     const runId = await cronRunReporter.createRun(
       loopCronId,
       clock.now(),
@@ -154,7 +155,7 @@ export function createLoopOrchestrator(
 
     let runResult: ClaudeRunResult;
     try {
-      runResult = await runner(command);
+      runResult = await runner(message);
     } catch (err) {
       await cronRunReporter.completeRun(
         loopCronId,
