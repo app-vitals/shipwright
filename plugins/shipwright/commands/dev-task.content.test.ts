@@ -40,8 +40,12 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
     expect(content).not.toContain("Resuming interrupted task");
   });
 
-  it("routes an explicit task-id's in_progress status through the Step 2 orphan check", () => {
-    expect(content).toMatch(/orphan check/i);
+  it("in_progress status skips straight to Step 3 — recovery now happens unconditionally in Step 4's reality check, not a status-gated orphan check", () => {
+    // The old status-gated "Step 2 Orphan Check" mechanism is retired (DOH-1.1) — superseded
+    // by the unconditional Branch/PR Reality Check in Step 4.
+    expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
+    expect(content).not.toContain("### Orphan Check (prior session recovery)");
+    expect(content).toMatch(/skip\s+Step 2's claim and proceed directly to Step 3/i);
   });
 });
 
@@ -151,5 +155,83 @@ describe("Step 4 — stale bundle branch detection", () => {
     // The check must derive the repo slug from git remote get-url and pass it as --repo.
     expect(content).toContain('--repo "$GH_REPO"');
     expect(content).toContain("remote get-url origin");
+  });
+});
+
+describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
+  it("runs the reality check before any `git worktree add -b {branch}` invocation, regardless of task-store status", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+
+    // Every worktree-add-with-new-branch invocation in Step 4 must come after the
+    // reality check header, not before it.
+    const worktreeAddIdx = content.indexOf("worktree add");
+    expect(worktreeAddIdx).toBeGreaterThan(-1);
+    expect(realityCheckIdx).toBeLessThan(worktreeAddIdx);
+  });
+
+  it("is not gated on task-store status — checks live git/GitHub state unconditionally", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 2500);
+    expect(section).toMatch(/regardless of what task-store status says/i);
+  });
+
+  it("checks the local branch, remote branch (git ls-remote --heads origin), and open PR (gh pr list --head, --state open)", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 3000);
+
+    // Local branch check
+    expect(section).toMatch(/git -C .*branch --list \{branch\}/);
+    // Remote branch check
+    expect(section).toContain("git ls-remote --heads origin {branch}");
+    // Open PR check with mergeability/CI-relevant fields
+    expect(section).toContain("--state open");
+    expect(section).toMatch(/gh pr list --head \{branch\}.*--state open.*json number,state,mergeable,mergeStateStatus/);
+  });
+
+  it("derives --repo from git remote using the same pattern as the Step 4 stale-bundle-branch check", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 3000);
+    expect(section).toContain("remote get-url origin");
+    expect(section).toContain('--repo "$GH_REPO"');
+  });
+
+  it("complete-and-correct path skips destructive delete and PATCHes the task store to reflect reality", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 5000);
+    expect(section).toMatch(/complete and correct/i);
+    expect(section).toMatch(/skip(s|ping)? (the )?destructive/i);
+    expect(section).toContain(`"$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}"`);
+    expect(section).toMatch(/-X PATCH/);
+  });
+
+  it("incomplete/stale path closes the PR (if any) and deletes the branch (remote + local) before falling through to fresh worktree creation", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 5000);
+    expect(section).toMatch(/incomplete|stale/i);
+    expect(section).toContain("gh pr close");
+    expect(section).toContain("git push origin --delete {branch}");
+    expect(section).toMatch(/git -C .*branch -D \{branch\}/);
+  });
+
+  it("resume-from-PR path checks CI status before treating an existing PR as complete", () => {
+    const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
+    expect(realityCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 5000);
+    expect(section).toMatch(/CI/);
+  });
+
+  it("no longer routes an in_progress task's stale branch/PR cleanup through a status-gated Step 2 Orphan Check", () => {
+    expect(content).not.toContain("### Orphan Check (prior session recovery)");
+    expect(content).not.toMatch(/If the task's current status is already `in_progress`:/);
+  });
+
+  it("Step 1 no longer special-cases in_progress status as a distinct branch routing to Step 2's Orphan Check", () => {
+    expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
   });
 });
