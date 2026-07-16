@@ -17,7 +17,7 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
-import { createAgentReposRef } from "./agent-repos-ref.ts";
+import { agentReposRef } from "./agent-repos-ref.ts";
 import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -138,8 +138,8 @@ const cronDeps: CronHandlerDeps = {
   slack,
   runner,
   formatter: markdownToSlack,
-  onSession: (channel: string, ts: string, sessionId: string) => {
-    sessions.set(threadKey(channel, ts), sessionId);
+  onSession: async (channel: string, ts: string, sessionId: string) => {
+    await sessions.set(threadKey(channel, ts), sessionId);
   },
   synthesizeSpeechFn: synthesizeSpeech,
   voiceConfig: config.voice,
@@ -178,10 +178,6 @@ const runtimeClient =
         apiKey: config.shipwright.apiKey,
       })
     : null;
-
-// Live view of the agent's scoped repos, populated from every config sync
-// tick's bundle.repos. See agent-repos-ref.ts.
-const agentReposRef = createAgentReposRef();
 
 // ─── Step 4: Config sync ──────────────────────────────────────────────────────
 
@@ -289,7 +285,10 @@ if (runtimeClient && agentId) {
 
   async function runPrStateReconciler() {
     try {
-      reconcilerDeps ??= buildPrStateReconcilerDeps({ ghJson });
+      reconcilerDeps ??= buildPrStateReconcilerDeps({
+        ghJson,
+        getScopedRepos: agentReposRef.get,
+      });
       await reconcilePrState(reconcilerDeps);
     } catch (err) {
       console.error(

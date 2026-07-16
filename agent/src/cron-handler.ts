@@ -84,7 +84,11 @@ export interface CronHandlerDeps {
   /** Called after a successful post so the caller can track the thread. */
   onPost?: (channel: string, ts: string) => void;
   /** Called after a successful post when a sessionId is available. */
-  onSession?: (channel: string, ts: string, sessionId: string) => void;
+  onSession?: (
+    channel: string,
+    ts: string,
+    sessionId: string,
+  ) => void | Promise<void>;
   /** Optional speech synthesis — if absent, [speak:] markers are skipped. */
   synthesizeSpeechFn?: SynthesizeSpeechFn;
   voiceConfig?: VoiceConfig;
@@ -365,7 +369,8 @@ export async function handleCronRequest(
     console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
     if (postResult.ts) {
       onPost?.(channel, postResult.ts);
-      if (onSession && sessionId) onSession(channel, postResult.ts, sessionId);
+      if (onSession && sessionId)
+        await onSession(channel, postResult.ts, sessionId);
     } else {
       console.warn(
         `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
@@ -404,7 +409,7 @@ export async function handleCronRequest(
     if (dmPostResult.ts) {
       onPost?.(dmChannel, dmPostResult.ts);
       if (onSession && sessionId)
-        onSession(dmChannel, dmPostResult.ts, sessionId);
+        await onSession(dmChannel, dmPostResult.ts, sessionId);
     } else {
       console.warn(
         `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,

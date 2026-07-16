@@ -104,8 +104,9 @@ export class ClaudeTimeoutError extends Error {
 }
 
 interface ClaudeSessionStore {
-  get: (key: string) => string | undefined;
-  set: (key: string, id: string) => void;
+  get: (key: string) => Promise<string | undefined> | string | undefined;
+  set: (key: string, id: string) => Promise<void> | void;
+  clear?: (key: string) => Promise<void> | void;
 }
 
 /**
@@ -260,9 +261,12 @@ export function createRunClaude(
     };
   }
 
-  function _saveSession(sessionKey: string | undefined, output: ClaudeRunResult) {
+  async function _saveSession(
+    sessionKey: string | undefined,
+    output: ClaudeRunResult,
+  ) {
     if (sessionKey && output.sessionId) {
-      sessions.set(sessionKey, output.sessionId);
+      await sessions.set(sessionKey, output.sessionId);
     }
   }
 
@@ -270,13 +274,15 @@ export function createRunClaude(
     message: string,
     sessionKey: string | undefined,
   ): Promise<ClaudeRunResult> {
-    const existingSessionId = sessionKey ? sessions.get(sessionKey) : undefined;
+    const existingSessionId = sessionKey
+      ? await sessions.get(sessionKey)
+      : undefined;
 
     const args = _buildArgs(message, existingSessionId);
 
     try {
       const output = await _spawn(args);
-      _saveSession(sessionKey, output);
+      await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
       // Retry the same resumed session once: transient blips (e.g. a socket
@@ -290,7 +296,7 @@ export function createRunClaude(
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
         try {
           const output = await _spawn(args);
-          _saveSession(sessionKey, output);
+          await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch {
           sentryClient?.captureException(err);

@@ -55,7 +55,6 @@ model Task {
   dependencies       String[]
   pr                 Int?
   hours              Float?
-  addedAt            String?
   startedAt          String?
   prCreatedAt        String?
   mergedAt           String?

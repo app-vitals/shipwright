@@ -6,7 +6,8 @@
  * createRunClaude() and your injected config values.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
@@ -78,7 +79,7 @@ export async function downloadFile(
 
   const buffer = Buffer.from(await resp.arrayBuffer());
   const tmpPath = join(tmpdir(), `shipwright-agent-${Date.now()}-${file.name}`);
-  writeFileSync(tmpPath, buffer);
+  await writeFile(tmpPath, buffer);
   return tmpPath;
 }
 
@@ -132,7 +133,7 @@ type ConversationsRepliesFn = (
 
 export type TranscribeAudioFn = typeof transcribeAudio;
 export type SynthesizeSpeechFn = typeof synthesizeSpeech;
-type GetSessionFn = (key: string) => string | undefined;
+type GetSessionFn = (key: string) => Promise<string | undefined>;
 
 export type ClaudeRunner = (
   message: string,
@@ -190,7 +191,7 @@ export async function dispatchMarkers(
           .uploadV2({
             channel_id: channel,
             thread_ts: threadTs,
-            file: readFileSync(absPath),
+            file: await readFile(absPath),
             filename: absPath.split("/").pop() ?? "file",
           })
           .catch((err: unknown) =>
@@ -220,7 +221,7 @@ export async function dispatchMarkers(
             .uploadV2({
               channel_id: channel,
               thread_ts: threadTs,
-              file: readFileSync(audioPath),
+              file: await readFile(audioPath),
               filename: audioPath.split("/").pop() ?? "response.mp3",
             })
             .catch((err: unknown) =>
@@ -358,7 +359,7 @@ export function createSlackApp(
   resolveUserFn: ResolveUserFn = async (userId) => userId,
   botUserId: string | undefined = undefined,
   conversationsRepliesFn: ConversationsRepliesFn = defaultConversationsRepliesFn,
-  getSessionFn: GetSessionFn = () => undefined,
+  getSessionFn: GetSessionFn = async () => undefined,
   blocksConverter: typeof markdownToBlocks = markdownToBlocks,
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
 ): App {
@@ -394,7 +395,8 @@ export function createSlackApp(
 
     if (!isDM) {
       if (!msg.thread_ts) return;
-      if (!getSessionFn(getThreadKey(msg.channel, msg.thread_ts))) return;
+      if (!(await getSessionFn(getThreadKey(msg.channel, msg.thread_ts))))
+        return;
     }
 
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
@@ -512,7 +514,7 @@ export function createSlackApp(
 
     // Drop @mention if bot is already participating in this thread —
     // the message handler covers it and would double-respond otherwise.
-    if (ev.thread_ts && getSessionFn(sessionKey)) {
+    if (ev.thread_ts && (await getSessionFn(sessionKey))) {
       return;
     }
 
@@ -538,7 +540,7 @@ export function createSlackApp(
       prompt = `[${name}]: ${prompt}`;
     }
 
-    if (event.thread_ts && !getSessionFn(sessionKey)) {
+    if (event.thread_ts && !(await getSessionFn(sessionKey))) {
       try {
         const repliesResult = await conversationsRepliesFn(
           client,
