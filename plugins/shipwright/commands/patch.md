@@ -1,13 +1,13 @@
 ---
-description: Address unresolved review findings, merge conflicts, and failing CI on own open PRs — queries GitHub directly, fixes in worktree, pushes
-argument-hint: "[org/repo#number]"
+description: Address unresolved review findings, merge conflicts, and failing CI on a specific own open PR — queries GitHub directly, fixes in worktree, pushes
+argument-hint: "<org/repo#number>"
 ---
 
 # Patch
 
-Scan own open PRs for three conditions: unaddressed review/PR comments, merge conflicts
-with base, and failing CI. For each PR, apply the appropriate fix. Goes silent when
-nothing needs addressing.
+Check one given PR for three conditions: unaddressed review/PR comments, merge conflicts
+with base, and failing CI. Apply the appropriate fix. Goes silent when nothing needs
+addressing, or when no target PR is given.
 
 > **Note:** Branches merely BEHIND main (no conflict) are not patch-worthy. Main is only
 > merged into a branch to resolve an actual conflict — see Step 2.5 and Step 4 for the
@@ -22,12 +22,22 @@ nothing needs addressing.
 ## Arguments
 
 Parse `$ARGUMENTS`:
-- `org/repo#number` (e.g. `app-vitals/shipwright#123`): target a specific PR. Skips the
-  multi-repo discovery in Step 2 — fetch just this PR (still scoped to `CURRENT_USER` as
-  author, per the Independence Principles' "own PRs only" rule for patch) and classify it
-  into Lists A/C/D as usual from Step 3 onward.
-- _(no arguments)_: normal flow — discover all own open PRs across all configured repos
-  (see Step 2).
+- `org/repo#number` (e.g. `app-vitals/shipwright#123`): **required** — target a specific
+  PR. Fetch just this PR (still scoped to `CURRENT_USER` as author, per the Independence
+  Principles' "own PRs only" rule for patch) and classify it into Lists A/C/D as usual from
+  Step 3 onward.
+- _(no arguments)_: not supported — respond `[silent]` and stop, with no GitHub scan across
+  all open PRs (see Step 0).
+
+---
+
+## Step 0: Require Explicit Target
+
+If `$ARGUMENTS` is empty, append `[silent]` and stop. An explicit `org/repo#number` target
+is required — patch no longer discovers PRs by scanning all own open PRs across configured
+repos.
+
+Otherwise, proceed to Step 1.
 
 ---
 
@@ -42,10 +52,10 @@ CURRENT_USER=$(gh api /user -q '.login')
 
 ---
 
-## Step 2: Discover Own Open PRs
+## Step 2: Resolve Target PR
 
-**If invoked with an `org/repo#number` argument**, skip the multi-repo scan below — fetch
-just that one PR instead:
+Parse `$ARGUMENTS` for the `org/repo#number` target (per the Arguments section above), then
+fetch that PR:
 
 ```bash
 gh pr view {number} --repo {org}/{repo} \
@@ -57,32 +67,6 @@ gh pr view {number} --repo {org}/{repo} \
   `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.
 - **Match found**: use it as the sole entry in the unified PR list and proceed directly to
   Step 2.5.
-
-**Otherwise (no arguments)**, resolve the list of repos to scan. Use the same resolver as other shipwright commands:
-
-```bash
-REPOS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.repos[]')
-```
-
-Iterate over the results to scan each repo.
-
-For each repo, fetch open PRs authored by `CURRENT_USER`:
-
-```bash
-gh pr list --state open --repo {org}/{repo} \
-  --author "$CURRENT_USER" \
-  --json number,title,headRefName,headRefOid,additions,deletions,mergeStateStatus
-```
-
-Collect all results into a unified list of PRs with their `org`, `repo`, `number`,
-`title`, `headRefName`, and `headRefOid`.
-
-If no own open PRs are found across all repos:
-```
-No own open PRs found.
-```
-Append `[silent]` and stop.
 
 ---
 
