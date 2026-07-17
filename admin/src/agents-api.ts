@@ -37,6 +37,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
 import type { AdminApiKey, AdminAuthEnv } from "./api-auth.ts";
@@ -59,6 +60,7 @@ import {
   AgentSummarySchema,
   AgentTokenSchema,
   AgentToolSchema,
+  AgentWorkQueueSnapshotSchema,
   ChatTokenStatsSchema,
   CreateAgentBodySchema,
   CreateAgentCronJobBodySchema,
@@ -85,6 +87,7 @@ import {
   PatchAgentPluginBodySchema,
   PatchAgentToolBodySchema,
   PluginNameQuerySchema,
+  PushWorkQueueSnapshotBodySchema,
   TokenIdParamSchema,
   ToolIdParamSchema,
   UpsertChatTokenDailyBodySchema,
@@ -137,6 +140,7 @@ export interface AdminDeps {
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
   >;
+  agentWorkQueueService: Pick<AgentWorkQueueService, "push" | "get">;
   /**
    * Retained solely as a pass-through to deleteAgentFully() (DELETE /agents/:id),
    * which has its own internal prisma.agent/prisma.agentEnv access — out of
@@ -253,6 +257,10 @@ const PluginsWrapperSchema = z
 const jsonError = {
   content: { "application/json": { schema: ErrorSchema } },
 };
+
+const WorkQueueSnapshotWrapperSchema = z
+  .object({ snapshot: AgentWorkQueueSnapshotSchema })
+  .openapi("WorkQueueSnapshotWrapper");
 
 // ─── Route definitions ──────────────────────────────────────────────────────────
 
@@ -764,6 +772,44 @@ const upsertChatTokenDailyRoute = createRoute({
   },
 });
 
+const pushWorkQueueSnapshotRoute = createRoute({
+  method: "post",
+  path: "/agents/{id}/work-queue",
+  request: {
+    params: AgentIdParamSchema,
+    body: {
+      content: {
+        "application/json": { schema: PushWorkQueueSnapshotBodySchema },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description:
+        "Snapshot upserted (overwrites any prior snapshot for this agent)",
+      content: {
+        "application/json": { schema: WorkQueueSnapshotWrapperSchema },
+      },
+    },
+    400: { description: "Bad request", ...jsonError },
+  },
+});
+
+const getWorkQueueSnapshotRoute = createRoute({
+  method: "get",
+  path: "/agents/{id}/work-queue",
+  request: { params: AgentIdParamSchema },
+  responses: {
+    200: {
+      description: "Latest work-queue snapshot",
+      content: {
+        "application/json": { schema: WorkQueueSnapshotWrapperSchema },
+      },
+    },
+    404: { description: "No snapshot pushed yet", ...jsonError },
+  },
+});
+
 const cronRunStatsQuerySchema = z
   .object({
     from: z
@@ -831,6 +877,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentTokenService,
     agentPluginService,
     agentChatTokenService,
+    agentWorkQueueService,
     prisma,
     provisioner,
     taskStore,
@@ -1437,6 +1484,30 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     return c.json(rows.map(serializeChatTokenDaily), 200);
   });
 
+  // ─── Work queue snapshot ───────────────────────────────────────────────────
+
+  // POST /agents/:id/work-queue — push a snapshot (upserts the single row for
+  // this agent, overwriting any prior snapshot)
+  app.openapi(pushWorkQueueSnapshotRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const body = c.req.valid("json");
+    const snapshot = await agentWorkQueueService.push(agentId, {
+      computedAt: new Date(body.computedAt),
+      items: body.items,
+    });
+    return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
+  });
+
+  // GET /agents/:id/work-queue — read the latest snapshot, 404 if none yet
+  app.openapi(getWorkQueueSnapshotRoute, async (c) => {
+    const { id: agentId } = c.req.valid("param");
+    const snapshot = await agentWorkQueueService.get(agentId);
+    if (!snapshot) {
+      throw new NotFoundError(`no work-queue snapshot for agent ${agentId}`);
+    }
+    return c.json({ snapshot: serializeWorkQueueSnapshot(snapshot) }, 200);
+  });
+
   return app;
 }
 
@@ -1604,6 +1675,24 @@ function serializeAgent(agent: {
     repos: agent.repos ?? [],
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
+  };
+}
+
+function serializeWorkQueueSnapshot(snapshot: {
+  id: string;
+  agentId: string;
+  computedAt: Date;
+  items: unknown;
+  createdAt: Date;
+}): z.infer<typeof AgentWorkQueueSnapshotSchema> {
+  return {
+    id: snapshot.id,
+    agentId: snapshot.agentId,
+    computedAt: snapshot.computedAt.toISOString(),
+    items: snapshot.items as z.infer<
+      typeof AgentWorkQueueSnapshotSchema
+    >["items"],
+    createdAt: snapshot.createdAt.toISOString(),
   };
 }
 

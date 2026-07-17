@@ -297,6 +297,12 @@ function buildSpecApp() {
         daily: [],
       }),
     },
+    agentWorkQueueService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     agentCronRunStatsService: {
       query: async () => ({
         totals: {

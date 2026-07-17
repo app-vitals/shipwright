@@ -356,6 +356,12 @@ function makeMockDeps(): AdminDeps {
         daily: [],
       }),
     },
+    agentWorkQueueService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     agentCronRunService: {
       create: async () => ({
         id: "run-id",

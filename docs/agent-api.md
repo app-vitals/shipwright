@@ -458,6 +458,35 @@ Returns `{ totals, byAgent, byModel, daily }` where each aggregate includes `inp
 
 ---
 
+## Work queue snapshot
+
+One row per agent, holding the agent's most recently pushed ranked view of its pending work (tasks/PRs across pipeline phases). There is no history — each push overwrites the prior snapshot.
+
+### Push snapshot
+
+```
+POST /agents/:id/work-queue
+```
+
+Body:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `computedAt` | yes | ISO timestamp when the agent computed this ranking |
+| `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
+
+Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with `{ snapshot: AgentWorkQueueSnapshot }`.
+
+### Get snapshot
+
+```
+GET /agents/:id/work-queue
+```
+
+Returns `200` with `{ snapshot: AgentWorkQueueSnapshot }` for the latest pushed snapshot, or `404` if the agent has never pushed one.
+
+---
+
 ## Runtime config
 
 ```

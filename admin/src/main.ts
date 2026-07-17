@@ -39,6 +39,7 @@ import {
 } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
 import { createAgentRuntimeApp } from "./api.ts";
@@ -351,6 +352,7 @@ async function startServer(): Promise<void> {
   const agentPluginService = new AgentPluginService(prisma);
   const agentChatTokenService = new AgentChatTokenService(prisma);
   const agentCronRunStatsService = new AgentCronRunStatsService(prisma);
+  const agentWorkQueueService = new AgentWorkQueueService(prisma);
 
   // Real K8s provisioner when SHIPWRIGHT_K8S_PROVISIONING=enabled, else Noop.
   const provisioner = buildProvisioner(process.env, agentTokenService);
@@ -440,6 +442,7 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     agentChatTokenService,
+    agentWorkQueueService,
     prisma,
     provisioner,
     taskStore: deletionTaskStore,

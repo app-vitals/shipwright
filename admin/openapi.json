@@ -792,6 +792,22 @@
             "description": "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
             "example": "dev-task"
           },
+          "itemType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\"). Null when the tick had no dispatch (skipped tick, empty queue).",
+            "example": "task"
+          },
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\"). Null when the tick had no dispatch.",
+            "example": "WLS-2.2"
+          },
           "inputTokens": {
             "type": [
               "integer",
@@ -843,6 +859,8 @@
           "outcome",
           "error",
           "phase",
+          "itemType",
+          "itemId",
           "inputTokens",
           "outputTokens",
           "cacheReadTokens",
@@ -909,6 +927,22 @@
             ],
             "description": "Pipeline phase this run served (dev-task/review/patch/deploy)",
             "example": "dev-task"
+          },
+          "itemType": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Work item type this run was dispatched against (\"task\" | \"pr\")",
+            "example": "task"
+          },
+          "itemId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Work item id this run was dispatched against (e.g. \"WLS-2.2\" or \"acme/x#123\")",
+            "example": "WLS-2.2"
           }
         },
         "required": [
@@ -1607,6 +1641,115 @@
         "required": [
           "date",
           "modelBreakdown"
+        ]
+      },
+      "RankedWorkItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "task",
+              "pr"
+            ],
+            "example": "task"
+          },
+          "id": {
+            "type": "string",
+            "example": "WLS-2.2"
+          },
+          "title": {
+            "type": "string",
+            "example": "Add work queue snapshot endpoints"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "dev-task",
+              "review",
+              "patch",
+              "deploy"
+            ],
+            "example": "dev-task"
+          },
+          "age": {
+            "type": "string",
+            "description": "ISO timestamp",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "phase",
+          "age"
+        ]
+      },
+      "AgentWorkQueueSnapshot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "agentId": {
+            "type": "string",
+            "example": "clx1234567890"
+          },
+          "computedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedWorkItem"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "agentId",
+          "computedAt",
+          "items",
+          "createdAt"
+        ]
+      },
+      "WorkQueueSnapshotWrapper": {
+        "type": "object",
+        "properties": {
+          "snapshot": {
+            "$ref": "#/components/schemas/AgentWorkQueueSnapshot"
+          }
+        },
+        "required": [
+          "snapshot"
+        ]
+      },
+      "PushWorkQueueSnapshotBody": {
+        "type": "object",
+        "properties": {
+          "computedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankedWorkItem"
+            }
+          }
+        },
+        "required": [
+          "computedAt",
+          "items"
         ]
       },
       "AgentConfigPlugin": {
@@ -3179,6 +3322,87 @@
           },
           "404": {
             "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agents/{id}/work-queue": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushWorkQueueSnapshotBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot upserted (overwrites any prior snapshot for this agent)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Latest work-queue snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkQueueSnapshotWrapper"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No snapshot pushed yet",
             "content": {
               "application/json": {
                 "schema": {

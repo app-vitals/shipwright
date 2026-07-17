@@ -1435,6 +1435,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/{id}/work-queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Latest work-queue snapshot */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkQueueSnapshotWrapper"];
+                    };
+                };
+                /** @description No snapshot pushed yet */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["PushWorkQueueSnapshotBody"];
+                };
+            };
+            responses: {
+                /** @description Snapshot upserted (overwrites any prior snapshot for this agent) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["WorkQueueSnapshotWrapper"];
+                    };
+                };
+                /** @description Bad request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/{id}/config": {
         parameters: {
             query?: never;
@@ -1804,6 +1884,16 @@ export interface components {
              * @example dev-task
              */
             phase: string | null;
+            /**
+             * @description Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch (skipped tick, empty queue).
+             * @example task
+             */
+            itemType: string | null;
+            /**
+             * @description Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch.
+             * @example WLS-2.2
+             */
+            itemId: string | null;
             /** @example 1234 */
             inputTokens: number | null;
             /** @example 567 */
@@ -1846,6 +1936,16 @@ export interface components {
              * @example dev-task
              */
             phase?: string | null;
+            /**
+             * @description Work item type this run was dispatched against ("task" | "pr")
+             * @example task
+             */
+            itemType?: string | null;
+            /**
+             * @description Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123")
+             * @example WLS-2.2
+             */
+            itemId?: string | null;
         };
         CronRunsList: {
             items: components["schemas"]["AgentCronRun"][];
@@ -2075,6 +2175,55 @@ export interface components {
             date: string;
             /** @description Per-model token usage increments */
             modelBreakdown: components["schemas"]["ChatTokenModelEntry"][];
+        };
+        RankedWorkItem: {
+            /**
+             * @example task
+             * @enum {string}
+             */
+            type: "task" | "pr";
+            /** @example WLS-2.2 */
+            id: string;
+            /** @example Add work queue snapshot endpoints */
+            title?: string;
+            /**
+             * @example dev-task
+             * @enum {string}
+             */
+            phase: "dev-task" | "review" | "patch" | "deploy";
+            /**
+             * @description ISO timestamp
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            age: string;
+        };
+        AgentWorkQueueSnapshot: {
+            /** @example clx1234567890 */
+            id: string;
+            /** @example clx1234567890 */
+            agentId: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            computedAt: string;
+            items: components["schemas"]["RankedWorkItem"][];
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            createdAt: string;
+        };
+        WorkQueueSnapshotWrapper: {
+            snapshot: components["schemas"]["AgentWorkQueueSnapshot"];
+        };
+        PushWorkQueueSnapshotBody: {
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00.000Z
+             */
+            computedAt: string;
+            items: components["schemas"]["RankedWorkItem"][];
         };
         AgentConfigPlugin: {
             /** @example shipwright */
