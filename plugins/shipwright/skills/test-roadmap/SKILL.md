@@ -73,6 +73,8 @@ This task covers:
    - **bun test `--filter`** — use path-based filters that respect the naming convention
 3. **Verification** — run each entry point in isolation and confirm it picks up only its layer's files (e.g., `bun test --filter integration` finds zero unit files).
 
+**Mandatory M1 task — carried-forward measurement-only items:** if Phase 3's `test-migration.md` flags a measurement-only item (not a test file) as carried forward unactioned across 3 or more consecutive cycles, Milestone 1 must include it as the first task, by construction — do not rely on noticing the streak in prose when assembling the task list.
+
 #### Milestone 2: Critical-path coverage
 Write or rebuild every `critical` tier test across all layers.
 - DOD: 100% of inventory items tagged `critical` have a passing test at the prescribed layer. `delete (redundant)` tests in this tier are gone.
