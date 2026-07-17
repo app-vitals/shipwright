@@ -24,6 +24,27 @@ import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links. */
+function taskLink(taskId: string): string {
+  return `<a href="/admin/tasks/${escapeHtml(taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(taskId)}</a>`;
+}
+
+/**
+ * Renders a link for a work-queue/cron-log item id, which is either a task id
+ * (e.g. "WLS-2.2") or a "repo#prNumber" PR reference (e.g. "acme/x#123") per
+ * the RankedWorkItem/CronRunItem id convention. Task ids link into the admin
+ * UI; PR references link out to GitHub since the internal PR record id isn't
+ * available in this shape. Falls back to plain escaped text if the PR
+ * reference doesn't parse.
+ */
+function workItemLink(type: "task" | "pr", id: string): string {
+  if (type === "task") return taskLink(id);
+  const match = id.match(/^(.+)#(\d+)$/);
+  if (!match) return escapeHtml(id);
+  const [, repo, prNumber] = match;
+  return `<a href="https://github.com/${escapeHtml(repo)}/pull/${escapeHtml(prNumber)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">${escapeHtml(id)}</a>`;
+}
+
 /**
  * Returns a human-friendly relative timestamp.
  * Examples: "just now", "5 minutes ago", "2 hours ago", "3 days ago", "1 week ago"
@@ -1457,7 +1478,7 @@ export function renderTasksPage(
         if (b.type === "hitl") {
           return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">Waiting: HITL</span>`;
         }
-        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${escapeHtml(b.id)}</span>`;
+        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${taskLink(b.id)}</span>`;
       })
       .join("");
   };
@@ -1739,12 +1760,16 @@ export function renderTaskDetailPage(
     </tr>`;
   }
 
-  function listField(label: string, items: string[] | undefined): string {
+  function listField(
+    label: string,
+    items: string[] | undefined,
+    linkItem = false,
+  ): string {
     if (!items || items.length === 0) return "";
     const listItems = items
       .map(
         (i) =>
-          `<li style="font-size:13px;margin-bottom:4px">${escapeHtml(i)}</li>`,
+          `<li style="font-size:13px;margin-bottom:4px">${linkItem ? taskLink(i) : escapeHtml(i)}</li>`,
       )
       .join("");
     return `<tr>
@@ -1845,7 +1870,7 @@ export function renderTaskDetailPage(
                     : "HITL gate (notification pending)";
                   return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">${escapeHtml(label)}</li>`;
                 }
-                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${escapeHtml(b.id)} (${escapeHtml(b.status)})</li>`;
+                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${taskLink(b.id)} (${escapeHtml(b.status)})</li>`;
               })
               .join("")}
           </ul>
@@ -1937,7 +1962,7 @@ export function renderTaskDetailPage(
 
   const depsSection =
     task.dependencies && task.dependencies.length > 0
-      ? listField("Dependencies", task.dependencies)
+      ? listField("Dependencies", task.dependencies, true)
       : "";
 
   return `<!DOCTYPE html>
@@ -2548,17 +2573,36 @@ export function renderPrDetailPage(
     </tr>`;
   }
 
+  function linkField(
+    label: string,
+    url: string | null | undefined,
+    text?: string,
+  ): string {
+    if (!url) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#6366f1">${escapeHtml(text ?? url)}</a></td>
+    </tr>`;
+  }
+
   const claimedByDisplay = pr.claimedBy
     ? agentNames[pr.claimedBy]
       ? `${agentNames[pr.claimedBy]} (${pr.claimedBy})`
       : pr.claimedBy
     : null;
 
+  const githubPrUrl = `https://github.com/${pr.repo}/pull/${pr.prNumber}`;
+
   const metaRows = [
     field("ID", pr.id, true),
     field("Repo", pr.repo),
-    field("PR Number", String(pr.prNumber)),
-    field("Task", pr.taskId),
+    linkField("PR Number", githubPrUrl, `#${pr.prNumber}`),
+    pr.taskId
+      ? `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
+      <td style="padding:8px 12px;font-size:13px">${taskLink(pr.taskId)}</td>
+    </tr>`
+      : "",
     field("State", pr.state),
     field("Review State", pr.reviewState),
     field("Review Cycles", String(pr.reviewCycles)),
@@ -2710,7 +2754,11 @@ export function renderCronLogsPage(opts: {
     // what kind of thing the id refers to.
     const itemCell =
       r.itemType && r.itemId
-        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${escapeHtml(r.itemId)}</span>`
+        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${
+            r.itemType === "task" || r.itemType === "pr"
+              ? workItemLink(r.itemType, r.itemId)
+              : escapeHtml(r.itemId)
+          }</span>`
         : "—";
 
     return `<tr>
@@ -2889,8 +2937,8 @@ export function renderWorkQueuePage(opts: {
     const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
     const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
     const idTitleCell = item.title
-      ? `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span> — ${escapeHtml(item.title)}`
-      : `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span>`;
+      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
+      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
     const ageDate = new Date(item.age);
     const ageIso = ageDate.toISOString();
     const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;

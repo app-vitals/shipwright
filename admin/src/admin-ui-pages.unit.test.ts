@@ -1779,10 +1779,12 @@ describe("renderTasksPage — blocker badges", () => {
     expect(html).toContain("badge-hitl");
   });
 
-  // AC3: dep block renders with the dep ID "Blocked: REL-2.2"
-  test("dep block renders as 'Blocked: <dep-id>'", () => {
+  // AC3: dep block renders with the dep ID "Blocked: REL-2.2", linked to the dep's task page
+  test("dep block renders as 'Blocked: <dep-id>' linked to the dep's task page", () => {
     const html = render([PENDING_TASK_DEP]);
-    expect(html).toContain("Blocked: REL-2.2");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain('<a href="/admin/tasks/REL-2.2"');
+    expect(html).toContain(">REL-2.2</a>");
     expect(html).toContain("badge-dep");
   });
 
@@ -1797,7 +1799,9 @@ describe("renderTasksPage — blocker badges", () => {
   test("task with multiple blockers renders all badges", () => {
     const html = render([PENDING_TASK_MULTI]);
     expect(html).toContain("Waiting: HITL");
-    expect(html).toContain("Blocked: REL-3.1");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain('<a href="/admin/tasks/REL-3.1"');
+    expect(html).toContain(">REL-3.1</a>");
   });
 
   // AC5: badges are visually distinct from status badges (different CSS class)
@@ -2244,6 +2248,11 @@ describe("renderTaskDetailPage — blockers", () => {
     expect(html).toContain("pending");
   });
 
+  test("dependency blocker id links to its task detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/tasks/TS-dep"');
+  });
+
   test("shows hitl blocker type", () => {
     const html = render();
     expect(html.toLowerCase()).toContain("hitl");
@@ -2288,6 +2297,28 @@ describe("renderTaskDetailPage — blockers", () => {
     expect(blockersIdx).toBeGreaterThan(-1);
     expect(descriptionIdx).toBeGreaterThan(-1);
     expect(blockersIdx).toBeLessThan(descriptionIdx);
+  });
+});
+
+describe("renderTaskDetailPage — dependencies", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+      {},
+      "UTC",
+    );
+  }
+
+  test("dependency ids link to their task detail pages", () => {
+    const html = render({ dependencies: ["TASK-A", "TASK-B"] });
+    expect(html).toContain('<a href="/admin/tasks/TASK-A"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-B"');
+  });
+
+  test("no dependencies field when dependencies is empty", () => {
+    const html = render({ dependencies: [] });
+    expect(html).not.toContain("Dependencies");
   });
 });
 
@@ -2907,6 +2938,24 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("TASK-99");
   });
 
+  test("taskId links to the task's detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/tasks/TASK-99"');
+  });
+
+  test("no Task row when taskId is absent", () => {
+    const html = render({ ...PR_DETAIL, taskId: null });
+    expect(html).not.toContain("/admin/tasks/");
+  });
+
+  test("PR number links out to the GitHub PR", () => {
+    const html = render();
+    expect(html).toContain(
+      '<a href="https://github.com/org/detail-repo/pull/99"',
+    );
+    expect(html).toContain(">#99</a>");
+  });
+
   test("renders commitSha field when present", () => {
     const html = render();
     expect(html).toContain("deadbeef");
@@ -3156,6 +3205,11 @@ describe("renderCronLogsPage", () => {
     expect(html).toMatch(/badge[^>]*>\s*Task/);
   });
 
+  test("Task item id links to its task detail page", () => {
+    const html = render([makeRun({ itemType: "task", itemId: "WLS-2.2" })]);
+    expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
+  });
+
   test("renders the run's itemType/itemId as a labeled PR badge when set", () => {
     const html = render([
       makeRun({ itemType: "pr", itemId: "app-vitals/shipwright#1234" }),
@@ -3167,6 +3221,15 @@ describe("renderCronLogsPage", () => {
     const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
     expect(bodyRowMatch).not.toBeNull();
     expect(bodyRowMatch?.[1]).not.toContain(">Task<");
+  });
+
+  test("PR item id links out to the GitHub PR", () => {
+    const html = render([
+      makeRun({ itemType: "pr", itemId: "app-vitals/shipwright#1234" }),
+    ]);
+    expect(html).toContain(
+      '<a href="https://github.com/app-vitals/shipwright/pull/1234"',
+    );
   });
 
   test("renders em-dash for the Item cell when itemType/itemId are null (no dispatch)", () => {

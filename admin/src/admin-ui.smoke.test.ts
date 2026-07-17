@@ -686,6 +686,40 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("dev-task");
     expect(html).toContain("review");
     expect(html).not.toContain("No work queue snapshot");
+    // task item links to its admin task detail page
+    expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
+  });
+
+  it("work queue PR item links out to GitHub using the repo#prNumber id", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentWorkQueueService: {
+          get: async () => ({
+            id: "snap-2",
+            agentId: AGENT_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "pr",
+                id: "app-vitals/shipwright#4321",
+                title: "Fix flaky test",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      '<a href="https://github.com/app-vitals/shipwright/pull/4321"',
+    );
   });
 
   it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
