@@ -41,6 +41,7 @@ export interface WorkPrCandidate {
   age: string;
   phase?: "review" | "patch" | "deploy";
   title?: string;
+  commitSha: string;
 }
 
 export type WorkItem =

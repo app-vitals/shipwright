@@ -174,6 +174,7 @@ describe("getPatchCandidates", () => {
       id: "acme/example-repo#10",
       phase: "patch",
       title: "My feature",
+      commitSha: "current-head-sha",
     });
   });
 
@@ -324,6 +325,10 @@ describe("getPatchCandidates", () => {
       "acme/example-repo#10",
       "acme/example-repo#11",
     ]);
+    expect(result.map((c) => c.commitSha)).toEqual([
+      "sha-dirty-1",
+      "sha-dirty-2",
+    ]);
   });
 
   test("skips a clean PR and still collects a later PR with findings (continues past clean PRs)", async () => {
@@ -368,6 +373,7 @@ describe("getPatchCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/example-repo#11");
+    expect(result[0].commitSha).toBe("sha-dirty");
   });
 
   test("returns a candidate when a PR has findings AND another is merely behind main (not dirty)", async () => {
@@ -1052,6 +1058,7 @@ describe("getPatchCandidates", () => {
     expect(result[0]).toMatchObject({
       id: "acme/example-repo#10",
       phase: "patch",
+      commitSha: "current-head-sha",
     });
   });
 
