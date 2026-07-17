@@ -8,7 +8,12 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type { ChatClient, ChatMessage, ChatThread, ThreadStats } from "./http-chat-client.ts";
+import type {
+  ChatClient,
+  ChatMessage,
+  ChatThread,
+  ThreadStats,
+} from "./http-chat-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
@@ -60,7 +65,12 @@ const MOCK_ASSISTANT_MESSAGE: ChatMessage = {
   createdAt: "2024-01-01T00:01:00.000Z",
   claimedBy: null,
   repliedAt: "2024-01-01T00:01:05.000Z",
-  tokens: { input_tokens: 50, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+  tokens: {
+    input_tokens: 50,
+    output_tokens: 30,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  },
   costUsd: 0.0005,
   errorKind: null,
   attachmentFilename: null,
@@ -282,10 +292,17 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       setEnabled: async () => MOCK_CRON,
       update: async () => MOCK_CRON,
       delete: async () => {},
-      reconcileSystemCrons: async () => ({ created: 0, updated: 0, deleted: 0 }),
+      reconcileSystemCrons: async () => ({
+        created: 0,
+        updated: 0,
+        deleted: 0,
+      }),
     },
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
+    },
+    agentWorkQueueService: {
+      get: async () => null,
     },
     agentToolService: {
       list: async () => [MOCK_TOOL],
@@ -387,7 +404,12 @@ describe("GET /admin/chat/:agentId/threads/:threadId — token/cost display", ()
       createdAt: "2024-01-01T00:01:00.000Z",
       claimedBy: null,
       repliedAt: "2024-01-01T00:01:05.000Z",
-      tokens: { input_tokens: 512, output_tokens: 234, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      tokens: {
+        input_tokens: 512,
+        output_tokens: 234,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
       costUsd: 0.0005,
       errorKind: null,
       attachmentFilename: null,
@@ -817,12 +839,9 @@ describe("GET /admin/chat?agentId=X&q=foo — search/filter threads", () => {
       }),
     });
     const app = createAdminUIApp(makeBaseDeps({ chatClient }));
-    const res = await app.request(
-      `/admin/chat?agentId=${AGENT_ID}&q=Test`,
-      {
-        headers: { Cookie: `admin_session=${sessionCookie}` },
-      },
-    );
+    const res = await app.request(`/admin/chat?agentId=${AGENT_ID}&q=Test`, {
+      headers: { Cookie: `admin_session=${sessionCookie}` },
+    });
     expect(res.status).toBe(200);
     const html = await res.text();
     // Should show matching thread
@@ -972,7 +991,7 @@ describe("GET /admin/chat/:agentId/threads/:threadId/messages.json", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/json");
-    const body = await res.json() as { messages: ChatMessage[] };
+    const body = (await res.json()) as { messages: ChatMessage[] };
     expect(Array.isArray(body.messages)).toBe(true);
     expect(body.messages[0].id).toBe(MOCK_MESSAGE.id);
   });
@@ -984,7 +1003,7 @@ describe("GET /admin/chat/:agentId/threads/:threadId/messages.json", () => {
       { headers: { Cookie: `admin_session=${sessionCookie}` } },
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { messages: ChatMessage[] };
+    const body = (await res.json()) as { messages: ChatMessage[] };
     expect(body.messages).toEqual([]);
   });
 });
@@ -1029,7 +1048,7 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages.json", () => {
     );
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toContain("application/json");
-    const body = await res.json() as { message: ChatMessage };
+    const body = (await res.json()) as { message: ChatMessage };
     expect(body.message).not.toBeNull();
     expect(body.message.id).toBe(MOCK_MESSAGE.id);
   });
@@ -1048,7 +1067,7 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages.json", () => {
       },
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { message: null };
+    const body = (await res.json()) as { message: null };
     expect(body.message).toBeNull();
   });
 });

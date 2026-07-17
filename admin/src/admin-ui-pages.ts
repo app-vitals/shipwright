@@ -2838,6 +2838,126 @@ export function renderCronLogsPage(opts: {
 </html>`;
 }
 
+// Inline CSS for the work-queue "Phase" column badge, keyed by the raw
+// phase value (dev-task/review/patch/deploy) — a single neutral palette
+// distinct from the outcome-style badges elsewhere on the cron logs page,
+// since phase here is informational, not a pass/fail signal.
+const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
+  "dev-task": "background:#eef2ff;color:#4338ca",
+  review: "background:#fef3c7;color:#92400e",
+  patch: "background:#fee2e2;color:#991b1b",
+  deploy: "background:#dcfce7;color:#166534",
+};
+const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+
+// Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
+// the zod schema itself — keeps this file's dependency surface to pure
+// string-rendering inputs.
+export interface WorkQueueItem {
+  type: "task" | "pr";
+  id: string;
+  title?: string;
+  phase: "dev-task" | "review" | "patch" | "deploy";
+  age: string;
+}
+
+export interface WorkQueueSnapshotItem {
+  computedAt: Date;
+  items: WorkQueueItem[];
+}
+
+/**
+ * Renders the per-agent work-queue page: a snapshot of the agent's
+ * self-reported ranked work queue (tasks/PRs across dev-task/review/patch/
+ * deploy), as last pushed via POST /agents/:id/work-queue (AWQ-1.2).
+ *
+ * Renders a clear empty state when no snapshot exists yet — the agent has no
+ * shipwright-loop cron, or hasn't ticked since this feature shipped — rather
+ * than erroring.
+ */
+export function renderWorkQueuePage(opts: {
+  agent: { id: string; name: string };
+  snapshot: WorkQueueSnapshotItem | null;
+  userName: string;
+  now?: Date;
+}): string {
+  const { agent, snapshot, userName } = opts;
+  const now = opts.now ?? new Date();
+
+  function row(item: WorkQueueItem, index: number): string {
+    const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
+    const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
+    const idTitleCell = item.title
+      ? `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span> — ${escapeHtml(item.title)}`
+      : `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span>`;
+    const ageDate = new Date(item.age);
+    const ageIso = ageDate.toISOString();
+    const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
+
+    return `<tr>
+      <td class="mono" style="font-size:12px">${index + 1}</td>
+      <td>${typeCell}</td>
+      <td>${phaseCell}</td>
+      <td style="font-size:12px">${idTitleCell}</td>
+      <td style="font-size:12px">${ageCell}</td>
+    </tr>`;
+  }
+
+  const backLink = `<a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>`;
+
+  const content =
+    snapshot === null
+      ? `<div class="card">
+      <div class="empty-state">No work queue snapshot yet for this agent. It will appear once the agent's shipwright-loop cron ticks and reports its ranked work queue.</div>
+    </div>`
+      : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
+    <div class="card">
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Type</th>
+            <th>Phase</th>
+            <th>Item</th>
+            <th>Age</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${
+            snapshot.items.length === 0
+              ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
+              : snapshot.items.map(row).join("\n")
+          }
+        </tbody>
+      </table>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Work Queue — ${escapeHtml(agent.name)} — Shipwright Admin</title>
+  <style>${baseStyles()}
+    .runs-table { width:100%;border-collapse:collapse; }
+    .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
+    .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
+  </style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/agents")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      ${backLink}
+      <h1 class="page-title" style="margin:0;flex:1">Work Queue — ${escapeHtml(agent.name)}</h1>
+    </div>
+
+    ${content}
+  </div>
+</body>
+</html>`;
+}
+
 export function renderProvisionCompletePage(
   userName: string,
   opts: {
