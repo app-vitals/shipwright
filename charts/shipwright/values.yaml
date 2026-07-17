@@ -389,8 +389,21 @@ agent:
       # 9000 (the image default); the Service port becomes WHISPER_SERVICE_URL.
       service:
         port: 9000
+      # -- ASR model name passed to the onerahmet image as ASR_MODEL (e.g. "tiny",
+      # "base", "small", "medium", "large-v3", or a language-suffixed variant like
+      # "tiny.en"). Empty → no ASR_MODEL env var is set and the image falls back to
+      # its own built-in default model.
+      model: ""
       # -- Compute resources for the Whisper container. Empty → no limits set.
       # ASR is CPU/memory heavy; size this for your model on a real deployment.
+      # Example sizing for a small model:
+      #   resources:
+      #     requests:
+      #       cpu: "1"
+      #       memory: 2Gi
+      #     limits:
+      #       cpu: "2"
+      #       memory: 4Gi
       resources: {}
     # -- ElevenLabs TTS (text-to-speech). Used for BOTH providers.
     elevenlabs:

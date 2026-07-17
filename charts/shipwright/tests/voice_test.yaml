@@ -5,7 +5,9 @@ suite: agent voice (STT/TTS) — Whisper pod, voice Secret, admin env (CV-1.1)
 #       base vars — see admin/src/agent-manifest.unit.test.ts).
 #   (b) enabled + provider=whisper → Whisper Deployment (onerahmet image) +
 #       Service render, and the admin gets WHISPER_SERVICE_URL + the ElevenLabs
-#       vars.
+#       vars. agent.voice.whisper.model (PPR-2.1), when set, is rendered as an
+#       ASR_MODEL env var on the Whisper container; unset renders no env block
+#       at all (byte-identical to pre-PPR-2.1 rendering).
 #   (c) enabled + provider=groq → no Whisper pod; GROQ_API_KEY flows via the voice
 #       Secret; no WHISPER_SERVICE_URL in the admin env.
 release:
@@ -66,6 +68,28 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 9000
+
+  - it: sets ASR_MODEL env on the Whisper container when agent.voice.whisper.model is set
+    template: templates/whisper-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+      agent.voice.whisper.model: small
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASR_MODEL
+            value: small
+
+  - it: renders no env block on the Whisper container when agent.voice.whisper.model is unset
+    template: templates/whisper-deployment.yaml
+    set:
+      agent.voice.enabled: true
+      agent.voice.provider: whisper
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].env
 
   - it: renders the Whisper Service when provider=whisper
     template: templates/whisper-service.yaml

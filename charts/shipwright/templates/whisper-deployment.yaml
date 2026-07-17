@@ -39,6 +39,11 @@ spec:
             - name: http
               containerPort: 9000
               protocol: TCP
+          {{- with .Values.agent.voice.whisper.model }}
+          env:
+            - name: ASR_MODEL
+              value: {{ . | quote }}
+          {{- end }}
           {{- with .Values.agent.voice.whisper.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
