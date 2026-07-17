@@ -1,0 +1,45 @@
+{
+  "tasks_list_success": {
+    "status": 200,
+    "body": {
+      "tasks": [
+        { "id": "clx1", "title": "Task A", "status": "pending" },
+        { "id": "clx2", "title": "Task B", "status": "pending" }
+      ],
+      "total": 2
+    }
+  },
+  "tasks_get_success": {
+    "status": 200,
+    "body": {
+      "id": "clx1234567890",
+      "title": "Implement feature X",
+      "status": "pending",
+      "repo": "org/repo"
+    }
+  },
+  "tasks_get_404": {
+    "status": 404,
+    "body": "Task not found"
+  },
+  "tasks_claim_success": {
+    "status": 200,
+    "body": {
+      "id": "clx1234567890",
+      "status": "in_progress",
+      "claimedBy": "agent-42",
+      "claimedAt": "2026-07-16T14:00:00.000Z"
+    }
+  },
+  "tasks_bulk_success": {
+    "status": 201,
+    "body": [
+      { "id": "clx-a", "title": "Task A", "status": "pending" },
+      { "id": "clx-b", "title": "Task B", "status": "pending" }
+    ]
+  },
+  "tasks_delete_success": {
+    "status": 204,
+    "body": null
+  }
+}
