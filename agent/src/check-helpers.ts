@@ -343,6 +343,10 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       const res = await doFetch(`${baseUrl}/tasks/${id}/claim`, {
         method: "POST",
         headers,
+        // headers always declares Content-Type: application/json — send a
+        // valid empty object so the server's JSON body parser doesn't choke
+        // on a truly empty body (agent tokens ignore the body regardless).
+        body: "{}",
       });
       if (res.ok) return true;
       if (res.status === 409) return false;
