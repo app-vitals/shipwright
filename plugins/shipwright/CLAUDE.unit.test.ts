@@ -89,48 +89,32 @@ describe("CLAUDE.md — Independence Principles section", () => {
   });
 });
 
-describe("CLAUDE.md — Precheck Contract section", () => {
-  it("has a Precheck Contract section", () => {
-    const hasPrecheckSection =
-      content.includes("Precheck Contract") ||
-      content.includes("precheck contract") ||
-      content.includes("Pre-check Contract");
-    expect(hasPrecheckSection).toBe(true);
+describe("CLAUDE.md — Candidate Selection Contract section", () => {
+  it("has a Candidate Selection Contract section", () => {
+    const hasSection =
+      content.includes("Candidate Selection Contract") ||
+      content.includes("candidate selection contract");
+    expect(hasSection).toBe(true);
   });
 
-  it("states that scripts are best-effort filters not correctness gates", () => {
-    const hasBestEffort =
-      content.includes("best-effort") || content.includes("best effort");
-    const hasNotGate =
-      content.includes("not a correctness gate") ||
-      content.includes("not correctness gates") ||
-      content.includes("not a gate") ||
-      content.includes("filters, not");
-    expect(hasBestEffort || hasNotGate).toBe(true);
-  });
-
-  it("states that the skill is authoritative on what qualifies", () => {
+  it("states that agent/src candidate providers are authoritative on what qualifies", () => {
     const hasAuthoritative =
-      content.includes("authoritative") ||
-      content.includes("skill is the authority") ||
-      content.includes("skill decides");
+      content.includes("authoritative") && content.includes("agent/src");
     expect(hasAuthoritative).toBe(true);
   });
 
-  it("states that when skill qualification changes the precheck must be audited", () => {
-    const hasAuditRequirement =
-      (content.includes("qualification") || content.includes("qualifying")) &&
-      content.includes("audit");
-    expect(hasAuditRequirement).toBe(true);
+  it("states the command re-validates current-state safety, not requalification", () => {
+    const hasRevalidation =
+      content.includes("current-state safety") ||
+      content.includes("re-validates current-state");
+    expect(hasRevalidation).toBe(true);
   });
 
-  it("states err permissive over restrictive", () => {
-    const hasPermissive =
-      content.includes("permissive") ||
-      content.includes("err permissive") ||
-      content.includes("false positive") ||
-      content.includes("over-trigger");
-    expect(hasPermissive).toBe(true);
+  it("states that when a candidate provider's qualification logic changes the corresponding command should be reviewed", () => {
+    const hasReviewRequirement =
+      (content.includes("qualification") || content.includes("qualifying")) &&
+      content.includes("should be reviewed");
+    expect(hasReviewRequirement).toBe(true);
   });
 });
 
@@ -153,7 +137,7 @@ describe("CLAUDE.md — skills listed in context of principles", () => {
     expect(content).toContain("patch");
   });
 
-  it("mentions precheck scripts by name", () => {
+  it("mentions candidate provider scripts by name", () => {
     const hasScripts =
       content.includes("check-review") ||
       content.includes("check-deploy") ||
