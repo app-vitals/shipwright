@@ -208,3 +208,83 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     expect(matches.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () => {
+  it("Step 5b Instructions [D] requires a gh pr comment rebuttal gated on all-REJECT / zero files changed", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const step5bSection = content.slice(step5bIdx, step5cIdx);
+
+    const dIdx = step5bSection.indexOf("[D] Commit");
+    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
+    expect(dIdx).toBeGreaterThan(-1);
+    expect(eIdx).toBeGreaterThan(-1);
+    const dSection = step5bSection.slice(dIdx, eIdx);
+
+    expect(dSection).toContain("gh pr comment");
+    expect(dSection).toContain("classified REJECT");
+    expect(dSection).toContain("no files changed");
+    expect(dSection).toContain("do not commit or push");
+  });
+
+  it("Step 5b Instructions [D] leaves the ACCEPT/MODIFY commit+push flow unchanged for the real-fix case", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5bSection = content.slice(step5bIdx, step5cIdx);
+
+    const dIdx = step5bSection.indexOf("[D] Commit");
+    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
+    const dSection = step5bSection.slice(dIdx, eIdx);
+
+    expect(dSection).toContain("ACCEPTED or MODIFIED");
+    expect(dSection).toContain("git add {changed files}");
+    expect(dSection).toContain(
+      "fix: address review findings on #{pr} — {one-line summary of changes}",
+    );
+    expect(dSection).toContain("git push origin {branch}");
+  });
+
+  it("Step 5b Instructions [F] report template ties DONE_WITH_CONCERNS confirmation to the rebuttal comment", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5bSection = content.slice(step5bIdx, step5cIdx);
+
+    const fIdx = step5bSection.indexOf("[F] Report back");
+    expect(fIdx).toBeGreaterThan(-1);
+    const fSection = step5bSection.slice(fIdx);
+
+    expect(fSection).toContain("rebuttal comment was posted");
+  });
+
+  it("Step 5c's DONE_WITH_CONCERNS branch requires confirming the rebuttal comment was posted before treating the no-push case as complete", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    expect(step5c5Idx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5c5Idx);
+
+    expect(section).toContain("DONE_WITH_CONCERNS");
+    expect(section).toContain("confirm");
+    expect(section).toContain("gh pr comment");
+    expect(section).toContain("rebuttal");
+    expect(section).not.toContain("note it and skip Step 5c.5");
+  });
+
+  it("Step 5c does not itself post the rebuttal comment — it only verifies the subagent already did", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    const section = content.slice(step5cIdx, step5c5Idx);
+
+    expect(section).toContain("Do not post the comment here");
+  });
+
+  it("Step 5c still skips Step 5c.5 (no PR record patch) on the all-REJECT no-push path", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    const section = content.slice(step5cIdx, step5c5Idx);
+
+    expect(section).toContain("skip Step 5c.5");
+  });
+});

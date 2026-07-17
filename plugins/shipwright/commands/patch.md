@@ -642,10 +642,29 @@ INSTRUCTIONS — follow in order:
   - Re-run until both pass cleanly
 
 [D] Commit
-  - Stage only the files you changed: `git add {changed files}`
-  - Commit with a conventional commit message describing what was fixed:
-    "fix: address review findings on #{pr} — {one-line summary of changes}"
-  - Push: `git push origin {branch}`
+  - **If at least one finding was ACCEPTED or MODIFIED** (i.e. you have file changes
+    staged):
+    - Stage only the files you changed: `git add {changed files}`
+    - Commit with a conventional commit message describing what was fixed:
+      "fix: address review findings on #{pr} — {one-line summary of changes}"
+    - Push: `git push origin {branch}`
+  - **If every finding was classified REJECT in [A.5]** (premise incorrect on all of
+    them — no files changed, nothing to commit): do not commit or push. Instead, post a
+    PR-level rebuttal comment explaining why each finding was rejected, so the review is
+    not left looking unaddressed:
+    ```bash
+    gh pr comment {pr} --repo {org}/{repo} --body "$(cat <<'EOF'
+    Reviewed the finding(s) above and did not implement changes — premise did not hold:
+
+    - {finding summary}: {reason rejected}
+    - {finding summary}: {reason rejected}
+    EOF
+    )"
+    ```
+    List every rejected finding, one bullet per finding, drawn from the CONCERNS you
+    compiled in [A.5]. This comment is what allows a future patch run to recognize the
+    review was addressed (rejected with reasoning, not ignored) instead of reflagging it
+    forever.
 
 [E] Resolve addressed inline threads
   PR-level comments cannot be resolved programmatically — skip them here.
@@ -672,6 +691,10 @@ INSTRUCTIONS — follow in order:
   {bullet list of each finding addressed and how}
 
   CONCERNS: (if DONE_WITH_CONCERNS)
+  {if every finding was REJECT and no push happened, explicitly confirm here that the
+  [D] rebuttal comment was posted, e.g. "All findings rejected (premise incorrect) — no
+  code changes; posted rebuttal comment via gh pr comment summarizing why each was
+  rejected." Otherwise, describe the correctness gap as usual.}
   BLOCKER: (if BLOCKED)
 ```
 
@@ -682,7 +705,14 @@ Parse the subagent's STATUS:
 - **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
   report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
-  subagent did not push due to a concern, note it and skip Step 5c.5.
+  subagent did not push due to a concern (the all-REJECT, no-diff path from Step 5b
+  Instructions [D]), confirm the subagent's CONCERNS text reports that it already posted
+  the required `gh pr comment` rebuttal — this is what activates the
+  `isAddressedByAuthorReply` escape hatch in `check-patch.ts` so the review stops being
+  reflagged on every subsequent patch run. Do not post the comment here; Step 5c only
+  verifies it happened. If the report doesn't confirm a rebuttal was posted, treat it as
+  a concern in the final report (the reflagging loop will otherwise persist). Either way,
+  skip Step 5c.5 — there is no new commit SHA to record.
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:
