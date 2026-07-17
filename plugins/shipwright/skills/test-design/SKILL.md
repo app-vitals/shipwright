@@ -153,6 +153,7 @@ Load template at `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-system.md.tmpl`. F
 ## Failure modes to avoid
 
 - **Don't look at existing tests.** That's Phase 3's job. Anchoring here makes Phase 3 cosmetic.
+- **A recommendation in this artifact is a target state, not a verified fact about current coverage.** Because this phase never reads existing tests, statements like "prefer mocking the client interface" for an internal HTTP service describe what *should* exist, not confirmation that it *does*. Downstream consumers — Phase 3 reconciliation, Phase 4 task generation, or an agent implementing a generated task — must verify actual coverage (e.g., does a recorded-client abstraction actually exist in the codebase) against the working tree before trusting this document's implied existing-coverage claims as a basis for effort estimation or task scoping.
 - **Don't recommend mocks for boundaries the inventory marked as integration-canonical.** A mocked DB is not an integration test.
 - **Don't skip the parallelization plan.** "Suite finishes in 8 minutes" is meaningless without "with N workers running in parallel."
 - **Don't recommend a stack the team can't actually run locally.** If the inventory names a dependency you can't suggest a local substitute for, flag it as a *blocker* in the artifact rather than hand-waving.
