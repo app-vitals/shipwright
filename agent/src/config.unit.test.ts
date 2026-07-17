@@ -295,6 +295,19 @@ describe("config.voice", () => {
     expect(cfg.voice.voiceId).toBeUndefined();
   });
 
+  test("piperVoice from PIPER_VOICE", () => {
+    process.env.PIPER_VOICE = "en_GB-alan-medium";
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.piperVoice).toBe("en_GB-alan-medium");
+    process.env.PIPER_VOICE = undefined;
+  });
+
+  test("piperVoice is undefined when PIPER_VOICE not set", () => {
+    process.env.PIPER_VOICE = undefined;
+    const { config: cfg } = createConfig(AGENT_HOME);
+    expect(cfg.voice.piperVoice).toBeUndefined();
+  });
+
   test("whisperServiceUrl from WHISPER_SERVICE_URL", () => {
     process.env.WHISPER_SERVICE_URL = "http://localhost:9000";
     const { config: cfg } = createConfig(AGENT_HOME);

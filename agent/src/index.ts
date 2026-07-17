@@ -18,12 +18,12 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import { agentReposRef } from "./agent-repos-ref.ts";
-import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
   HttpChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
+import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
@@ -36,12 +36,6 @@ import {
 } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import {
-  buildProductionDeps as buildPrStateReconcilerDeps,
-  buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
-  reconcilePrState,
-  reconcileReviewState,
-} from "./pr-state-reconciler.ts";
-import {
   DEFAULT_HEALTH_PORT,
   markSlackConnected,
   markSlackDisconnected,
@@ -53,6 +47,13 @@ import { classifyCronJobsForScheduling } from "./loop-cron-classifier.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import { createJobsRef } from "./loop-jobs-ref.ts";
 import { createLoopOrchestratorGetter } from "./loop-orchestrator.ts";
+import { validatePiperVoice } from "./piper-voice.ts";
+import {
+  buildProductionDeps as buildPrStateReconcilerDeps,
+  buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
+  reconcilePrState,
+  reconcileReviewState,
+} from "./pr-state-reconciler.ts";
 import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
@@ -69,6 +70,11 @@ import {
 
 const agentHome = process.env.AGENT_HOME ?? "/data/agent-home";
 const { config } = createConfig(agentHome);
+
+// Discovery-based startup validation: fail loudly now (log) rather than
+// silently at speak time if PIPER_VOICE doesn't match a baked voice.
+const resolvedPiperVoice = validatePiperVoice(config.voice.piperVoice);
+console.log(`[agent] piper voice resolved: ${resolvedPiperVoice}`);
 
 // ─── Agent ID (hoisted for use in console monkeypatch) ────────────────────────
 
