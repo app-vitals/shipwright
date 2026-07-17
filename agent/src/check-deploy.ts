@@ -23,6 +23,7 @@
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
@@ -384,7 +385,7 @@ export async function buildProductionDeps(opts: {
         .filter((r) => r.name === "CI")
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
-    isBundleComplete: undefined,
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
   };

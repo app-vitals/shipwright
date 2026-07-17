@@ -486,6 +486,71 @@ export function createTaskStatusQuery(opts?: {
   };
 }
 
+/** Task statuses that mark a bundle-mate as still "in flight" (not yet at pr_open or beyond). */
+const INCOMPLETE_BUNDLE_STATUSES: ReadonlySet<TaskStatus> = new Set([
+  "pending",
+  "in_progress",
+  "blocked",
+]);
+
+/**
+ * Build a `(branch: string) => Promise<boolean>` query function against the
+ * task-store `/tasks` endpoint's `?branch=` filter, mirroring deploy.md's Step
+ * 2b bundle-completeness bash logic exactly: a branch is "complete" iff none
+ * of its tasks are `pending`, `in_progress`, or `blocked` (a branch with zero
+ * tasks counts as complete — there are no bundle-mates to wait on).
+ *
+ * Throws on missing config, a non-ok response, or a malformed/unreachable
+ * response — matching createTaskStatusQuery's fail-closed-by-throwing style,
+ * NOT createPrRecordQuery's fail-open-by-catching style. The existing call
+ * site (check-deploy.ts's getDeployCandidates) already wraps this call in
+ * `.catch(() => true)` to fail open at that layer, so this function itself
+ * must not swallow errors.
+ *
+ * Accepts an optional `fetchFn` for dependency injection in tests, matching
+ * createTaskStatusQuery's pattern.
+ */
+export function createBundleCompleteQuery(opts?: {
+  fetchFn?: FetchFn;
+}): (branch: string) => Promise<boolean> {
+  const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
+  const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
+  const doFetch: FetchFn = opts?.fetchFn ?? fetch;
+
+  return async (branch: string): Promise<boolean> => {
+    if (!taskStoreUrl || !taskStoreToken) {
+      throw new Error(
+        "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+      );
+    }
+    const baseUrl = taskStoreUrl.replace(/\/$/, "");
+    const params = new URLSearchParams({ branch });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, {
+      headers: {
+        Authorization: `Bearer ${taskStoreToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    let tasks: Task[];
+    if (Array.isArray(data)) {
+      tasks = data as Task[];
+    } else if (
+      data !== null &&
+      typeof data === "object" &&
+      Array.isArray((data as Record<string, unknown>).tasks)
+    ) {
+      tasks = (data as Record<string, unknown>).tasks as Task[];
+    } else {
+      throw new Error(`Unexpected task-store response format: ${JSON.stringify(data)}`);
+    }
+    return !tasks.some((task) => INCOMPLETE_BUNDLE_STATUSES.has(task.status));
+  };
+}
+
 // ─── Repo-tolerant candidate collection ───────────────────────────────────────
 
 /**
