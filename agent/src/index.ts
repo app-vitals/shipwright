@@ -60,6 +60,10 @@ import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
+import {
+  HttpWorkQueueReporter,
+  NoopWorkQueueReporter,
+} from "./work-queue-reporter.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -134,6 +138,17 @@ const chatTokenReporter =
         apiKey: config.shipwright.apiKey,
       })
     : new NoopChatTokenReporter();
+
+const workQueueReporter =
+  config.shipwright.apiUrl &&
+  config.shipwright.apiKey &&
+  config.shipwright.agentId
+    ? new HttpWorkQueueReporter({
+        apiUrl: config.shipwright.apiUrl,
+        agentId: config.shipwright.agentId,
+        apiKey: config.shipwright.apiKey,
+      })
+    : new NoopWorkQueueReporter();
 
 const cronDeps: CronHandlerDeps = {
   slack,
@@ -342,6 +357,7 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 const getLoopOrchestrator = createLoopOrchestratorGetter({
   runner,
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
+  workQueueReporter,
 });
 
 if (runtimeClient && agentId) {

@@ -19,7 +19,13 @@ import {
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
 } from "./loop-orchestrator.ts";
-import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
+import type { WorkQueueReporter } from "./work-queue-reporter.ts";
+import {
+  type RankedWorkItem,
+  type WorkPrCandidate,
+  type WorkTaskCandidate,
+  rankWorkItems,
+} from "./work-selector.ts";
 
 // ─── Stub reporter ──────────────────────────────────────────────────────────
 
@@ -90,6 +96,26 @@ function makeRecordingReporter(): {
   };
 
   return { reporter, creates, completes, skips };
+}
+
+// ─── Stub work queue reporter ───────────────────────────────────────────────
+
+interface SnapshotCall {
+  computedAt: string;
+  items: RankedWorkItem[];
+}
+
+function makeRecordingWorkQueueReporter(): {
+  reporter: WorkQueueReporter;
+  snapshots: SnapshotCall[];
+} {
+  const snapshots: SnapshotCall[] = [];
+  const reporter: WorkQueueReporter = {
+    async reportSnapshot(snapshot) {
+      snapshots.push({ computedAt: snapshot.computedAt, items: snapshot.items });
+    },
+  };
+  return { reporter, snapshots };
 }
 
 // ─── Stub runner ──────────────────────────────────────────────────────────
@@ -226,6 +252,7 @@ interface MakeDepsOptions {
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   runner?: (message: string) => Promise<ClaudeRunResult>;
   reporter?: CronRunReporter;
+  workQueueReporter?: WorkQueueReporter;
   loopCronId?: string;
   // Records which qualification functions were actually invoked.
   calls?: string[];
@@ -291,6 +318,8 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     ),
     runner: baseRunner,
     cronRunReporter: options.reporter ?? makeRecordingReporter().reporter,
+    workQueueReporter:
+      options.workQueueReporter ?? makeRecordingWorkQueueReporter().reporter,
     loopCronId: options.loopCronId ?? "shipwright-loop",
     clock: FixedClock(new Date("2026-07-10T00:00:00Z")),
   };
@@ -349,6 +378,7 @@ describe("createLoopOrchestratorGetter", () => {
     const getter = createLoopOrchestratorGetter({
       runner,
       cronRunReporter: reporter,
+      workQueueReporter: makeRecordingWorkQueueReporter().reporter,
       createOrchestrator: fakeCreateOrchestrator,
     });
 
@@ -374,6 +404,7 @@ describe("createLoopOrchestratorGetter", () => {
     const getter = createLoopOrchestratorGetter({
       runner,
       cronRunReporter: reporter,
+      workQueueReporter: makeRecordingWorkQueueReporter().reporter,
       createOrchestrator: fakeCreateOrchestrator,
     });
 
@@ -409,6 +440,7 @@ describe("createLoopOrchestratorGetter", () => {
     const getter = createLoopOrchestratorGetter({
       runner,
       cronRunReporter: reporter,
+      workQueueReporter: makeRecordingWorkQueueReporter().reporter,
       createOrchestrator: fakeCreateOrchestrator,
     });
 
@@ -708,6 +740,86 @@ describe("createLoopOrchestrator", () => {
     expect(creates).toEqual([]);
     expect(completes).toEqual([]);
     expect(skips).toEqual([]);
+  });
+
+  // ─── Work queue reporter tests (AWQ-1.3) ────────────────────────────────────
+
+  test("workQueueReporter.reportSnapshot is called exactly once on an idle tick, with an empty items array — no dispatch occurs", async () => {
+    const { reporter: workQueueReporter, snapshots } =
+      makeRecordingWorkQueueReporter();
+    const deps = makeDeps({ workQueueReporter });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop(ALL_PHASES_ON);
+
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].items).toEqual([]);
+  });
+
+  test("workQueueReporter.reportSnapshot is called exactly once per tick with the full ranked candidate list for a single dispatching tick", async () => {
+    const consumed = new Set<string>();
+    const { reporter: workQueueReporter, snapshots } =
+      makeRecordingWorkQueueReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner({ devTask: devTaskCandidates }, consumed);
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      consumed,
+      workQueueReporter,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // One dispatching iteration (consumes the only candidate) + one final idle
+    // iteration that ends the drain = 2 reportSnapshot calls total.
+    expect(snapshots).toHaveLength(2);
+    expect(snapshots[0].items).toEqual(rankWorkItems(devTaskCandidates, []));
+    expect(snapshots[1].items).toEqual([]);
+  });
+
+  test("workQueueReporter.reportSnapshot is called once per while-loop iteration across a multi-item drain, with decreasing candidate lists each time", async () => {
+    const consumed = new Set<string>();
+    const { reporter: workQueueReporter, snapshots } =
+      makeRecordingWorkQueueReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-02T00:00:00Z")];
+    const reviewCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "review")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates, review: reviewCandidates },
+      consumed,
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+      workQueueReporter,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop(ALL_PHASES_ON);
+
+    // 2 candidates drain over 2 dispatching iterations + 1 final idle
+    // iteration = 3 reportSnapshot calls total, decreasing each time.
+    expect(snapshots).toHaveLength(3);
+    expect(snapshots[0].items).toHaveLength(2);
+    expect(snapshots[0].items).toEqual(
+      rankWorkItems(devTaskCandidates, reviewCandidates),
+    );
+    expect(snapshots[1].items).toHaveLength(1);
+    expect(snapshots[2].items).toEqual([]);
+  });
+
+  test("reportSnapshot receives computedAt from the injected clock", async () => {
+    const { reporter: workQueueReporter, snapshots } =
+      makeRecordingWorkQueueReporter();
+    const deps = makeDeps({ workQueueReporter });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop(ALL_PHASES_ON);
+
+    expect(snapshots[0].computedAt).toBe("2026-07-10T00:00:00.000Z");
   });
 
   test("a dispatch whose command reports [silent] is recorded as skipped, not completed", async () => {
