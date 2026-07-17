@@ -11,6 +11,7 @@ export interface VoiceConfig {
   groqApiKey?: string;
   elevenLabsApiKey?: string;
   voiceId?: string;
+  piperVoice?: string;
   whisperServiceUrl?: string;
 }
 
