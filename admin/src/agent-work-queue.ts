@@ -9,6 +9,7 @@
 
 import type {
   AgentWorkQueueSnapshot,
+  Prisma,
   PrismaClient,
 } from "../prisma/client/index.js";
 
@@ -16,7 +17,7 @@ export type { AgentWorkQueueSnapshot };
 
 export interface PushWorkQueueSnapshotInput {
   computedAt: Date;
-  items: unknown;
+  items: Prisma.InputJsonValue;
 }
 
 export class AgentWorkQueueService {
@@ -35,11 +36,11 @@ export class AgentWorkQueueService {
       create: {
         agentId,
         computedAt: input.computedAt,
-        items: input.items as never,
+        items: input.items,
       },
       update: {
         computedAt: input.computedAt,
-        items: input.items as never,
+        items: input.items,
       },
     });
   }
