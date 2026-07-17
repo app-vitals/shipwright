@@ -722,11 +722,15 @@ INSTRUCTIONS — follow in order:
   {bullet list of each finding addressed and how}
 
   CONCERNS: (if DONE_WITH_CONCERNS)
-  {if every finding was REJECT and no push happened, explicitly confirm here that the
-  [D] rebuttal comment was posted AND that the inline threads for the REJECTed findings
-  were resolved, e.g. "All findings rejected (premise incorrect) — no code changes; posted
-  rebuttal comment via gh pr comment summarizing why each was rejected, and resolved the
-  corresponding inline threads." Otherwise, describe the correctness gap as usual.}
+  {whenever CONCERNS lists any REJECTed finding — whether every finding was REJECT and no
+  push happened, or this was a mixed ACCEPT+REJECT run where a push also happened —
+  explicitly confirm here that the [D] rebuttal comment was posted AND that the inline
+  threads for the REJECTed findings were resolved. All-REJECT example: "All findings
+  rejected (premise incorrect) — no code changes; posted rebuttal comment via gh pr comment
+  summarizing why each was rejected, and resolved the corresponding inline threads." Mixed
+  example: "2 of 3 findings fixed and pushed (commit abc1234); 1 finding rejected (premise
+  incorrect) — posted rebuttal comment via gh pr comment explaining why, and resolved that
+  finding's inline thread." Otherwise, describe the correctness gap as usual.}
   BLOCKER: (if BLOCKED)
 ```
 
@@ -735,19 +739,23 @@ INSTRUCTIONS — follow in order:
 Parse the subagent's STATUS:
 
 - **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
-- **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
-  report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
-  subagent did not push due to a concern (the all-REJECT, no-diff path from Step 5b
-  Instructions [D]), confirm the subagent's CONCERNS text reports both that it already
-  posted the required `gh pr comment` rebuttal AND that it resolved the inline threads for
-  the REJECTed findings. Both are needed — the rebuttal activates the
-  `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but `hasUnaddressedFindings()`
-  short-circuits to `true` on any unresolved inline thread before that escape hatch is even
-  consulted, so the threads must also be resolved or the review stops being reflagged only
-  for body-level findings, not inline ones (the common case). Do not post the comment here
-  or resolve the threads here; Step 5c only verifies it already happened. If the report
-  doesn't confirm both, treat it as a concern in the final report (the reflagging loop will
-  otherwise persist). Either way, skip Step 5c.5 — there is no new commit SHA to record.
+- **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
+  Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
+  whether that was the *only* outcome (the all-REJECT, no-diff path) or one branch of a
+  mixed ACCEPT+REJECT run where a push also happened), confirm the subagent's CONCERNS
+  text reports both that it already posted the required `gh pr comment` rebuttal AND that
+  it resolved the inline threads for the REJECTed findings. Both are needed — the rebuttal
+  activates the `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but
+  `hasUnaddressedFindings()` short-circuits to `true` on any unresolved inline thread before
+  that escape hatch is even consulted, so the threads must also be resolved or the review
+  stops being reflagged only for body-level findings, not inline ones (the common case).
+  Do not post the comment here or resolve the threads here; Step 5c only verifies it
+  already happened. If the report doesn't confirm both, treat it as a concern in the final
+  report (the reflagging loop will otherwise persist via this mixed-case path, not just the
+  all-REJECT path). For other, non-REJECT correctness-gap concerns, just log them in the
+  report. Either way, proceed to Step 5c.5 (upsert PR record) if a push happened (mixed
+  case — there IS a new commit SHA to record); skip Step 5c.5 only in the all-REJECT,
+  no-push case (there is no new commit SHA to record).
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:
