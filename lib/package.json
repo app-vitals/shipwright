@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./admin-types": "./admin-types.ts",
+    "./claim-ttl": "./claim-ttl.ts",
     "./org-repo": "./org-repo.ts",
     "./pricing": "./pricing.ts",
     "./request-context": "./request-context.ts",
