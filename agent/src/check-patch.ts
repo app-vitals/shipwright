@@ -443,6 +443,7 @@ export async function getPatchCandidates(
       id: candidateId(pr.repo, pr.number),
       age: linkedTask?.createdAt ?? pr.createdAt ?? "",
       phase: "patch",
+      title: pr.title,
     });
   }
 

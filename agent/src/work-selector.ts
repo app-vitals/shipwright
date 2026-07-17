@@ -33,17 +33,42 @@
 export interface WorkTaskCandidate {
   id: string;
   createdAt: string;
+  title?: string;
 }
 
 export interface WorkPrCandidate {
   id: string;
   age: string;
   phase?: "review" | "patch" | "deploy";
+  title?: string;
 }
 
 export type WorkItem =
   | { type: "task"; task: WorkTaskCandidate }
   | { type: "pr"; pr: WorkPrCandidate };
+
+/**
+ * Full ranked view of a work candidate — used by rankWorkItems() below. Task
+ * candidates are synthetically tagged phase: "dev-task" (WorkTaskCandidate
+ * itself has no phase field, since it only ever represents the dev-task
+ * phase). Every real caller of getReviewCandidates/getPatchCandidates/
+ * getDeployCandidates always sets WorkPrCandidate.phase (it's set once at
+ * each candidate's single construction site, unconditionally) — so by the
+ * time a PR candidate reaches rankWorkItems(), phase is never actually
+ * undefined in practice, even though the field's declared type is optional
+ * for backward compatibility with existing fixtures/tests. If an
+ * unpopulated PR candidate ever did reach this function, it falls back to
+ * "review" (documented here rather than silently defaulting elsewhere) —
+ * an arbitrary but harmless choice, since ordering (the only thing
+ * rankWorkItems is relied on for) is unaffected by phase.
+ */
+export interface RankedWorkItem {
+  type: "task" | "pr";
+  id: string;
+  title?: string;
+  phase: "dev-task" | "review" | "patch" | "deploy";
+  age: string;
+}
 
 /**
  * Select the single oldest ready item across tasks and PRs.
@@ -72,4 +97,61 @@ export function selectNextWorkItem(
   }
 
   return best ? best.item : null;
+}
+
+/**
+ * Age comparator for rankWorkItems() — the same "older ISO timestamp string
+ * sorts first" rule selectNextWorkItem() applies inline via its own
+ * min-tracking loop (left untouched here per this function's additive scope).
+ */
+function compareByAge(a: { age: string }, b: { age: string }): number {
+  return a.age < b.age ? -1 : a.age > b.age ? 1 : 0;
+}
+
+/**
+ * Rank ALL ready items (tasks and PRs) oldest-first, across both entity
+ * types — the full-list counterpart to selectNextWorkItem()'s single winner.
+ * Returns [] when both inputs are empty.
+ *
+ * Ordering is guaranteed to match calling selectNextWorkItem() repeatedly and
+ * removing each winner from its source list, since both apply the same
+ * lexicographic ISO-timestamp comparison rule (selectNextWorkItem() inline,
+ * this function via compareByAge).
+ *
+ * Tie-break on equal age is deterministic: tasks are appended to the flat
+ * candidate list before PRs, and Array.prototype.sort is a stable sort (ES2019+,
+ * guaranteed by the spec and by Bun's engine), so equal-age items keep that
+ * build order — i.e. tasks-before-PRs, then original input order within each
+ * group. This is an arbitrary but fully deterministic and documented choice;
+ * nothing in the caller relies on any particular tie-break beyond
+ * determinism itself.
+ */
+export function rankWorkItems(
+  tasks: WorkTaskCandidate[],
+  prs: WorkPrCandidate[],
+): RankedWorkItem[] {
+  const items: RankedWorkItem[] = [
+    ...tasks.map(
+      (task): RankedWorkItem => ({
+        type: "task",
+        id: task.id,
+        title: task.title,
+        phase: "dev-task",
+        age: task.createdAt,
+      }),
+    ),
+    ...prs.map(
+      (pr): RankedWorkItem => ({
+        type: "pr",
+        id: pr.id,
+        title: pr.title,
+        // See RankedWorkItem's doc comment: every real caller always sets
+        // phase, so this fallback is unreachable in practice.
+        phase: pr.phase ?? "review",
+        age: pr.age,
+      }),
+    ),
+  ];
+
+  return items.sort(compareByAge);
 }

@@ -57,6 +57,7 @@ function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
   return {
     id: task.id,
     createdAt: task.createdAt ?? "",
+    title: task.title,
   };
 }
 
