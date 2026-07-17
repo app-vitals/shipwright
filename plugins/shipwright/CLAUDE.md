@@ -13,8 +13,14 @@ any invocable workflow unit.
 ## Independence Principles
 
 Shipwright skills are designed to operate without requiring preconditions set by other
-skills. A user or agent can invoke any skill at any time — against any PR, on any repo —
-and the skill will discover what it needs from live state.
+skills. `dev-task`, `review`, `patch`, and `deploy` are explicit-target-only executors —
+each requires an explicit argument (a task id for `dev-task`; an `org/repo#number` PR for
+`review`/`patch`/`deploy`) and responds `[silent]` and stops immediately if invoked with no
+argument. None of the four self-scans or discovers its own work. Candidate selection happens
+once, upstream, before any of these commands is even dispatched (see "Candidate Selection"
+below); what each command does independently of the others is re-validate the *current
+state* of its named target against live GitHub/task-store data rather than trusting stale
+state — not discover the target itself.
 
 ### 1. GitHub is the Source of Truth
 
@@ -70,10 +76,19 @@ applying fixes)
 
 ### 5. No Skill Depends on Another Having Run First
 
-Skills are invocable in any order. `deploy` does not require `review` to have run first.
-`patch` does not require `dev-task` to have run first. `review` does not require
-`plan-session` to have produced a task first. Each skill discovers its inputs independently
-from GitHub and the file system at the time it runs.
+Skills do not require preconditions set by other skills. `deploy` does not require `review`
+to have run first. `patch` does not require `dev-task` to have run first. `review` does not
+require `plan-session` to have produced a task first. This is no longer about skills
+self-discovering inputs in any order, though — `dev-task`, `review`, `patch`, and `deploy`
+are dispatched with an explicit, already-selected target (a task id or a PR), chosen either
+by a human invoking the command directly or by the `shipwright-loop` cron's
+`loop-orchestrator.ts`, which merges candidates from `agent/src`'s per-phase qualification
+functions (`check-dev-task.ts`, `check-review.ts`, `check-patch.ts`, `check-deploy.ts`) and
+picks exactly one winning item via `work-selector.ts`'s `selectNextWorkItem` (strict
+age-based FIFO). What "no dependency between skills" means in practice: none of the four
+commands' *qualification logic* depends on another command's prior run — a PR can be
+`deploy`ed without `review` having produced task-store state first, as long as it is
+independently approved and green on GitHub.
 
 Applies to: **all skills** — review, deploy, patch, dev-task, plan-session, research,
 prd, refresh-plan
@@ -90,43 +105,45 @@ Applies to: **all skills** — review, deploy, patch, dev-task
 
 ---
 
-## Precheck Contract
+## Candidate Selection Contract
 
-Precheck scripts (`scripts/check-review.ts`, `scripts/check-deploy.ts`,
-`scripts/check-dev-task.ts`, `scripts/check-patch.ts`) are cron guards. They run before
-a skill is invoked and exit 1 (no output) when there is clearly nothing to do, saving
-an unnecessary Claude session.
+Selection of *what* to work on no longer happens inside `dev-task`, `review`, `patch`, or
+`deploy` themselves. It happens once, upstream, in `agent/src`'s native TypeScript
+candidate providers — `check-dev-task.ts` (`getDevTaskCandidates`), `check-review.ts`
+(`getReviewCandidates`), `check-patch.ts` (`getPatchCandidates`), and `check-deploy.ts`
+(`getDeployCandidates`). The `shipwright-loop` cron's `loop-orchestrator.ts` calls the
+providers for every enabled phase each tick, merges their results, and picks exactly one
+winning item via `work-selector.ts`'s `selectNextWorkItem` (strict age-based FIFO across
+task and PR candidates, no phase-priority bias). It then dispatches the one matching
+one-shot command with the winning item's id/PR embedded directly in the prompt — e.g.
+`/shipwright:dev-task {task-id}` or `/shipwright:review {org/repo#number}`.
 
 ### Rules
 
-**Scripts are best-effort filters, not correctness gates.**
-A precheck may exit 0 even when the skill ultimately finds nothing to do. That is expected
-and acceptable. A false positive (unnecessary skill invocation) is far cheaper than a false
-negative (skipping work that needed to happen).
+**The `agent/src` candidate providers are authoritative on what qualifies.**
+This is not a best-effort pre-filter the invoked command can override — there is no
+second, independent qualification pass inside the command. By the time
+`/shipwright:dev-task {id}` or `/shipwright:review {pr}` runs, the item has already been
+selected. The command does not re-run candidate qualification logic.
 
-**The skill is authoritative on what qualifies.**
-The precheck approximates the skill's qualification logic using cheap GitHub queries. The
-skill's own qualification checks are the canonical definition of readiness. If they
-disagree, the skill wins — not the precheck.
+**The command re-validates current-state safety immediately before acting — not
+requalification.** Time passes between selection and dispatch (the Claude session has to
+spin up), so live state can change. `dev-task`'s Step 2 performs an atomic claim
+(`POST /tasks/{id}/claim`, which 409s if another agent claimed the task since selection).
+`review`, `patch`, and `deploy` re-check live GitHub state — mergeability, CI status, review
+decision — before taking a write action. This check is narrow: it confirms the target is
+still safe/current to act on, it does not re-decide whether the target qualifies in the
+first place.
 
-**When skill qualification changes, the corresponding precheck must be audited.**
-If `deploy.md` adds a new qualification requirement (e.g. a label check), `check-deploy.ts`
-must be reviewed to ensure it does not over-filter. The precheck is a dependent of the
-skill's qualification logic, not independent of it.
+**When a provider's qualification logic changes, the corresponding command's Arguments/Step
+0-2 assumptions should be reviewed.** If `check-deploy.ts` adds a new qualification
+requirement, `deploy.md`'s current-state re-validation should be checked to make sure it
+still makes sense against the new qualification bar.
 
-**Err permissive over restrictive.**
-When uncertain whether a PR qualifies, the precheck should exit 0 and let the skill decide.
-An over-trigger wastes one Claude session. An under-trigger silently skips work. The asymmetry
-favors permissive: false positives are visible and self-correcting; false negatives are not.
-
-### Scripts and What They Check
-
-| Script | Guards | What it checks |
-|---|---|---|
-| `check-review.ts` | `review` cron | Open PRs with unreviewed commits (by headRefOid dedup against task store `/prs` records); respects `allow_self_review` policy |
-| `check-deploy.ts` | `deploy` cron | Open PRs with `APPROVED` review decision and green CI; respects `allow_self_review` for self-authored PRs; skips a repo with an active Deploy workflow run, scoped per repo — a busy repo does not block ready PRs in other configured repos |
-| `check-dev-task.ts` | `dev-task` cron | Pending tasks with all dependencies satisfied (task store `ready: true` query) |
-| `check-patch.ts` | `patch` cron | Signals patch skill for unaddressed review findings, merge conflicts (DIRTY), and failing CI; queries GitHub directly — does NOT read `state/reviews.json`. Branches merely BEHIND main (no conflict) are not patch-worthy — main is only merged into a branch to resolve a conflict. Returns on the FIRST qualifying PR found (single-PR-at-a-time); its stdout is a literal, directly-invocable `/shipwright:patch {org}/{repo}#{number}` command naming that PR — required since `patch.md` now takes an explicit target instead of self-scanning. |
+**Selection and dispatch are both driven by explicit targets, human or automated.** A human
+can also invoke any of the four commands directly with an explicit task id or PR — the
+Independence Principles above still apply to that path. The only thing that no longer
+exists is a mode where the command scans for its own candidates.
 
 ---
 
@@ -140,7 +157,7 @@ System crons are the crons defined in `SYSTEM_CRONS` — they cover both the cor
 
 **New system crons always ship disabled.** Any cron added to `SYSTEM_CRONS` must have `enabled: false`. Enable it per-agent when ready. This avoids new crons firing unexpectedly on agents that haven't opted in. The exception is crons explicitly replacing a prior cron — but even then, add disabled, verify, then enable and disable the old one.
 
-**review and patch run as independent phases.** There is no combined `shipwright-review-patch` cron — `shipwright-review` and `shipwright-patch` each ship `enabled: true` by default and run their own phase directly.
+**review and patch run as independent phases.** `shipwright-review` and `shipwright-patch` are independent system crons, each shipping `enabled: true` by default (see `admin/src/system-crons.ts`), and each runs its own phase directly.
 
 ---
 
