@@ -1497,7 +1497,7 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     unlinkSync(outPath);
   });
 
-  test("[speak:text] in DM — skips upload when synthesis returns null", async () => {
+  test("[speak:text] in DM — posts text fallback when synthesis returns null", async () => {
     const mockSynthesize = mock(async () => null);
     createSlackApp({ synthesizeSpeechFn: mockSynthesize });
 
@@ -1518,6 +1518,9 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "hello" }),
+    );
   });
 
   test("[speak:text] in mention — synthesizes and uploads", async () => {
@@ -2671,7 +2674,7 @@ describe("dispatchMarkers — direct", () => {
     unlinkSync(outPath);
   });
 
-  test("speak marker — skips upload when synthesis returns null", async () => {
+  test("speak marker — posts text fallback when synthesis returns null", async () => {
     const mockSynthesize = mock(async () => null);
 
     await dispatchMarkers([{ type: "speak", text: "Hello" }], {
@@ -2682,6 +2685,27 @@ describe("dispatchMarkers — direct", () => {
     });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
+  });
+
+  test("speak marker — posts text fallback when synthesizeSpeechFn throws", async () => {
+    const throwingSynthesize = mock(async () => {
+      throw new Error("synthesis blew up");
+    });
+
+    await dispatchMarkers([{ type: "speak", text: "Hello" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: throwingSynthesize,
+      voiceConfig: {},
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
   });
 
   test("speak marker — skipped gracefully when synthesizeSpeechFn is absent", async () => {

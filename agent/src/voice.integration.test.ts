@@ -276,7 +276,7 @@ describe("makeWhisperSvcClient — HTTP transcription client", () => {
 // ─── synthesizeSpeech (ElevenLabs) ────────────────────────────────────────────
 
 describe("synthesizeSpeech — ElevenLabs", () => {
-  test("returns null when no keys are set and edge-tts fallback fails", async () => {
+  test("returns null when no keys are set and Piper fallback fails", async () => {
     const result = await synthesizeSpeech(
       "hello",
       {},
@@ -287,7 +287,7 @@ describe("synthesizeSpeech — ElevenLabs", () => {
     expect(result).toBeNull();
   });
 
-  test("returns an audio path when edge-tts fallback succeeds", async () => {
+  test("returns an audio path when Piper fallback succeeds", async () => {
     const result = await synthesizeSpeech(
       "hello",
       {},
@@ -296,7 +296,7 @@ describe("synthesizeSpeech — ElevenLabs", () => {
     );
 
     expect(result).not.toBeNull();
-    expect(result).toContain("response.mp3");
+    expect(result).toContain("response.wav");
   });
 
   test("calls ElevenLabs API with elevenLabsApiKey and voiceId", async () => {
@@ -391,7 +391,7 @@ function makeSuccessSpawn(output: string): SpawnFn {
     const proc: any = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
-    proc.stdin = { destroy: () => {} };
+    proc.stdin = { write: () => {}, end: () => {}, destroy: () => {} };
     setImmediate(() => {
       if (output) proc.stdout.emit("data", Buffer.from(output));
       proc.emit("close", 0);
@@ -406,7 +406,7 @@ function makeFailExitSpawn(code: number): SpawnFn {
     const proc: any = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
-    proc.stdin = { destroy: () => {} };
+    proc.stdin = { write: () => {}, end: () => {}, destroy: () => {} };
     setImmediate(() => {
       proc.emit("close", code);
     });

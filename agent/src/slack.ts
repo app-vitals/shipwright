@@ -229,11 +229,27 @@ export async function dispatchMarkers(
             );
         } else {
           console.warn(
-            "[markers] speak synthesis returned null — no audio uploaded",
+            "[markers] speak synthesis returned null — posting text fallback",
           );
+          await client.chat
+            .postMessage({ channel, thread_ts: threadTs, text: marker.text })
+            .catch((err: unknown) =>
+              console.warn("[markers] speak text fallback post failed:", err),
+            );
         }
       } catch (err) {
-        console.warn("[markers] speak synthesis failed:", err);
+        console.warn(
+          "[markers] speak synthesis failed — posting text fallback:",
+          err,
+        );
+        await client.chat
+          .postMessage({ channel, thread_ts: threadTs, text: marker.text })
+          .catch((postErr: unknown) =>
+            console.warn(
+              "[markers] speak text fallback post failed:",
+              postErr,
+            ),
+          );
       }
     }
   }
