@@ -36,6 +36,7 @@ model Agent {
   plugins          AgentPlugin[]
   members          AgentMember[]
   chatTokenUsage   AgentChatTokenUsageDailyByModel[]
+  workQueueSnapshot AgentWorkQueueSnapshot?
 }
 
 // ─── Agent Env ────────────────────────────────────────────────────────────────
@@ -212,5 +213,20 @@ model AgentChatTokenUsageDailyByModel {
   updatedAt           DateTime @updatedAt
 
   @@unique([agentId, date, model])
+}
+
+// ─── Agent Work Queue Snapshot ────────────────────────────────────────────────
+// One row per agent, holding the agent's most recently pushed work-queue
+// snapshot (its ranked view of pending tasks/PRs across pipeline phases).
+// POST /agents/:id/work-queue upserts this single row, overwriting any prior
+// snapshot — there is no history, only the latest state.
+
+model AgentWorkQueueSnapshot {
+  id         String   @id @default(cuid())
+  agentId    String   @unique
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  computedAt DateTime
+  items      Json     // RankedWorkItem[]
+  createdAt  DateTime @default(now())
 }
 

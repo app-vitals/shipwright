@@ -189,6 +189,12 @@ function makeBaseDeps(
         daily: [],
       }),
     },
+    agentWorkQueueService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     prisma: {
       agent: {} as never,
       agentEnv: { findMany: async () => [] },

@@ -585,6 +585,72 @@ export const AgentEnvPatchBodySchema = z
   })
   .openapi("AgentEnvPatchBody");
 
+// ─── AgentWorkQueueSnapshot ───────────────────────────────────────────────────
+
+/**
+ * A single ranked work item, mirroring the RankedWorkItem interface in
+ * agent/src/work-selector.ts (type/phase are string enums there — validated
+ * here for real, since this is a request body needing genuine validation,
+ * not just an opaque Json passthrough).
+ */
+export const RankedWorkItemSchema = z
+  .object({
+    type: z.enum(["task", "pr"]).openapi({ example: "task" }),
+    id: z.string().openapi({ example: "WLS-2.2" }),
+    title: z
+      .string()
+      .optional()
+      .openapi({ example: "Add work queue snapshot endpoints" }),
+    phase: z
+      .enum(["dev-task", "review", "patch", "deploy"])
+      .openapi({ example: "dev-task" }),
+    age: z.string().openapi({
+      example: "2026-01-01T00:00:00.000Z",
+      description: "ISO timestamp",
+    }),
+  })
+  .openapi("RankedWorkItem");
+
+export type RankedWorkItem = z.infer<typeof RankedWorkItemSchema>;
+
+/**
+ * POST /agents/:id/work-queue body — the envelope an agent pushes each time
+ * it recomputes its ranked work queue. Upserts the single row for that
+ * agentId, overwriting any prior snapshot.
+ */
+export const PushWorkQueueSnapshotBodySchema = z
+  .object({
+    computedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    items: z.array(RankedWorkItemSchema),
+  })
+  .openapi("PushWorkQueueSnapshotBody");
+
+/**
+ * GET /agents/:id/work-queue response — the latest pushed snapshot.
+ */
+export const AgentWorkQueueSnapshotSchema = z
+  .object({
+    id: z.string().openapi({ example: "clx1234567890" }),
+    agentId: z.string().openapi({ example: "clx1234567890" }),
+    computedAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    items: z.array(RankedWorkItemSchema),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+  })
+  .openapi("AgentWorkQueueSnapshot");
+
+export type AgentWorkQueueSnapshotType = z.infer<
+  typeof AgentWorkQueueSnapshotSchema
+>;
+
 // ─── Path param schemas ───────────────────────────────────────────────────────
 
 export const AgentIdParamSchema = z.object({

@@ -207,6 +207,12 @@ function makeMockDeps(opts?: {
         : async () => MOCK_DAILY_ROW,
       queryStats: async () => MOCK_STATS_RESULT,
     },
+    agentWorkQueueService: {
+      push: async () => {
+        throw new Error("not implemented");
+      },
+      get: async () => null,
+    },
     agentCronRunStatsService: {
       query: async () => ({
         totals: {

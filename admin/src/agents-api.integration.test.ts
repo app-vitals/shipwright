@@ -22,6 +22,7 @@ import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
 import { AgentService } from "./agents.ts";
@@ -74,6 +75,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     prisma = makePrisma();
 
     // Clean all tables in FK dependency order
+    await prisma.agentWorkQueueSnapshot.deleteMany();
     await prisma.agentPlugin.deleteMany();
     await prisma.agentToken.deleteMany();
     await prisma.agentCronJob.deleteMany();
@@ -100,6 +102,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
       agentTokenService: new AgentTokenService(prisma),
       agentPluginService: new AgentPluginService(prisma),
       agentChatTokenService: new AgentChatTokenService(prisma),
+      agentWorkQueueService: new AgentWorkQueueService(prisma),
       prisma,
       provisioner: new NoopAgentProvisioner(),
       taskStore: new NoopTaskStoreProvisioningClient(),
@@ -239,5 +242,93 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(getRes.status).toBe(200);
     const getBody = await getRes.json();
     expect(getBody.repos).toEqual(["my-org/my-repo"]);
+  });
+
+  // ─── Work queue snapshot upsert semantics ─────────────────────────────────────
+
+  it("POST /work-queue twice overwrites the row rather than creating a second one", async () => {
+    const firstRes = await app.request(`/agents/${agentId}/work-queue`, {
+      method: "POST",
+      body: JSON.stringify({
+        computedAt: "2026-01-01T00:00:00.000Z",
+        items: [
+          {
+            type: "task",
+            id: "WLS-2.2",
+            phase: "dev-task",
+            age: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(firstRes.status).toBe(200);
+    const firstBody = await firstRes.json();
+
+    const secondRes = await app.request(`/agents/${agentId}/work-queue`, {
+      method: "POST",
+      body: JSON.stringify({
+        computedAt: "2026-01-02T00:00:00.000Z",
+        items: [
+          {
+            type: "pr",
+            id: "acme/x#123",
+            title: "Overwritten snapshot",
+            phase: "review",
+            age: "2026-01-02T00:00:00.000Z",
+          },
+        ],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(secondRes.status).toBe(200);
+    const secondBody = await secondRes.json();
+
+    // Same row id — upserted, not a new row.
+    expect(secondBody.snapshot.id).toBe(firstBody.snapshot.id);
+
+    // Exactly one row exists for this agent in the DB.
+    const rows = await prisma.agentWorkQueueSnapshot.findMany({
+      where: { agentId },
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.computedAt.toISOString()).toBe("2026-01-02T00:00:00.000Z");
+    expect(rows[0]?.items).toEqual(secondBody.snapshot.items);
+
+    // GET reflects the latest (second) snapshot, not the first.
+    const getRes = await app.request(`/agents/${agentId}/work-queue`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.snapshot.items).toEqual(secondBody.snapshot.items);
+  });
+
+  it("DELETE /agents/:id cascades to its work-queue snapshot row", async () => {
+    const postRes = await app.request(`/agents/${agentId}/work-queue`, {
+      method: "POST",
+      body: JSON.stringify({
+        computedAt: "2026-01-01T00:00:00.000Z",
+        items: [],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(postRes.status).toBe(200);
+
+    await prisma.agent.delete({ where: { id: agentId } });
+
+    const rows = await prisma.agentWorkQueueSnapshot.findMany({
+      where: { agentId },
+    });
+    expect(rows).toHaveLength(0);
   });
 });
