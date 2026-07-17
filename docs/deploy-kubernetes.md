@@ -502,6 +502,7 @@ agent:
       image: onerahmet/openai-whisper-asr-webservice:latest  # pin a concrete tag in prod
       service:
         port: 9000               # in-cluster Service port → WHISPER_SERVICE_URL
+      model: ""                  # ASR model name → ASR_MODEL (e.g. tiny, base, small, medium, large-v3, tiny.en); empty = image default
       resources: {}              # ASR is heavy; size for your model
     elevenlabs:
       apiKey: ""                 # → ELEVENLABS_API_KEY (TTS); empty → edge-tts fallback
@@ -511,8 +512,8 @@ agent:
 ```
 
 These map to the agent voice env vars (`WHISPER_SERVICE_URL`,
-`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `GROQ_API_KEY`) read by
-`agent/src/config.ts`.
+`ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `GROQ_API_KEY`) and Whisper pod env vars
+(`ASR_MODEL`) read by `agent/src/config.ts` and the Whisper container respectively.
 
 ---
 
