@@ -115,6 +115,8 @@ Example flags:
 
 **Data-backfill migrations need a live-data check, not just a design review.** If a task involves a migration that assigns or attributes existing rows by pattern-matching a column (mapping an existing value to a new one), flag that the task's acceptance criteria must require querying the live table for its actual distinct values and confirming every distinct group is covered — not just checking the mapping against docs/config/API references. Test fixtures for that migration must be seeded from the same live-distinct-values check. A mapping that looks complete against documentation can still miss a real data shape that only a live query would surface.
 
+Mark this task **HITL** (see Step 5.5): in repos where production databases aren't reachable from the dev-task agent's normal execution environment (a common pattern — check the repo's `CLAUDE.md` for a rule like "scripts outside the cluster must use service APIs, not DB directly"), the live-data check itself requires a human with cluster/DB access to run the query and hand back the result before the mapping can be finalized. Inject a `## Human steps` section naming the query to run and where to run it from (e.g. `kubectl exec`/cloud-sql-proxy, or an existing read-only admin endpoint if one exists).
+
 **Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks:
 
 - **DB**: dropping or renaming a table or column — who reads or writes it?
@@ -277,6 +279,7 @@ Even without a keyword match, flag the task HITL if it fundamentally requires:
 - Provisioning or rotating a credential, secret, or API key
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
+- Reading live production data to verify something (a backfill/attribution mapping, a data shape assumption) in a repo where the dev-task agent's normal execution environment cannot reach production databases directly — check the repo's `CLAUDE.md` for a rule to this effect. The keyword scan above won't catch this on its own since the trigger words (`kubectl`, `Cloud SQL`, etc.) typically show up only in acceptance criteria, not the task title/description — apply this judgment check explicitly for any backfill/migration task.
 
 **CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task HITL and list the new secret names in the `## Human steps` section.
 
