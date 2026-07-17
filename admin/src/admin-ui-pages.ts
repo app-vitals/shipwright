@@ -479,6 +479,7 @@ export function renderAgentsPage(
     <td>
       <a href="/admin/agents/${escapeHtml(a.id)}" class="btn btn-secondary" style="font-size:12px;padding:4px 10px">Manage</a>
       <a href="/admin/agents/${escapeHtml(a.id)}/cron-logs" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Cron Logs</a>
+      <a href="/admin/agents/${escapeHtml(a.id)}/work-queue" class="btn btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px">Work Queue</a>
     </td>
   </tr>`,
           )

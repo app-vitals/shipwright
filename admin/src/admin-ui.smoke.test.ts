@@ -508,6 +508,18 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Test Agent");
   });
 
+  it("authenticated GET /admin/agents includes a Work Queue link with the correct href for a rendered agent row", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      `<a href="/admin/agents/${AGENT_ID}/work-queue" class="btn btn-secondary"`,
+    );
+  });
+
   it("authenticated GET /admin/agents shows the session user's email in the navbar", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents", {
