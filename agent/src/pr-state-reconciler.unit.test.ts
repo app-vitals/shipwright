@@ -1358,6 +1358,42 @@ describe("reconcilePrState — deploying task reconciliation pass", () => {
     );
   });
 
+  test("no Deploy workflow, one distinct workflow succeeds and another fails — marks the task blocked, not deployed", async () => {
+    // Fallback path only: distinct, unrelated workflows (e.g. CI, Docs
+    // Build) at the same SHA, not retries of the same workflow — a
+    // successful unrelated run must not mask a genuinely failed one.
+    // Mirrors deploy.md Step 5c's "every run must succeed" rule.
+    const task: PrOpenTaskRecord = {
+      id: "task-d4b",
+      repo: "acme/example-repo",
+      pr: 112,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 112, "sha-112"),
+      runsForSha: {
+        "acme/example-repo#sha-112": [
+          {
+            id: 30,
+            name: "Docs Build",
+            status: "completed",
+            conclusion: "success",
+          },
+          { id: 31, name: "CI", status: "completed", conclusion: "failure" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d4b");
+    expect(taskPatchCalls[0].fields.status).toBe("blocked");
+    expect(taskPatchCalls[0].fields.note).toBe(
+      "Post-merge CI failed — run ID: 31",
+    );
+  });
+
   test("runs still in progress are left untouched — not yet resolvable", async () => {
     const task: PrOpenTaskRecord = {
       id: "task-d5",

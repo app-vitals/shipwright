@@ -359,21 +359,44 @@ export async function reconcilePrOpenTasks(
 type RunOutcome = "success" | "failure" | "pending";
 
 /**
- * Classify a set of GH Actions runs at a single head_sha. Mirrors
- * deploy.md Step 5c's completion logic: any run that reports
- * `conclusion: "success"` wins outright (a later successful retry must not
- * be masked by an earlier failed attempt at the same SHA); with no success
- * present, any still-incomplete run means the outcome isn't resolvable yet;
- * only once every run has completed with none succeeding is the outcome a
- * genuine failure. Zero runs is "pending" — nothing to decide from yet.
+ * Classify a set of GH Actions runs that are all plausible retries of the
+ * SAME workflow (the primary path — `deployRuns`, pre-filtered to
+ * `name === "Deploy"`). Any run that reports `conclusion: "success"` wins
+ * outright (a later successful retry must not be masked by an earlier failed
+ * attempt at the same SHA); with no success present, any still-incomplete
+ * run means the outcome isn't resolvable yet; only once every run has
+ * completed with none succeeding is the outcome a genuine failure. Zero runs
+ * is "pending" — nothing to decide from yet.
  */
-function classifyRuns(
+function classifyRunsAnySuccessWins(
   runs: Array<{ status: string; conclusion: string | null }>,
 ): RunOutcome {
   if (runs.length === 0) return "pending";
   if (runs.some((r) => r.conclusion === "success")) return "success";
   if (runs.some((r) => r.status !== "completed")) return "pending";
   return "failure"; // every run completed, none succeeded
+}
+
+/**
+ * Classify a set of GH Actions runs that are DISTINCT, unrelated workflows at
+ * the same head_sha (the fallback path — unfiltered `runs`, used only when no
+ * Deploy-named run exists). Mirrors deploy.md Step 5c's "Post-Merge CI Watch"
+ * rule: every run seen must complete with `conclusion === "success"` — a
+ * single genuinely-failed run (e.g. `CI` failing) is a definite failure
+ * immediately, even while an unrelated run (e.g. `Docs Build`) has already
+ * succeeded or is still pending, since "any success wins" does not apply
+ * across distinct workflows. Only once every run has completed with none
+ * failing is the outcome a genuine success. Zero runs is "pending" — nothing
+ * to decide from yet.
+ */
+function classifyRunsAllMustSucceed(
+  runs: Array<{ status: string; conclusion: string | null }>,
+): RunOutcome {
+  if (runs.length === 0) return "pending";
+  if (runs.some((r) => r.status === "completed" && r.conclusion !== "success"))
+    return "failure";
+  if (runs.some((r) => r.status !== "completed")) return "pending";
+  return "success"; // every run completed, all succeeded
 }
 
 /** Find a completed, non-success run to cite in a blocked-task note. */
@@ -384,19 +407,24 @@ function findFailedRun(runs: GhWorkflowRun[]): GhWorkflowRun | undefined {
 }
 
 /**
- * Classify `runs` and PATCH the task to deployed/blocked accordingly, or
- * leave it untouched if the outcome isn't resolvable yet. Shared by both the
- * primary (Deploy-named runs) and fallback (post-merge CI) paths in
- * `reconcileDeployingTask` — they differ only in which runs they classify
- * and the failure label cited in the blocked-task note.
+ * Classify `runs` (using the given `classify` function) and PATCH the task
+ * to deployed/blocked accordingly, or leave it untouched if the outcome
+ * isn't resolvable yet. Shared by both the primary (Deploy-named runs) and
+ * fallback (post-merge CI) paths in `reconcileDeployingTask` — they differ in
+ * which runs they classify, which classification semantic applies (any-
+ * success-wins for same-workflow retries vs. all-must-succeed for distinct
+ * unrelated workflows), and the failure label cited in the blocked-task note.
  */
 async function applyRunOutcome(
   deps: PrStateReconcilerDeps,
   task: PrOpenTaskRecord,
   runs: GhWorkflowRun[],
   failureLabel: string,
+  classify: (
+    runs: Array<{ status: string; conclusion: string | null }>,
+  ) => RunOutcome,
 ): Promise<void> {
-  const outcome = classifyRuns(runs);
+  const outcome = classify(runs);
   if (outcome === "pending") return; // not yet resolvable (or zero runs seen yet)
   if (outcome === "success") {
     await deps.updateTaskStatus(task.id, {
@@ -439,12 +467,26 @@ async function reconcileDeployingTask(
   const deployRuns = runs.filter((r) => r.name === "Deploy");
 
   if (deployRuns.length > 0) {
-    return applyRunOutcome(deps, task, deployRuns, "Deploy stage failed");
+    return applyRunOutcome(
+      deps,
+      task,
+      deployRuns,
+      "Deploy stage failed",
+      classifyRunsAnySuccessWins,
+    );
   }
 
   // Fallback path — no Deploy-named run at this SHA; classify all runs seen
-  // (post-merge CI), mirroring deploy.md Step 5c.
-  return applyRunOutcome(deps, task, runs, "Post-merge CI failed");
+  // (post-merge CI, distinct unrelated workflows), mirroring deploy.md Step
+  // 5c's "every run must succeed" rule — a single failed run here is a
+  // definite failure even if another unrelated run already succeeded.
+  return applyRunOutcome(
+    deps,
+    task,
+    runs,
+    "Post-merge CI failed",
+    classifyRunsAllMustSucceed,
+  );
 }
 
 /**
