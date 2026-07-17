@@ -698,6 +698,9 @@ describe("createTaskStoreClient query()", () => {
       "https://task-store.example.com/tasks/T-1/claim",
     );
     expect(capturedInit?.method).toBe("POST");
+    // headers always sets Content-Type: application/json — a truly empty
+    // body would fail the server's JSON parse
+    expect(capturedInit?.body).toBe("{}");
   });
 
   test("claim() returns true on 200", async () => {
