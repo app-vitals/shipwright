@@ -127,7 +127,7 @@ describe("deploy.md — self-approve bold-markdown strip (PCK-1.4)", () => {
     expect(step3aSection.toLowerCase()).toContain("strip");
   });
 
-  it("Step 3a's prose describes stripping leading bold markers before startsWith(\"APPROVE\")", () => {
+  it('Step 3a\'s prose describes stripping leading bold markers before startsWith("APPROVE")', () => {
     const step3aMatch = content.match(
       /### 3a\. Verify PR Approval[\s\S]*?(?=### 3b)/,
     );
@@ -182,9 +182,14 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
   it("post-merge upsert reuses PR_RECORD_ID from the pre-merge claim (plain PATCH, no redundant claim)", () => {
     // The post-merge section should PATCH the already-claimed record rather than
     // issuing a second POST /prs/claim call.
-    const postMergeSectionIdx = content.indexOf("Update PullRequest Record (post-merge)");
+    const postMergeSectionIdx = content.indexOf(
+      "Update PullRequest Record (post-merge)",
+    );
     expect(postMergeSectionIdx).toBeGreaterThan(-1);
-    const postMergeSection = content.slice(postMergeSectionIdx, postMergeSectionIdx + 1500);
+    const postMergeSection = content.slice(
+      postMergeSectionIdx,
+      postMergeSectionIdx + 1500,
+    );
     expect(postMergeSection.includes("/prs/claim")).toBe(false);
     expect(postMergeSection.includes("/prs/$PR_RECORD_ID")).toBe(true);
   });
@@ -205,7 +210,9 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
 
 describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   function extractStep5bSection(md: string): string {
-    const match = md.match(/### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/);
+    const match = md.match(
+      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
+    );
     expect(match).not.toBeNull();
     return match?.[0] ?? "";
   }
