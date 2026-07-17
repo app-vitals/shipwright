@@ -1,9 +1,5 @@
 import { join } from "node:path";
-
-// Default hard timeout for a single `claude -p` session — mirrors the default
-// in createRunClaude (agent/src/claude.ts). Kept in sync so behavior is
-// unchanged when SHIPWRIGHT_CLAUDE_TIMEOUT_MS is unset.
-const DEFAULT_CLAUDE_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claim-ttl";
 
 function optional(key: string): string | undefined {
   return process.env[key];
