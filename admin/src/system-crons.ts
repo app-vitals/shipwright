@@ -22,7 +22,6 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     schedule: "0,30 * * * *",
     prompt: "/shipwright:dev-task",
     silent: true,
-    preCheck: "shipwright:check-dev-task.ts",
     enabled: true,
   },
   {
@@ -30,7 +29,6 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     schedule: "5,35 * * * *",
     prompt: "/shipwright:patch",
     silent: true,
-    preCheck: "shipwright:check-patch.ts",
     enabled: true,
   },
   {
@@ -38,7 +36,6 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     schedule: "15,45 * * * *",
     prompt: "/shipwright:review",
     silent: true,
-    preCheck: "shipwright:check-review.ts",
     enabled: true,
   },
   {
@@ -46,7 +43,6 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     schedule: "20,50 * * * *",
     prompt: "/shipwright:deploy",
     silent: true,
-    preCheck: "shipwright:check-deploy.ts",
     enabled: false,
   },
   {

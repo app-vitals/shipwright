@@ -409,7 +409,7 @@ can read the verdict directly from the GitHub review body.
 
 **The `body` field MUST contain the literal phrase `Verdict: APPROVE` or `Verdict: COMMENT`**,
 matching whichever verdict was selected below in Event selection — not just implied wording or
-free-form approval prose. `check-patch.ts`'s `isSelfCleanApprove` (`VERDICT_APPROVE_LABEL =
+free-form approval prose. `agent/src/check-patch.ts`'s `isSelfCleanApprove` (`VERDICT_APPROVE_LABEL =
 /verdict\**\s*:\s*\**approve\b/i`) scans the GitHub-posted review body for this exact phrase to
 recognize a clean self-approve on a self-authored PR (where `event` is forced to `COMMENT` above,
 since GitHub blocks self-APPROVE via the API). A body like "Clean conversion, all routes

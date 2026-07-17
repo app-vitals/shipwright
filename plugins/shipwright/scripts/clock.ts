@@ -4,7 +4,7 @@
  * Clock interface and production implementation for injectable time.
  *
  * WHY THIS FILE EXISTS:
- * Precheck scripts (e.g. check-dev-task.ts) are installed into the plugin
+ * Precheck scripts (e.g. check-docs-freshness.ts) are installed into the plugin
  * cache at a path like:
  *   ~/.claude/plugins/cache/app-vitals/shipwright/<version>/scripts/
  * The scripts must import Clock from a local path that exists in the cache —

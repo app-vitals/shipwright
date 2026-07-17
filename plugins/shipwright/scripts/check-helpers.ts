@@ -97,8 +97,9 @@ export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
  *   self-review convention, which ends a summary with the verdict rather
  *   than leading with it).
  *
- * Shared by check-deploy.ts's hasSelfApproveReview and check-patch.ts's
- * isSelfCleanApprove so the two self-review consumers can't diverge again.
+ * Shared by agent/src/check-deploy.ts's hasSelfApproveReview and
+ * agent/src/check-patch.ts's isSelfCleanApprove so the two self-review
+ * consumers can't diverge again.
  */
 export function isCleanApproveBody(body: string): boolean {
   return (
