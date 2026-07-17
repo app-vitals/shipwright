@@ -15,10 +15,18 @@ const GA_MEASUREMENT_ID = "G-WS5TVR713J";
   async
   src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}></script>
 <script define:vars={{ GA_MEASUREMENT_ID }}>
-  window.dataLayer = window.dataLayer || [];
-  function gtag() {
-    dataLayer.push(arguments);
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
   }
-  gtag("js", new Date());
-  gtag("config", GA_MEASUREMENT_ID);
 </script>

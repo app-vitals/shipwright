@@ -10,6 +10,84 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.423] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.423 triggered by release tag(s): `chat-v0.56.0`
+
+## [1.6.422] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.422 triggered by release tag(s): `task-store-v0.110.1`
+
+## [1.6.421] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.421 triggered by release tag(s): `admin-v0.213.0`, `agent-v0.209.1`, `chat-v0.54.0`, `metrics-v0.169.0`, `task-store-v0.110.0`
+
+## [1.6.420] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.420 triggered by release tag(s): `agent-v0.209.0`
+
+## [1.6.419] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.419 triggered by release tag(s): `metrics-v0.168.0`
+
+## [1.6.418] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.418 triggered by release tag(s): `admin-v0.212.0`, `agent-v0.208.0`, `chat-v0.53.0`, `metrics-v0.167.0`, `task-store-v0.109.0`
+
+## [1.6.417] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.417 triggered by release tag(s): `task-store-v0.108.0`
+
+## [1.6.416] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.416 triggered by release tag(s): `agent-v0.207.0`
+
+## [1.6.415] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.415 triggered by release tag(s): `agent-v0.206.2`
+
+## [1.6.414] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.414 triggered by release tag(s): `admin-v0.209.0`, `admin-v0.210.0`, `admin-v0.211.0`, `agent-v0.203.0`, `agent-v0.204.0`, `agent-v0.205.0`, `agent-v0.206.0`, `agent-v0.206.1`, `chat-v0.51.0`, `chat-v0.52.0`, `metrics-v0.165.0`, `metrics-v0.166.0`, `task-store-v0.106.0`, `task-store-v0.107.0`
+
+## [1.6.413] - 2026-07-16
+
+### Changed
+
+- README: clarify `appVersion` is not used for image resolution — each service's `image.tag` is pinned independently
+
+## [1.6.412] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.412 triggered by release tag(s): `admin-v0.208.0`, `chat-v0.50.0`, `metrics-v0.164.0`, `task-store-v0.105.0`
+
+## [1.6.411] - 2026-07-16
+
+### Changed
+
+- auto-bump to chart v1.6.411 triggered by release tag(s): `admin-v0.207.0`, `agent-v0.202.0`, `chat-v0.49.0`, `metrics-v0.163.0`, `task-store-v0.104.0`
+
 ## [1.6.410] - 2026-07-16
 
 ### Changed

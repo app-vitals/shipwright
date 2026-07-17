@@ -1,7 +1,4 @@
-import type { AnalyticsEvent } from "./analytics.ts";
-
-type Tracker = (event: Omit<AnalyticsEvent, "timestamp">) => void;
-const noopTracker: Tracker = () => {};
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 
 export interface LiveClaudeConfig {
   model: string;
@@ -58,6 +55,7 @@ export interface ClaudeRunResult {
   usage?: TokenUsage;
   totalCostUsd?: number;
   modelUsage?: ModelUsage;
+  recoveredFromError?: boolean;
 }
 
 /**
@@ -106,8 +104,9 @@ export class ClaudeTimeoutError extends Error {
 }
 
 interface ClaudeSessionStore {
-  get: (key: string) => string | undefined;
-  set: (key: string, id: string) => void;
+  get: (key: string) => Promise<string | undefined> | string | undefined;
+  set: (key: string, id: string) => Promise<void> | void;
+  clear?: (key: string) => Promise<void> | void;
 }
 
 /**
@@ -123,7 +122,7 @@ export function createRunClaude(
   sessions: ClaudeSessionStore = { get: () => undefined, set: () => {} },
   model: string | undefined = undefined,
   workspace: string = process.cwd(),
-  tracker: Tracker = noopTracker,
+  sentryClient?: ErrorCapturingClient,
   extraAllowedTools: string[] | undefined = undefined,
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
@@ -262,46 +261,47 @@ export function createRunClaude(
     };
   }
 
+  async function _saveSession(
+    sessionKey: string | undefined,
+    output: ClaudeRunResult,
+  ) {
+    if (sessionKey && output.sessionId) {
+      await sessions.set(sessionKey, output.sessionId);
+    }
+  }
+
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
   ): Promise<ClaudeRunResult> {
-    const existingSessionId = sessionKey ? sessions.get(sessionKey) : undefined;
-
-    if (sessionKey && !existingSessionId) {
-      tracker({ type: "session_start", sessionKey });
-    }
+    const existingSessionId = sessionKey
+      ? await sessions.get(sessionKey)
+      : undefined;
 
     const args = _buildArgs(message, existingSessionId);
 
     try {
       const output = await _spawn(args);
-      if (sessionKey && output.sessionId) {
-        sessions.set(sessionKey, output.sessionId);
-      }
+      await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
-      // Stale session fallback: if resume failed, clear the dead session
-      // and retry fresh so the user gets a response instead of an error.
-      // Do NOT catch ClaudeTimeoutError — that means the session hung and
-      // we should surface the error rather than silently spawning a second
-      // process that would also hang.
+      // Retry the same resumed session once: transient blips (e.g. a socket
+      // close) can self-heal on a second attempt without losing conversation
+      // context. Do NOT catch ClaudeTimeoutError — that means the session
+      // hung and we should surface the error rather than silently spawning a
+      // second process that would also hang. If the retry also fails,
+      // rethrow the ORIGINAL error and leave the session mapping untouched —
+      // an error (even a burst of them) is never treated as proof the
+      // session itself is corrupt.
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
-        const fallbackStart = Date.now();
-        if (sessionKey && "clear" in sessions) {
-          (sessions as { clear: (key: string) => void }).clear(sessionKey);
+        try {
+          const output = await _spawn(args);
+          await _saveSession(sessionKey, output);
+          return { ...output, recoveredFromError: true };
+        } catch {
+          sentryClient?.captureException(err);
+          throw err;
         }
-        const freshArgs = _buildArgs(message, undefined);
-        const output = await _spawn(freshArgs);
-        tracker({
-          type: "session_fallback",
-          sessionKey,
-          durationMs: Date.now() - fallbackStart,
-        });
-        if (sessionKey && output.sessionId) {
-          sessions.set(sessionKey, output.sessionId);
-        }
-        return output;
       }
       throw err;
     }

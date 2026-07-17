@@ -52,7 +52,6 @@ describeOrSkip("Task store schema (integration)", () => {
         dependencies: ["TSS-0", "TSS-0b"],
         pr: 42,
         hours: 3.5,
-        addedAt: "2026-06-22T10:00:00.000Z",
         startedAt: "2026-06-22T11:00:00.000Z",
         prCreatedAt: "2026-06-22T12:00:00.000Z",
         mergedAt: "2026-06-22T13:00:00.000Z",
@@ -112,7 +111,6 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.dependencies).toEqual(["TSS-0", "TSS-0b"]);
     expect(read.pr).toBe(42);
     expect(read.hours).toBe(3.5);
-    expect(read.addedAt).toBe("2026-06-22T10:00:00.000Z");
     expect(read.startedAt).toBe("2026-06-22T11:00:00.000Z");
     expect(read.prCreatedAt).toBe("2026-06-22T12:00:00.000Z");
     expect(read.mergedAt).toBe("2026-06-22T13:00:00.000Z");
@@ -736,5 +734,178 @@ describeOrSkip("Task store schema (integration)", () => {
 
     expect(result.tasks.map((t) => t.title)).toEqual(["Own task"]);
     expect(result.total).toBe(1);
+  });
+
+  // ─── TaskService.list() updatedSince filter ─────────────────────────────────
+
+  it("list({ updatedSince }) excludes tasks whose updatedAt is before the cutoff", async () => {
+    const taskService = new TaskService(prisma);
+
+    const oldTask = await prisma.task.create({
+      data: {
+        title: "Old task",
+        status: "pending",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newTask = await prisma.task.create({
+      data: {
+        title: "New task",
+        status: "pending",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+    });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([newTask.id]);
+    expect(result.tasks.map((t) => t.id)).not.toContain(oldTask.id);
+  });
+
+  it("list() without updatedSince returns tasks regardless of updatedAt (preserves current unfiltered behavior)", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Old task",
+        status: "pending",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "New task",
+        status: "pending",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({});
+
+    expect(result.total).toBe(2);
+  });
+
+  it("list({ updatedSince, repo }) applies both filters together", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Old task, matching repo",
+        status: "pending",
+        repo: "acme-inc/backend-api",
+        updatedAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const newMatchingTask = await prisma.task.create({
+      data: {
+        title: "New task, matching repo",
+        status: "pending",
+        repo: "acme-inc/backend-api",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "New task, other repo",
+        status: "pending",
+        repo: "acme-inc/other-repo",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({
+      updatedSince: "2026-03-01T00:00:00.000Z",
+      repo: "acme-inc/backend-api",
+    });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([newMatchingTask.id]);
+  });
+
+  it("list({ updatedSince }) includes a task whose updatedAt exactly equals the cutoff (gte inclusivity)", async () => {
+    const taskService = new TaskService(prisma);
+    const cutoff = "2026-03-01T00:00:00.000Z";
+
+    const boundaryTask = await prisma.task.create({
+      data: {
+        title: "Boundary task",
+        status: "pending",
+        updatedAt: new Date(cutoff),
+      },
+    });
+
+    const result = await taskService.list({ updatedSince: cutoff });
+
+    expect(result.tasks.map((t) => t.id)).toContain(boundaryTask.id);
+  });
+
+  it("list({ updatedSince: 'not-a-date' }) throws instead of silently matching or 500ing", async () => {
+    const taskService = new TaskService(prisma);
+
+    await expect(
+      taskService.list({ updatedSince: "not-a-date" }),
+    ).rejects.toThrow();
+  });
+
+  // ─── TaskService.list() blockedBy dependency lookup scoping ────────────────
+
+  it("resolves blockedBy for a dependency outside the current page/pagination window", async () => {
+    const taskService = new TaskService(prisma);
+
+    // dep created first (earliest createdAt) so, combined with limit:1, it
+    // falls on a different page than the task that depends on it — proving
+    // the dependency lookup is scoped by dependency ID, not by page.
+    const dep = await prisma.task.create({
+      data: {
+        title: "Dependency task",
+        status: "in_progress",
+        createdAt: new Date("2026-01-01T00:00:00Z"),
+      },
+    });
+    const dependent = await prisma.task.create({
+      data: {
+        title: "Dependent task",
+        status: "pending",
+        dependencies: [dep.id],
+        createdAt: new Date("2026-01-02T00:00:00Z"),
+      },
+    });
+
+    // limit:1, offset:1 selects only "Dependent task" — "Dependency task"
+    // (offset:0) is excluded from the returned page entirely.
+    const result = await taskService.list({ limit: 1, offset: 1, sort: "asc" });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([dependent.id]);
+    expect(result.tasks[0].blockedBy).toEqual([
+      { type: "dependency", id: dep.id, status: "in_progress" },
+    ]);
+  });
+
+  it("resolves a same-page dependency between two tasks on the same page", async () => {
+    const taskService = new TaskService(prisma);
+
+    const dep = await prisma.task.create({
+      data: {
+        title: "Same-page dependency",
+        status: "done",
+        createdAt: new Date("2026-02-01T00:00:00Z"),
+      },
+    });
+    const dependent = await prisma.task.create({
+      data: {
+        title: "Same-page dependent",
+        status: "pending",
+        dependencies: [dep.id],
+        createdAt: new Date("2026-02-02T00:00:00Z"),
+      },
+    });
+
+    const result = await taskService.list({ sort: "asc" });
+
+    const dependentResult = result.tasks.find((t) => t.id === dependent.id);
+    expect(dependentResult).toBeDefined();
+    // dep is "done" (terminal) → satisfied, blockedBy empty.
+    expect(dependentResult?.blockedBy).toEqual([]);
   });
 });

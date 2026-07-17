@@ -16,20 +16,29 @@
  * eligible; a query failure is also treated as eligible (graceful
  * degradation, matching the plugin's "err permissive" precheck philosophy).
  *
- * age is populated from the task-store record's readyForReviewAt when
- * available, falling back to the PR's GitHub createdAt when no record exists
- * yet — a missing record must not throw.
+ * age is populated from the linked task's createdAt (via queryTaskStatus,
+ * LPF-3.2), falling back to the PR's GitHub createdAt when no task is linked
+ * or the lookup fails — readyForReviewAt is a necessarily-recent
+ * phase-readiness stamp, not the work item's true origination age, and is no
+ * longer used for age sourcing (it remains in PrRecord solely for
+ * queryPrRecord's other historical callers). Unlike check-deploy.ts's
+ * queryTaskStatus usage, a lookup failure here is NOT gating — it is only
+ * ever consumed for its createdAt field, so a thrown error just falls back to
+ * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
+  createTaskStatusQuery,
   getCurrentUser,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
 } from "./check-helpers.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,10 +63,37 @@ export interface PrRecord {
 }
 
 export interface CheckReviewDeps {
-  getCurrentUser: () => string;
+  getCurrentUser: () => Promise<string>;
   isSelfReviewAllowed: boolean;
   listOpenPrs: (repo: string) => Promise<PrInfo[]>;
   queryPrRecord: (repo: string, prNumber: number) => Promise<PrRecord | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getReviewCandidates() invocation — not once at
+   * deps-build time — so a repo present in the local clone list (and
+   * therefore returned by listOpenPrs) but absent from this call's result is
+   * excluded from candidates, and a later scope change is picked up on the
+   * very next call.
+   */
+  getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getReviewCandidates() fails open and does
+   * not filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from review
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
+  // Task status lookup for the linked task (if any), used PURELY to source
+  // the age field via its createdAt — unlike check-deploy.ts, this is never
+  // used as a gating/disqualifying check here. A thrown error is treated the
+  // same as "no linked task" (age falls back to pr.createdAt); it must not
+  // disqualify an otherwise-eligible PR from review candidacy.
+  queryTaskStatus?: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null>;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -71,7 +107,15 @@ export async function getReviewCandidates(
 ): Promise<WorkPrCandidate[]> {
   const currentUser = await deps.getCurrentUser();
 
-  const prs = await deps.listOpenPrs("default");
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const allPrs = await deps.listOpenPrs("default");
+  const prs = scopeSynced
+    ? allPrs.filter((pr) => scopedRepos.has(pr.repo ?? ""))
+    : allPrs;
   const candidates: WorkPrCandidate[] = [];
 
   for (const pr of prs) {
@@ -87,11 +131,25 @@ export async function getReviewCandidates(
       // Query failed → treat as eligible (no dedup)
     }
 
+    // Task-store task lookup, used purely to source the age field from the
+    // linked task's createdAt (LPF-3.2) — not a gating check. A thrown error
+    // is treated as "no linked task" so it never disqualifies an otherwise-
+    // eligible PR from review candidacy.
+    let linkedTask: LinkedTaskInfo | null = null;
+    if (deps.queryTaskStatus) {
+      try {
+        linkedTask = await deps.queryTaskStatus(pr.repo ?? "", pr.number);
+      } catch {
+        linkedTask = null;
+      }
+    }
+    const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
+
     // No record → eligible
     if (!record) {
       candidates.push({
         id: candidateId(pr.repo ?? "unknown", pr.number),
-        age: pr.createdAt ?? "",
+        age,
         phase: "review",
       });
       continue;
@@ -112,7 +170,7 @@ export async function getReviewCandidates(
     // Different SHA or pending → eligible
     candidates.push({
       id: candidateId(pr.repo ?? "unknown", pr.number),
-      age: record.readyForReviewAt ?? pr.createdAt ?? "",
+      age,
       phase: "review",
     });
   }
@@ -123,8 +181,10 @@ export async function getReviewCandidates(
 // ─── Production deps ──────────────────────────────────────────────────────────
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
+  ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -133,9 +193,11 @@ export async function buildProductionDeps(opts: {
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
-        const repoPrs = ghJsonFn<PrInfo[]>([
+        const repoPrs = await ghJsonFn<PrInfo[]>([
           "pr",
           "list",
           "--state",
@@ -149,5 +211,6 @@ export async function buildProductionDeps(opts: {
       });
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
+    queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
   };
 }

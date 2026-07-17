@@ -9,6 +9,7 @@
 import "./test-env.ts";
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import { TEST_AGENT_HOME } from "./test-env.ts";
 
 const MODEL = "claude-opus-4-6";
@@ -30,7 +31,16 @@ const testSessions = {
   clear: mockClearSession,
 };
 
-const mockTracker = mock((_event: unknown): void => {});
+let capturedMessages: string[] = [];
+let capturedExceptions: unknown[] = [];
+const fakeSentryClient: ErrorCapturingClient = {
+  captureException: (err: unknown) => {
+    capturedExceptions.push(err);
+  },
+  captureMessage: (message: string) => {
+    capturedMessages.push(message);
+  },
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,7 +104,8 @@ describe("runClaude", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -106,7 +117,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
   });
 
@@ -157,7 +168,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       [],
       undefined,
       "xhigh",
@@ -175,7 +186,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       [],
       "claude-sonnet-4-6",
     );
@@ -280,28 +291,6 @@ describe("runClaude", () => {
     expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "sess-abc");
   });
 
-  test("tracks session_start when sessionKey provided and no existing session", async () => {
-    mockGetSession.mockReturnValueOnce(undefined);
-    await runClaude("hello", "chan:ts");
-    expect(mockTracker).toHaveBeenCalledWith({
-      type: "session_start",
-      sessionKey: "chan:ts",
-    });
-  });
-
-  test("does not track session_start when resuming an existing session", async () => {
-    mockGetSession.mockReturnValueOnce("existing-sid");
-    await runClaude("hello", "chan:ts");
-    expect(mockTracker).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: "session_start" }),
-    );
-  });
-
-  test("does not track session_start when no sessionKey provided", async () => {
-    await runClaude("hello");
-    expect(mockTracker).not.toHaveBeenCalled();
-  });
-
   test("throws on non-zero exit code", async () => {
     mockSpawn.mockReturnValue(
       fakeProc("", "claude: command not found", 127) as ReturnType<
@@ -356,7 +345,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       undefined,
       undefined,
       undefined,
@@ -386,7 +375,7 @@ describe("runClaude", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       undefined,
       undefined,
       undefined,
@@ -426,19 +415,19 @@ describe("runClaude", () => {
 
 // ─── Stale session fallback tests ─────────────────────────────────────────────
 
-describe("stale session fallback", () => {
-  test("retries without -r when resume fails, clears stale session", async () => {
+describe("resume retry", () => {
+  test("retries the same resumed session once when it fails, then succeeds", async () => {
     let callCount = 0;
     const mockSpawn = mock(() => {
       callCount++;
       if (callCount === 1) {
         // First call (resume) fails
-        return fakeProc("", "session not found", 1) as ReturnType<
+        return fakeProc("", "socket closed", 1) as ReturnType<
           typeof Bun.spawn
         >;
       }
-      // Second call (fresh) succeeds
-      return fakeProc(jsonOutput("recovered", "new-sess")) as ReturnType<
+      // Second call (retry, same resumed session) succeeds
+      return fakeProc(jsonOutput("recovered", "stale-sess-id")) as ReturnType<
         typeof Bun.spawn
       >;
     });
@@ -446,7 +435,8 @@ describe("stale session fallback", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
     mockGetSession.mockReturnValue("stale-sess-id");
 
     const runClaude = createRunClaude(
@@ -454,95 +444,27 @@ describe("stale session fallback", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
 
     const result = await runClaude("hello", "chan:ts");
 
     expect(result.result).toBe("recovered");
-    expect(result.sessionId).toBe("new-sess");
-    expect(mockClearSession).toHaveBeenCalledWith("chan:ts");
-    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "new-sess");
+    expect(result.sessionId).toBe("stale-sess-id");
+    expect(result.recoveredFromError).toBe(true);
+    expect(mockClearSession).not.toHaveBeenCalled();
+    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "stale-sess-id");
     expect(mockSpawn).toHaveBeenCalledTimes(2);
 
-    // Verify first call had -r, second did not
+    // Verify both calls resumed the SAME session id via -r
     const [firstCmd] = mockSpawn.mock.calls[0] as unknown as [string[]];
     const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
-    expect(firstCmd).toContain("-r");
-    expect(secondCmd).not.toContain("-r");
-  });
-
-  test("tracks session_fallback with sessionKey and durationMs when stale session retried", async () => {
-    let callCount = 0;
-    const mockSpawn = mock(() => {
-      callCount++;
-      if (callCount === 1) {
-        return fakeProc("", "session not found", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
-      }
-      return fakeProc(jsonOutput("recovered", "new-sess")) as ReturnType<
-        typeof Bun.spawn
-      >;
-    });
-
-    mockGetSession.mockClear();
-    mockSetSession.mockClear();
-    mockClearSession.mockClear();
-    mockTracker.mockClear();
-    mockGetSession.mockReturnValue("stale-sess-id");
-
-    const runClaude = createRunClaude(
-      mockSpawn as typeof Bun.spawn,
-      testSessions,
-      MODEL,
-      WORKSPACE,
-      mockTracker,
-    );
-
-    await runClaude("hello", "chan:ts");
-
-    expect(mockTracker).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "session_fallback",
-        sessionKey: "chan:ts",
-        durationMs: expect.any(Number),
-      }),
-    );
-  });
-
-  test("fresh retry passes raw message without identity injection", async () => {
-    let callCount = 0;
-    const mockSpawn = mock(() => {
-      callCount++;
-      if (callCount === 1) {
-        return fakeProc("", "session expired", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
-      }
-      return fakeProc(jsonOutput("ok", "fresh-sess")) as ReturnType<
-        typeof Bun.spawn
-      >;
-    });
-
-    mockGetSession.mockClear();
-    mockSetSession.mockClear();
-    mockClearSession.mockClear();
-    mockGetSession.mockReturnValue("old-sess");
-
-    const runClaude = createRunClaude(
-      mockSpawn as typeof Bun.spawn,
-      testSessions,
-      MODEL,
-      WORKSPACE,
-    );
-
-    await runClaude("my question", "chan:ts");
-
-    // Second call (fresh) should have raw message only
-    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
-    const lastArg = secondCmd[secondCmd.length - 1];
-    expect(lastArg).toBe("my question");
+    const firstRIdx = firstCmd.indexOf("-r");
+    const secondRIdx = secondCmd.indexOf("-r");
+    expect(firstRIdx).toBeGreaterThan(-1);
+    expect(secondRIdx).toBeGreaterThan(-1);
+    expect(firstCmd[firstRIdx + 1]).toBe("stale-sess-id");
+    expect(secondCmd[secondRIdx + 1]).toBe("stale-sess-id");
   });
 
   test("does not retry when there is no existing session (fresh call fails)", async () => {
@@ -564,27 +486,76 @@ describe("stale session fallback", () => {
     expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
-  test("throws if both resume and fresh retry fail", async () => {
+  test("throws if both resume attempts fail, preserving the session mapping", async () => {
     const mockSpawn = mock(
       () => fakeProc("", "total failure", 1) as ReturnType<typeof Bun.spawn>,
     );
 
-    mockGetSession.mockClear();
-    mockClearSession.mockClear();
-    mockGetSession.mockReturnValue("stale-sess");
+    // Stateful in-memory session store double — NOT the module-level spy mocks.
+    const store = new Map<string, string>([["chan:ts", "stale-sess"]]);
+    const clearSpy = mock((_key: string): void => {});
+    const statefulSessions = {
+      get: (key: string) => store.get(key),
+      set: (key: string, id: string) => {
+        store.set(key, id);
+      },
+      clear: clearSpy,
+    };
 
     const runClaude = createRunClaude(
       mockSpawn as typeof Bun.spawn,
-      testSessions,
+      statefulSessions,
       MODEL,
       WORKSPACE,
+      fakeSentryClient,
     );
 
     await expect(runClaude("hello", "chan:ts")).rejects.toThrow(
       "total failure",
     );
     expect(mockSpawn).toHaveBeenCalledTimes(2);
-    expect(mockClearSession).toHaveBeenCalledWith("chan:ts");
+    expect(clearSpy).not.toHaveBeenCalled();
+    // The mapping must still point at the original session id.
+    expect(store.get("chan:ts")).toBe("stale-sess");
+    // Retry-exhausted case is reported to Sentry with the ORIGINAL error.
+    expect(capturedExceptions).toHaveLength(1);
+    expect((capturedExceptions[0] as Error).message).toContain(
+      "total failure",
+    );
+  });
+
+  test("does not report to Sentry when the retry succeeds", async () => {
+    let callCount = 0;
+    const mockSpawn = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        return fakeProc("", "socket closed", 1) as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      return fakeProc(jsonOutput("recovered", "stale-sess-id")) as ReturnType<
+        typeof Bun.spawn
+      >;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    capturedExceptions = [];
+    mockGetSession.mockReturnValue("stale-sess-id");
+
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const result = await runClaude("hello", "chan:ts");
+
+    expect(result.recoveredFromError).toBe(true);
+    expect(capturedExceptions).toHaveLength(0);
   });
 });
 
@@ -696,7 +667,8 @@ describe("extraAllowedTools", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -711,14 +683,14 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
     const runClaudeEmpty = createRunClaude(
       mockSpawn as typeof Bun.spawn,
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       [],
     );
 
@@ -739,7 +711,7 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       ["mcp__my_server__my_tool", "mcp__other__tool"],
     );
 
@@ -766,7 +738,7 @@ describe("extraAllowedTools", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
       ["mcp__extra__tool"],
     );
 
@@ -793,7 +765,8 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -805,7 +778,7 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
       testSessions,
       MODEL,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
   });
 
@@ -924,7 +897,8 @@ describe("liveClaudeConfig", () => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
     mockClearSession.mockClear();
-    mockTracker.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
     mockSpawn = mock(
       () =>
         fakeProc(jsonOutput("Hello from Claude")) as ReturnType<
@@ -942,7 +916,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
 
     await runClaudeDefault("test");
@@ -961,7 +935,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       "claude-opus-4-6",
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
 
     await runClaudeExplicit("test");
@@ -979,7 +953,7 @@ describe("liveClaudeConfig", () => {
       testSessions,
       undefined,
       WORKSPACE,
-      mockTracker,
+      fakeSentryClient,
     );
 
     await runClaudeDefault("test");

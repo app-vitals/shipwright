@@ -11,6 +11,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
@@ -42,12 +43,22 @@ function makeDeps(
   ) => Promise<PrRecord | null> = async () => null,
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = false,
+  queryTaskStatus: (
+    repo: string,
+    prNumber: number,
+  ) => Promise<LinkedTaskInfo | null> = async () => null,
+  getScopedRepos: () => string[] = () =>
+    [...new Set(prs.map((pr) => pr.repo ?? ""))],
+  hasScopeSynced: () => boolean = () => true,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
-    getCurrentUser: () => currentUser,
+    getCurrentUser: async () => currentUser,
     isSelfReviewAllowed,
+    getScopedRepos,
+    hasScopeSynced,
+    queryTaskStatus,
   };
 }
 
@@ -204,8 +215,10 @@ describe("getReviewCandidates", () => {
       ): Promise<PrRecord | null> => {
         throw new Error("Network error");
       },
-      getCurrentUser: () => "bodhi-agent",
+      getCurrentUser: async () => "bodhi-agent",
       isSelfReviewAllowed: false,
+      getScopedRepos: () => [pr.repo ?? ""],
+      hasScopeSynced: () => true,
     };
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
@@ -288,7 +301,28 @@ describe("getReviewCandidates", () => {
 
   // ─── age field sourcing ──────────────────────────────────────────────────
 
-  test("age is sourced from readyForReviewAt when a task-store record exists", async () => {
+  test("age is sourced from the linked task's createdAt when a task is linked, even when a task-store PR record exists", async () => {
+    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "oldsha",
+          reviewState: "posted",
+          readyForReviewAt: "2026-05-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => ({
+          status: "in_progress",
+          createdAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ),
+    );
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null), even when a task-store record exists", async () => {
     const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
@@ -297,13 +331,52 @@ describe("getReviewCandidates", () => {
         readyForReviewAt: "2026-05-15T00:00:00.000Z",
       })),
     );
-    expect(result[0].age).toBe("2026-05-15T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  test("age falls back to PR createdAt when no task-store record exists", async () => {
+  test("age falls back to PR createdAt when no task-store record exists and no task is linked", async () => {
     const pr = makePr({ createdAt: "2026-06-01T00:00:00.000Z" });
     const result = await getReviewCandidates(makeDeps([pr], async () => null));
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("age falls back to PR createdAt when queryTaskStatus throws (lookup failure does not disqualify or block age fallback)", async () => {
+    const pr = makePr({ createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => {
+          throw new Error("task-store unreachable");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
+  });
+
+  test("readyForReviewAt is never used for age sourcing when a task is linked", async () => {
+    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "oldsha",
+          reviewState: "posted",
+          readyForReviewAt: "2026-05-20T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => ({
+          status: "in_progress",
+          createdAt: "2026-05-01T00:00:00.000Z",
+        }),
+      ),
+    );
+    expect(result[0].age).not.toBe("2026-05-20T00:00:00.000Z");
+    expect(result[0].age).toBe("2026-05-01T00:00:00.000Z");
   });
 
   // ─── claim gating (LPF-2.2) ───────────────────────────────────────────────
@@ -320,6 +393,79 @@ describe("getReviewCandidates", () => {
         reviewState: "pending",
         claimedBy: "agent-other",
       })),
+    );
+    expect(result).toEqual([]);
+  });
+
+  // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
+
+  test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
+    const inScope = makePr({ number: 1, repo: "example-org/in-scope" });
+    const outOfScope = makePr({ number: 2, repo: "example-org/out-of-scope" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [inScope, outOfScope],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => ["example-org/in-scope"],
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/in-scope#1");
+  });
+
+  test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/newly-added" });
+    let scope: string[] = [];
+    const deps = makeDeps(
+      [pr],
+      async () => null,
+      "bodhi-agent",
+      false,
+      undefined,
+      () => scope,
+    );
+
+    const first = await getReviewCandidates(deps);
+    expect(first).toEqual([]);
+
+    scope = ["example-org/newly-added"];
+    const second = await getReviewCandidates(deps);
+    expect(second).toHaveLength(1);
+    expect(second[0].id).toBe("example-org/newly-added#1");
+  });
+
+  test("fails open (does not filter) when hasScopeSynced() is false, even if getScopedRepos() would otherwise exclude everything", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/never-synced" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => [],
+        () => false,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/never-synced#1");
+  });
+
+  test("filters normally when hasScopeSynced() is true, even if the synced scope is a deliberately empty list", async () => {
+    const pr = makePr({ number: 1, repo: "example-org/some-repo" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        undefined,
+        () => [],
+        () => true,
+      ),
     );
     expect(result).toEqual([]);
   });

@@ -20,6 +20,7 @@
  * before calling this function if needed.
  */
 
+import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
   createPrRecordQuery,
@@ -70,7 +71,7 @@ export interface PrRecord {
 }
 
 export interface CheckDeployDeps {
-  getCurrentUser: () => string;
+  getCurrentUser: () => Promise<string>;
   isSelfReviewAllowed: boolean;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
@@ -109,6 +110,23 @@ export interface CheckDeployDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Returns the agent's currently configured repo scope (org/repo strings).
+   * Called at the top of every getDeployCandidates() invocation — not once at
+   * deps-build time — so a repo present in `repos` (the local clone list) but
+   * absent from this call's result is excluded from candidates, and a later
+   * scope change is picked up on the very next call.
+   */
+  getScopedRepos: () => string[];
+  /**
+   * True once the agent's repo scope has been successfully synced at least
+   * once. When false (e.g. a persistent 404 on the agent's config bundle —
+   * see index.ts's syncConfig), getDeployCandidates() fails open and does
+   * not filter by scope at all, matching pre-scoping behavior — otherwise a
+   * config-sync outage would silently exclude every repo from deploy
+   * candidacy, indistinguishable from "no work found".
+   */
+  hasScopeSynced: () => boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -152,8 +170,17 @@ export async function getDeployCandidates(
   // that must not block PRs in other, independent repos. Queued runs older
   // than 1 hour are treated as stuck/ghost and ignored.
   const now = deps.clock ? deps.clock() : new Date().toISOString();
+  // Fail open when scope has never synced (e.g. a persistent config-bundle
+  // 404) — filtering by an unpopulated scope would silently drop every repo
+  // from candidacy, a failure mode that didn't exist before scoping.
+  const scopeSynced = deps.hasScopeSynced();
+  const scopedRepos = new Set(deps.getScopedRepos());
+  const repos = scopeSynced
+    ? deps.repos.filter((repo) => scopedRepos.has(repo))
+    : deps.repos;
+
   const busyRepos = new Set(
-    await mapReposTolerant(deps.repos, "check-deploy", async (repo) => {
+    await mapReposTolerant(repos, "check-deploy", async (repo) => {
       const [org, repoName] = splitOrgRepo(repo);
       const activeRuns = await deps.fetchActiveDeployRuns(org, repoName);
       return activeRuns.some((r) => isActiveRun(r, now)) ? [repo] : [];
@@ -163,7 +190,7 @@ export async function getDeployCandidates(
   const currentUser = await deps.getCurrentUser();
   const candidates: WorkPrCandidate[] = [];
 
-  const openRepos = deps.repos.filter((repo) => !busyRepos.has(repo));
+  const openRepos = repos.filter((repo) => !busyRepos.has(repo));
   const openPrs = await mapReposTolerant<GhPr & { repo: string }>(
     openRepos,
     "check-deploy",
@@ -287,8 +314,10 @@ interface GhWorkflowRunsJson {
 }
 
 export async function buildProductionDeps(opts: {
-  ghJson: <T>(args: string[]) => T;
+  ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: typeof fetch;
+  getScopedRepos?: () => string[];
+  hasScopeSynced?: () => boolean;
 }): Promise<CheckDeployDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -299,13 +328,15 @@ export async function buildProductionDeps(opts: {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     repos: allRepos,
+    getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
+    hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
     clock,
     fetchActiveDeployRuns: async (org: string, repo: string) => {
-      const inProgress = ghJson<GhWorkflowRunsJson>([
+      const inProgress = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?status=in_progress&per_page=10`,
       ]);
-      const queued = ghJson<GhWorkflowRunsJson>([
+      const queued = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
       ]);
@@ -318,7 +349,7 @@ export async function buildProductionDeps(opts: {
         }));
     },
     listOpenPrs: async (repo: string) => {
-      return ghJson<GhPrListJson[]>([
+      return await ghJson<GhPrListJson[]>([
         "pr",
         "list",
         "--state",
@@ -330,7 +361,7 @@ export async function buildProductionDeps(opts: {
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
-      const data = ghJson<GhPrReviewsJson>([
+      const data = await ghJson<GhPrReviewsJson>([
         "pr",
         "view",
         String(pr),
@@ -342,7 +373,7 @@ export async function buildProductionDeps(opts: {
       return data.reviews;
     },
     fetchCiRuns: async (org: string, repo: string, headSha: string) => {
-      const data = ghJson<GhWorkflowRunsJson>([
+      const data = await ghJson<GhWorkflowRunsJson>([
         "api",
         `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
       ]);

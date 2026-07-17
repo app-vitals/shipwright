@@ -140,6 +140,60 @@ describe("HttpTaskStoreClient client-side window filtering", () => {
   });
 });
 
+describe("HttpTaskStoreClient server-side query params", () => {
+  test("listTasks sends updatedSince and repo in the query string", async () => {
+    const { fetch, calls } = pagingFetch<TaskRecord>("tasks", []);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    await client.listTasks({ from: "2026-06-01", repo: "org/alpha" });
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const url = new URL(call);
+      expect(url.searchParams.get("updatedSince")).toBe("2026-06-01");
+      expect(url.searchParams.get("repo")).toBe("org/alpha");
+    }
+  });
+
+  test("listPrs sends updatedSince and repo in the query string", async () => {
+    const { fetch, calls } = pagingFetch<PrRecord>("prs", []);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    await client.listPrs({ from: "2026-06-01", repo: "org/beta" });
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const url = new URL(call);
+      expect(url.searchParams.get("updatedSince")).toBe("2026-06-01");
+      expect(url.searchParams.get("repo")).toBe("org/beta");
+    }
+  });
+
+  test("listTasks omits updatedSince/repo from the query string when not provided", async () => {
+    const { fetch, calls } = pagingFetch<TaskRecord>("tasks", []);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    await client.listTasks({});
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const url = new URL(call);
+      expect(url.searchParams.has("updatedSince")).toBe(false);
+      expect(url.searchParams.has("repo")).toBe(false);
+    }
+  });
+
+  test("listPrs omits updatedSince/repo from the query string when not provided", async () => {
+    const { fetch, calls } = pagingFetch<PrRecord>("prs", []);
+    const client = new HttpTaskStoreClient("http://store", "tok", fetch);
+
+    await client.listPrs({});
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      const url = new URL(call);
+      expect(url.searchParams.has("updatedSince")).toBe(false);
+      expect(url.searchParams.has("repo")).toBe(false);
+    }
+  });
+});
+
 describe("HttpTaskStoreClient repo filtering", () => {
   test("listTasks returns only tasks matching params.repo", async () => {
     const tasks: TaskRecord[] = [

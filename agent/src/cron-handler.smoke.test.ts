@@ -25,6 +25,7 @@ import type { Server } from "bun";
 import { FixedClock } from "./clock.ts";
 import type { ModelUsage, TokenUsage } from "./claude.ts";
 import { ValidationError, handleCronRequest } from "./cron-handler.ts";
+import { reportCronFailure } from "./cron-failure-reporter.ts";
 import { HttpCronRunReporter } from "./cron-run-reporter.ts";
 import { startHealthServer } from "./health.ts";
 
@@ -1387,6 +1388,115 @@ describe("handleCronRequest — CronRunReporter", () => {
     const patchBody = patchReq?.body as Record<string, unknown>;
     expect(patchBody.outcome).toBe("completed");
   });
+
+  // ── Post-completion Slack-delivery-failure dedup contract ──────────────────
+  //
+  // handleCronRequest records the run as "completed" BEFORE attempting Slack
+  // delivery (channel post / DM open / dispatchMarkers). If that delivery
+  // step throws, the run already has a correct "completed" row — the thrown
+  // error must be tagged via markCronRunFailureReported() so that a
+  // subsequent reportCronFailure() call (as index.ts's outer catch performs)
+  // skips creating a spurious duplicate "failed" row for the same tick. These
+  // tests drive handleCronRequest through a real post-completion failure and
+  // then feed the thrown error into the real reportCronFailure() to confirm
+  // the end-to-end cross-module dedup contract, not just the tagging
+  // primitive in isolation.
+
+  test("channel post-completion Slack failure: run recorded 'completed', thrown error tagged so reportCronFailure skips a duplicate 'failed' row", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "the report",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    mockPostMessage.mockRejectedValueOnce(new Error("slack API down"));
+
+    const reporter = makeHttpReporter();
+    const thrown = await handleCronRequest(
+      { jobId: "slack-fail-channel", prompt: "hello", channel: "C-REPORTS" },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+    ).then(
+      () => undefined,
+      (err) => err,
+    );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toBe("slack API down");
+
+    // The run was already recorded as "completed" before the Slack failure.
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
+    expect(
+      reporterState.requests.filter((r) => r.method === "PATCH"),
+    ).toHaveLength(1);
+
+    // Feeding the thrown error into the real reportCronFailure() (the same
+    // call index.ts's outer catch makes) must NOT create a second run —
+    // it must detect the tag and skip.
+    const failureReportCalls: Array<{ requests: number }> = [];
+    const dedupReporter = makeHttpReporter();
+    await reportCronFailure("slack-fail-channel", thrown, {
+      cronRunReporter: dedupReporter,
+      clock: FixedClock(FIXED_TIME),
+    });
+    failureReportCalls.push({ requests: reporterState.requests.length });
+
+    // No additional createRun/completeRun requests were made by
+    // reportCronFailure — still just the original CREATE + PATCH pair.
+    expect(reporterState.requests).toHaveLength(2);
+  });
+
+  test("DM post-completion Slack failure ('could not open DM'): run recorded 'completed', thrown error tagged so reportCronFailure skips a duplicate 'failed' row", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "dm reply",
+      sessionId: "s1",
+      usage: {
+        input_tokens: 10,
+        output_tokens: 5,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+      },
+    });
+    // biome-ignore lint/suspicious/noExplicitAny: test mock — intentionally null channel
+    mockConversationsOpen.mockResolvedValueOnce({ channel: null } as any);
+
+    const reporter = makeHttpReporter();
+    const thrown = await handleCronRequest(
+      { jobId: "slack-fail-dm", prompt: "hello", user: "U-DAN" },
+      { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+    ).then(
+      () => undefined,
+      (err) => err,
+    );
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("could not open DM");
+
+    // The run was already recorded as "completed" before the DM-open failure.
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("completed");
+    expect(
+      reporterState.requests.filter((r) => r.method === "PATCH"),
+    ).toHaveLength(1);
+
+    const dedupReporter = makeHttpReporter();
+    await reportCronFailure("slack-fail-dm", thrown, {
+      cronRunReporter: dedupReporter,
+      clock: FixedClock(FIXED_TIME),
+    });
+
+    // reportCronFailure must not have made any additional requests against
+    // the reporter stub — the tag caused it to skip createRun/completeRun.
+    expect(reporterState.requests).toHaveLength(2);
+  });
 });
 
 // ─── POST /cron HTTP endpoint ─────────────────────────────────────────────────
@@ -1400,14 +1510,7 @@ describe("POST /cron HTTP endpoint", () => {
     sentryClient?: ErrorCapturingClient,
     // biome-ignore lint/suspicious/noExplicitAny: Server type param varies by bun version
   ): Server<any> {
-    const s = startHealthServer(
-      port,
-      undefined,
-      deps,
-      undefined,
-      undefined,
-      sentryClient,
-    );
+    const s = startHealthServer(port, deps, undefined, undefined, sentryClient);
     servers.push(s);
     return s;
   }

@@ -312,6 +312,7 @@ export function createPrsRoutes(
         offsetRaw !== undefined
           ? Number.parseInt(offsetRaw, 10) || undefined
           : undefined,
+      updatedSince: c.req.query("updatedSince"),
     });
     return c.json(result, 200);
   });
@@ -323,7 +324,8 @@ export function createPrsRoutes(
     const repos = c.get("repos");
     const body = await readJson(c);
 
-    const { repo, prNumber, commitSha, claimedBy, taskId, phase, prCreatedAt } = body;
+    const { repo, prNumber, commitSha, claimedBy, taskId, phase, prCreatedAt } =
+      body;
 
     // Validate required fields
     if (typeof repo !== "string" || !repo) {
@@ -414,7 +416,7 @@ export function createPrsRoutes(
     const result = await prService.claimNext(
       resolvedAgentId,
       resolvedMaxConcurrent,
-      agentId !== null ? repos ?? undefined : undefined,
+      agentId !== null ? (repos ?? undefined) : undefined,
     );
 
     if (result === null) {

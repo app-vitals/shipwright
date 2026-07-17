@@ -1,0 +1,29 @@
+{
+  "listUsers_success": {
+    "status": 200,
+    "body": [
+      {
+        "id": "user-1",
+        "name": "Ada Lovelace",
+        "email": "ada@example.com",
+        "slackId": "U0123456",
+        "role": "OWNER",
+        "createdAt": "2026-01-01T00:00:00.000Z",
+        "updatedAt": "2026-01-02T00:00:00.000Z"
+      },
+      {
+        "id": "user-2",
+        "name": "Grace Hopper",
+        "email": "grace@example.com",
+        "slackId": null,
+        "role": "MEMBER",
+        "createdAt": "2026-01-03T00:00:00.000Z",
+        "updatedAt": "2026-01-04T00:00:00.000Z"
+      }
+    ]
+  },
+  "listUsers_server_error": {
+    "status": 503,
+    "body": "accounts service unavailable"
+  }
+}

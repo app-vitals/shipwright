@@ -13,13 +13,11 @@
  *  8. Graceful SIGTERM/SIGINT shutdown
  */
 
-import { join } from "node:path";
 import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
-import { createAgentReposRef } from "./agent-repos-ref.ts";
-import { createAnalyticsStore } from "./analytics.ts";
+import { agentReposRef } from "./agent-repos-ref.ts";
 import { ghGraphql, ghJson } from "./check-helpers.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -29,6 +27,7 @@ import {
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
+import { reportCronFailure } from "./cron-failure-reporter.ts";
 import { handleCronRequest } from "./cron-handler.ts";
 import type { CronHandlerDeps } from "./cron-handler.ts";
 import {
@@ -100,8 +99,6 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
-const analytics = createAnalyticsStore(join(config.paths.home, "analytics"));
-analytics.track({ type: "session_start" });
 
 const slack = new WebClient(config.slack.botToken ?? "");
 const runner = createRunClaude(
@@ -109,7 +106,7 @@ const runner = createRunClaude(
   sessions,
   undefined,
   config.paths.workspace,
-  analytics.track,
+  process.env.SENTRY_DSN ? Sentry : undefined,
   undefined,
   undefined,
   undefined,
@@ -142,8 +139,8 @@ const cronDeps: CronHandlerDeps = {
   slack,
   runner,
   formatter: markdownToSlack,
-  onSession: (channel: string, ts: string, sessionId: string) => {
-    sessions.set(threadKey(channel, ts), sessionId);
+  onSession: async (channel: string, ts: string, sessionId: string) => {
+    await sessions.set(threadKey(channel, ts), sessionId);
   },
   synthesizeSpeechFn: synthesizeSpeech,
   voiceConfig: config.voice,
@@ -158,7 +155,6 @@ const healthPort = Number(
 );
 startHealthServer(
   healthPort,
-  analytics.summarize,
   cronDeps,
   slackClock,
   undefined,
@@ -183,10 +179,6 @@ const runtimeClient =
         apiKey: config.shipwright.apiKey,
       })
     : null;
-
-// Live view of the agent's scoped repos, populated from every config sync
-// tick's bundle.repos. See agent-repos-ref.ts.
-const agentReposRef = createAgentReposRef();
 
 // ─── Step 4: Config sync ──────────────────────────────────────────────────────
 
@@ -294,7 +286,10 @@ if (runtimeClient && agentId) {
 
   async function runPrStateReconciler() {
     try {
-      reconcilerDeps ??= buildPrStateReconcilerDeps({ ghJson });
+      reconcilerDeps ??= buildPrStateReconcilerDeps({
+        ghJson,
+        getScopedRepos: agentReposRef.get,
+      });
       await reconcilePrState(reconcilerDeps);
     } catch (err) {
       console.error(
@@ -409,10 +404,11 @@ if (runtimeClient && agentId) {
               );
             }
           } catch (err) {
-            console.error(
-              `[cron] job ${id} failed:`,
-              err instanceof Error ? err.message : String(err),
-            );
+            await reportCronFailure(id, err, {
+              cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
+              sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+              clock: SystemClock(),
+            });
           }
         });
         cronTasks.set(id, task);
@@ -438,7 +434,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     chatSessions,
     undefined,
     config.paths.workspace,
-    undefined,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined,
     undefined,
     undefined,
@@ -480,7 +476,7 @@ if (hasSlackCredentials(slackAppConfig)) {
     threadKey,
     undefined, // appFactory — default Bolt App
     slackAppConfig,
-    analytics.track,
+    process.env.SENTRY_DSN ? Sentry : undefined,
     undefined, // fileDownloaderFn — default
     config.voice,
     undefined, // transcribeAudioFn — default

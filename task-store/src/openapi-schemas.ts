@@ -74,11 +74,6 @@ export const TaskSchema = z
       .openapi({ example: ["task-1", "task-2"] }),
     pr: z.number().int().nullable().optional().openapi({ example: 42 }),
     hours: z.number().nullable().optional().openapi({ example: 5.5 }),
-    addedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-01T00:00:00.000Z" }),
     startedAt: z
       .string()
       .nullable()
@@ -285,15 +280,11 @@ export const PullRequestSchema = z
       .openapi({ example: "2026-01-03T00:00:00.000Z" }),
     patchedAt: z.string().nullable().optional().openapi({ example: null }),
     mergedAt: z.string().nullable().optional().openapi({ example: null }),
-    prCreatedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "2026-01-01T00:00:00.000Z",
-        description:
-          "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
-      }),
+    prCreatedAt: z.string().nullable().optional().openapi({
+      example: "2026-01-01T00:00:00.000Z",
+      description:
+        "ISO timestamp of the GitHub PR's actual creation time. Set once via POST /prs/claim (first claim only); read-only thereafter.",
+    }),
     claimedBy: z
       .string()
       .nullable()
@@ -396,6 +387,11 @@ export const TaskListQuerySchema = z.object({
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
+  updatedSince: z.string().optional().openapi({
+    example: "2026-01-01T00:00:00.000Z",
+    description:
+      "Only return tasks with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+  }),
 });
 
 /** Response for GET /tasks */
@@ -413,13 +409,13 @@ export const TaskListResponseSchema = z
  */
 export const CreateTaskBodySchema = z
   .object({
-    title: z.string().min(1).optional().openapi({ example: "Implement feature X" }),
-    status: z.string().min(1).optional().openapi({ example: "pending" }),
-    repo: z
+    title: z
       .string()
-      .nullable()
+      .min(1)
       .optional()
-      .openapi({ example: "org/repo" }),
+      .openapi({ example: "Implement feature X" }),
+    status: z.string().min(1).optional().openapi({ example: "pending" }),
+    repo: z.string().nullable().optional().openapi({ example: "org/repo" }),
     session: z.string().optional().openapi({ example: "session-123" }),
     description: z.string().optional().openapi({ example: "Task description" }),
     layer: z.string().optional().openapi({ example: "service" }),
@@ -445,7 +441,11 @@ export const UpdateTaskBodySchema = z
  */
 const BulkInsertItemSchema = z
   .object({
-    title: z.string().min(1).optional().openapi({ example: "Implement feature X" }),
+    title: z
+      .string()
+      .min(1)
+      .optional()
+      .openapi({ example: "Implement feature X" }),
     status: z.string().min(1).optional().openapi({ example: "pending" }),
     repo: z.string().nullable().optional().openapi({ example: "org/repo" }),
   })
@@ -537,12 +537,19 @@ export const PrListQuerySchema = z
       description:
         "Order results by createdAt. Default is ascending (asc), preserving current behavior for existing callers. Unrelated to claim-next's own deterministic ordering.",
     }),
+    updatedSince: z.string().optional().openapi({
+      example: "2026-01-01T00:00:00.000Z",
+      description:
+        "Only return PRs with updatedAt >= this ISO timestamp. A conservative pre-filter, not a precise sync anchor.",
+    }),
   })
   .openapi("PrListQuery");
 
 export const PrListResponseSchema = z
   .object({
-    prs: z.array(PullRequestSchema).openapi({ description: "Array of pull requests" }),
+    prs: z
+      .array(PullRequestSchema)
+      .openapi({ description: "Array of pull requests" }),
     total: z.number().int().openapi({ example: 1 }),
     limit: z.number().int().openapi({ example: 50 }),
     offset: z.number().int().openapi({ example: 0 }),
@@ -551,45 +558,46 @@ export const PrListResponseSchema = z
 
 export const ClaimPrBodySchema = z
   .object({
-    repo: z
-      .string()
-      .openapi({ example: "org/repo", description: "Repository in org/repo format" }),
+    repo: z.string().openapi({
+      example: "org/repo",
+      description: "Repository in org/repo format",
+    }),
     prNumber: z
       .number()
       .int()
       .openapi({ example: 42, description: "Pull request number" }),
-    commitSha: z
-      .string()
-      .openapi({ example: "abc123def456", description: "Commit SHA to associate" }),
-    claimedBy: z
-      .string()
-      .optional()
-      .openapi({ example: "agent-id-123", description: "Agent claiming this PR (admin tokens only)" }),
+    commitSha: z.string().openapi({
+      example: "abc123def456",
+      description: "Commit SHA to associate",
+    }),
+    claimedBy: z.string().optional().openapi({
+      example: "agent-id-123",
+      description: "Agent claiming this PR (admin tokens only)",
+    }),
     taskId: z
       .string()
       .optional()
       .openapi({ example: "clx1234567890", description: "Associated task ID" }),
-    phase: z
-      .enum(["review", "patch", "deploy"])
-      .optional()
-      .openapi({ example: "patch", description: "Pipeline phase this claim is for (defaults to 'review' when omitted)" }),
-    prCreatedAt: z
-      .string()
-      .optional()
-      .openapi({
-        example: "2026-01-01T00:00:00.000Z",
-        description:
-          "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
-      }),
+    phase: z.enum(["review", "patch", "deploy"]).optional().openapi({
+      example: "patch",
+      description:
+        "Pipeline phase this claim is for (defaults to 'review' when omitted)",
+    }),
+    prCreatedAt: z.string().optional().openapi({
+      example: "2026-01-01T00:00:00.000Z",
+      description:
+        "ISO timestamp of the GitHub PR's actual creation time. Only applied on first claim (record creation); ignored on subsequent claims since the field is immutable once set.",
+    }),
   })
   .openapi("ClaimPrBody");
 
 export const ClaimNextBodySchema = z
   .object({
-    agentId: z
-      .string()
-      .optional()
-      .openapi({ example: "agent-id-123", description: "Agent ID (admin tokens only; agent tokens use token identity)" }),
+    agentId: z.string().optional().openapi({
+      example: "agent-id-123",
+      description:
+        "Agent ID (admin tokens only; agent tokens use token identity)",
+    }),
     maxConcurrent: z
       .number()
       .int()
