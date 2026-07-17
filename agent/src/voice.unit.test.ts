@@ -21,7 +21,7 @@
 
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { unlinkSync } from "node:fs";
+import { existsSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeWhisperSvcClient, synthesizeSpeech } from "./voice.ts";
 
@@ -120,20 +120,41 @@ type SpawnFn = (
 // Builds a fake ChildProcess and schedules `onImmediate` to fire on it once
 // stdout/stderr/stdin are wired up — mirrors the shape spawnFn callers expect
 // (proc.stdout/stderr as EventEmitters, proc.stdin.write/end) without a real
-// subprocess.
-function makeFakeSpawn(onImmediate: (proc: EventEmitter) => void): SpawnFn {
-  return (_cmd, _args, _opts) => {
+// subprocess. `onImmediate` also receives the args the real spawnPiper call
+// was made with, so callers can locate the `--output_file` path a real
+// Piper binary would write to.
+function makeFakeSpawn(
+  onImmediate: (proc: EventEmitter, args: string[]) => void,
+): SpawnFn {
+  return (_cmd, args, _opts) => {
     // biome-ignore lint/suspicious/noExplicitAny: test helper needs dynamic property assignment
     const proc: any = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
     proc.stdin = { write: () => {}, end: () => {} };
-    setImmediate(() => onImmediate(proc));
+    setImmediate(() => onImmediate(proc, args));
     return proc as unknown as ChildProcess;
   };
 }
 
-const makeSuccessSpawn = () => makeFakeSpawn((proc) => proc.emit("close", 0));
+// Extracts the path following `--output_file` from the args synthesizePiper
+// spawns with, mirroring how the real piper binary locates its output path.
+function outputFileFromArgs(args: string[]): string {
+  const idx = args.indexOf("--output_file");
+  if (idx === -1 || idx === args.length - 1) {
+    throw new Error("--output_file not found in spawn args");
+  }
+  return args[idx + 1];
+}
+
+// Mirrors what the real piper binary does: writes non-empty audio bytes to
+// the `--output_file` path before exiting 0. Lets tests assert a real file
+// was written, not just that a path string was returned.
+const makeSuccessSpawn = () =>
+  makeFakeSpawn((proc, args) => {
+    writeFileSync(outputFileFromArgs(args), Buffer.from([1, 2, 3, 4]));
+    proc.emit("close", 0);
+  });
 
 const makeFailExitSpawn = (code: number) =>
   makeFakeSpawn((proc) => {
@@ -203,6 +224,11 @@ describe("synthesizeSpeech — dispatch (ElevenLabs vs Piper)", () => {
 
     expect(outPath).not.toBeNull();
     expect(outPath).toContain(".wav");
+    if (outPath) {
+      expect(existsSync(outPath)).toBe(true);
+      expect(statSync(outPath).size).toBeGreaterThan(0);
+      unlinkSync(outPath);
+    }
   });
 
   test("when Piper exits non-zero, synthesizeSpeech returns null with no throw", async () => {
