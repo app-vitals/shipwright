@@ -127,7 +127,7 @@ describe("deploy.md — self-approve bold-markdown strip (PCK-1.4)", () => {
     expect(step3aSection.toLowerCase()).toContain("strip");
   });
 
-  it("Step 3a's prose describes stripping leading bold markers before startsWith(\"APPROVE\")", () => {
+  it('Step 3a\'s prose describes stripping leading bold markers before startsWith("APPROVE")', () => {
     const step3aMatch = content.match(
       /### 3a\. Verify PR Approval[\s\S]*?(?=### 3b)/,
     );
@@ -182,9 +182,14 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
   it("post-merge upsert reuses PR_RECORD_ID from the pre-merge claim (plain PATCH, no redundant claim)", () => {
     // The post-merge section should PATCH the already-claimed record rather than
     // issuing a second POST /prs/claim call.
-    const postMergeSectionIdx = content.indexOf("Update PullRequest Record (post-merge)");
+    const postMergeSectionIdx = content.indexOf(
+      "Update PullRequest Record (post-merge)",
+    );
     expect(postMergeSectionIdx).toBeGreaterThan(-1);
-    const postMergeSection = content.slice(postMergeSectionIdx, postMergeSectionIdx + 1500);
+    const postMergeSection = content.slice(
+      postMergeSectionIdx,
+      postMergeSectionIdx + 1500,
+    );
     expect(postMergeSection.includes("/prs/claim")).toBe(false);
     expect(postMergeSection.includes("/prs/$PR_RECORD_ID")).toBe(true);
   });
@@ -200,5 +205,63 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
     // The release call must come after the pre-merge claim and before the timeout message
     const claimIdx = content.indexOf("/prs/claim");
     expect(releaseIdx).toBeGreaterThan(claimIdx);
+  });
+});
+
+describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
+  function extractStep5bSection(md: string): string {
+    const match = md.match(
+      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
+    );
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Step 5b's polling implementation uses a chained in-Bash sleep loop (shell for-loop + sleep 60)", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("sleep 60");
+    const hasForLoop =
+      /for\s+\w+\s+in\s+\$\(seq/.test(step5bSection) ||
+      step5bSection.includes("for i in");
+    expect(hasForLoop).toBe(true);
+  });
+
+  it("Step 5b instructs chaining multiple Bash tool calls back-to-back to cover the 30-minute budget", () => {
+    const step5bSection = extractStep5bSection(content);
+    const mentionsChaining =
+      step5bSection.toLowerCase().includes("chain") &&
+      step5bSection.toLowerCase().includes("bash");
+    expect(mentionsChaining).toBe(true);
+  });
+
+  it("Step 5b's polling section does NOT instruct a per-60s ScheduleWakeup call", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).not.toContain("ScheduleWakeup");
+  });
+
+  it("preserves the midpoint claim-heartbeat renewal (elapsed ~15 minutes) inside Step 5b", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("/prs/$PR_RECORD_ID/heartbeat");
+    expect(step5bSection.toLowerCase()).toContain("midpoint");
+  });
+
+  it("preserves the 60-second poll interval and 30-minute budget wording in Step 5b", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("60 seconds");
+    expect(step5bSection).toContain("30 minutes");
+  });
+
+  it("preserves the progress print format for Deploy/Canary/Promote stages", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain(
+      "[{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}",
+    );
+  });
+
+  it("does not affect the ARC desync section, which still re-surfaces every 5 minutes", () => {
+    // ARC desync detection lives just after Step 5b in the same file; it must be
+    // untouched by the polling-mechanism rewrite.
+    expect(content).toContain("ARC desync suspected");
+    expect(content).toContain("Re-surface this message every 5 minutes");
   });
 });

@@ -381,13 +381,30 @@ truth — only watch runs whose `head_sha` matches this value.
 
 **Budget: 30 minutes from merge. Poll interval: 60 seconds.**
 
-Each poll fetches all runs matching the squash SHA:
+**Implementation: chained in-Bash sleep loops.** Do not wait between polls via a
+scheduled wakeup mechanism that resumes the session later (each resumption is a
+brand-new process invocation — costly and unnecessary here). Instead, run the
+60-second-interval checks as a shell-level loop inside a single Bash tool call, and
+chain several such Bash calls back-to-back within the same turn:
 
 ```bash
-REPO="{org}/{repo}"
-gh api "repos/$REPO/actions/runs?per_page=50" \
-  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, status, conclusion, created_at}]"
+for i in $(seq 1 8); do
+  REPO="{org}/{repo}"
+  gh api "repos/$REPO/actions/runs?per_page=50" \
+    --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\") | {id, name, status, conclusion, created_at}]"
+  # print progress, evaluate terminal conditions (see below) — break out of the
+  # loop immediately if any terminal condition is met
+  sleep 60
+done
 ```
+
+Each iteration of this loop is one poll (~8 iterations ≈ 8 minutes per Bash call, safely
+under Bash's practical ~10-minute ceiling). Chain 3-4 of these Bash calls back-to-back
+in the same turn to cover the full 30-minute budget — e.g. call 1 covers minutes 0-8,
+call 2 covers minutes 8-16, call 3 covers minutes 16-24, call 4 covers minutes 24-30 (last
+call may run fewer than 8 iterations to land on the 30-minute mark). Break out of the loop
+(and stop chaining further Bash calls) as soon as any terminal condition below is met —
+do not keep polling once Deploy has failed, Canary has resolved, or Promote has resolved.
 
 Track three stages by workflow name (`.name`):
 
@@ -397,7 +414,7 @@ Track three stages by workflow name (`.name`):
 | `"Canary"`       | Canary  |
 | `"Promote to Prod"` | Promote |
 
-Print progress on each poll:
+Print progress on each poll (each loop iteration):
 ```
 [{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}
 ```
@@ -407,7 +424,9 @@ Use `-` for stages not yet seen (no run exists yet).
 **Renew the claim heartbeat at the midpoint** (elapsed ≈ 15 minutes, the midpoint of the
 30-minute budget): the `PullRequest` record claimed in Step 4 has a TTL shorter than this
 poll's full budget, so a pipeline that runs the full 30 minutes would otherwise let the
-claim go stale before Promote resolves. Renew once, best-effort:
+claim go stale before Promote resolves. Renew once, best-effort — fire this at the start
+of whichever chained Bash call lands closest to elapsed ≈ 15 minutes (the 2nd or 3rd call
+in the chain above):
 
 ```bash
 if [ -n "$PR_RECORD_ID" ]; then
