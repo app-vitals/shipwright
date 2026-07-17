@@ -18,6 +18,7 @@ import {
   type LoopOrchestratorProductionOptions,
   createLoopOrchestrator,
   createLoopOrchestratorGetter,
+  formatPreClaimMarker,
 } from "./loop-orchestrator.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
@@ -112,7 +113,10 @@ function makeRecordingWorkQueueReporter(): {
   const snapshots: SnapshotCall[] = [];
   const reporter: WorkQueueReporter = {
     async reportSnapshot(snapshot) {
-      snapshots.push({ computedAt: snapshot.computedAt, items: snapshot.items });
+      snapshots.push({
+        computedAt: snapshot.computedAt,
+        items: snapshot.items,
+      });
     },
   };
   return { reporter, snapshots };
@@ -185,9 +189,7 @@ function makeDrainingRunner(
     // by scanning for the command anywhere in the message (not just as a
     // prefix) since the trailing item id varies per dispatch and the tag
     // prefix now precedes the command.
-    const command = Object.keys(commandToPool).find(
-      (c) => message.includes(c),
-    );
+    const command = Object.keys(commandToPool).find((c) => message.includes(c));
     // Consume the oldest unconsumed candidate of this command's phase.
     const candidates = (command ? commandToPool[command] : []) ?? [];
     const sorted = candidates
@@ -267,6 +269,12 @@ interface MakeDepsOptions {
   // item. Defaults to a stub that always resolves true (claim succeeds), so
   // existing tests that don't pass this option are unaffected.
   claimTask?: (taskId: string) => Promise<boolean>;
+  // Pre-claim hook (CBD-1.3) invoked before dispatching a winning PR item.
+  // Defaults to a stub that echoes the candidate's id+commitSha (claim
+  // succeeds), so existing tests that don't pass this option are unaffected.
+  claimPr?: (
+    pr: WorkPrCandidate,
+  ) => Promise<{ id: string; commitSha: string } | null>;
 }
 
 /**
@@ -327,6 +335,12 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
     loopCronId: options.loopCronId ?? "shipwright-loop",
     clock: FixedClock(new Date("2026-07-10T00:00:00Z")),
     claimTask: options.claimTask ?? (async () => true),
+    claimPr:
+      options.claimPr ??
+      (async (pr: WorkPrCandidate) => ({
+        id: pr.id,
+        commitSha: pr.commitSha,
+      })),
   };
 }
 
@@ -546,7 +560,11 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-review", true)]);
 
-    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
+    // PR dispatches carry a pre-claim marker (CBD-1.3); the default makeDeps
+    // claimPr stub echoes the candidate's id+commitSha.
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#1 [preclaim:acme/x#1:acme/x#1-sha]",
+    ]);
   });
 
   test("dispatches /shipwright:patch for a winning patch PR", async () => {
@@ -561,7 +579,9 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-patch", true)]);
 
-    expectDispatchedCommands(messages, ["/shipwright:patch acme/x#2"]);
+    expectDispatchedCommands(messages, [
+      "/shipwright:patch acme/x#2 [preclaim:acme/x#2:acme/x#2-sha]",
+    ]);
   });
 
   test("dispatches /shipwright:deploy for a winning deploy PR", async () => {
@@ -576,7 +596,9 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-deploy", true)]);
 
-    expectDispatchedCommands(messages, ["/shipwright:deploy acme/x#3"]);
+    expectDispatchedCommands(messages, [
+      "/shipwright:deploy acme/x#3 [preclaim:acme/x#3:acme/x#3-sha]",
+    ]);
   });
 
   test("selects the globally-oldest item across phases and drains in age order", async () => {
@@ -608,9 +630,9 @@ describe("createLoopOrchestrator", () => {
     await loop(ALL_PHASES_ON);
 
     expectDispatchedCommands(messages, [
-      "/shipwright:patch acme/x#5",
+      "/shipwright:patch acme/x#5 [preclaim:acme/x#5:acme/x#5-sha]",
       "/shipwright:dev-task SWC-1.1",
-      "/shipwright:review acme/x#9",
+      "/shipwright:review acme/x#9 [preclaim:acme/x#9:acme/x#9-sha]",
     ]);
   });
 
@@ -630,7 +652,9 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", true),
     ]);
 
-    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#1 [preclaim:acme/x#1:acme/x#1-sha]",
+    ]);
     expect(messages.some((m) => m.includes("/shipwright:review-patch"))).toBe(
       false,
     );
@@ -651,7 +675,9 @@ describe("createLoopOrchestrator", () => {
       job("shipwright-review-patch", false),
     ]);
 
-    expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#1 [preclaim:acme/x#1:acme/x#1-sha]",
+    ]);
   });
 
   test("reports itemType/itemId for each PR phase dispatch (review/patch/deploy)", async () => {
@@ -766,7 +792,10 @@ describe("createLoopOrchestrator", () => {
     const { reporter: workQueueReporter, snapshots } =
       makeRecordingWorkQueueReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
-    const { runner } = makeDrainingRunner({ devTask: devTaskCandidates }, consumed);
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+    );
     const deps = makeDeps({
       devTaskCandidates,
       runner,
@@ -849,12 +878,12 @@ describe("createLoopOrchestrator", () => {
     expect(skips.map((s) => s.phase)).toEqual(["dev-task"]);
 
     // The skipped run still records which task-type item was dispatched.
-    expect(creates.map((c) => ({ itemType: c.itemType, itemId: c.itemId }))).toEqual([
-      { itemType: "task", itemId: "SWC-1.1" },
-    ]);
-    expect(skips.map((s) => ({ itemType: s.itemType, itemId: s.itemId }))).toEqual([
-      { itemType: "task", itemId: "SWC-1.1" },
-    ]);
+    expect(
+      creates.map((c) => ({ itemType: c.itemType, itemId: c.itemId })),
+    ).toEqual([{ itemType: "task", itemId: "SWC-1.1" }]);
+    expect(
+      skips.map((s) => ({ itemType: s.itemType, itemId: s.itemId })),
+    ).toEqual([{ itemType: "task", itemId: "SWC-1.1" }]);
   });
 
   test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
@@ -951,7 +980,9 @@ describe("createLoopOrchestrator", () => {
     await loop([job("shipwright-dev-task", true)]);
 
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toStartWith("[Cron job: shipwright-loop] Current time:");
+    expect(messages[0]).toStartWith(
+      "[Cron job: shipwright-loop] Current time:",
+    );
     expect(messages[0]).toContain("/shipwright:dev-task T-123");
   });
 
@@ -976,8 +1007,8 @@ describe("createLoopOrchestrator", () => {
     });
 
     // Should have at least one spin detection warning
-    const spinWarnings = warnMessages.filter((msg) =>
-      msg.includes("repeated dispatch") || msg.includes("spin"),
+    const spinWarnings = warnMessages.filter(
+      (msg) => msg.includes("repeated dispatch") || msg.includes("spin"),
     );
     expect(spinWarnings.length).toBeGreaterThan(0);
     // Verify it mentions the item id
@@ -1003,8 +1034,8 @@ describe("createLoopOrchestrator", () => {
     });
 
     // Should have no spin detection warning (only 2 dispatches, threshold is 3)
-    const spinWarnings = warnMessages.filter((msg) =>
-      msg.includes("repeated dispatch") || msg.includes("spin"),
+    const spinWarnings = warnMessages.filter(
+      (msg) => msg.includes("repeated dispatch") || msg.includes("spin"),
     );
     expect(spinWarnings).toHaveLength(0);
   });
@@ -1036,8 +1067,8 @@ describe("createLoopOrchestrator", () => {
 
     // Pattern: T-A (1), T-A (2), T-B (reset to 1), T-A (1), T-A (2), end
     // No warning should fire (never reach 3 consecutively after reset)
-    const spinWarnings = warnMessages.filter((msg) =>
-      msg.includes("repeated dispatch") || msg.includes("spin"),
+    const spinWarnings = warnMessages.filter(
+      (msg) => msg.includes("repeated dispatch") || msg.includes("spin"),
     );
     expect(spinWarnings).toHaveLength(0);
   });
@@ -1140,5 +1171,147 @@ describe("createLoopOrchestrator", () => {
     expect(devTaskCalls).toBeGreaterThan(1);
     expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-OK"]);
     expect(creates.map((c) => c.itemId)).toEqual(["SWC-OK"]);
+  });
+
+  // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
+
+  for (const phase of ["review", "patch", "deploy"] as const) {
+    const optKey = `${phase}Candidates` as const;
+    const command = `/shipwright:${phase}`;
+
+    test(`a successful ${phase} pre-claim proceeds to dispatch with a marker appended`, async () => {
+      const consumed = new Set<string>();
+      const prCandidate = pr(
+        "app-vitals/shipwright#1",
+        "2026-01-01T00:00:00Z",
+        phase,
+      );
+      const { runner, messages } = makeDrainingRunner(
+        { [phase]: [prCandidate] },
+        consumed,
+      );
+      const claimedPrs: WorkPrCandidate[] = [];
+      const deps = makeDeps({
+        [optKey]: [prCandidate],
+        runner,
+        consumed,
+        claimPr: async (pr: WorkPrCandidate) => {
+          claimedPrs.push(pr);
+          return { id: "clx-record-id", commitSha: pr.commitSha };
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job(`shipwright-${phase}`, true)]);
+
+      expect(claimedPrs).toHaveLength(1);
+      expect(claimedPrs[0]?.id).toBe("app-vitals/shipwright#1");
+      expectDispatchedCommands(messages, [
+        `${command} app-vitals/shipwright#1 [preclaim:clx-record-id:app-vitals/shipwright#1-sha]`,
+      ]);
+    });
+
+    test(`a 409 ${phase} pre-claim conflict skips dispatch entirely — no runner call, no cron-run row`, async () => {
+      const { reporter, creates, completes, skips } = makeRecordingReporter();
+      const { runner, messages } = makeRunner();
+      const prCandidate = pr(
+        "app-vitals/shipwright#1",
+        "2026-01-01T00:00:00Z",
+        phase,
+      );
+      // Return the candidate once, then empty — modeling "claimed by another
+      // agent and no longer qualifying" so the drain terminates.
+      let calls = 0;
+      const deps = makeDeps({
+        [optKey]: async () => {
+          calls += 1;
+          return calls === 1 ? [prCandidate] : [];
+        },
+        runner,
+        reporter,
+        claimPr: async () => null,
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job(`shipwright-${phase}`, true)]);
+
+      expect(messages).toEqual([]);
+      expect(creates).toEqual([]);
+      expect(completes).toEqual([]);
+      expect(skips).toEqual([]);
+    });
+
+    test(`the drain loop continues past a skipped (409) ${phase} item to the next candidate`, async () => {
+      const consumed = new Set<string>();
+      const { reporter, creates } = makeRecordingReporter();
+      const prCandidates = [
+        pr("app-vitals/shipwright#1", "2026-01-01T00:00:00Z", phase),
+        pr("app-vitals/shipwright#2", "2026-01-02T00:00:00Z", phase),
+      ];
+      const { runner, messages } = makeDrainingRunner(
+        { [phase]: prCandidates },
+        consumed,
+      );
+      const deps = makeDeps({
+        [optKey]: async () => prCandidates.filter((c) => !consumed.has(c.id)),
+        runner,
+        consumed,
+        reporter,
+        claimPr: async (pr: WorkPrCandidate) => {
+          if (pr.id === "app-vitals/shipwright#1") {
+            consumed.add(pr.id);
+            return null;
+          }
+          return { id: "clx-record-id", commitSha: pr.commitSha };
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job(`shipwright-${phase}`, true)]);
+
+      expectDispatchedCommands(messages, [
+        `${command} app-vitals/shipwright#2 [preclaim:clx-record-id:app-vitals/shipwright#2-sha]`,
+      ]);
+      expect(creates.map((c) => c.itemId)).toEqual(["app-vitals/shipwright#2"]);
+    });
+  }
+
+  test("the pre-claim marker is appended in the exact [preclaim:id:sha] format", async () => {
+    const consumed = new Set<string>();
+    const prCandidate = pr(
+      "app-vitals/shipwright#1",
+      "2026-01-01T00:00:00Z",
+      "review",
+    );
+    const { runner, messages } = makeDrainingRunner(
+      { review: [prCandidate] },
+      consumed,
+    );
+    const deps = makeDeps({
+      reviewCandidates: [prCandidate],
+      runner,
+      consumed,
+      claimPr: async (pr: WorkPrCandidate) => ({
+        id: "clxRECORD",
+        commitSha: "deadbeef1234",
+      }),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(messages[0]).toEndWith(
+      "/shipwright:review app-vitals/shipwright#1 [preclaim:clxRECORD:deadbeef1234]",
+    );
+  });
+});
+
+// ─── formatPreClaimMarker ────────────────────────────────────────────────────
+
+describe("formatPreClaimMarker", () => {
+  test("formats a bracket-delimited [preclaim:id:sha] marker", () => {
+    expect(formatPreClaimMarker("clxRECORD", "deadbeef1234")).toBe(
+      "[preclaim:clxRECORD:deadbeef1234]",
+    );
   });
 });

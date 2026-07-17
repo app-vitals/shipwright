@@ -293,6 +293,12 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
   claim(id: string): Promise<boolean>;
+  claimPr(params: {
+    repo: string;
+    prNumber: number;
+    commitSha: string;
+    phase: "review" | "patch" | "deploy";
+  }): Promise<{ id: string; commitSha: string } | null>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -352,6 +358,31 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       if (res.status === 409) return false;
       throw new Error(`task-store POST /tasks/${id}/claim → ${res.status}`);
     },
+    async claimPr(params: {
+      repo: string;
+      prNumber: number;
+      commitSha: string;
+      phase: "review" | "patch" | "deploy";
+    }): Promise<{ id: string; commitSha: string } | null> {
+      const res = await doFetch(`${baseUrl}/prs/claim`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(params),
+      });
+      // 409 = another agent replica already claimed this PR at this commit.
+      // The caller skips dispatch; not an error.
+      if (res.status === 409) return null;
+      if (!res.ok)
+        throw new Error(`task-store POST /prs/claim → ${res.status}`);
+      const data = (await res.json()) as {
+        id: string;
+        commitSha?: string | null;
+      };
+      // commitSha is declared nullable in the schema, but we just claimed with
+      // a specific commitSha, so fall back to the request value to keep the
+      // return type non-nullable.
+      return { id: data.id, commitSha: data.commitSha ?? params.commitSha };
+    },
   };
 }
 
@@ -364,6 +395,22 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
 /** Stable, human-readable candidate id: "org/repo#prNumber". */
 export function candidateId(repo: string, prNumber: number): string {
   return `${repo}#${prNumber}`;
+}
+
+/**
+ * Inverse of candidateId(): split "org/repo#42" into { repo, prNumber }.
+ * Uses the last "#" so a repo name is never mis-split. Returns null when the
+ * id is malformed — no "#", an empty repo part, or a non-integer number part.
+ */
+export function parseCandidateId(
+  id: string,
+): { repo: string; prNumber: number } | null {
+  const hashIdx = id.lastIndexOf("#");
+  if (hashIdx <= 0) return null;
+  const repo = id.slice(0, hashIdx);
+  const numberPart = id.slice(hashIdx + 1);
+  if (!/^\d+$/.test(numberPart)) return null;
+  return { repo, prNumber: Number.parseInt(numberPart, 10) };
 }
 
 /** Split "org/repo" into [org, repo], defaulting org to "app-vitals" for a bare repo name. */
@@ -492,7 +539,9 @@ export function createTaskStatusQuery(opts?: {
     ) {
       tasks = (data as Record<string, unknown>).tasks as Task[];
     } else {
-      throw new Error(`Unexpected task-store response format: ${JSON.stringify(data)}`);
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
     }
     const task = tasks[0];
     if (!task) return null;
@@ -559,7 +608,9 @@ export function createBundleCompleteQuery(opts?: {
     ) {
       tasks = (data as Record<string, unknown>).tasks as Task[];
     } else {
-      throw new Error(`Unexpected task-store response format: ${JSON.stringify(data)}`);
+      throw new Error(
+        `Unexpected task-store response format: ${JSON.stringify(data)}`,
+      );
     }
     return !tasks.some((task) => INCOMPLETE_BUNDLE_STATUSES.has(task.status));
   };

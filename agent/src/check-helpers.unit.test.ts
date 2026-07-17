@@ -26,6 +26,7 @@ import {
   createTaskStoreClient,
   getCurrentUser,
   isCleanApproveBody,
+  parseCandidateId,
   resolveAllRepos,
   resolveRepos,
 } from "./check-helpers.ts";
@@ -471,7 +472,11 @@ function writeFakeGhBinary(dir: string, viewerLogin: string): string {
 }
 
 /** Write a fake `gh` binary that always fails with a given exit code. */
-function writeFailingGhBinary(dir: string, exitCode: number, stderr: string): string {
+function writeFailingGhBinary(
+  dir: string,
+  exitCode: number,
+  stderr: string,
+): string {
   const binPath = join(dir, "gh");
   writeFileSync(
     binPath,
@@ -661,9 +666,7 @@ describe("createTaskStoreClient query()", () => {
     const client = createTaskStoreClient({ fetchFn: fakeFetch });
     const result = await client.update("T-1", { status: "in_progress" });
 
-    expect(capturedUrl).toBe(
-      "https://task-store.example.com/tasks/T-1",
-    );
+    expect(capturedUrl).toBe("https://task-store.example.com/tasks/T-1");
     expect(capturedInit?.method).toBe("PATCH");
     expect(result).toEqual({ ...FAKE_TASK, status: "in_progress" });
   });
@@ -694,9 +697,7 @@ describe("createTaskStoreClient query()", () => {
     const client = createTaskStoreClient({ fetchFn: fakeFetch });
     await client.claim("T-1");
 
-    expect(capturedUrl).toBe(
-      "https://task-store.example.com/tasks/T-1/claim",
-    );
+    expect(capturedUrl).toBe("https://task-store.example.com/tasks/T-1/claim");
     expect(capturedInit?.method).toBe("POST");
     // headers always sets Content-Type: application/json — a truly empty
     // body would fail the server's JSON parse
@@ -752,6 +753,173 @@ describe("createTaskStoreClient query()", () => {
       "task-store POST /tasks/T-1/claim",
     );
   });
+
+  // ─── claimPr() (CBD-1.3) ──────────────────────────────────────────────────
+
+  const FAKE_PR = {
+    id: "clx0987654321",
+    repo: "app-vitals/shipwright",
+    prNumber: 42,
+    commitSha: "abc123def456",
+  };
+
+  test("claimPr() POSTs to /prs/claim with the right body", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_PR } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.claimPr({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+      commitSha: "abc123def456",
+      phase: "review",
+    });
+
+    expect(capturedUrl).toBe("https://task-store.example.com/prs/claim");
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe(
+      JSON.stringify({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "review",
+      }),
+    );
+  });
+
+  test("claimPr() returns {id, commitSha} on 200", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => FAKE_PR,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.claimPr({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "review",
+      }),
+    ).resolves.toEqual({ id: "clx0987654321", commitSha: "abc123def456" });
+  });
+
+  test("claimPr() returns {id, commitSha} on 201", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        status: 201,
+        json: async () => FAKE_PR,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.claimPr({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "deploy",
+      }),
+    ).resolves.toEqual({ id: "clx0987654321", commitSha: "abc123def456" });
+  });
+
+  test("claimPr() falls back to the request commitSha when the response omits it", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ ...FAKE_PR, commitSha: null }),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.claimPr({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "patch",
+      }),
+    ).resolves.toEqual({ id: "clx0987654321", commitSha: "abc123def456" });
+  });
+
+  test("claimPr() returns null on 409 (does not throw)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "already claimed" }),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.claimPr({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "review",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  test("claimPr() throws on other non-ok statuses (e.g. 500)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.claimPr({
+        repo: "app-vitals/shipwright",
+        prNumber: 42,
+        commitSha: "abc123def456",
+        phase: "review",
+      }),
+    ).rejects.toThrow("task-store POST /prs/claim → 500");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCandidateId
+// ---------------------------------------------------------------------------
+
+describe("parseCandidateId", () => {
+  test("splits a valid org/repo#number id", () => {
+    expect(parseCandidateId("app-vitals/shipwright#42")).toEqual({
+      repo: "app-vitals/shipwright",
+      prNumber: 42,
+    });
+  });
+
+  test("handles a bare repo name without an org", () => {
+    expect(parseCandidateId("shipwright#7")).toEqual({
+      repo: "shipwright",
+      prNumber: 7,
+    });
+  });
+
+  test("returns null when there is no '#'", () => {
+    expect(parseCandidateId("app-vitals/shipwright")).toBeNull();
+  });
+
+  test("returns null when the repo part is empty", () => {
+    expect(parseCandidateId("#42")).toBeNull();
+  });
+
+  test("returns null when the number part is not an integer", () => {
+    expect(parseCandidateId("app-vitals/shipwright#abc")).toBeNull();
+    expect(parseCandidateId("app-vitals/shipwright#4.5")).toBeNull();
+    expect(parseCandidateId("app-vitals/shipwright#")).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -791,7 +959,12 @@ describe("createTaskStatusQuery", () => {
         ok: true,
         json: async () => ({
           tasks: [
-            { id: "T-1", title: "Do the thing", status: "in_progress", createdAt: "2026-05-01T00:00:00.000Z" },
+            {
+              id: "T-1",
+              title: "Do the thing",
+              status: "in_progress",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
           ],
         }),
       }) as Response) as unknown as typeof fetch;
