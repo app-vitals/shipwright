@@ -475,7 +475,19 @@ Body:
 | `computedAt` | yes | ISO timestamp when the agent computed this ranking |
 | `items` | yes | Array of ranked work items. Each entry: `{ type: "task" \| "pr", id: string, title?: string, phase: "dev-task" \| "review" \| "patch" \| "deploy", age: string }` (`age` is an ISO timestamp) |
 
-Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with `{ snapshot: AgentWorkQueueSnapshot }`.
+Upserts the single row for this `agentId`, overwriting any prior snapshot. Returns `200` with:
+
+```json
+{
+  "snapshot": {
+    "id": "string",
+    "agentId": "string",
+    "computedAt": "ISO timestamp",
+    "items": [{ "type": "task|pr", "id": "string", "title": "string (optional)", "phase": "dev-task|review|patch|deploy", "age": "ISO timestamp" }],
+    "createdAt": "ISO timestamp"
+  }
+}
+```
 
 ### Get snapshot
 
@@ -483,7 +495,7 @@ Upserts the single row for this `agentId`, overwriting any prior snapshot. Retur
 GET /agents/:id/work-queue
 ```
 
-Returns `200` with `{ snapshot: AgentWorkQueueSnapshot }` for the latest pushed snapshot, or `404` if the agent has never pushed one.
+Returns `200` with the latest pushed snapshot in the same `{ snapshot: { id, agentId, computedAt, items, createdAt } }` format, or `404` if the agent has never pushed one.
 
 ---
 
