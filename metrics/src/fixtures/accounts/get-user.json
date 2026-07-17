@@ -1,0 +1,24 @@
+{
+  "getUser_success": {
+    "status": 200,
+    "body": {
+      "id": "user-1",
+      "name": "Ada Lovelace",
+      "email": "ada@example.com",
+      "slackId": "U0123456",
+      "role": "OWNER",
+      "workingHoursStart": "09:00",
+      "workingHoursEnd": "17:00",
+      "timezone": "UTC",
+      "mercuryCounterparty": null,
+      "ownerUserId": null,
+      "clientId": "client-1",
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-02T00:00:00.000Z"
+    }
+  },
+  "getUser_not_found": {
+    "status": 404,
+    "body": "user not found"
+  }
+}

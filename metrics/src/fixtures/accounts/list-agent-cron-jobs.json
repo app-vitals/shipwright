@@ -1,0 +1,17 @@
+{
+  "listAgentCronJobs_success": {
+    "status": 200,
+    "body": [
+      {
+        "id": "cron-1",
+        "name": "daily-standup",
+        "prompt": "Post the daily standup summary."
+      },
+      { "id": "cron-2", "name": null, "prompt": "Sweep stale branches." }
+    ]
+  },
+  "listAgentCronJobs_not_found": {
+    "status": 404,
+    "body": "agent not found"
+  }
+}
