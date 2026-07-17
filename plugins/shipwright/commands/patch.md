@@ -651,20 +651,23 @@ INSTRUCTIONS — follow in order:
   - **If every finding was classified REJECT in [A.5]** (premise incorrect on all of
     them — no files changed, nothing to commit): do not commit or push. Instead, post a
     PR-level rebuttal comment explaining why each finding was rejected, so the review is
-    not left looking unaddressed:
+    not left looking unaddressed. Write the comment body to a temp file first to avoid
+    heredoc syntax in the command string (heredocs break permission glob matching and
+    cause repeated approval prompts):
     ```bash
-    gh pr comment {pr} --repo {org}/{repo} --body "$(cat <<'EOF'
-    Reviewed the finding(s) above and did not implement changes — premise did not hold:
-
-    - {finding summary}: {reason rejected}
-    - {finding summary}: {reason rejected}
-    EOF
-    )"
+    # Write the rebuttal body to /tmp/shipwright-patch-rebuttal-{pr}.txt:
+    #   Reviewed the finding(s) above and did not implement changes — premise did not hold:
+    #
+    #   - {finding summary}: {reason rejected}
+    #   - {finding summary}: {reason rejected}
+    gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-rebuttal-{pr}.txt
+    rm /tmp/shipwright-patch-rebuttal-{pr}.txt
     ```
-    List every rejected finding, one bullet per finding, drawn from the CONCERNS you
-    compiled in [A.5]. This comment is what allows a future patch run to recognize the
-    review was addressed (rejected with reasoning, not ignored) instead of reflagging it
-    forever.
+    The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+    across all worktrees. List every rejected finding, one bullet per finding, drawn from
+    the CONCERNS you compiled in [A.5]. This comment is what allows a future patch run to
+    recognize the review was addressed (rejected with reasoning, not ignored) instead of
+    reflagging it forever.
 
 [E] Resolve addressed inline threads
   PR-level comments cannot be resolved programmatically — skip them here.
