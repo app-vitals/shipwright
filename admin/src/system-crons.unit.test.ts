@@ -128,9 +128,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.enabled).toBe(true);
   });
 
-  test("shipwright-dev-task has correct preCheck", () => {
+  test("shipwright-dev-task has no preCheck — the legacy CLI script was removed", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-dev-task");
-    expect(cron?.preCheck).toBe("shipwright:check-dev-task.ts");
+    expect(cron?.preCheck).toBeUndefined();
   });
 
   test("shipwright-dev-task prompt includes /shipwright:dev-task skill invocation", () => {
@@ -143,9 +143,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.enabled).toBe(true);
   });
 
-  test("shipwright-patch has correct preCheck", () => {
+  test("shipwright-patch has no preCheck — the legacy CLI script was removed", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-patch");
-    expect(cron?.preCheck).toBe("shipwright:check-patch.ts");
+    expect(cron?.preCheck).toBeUndefined();
   });
 
   test("shipwright-patch prompt includes /shipwright:patch skill invocation", () => {
@@ -158,9 +158,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.enabled).toBe(true);
   });
 
-  test("shipwright-review has correct preCheck", () => {
+  test("shipwright-review has no preCheck — the legacy CLI script was removed", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-review");
-    expect(cron?.preCheck).toBe("shipwright:check-review.ts");
+    expect(cron?.preCheck).toBeUndefined();
   });
 
   test("shipwright-review prompt includes /shipwright:review skill invocation", () => {
@@ -173,9 +173,9 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.enabled).toBe(false);
   });
 
-  test("shipwright-deploy has correct preCheck", () => {
+  test("shipwright-deploy has no preCheck — the legacy CLI script was removed", () => {
     const cron = SYSTEM_CRONS.find((c) => c.name === "shipwright-deploy");
-    expect(cron?.preCheck).toBe("shipwright:check-deploy.ts");
+    expect(cron?.preCheck).toBeUndefined();
   });
 
   test("shipwright-deploy prompt includes /shipwright:deploy skill invocation", () => {

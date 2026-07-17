@@ -112,8 +112,8 @@ reviews from GitHub and check if any review has a clean APPROVE body — either 
 `APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
 posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
 self-review convention, case-insensitive, optional `**` around either word — mirrors
-`check-helpers.ts`'s `isCleanApproveBody`, shared by `check-deploy.ts`'s
-`hasSelfApproveReview` and `check-patch.ts`'s `isSelfCleanApprove`):
+`agent/src/check-helpers.ts`'s `isCleanApproveBody`, shared by `agent/src/check-deploy.ts`'s
+`hasSelfApproveReview` and `agent/src/check-patch.ts`'s `isSelfCleanApprove`):
 
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json reviews \

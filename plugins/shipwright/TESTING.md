@@ -1149,7 +1149,7 @@ As `agent-A`, invoke `/shipwright:dev-task`
 - [ ] `agent-B`'s task record is untouched — no `startedAt` re-stamp, no worktree created for it
 
 ### Related — check-dev-task precheck
-- [ ] `check-dev-task.ts`'s stale-in_progress reset loop does not reset or stamp `agent-B`'s task (verify via `bun test plugins/shipwright/scripts/check-dev-task.unit.test.ts`, cross-agent scoping tests)
+- [ ] `agent/src/check-dev-task.ts`'s stale-in_progress reset loop does not reset or stamp `agent-B`'s task (verify via `bun test agent/src/check-dev-task.unit.test.ts`, cross-agent scoping tests)
 - [ ] HITL-pending notifications only surface tasks where `assignee === SHIPWRIGHT_AGENT_ID`
 
 ### Related — task-store API

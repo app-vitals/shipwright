@@ -67,7 +67,7 @@ by a short one-liner. A good body is:
 
 Don't enumerate findings in the body -- the author sees both body and inline comments.
 
-**This literal phrase is load-bearing, not stylistic.** `check-patch.ts`'s
+**This literal phrase is load-bearing, not stylistic.** `agent/src/check-patch.ts`'s
 `isSelfCleanApprove` matches `Verdict: APPROVE` (case-insensitive, optional `**` markdown
 bold) anywhere in a review body to recognize a clean APPROVE -- this matters because
 GitHub blocks self-APPROVE via the API, so a self-review's clean approval is always

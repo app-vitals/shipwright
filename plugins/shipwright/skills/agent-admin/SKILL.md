@@ -131,7 +131,7 @@ curl -sf -X POST \
     "schedule": "*/30 * * * *",
     "prompt": "/shipwright:dev-task",
     "silent": true,
-    "preCheck": "shipwright:check-dev-task.ts",
+    "preCheck": "shipwright:check-test-readiness.ts",
     "enabled": true
   }' | jq .
 
@@ -144,7 +144,7 @@ curl -sf -X PATCH \
     "schedule": "0 8 * * 1-5",
     "prompt": "Updated prompt text here",
     "channel": "C123456",
-    "preCheck": "shipwright:check-review.ts"
+    "preCheck": "shipwright:check-docs-freshness.ts"
   }' | jq .
 
 # Enable or disable any cron (custom or system) — enabled-only toggle
@@ -159,7 +159,7 @@ curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/{cronId}" \
-  -d '{"preCheck": "shipwright:check-review.ts"}' | jq .
+  -d '{"preCheck": "shipwright:check-docs-freshness.ts"}' | jq .
 
 # Clear preCheck (pass null)
 curl -sf -X PATCH \

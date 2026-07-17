@@ -4,7 +4,7 @@
  * Unit tests for check-test-readiness.ts
  *
  * Design: the script exports a `run(deps)` function that accepts injected
- * dependencies, repo-aware (mirrors check-docs-freshness.ts's/check-deploy.ts's
+ * dependencies, repo-aware (mirrors check-docs-freshness.ts's/check-error-patrol.ts's
  * resolveAllRepos usage pattern — deps.repos is an array of { repo, dir }
  * pairs). Tests inject stub implementations — no file I/O or git commands
  * are executed.
