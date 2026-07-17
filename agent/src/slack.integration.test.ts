@@ -1549,6 +1549,41 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     expect(client.chat.postMessage).not.toHaveBeenCalled();
   });
 
+  test("[silent] + [speak:text] in channel — synthesis failure still posts fallback (suppressed reply must not count as posted)", async () => {
+    const mockSynthesize = mock(async () => null);
+    createSlackApp({
+      synthesizeSpeechFn: mockSynthesize,
+      getSessionFn: mock(async () => "sess-xyz"),
+    });
+
+    // [silent] suppresses the say() reply in a non-DM channel, but the
+    // [speak:text] marker echoes the suppressed `cleaned` text. Since the
+    // text was never actually posted, the duplicate-content guard must not
+    // treat it as already-shown — the fallback should still post.
+    mockRunClaude.mockResolvedValueOnce({
+      result: "Here is the answer. [speak:Here is the answer] [silent]",
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "C123",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "hi",
+        channel_type: "channel",
+      },
+      say,
+      client,
+    });
+
+    expect(say).not.toHaveBeenCalled();
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Here is the answer" }),
+    );
+  });
+
   test("[speak:text] in mention — synthesizes and uploads", async () => {
     const outPath = join(tmpdir(), `test-speak-mention-${Date.now()}.mp3`);
     writeFileSync(outPath, Buffer.from("fake audio"));

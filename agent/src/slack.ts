@@ -529,7 +529,7 @@ export function createSlackApp(
         threadTs: msg.thread_ts ?? msg.ts,
         synthesizeSpeechFn,
         voiceConfig,
-        postedText: cleaned,
+        postedText: shouldSuppress ? undefined : cleaned,
       });
     } catch (err) {
       console.error("[slack] error:", err);
@@ -664,7 +664,7 @@ export function createSlackApp(
         threadTs: replyTs,
         synthesizeSpeechFn,
         voiceConfig,
-        postedText: cleaned,
+        postedText: isSilent ? undefined : cleaned,
       });
     } catch (err) {
       console.error("[slack] error:", err);
