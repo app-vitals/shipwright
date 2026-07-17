@@ -219,7 +219,7 @@ function pr(
   age: string,
   phase: "review" | "patch" | "deploy",
 ): WorkPrCandidate {
-  return { id, age, phase };
+  return { id, age, phase, commitSha: `${id}-sha` };
 }
 
 /**
@@ -263,6 +263,10 @@ interface MakeDepsOptions {
   // Direct raw-callable override for the dev-task qualification fn — used by
   // tests that need full control (e.g. hanging or throwing).
   getDevTaskCandidates?: () => Promise<WorkTaskCandidate[]>;
+  // Pre-claim hook (CBD-1.2) invoked before dispatching a winning dev-task
+  // item. Defaults to a stub that always resolves true (claim succeeds), so
+  // existing tests that don't pass this option are unaffected.
+  claimTask?: (taskId: string) => Promise<boolean>;
 }
 
 /**
@@ -322,6 +326,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
       options.workQueueReporter ?? makeRecordingWorkQueueReporter().reporter,
     loopCronId: options.loopCronId ?? "shipwright-loop",
     clock: FixedClock(new Date("2026-07-10T00:00:00Z")),
+    claimTask: options.claimTask ?? (async () => true),
   };
 }
 
@@ -1035,5 +1040,105 @@ describe("createLoopOrchestrator", () => {
       msg.includes("repeated dispatch") || msg.includes("spin"),
     );
     expect(spinWarnings).toHaveLength(0);
+  });
+
+  // ─── Pre-claim tests (CBD-1.2) ──────────────────────────────────────────────
+
+  test("a successful pre-claim (claimTask resolves true) proceeds to dispatch as before", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+    );
+    const claimedIds: string[] = [];
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      consumed,
+      claimTask: async (taskId: string) => {
+        claimedIds.push(taskId);
+        return true;
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(claimedIds).toEqual(["SWC-1.1"]);
+    expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-1.1"]);
+  });
+
+  test("a 409 pre-claim conflict skips dispatch entirely — no runner call, no cron-run row", async () => {
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const { runner, messages } = makeRunner();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    // The candidate never gets consumed since we never dispatch — so without
+    // some other termination condition the loop would spin forever. To keep
+    // the test finite, the qualification stub returns the candidate exactly
+    // once, then an empty list — modeling "the task got claimed by another
+    // agent in production and no longer appears in the next collection pass".
+    let calls = 0;
+    const deps = makeDeps({
+      getDevTaskCandidates: async () => {
+        calls += 1;
+        return calls === 1 ? devTaskCandidates : [];
+      },
+      runner,
+      reporter,
+      claimTask: async () => false,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(messages).toEqual([]);
+    expect(creates).toEqual([]);
+    expect(completes).toEqual([]);
+    expect(skips).toEqual([]);
+  });
+
+  test("the drain loop continues past a skipped (409) item to the next candidate in the same tick", async () => {
+    // Two dev-task candidates: SWC-CONFLICT (older, wins selection first) and
+    // SWC-OK (younger). SWC-CONFLICT's claim always 409s, so it must never be
+    // dispatched, but the drain must continue on to dispatch SWC-OK in the
+    // SAME tick (no new cron tick needed). `consumed` models "no longer
+    // qualifies" — the 409 claim itself adds the conflicting id to it, since
+    // in production a task claimed by another agent stops appearing in the
+    // next getDevTaskCandidates() ready-query.
+    const consumed = new Set<string>();
+    const { reporter, creates } = makeRecordingReporter();
+    const devTaskCandidates = [
+      task("SWC-CONFLICT", "2026-01-01T00:00:00Z"),
+      task("SWC-OK", "2026-01-02T00:00:00Z"),
+    ];
+    const { runner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+    );
+    let devTaskCalls = 0;
+    const deps = makeDeps({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCandidates.filter((c) => !consumed.has(c.id));
+      },
+      runner,
+      consumed,
+      reporter,
+      claimTask: async (taskId: string) => {
+        if (taskId === "SWC-CONFLICT") {
+          consumed.add(taskId);
+          return false;
+        }
+        return true;
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(devTaskCalls).toBeGreaterThan(1);
+    expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-OK"]);
+    expect(creates.map((c) => c.itemId)).toEqual(["SWC-OK"]);
   });
 });

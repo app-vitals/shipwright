@@ -29,6 +29,7 @@ function makePr(
   return {
     id: "pr-1",
     age: "2026-01-01T00:00:00.000Z",
+    commitSha: "sha-1",
     ...overrides,
   };
 }

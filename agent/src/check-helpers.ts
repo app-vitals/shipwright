@@ -292,6 +292,7 @@ type FetchFn = (
 export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   query(params: URLSearchParams): Promise<Task[]>;
   update(id: string, fields: Record<string, unknown>): Promise<Task>;
+  claim(id: string): Promise<boolean>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -337,6 +338,15 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       if (!res.ok)
         throw new Error(`task-store PATCH /tasks/${id} → ${res.status}`);
       return res.json() as Promise<Task>;
+    },
+    async claim(id: string): Promise<boolean> {
+      const res = await doFetch(`${baseUrl}/tasks/${id}/claim`, {
+        method: "POST",
+        headers,
+      });
+      if (res.ok) return true;
+      if (res.status === 409) return false;
+      throw new Error(`task-store POST /tasks/${id}/claim → ${res.status}`);
     },
   };
 }

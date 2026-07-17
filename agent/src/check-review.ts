@@ -152,6 +152,7 @@ export async function getReviewCandidates(
         age,
         phase: "review",
         title: pr.title,
+        commitSha: pr.headRefOid,
       });
       continue;
     }
@@ -174,6 +175,7 @@ export async function getReviewCandidates(
       age,
       phase: "review",
       title: pr.title,
+      commitSha: pr.headRefOid,
     });
   }
 
