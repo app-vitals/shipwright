@@ -17,6 +17,7 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
+  type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
   renderAgentDetailPage,
@@ -33,6 +34,7 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderTokensPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -2322,6 +2324,44 @@ describe("renderTaskDetailPage — dependencies", () => {
   });
 });
 
+describe("renderTaskDetailPage — agent field linkability", () => {
+  function render(
+    task: Partial<TaskItem> = {},
+    agentNames: Record<string, string> = {},
+  ): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+      agentNames,
+      "UTC",
+    );
+  }
+
+  test("Assignee links to the agent detail page", () => {
+    const html = render({ assignee: "agent-a" });
+    expect(html).toContain('<a href="/admin/agents/agent-a"');
+  });
+
+  test("Agent Hint links to the agent detail page", () => {
+    const html = render({ agentHint: "agent-b" });
+    expect(html).toContain('<a href="/admin/agents/agent-b"');
+  });
+
+  test("Claimed By links to the agent detail page and shows display name", () => {
+    const html = render(
+      { claimedBy: "agent-c" },
+      { "agent-c": "Agent Charlie" },
+    );
+    expect(html).toContain('<a href="/admin/agents/agent-c"');
+    expect(html).toContain("Agent Charlie (agent-c)");
+  });
+
+  test("no Assignee/Agent Hint/Claimed By rows when unset", () => {
+    const html = render({ assignee: null, agentHint: null, claimedBy: null });
+    expect(html).not.toContain("/admin/agents/");
+  });
+});
+
 describe("renderTaskDetailPage — markdown", () => {
   function render(task: Partial<TaskItem> = {}): string {
     return renderTaskDetailPage(
@@ -2691,6 +2731,12 @@ describe("renderPrsPage", () => {
     expect(html).toContain("Updated");
   });
 
+  test("Claimed By cell links to the claiming agent's detail page", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain('<a href="/admin/agents/agent-001"');
+    expect(html).toContain("Alpha Agent");
+  });
+
   test("renders 2+ PRs as table rows", () => {
     const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
     expect(html).toContain("org/repo-a");
@@ -2967,6 +3013,18 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("Xray Agent");
   });
 
+  test("claimedBy links to the agent detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/agents/agent-x"');
+  });
+
+  test("agentId links to the agent detail page", () => {
+    const html = render();
+    const matches = html.match(/<a href="\/admin\/agents\/agent-x"/g);
+    // both Claimed By and Agent ID resolve to agent-x here, so 2 links
+    expect(matches?.length).toBe(2);
+  });
+
   test("renders Timeline section with date fields", () => {
     const html = render();
     expect(html).toContain("Timeline");
@@ -3087,7 +3145,11 @@ describe("renderCronLogsPage", () => {
       crons: [CRON, OTHER_CRON],
       runs,
       filters: opts?.filters ?? {},
-      pagination: opts?.pagination ?? { total: runs.length, limit: 20, page: 1 },
+      pagination: opts?.pagination ?? {
+        total: runs.length,
+        limit: 20,
+        page: 1,
+      },
       userName: "admin@example.com",
       timezone: "America/Los_Angeles",
     });
@@ -3165,6 +3227,18 @@ describe("renderCronLogsPage", () => {
   test("renders the cron schedule when the owning cron has no name", () => {
     const html = render([makeRun({ cron: OTHER_CRON })]);
     expect(html).toContain("*/15 * * * *");
+  });
+
+  test("Cron column links to the same page filtered to that cron's id", () => {
+    const html = render([makeRun({ cron: CRON })]);
+    expect(html).toContain(
+      `<a href="/admin/agents/${CRON_AGENT.id}/cron-logs?cronId=${CRON.id}"`,
+    );
+  });
+
+  test("Cron column renders plain '—' with no link when the run has no cron", () => {
+    const html = render([makeRun({ cron: undefined })]);
+    expect(html).not.toContain("cron-logs?cronId=");
   });
 
   test("renders empty state when no runs match", () => {
@@ -3409,7 +3483,11 @@ describe("renderCronLogsPage", () => {
 
   test("outcome badge shows 'skipped' ahead of the outcome column value when skipped is true", () => {
     const html = render([
-      makeRun({ skipped: true, outcome: "error", skipReason: "pre-check failed" }),
+      makeRun({
+        skipped: true,
+        outcome: "error",
+        skipReason: "pre-check failed",
+      }),
     ]);
     // The badge itself renders "skipped", not "error" — mirrors
     // cronRunOutcomeLabel's skipped-takes-priority convention.
@@ -3491,6 +3569,49 @@ describe("renderTasksPage — mobile column hiding", () => {
     expect((sessionTdMatches ?? []).length).toBe(2);
     expect(repoTdMatches).not.toBeNull();
     expect((repoTdMatches ?? []).length).toBe(2);
+  });
+});
+
+// ─── renderTasksPage — readOnly suppresses internal /admin/ links ────────────
+
+describe("renderTasksPage — readOnly suppresses internal /admin/ links", () => {
+  const CLAIMED_BLOCKED_TASK: TaskItem = {
+    id: "TASK-3",
+    title: "Claimed and blocked task",
+    status: "blocked",
+    session: "session-abc",
+    repo: "org/repo",
+    assignee: null,
+    claimedBy: "agent-x",
+    blockedBy: [{ type: "dependency", id: "TASK-dep", status: "pending" }],
+  };
+
+  function render(readOnly: boolean): string {
+    return renderTasksPage(
+      [CLAIMED_BLOCKED_TASK],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      readOnly,
+    );
+  }
+
+  test("readOnly=false links the agent cell and the blocker badge", () => {
+    const html = render(false);
+    expect(html).toContain('<a href="/admin/agents/agent-x"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-dep"');
+  });
+
+  test("readOnly=true renders the same ids as plain text, no /admin/ links", () => {
+    const html = render(true);
+    expect(html).toContain("agent-x");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain("TASK-dep");
+    expect(html).not.toContain("/admin/");
   });
 });
 
@@ -4468,5 +4589,42 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("<img src=x onerror=alert(1)>");
     expect(section).not.toContain("<script>evil()</script>");
     expect(section).not.toContain("<b>dep</b>");
+  });
+});
+
+// ─── renderTokensPage — agent column linkability ─────────────────────────────
+
+describe("renderTokensPage — agent column linkability", () => {
+  function render(tokens: TaskStoreTokenItem[]): string {
+    return renderTokensPage(tokens, false, USER_NAME);
+  }
+
+  test("agent-scoped token links its Agent ID to the agent detail page", () => {
+    const html = render([
+      {
+        id: "tok-1",
+        label: "CI token",
+        agentId: "agent-y",
+        token: "sw_abc",
+        createdAt: "2026-06-01T10:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(html).toContain('<a href="/admin/agents/agent-y"');
+  });
+
+  test("admin token (no agentId) renders '(admin)' with no agent link", () => {
+    const html = render([
+      {
+        id: "tok-2",
+        label: "Admin token",
+        agentId: null,
+        token: "sw_def",
+        createdAt: "2026-06-01T10:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(html).toContain("(admin)");
+    expect(html).not.toContain("/admin/agents/");
   });
 });

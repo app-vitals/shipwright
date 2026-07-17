@@ -30,6 +30,16 @@ function taskLink(taskId: string): string {
 }
 
 /**
+ * Renders a link to an agent's detail page. `label` defaults to the agent id
+ * but callers pass a display name (e.g. "Xray Agent (agent-x)") when one is
+ * available from an `agentNames` lookup map, keeping the link text
+ * human-readable while still routing by id.
+ */
+function agentLink(agentId: string, label?: string): string {
+  return `<a href="/admin/agents/${escapeHtml(agentId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(label ?? agentId)}</a>`;
+}
+
+/**
  * Renders a link for a work-queue/cron-log item id, which is either a task id
  * (e.g. "WLS-2.2") or a "repo#prNumber" PR reference (e.g. "acme/x#123") per
  * the RankedWorkItem/CronRunItem id convention. Task ids link into the admin
@@ -1478,7 +1488,7 @@ export function renderTasksPage(
         if (b.type === "hitl") {
           return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">Waiting: HITL</span>`;
         }
-        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${taskLink(b.id)}</span>`;
+        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${readOnly ? escapeHtml(b.id) : taskLink(b.id)}</span>`;
       })
       .join("");
   };
@@ -1519,7 +1529,9 @@ export function renderTasksPage(
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
             const agentCell = agentId
-              ? escapeHtml(agentNames[agentId] ?? agentId)
+              ? readOnly
+                ? escapeHtml(agentNames[agentId] ?? agentId)
+                : agentLink(agentId, agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
             const prCell =
@@ -1748,6 +1760,17 @@ export function renderTaskDetailPage(
     </tr>`;
   }
 
+  function agentField(
+    label: string,
+    agentId: string | null | undefined,
+  ): string {
+    if (!agentId) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
+    </tr>`;
+  }
+
   function linkField(
     label: string,
     url: string | null | undefined,
@@ -1883,33 +1906,9 @@ export function renderTaskDetailPage(
     field("Type", task.type),
     field("Layer", task.layer),
     field("Source", task.source),
-    field(
-      "Assignee",
-      task.assignee
-        ? agentNames[task.assignee]
-          ? `${agentNames[task.assignee]} (${task.assignee})`
-          : task.assignee
-        : null,
-      true,
-    ),
-    field(
-      "Agent Hint",
-      task.agentHint
-        ? agentNames[task.agentHint]
-          ? `${agentNames[task.agentHint]} (${task.agentHint})`
-          : task.agentHint
-        : null,
-      true,
-    ),
-    field(
-      "Claimed By",
-      task.claimedBy
-        ? agentNames[task.claimedBy]
-          ? `${agentNames[task.claimedBy]} (${task.claimedBy})`
-          : task.claimedBy
-        : null,
-      true,
-    ),
+    agentField("Assignee", task.assignee),
+    agentField("Agent Hint", task.agentHint),
+    agentField("Claimed By", task.claimedBy),
     task.session
       ? `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
@@ -2359,7 +2358,10 @@ export function renderPrsPage(
       : prs
           .map((pr) => {
             const claimedCell = pr.claimedBy
-              ? escapeHtml(agentNames[pr.claimedBy] ?? pr.claimedBy)
+              ? agentLink(
+                  pr.claimedBy,
+                  agentNames[pr.claimedBy] ?? pr.claimedBy,
+                )
               : '<span style="color:#9ca3af">—</span>';
             const taskCell = pr.taskId
               ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
@@ -2585,11 +2587,16 @@ export function renderPrDetailPage(
     </tr>`;
   }
 
-  const claimedByDisplay = pr.claimedBy
-    ? agentNames[pr.claimedBy]
-      ? `${agentNames[pr.claimedBy]} (${pr.claimedBy})`
-      : pr.claimedBy
-    : null;
+  function agentField(
+    label: string,
+    agentId: string | null | undefined,
+  ): string {
+    if (!agentId) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
+    </tr>`;
+  }
 
   const githubPrUrl = `https://github.com/${pr.repo}/pull/${pr.prNumber}`;
 
@@ -2609,8 +2616,8 @@ export function renderPrDetailPage(
     field("Patch Cycles", String(pr.patchCycles)),
     field("Commit SHA", pr.commitSha, true),
     field("Staged", pr.staged ? "yes" : "no"),
-    field("Claimed By", claimedByDisplay, true),
-    field("Agent ID", pr.agentId, true),
+    agentField("Claimed By", pr.claimedBy),
+    agentField("Agent ID", pr.agentId),
   ]
     .filter(Boolean)
     .join("\n");
@@ -2701,7 +2708,9 @@ export function renderCronLogsPage(opts: {
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
-    const cronCell = escapeHtml(cronLabel);
+    const cronCell = r.cron
+      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+      : escapeHtml(cronLabel);
 
     const startedIso = new Date(r.startedAt).toISOString();
     const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
@@ -3115,7 +3124,7 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
             (t) => `<tr>
           <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
           <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.agentId ?? "(admin)")}</td>
+          <td style="font-size:12px;color:#6b7280;font-family:monospace">${t.agentId ? agentLink(t.agentId) : "(admin)"}</td>
           <td>${fmt(t.createdAt)}</td>
           <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
           <td>

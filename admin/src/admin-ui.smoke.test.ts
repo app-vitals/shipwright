@@ -4907,6 +4907,40 @@ describe("admin UI — public task board", () => {
     expect(html).not.toContain("admin_session");
   });
 
+  it("GET /public/tasks does not leak /admin/ links for claimed or blocked tasks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [
+            {
+              id: "pub-task-3",
+              title: "Public task gamma",
+              status: "blocked",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              assignee: null,
+              claimedBy: "agent-pub",
+              blockedBy: [
+                { type: "dependency", id: "pub-task-1", status: "pending" },
+              ],
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Public task gamma");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain("agent-pub");
+    expect(html).not.toContain("/admin/");
+  });
+
   it("GET /public/tasks renders 200 even when no publicRepo configured (degraded mode)", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
