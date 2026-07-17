@@ -115,7 +115,7 @@ Example flags:
 
 **Data-backfill migrations need a live-data check, not just a design review.** If a task involves a migration that assigns or attributes existing rows by pattern-matching a column (mapping an existing value to a new one), flag that the task's acceptance criteria must require querying the live table for its actual distinct values and confirming every distinct group is covered — not just checking the mapping against docs/config/API references. Test fixtures for that migration must be seeded from the same live-distinct-values check. A mapping that looks complete against documentation can still miss a real data shape that only a live query would surface.
 
-Mark this task **HITL** (see Step 5.5): in repos where production databases aren't reachable from the dev-task agent's normal execution environment (a common pattern — check the repo's `CLAUDE.md` for a rule like "scripts outside the cluster must use service APIs, not DB directly"), the live-data check itself requires a human with cluster/DB access to run the query and hand back the result before the mapping can be finalized. Inject a `## Human steps` section naming the query to run and where to run it from (e.g. `kubectl exec`/cloud-sql-proxy, or an existing read-only admin endpoint if one exists).
+Mark this task **HITL** — see the judgment step in Step 5.5.
 
 **Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks:
 
