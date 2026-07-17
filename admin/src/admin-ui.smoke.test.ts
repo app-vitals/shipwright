@@ -578,6 +578,8 @@ describe("admin UI — authenticated pages", () => {
       outcome: "posted",
       error: null,
       phase: null,
+      itemType: null,
+      itemId: null,
       createdAt: new Date("2026-06-01T10:00:00Z"),
       modelBreakdown: [] as {
         id: string;

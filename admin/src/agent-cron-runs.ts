@@ -41,6 +41,10 @@ export interface CreateAgentCronRunInput {
   error?: string | null;
   /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
   phase?: string | null;
+  /** Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch. */
+  itemType?: string | null;
+  /** Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch. */
+  itemId?: string | null;
 }
 
 export interface ModelBreakdownEntry {
@@ -131,6 +135,8 @@ export class AgentCronRunService {
         outcome: input.outcome ?? null,
         error: input.error ?? null,
         phase: input.phase ?? null,
+        itemType: input.itemType ?? null,
+        itemId: input.itemId ?? null,
       },
     });
   }

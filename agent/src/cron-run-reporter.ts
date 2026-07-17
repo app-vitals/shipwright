@@ -29,11 +29,19 @@ export interface CronRunReporter {
    * command in the admin UI and metrics dashboard. Optional and additive —
    * callers that don't pass it (e.g. the generic cron handler) keep working
    * unchanged.
+   *
+   * `itemType`/`itemId` tag the run with the work item ("task" | "pr") the
+   * dispatched command was invoked against (e.g. itemType "task", itemId
+   * "WLS-2.2", or itemType "pr", itemId "acme/x#123"). Optional and additive,
+   * same as `phase` — a tick with no dispatch (skipped tick, empty queue)
+   * passes neither.
    */
   createRun(
     cronId: string,
     startedAt: Date,
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<string | null>;
   /** Called when run completes (success or error). Includes token data for non-error. */
   completeRun(
@@ -50,6 +58,8 @@ export interface CronRunReporter {
       modelBreakdown?: ModelBreakdownEntry[];
     },
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<void>;
   /** Called when precheck causes a skip. No token data. */
   skipRun(
@@ -59,6 +69,8 @@ export interface CronRunReporter {
     skipReason: string,
     opts?: { error?: string },
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<void>;
 }
 
@@ -101,6 +113,8 @@ export class HttpCronRunReporter implements CronRunReporter {
     cronId: string,
     startedAt: Date,
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<string | null> {
     const { apiUrl, agentId, apiKey } = this.opts;
     const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs`;
@@ -109,6 +123,8 @@ export class HttpCronRunReporter implements CronRunReporter {
       startedAt: startedAt.toISOString(),
     };
     if (phase !== undefined) startBody.phase = phase;
+    if (itemType !== undefined) startBody.itemType = itemType;
+    if (itemId !== undefined) startBody.itemId = itemId;
 
     try {
       const res = await fetch(url, {
@@ -149,6 +165,8 @@ export class HttpCronRunReporter implements CronRunReporter {
       modelBreakdown?: ModelBreakdownEntry[];
     },
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<void> {
     if (runId === null) return;
 
@@ -169,6 +187,8 @@ export class HttpCronRunReporter implements CronRunReporter {
     if (opts?.modelBreakdown !== undefined)
       body.modelBreakdown = opts.modelBreakdown;
     if (phase !== undefined) body.phase = phase;
+    if (itemType !== undefined) body.itemType = itemType;
+    if (itemId !== undefined) body.itemId = itemId;
 
     await this.patchRun(url, body);
   }
@@ -180,6 +200,8 @@ export class HttpCronRunReporter implements CronRunReporter {
     skipReason: string,
     opts?: { error?: string },
     phase?: string,
+    itemType?: string,
+    itemId?: string,
   ): Promise<void> {
     if (runId === null) return;
 
@@ -193,6 +215,8 @@ export class HttpCronRunReporter implements CronRunReporter {
     };
     if (opts?.error !== undefined) body.error = opts.error;
     if (phase !== undefined) body.phase = phase;
+    if (itemType !== undefined) body.itemType = itemType;
+    if (itemId !== undefined) body.itemId = itemId;
 
     await this.patchRun(url, body);
   }
@@ -203,6 +227,8 @@ export class NoopCronRunReporter implements CronRunReporter {
     _cronId: string,
     _startedAt: Date,
     _phase?: string,
+    _itemType?: string,
+    _itemId?: string,
   ): Promise<string | null> {
     return null;
   }
@@ -221,6 +247,8 @@ export class NoopCronRunReporter implements CronRunReporter {
       modelBreakdown?: ModelBreakdownEntry[];
     },
     _phase?: string,
+    _itemType?: string,
+    _itemId?: string,
   ): Promise<void> {
     // intentional no-op
   }
@@ -232,6 +260,8 @@ export class NoopCronRunReporter implements CronRunReporter {
     _skipReason: string,
     _opts?: { error?: string },
     _phase?: string,
+    _itemType?: string,
+    _itemId?: string,
   ): Promise<void> {
     // intentional no-op
   }
