@@ -23,7 +23,10 @@ import { type Clock, SystemClock } from "./clock.ts";
 import type { PrismaClient } from "./index.ts";
 
 export class StaleClaimReaper {
-  private readonly ttlMs: number;
+  /** The resolved claim TTL (ms), read once at construction. Exposed so
+   * startup code (main.ts) can validate it against other configured
+   * timeouts — see `checkClaimTtlBuffer` in ./claim-ttl-buffer-check.ts. */
+  readonly ttlMs: number;
 
   constructor(
     private readonly prisma: PrismaClient,

@@ -16,6 +16,7 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { createTaskStoreApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
+import { checkClaimTtlBuffer } from "./claim-ttl-buffer-check.ts";
 import { PrismaClient } from "./index.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
@@ -125,6 +126,27 @@ async function startServer(): Promise<void> {
   });
 
   const reaper = new StaleClaimReaper(prisma);
+
+  // Opt-in sanity check: task-store and the agent are separate deployables
+  // with independent env surfaces, so task-store can't read the agent's
+  // SHIPWRIGHT_CLAUDE_TIMEOUT_MS directly. If an operator also sets it here
+  // (a second copy of the same value, not new cross-service coupling), warn
+  // when the resolved claim TTL doesn't leave enough headroom over it. In an
+  // N:1 fleet (many agents sharing one task-store), use the MAX
+  // SHIPWRIGHT_CLAUDE_TIMEOUT_MS across all agents, not any single agent's
+  // value.
+  const rawClaudeTimeoutMs = process.env.SHIPWRIGHT_CLAUDE_TIMEOUT_MS;
+  const parsedClaudeTimeoutMs = rawClaudeTimeoutMs
+    ? Number(rawClaudeTimeoutMs)
+    : undefined;
+  const claudeTimeoutMs = Number.isFinite(parsedClaudeTimeoutMs)
+    ? parsedClaudeTimeoutMs
+    : undefined;
+  const ttlBufferWarning = checkClaimTtlBuffer(reaper.ttlMs, claudeTimeoutMs);
+  if (ttlBufferWarning) {
+    console.warn(ttlBufferWarning);
+  }
+
   setInterval(() => {
     reaper.reap().catch((err) => {
       console.error("[stale-claim-reaper] reap error:", err);
