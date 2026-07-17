@@ -26,6 +26,24 @@ interface CapturedCall {
   init: RequestInit | undefined;
 }
 
+// Captures console.warn calls for the duration of `fn`, restoring the
+// original afterward even if `fn` throws.
+async function withCapturedWarnings(
+  fn: () => Promise<void>,
+): Promise<string[]> {
+  const warnMessages: string[] = [];
+  const originalWarn = console.warn.bind(console);
+  console.warn = (...args: unknown[]) => {
+    warnMessages.push(args.map(String).join(" "));
+  };
+  try {
+    await fn();
+  } finally {
+    console.warn = originalWarn;
+  }
+  return warnMessages;
+}
+
 /** Records each call and returns a scripted Response (or throws). */
 function makeFetchStub(responses: (Response | Error)[] = []): {
   fetchFn: typeof fetch;
@@ -92,21 +110,14 @@ describe("HttpWorkQueueReporter", () => {
       fetchFn,
     });
 
-    const originalWarn = console.warn.bind(console);
-    const warnMessages: string[] = [];
-    console.warn = (...args: unknown[]) => {
-      warnMessages.push(args.map(String).join(" "));
-    };
-    try {
+    const warnMessages = await withCapturedWarnings(async () => {
       await expect(
         reporter.reportSnapshot({
           computedAt: "2026-07-17T00:00:00.000Z",
           items: [],
         }),
       ).resolves.toBeUndefined();
-    } finally {
-      console.warn = originalWarn;
-    }
+    });
 
     expect(warnMessages.some((m) => m.includes("500"))).toBe(true);
   });
@@ -120,21 +131,14 @@ describe("HttpWorkQueueReporter", () => {
       fetchFn,
     });
 
-    const originalWarn = console.warn.bind(console);
-    const warnMessages: string[] = [];
-    console.warn = (...args: unknown[]) => {
-      warnMessages.push(args.map(String).join(" "));
-    };
-    try {
+    const warnMessages = await withCapturedWarnings(async () => {
       await expect(
         reporter.reportSnapshot({
           computedAt: "2026-07-17T00:00:00.000Z",
           items: [],
         }),
       ).resolves.toBeUndefined();
-    } finally {
-      console.warn = originalWarn;
-    }
+    });
 
     expect(warnMessages.some((m) => m.includes("network unreachable"))).toBe(
       true,
