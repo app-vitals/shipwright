@@ -140,6 +140,14 @@ export interface CronRunItem {
   /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
   phase?: string | null;
   /**
+   * The work item ("task" | "pr") and its id (e.g. "WLS-2.2" or "acme/x#123")
+   * that this run's dispatched command targeted. Both null for a tick with no
+   * dispatch (skipped tick, empty queue) and for legacy runs that predate
+   * item tracking.
+   */
+  itemType?: string | null;
+  itemId?: string | null;
+  /**
    * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
    * renderCronLogsPage's per-agent table) so the Cron column can be rendered
    * without an N+1 lookup. Absent on single-cron listings.
@@ -2679,6 +2687,13 @@ export function renderCronLogsPage(opts: {
     // Legacy five-job crons never set phase — em-dash rather than a blank cell.
     const phaseCell = r.phase ? escapeHtml(r.phase) : "—";
 
+    // A run with no dispatch (skipped tick, empty queue) leaves itemType/itemId
+    // null — em-dash rather than a blank cell, same convention as phaseCell.
+    const itemCell =
+      r.itemType && r.itemId
+        ? `${escapeHtml(r.itemType)}: ${escapeHtml(r.itemId)}`
+        : "—";
+
     return `<tr>
       <td>${outcomeCell}</td>
       <td style="font-size:12px">${cronCell}</td>
@@ -2687,12 +2702,13 @@ export function renderCronLogsPage(opts: {
       <td class="mono" style="font-size:12px">${tokensCell}</td>
       <td style="font-size:12px">${modelCell}</td>
       <td style="font-size:12px">${phaseCell}</td>
+      <td style="font-size:12px">${itemCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="7" class="empty-state">No runs match the selected filters.</td></tr>`
+      ? `<tr><td colspan="8" class="empty-state">No runs match the selected filters.</td></tr>`
       : runs.map(row).join("\n");
 
   // Filter form
@@ -2790,6 +2806,7 @@ export function renderCronLogsPage(opts: {
             <th>Tokens</th>
             <th>Model</th>
             <th>Phase</th>
+            <th>Item</th>
           </tr>
         </thead>
         <tbody>

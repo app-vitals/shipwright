@@ -3053,6 +3053,7 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Tokens");
     expect(html).toContain("<th>Model</th>");
     expect(html).toContain("<th>Phase</th>");
+    expect(html).toContain("<th>Item</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
   });
@@ -3141,6 +3142,18 @@ describe("renderCronLogsPage", () => {
     const html = render([makeRun({ phase: null })]);
     // Locate the tbody row specifically (not the thead row) to check the
     // phase cell — the last <td> in the row.
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders the run's itemType/itemId when set", () => {
+    const html = render([makeRun({ itemType: "task", itemId: "WLS-2.2" })]);
+    expect(html).toContain("task: WLS-2.2");
+  });
+
+  test("renders em-dash for the Item cell when itemType/itemId are null (no dispatch)", () => {
+    const html = render([makeRun({ itemType: null, itemId: null })]);
     const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
     expect(bodyRowMatch).not.toBeNull();
     expect(bodyRowMatch?.[1]).toContain("—");
