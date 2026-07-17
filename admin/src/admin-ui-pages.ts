@@ -194,6 +194,21 @@ function fmtDuration(ms: number): string {
 // color coding needed here.
 const MODEL_BADGE_STYLE = "background:#eef2ff;color:#4338ca";
 
+// Inline CSS for the cron-run "Item" column badge, keyed by the raw
+// itemType ("task" | "pr") — distinct colors so a reader can tell a Task row
+// from a PR row at a glance, not just by reading the label text.
+const ITEM_TYPE_BADGE_STYLE: Record<string, string> = {
+  task: "background:#eef2ff;color:#4338ca",
+  pr: "background:#dcfce7;color:#166534",
+};
+const ITEM_TYPE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+
+// Human-readable capitalized labels for the raw lowercase itemType values.
+const ITEM_TYPE_LABEL: Record<string, string> = {
+  task: "Task",
+  pr: "PR",
+};
+
 export interface ToolItem {
   id: string;
   pattern: string;
@@ -2689,9 +2704,12 @@ export function renderCronLogsPage(opts: {
 
     // A run with no dispatch (skipped tick, empty queue) leaves itemType/itemId
     // null — em-dash rather than a blank cell, same convention as phaseCell.
+    // When set, render a distinctly-labeled Task/PR badge — a bare
+    // "task: WLS-2.2" string forces the reader to parse itemType to infer
+    // what kind of thing the id refers to.
     const itemCell =
       r.itemType && r.itemId
-        ? `${escapeHtml(r.itemType)}: ${escapeHtml(r.itemId)}`
+        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${escapeHtml(r.itemId)}</span>`
         : "—";
 
     return `<tr>

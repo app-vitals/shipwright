@@ -3147,9 +3147,26 @@ describe("renderCronLogsPage", () => {
     expect(bodyRowMatch?.[1]).toContain("—");
   });
 
-  test("renders the run's itemType/itemId when set", () => {
+  test("renders the run's itemType/itemId as a labeled Task badge when set", () => {
     const html = render([makeRun({ itemType: "task", itemId: "WLS-2.2" })]);
-    expect(html).toContain("task: WLS-2.2");
+    // Must render a distinctly-labeled "Task" badge, not the bare "task: WLS-2.2" string.
+    expect(html).not.toContain("task: WLS-2.2");
+    expect(html).toContain("Task");
+    expect(html).toContain("WLS-2.2");
+    expect(html).toMatch(/badge[^>]*>\s*Task/);
+  });
+
+  test("renders the run's itemType/itemId as a labeled PR badge when set", () => {
+    const html = render([
+      makeRun({ itemType: "pr", itemId: "app-vitals/shipwright#1234" }),
+    ]);
+    // Must render a distinctly-labeled "PR" badge, clearly distinguished from "Task".
+    expect(html).toContain("PR");
+    expect(html).toContain("app-vitals/shipwright#1234");
+    expect(html).toMatch(/badge[^>]*>\s*PR/);
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    expect(bodyRowMatch?.[1]).not.toContain(">Task<");
   });
 
   test("renders em-dash for the Item cell when itemType/itemId are null (no dispatch)", () => {
