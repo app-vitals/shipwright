@@ -469,6 +469,114 @@ describe("PullRequestService.update() claim release on review post", () => {
   });
 });
 
+describe("PullRequestService.release()", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("reviewState:posted — preserves reviewState, still clears claim fields", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "posted",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("reviewState" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  test("reviewState:approved — preserves reviewState, still clears claim fields", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "approved",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("reviewState" in data).toBe(false);
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  test("reviewState:pending — resets reviewState=pending (no-op value), clears claim fields", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "pending",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("pending");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  test("reviewState:in_progress — resets reviewState=pending, clears claim fields", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "in_progress",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("pending");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  test("reviewState missing/null on existing record — resets reviewState=pending, clears claim fields", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.reviewState).toBe("pending");
+    expect(data.claimedBy).toBeNull();
+    expect(data.claimedAt).toBeNull();
+    expect(data.heartbeatAt).toBeNull();
+  });
+
+  test("record does not exist — throws NotFoundError, does not call update", async () => {
+    const prisma = makePrismaDouble(null);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    let caught: unknown;
+    try {
+      await svc.release("missing-id");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+    expect(prisma._updateCalls).toHaveLength(0);
+  });
+});
+
 describe("PullRequestService.complete() claim release", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);
