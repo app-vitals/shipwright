@@ -1,0 +1,50 @@
+{
+  "listThreads_success": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread-abc",
+          "agentId": "agent-1",
+          "memberId": "member-1",
+          "title": "Test Thread",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:05:00.000Z"
+        },
+        {
+          "id": "thread-def",
+          "agentId": "agent-1",
+          "memberId": null,
+          "title": null,
+          "createdAt": "2026-01-02T00:00:00.000Z",
+          "updatedAt": "2026-01-02T00:05:00.000Z"
+        }
+      ],
+      "total": 2,
+      "limit": 50,
+      "offset": 0
+    }
+  },
+  "listThreads_with_query_params": {
+    "status": 200,
+    "body": {
+      "threads": [
+        {
+          "id": "thread-abc",
+          "agentId": "agent-1",
+          "memberId": "member-1",
+          "title": "Test Thread",
+          "createdAt": "2026-01-01T00:00:00.000Z",
+          "updatedAt": "2026-01-01T00:05:00.000Z"
+        }
+      ],
+      "total": 6,
+      "limit": 10,
+      "offset": 5
+    }
+  },
+  "listThreads_500": {
+    "status": 500,
+    "body": { "error": "internal server error" }
+  }
+}
