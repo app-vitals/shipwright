@@ -151,6 +151,7 @@ export async function getReviewCandidates(
         id: candidateId(pr.repo ?? "unknown", pr.number),
         age,
         phase: "review",
+        title: pr.title,
       });
       continue;
     }
@@ -172,6 +173,7 @@ export async function getReviewCandidates(
       id: candidateId(pr.repo ?? "unknown", pr.number),
       age,
       phase: "review",
+      title: pr.title,
     });
   }
 

@@ -40,6 +40,7 @@ import type { WorkPrCandidate } from "./work-selector.ts";
 
 export interface GhPr {
   number: number;
+  title?: string;
   headRefOid: string;
   headRefName: string;
   author: { login: string };
@@ -273,6 +274,7 @@ export async function getDeployCandidates(
         id: candidateId(repo, pr.number),
         age: linkedTask?.createdAt ?? pr.createdAt ?? "",
         phase: "deploy",
+        title: pr.title,
       });
     } catch (err) {
       process.stderr.write(
@@ -288,6 +290,7 @@ export async function getDeployCandidates(
 
 interface GhPrListJson {
   number: number;
+  title?: string;
   headRefOid: string;
   headRefName: string;
   author: { login: string };
@@ -357,7 +360,7 @@ export async function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "number,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {

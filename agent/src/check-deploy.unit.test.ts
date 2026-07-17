@@ -23,6 +23,7 @@ import {
 function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
     number: 50,
+    title: "Deploy-ready feature",
     headRefOid: "sha50",
     headRefName: "feat/example-branch",
     author: { login: "bodhi-agent" },
@@ -108,6 +109,7 @@ describe("getDeployCandidates", () => {
     expect(result[0]).toMatchObject({
       id: "acme/example-repo#50",
       phase: "deploy",
+      title: "Deploy-ready feature",
     });
   });
 
