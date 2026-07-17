@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.6.448] - 2026-07-17
+
+### Changed
+
+- docs: document opt-in claim TTL buffer var (`taskStore.extraEnv` example) and N:1 agents-to-task-store TTL requirement (CTB-3.1)
+
 ## [1.6.447] - 2026-07-17
 
 ### Changed
