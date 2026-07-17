@@ -26,18 +26,24 @@ import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
 interface CreateCall {
   cronId: string;
   phase?: string;
+  itemType?: string;
+  itemId?: string;
 }
 interface CompleteCall {
   cronId: string;
   runId: string | null;
   outcome: "completed" | "failed";
   phase?: string;
+  itemType?: string;
+  itemId?: string;
 }
 interface SkipCall {
   cronId: string;
   runId: string | null;
   skipReason: string;
   phase?: string;
+  itemType?: string;
+  itemId?: string;
 }
 
 function makeRecordingReporter(): {
@@ -52,16 +58,34 @@ function makeRecordingReporter(): {
   let counter = 0;
 
   const reporter: CronRunReporter = {
-    async createRun(cronId, _startedAt, phase) {
-      creates.push({ cronId, phase });
+    async createRun(cronId, _startedAt, phase, itemType, itemId) {
+      creates.push({ cronId, phase, itemType, itemId });
       counter += 1;
       return `run-${counter}`;
     },
-    async completeRun(cronId, runId, _completedAt, outcome, _opts, phase) {
-      completes.push({ cronId, runId, outcome, phase });
+    async completeRun(
+      cronId,
+      runId,
+      _completedAt,
+      outcome,
+      _opts,
+      phase,
+      itemType,
+      itemId,
+    ) {
+      completes.push({ cronId, runId, outcome, phase, itemType, itemId });
     },
-    async skipRun(cronId, runId, _completedAt, skipReason, _opts, phase) {
-      skips.push({ cronId, runId, skipReason, phase });
+    async skipRun(
+      cronId,
+      runId,
+      _completedAt,
+      skipReason,
+      _opts,
+      phase,
+      itemType,
+      itemId,
+    ) {
+      skips.push({ cronId, runId, skipReason, phase, itemType, itemId });
     },
   };
 
@@ -593,6 +617,49 @@ describe("createLoopOrchestrator", () => {
     expectDispatchedCommands(messages, ["/shipwright:review acme/x#1"]);
   });
 
+  test("reports itemType/itemId for each PR phase dispatch (review/patch/deploy)", async () => {
+    const consumed = new Set<string>();
+    const { reporter, creates, completes } = makeRecordingReporter();
+    const reviewCandidates = [pr("acme/x#9", "2026-01-03T00:00:00Z", "review")];
+    const patchCandidates = [pr("acme/x#5", "2026-01-01T00:00:00Z", "patch")];
+    const deployCandidates = [pr("acme/x#3", "2026-01-02T00:00:00Z", "deploy")];
+    const { runner } = makeDrainingRunner(
+      {
+        review: reviewCandidates,
+        patch: patchCandidates,
+        deploy: deployCandidates,
+      },
+      consumed,
+    );
+    const deps = makeDeps({
+      reviewCandidates,
+      patchCandidates,
+      deployCandidates,
+      runner,
+      reporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop(ALL_PHASES_ON);
+
+    // Oldest-first drain order: patch (01-01), deploy (01-02), review (01-03).
+    expect(
+      creates.map((c) => ({ itemType: c.itemType, itemId: c.itemId })),
+    ).toEqual([
+      { itemType: "pr", itemId: "acme/x#5" },
+      { itemType: "pr", itemId: "acme/x#3" },
+      { itemType: "pr", itemId: "acme/x#9" },
+    ]);
+    expect(
+      completes.map((c) => ({ itemType: c.itemType, itemId: c.itemId })),
+    ).toEqual([
+      { itemType: "pr", itemId: "acme/x#5" },
+      { itemType: "pr", itemId: "acme/x#3" },
+      { itemType: "pr", itemId: "acme/x#9" },
+    ]);
+  });
+
   test("reports a tagged createRun/completeRun pair per dispatch", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
@@ -622,6 +689,13 @@ describe("createLoopOrchestrator", () => {
     expect(completes.every((c) => c.outcome === "completed")).toBe(true);
     expect(creates.every((c) => c.cronId === "shipwright-loop")).toBe(true);
     expect(skips).toEqual([]);
+
+    // The winning item's type/id is threaded through create AND complete for
+    // both the PR-type and task-type dispatches.
+    expect(creates.map((c) => c.itemType)).toEqual(["pr", "task"]);
+    expect(creates.map((c) => c.itemId)).toEqual(["acme/x#3", "SWC-1.1"]);
+    expect(completes.map((c) => c.itemType)).toEqual(["pr", "task"]);
+    expect(completes.map((c) => c.itemId)).toEqual(["acme/x#3", "SWC-1.1"]);
   });
 
   test("an idle tick with no candidates across all phases reports zero runs", async () => {
@@ -656,6 +730,14 @@ describe("createLoopOrchestrator", () => {
     expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
     expect(completes).toEqual([]);
     expect(skips.map((s) => s.phase)).toEqual(["dev-task"]);
+
+    // The skipped run still records which task-type item was dispatched.
+    expect(creates.map((c) => ({ itemType: c.itemType, itemId: c.itemId }))).toEqual([
+      { itemType: "task", itemId: "SWC-1.1" },
+    ]);
+    expect(skips.map((s) => ({ itemType: s.itemType, itemId: s.itemId }))).toEqual([
+      { itemType: "task", itemId: "SWC-1.1" },
+    ]);
   });
 
   test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
@@ -686,6 +768,8 @@ describe("createLoopOrchestrator", () => {
         runId: "run-1",
         outcome: "failed",
         phase: "dev-task",
+        itemType: "task",
+        itemId: "SWC-1.1",
       },
     ]);
     expect(skips).toEqual([]);

@@ -435,6 +435,8 @@ function makeMockDeps(): AdminDeps {
         outcome: "success",
         error: null,
         phase: null,
+        itemType: null,
+        itemId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
       list: async () => ({
@@ -454,6 +456,8 @@ function makeMockDeps(): AdminDeps {
         outcome: null,
         error: null,
         phase: null,
+        itemType: null,
+        itemId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
       }),
@@ -2067,6 +2071,79 @@ describe("admin API — cron runs", () => {
     expect(body.run.phase).toBeNull();
   });
 
+  it("POST /agents/:id/crons/:cronId/runs accepts and round-trips itemType/itemId for a task item", async () => {
+    const deps = makeMockDepsWithRunService({
+      itemType: "task",
+      itemId: "WLS-2.2",
+    });
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        startedAt: "2026-01-01T08:00:00.000Z",
+        skipped: false,
+        outcome: "success",
+        itemType: "task",
+        itemId: "WLS-2.2",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.run.itemType).toBe("task");
+    expect(body.run.itemId).toBe("WLS-2.2");
+  });
+
+  it("POST /agents/:id/crons/:cronId/runs accepts and round-trips itemType/itemId for a PR item", async () => {
+    const deps = makeMockDepsWithRunService({
+      itemType: "pr",
+      itemId: "acme/x#123",
+    });
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        startedAt: "2026-01-01T08:00:00.000Z",
+        skipped: false,
+        outcome: "success",
+        itemType: "pr",
+        itemId: "acme/x#123",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.run.itemType).toBe("pr");
+    expect(body.run.itemId).toBe("acme/x#123");
+  });
+
+  it("POST /agents/:id/crons/:cronId/runs without itemType/itemId returns both null (skipped tick with no dispatch)", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        startedAt: "2026-01-01T08:00:00.000Z",
+        skipped: false,
+        outcome: "success",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.run.itemType).toBeNull();
+    expect(body.run.itemId).toBeNull();
+  });
+
   it("POST /agents/:id/crons/:cronId/runs returns 404 for unknown cronId", async () => {
     const deps = makeMockDepsWithRunService({ notFound: true });
     const app = createAdminApp(deps);
@@ -2112,6 +2189,33 @@ describe("admin API — cron runs", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.items[0].phase).toBe("review");
+  });
+
+  it("GET /agents/:id/crons/:cronId/runs exposes itemType/itemId when the run has them", async () => {
+    const deps = makeMockDepsWithRunService({
+      itemType: "pr",
+      itemId: "acme/x#123",
+    });
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items[0].itemType).toBe("pr");
+    expect(body.items[0].itemId).toBe("acme/x#123");
+  });
+
+  it("GET /agents/:id/crons/:cronId/runs returns itemType/itemId: null for runs without them", async () => {
+    const deps = makeMockDepsWithRunService();
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.items[0].itemType).toBeNull();
+    expect(body.items[0].itemId).toBeNull();
   });
 
   it("GET /agents/:id/crons/:cronId/runs includes modelBreakdown in each item", async () => {
@@ -2278,6 +2382,10 @@ function makeMockDepsWithRunService(opts?: {
   }>;
   /** If set, create()/list() return this phase on the mock run; defaults to null. */
   phase?: string | null;
+  /** If set, create()/list() return this itemType on the mock run; defaults to null. */
+  itemType?: string | null;
+  /** If set, create()/list() return this itemId on the mock run; defaults to null. */
+  itemId?: string | null;
 }): AdminDeps {
   const mockRun = {
     id: RUN_ID,
@@ -2290,6 +2398,8 @@ function makeMockDepsWithRunService(opts?: {
     outcome: "success",
     error: null,
     phase: opts?.phase ?? null,
+    itemType: opts?.itemType ?? null,
+    itemId: opts?.itemId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 

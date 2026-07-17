@@ -145,6 +145,67 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(items[0].phase).toBeNull();
   });
 
+  it("create() round-trips optional itemType/itemId fields for a task item", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date();
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+      outcome: "success",
+      itemType: "task",
+      itemId: "WLS-2.2",
+    });
+
+    expect(run.itemType).toBe("task");
+    expect(run.itemId).toBe("WLS-2.2");
+
+    const { items } = await runService.list(cronId, agentId);
+    expect(items[0].itemType).toBe("task");
+    expect(items[0].itemId).toBe("WLS-2.2");
+  });
+
+  it("create() round-trips optional itemType/itemId fields for a PR item", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date();
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+      outcome: "success",
+      itemType: "pr",
+      itemId: "acme/x#123",
+    });
+
+    expect(run.itemType).toBe("pr");
+    expect(run.itemId).toBe("acme/x#123");
+
+    const { items } = await runService.list(cronId, agentId);
+    expect(items[0].itemType).toBe("pr");
+    expect(items[0].itemId).toBe("acme/x#123");
+  });
+
+  it("create() leaves itemType/itemId null when not provided (skipped tick with no dispatch)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const startedAt = new Date();
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt,
+      skipped: false,
+      outcome: "success",
+    });
+
+    expect(run.itemType).toBeNull();
+    expect(run.itemId).toBeNull();
+
+    const { items } = await runService.list(cronId, agentId);
+    expect(items[0].itemType).toBeNull();
+    expect(items[0].itemId).toBeNull();
+  });
+
   it("create() throws NotFoundError when cronId does not exist", async () => {
     const agentId = await createAgent(prisma);
 

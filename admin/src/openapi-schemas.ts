@@ -257,6 +257,22 @@ export const AgentCronRunSchema = z
         description:
           "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
       }),
+    itemType: z
+      .string()
+      .nullable()
+      .openapi({
+        example: "task",
+        description:
+          'Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch (skipped tick, empty queue).',
+      }),
+    itemId: z
+      .string()
+      .nullable()
+      .openapi({
+        example: "WLS-2.2",
+        description:
+          'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch.',
+      }),
     inputTokens: z.number().int().nullable().openapi({ example: 1234 }),
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
@@ -310,6 +326,24 @@ export const CreateAgentCronRunBodySchema = z
         example: "dev-task",
         description:
           "Pipeline phase this run served (dev-task/review/patch/deploy)",
+      }),
+    itemType: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "task",
+        description:
+          'Work item type this run was dispatched against ("task" | "pr")',
+      }),
+    itemId: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({
+        example: "WLS-2.2",
+        description:
+          'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123")',
       }),
   })
   .openapi("CreateAgentCronRunBody");

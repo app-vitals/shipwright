@@ -155,14 +155,25 @@ export function createLoopOrchestrator(
    * "nothing to do once it actually ran" — the precheck contract's narrow
    * skip case — so it is recorded via skipRun rather than completeRun. Every
    * other outcome completes normally.
+   *
+   * `itemType`/`itemId` identify the winning work item this dispatch was sent
+   * against ("task" | "pr", plus its id) — threaded through to the reporter so
+   * every AgentCronRun row records which task or PR a given cron run actually
+   * touched (WLS-2.2).
    */
-  async function dispatch(phase: LoopPhase, itemId: string): Promise<void> {
+  async function dispatch(
+    phase: LoopPhase,
+    itemType: "task" | "pr",
+    itemId: string,
+  ): Promise<void> {
     const command = `${PHASE_COMMANDS[phase]} ${itemId}`;
     const message = formatCronMessage(loopCronId, command);
     const runId = await cronRunReporter.createRun(
       loopCronId,
       clock.now(),
       phase,
+      itemType,
+      itemId,
     );
 
     let runResult: ClaudeRunResult;
@@ -176,6 +187,8 @@ export function createLoopOrchestrator(
         "failed",
         { error: err instanceof Error ? err.message : String(err) },
         phase,
+        itemType,
+        itemId,
       );
       markCronRunFailureReported(err);
       throw err;
@@ -194,6 +207,8 @@ export function createLoopOrchestrator(
         "command:no-work",
         undefined,
         phase,
+        itemType,
+        itemId,
       );
       return;
     }
@@ -205,6 +220,8 @@ export function createLoopOrchestrator(
       "completed",
       buildTokenPayload(runResult.usage, runResult.modelUsage),
       phase,
+      itemType,
+      itemId,
     );
   }
 
@@ -258,7 +275,7 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(phase, itemId);
+        await dispatch(phase, item.type, itemId);
       }
     } finally {
       busy = false;
