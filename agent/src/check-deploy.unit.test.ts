@@ -44,6 +44,7 @@ interface MakeDepsOptions {
   taskStatus?: Record<string, LinkedTaskInfo | null>;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 function makeDeps({
@@ -56,6 +57,7 @@ function makeDeps({
   taskStatus = {},
   getScopedRepos = () => repos,
   hasScopeSynced = () => true,
+  isBundleComplete,
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: async () => currentUser,
@@ -79,6 +81,7 @@ function makeDeps({
       const key = `${repo}#${prNumber}`;
       return taskStatus[key] ?? null;
     },
+    ...(isBundleComplete ? { isBundleComplete } : {}),
   };
 }
 
@@ -707,5 +710,40 @@ describe("getDeployCandidates", () => {
       }),
     );
     expect(result).toEqual([]);
+  });
+
+  test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+      headRefName: "feat/bundle-incomplete",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (branch: string) =>
+          branch !== "feat/bundle-incomplete",
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR when isBundleComplete resolves true for its branch", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+      headRefName: "feat/bundle-complete",
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+        isBundleComplete: async (branch: string) =>
+          branch === "feat/bundle-complete",
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/example-repo#50");
   });
 });

@@ -20,6 +20,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
@@ -780,6 +781,139 @@ describe("createTaskStatusQuery", () => {
 
     const query = createTaskStatusQuery();
     await expect(query("acme/example-repo", 42)).rejects.toThrow(
+      "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createBundleCompleteQuery
+// ---------------------------------------------------------------------------
+
+describe("createBundleCompleteQuery", () => {
+  let savedEnv: { url?: string; token?: string };
+
+  beforeEach(() => {
+    savedEnv = {
+      url: process.env.SHIPWRIGHT_TASK_STORE_URL,
+      token: process.env.SHIPWRIGHT_TASK_STORE_TOKEN,
+    };
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.com";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "test-token";
+  });
+
+  afterEach(() => {
+    if (savedEnv.url !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_URL = savedEnv.url;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedEnv.token !== undefined) {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN = savedEnv.token;
+    } else {
+      // biome-ignore lint/performance/noDelete: intentional env cleanup
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("returns true when the branch has zero tasks", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({ tasks: [] }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    const result = await query("feat/example-branch");
+    expect(result).toBe(true);
+  });
+
+  test("returns true when all tasks on the branch are complete (pr_open/merged/approved)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            { id: "T-1", title: "First", status: "pr_open" },
+            { id: "T-2", title: "Second", status: "merged" },
+            { id: "T-3", title: "Third", status: "approved" },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    const result = await query("feat/example-branch");
+    expect(result).toBe(true);
+  });
+
+  test("returns false when at least one task on the branch is pending", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            { id: "T-1", title: "First", status: "pr_open" },
+            { id: "T-2", title: "Second", status: "pending" },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    const result = await query("feat/example-branch");
+    expect(result).toBe(false);
+  });
+
+  test("returns false when at least one task on the branch is in_progress", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [{ id: "T-1", title: "First", status: "in_progress" }],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    const result = await query("feat/example-branch");
+    expect(result).toBe(false);
+  });
+
+  test("returns false when at least one task on the branch is blocked", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [{ id: "T-1", title: "First", status: "blocked" }],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    const result = await query("feat/example-branch");
+    expect(result).toBe(false);
+  });
+
+  test("throws when the lookup response is not ok (fail-closed)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createBundleCompleteQuery({ fetchFn: fakeFetch });
+    await expect(query("feat/example-branch")).rejects.toThrow(
+      "task-store GET /tasks",
+    );
+  });
+
+  test("throws when SHIPWRIGHT_TASK_STORE_URL/TOKEN are not configured", async () => {
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    // biome-ignore lint/performance/noDelete: intentional env cleanup
+    delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+
+    const query = createBundleCompleteQuery();
+    await expect(query("feat/example-branch")).rejects.toThrow(
       "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
     );
   });
