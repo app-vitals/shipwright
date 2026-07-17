@@ -173,6 +173,7 @@ describe("getPatchCandidates", () => {
     expect(result[0]).toMatchObject({
       id: "acme/example-repo#10",
       phase: "patch",
+      title: "My feature",
     });
   });
 

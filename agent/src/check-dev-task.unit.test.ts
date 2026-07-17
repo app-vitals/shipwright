@@ -82,6 +82,7 @@ describe("getDevTaskCandidates", () => {
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
       id: "SWC-1.1",
+      title: "Test task",
       createdAt: "2026-05-01T00:00:00.000Z",
     });
   });
@@ -94,6 +95,7 @@ describe("getDevTaskCandidates", () => {
     );
     expect(result).toHaveLength(2);
     expect(result.map((t) => t.id)).toEqual(["SWC-1.1", "SWC-1.2"]);
+    expect(result.map((t) => t.title)).toEqual(["Test task", "Second task"]);
   });
 
   // ─── Stale in_progress guard ──────────────────────────────────────────────

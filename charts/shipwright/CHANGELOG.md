@@ -16,6 +16,66 @@ independent of `appVersion`. CI enforces this with
 
 - **Whisper ASR model configurability** (`agent.voice.whisper.model`, PPR-2.1): set the ASR model used by the self-hosted Whisper pod (`onerahmet/openai-whisper-asr-webservice`) via a new `ASR_MODEL` env var, e.g. `tiny`, `base`, `small`, `medium`, `large-v3`, or a language-suffixed variant like `tiny.en`. Empty (default) → no `ASR_MODEL` env var is rendered and the image falls back to its own built-in default model, preserving today's behaviour on upgrade. The `resources: {}` example in `values.yaml` was also expanded into a concrete CPU/memory sizing example for a small model.
 
+## [1.6.455] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.455 triggered by release tag(s): `agent-v1.5.0`
+
+## [1.6.454] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.454 triggered by release tag(s): `agent-v1.4.0`
+
+## [1.6.453] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.453 triggered by release tag(s): `admin-v1.2.0`
+
+## [1.6.452] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.452 triggered by release tag(s): `admin-v1.1.0`
+
+## [1.6.451] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.451 triggered by release tag(s): `agent-v1.3.0`
+
+## [1.6.450] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.450 triggered by release tag(s): `admin-v1.0.0`, `chat-v1.0.0`, `metrics-v1.0.0`, `task-store-v1.1.0`
+
+## [1.6.449] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.449 triggered by release tag(s): `agent-v1.2.0`
+
+## [1.6.448] - 2026-07-17
+
+### Changed
+
+- docs: document opt-in claim TTL buffer var (`taskStore.extraEnv` example) and N:1 agents-to-task-store TTL requirement (CTB-3.1)
+
+## [1.6.447] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.447 triggered by release tag(s): `task-store-v1.0.0`
+
+## [1.6.446] - 2026-07-17
+
+### Changed
+
+- auto-bump to chart v1.6.446 triggered by release tag(s): `agent-v1.1.0`
+
 ## [1.6.445] - 2026-07-17
 
 ### Changed

@@ -642,15 +642,62 @@ INSTRUCTIONS — follow in order:
   - Re-run until both pass cleanly
 
 [D] Commit
-  - Stage only the files you changed: `git add {changed files}`
-  - Commit with a conventional commit message describing what was fixed:
-    "fix: address review findings on #{pr} — {one-line summary of changes}"
-  - Push: `git push origin {branch}`
+  These two conditions are independent — both can fire in the same run (a mixed
+  ACCEPT+REJECT outcome), only the first can fire (all findings accepted/modified), only
+  the second can fire (all findings rejected), or neither (nothing to do).
+
+  - **If at least one finding was ACCEPTED or MODIFIED** (i.e. you have file changes
+    staged):
+    - Stage only the files you changed: `git add {changed files}`
+    - Commit with a conventional commit message describing what was fixed:
+      "fix: address review findings on #{pr} — {one-line summary of changes}"
+    - Push: `git push origin {branch}`
+
+  - **If any finding was classified REJECT in [A.5]** (regardless of whether other
+    findings in the same run were ACCEPTED/MODIFIED and handled above): post a PR-level
+    rebuttal comment explaining why each REJECTed finding was rejected, so the review is
+    not left looking unaddressed. Write the comment body to a temp file first to avoid
+    heredoc syntax in the command string (heredocs break permission glob matching and
+    cause repeated approval prompts):
+    ```bash
+    # Write the rebuttal body to /tmp/shipwright-patch-rebuttal-{pr}.txt:
+    #   Reviewed the finding(s) above and did not implement changes — premise did not hold:
+    #
+    #   - {finding summary}: {reason rejected}
+    #   - {finding summary}: {reason rejected}
+    gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-rebuttal-{pr}.txt
+    rm /tmp/shipwright-patch-rebuttal-{pr}.txt
+    ```
+    The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+    across all worktrees. List only the REJECTed findings, one bullet per finding, drawn
+    from the CONCERNS you compiled in [A.5] — do not include ACCEPTED/MODIFIED findings
+    here even if this run also produced a commit above. This comment is what allows a
+    future patch run to recognize the review was addressed (rejected with reasoning, not
+    ignored) instead of reflagging it forever.
+
+    This only works for review-body-level findings, though — `hasUnaddressedFindings()`
+    short-circuits to `true` whenever any unresolved **inline** thread exists, regardless
+    of this comment. Since most real findings arrive as inline threads (`/shipwright:review`
+    maps any `file:line` finding to an inline comment), also resolve the inline threads for
+    the REJECTed findings now, right after posting the rebuttal comment:
+    ```bash
+    gh api graphql -f query='
+    mutation {
+      resolveReviewThread(input: {threadId: "{thread.id}"}) {
+        thread { isResolved }
+      }
+    }'
+    ```
+    Run this for the Thread ID of every unresolved inline thread whose finding was
+    REJECTed in [A.5] — the rebuttal comment you just posted is the explanation for why
+    that thread is being resolved without a code change. Do this whether or not the
+    commit/push condition above also fired in this same run.
 
 [E] Resolve addressed inline threads
   PR-level comments cannot be resolved programmatically — skip them here.
-  For each unresolved **inline review thread** (listed under "Unresolved inline threads"
-  above) that was addressed, mark it resolved:
+  For each remaining unresolved **inline review thread** (listed under "Unresolved inline
+  threads" above) whose finding was ACCEPTED or MODIFIED and fixed in [B], mark it
+  resolved:
   ```bash
   gh api graphql -f query='
   mutation {
@@ -659,9 +706,12 @@ INSTRUCTIONS — follow in order:
     }
   }'
   ```
-  Run this for each Thread ID that was addressed. Skip threads whose findings were not
-  applicable or were not addressed. Do not attempt to resolve PR-level comments — they
-  have no resolution mechanism.
+  Run this for each Thread ID whose finding was fixed. Threads for REJECTed findings were
+  already handled by [D]'s rebuttal+resolve condition above, whenever at least one finding
+  was REJECTed — do not process them again here. Skip only threads whose findings were
+  genuinely inapplicable for some other reason (e.g., stale/already-fixed on main,
+  unrelated to this PR) without a rebuttal explaining why — those stay unresolved. Do not
+  attempt to resolve PR-level comments — they have no resolution mechanism.
 
 [F] Report back
   At the end, output:
@@ -672,6 +722,15 @@ INSTRUCTIONS — follow in order:
   {bullet list of each finding addressed and how}
 
   CONCERNS: (if DONE_WITH_CONCERNS)
+  {whenever CONCERNS lists any REJECTed finding — whether every finding was REJECT and no
+  push happened, or this was a mixed ACCEPT+REJECT run where a push also happened —
+  explicitly confirm here that the [D] rebuttal comment was posted AND that the inline
+  threads for the REJECTed findings were resolved. All-REJECT example: "All findings
+  rejected (premise incorrect) — no code changes; posted rebuttal comment via gh pr comment
+  summarizing why each was rejected, and resolved the corresponding inline threads." Mixed
+  example: "2 of 3 findings fixed and pushed (commit abc1234); 1 finding rejected (premise
+  incorrect) — posted rebuttal comment via gh pr comment explaining why, and resolved that
+  finding's inline thread." Otherwise, describe the correctness gap as usual.}
   BLOCKER: (if BLOCKED)
 ```
 
@@ -680,9 +739,23 @@ INSTRUCTIONS — follow in order:
 Parse the subagent's STATUS:
 
 - **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
-- **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
-  report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
-  subagent did not push due to a concern, note it and skip Step 5c.5.
+- **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
+  Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
+  whether that was the *only* outcome (the all-REJECT, no-diff path) or one branch of a
+  mixed ACCEPT+REJECT run where a push also happened), confirm the subagent's CONCERNS
+  text reports both that it already posted the required `gh pr comment` rebuttal AND that
+  it resolved the inline threads for the REJECTed findings. Both are needed — the rebuttal
+  activates the `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but
+  `hasUnaddressedFindings()` short-circuits to `true` on any unresolved inline thread before
+  that escape hatch is even consulted, so the threads must also be resolved or the review
+  stops being reflagged only for body-level findings, not inline ones (the common case).
+  Do not post the comment here or resolve the threads here; Step 5c only verifies it
+  already happened. If the report doesn't confirm both, treat it as a concern in the final
+  report (the reflagging loop will otherwise persist via this mixed-case path, not just the
+  all-REJECT path). For other, non-REJECT correctness-gap concerns, just log them in the
+  report. Either way, proceed to Step 5c.5 (upsert PR record) if a push happened (mixed
+  case — there IS a new commit SHA to record); skip Step 5c.5 only in the all-REJECT,
+  no-push case (there is no new commit SHA to record).
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:

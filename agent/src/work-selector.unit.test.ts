@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  rankWorkItems,
   selectNextWorkItem,
   type WorkPrCandidate,
   type WorkTaskCandidate,
@@ -136,5 +137,89 @@ describe("selectNextWorkItem", () => {
     });
     const result = selectNextWorkItem([oldDevTask], [newerPr]);
     expect(result).toEqual({ type: "task", task: oldDevTask });
+  });
+});
+
+describe("rankWorkItems", () => {
+  it("returns [] when both tasks and prs are empty", () => {
+    expect(rankWorkItems([], [])).toEqual([]);
+  });
+
+  it("returns the full oldest-first ordering across a mixed task/PR input, matching what repeated selectNextWorkItem calls would produce", () => {
+    const t1 = makeTask({ id: "t1", createdAt: "2026-03-01T00:00:00.000Z" });
+    const t2 = makeTask({ id: "t2", createdAt: "2026-01-15T00:00:00.000Z" });
+    const pr1 = makePr({ id: "pr1", age: "2026-02-01T00:00:00.000Z", phase: "review" });
+    const pr2 = makePr({ id: "pr2", age: "2026-01-10T00:00:00.000Z", phase: "patch" });
+
+    const ranked = rankWorkItems([t1, t2], [pr1, pr2]);
+
+    expect(ranked.map((r) => r.id)).toEqual(["pr2", "t2", "pr1", "t1"]);
+
+    // Cross-check against repeated selectNextWorkItem() calls with items
+    // removed one at a time — the two must agree on ordering.
+    let remainingTasks = [t1, t2];
+    let remainingPrs = [pr1, pr2];
+    const viaRepeatedSelect: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const winner = selectNextWorkItem(remainingTasks, remainingPrs);
+      if (!winner) break;
+      if (winner.type === "task") {
+        viaRepeatedSelect.push(winner.task.id);
+        remainingTasks = remainingTasks.filter((t) => t.id !== winner.task.id);
+      } else {
+        viaRepeatedSelect.push(winner.pr.id);
+        remainingPrs = remainingPrs.filter((p) => p.id !== winner.pr.id);
+      }
+    }
+    expect(ranked.map((r) => r.id)).toEqual(viaRepeatedSelect);
+  });
+
+  it("carries phase/title through correctly for both task and PR items — tasks are synthetically tagged phase: 'dev-task'", () => {
+    const task = makeTask({
+      id: "t1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      title: "Task title",
+    });
+    const pr = makePr({
+      id: "pr1",
+      age: "2026-01-02T00:00:00.000Z",
+      phase: "deploy",
+      title: "PR title",
+    });
+
+    const ranked = rankWorkItems([task], [pr]);
+
+    expect(ranked).toEqual([
+      {
+        type: "task",
+        id: "t1",
+        title: "Task title",
+        phase: "dev-task",
+        age: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        type: "pr",
+        id: "pr1",
+        title: "PR title",
+        phase: "deploy",
+        age: "2026-01-02T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("tie-break on equal age is deterministic: tasks are collected before PRs, and each group preserves input order (stable sort) — documented in rankWorkItems' implementation comment", () => {
+    const sameAge = "2026-01-01T00:00:00.000Z";
+    const t1 = makeTask({ id: "t1", createdAt: sameAge });
+    const t2 = makeTask({ id: "t2", createdAt: sameAge });
+    const pr1 = makePr({ id: "pr1", age: sameAge });
+    const pr2 = makePr({ id: "pr2", age: sameAge });
+
+    const ranked = rankWorkItems([t1, t2], [pr1, pr2]);
+
+    // All four share the same age. Deterministic tie-break: tasks are
+    // appended to the flat candidate list before PRs, and the sort is
+    // stable, so ties preserve that build order — tasks-before-PRs, then
+    // input order within each group.
+    expect(ranked.map((r) => r.id)).toEqual(["t1", "t2", "pr1", "pr2"]);
   });
 });

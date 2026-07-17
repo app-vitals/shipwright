@@ -32,6 +32,7 @@ import {
   type PullRequestItem,
   type TaskItem,
   type TaskStoreTokenItem,
+  type WorkQueueItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatPage,
@@ -48,6 +49,7 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
   renderTokensPage,
+  renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -59,6 +61,7 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
@@ -210,6 +213,7 @@ export interface AdminUIDeps {
     | "reconcileSystemCrons"
   >;
   agentCronRunService: Pick<AgentCronRunService, "listForAgent">;
+  agentWorkQueueService: Pick<AgentWorkQueueService, "get">;
   agentToolService: Pick<
     AgentToolService,
     "list" | "add" | "toggle" | "remove"
@@ -425,6 +429,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentEnvService,
     agentCronJobService,
     agentCronRunService,
+    agentWorkQueueService,
     agentToolService,
     agentTokenService,
     agentPluginService,
@@ -865,6 +870,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         pagination: { total: runResult.total, limit, page },
         userName: c.var.userEmail,
         timezone,
+      }),
+    );
+  });
+
+  app.get("/admin/agents/:id/work-queue", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    const snapshot = await agentWorkQueueService.get(agentId);
+
+    return html(
+      renderWorkQueuePage({
+        agent: { id: agent.id, name: agent.name },
+        snapshot: snapshot
+          ? {
+              computedAt: snapshot.computedAt,
+              items: snapshot.items as unknown as WorkQueueItem[],
+            }
+          : null,
+        userName: c.var.userEmail,
       }),
     );
   });

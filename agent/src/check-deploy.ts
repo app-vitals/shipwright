@@ -23,6 +23,7 @@
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
@@ -40,6 +41,7 @@ import type { WorkPrCandidate } from "./work-selector.ts";
 
 export interface GhPr {
   number: number;
+  title?: string;
   headRefOid: string;
   headRefName: string;
   author: { login: string };
@@ -273,6 +275,7 @@ export async function getDeployCandidates(
         id: candidateId(repo, pr.number),
         age: linkedTask?.createdAt ?? pr.createdAt ?? "",
         phase: "deploy",
+        title: pr.title,
       });
     } catch (err) {
       process.stderr.write(
@@ -288,6 +291,7 @@ export async function getDeployCandidates(
 
 interface GhPrListJson {
   number: number;
+  title?: string;
   headRefOid: string;
   headRefName: string;
   author: { login: string };
@@ -357,7 +361,7 @@ export async function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "number,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
@@ -381,7 +385,7 @@ export async function buildProductionDeps(opts: {
         .filter((r) => r.name === "CI")
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
-    isBundleComplete: undefined,
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
   };

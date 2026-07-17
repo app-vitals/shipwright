@@ -39,6 +39,15 @@
  * inside the branch where selectNextWorkItem returned a non-null item and a
  * command was genuinely dispatched. An idle tick (nothing selected) reports
  * nothing at all.
+ *
+ * Work-queue reporting (AWQ-1.3) is deliberately NOT subject to that noise
+ * guard: every while-loop iteration ranks that iteration's already-collected
+ * tasks/prs via rankWorkItems() and fires workQueueReporter.reportSnapshot()
+ * — including the final idle/dry iteration where selectNextWorkItem returns
+ * null and nothing gets dispatched. This is a full-queue observability
+ * snapshot (what's waiting right now), not a per-dispatch run record, so an
+ * empty snapshot on an idle tick is itself meaningful signal rather than
+ * noise.
  */
 
 import {
@@ -68,9 +77,11 @@ import {
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
+import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import {
   type WorkPrCandidate,
   type WorkTaskCandidate,
+  rankWorkItems,
   selectNextWorkItem,
 } from "./work-selector.ts";
 
@@ -92,6 +103,12 @@ export interface LoopOrchestratorDeps {
   runner: (message: string) => Promise<ClaudeRunResult>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
   cronRunReporter: CronRunReporter;
+  /**
+   * Reports the ranked work-queue snapshot every while-loop iteration
+   * (dispatch or idle), fire-and-forget. Unlike cronRunReporter, this has no
+   * dispatch-only noise guard — see the file's top doc comment.
+   */
+  workQueueReporter: WorkQueueReporter;
   /** The shipwright-loop cron id — shared by every dispatch's run row. */
   loopCronId: string;
   /** Clock for deterministic run timestamps. Defaults to SystemClock(). */
@@ -136,6 +153,7 @@ export function createLoopOrchestrator(
     getDeployCandidates,
     runner,
     cronRunReporter,
+    workQueueReporter,
     loopCronId,
     clock = SystemClock(),
   } = deps;
@@ -246,6 +264,15 @@ export function createLoopOrchestrator(
         if (toggles.patch) prs.push(...(await getPatchCandidates()));
         if (toggles.deploy) prs.push(...(await getDeployCandidates()));
 
+        // Full-queue observability snapshot — fires every iteration
+        // (dispatch or idle), deliberately with no noise guard. See the
+        // file's top doc comment.
+        const ranked = rankWorkItems(tasks, prs);
+        await workQueueReporter.reportSnapshot({
+          computedAt: clock.now().toISOString(),
+          items: ranked,
+        });
+
         const item = selectNextWorkItem(tasks, prs);
         if (!item) break;
 
@@ -288,6 +315,7 @@ export function createLoopOrchestrator(
 export interface LoopOrchestratorGetterDeps {
   runner: (message: string) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
+  workQueueReporter: WorkQueueReporter;
   createOrchestrator?: typeof createProductionLoopOrchestrator;
 }
 
@@ -321,6 +349,7 @@ export function createLoopOrchestratorGetter(
       orchestratorInit = createOrchestrator({
         runner: deps.runner,
         cronRunReporter: deps.cronRunReporter,
+        workQueueReporter: deps.workQueueReporter,
         loopCronId,
       })
         .then((orch) => {
@@ -343,6 +372,7 @@ export function createLoopOrchestratorGetter(
 export interface LoopOrchestratorProductionOptions {
   runner: (message: string) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
+  workQueueReporter: WorkQueueReporter;
   loopCronId?: string;
   clock?: Clock;
 }
@@ -375,6 +405,7 @@ export async function createProductionLoopOrchestrator(
     getDeployCandidates: () => getDeployCandidates(deployDeps),
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
+    workQueueReporter: opts.workQueueReporter,
     loopCronId: opts.loopCronId ?? "shipwright-loop",
     clock: opts.clock ?? SystemClock(),
   });

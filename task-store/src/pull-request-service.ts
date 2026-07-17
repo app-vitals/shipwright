@@ -567,17 +567,45 @@ export class PullRequestService implements PullRequestServiceLike {
     });
   }
 
-  /** Unclaim a PR — reset claim fields and return reviewState to pending. */
+  /**
+   * Unclaim a PR — always clears claim fields (claimedBy/claimedAt/heartbeatAt).
+   * reviewState is reset to 'pending' only if it is not already a terminal
+   * value ('posted' or 'approved'); a terminal reviewState is left untouched.
+   *
+   * Without this guard, a caller racing /complete or a direct PATCH that just
+   * set reviewState='posted'/'approved' would have that terminal verdict
+   * clobbered back to 'pending' by a subsequent release(), causing
+   * check-review / /shipwright:review to re-process a PR that was already
+   * reviewed and terminally verdicted on GitHub (18+ documented recurrences,
+   * app-vitals/shipwright CHU-2.3). Mirrors the same terminal-state guard
+   * already used by update() (posted/approved release, ~line 191) and
+   * patch()'s no-op-cycle guard (~line 411), and StaleClaimReaper.reap()'s
+   * equivalent SQL CASE expression.
+   */
   async release(id: string): Promise<PullRequest> {
+    const existing = await this.prisma.pullRequest.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundError("pr not found");
+    }
+
+    const updateData: Prisma.PullRequestUpdateInput = {
+      claimedBy: null,
+      claimedAt: null,
+      heartbeatAt: null,
+    };
+    if (
+      existing.reviewState !== "posted" &&
+      existing.reviewState !== "approved"
+    ) {
+      updateData.reviewState = "pending";
+    }
+
     try {
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: {
-          reviewState: "pending",
-          claimedBy: null,
-          claimedAt: null,
-          heartbeatAt: null,
-        },
+        data: updateData,
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

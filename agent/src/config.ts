@@ -51,6 +51,7 @@ function buildConfig(agentHome: string) {
       groqApiKey: optional("GROQ_API_KEY"),
       elevenLabsApiKey: optional("ELEVENLABS_API_KEY"),
       voiceId: optional("ELEVENLABS_VOICE_ID"),
+      piperVoice: optional("PIPER_VOICE"),
       whisperServiceUrl: optional("WHISPER_SERVICE_URL"),
     },
     chat: {

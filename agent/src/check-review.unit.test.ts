@@ -78,6 +78,7 @@ describe("getReviewCandidates", () => {
     expect(result[0]).toMatchObject({
       id: "example-org/example-repo#42",
       phase: "review",
+      title: "Add feature X",
     });
   });
 
