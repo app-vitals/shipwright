@@ -79,6 +79,7 @@ describe("getReviewCandidates", () => {
       id: "example-org/example-repo#42",
       phase: "review",
       title: "Add feature X",
+      commitSha: "abc123def456",
     });
   });
 
@@ -102,6 +103,7 @@ describe("getReviewCandidates", () => {
       })),
     );
     expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("newsha999");
   });
 
   test("returns a candidate when PR record has reviewState=pending (even if commitSha matches)", async () => {
@@ -113,6 +115,7 @@ describe("getReviewCandidates", () => {
       })),
     );
     expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
   });
 
   test("returns a candidate when PR record has null commitSha", async () => {
@@ -202,6 +205,7 @@ describe("getReviewCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("example-org/repo-b#42");
+    expect(result[0].commitSha).toBe("sha-B");
   });
 
   // ─── queryPrRecord failure → treat as eligible ───────────────────────────────
@@ -297,6 +301,11 @@ describe("getReviewCandidates", () => {
       "example-org/repo-a#1",
       "example-org/repo-b#2",
       "example-org/repo-c#3",
+    ]);
+    expect(result.map((c) => c.commitSha)).toEqual([
+      "sha-1",
+      "sha-2",
+      "sha-3",
     ]);
   });
 

@@ -113,6 +113,7 @@ describe("getDeployCandidates", () => {
       id: "acme/example-repo#50",
       phase: "deploy",
       title: "Deploy-ready feature",
+      commitSha: "sha50",
     });
   });
 
@@ -425,6 +426,7 @@ describe("getDeployCandidates", () => {
       "acme/repo-b#2",
       "acme/repo-c#3",
     ]);
+    expect(result.map((c) => c.commitSha)).toEqual(["sha1", "sha2", "sha3"]);
   });
 
   // ─── busy-repo skip ────────────────────────────────────────────────────────
@@ -456,6 +458,7 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(deps);
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/free-repo#2");
+    expect(result[0].commitSha).toBe("sha2");
   });
 
   // ─── age field sourcing ────────────────────────────────────────────────────
@@ -653,6 +656,7 @@ describe("getDeployCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/in-scope#50");
+    expect(result[0].commitSha).toBe("sha50");
   });
 
   test("re-evaluates getScopedRepos() on every call — a scope change between two calls changes the result on the second call", async () => {
