@@ -384,6 +384,35 @@ function findFailedRun(runs: GhWorkflowRun[]): GhWorkflowRun | undefined {
 }
 
 /**
+ * Classify `runs` and PATCH the task to deployed/blocked accordingly, or
+ * leave it untouched if the outcome isn't resolvable yet. Shared by both the
+ * primary (Deploy-named runs) and fallback (post-merge CI) paths in
+ * `reconcileDeployingTask` — they differ only in which runs they classify
+ * and the failure label cited in the blocked-task note.
+ */
+async function applyRunOutcome(
+  deps: PrStateReconcilerDeps,
+  task: PrOpenTaskRecord,
+  runs: GhWorkflowRun[],
+  failureLabel: string,
+): Promise<void> {
+  const outcome = classifyRuns(runs);
+  if (outcome === "pending") return; // not yet resolvable (or zero runs seen yet)
+  if (outcome === "success") {
+    await deps.updateTaskStatus(task.id, {
+      status: "deployed",
+      deployedAt: deps.now(),
+    });
+    return;
+  }
+  const failedRun = findFailedRun(runs);
+  await deps.updateTaskStatus(task.id, {
+    status: "blocked",
+    note: `${failureLabel} — run ID: ${failedRun?.id}`,
+  });
+}
+
+/**
  * Reconcile one deploying task against the actual GH Actions run outcome for
  * its linked PR's merge commit (DSR-1.2). Deliberately never treats "PR
  * merged" alone as a success signal — the task's linked PullRequest record
@@ -410,39 +439,12 @@ async function reconcileDeployingTask(
   const deployRuns = runs.filter((r) => r.name === "Deploy");
 
   if (deployRuns.length > 0) {
-    const outcome = classifyRuns(deployRuns);
-    if (outcome === "pending") return; // not yet resolvable
-    if (outcome === "success") {
-      await deps.updateTaskStatus(task.id, {
-        status: "deployed",
-        deployedAt: deps.now(),
-      });
-      return;
-    }
-    const failedRun = findFailedRun(deployRuns);
-    await deps.updateTaskStatus(task.id, {
-      status: "blocked",
-      note: `Deploy stage failed — run ID: ${failedRun?.id}`,
-    });
-    return;
+    return applyRunOutcome(deps, task, deployRuns, "Deploy stage failed");
   }
 
   // Fallback path — no Deploy-named run at this SHA; classify all runs seen
   // (post-merge CI), mirroring deploy.md Step 5c.
-  const outcome = classifyRuns(runs);
-  if (outcome === "pending") return; // not yet resolvable (or zero runs seen yet)
-  if (outcome === "success") {
-    await deps.updateTaskStatus(task.id, {
-      status: "deployed",
-      deployedAt: deps.now(),
-    });
-    return;
-  }
-  const failedRun = findFailedRun(runs);
-  await deps.updateTaskStatus(task.id, {
-    status: "blocked",
-    note: `Post-merge CI failed — run ID: ${failedRun?.id}`,
-  });
+  return applyRunOutcome(deps, task, runs, "Post-merge CI failed");
 }
 
 /**
