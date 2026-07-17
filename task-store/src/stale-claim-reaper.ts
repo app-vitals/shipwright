@@ -32,7 +32,9 @@ export class StaleClaimReaper {
   ) {
     this.ttlMs =
       ttlMs ??
-      Number(process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS);
+      Number(
+        process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+      );
   }
 
   /**
