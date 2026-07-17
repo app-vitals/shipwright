@@ -26,6 +26,15 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, …).
 
+`dev-task`, `review`, `patch`, and `deploy` are item-addressed executors, not self-discovering
+standalone crons: each requires an explicit target (a task id for `dev-task`; an
+`org/repo#number` PR for the other three) and does no candidate scanning of its own.
+Candidate selection happens once, upstream, in the Shipwright agent's `shipwright-loop`
+cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supported driver for
+these four phases; it merges candidates from `agent/src`'s per-phase qualification
+functions and dispatches the winning item's command with its id/PR embedded directly in the
+prompt. A human can still invoke any of the four directly with an explicit target.
+
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
 
 ## B — Metrics dashboard

@@ -122,14 +122,27 @@ All child models cascade-delete with their `Agent` (including `AgentCronRun` via
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready — the four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, `shipwright-deploy`) instead rely on the `shipwright-loop` cron's in-process candidate providers (`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`, `check-deploy.ts`) for qualification when driven via the loop, or run unconditionally on their own schedule when driven as standalone crons.
+Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
+
+The four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
+`shipwright-deploy`) are **loop-driven, item-addressed executors, not self-discovering
+standalone crons.** `shipwright-loop` is the sole supported driver for these four phases: its
+in-process candidate providers (`agent/src/check-dev-task.ts`, `check-review.ts`,
+`check-patch.ts`, `check-deploy.ts`) select a winning candidate each tick and
+`loop-orchestrator.ts` dispatches the matching command with an explicit task id or
+`org/repo#number` embedded in the prompt. None of the four commands scans for its own work
+— each responds `[silent]` and exits immediately if invoked with no target. This means a
+standalone pipeline cron (`shipwright-loop` disabled) is **silently inert**: its stored
+prompt (e.g. `/shipwright:dev-task`) carries no target, so every tick dispatches, goes
+`[silent]`, and does nothing. See [migration.md](./migration.md) for the breaking-change
+note and the fix (enable `shipwright-loop`).
 
 | Cron | Schedule (cron expr) | Default | What it does |
 |---|---|---|---|
-| `shipwright-dev-task` | `0,30 * * * *` (min 0, 30) | **on** | Picks the next ready task, builds it with tests, opens a PR. |
-| `shipwright-review` | `15,45 * * * *` (min 15, 45) | **on** | Review-only pass over open PRs (excluding drafts and Dependabot PRs). |
-| `shipwright-patch` | `5,35 * * * *` (min 5, 35) | **on** | Patch-only pass over open PRs with failing CI or unresolved review findings. Has no `preCheck` of its own — when driven via the `shipwright-loop` cron, `agent/src/check-patch.ts`'s `getPatchCandidates()` qualifies candidate PRs in-process and `loop-orchestrator.ts` dispatches the winning candidate directly as `/shipwright:patch {org}/{repo}#{number}`; run as a standalone cron (loop disabled), it dispatches its stored prompt (`/shipwright:patch`) unconditionally on schedule. |
-| `shipwright-deploy` | `20,50 * * * *` (min 20, 50) | off | Merges approved PRs and deploys them. |
+| `shipwright-dev-task` | `0,30 * * * *` (min 0, 30) | **on** | Builds and ships a PR for the task `shipwright-loop` selects (dispatched with an explicit task id). Standalone (loop disabled): inert — see above. |
+| `shipwright-review` | `15,45 * * * *` (min 15, 45) | **on** | Reviews the PR `shipwright-loop` selects (dispatched with an explicit `org/repo#number`). Standalone (loop disabled): inert — see above. |
+| `shipwright-patch` | `5,35 * * * *` (min 5, 35) | **on** | Patches the PR `shipwright-loop` selects (dispatched with an explicit `org/repo#number`). Standalone (loop disabled): inert — see above. |
+| `shipwright-deploy` | `20,50 * * * *` (min 20, 50) | off | Merges and deploys the PR `shipwright-loop` selects (dispatched with an explicit `org/repo#number`). Standalone (loop disabled): inert — see above. |
 | `shipwright-loop` | `* * * * *` (every minute) | off | Internal: dispatches enabled pipeline phases (dev-task, review, patch, deploy) in a single multi-step drain-until-dry run. Orchestrates phase toggling and claim/retry logic; requires explicit enablement alongside per-phase cron toggling. Implemented by the `loop-orchestrator.ts` module — drain-until-dry through all phases on every tick, strict age-based FIFO work selection, per-dispatch run reporting, and spin detection (warns via `console.warn` when the same item is dispatched 3+ times consecutively, signaling a potential infinite loop for Sentry alerting). |
 | `shipwright-test-readiness` | `0 6 * * *` (daily, 06:00) | off | Iterates repos in `repos/` with a `docs/test-readiness/` directory and runs the full test-readiness audit (`--full --publish`) once per qualifying repo, each in its own worktree + branch. Via the `check-test-readiness.ts` preCheck, only repos with stale or missing phase artifacts are invoked. |
 | `shipwright-docs-freshness` | `0 7 * * *` (daily, 07:00) | off | Scans all repos in `repos/` for source changes and refreshes docs that drifted from the code via the docs-freshness agent (`research-docs --auto`). Iterates per-repo, checking each against its `state/docs-last-synced.json` anchor — skips repos without `docs/` directories. |
