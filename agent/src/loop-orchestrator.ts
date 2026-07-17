@@ -113,6 +113,12 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
   deploy: "/shipwright:deploy",
 };
 
+/**
+ * Threshold for spin detection: when the same itemId is dispatched this many
+ * times in a row, a console.warn is emitted to signal a potential infinite loop.
+ */
+const SPIN_DETECTION_THRESHOLD = 3;
+
 // ─── Factory ────────────────────────────────────────────────────────────────
 
 /**
@@ -136,6 +142,11 @@ export function createLoopOrchestrator(
 
   // Persisted across ticks: guards against a second concurrent drain.
   let busy = false;
+
+  // Spin detection state: tracks the last dispatched itemId and consecutive
+  // repeat count to warn when the same item is dispatched repeatedly.
+  let lastDispatchedItemId: string | null = null;
+  let consecutiveDispatchCount = 0;
 
   /**
    * Dispatch one selected phase's one-shot command (with the winning item's
@@ -226,6 +237,27 @@ export function createLoopOrchestrator(
         const phase: LoopPhase =
           item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
         const itemId = item.type === "task" ? item.task.id : item.pr.id;
+
+        // Spin detection: track consecutive dispatches of the same itemId.
+        // On reaching the threshold, emit a console.warn (Sentry-eligible) to
+        // alert on a potential infinite loop or stuck candidate. Warn on every
+        // dispatch once the threshold is reached (not just at the crossing) so
+        // the signal persists and escalates in Sentry for as long as the spin
+        // continues, making it more useful for alert rules than a one-time signal.
+        if (itemId === lastDispatchedItemId) {
+          consecutiveDispatchCount += 1;
+        } else {
+          consecutiveDispatchCount = 1;
+          lastDispatchedItemId = itemId;
+        }
+
+        if (consecutiveDispatchCount >= SPIN_DETECTION_THRESHOLD) {
+          console.warn(
+            `Spin detected: repeated dispatch of ${itemId} ` +
+              `(${consecutiveDispatchCount} consecutive times)`,
+          );
+        }
+
         await dispatch(phase, itemId);
       }
     } finally {
