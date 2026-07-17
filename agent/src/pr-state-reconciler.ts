@@ -37,6 +37,7 @@
  * the SAME setInterval tick in agent/src/index.ts — not a second timer.
  */
 
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import type { PrReviewData } from "./check-patch.ts";
 import {
   createPrRecordQuery,
@@ -160,7 +161,6 @@ export interface PrReviewStateReconcilerDeps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_LIMIT = 50;
-const DEFAULT_CLAIM_TTL_MS = 2_100_000;
 
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
@@ -489,6 +489,11 @@ async function reconcileReviewStateRecord(
   deps: PrReviewStateReconcilerDeps,
   record: PrReviewStateRecord,
 ): Promise<void> {
+  // deps.claimTtlMs is NOT left unwired here: buildReviewStateProductionDeps
+  // (below) reads process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS itself and
+  // sets it on the returned deps object, so index.ts's bare
+  // buildReviewStateReconcilerDeps({ ghGraphql }) call site still gets the
+  // env var end-to-end — confirmed by this factory's own unit tests below.
   const claimTtlMs = deps.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
   if (isActivelyClaimed(record, deps.clock, claimTtlMs)) return; // live claim — never overwrite
 
