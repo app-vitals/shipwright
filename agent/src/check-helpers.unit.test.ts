@@ -681,6 +681,74 @@ describe("createTaskStoreClient query()", () => {
       client.update("T-1", { status: "in_progress" }),
     ).rejects.toThrow("task-store PATCH /tasks/T-1");
   });
+
+  test("claim() POSTs to /tasks/:id/claim", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => FAKE_TASK } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.claim("T-1");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/tasks/T-1/claim",
+    );
+    expect(capturedInit?.method).toBe("POST");
+  });
+
+  test("claim() returns true on 200", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => FAKE_TASK,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.claim("T-1")).resolves.toBe(true);
+  });
+
+  test("claim() returns true on 201", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        status: 201,
+        json: async () => FAKE_TASK,
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.claim("T-1")).resolves.toBe(true);
+  });
+
+  test("claim() returns false on 409 (does not throw)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 409,
+        json: async () => ({ error: "already claimed" }),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.claim("T-1")).resolves.toBe(false);
+  });
+
+  test("claim() throws on other non-ok statuses (e.g. 500)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(client.claim("T-1")).rejects.toThrow(
+      "task-store POST /tasks/T-1/claim",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------

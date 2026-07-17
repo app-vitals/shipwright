@@ -58,7 +58,12 @@ import {
   buildProductionDeps as buildDevTaskDeps,
   getDevTaskCandidates,
 } from "./check-dev-task.ts";
-import { getCurrentUser, ghGraphql, ghJson } from "./check-helpers.ts";
+import {
+  createTaskStoreClient,
+  getCurrentUser,
+  ghGraphql,
+  ghJson,
+} from "./check-helpers.ts";
 import {
   buildProductionDeps as buildPatchDeps,
   getPatchCandidates,
@@ -99,6 +104,16 @@ export interface LoopOrchestratorDeps {
   getPatchCandidates: () => Promise<WorkPrCandidate[]>;
   /** WL-2.2 deploy qualification — candidates tagged phase: "deploy". */
   getDeployCandidates: () => Promise<WorkPrCandidate[]>;
+  /**
+   * Pre-claim (CBD-1.2): claims a dev-task candidate directly against the
+   * task store, POSTing /tasks/{id}/claim, BEFORE it is dispatched. Resolves
+   * true on success (200/201) — dispatch proceeds unchanged. Resolves false
+   * on a 409 conflict (another agent replica already claimed it) — the item
+   * is skipped entirely (no dispatch, no cron-run row) and the drain loop
+   * re-collects candidates and continues. Only called for `item.type ===
+   * "task"` — PR items (review/patch/deploy) are never pre-claimed here.
+   */
+  claimTask: (taskId: string) => Promise<boolean>;
   /** The claude runner — sends a one-shot slash-command message. */
   runner: (message: string) => Promise<ClaudeRunResult>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
@@ -151,6 +166,7 @@ export function createLoopOrchestrator(
     getReviewCandidates,
     getPatchCandidates,
     getDeployCandidates,
+    claimTask,
     runner,
     cronRunReporter,
     workQueueReporter,
@@ -282,6 +298,19 @@ export function createLoopOrchestrator(
           item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
         const itemId = item.type === "task" ? item.task.id : item.pr.id;
 
+        // Pre-claim (CBD-1.2): a dev-task item must be claimed directly
+        // against the task store before dispatch. A 409 means another agent
+        // replica claimed it first since this item was collected — skip
+        // dispatch entirely (no runner() call, no cronRunReporter, no spin-
+        // detection accounting for this iteration) and `continue` the while
+        // loop so the next iteration re-reads toggles and re-collects
+        // candidates fresh, naturally excluding the now-claimed item. PR
+        // items (review/patch/deploy) are never pre-claimed here.
+        if (item.type === "task") {
+          const claimed = await claimTask(itemId);
+          if (!claimed) continue;
+        }
+
         // Spin detection: track consecutive dispatches of the same itemId.
         // On reaching the threshold, emit a console.warn (Sentry-eligible) to
         // alert on a potential infinite loop or stuck candidate. Warn on every
@@ -397,12 +426,14 @@ export async function createProductionLoopOrchestrator(
   const reviewDeps = await buildReviewDeps({ ghJson });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
   const deployDeps = await buildDeployDeps({ ghJson });
+  const taskStoreClient = createTaskStoreClient();
 
   return createLoopOrchestrator({
     getDevTaskCandidates: () => getDevTaskCandidates(devTaskDeps),
     getReviewCandidates: () => getReviewCandidates(reviewDeps),
     getPatchCandidates: () => getPatchCandidates(patchDeps),
     getDeployCandidates: () => getDeployCandidates(deployDeps),
+    claimTask: (id) => taskStoreClient.claim(id),
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,
