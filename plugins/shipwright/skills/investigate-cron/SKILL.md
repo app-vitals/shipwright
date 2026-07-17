@@ -13,7 +13,7 @@ Diagnose a cron run by name and approximate execution time.
 
 **Usage:** `/shipwright:investigate-cron <name> <time>`
 
-- `<name>` — cron name: `deploy`, `review-patch`, `dev-task`, `patch`, `review`
+- `<name>` — cron name: `deploy`, `dev-task`, `patch`, `review`
 - `<time>` — approximate time the cron fired, e.g. `6pm`, `14:30`, `2:30pm PST`
   Timezone defaults to Pacific if not specified.
 
@@ -278,7 +278,7 @@ Run it against the matched session file and capture the output for synthesis.
 
 Produce a plain-language explanation covering:
 
-1. **Cron name** — which cron was investigated (`deploy`, `review-patch`, etc.)
+1. **Cron name** — which cron was investigated (`deploy`, `dev-task`, etc.)
 2. **Time** — when the session fired (from the JSONL mtime or first entry timestamp)
 3. **Session ID** — the JSONL filename (without `.jsonl`), for cross-referencing logs
 4. **What it did** — summarize the bash commands and assistant reasoning in 2–5 sentences

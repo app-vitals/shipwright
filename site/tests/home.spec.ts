@@ -293,7 +293,7 @@ test("metrics section renders real proof-dashboard figures", async ({ page }) =>
   await expect(section.getByText(/Real figures for this repo/i)).toBeVisible();
 });
 
-test("crons section documents the ten default scheduled jobs", async ({
+test("crons section documents the default scheduled jobs", async ({
   page,
 }) => {
   await page.goto("/");
@@ -301,10 +301,9 @@ test("crons section documents the ten default scheduled jobs", async ({
   await page.locator('label[for="sw-tab-crons"]').click();
   const section = page.locator("#crons");
   await expect(section).toBeVisible();
-  // All ten system crons (admin/src/system-crons.ts) are named.
+  // The system crons shown on the homepage (admin/src/system-crons.ts) are named.
   for (const name of [
     "dev-task",
-    "review-patch",
     "review",
     "patch",
     "deploy",
@@ -318,9 +317,9 @@ test("crons section documents the ten default scheduled jobs", async ({
       section.getByText(name, { exact: false }).first(),
     ).toBeVisible();
   }
-  // Exactly two run on by default; the rest are opt-in.
-  await expect(section.getByText("On", { exact: true })).toHaveCount(2);
-  await expect(section.getByText("Opt-in", { exact: true })).toHaveCount(8);
+  // Exactly three run on by default; the rest are opt-in.
+  await expect(section.getByText("On", { exact: true })).toHaveCount(3);
+  await expect(section.getByText("Opt-in", { exact: true })).toHaveCount(6);
 });
 
 // SWW-2.2: Body sections (problem / how-it-works / differentiators / demo / social proof).
