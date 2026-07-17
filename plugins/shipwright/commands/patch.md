@@ -669,10 +669,28 @@ INSTRUCTIONS — follow in order:
     recognize the review was addressed (rejected with reasoning, not ignored) instead of
     reflagging it forever.
 
+    This only works for review-body-level findings, though — `hasUnaddressedFindings()`
+    short-circuits to `true` whenever any unresolved **inline** thread exists, regardless
+    of this comment. Since most real findings arrive as inline threads (`/shipwright:review`
+    maps any `file:line` finding to an inline comment), also resolve the inline threads for
+    the REJECTed findings now, right after posting the rebuttal comment:
+    ```bash
+    gh api graphql -f query='
+    mutation {
+      resolveReviewThread(input: {threadId: "{thread.id}"}) {
+        thread { isResolved }
+      }
+    }'
+    ```
+    Run this for the Thread ID of every unresolved inline thread whose finding was
+    REJECTed in [A.5] — the rebuttal comment you just posted is the explanation for why
+    that thread is being resolved without a code change.
+
 [E] Resolve addressed inline threads
   PR-level comments cannot be resolved programmatically — skip them here.
-  For each unresolved **inline review thread** (listed under "Unresolved inline threads"
-  above) that was addressed, mark it resolved:
+  For each remaining unresolved **inline review thread** (listed under "Unresolved inline
+  threads" above) whose finding was ACCEPTED or MODIFIED and fixed in [B], mark it
+  resolved:
   ```bash
   gh api graphql -f query='
   mutation {
@@ -681,9 +699,11 @@ INSTRUCTIONS — follow in order:
     }
   }'
   ```
-  Run this for each Thread ID that was addressed. Skip threads whose findings were not
-  applicable or were not addressed. Do not attempt to resolve PR-level comments — they
-  have no resolution mechanism.
+  Run this for each Thread ID whose finding was fixed. Threads for REJECTed findings were
+  already resolved in [D] above — do not process them again here. Skip only threads whose
+  findings were genuinely inapplicable for some other reason (e.g., stale/already-fixed on
+  main, unrelated to this PR) without a rebuttal explaining why — those stay unresolved. Do
+  not attempt to resolve PR-level comments — they have no resolution mechanism.
 
 [F] Report back
   At the end, output:
@@ -695,9 +715,10 @@ INSTRUCTIONS — follow in order:
 
   CONCERNS: (if DONE_WITH_CONCERNS)
   {if every finding was REJECT and no push happened, explicitly confirm here that the
-  [D] rebuttal comment was posted, e.g. "All findings rejected (premise incorrect) — no
-  code changes; posted rebuttal comment via gh pr comment summarizing why each was
-  rejected." Otherwise, describe the correctness gap as usual.}
+  [D] rebuttal comment was posted AND that the inline threads for the REJECTed findings
+  were resolved, e.g. "All findings rejected (premise incorrect) — no code changes; posted
+  rebuttal comment via gh pr comment summarizing why each was rejected, and resolved the
+  corresponding inline threads." Otherwise, describe the correctness gap as usual.}
   BLOCKER: (if BLOCKED)
 ```
 
@@ -709,13 +730,16 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If they are correctness gaps, log them in the
   report but proceed (the push already happened) to Step 5c.5 (upsert PR record). If the
   subagent did not push due to a concern (the all-REJECT, no-diff path from Step 5b
-  Instructions [D]), confirm the subagent's CONCERNS text reports that it already posted
-  the required `gh pr comment` rebuttal — this is what activates the
-  `isAddressedByAuthorReply` escape hatch in `check-patch.ts` so the review stops being
-  reflagged on every subsequent patch run. Do not post the comment here; Step 5c only
-  verifies it happened. If the report doesn't confirm a rebuttal was posted, treat it as
-  a concern in the final report (the reflagging loop will otherwise persist). Either way,
-  skip Step 5c.5 — there is no new commit SHA to record.
+  Instructions [D]), confirm the subagent's CONCERNS text reports both that it already
+  posted the required `gh pr comment` rebuttal AND that it resolved the inline threads for
+  the REJECTed findings. Both are needed — the rebuttal activates the
+  `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but `hasUnaddressedFindings()`
+  short-circuits to `true` on any unresolved inline thread before that escape hatch is even
+  consulted, so the threads must also be resolved or the review stops being reflagged only
+  for body-level findings, not inline ones (the common case). Do not post the comment here
+  or resolve the threads here; Step 5c only verifies it already happened. If the report
+  doesn't confirm both, treat it as a concern in the final report (the reflagging loop will
+  otherwise persist). Either way, skip Step 5c.5 — there is no new commit SHA to record.
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:
