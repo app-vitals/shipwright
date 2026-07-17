@@ -100,11 +100,9 @@ export function selectNextWorkItem(
 }
 
 /**
- * Age comparator shared between selectNextWorkItem() and rankWorkItems() —
- * both need the exact same "older ISO timestamp string sorts first" rule, and
- * duplicating a one-line string comparison isn't worth its own module; this
- * keeps the two entry points from silently drifting apart if the comparison
- * ever needs to change (e.g. to Date-based comparison).
+ * Age comparator for rankWorkItems() — the same "older ISO timestamp string
+ * sorts first" rule selectNextWorkItem() applies inline via its own
+ * min-tracking loop (left untouched here per this function's additive scope).
  */
 function compareByAge(a: { age: string }, b: { age: string }): number {
   return a.age < b.age ? -1 : a.age > b.age ? 1 : 0;
@@ -116,8 +114,9 @@ function compareByAge(a: { age: string }, b: { age: string }): number {
  * Returns [] when both inputs are empty.
  *
  * Ordering is guaranteed to match calling selectNextWorkItem() repeatedly and
- * removing each winner from its source list, since both use the same
- * lexicographic ISO-timestamp comparison (compareByAge).
+ * removing each winner from its source list, since both apply the same
+ * lexicographic ISO-timestamp comparison rule (selectNextWorkItem() inline,
+ * this function via compareByAge).
  *
  * Tie-break on equal age is deterministic: tasks are appended to the flat
  * candidate list before PRs, and Array.prototype.sort is a stable sort (ES2019+,
