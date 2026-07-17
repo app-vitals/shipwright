@@ -209,6 +209,161 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
   });
 });
 
+describe("patch.md — pre-claim marker documentation (CBD-1.5)", () => {
+  it("Arguments section documents the [preclaim:{recordId}:{commitSha}] marker format", () => {
+    const argsIdx = content.indexOf("## Arguments");
+    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
+    expect(argsIdx).toBeGreaterThan(-1);
+    expect(step0Idx).toBeGreaterThan(-1);
+    const argsSection = content.slice(argsIdx, step0Idx);
+
+    expect(argsSection).toContain("[preclaim:{recordId}:{commitSha}]");
+    expect(argsSection).toContain("CBD-1.3");
+  });
+
+  it("Arguments section attributes the marker to the loop orchestrator, not a human caller", () => {
+    const argsIdx = content.indexOf("## Arguments");
+    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
+    const argsSection = content.slice(argsIdx, step0Idx);
+
+    expect(argsSection).toContain("loop orchestrator");
+    expect(argsSection.toLowerCase()).toContain("human");
+  });
+
+  it("Arguments section says the marker must be stripped before parsing org/repo#number", () => {
+    const argsIdx = content.indexOf("## Arguments");
+    const step0Idx = content.indexOf("## Step 0: Require Explicit Target");
+    const argsSection = content.slice(argsIdx, step0Idx);
+
+    expect(argsSection).toContain("strip");
+  });
+
+  it("Step 2 parses and strips the marker once, extracting PRECLAIM_RECORD_ID/PRECLAIM_COMMIT_SHA", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    expect(step2Idx).toBeGreaterThan(-1);
+    expect(step2_5Idx).toBeGreaterThan(-1);
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+
+    expect(step2Section).toContain("PRECLAIM_RECORD_ID");
+    expect(step2Section).toContain("PRECLAIM_COMMIT_SHA");
+    expect(step2Section).toContain("strip");
+  });
+});
+
+describe("patch.md — pre-claim fast path skips re-claiming at all three sites (CBD-1.5)", () => {
+  // List C — merge conflicts — Step 4a.6
+  it("Step 4a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
+    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    expect(siteIdx).toBeGreaterThan(-1);
+    expect(nextIdx).toBeGreaterThan(-1);
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("Pre-Claim Fast Path");
+    expect(section).toContain("headRefOid");
+    expect(section).toContain("PRECLAIM_COMMIT_SHA");
+  });
+
+  it("Step 4a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
+    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
+    expect(section).toContain("skip");
+  });
+
+  it("Step 4a.6 falls back to self-claiming on a stale or absent marker", () => {
+    const siteIdx = content.indexOf("### Step 4a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("no marker present");
+    expect(section).toContain("self-claim");
+    // self-claim path is preserved: still POSTs /prs/claim with phase patch
+    expect(section).toContain("/prs/claim");
+    expect(section).toContain("HEAD_SHA_PRE_PATCH");
+  });
+
+  // List A — review findings — Step 5a.6
+  it("Step 5a.6 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
+    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(siteIdx).toBeGreaterThan(-1);
+    expect(nextIdx).toBeGreaterThan(-1);
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("Pre-Claim Fast Path");
+    expect(section).toContain("headRefOid");
+    expect(section).toContain("PRECLAIM_COMMIT_SHA");
+  });
+
+  it("Step 5a.6 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
+    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
+    expect(section).toContain("skip");
+  });
+
+  it("Step 5a.6 falls back to self-claiming on a stale or absent marker", () => {
+    const siteIdx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("no marker present");
+    expect(section).toContain("self-claim");
+    expect(section).toContain("/prs/claim");
+    expect(section).toContain("HEAD_SHA_PRE_PATCH");
+  });
+
+  // List D — failing CI — Step 6b.5
+  it("Step 6b.5 has a Pre-Claim Fast Path that validates against a freshly-fetched live headRefOid", () => {
+    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(siteIdx).toBeGreaterThan(-1);
+    expect(nextIdx).toBeGreaterThan(-1);
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("Pre-Claim Fast Path");
+    expect(section).toContain("headRefOid");
+    expect(section).toContain("PRECLAIM_COMMIT_SHA");
+  });
+
+  it("Step 6b.5 trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips its own /prs/claim", () => {
+    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid == PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
+    expect(section).toContain("skip");
+  });
+
+  it("Step 6b.5 falls back to self-claiming on a stale or absent marker", () => {
+    const siteIdx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const nextIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const section = content.slice(siteIdx, nextIdx);
+
+    expect(section).toContain("headRefOid != PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("no marker present");
+    expect(section).toContain("self-claim");
+    expect(section).toContain("/prs/claim");
+    expect(section).toContain("HEAD_SHA_PRE_PATCH");
+  });
+
+  it("each fast path re-fetches the live head independently (three gh pr view --json headRefOid reads)", () => {
+    const matches = content.match(/gh pr view \{pr\} --repo \{org\}\/\{repo\} --json headRefOid/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () => {
   it("Step 5b Instructions [D] requires a gh pr comment rebuttal whenever any finding was REJECTed, independent of the commit/push condition", () => {
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
