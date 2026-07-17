@@ -733,4 +733,116 @@ describe("createLoopOrchestrator", () => {
     expect(messages[0]).toStartWith("[Cron job: shipwright-loop] Current time:");
     expect(messages[0]).toContain("/shipwright:dev-task T-123");
   });
+
+  // ─── Spin detection tests ───────────────────────────────────────────────────────
+
+  test("spin detection: console.warn fires on 3rd consecutive dispatch of same itemId", async () => {
+    // Capture console.warn output
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn.bind(console);
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+
+    try {
+      // Sequence: return T-SPIN three times, then nothing (to end drain)
+      let callCount = 0;
+      const deps = makeDeps({
+        getDevTaskCandidates: async () => {
+          callCount += 1;
+          if (callCount <= 3) {
+            return [task("T-SPIN", "2026-01-01T00:00:00Z")];
+          }
+          return [];
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job("shipwright-dev-task", true)]);
+
+      // Should have at least one spin detection warning
+      const spinWarnings = warnMessages.filter((msg) =>
+        msg.includes("repeated dispatch") || msg.includes("spin"),
+      );
+      expect(spinWarnings.length).toBeGreaterThan(0);
+      // Verify it mentions the item id
+      expect(spinWarnings[0]).toContain("T-SPIN");
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("spin detection: no warn on 1st or 2nd consecutive dispatch of same itemId", async () => {
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn.bind(console);
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+
+    try {
+      // Sequence: return T-SPIN-2 only twice, then nothing
+      let callCount = 0;
+      const deps = makeDeps({
+        getDevTaskCandidates: async () => {
+          callCount += 1;
+          if (callCount <= 2) {
+            return [task("T-SPIN-2", "2026-01-01T00:00:00Z")];
+          }
+          return [];
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job("shipwright-dev-task", true)]);
+
+      // Should have no spin detection warning (only 2 dispatches, threshold is 3)
+      const spinWarnings = warnMessages.filter((msg) =>
+        msg.includes("repeated dispatch") || msg.includes("spin"),
+      );
+      expect(spinWarnings).toHaveLength(0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
+  test("spin detection: counter resets when different itemId dispatched", async () => {
+    const warnMessages: string[] = [];
+    const originalWarn = console.warn.bind(console);
+    console.warn = (...args: unknown[]) => {
+      warnMessages.push(args.map(String).join(" "));
+    };
+
+    try {
+      // Sequence: T-A, T-A, T-B, T-A, T-A, nothing (stops drain)
+      // After reset at T-B, we only have 2 more T-A's, so no spin warning
+      let callCount = 0;
+      const deps = makeDeps({
+        getDevTaskCandidates: async () => {
+          callCount += 1;
+          if (callCount === 1 || callCount === 2) {
+            return [task("T-A", "2026-01-01T00:00:00Z")];
+          }
+          if (callCount === 3) {
+            return [task("T-B", "2026-01-02T00:00:00Z")];
+          }
+          if (callCount === 4 || callCount === 5) {
+            return [task("T-A", "2026-01-01T00:00:00Z")];
+          }
+          return [];
+        },
+      });
+      const loop = createLoopOrchestrator(deps);
+
+      await loop([job("shipwright-dev-task", true)]);
+
+      // Pattern: T-A (1), T-A (2), T-B (reset to 1), T-A (1), T-A (2), end
+      // No warning should fire (never reach 3 consecutively after reset)
+      const spinWarnings = warnMessages.filter((msg) =>
+        msg.includes("repeated dispatch") || msg.includes("spin"),
+      );
+      expect(spinWarnings).toHaveLength(0);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
 });
