@@ -50,6 +50,7 @@ Query params:
 | `claimedBy` | string | Filter by claiming agent |
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
+| `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
 | `limit` | number | Page size |
 | `offset` | number | Page offset |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |

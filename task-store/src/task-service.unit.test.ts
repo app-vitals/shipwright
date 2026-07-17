@@ -415,6 +415,42 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
       BadRequestError,
     );
   });
+
+  it("list({ hitl: true }) sets where.hitl = true", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ hitl: true });
+
+    const where = prisma._findManyCalls[0].where as
+      | { hitl?: boolean }
+      | undefined;
+    expect(where?.hitl).toBe(true);
+  });
+
+  it("list({ hitl: false }) sets where.hitl = false", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ hitl: false });
+
+    const where = prisma._findManyCalls[0].where as
+      | { hitl?: boolean }
+      | undefined;
+    expect(where?.hitl).toBe(false);
+  });
+
+  it("list({}) omits where.hitl entirely (preserves current unfiltered behavior)", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({});
+
+    const where = prisma._findManyCalls[0].where as
+      | { hitl?: boolean }
+      | undefined;
+    expect(where?.hitl).toBeUndefined();
+  });
 });
 
 // ─── TaskService.list() blockedBy dependency lookup scoping ────────────────

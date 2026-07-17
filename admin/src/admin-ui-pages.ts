@@ -1423,6 +1423,7 @@ export function renderTasksPage(
     session?: string;
     repo?: string;
     agent?: string;
+    hitl?: "true" | "false";
   },
   degraded: boolean,
   userName: string,
@@ -1476,6 +1477,7 @@ export function renderTasksPage(
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
     if (filters.agent) params.set("agent", filters.agent);
+    if (filters.hitl) params.set("hitl", filters.hitl);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
@@ -1544,6 +1546,7 @@ export function renderTasksPage(
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
     if (filters.agent) p.set("agent", filters.agent);
+    if (filters.hitl) p.set("hitl", filters.hitl);
     const qs = p.toString();
     return qs ? `?${qs}` : "";
   };
@@ -1581,6 +1584,17 @@ export function renderTasksPage(
     .map(
       (s) =>
         `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
+    )
+    .join("");
+
+  const hitlOptions = [
+    { value: "", label: "Any" },
+    { value: "true", label: "Yes" },
+    { value: "false", label: "No" },
+  ]
+    .map(
+      (o) =>
+        `<option value="${o.value}" ${filters.hitl === o.value ? "selected" : ""}>${o.label}</option>`,
     )
     .join("");
 
@@ -1634,6 +1648,10 @@ export function renderTasksPage(
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Status</label>
           <select name="status" class="form-input" style="font-size:12px;padding:4px 8px">${statusOptions}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">HITL</label>
+          <select name="hitl" class="form-input" style="font-size:12px;padding:4px 8px">${hitlOptions}</select>
         </div>
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Session</label>
