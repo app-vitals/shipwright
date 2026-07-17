@@ -4,6 +4,33 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `dev-task`/`review`/`patch`/`deploy` require `shipwright-loop` (or an explicit target)
+
+**Version**: next (WLS-6.1)
+
+`dev-task`, `review`, `patch`, and `deploy` no longer self-discover work. Each is now an
+explicit-target-only executor: `dev-task` requires a task id, and `review`/`patch`/`deploy`
+require an `org/repo#number` PR. Candidate selection — deciding *what* to work on — now
+happens exclusively upstream, in the `shipwright-loop` cron's in-process candidate
+providers (`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`,
+`check-deploy.ts`), which merge candidates and dispatch the winning item's command with its
+id/PR embedded directly in the prompt. No self-search fallback remains inside any of the
+four commands.
+
+**Impact**: any agent running `shipwright-dev-task`, `shipwright-review`, or
+`shipwright-patch` as **standalone crons** (i.e. without `shipwright-loop` enabled) will see
+those crons go silently inert. Their stored prompt (e.g. `/shipwright:dev-task`) carries no
+target, so the command responds `[silent]` and exits immediately on every tick — no error,
+no Slack message, no work done.
+
+**What to update**: enable the `shipwright-loop` system cron (`PATCH
+/agents/:id/crons/:cronId` with `{"enabled": true}`, or via the admin UI). `dev-task`,
+`review`, and `patch` are enabled by default, so once the loop is on, they resume working
+automatically. `shipwright-deploy` remains an explicit opt-in — its per-phase cron ships
+`enabled: false`, so toggle it on separately if you also want deploys driven by the loop.
+
+---
+
 ## Upgrading to chart 1.6.132
 
 Remove `metrics.provider.posthog.*` from your `values.yaml` before running `helm upgrade`. The `posthog` key is no longer accepted by the values schema — with `additionalProperties: false` still in place, Helm will reject the upgrade with a schema validation error if any `metrics.provider.posthog.*` keys remain.
