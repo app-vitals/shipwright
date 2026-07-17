@@ -19,6 +19,7 @@ import { type Clock, FixedClock } from "./clock.ts";
 import {
   buildReviewStateProductionDeps,
   type GhPrView,
+  type GhWorkflowRun,
   type PrOpenTaskRecord,
   type PrReviewStateRecord,
   type PrReviewStateReconcilerDeps,
@@ -61,6 +62,10 @@ interface MakeDepsOptions {
   now?: () => string;
   /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
   getScopedRepos?: () => string[];
+  /** deploying tasks for the new deploying-task reconciliation pass; defaults to [] so existing tests are unaffected. */
+  deployingTasks?: PrOpenTaskRecord[];
+  /** "org/repo#sha" -> GH Actions runs at that head_sha, or an Error to throw for that lookup. */
+  runsForSha?: Record<string, GhWorkflowRun[] | Error>;
 }
 
 function makeDeps({
@@ -73,6 +78,8 @@ function makeDeps({
   prRecords = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
+  deployingTasks = [],
+  runsForSha = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -117,6 +124,13 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
+    listDeployingTasks: async () => deployingTasks,
+    fetchRunsForSha: async (org: string, repo: string, headSha: string) => {
+      const key = `${org}/${repo}#${headSha}`;
+      const result = runsForSha[key];
+      if (result instanceof Error) throw result;
+      return result ?? [];
+    },
   };
 
   return { deps, listCalls, patchCalls, taskPatchCalls };
@@ -1013,11 +1027,18 @@ describe("buildReviewStateProductionDeps", () => {
 
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
   test("pr_open task with merged PR (direct path) is reconciled to merged, using GitHub's mergedAt", async () => {
-    const task: PrOpenTaskRecord = { id: "task-1", repo: "acme/example-repo", pr: 42 };
+    const task: PrOpenTaskRecord = {
+      id: "task-1",
+      repo: "acme/example-repo",
+      pr: 42,
+    };
     const { deps, taskPatchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
-        "acme/example-repo#42": { state: "MERGED", mergedAt: "2026-07-10T00:00:00.000Z" },
+        "acme/example-repo#42": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
       },
     });
 
@@ -1031,7 +1052,11 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("pr_open task whose PR has no mergedAt from GitHub falls back to the injected clock", async () => {
-    const task: PrOpenTaskRecord = { id: "task-2", repo: "acme/example-repo", pr: 43 };
+    const task: PrOpenTaskRecord = {
+      id: "task-2",
+      repo: "acme/example-repo",
+      pr: 43,
+    };
     const { deps, taskPatchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
@@ -1047,7 +1072,11 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("pr_open task whose PR is still open on GitHub is left untouched — no PATCH", async () => {
-    const task: PrOpenTaskRecord = { id: "task-3", repo: "acme/example-repo", pr: 44 };
+    const task: PrOpenTaskRecord = {
+      id: "task-3",
+      repo: "acme/example-repo",
+      pr: 44,
+    };
     const { deps, taskPatchCalls, patchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
@@ -1093,11 +1122,18 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("taskId is backfilled on the matching PR record when it is currently null", async () => {
-    const task: PrOpenTaskRecord = { id: "task-6", repo: "acme/example-repo", pr: 60 };
+    const task: PrOpenTaskRecord = {
+      id: "task-6",
+      repo: "acme/example-repo",
+      pr: 60,
+    };
     const { deps, patchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
-        "acme/example-repo#60": { state: "MERGED", mergedAt: "2026-07-10T00:00:00.000Z" },
+        "acme/example-repo#60": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
       },
       prRecords: {
         "acme/example-repo#60": {
@@ -1118,11 +1154,18 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("taskId is left untouched when the PR record already has one set", async () => {
-    const task: PrOpenTaskRecord = { id: "task-7", repo: "acme/example-repo", pr: 61 };
+    const task: PrOpenTaskRecord = {
+      id: "task-7",
+      repo: "acme/example-repo",
+      pr: 61,
+    };
     const { deps, patchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
-        "acme/example-repo#61": { state: "MERGED", mergedAt: "2026-07-10T00:00:00.000Z" },
+        "acme/example-repo#61": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
       },
       prRecords: {
         "acme/example-repo#61": {
@@ -1141,13 +1184,24 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("a lookup failure for one pr_open task does not abort reconciliation of the others in the batch", async () => {
-    const taskA: PrOpenTaskRecord = { id: "task-8", repo: "acme/example-repo", pr: 70 };
-    const taskB: PrOpenTaskRecord = { id: "task-9", repo: "acme/example-repo", pr: 71 };
+    const taskA: PrOpenTaskRecord = {
+      id: "task-8",
+      repo: "acme/example-repo",
+      pr: 70,
+    };
+    const taskB: PrOpenTaskRecord = {
+      id: "task-9",
+      repo: "acme/example-repo",
+      pr: 71,
+    };
     const { deps, taskPatchCalls } = makeDeps({
       prOpenTasks: [taskA, taskB],
       ghResults: {
         "acme/example-repo#70": new Error("gh pr view failed: rate limited"),
-        "acme/example-repo#71": { state: "MERGED", mergedAt: "2026-07-10T00:00:00.000Z" },
+        "acme/example-repo#71": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
       },
     });
 
@@ -1158,11 +1212,334 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 
   test("task.repo without a slash and no configured repos is skipped defensively — no throw", async () => {
-    const task: PrOpenTaskRecord = { id: "task-10", repo: "example-repo", pr: 80 };
-    const { deps, taskPatchCalls } = makeDeps({ repos: [], prOpenTasks: [task] });
+    const task: PrOpenTaskRecord = {
+      id: "task-10",
+      repo: "example-repo",
+      pr: 80,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      repos: [],
+      prOpenTasks: [task],
+    });
 
     await reconcilePrState(deps);
 
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+});
+
+// ─── reconcilePrState — deploying task reconciliation pass (DSR-1.2) ──────────
+
+describe("reconcilePrState — deploying task reconciliation pass", () => {
+  function withCommitShaPrRecord(
+    repo: string,
+    prNumber: number,
+    commitSha: string | null,
+  ): Record<string, PrStateRecord> {
+    return {
+      [`${repo}#${prNumber}`]: {
+        id: `pr-record-${prNumber}`,
+        repo,
+        prNumber,
+        state: "merged",
+        commitSha,
+      },
+    };
+  }
+
+  test("successful Deploy run marks the task deployed", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d1",
+      repo: "acme/example-repo",
+      pr: 100,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 100, "sha-100"),
+      runsForSha: {
+        "acme/example-repo#sha-100": [
+          { id: 1, name: "Deploy", status: "completed", conclusion: "success" },
+        ],
+      },
+      now: () => "2026-07-16T00:00:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d1");
+    expect(taskPatchCalls[0].fields.status).toBe("deployed");
+    expect(taskPatchCalls[0].fields.deployedAt).toBe(
+      "2026-07-16T00:00:00.000Z",
+    );
+  });
+
+  test("failed Deploy run marks the task blocked with a note citing the run", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d2",
+      repo: "acme/example-repo",
+      pr: 101,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 101, "sha-101"),
+      runsForSha: {
+        "acme/example-repo#sha-101": [
+          {
+            id: 42,
+            name: "Deploy",
+            status: "completed",
+            conclusion: "failure",
+          },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d2");
+    expect(taskPatchCalls[0].fields.status).toBe("blocked");
+    expect(taskPatchCalls[0].fields.note).toBe(
+      "Deploy stage failed — run ID: 42",
+    );
+  });
+
+  test("no Deploy workflow but green post-merge CI marks the task deployed via fallback", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d3",
+      repo: "acme/example-repo",
+      pr: 102,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 102, "sha-102"),
+      runsForSha: {
+        "acme/example-repo#sha-102": [
+          { id: 7, name: "CI", status: "completed", conclusion: "success" },
+        ],
+      },
+      now: () => "2026-07-16T01:00:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d3");
+    expect(taskPatchCalls[0].fields.status).toBe("deployed");
+    expect(taskPatchCalls[0].fields.deployedAt).toBe(
+      "2026-07-16T01:00:00.000Z",
+    );
+  });
+
+  test("no Deploy workflow and failed post-merge CI marks the task blocked via fallback", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d4",
+      repo: "acme/example-repo",
+      pr: 103,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 103, "sha-103"),
+      runsForSha: {
+        "acme/example-repo#sha-103": [
+          { id: 9, name: "CI", status: "completed", conclusion: "failure" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d4");
+    expect(taskPatchCalls[0].fields.status).toBe("blocked");
+    expect(taskPatchCalls[0].fields.note).toBe(
+      "Post-merge CI failed — run ID: 9",
+    );
+  });
+
+  test("runs still in progress are left untouched — not yet resolvable", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d5",
+      repo: "acme/example-repo",
+      pr: 104,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 104, "sha-104"),
+      runsForSha: {
+        "acme/example-repo#sha-104": [
+          { id: 11, name: "Deploy", status: "in_progress", conclusion: null },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("no runs found at all for the SHA yet is left untouched — not yet resolvable", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d6",
+      repo: "acme/example-repo",
+      pr: 105,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 105, "sha-105"),
+      runsForSha: {
+        "acme/example-repo#sha-105": [],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("a failed earlier Deploy attempt followed by a successful retry is deployed, not blocked", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d7",
+      repo: "acme/example-repo",
+      pr: 106,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 106, "sha-106"),
+      runsForSha: {
+        "acme/example-repo#sha-106": [
+          {
+            id: 20,
+            name: "Deploy",
+            status: "completed",
+            conclusion: "failure",
+          },
+          {
+            id: 21,
+            name: "Deploy",
+            status: "completed",
+            conclusion: "success",
+          },
+        ],
+      },
+      now: () => "2026-07-16T02:00:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].fields.status).toBe("deployed");
+    expect(taskPatchCalls[0].fields.deployedAt).toBe(
+      "2026-07-16T02:00:00.000Z",
+    );
+  });
+
+  test("no PR record found for the deploying task is skipped — no PATCH, no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d8",
+      repo: "acme/example-repo",
+      pr: 107,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: {},
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("PR record found but commitSha is null is skipped — no PATCH, no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d9",
+      repo: "acme/example-repo",
+      pr: 108,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+      prRecords: withCommitShaPrRecord("acme/example-repo", 108, null),
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("deploying task with no pr number is skipped — no PATCH, no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d10",
+      repo: "acme/example-repo",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [task],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("task.repo without a slash and no configured repos is skipped defensively — no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-d11",
+      repo: "example-repo",
+      pr: 109,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      repos: [],
+      deployingTasks: [task],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("a lookup failure for one deploying task does not abort reconciliation of the others in the batch", async () => {
+    const taskA: PrOpenTaskRecord = {
+      id: "task-d12",
+      repo: "acme/example-repo",
+      pr: 110,
+    };
+    const taskB: PrOpenTaskRecord = {
+      id: "task-d13",
+      repo: "acme/example-repo",
+      pr: 111,
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      deployingTasks: [taskA, taskB],
+      prRecords: {
+        ...withCommitShaPrRecord("acme/example-repo", 110, "sha-110"),
+        ...withCommitShaPrRecord("acme/example-repo", 111, "sha-111"),
+      },
+      runsForSha: {
+        "acme/example-repo#sha-110": new Error("gh api failed: rate limited"),
+        "acme/example-repo#sha-111": [
+          {
+            id: 55,
+            name: "Deploy",
+            status: "completed",
+            conclusion: "success",
+          },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-d13");
+  });
+
+  test("a listDeployingTasks() failure is logged and does not throw", async () => {
+    const { deps, taskPatchCalls } = makeDeps({});
+    deps.listDeployingTasks = async () => {
+      throw new Error("task-store unreachable");
+    };
+
+    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
   });
 });

@@ -58,6 +58,16 @@ export interface PrStateRecord {
   state: string;
   /** Present when this record was fetched for the taskId-backfill lookup; absent/undefined elsewhere. */
   taskId?: string | null;
+  /** Merge commit SHA — used by the deploying-task reconciliation pass (DSR-1.2) to look up GH Actions runs. */
+  commitSha?: string | null;
+}
+
+/** A single GH Actions workflow run, as returned by `fetchRunsForSha` (DSR-1.2). */
+export interface GhWorkflowRun {
+  id: number;
+  name: string;
+  status: string;
+  conclusion: string | null;
 }
 
 /** Result of `gh pr view <n> --json state,mergedAt`. */
@@ -91,7 +101,10 @@ export interface PrStateReconcilerDeps {
   /** List every task-store Task with status "pr_open" (DSR-1.1). */
   listPrOpenTasks: () => Promise<PrOpenTaskRecord[]>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
-  updateTaskStatus: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  updateTaskStatus: (
+    id: string,
+    fields: Record<string, unknown>,
+  ) => Promise<void>;
   /** Branch-fallback PR lookup (`gh pr list --head <branch> --state merged`) for tasks with no `pr` number set (DSR-1.1). */
   ghListMergedPrsForBranch: (
     repo: string,
@@ -104,6 +117,19 @@ export interface PrStateReconcilerDeps {
   ) => Promise<PrStateRecord | null>;
   /** Injected clock — mergedAt fallback when GitHub doesn't report one (DSR-1.1). */
   now: () => string;
+  /** List every task-store Task with status "deploying" (DSR-1.2). */
+  listDeployingTasks: () => Promise<PrOpenTaskRecord[]>;
+  /**
+   * Fetch every GH Actions run recorded at a given head_sha, unfiltered by
+   * workflow name — the caller filters to `name === "Deploy"` first and
+   * falls back to the full set (post-merge CI) only when no Deploy-named run
+   * exists at that SHA (DSR-1.2).
+   */
+  fetchRunsForSha: (
+    org: string,
+    repo: string,
+    headSha: string,
+  ) => Promise<GhWorkflowRun[]>;
   /**
    * Returns the agent's currently-configured repo scope (WL-4.2's live
    * agent-repos-ref.ts), read fresh on every reconcilePrState() call — not
@@ -230,7 +256,10 @@ async function reconcileRecord(
  * (bare repo name + no configured repos) — callers must skip defensively
  * rather than guess.
  */
-function resolveTaskRepo(deps: PrStateReconcilerDeps, task: PrOpenTaskRecord): string | undefined {
+function resolveTaskRepo(
+  deps: PrStateReconcilerDeps,
+  task: PrOpenTaskRecord,
+): string | undefined {
   if (task.repo?.includes("/")) return task.repo;
   return deps.repos[0];
 }
@@ -299,7 +328,9 @@ async function reconcilePrOpenTask(
  * and does not abort reconciliation of the rest of the batch — mirrors
  * reconcilePrState's own per-record error isolation above.
  */
-export async function reconcilePrOpenTasks(deps: PrStateReconcilerDeps): Promise<void> {
+export async function reconcilePrOpenTasks(
+  deps: PrStateReconcilerDeps,
+): Promise<void> {
   let tasks: PrOpenTaskRecord[];
   try {
     tasks = await deps.listPrOpenTasks();
@@ -323,6 +354,132 @@ export async function reconcilePrOpenTasks(deps: PrStateReconcilerDeps): Promise
   }
 }
 
+// ─── reconcileDeployingTasks (DSR-1.2) ─────────────────────────────────────────
+
+type RunOutcome = "success" | "failure" | "pending";
+
+/**
+ * Classify a set of GH Actions runs at a single head_sha. Mirrors
+ * deploy.md Step 5c's completion logic: any run that reports
+ * `conclusion: "success"` wins outright (a later successful retry must not
+ * be masked by an earlier failed attempt at the same SHA); with no success
+ * present, any still-incomplete run means the outcome isn't resolvable yet;
+ * only once every run has completed with none succeeding is the outcome a
+ * genuine failure. Zero runs is "pending" — nothing to decide from yet.
+ */
+function classifyRuns(
+  runs: Array<{ status: string; conclusion: string | null }>,
+): RunOutcome {
+  if (runs.length === 0) return "pending";
+  if (runs.some((r) => r.conclusion === "success")) return "success";
+  if (runs.some((r) => r.status !== "completed")) return "pending";
+  return "failure"; // every run completed, none succeeded
+}
+
+/** Find a completed, non-success run to cite in a blocked-task note. */
+function findFailedRun(runs: GhWorkflowRun[]): GhWorkflowRun | undefined {
+  return runs.find(
+    (r) => r.status === "completed" && r.conclusion !== "success",
+  );
+}
+
+/**
+ * Reconcile one deploying task against the actual GH Actions run outcome for
+ * its linked PR's merge commit (DSR-1.2). Deliberately never treats "PR
+ * merged" alone as a success signal — the task's linked PullRequest record
+ * must have a `commitSha`, and that SHA's runs must show a genuine
+ * success/failure conclusion, or the task is left untouched.
+ *
+ * Primary path: runs named "Deploy" at that SHA. Fallback path (no
+ * Deploy-named run found — e.g. a repo with no Deploy workflow): all runs at
+ * that SHA, i.e. post-merge CI, mirroring deploy.md Step 5c.
+ */
+async function reconcileDeployingTask(
+  deps: PrStateReconcilerDeps,
+  task: PrOpenTaskRecord,
+): Promise<void> {
+  const taskRepo = resolveTaskRepo(deps, task);
+  if (!taskRepo) return; // no repo to resolve against — skip defensively
+  if (!task.pr) return; // nothing to resolve a commitSha from — skip
+
+  const prRecord = await deps.findPrRecordByRepoAndPrNumber(taskRepo, task.pr);
+  if (!prRecord?.commitSha) return; // nothing to check yet
+
+  const [org, repoName] = splitOrgRepo(taskRepo);
+  const runs = await deps.fetchRunsForSha(org, repoName, prRecord.commitSha);
+  const deployRuns = runs.filter((r) => r.name === "Deploy");
+
+  if (deployRuns.length > 0) {
+    const outcome = classifyRuns(deployRuns);
+    if (outcome === "pending") return; // not yet resolvable
+    if (outcome === "success") {
+      await deps.updateTaskStatus(task.id, {
+        status: "deployed",
+        deployedAt: deps.now(),
+      });
+      return;
+    }
+    const failedRun = findFailedRun(deployRuns);
+    await deps.updateTaskStatus(task.id, {
+      status: "blocked",
+      note: `Deploy stage failed — run ID: ${failedRun?.id}`,
+    });
+    return;
+  }
+
+  // Fallback path — no Deploy-named run at this SHA; classify all runs seen
+  // (post-merge CI), mirroring deploy.md Step 5c.
+  const outcome = classifyRuns(runs);
+  if (outcome === "pending") return; // not yet resolvable (or zero runs seen yet)
+  if (outcome === "success") {
+    await deps.updateTaskStatus(task.id, {
+      status: "deployed",
+      deployedAt: deps.now(),
+    });
+    return;
+  }
+  const failedRun = findFailedRun(runs);
+  await deps.updateTaskStatus(task.id, {
+    status: "blocked",
+    note: `Post-merge CI failed — run ID: ${failedRun?.id}`,
+  });
+}
+
+/**
+ * Scan every deploying task, resolve its linked PR's merge commit, and PATCH
+ * the task to deployed/blocked once the actual GH Actions run outcome for
+ * that commit is resolvable. Self-heals tasks left stuck at "deploying"
+ * because the `/shipwright:deploy` session that would normally transition
+ * them synchronously died, timed out, or got evicted mid-poll. A single
+ * per-task failure is logged and does not abort reconciliation of the rest
+ * of the batch — mirrors reconcilePrOpenTasks's own per-task error isolation.
+ */
+export async function reconcileDeployingTasks(
+  deps: PrStateReconcilerDeps,
+): Promise<void> {
+  let tasks: PrOpenTaskRecord[];
+  try {
+    tasks = await deps.listDeployingTasks();
+  } catch (err) {
+    console.error(
+      "[pr-state-reconciler] failed to list deploying tasks:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return;
+  }
+
+  for (const task of tasks) {
+    try {
+      await reconcileDeployingTask(deps, task);
+    } catch (err) {
+      console.error(
+        `[pr-state-reconciler] failed to reconcile deploying task ${task.id}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+}
+
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -330,8 +487,9 @@ export async function reconcilePrOpenTasks(deps: PrStateReconcilerDeps): Promise
  * GitHub state, and PATCH only the ones that disagree (GitHub shows
  * MERGED/CLOSED but the record still says "open"). A single per-PR gh
  * lookup failure is logged and does not abort reconciliation of the rest
- * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) so
- * agent/src/index.ts's single call site doesn't need to change.
+ * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) and
+ * the deploying-task reconciliation pass (DSR-1.2) so agent/src/index.ts's
+ * single call site doesn't need to change.
  */
 export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
@@ -364,6 +522,7 @@ export async function reconcilePrState(
   }
 
   await reconcilePrOpenTasks(deps);
+  await reconcileDeployingTasks(deps);
 }
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
@@ -407,9 +566,7 @@ function classifyReviewState(data: PrReviewData): "approved" | "posted" | null {
   );
 
   if (qualifyingReviews.length > 0) {
-    const unresolvedThreads = reviewThreads.nodes.filter(
-      (t) => !t.isResolved,
-    );
+    const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
     if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
 
     const hasFindingBody = qualifyingReviews.some(
@@ -576,6 +733,16 @@ interface TaskListResponseJson {
   tasks: PrOpenTaskRecord[];
 }
 
+/** GET /repos/{org}/{repo}/actions/runs response shape (DSR-1.2). */
+interface GhWorkflowRunsJson {
+  workflow_runs: Array<{
+    id: number;
+    name: string;
+    status: string;
+    conclusion: string | null;
+  }>;
+}
+
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -667,6 +834,29 @@ export function buildProductionDeps(opts: {
       fetchFn: opts.fetchFn,
     }),
     now: () => new Date().toISOString(),
+    listDeployingTasks: async () => {
+      const params = new URLSearchParams({ status: "deploying" });
+      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
+      if (!res.ok) {
+        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+      }
+      const data = (await res.json()) as unknown;
+      // Same legacy-bare-array tolerance as listPrOpenTasks above.
+      if (Array.isArray(data)) return data as PrOpenTaskRecord[];
+      return (data as TaskListResponseJson).tasks;
+    },
+    fetchRunsForSha: async (org: string, repo: string, headSha: string) => {
+      const data = await ghJson<GhWorkflowRunsJson>([
+        "api",
+        `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
+      ]);
+      return data.workflow_runs.map((r) => ({
+        id: r.id,
+        name: r.name,
+        status: r.status,
+        conclusion: r.conclusion,
+      }));
+    },
   };
 }
 
