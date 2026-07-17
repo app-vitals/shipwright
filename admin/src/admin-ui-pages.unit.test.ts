@@ -1574,6 +1574,119 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
   });
 });
 
+// ─── renderTasksPage — hitl filter ───────────────────────────────────────────
+
+describe("renderTasksPage — hitl filter", () => {
+  test("renders a hitl select with Any/Yes/No options next to Status", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('<select name="hitl"');
+    expect(html).toMatch(/<option value=""[^>]*>Any<\/option>/);
+    expect(html).toMatch(/<option value="true"[^>]*>Yes<\/option>/);
+    expect(html).toMatch(/<option value="false"[^>]*>No<\/option>/);
+  });
+
+  test("selects 'Yes' option when filters.hitl is 'true'", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { hitl: "true" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('<option value="true" selected>Yes</option>');
+  });
+
+  test("selects 'No' option when filters.hitl is 'false'", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { hitl: "false" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('<option value="false" selected>No</option>');
+  });
+
+  test("defaults to 'Any' with no explicit hitl option selected when filters.hitl is undefined", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toMatch(/<option value=""[^>]*>Any<\/option>/);
+    expect(html).not.toMatch(/<option value="true"[^>]*selected[^>]*>Yes<\/option>/);
+    expect(html).not.toMatch(/<option value="false"[^>]*selected[^>]*>No<\/option>/);
+  });
+
+  test("makePageUrl preserves hitl filter across pagination links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { hitl: "true" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('href="/admin/tasks?hitl=true&page=2"');
+  });
+
+  test("makeStateParams preserves hitl filter in state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { hitl: "true" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain('href="/admin/tasks?state=ready&hitl=true"');
+    expect(html).toContain('href="/admin/tasks?state=in_progress&hitl=true"');
+    expect(html).toContain('href="/admin/tasks?state=blocked&hitl=true"');
+    expect(html).toContain('href="/admin/tasks?state=closed&hitl=true"');
+  });
+
+  test("row links carry ?from= including hitl when a hitl filter is active", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { hitl: "true" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    const expectedFrom = encodeURIComponent("/admin/tasks?hitl=true");
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
+  });
+});
+
 // ─── renderAgentDetailPage — repos section ───────────────────────────────────
 
 describe("renderAgentDetailPage — repos", () => {

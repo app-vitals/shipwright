@@ -3797,6 +3797,74 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].has("status")).toBe(false);
   });
 
+  it("GET /admin/tasks?hitl=true forwards hitl=true to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?hitl=true", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("hitl")).toBe("true");
+  });
+
+  it("GET /admin/tasks?hitl=false forwards hitl=false to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?hitl=false", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("hitl")).toBe("false");
+  });
+
+  it("GET /admin/tasks with no hitl param forwards no hitl to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("hitl")).toBe(false);
+  });
+
+  it("GET /admin/tasks?hitl=garbage forwards no hitl to the task store (invalid values treated as no filter)", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?hitl=garbage", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("hitl")).toBe(false);
+  });
+
   it("GET /admin/tasks requests sort=desc from the task store", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createAdminUIApp(

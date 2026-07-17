@@ -302,6 +302,68 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(res.status).toBe(400);
   });
 
+  it("GET /?hitl=true passes hitl: true through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1", hitl: true });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?hitl=true");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { hitl?: boolean }).hitl).toBe(true);
+  });
+
+  it("GET /?hitl=false passes hitl: false through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1", hitl: false });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?hitl=false");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { hitl?: boolean }).hitl).toBe(false);
+  });
+
+  it("GET / with no hitl param passes hitl: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { hitl?: boolean }).hitl).toBeUndefined();
+  });
+
+  it("GET /?hitl=garbage rejects with a 400 (invalid enum value, mirrors ?ready= behavior)", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?hitl=garbage");
+    expect(res.status).toBe(400);
+  });
+
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {
     const app = createTasksRoutes(fakeTaskService());
     const parent = makeAdminParent(app);

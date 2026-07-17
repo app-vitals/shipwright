@@ -13,7 +13,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total }
  *   POST   /tasks               create one (409 if id exists)
  *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated, skipped }
@@ -498,6 +498,12 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
+      hitl:
+        c.req.query("hitl") === "true"
+          ? true
+          : c.req.query("hitl") === "false"
+            ? false
+            : undefined,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined

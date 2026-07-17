@@ -1922,6 +1922,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;
+    const hitlRaw = c.req.query("hitl");
+    const hitl: "true" | "false" | undefined =
+      hitlRaw === "true" || hitlRaw === "false" ? hitlRaw : undefined;
     const error = c.req.query("error") ?? undefined;
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
@@ -1951,6 +1954,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (state) params.set("state", state);
       if (session) params.set("session", session);
       if (repo) params.set("repo", repo);
+      if (hitl) params.set("hitl", hitl);
       // Agent-name filtering is done client-side, so we fetch a larger slice
       // when an agent filter is active to avoid under-counting across pages.
       params.set("limit", agentFilterIds !== null ? "500" : String(limit));
@@ -2013,7 +2017,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { status, state, session, repo, agent },
+        { status, state, session, repo, agent, hitl },
         degraded,
         c.var.userEmail,
         agentNames,
