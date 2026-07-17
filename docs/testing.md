@@ -46,14 +46,15 @@ cd site && npm test                  # playwright (*.spec.ts)
 
 | Component | Layers in use | Run command |
 |---|---|---|
-| Plugin (`plugins/shipwright`) | unit, integration, content | `bun test --filter plugins/shipwright` |
+| Plugin (`plugins/shipwright`) | unit, content | `bun test --filter plugins/shipwright` |
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
 | Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
 | Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
-| Task Store (`task-store`) | integration | `bun test --filter task-store` |
+| Chat (`chat`) | unit, integration, smoke | `bun test --filter chat` |
+| Task Store (`task-store`) | unit, integration, smoke | `bun test --filter task-store` |
 | MCP Server (`mcp-server`) | unit, integration, smoke | `bun test --filter mcp-server` |
 
-The plugin has **no smoke/e2e layer** (no HTTP surface). Task Store is a pure Prisma package (library, no HTTP surface). MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-search.spec.ts`), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
+The plugin has **no integration/smoke/e2e layer** (no HTTP surface, no external dependencies). Chat and Task Store are Hono apps backed by Prisma (Postgres); integration tests cover the Prisma-backed services against a real DB (`describeOrSkip`-gated on `DATABASE_URL_SHIPWRIGHT_CHAT` / `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`), and smoke tests drive the Hono app via `app.request()`. MCP Server is a Hono app with no database; integration tests inject a recorded fetch implementation, and smoke tests drive the Hono app via `app.request()`. E2E (Playwright) covers the marketing site (`site/tests/home.spec.ts`, `site/tests/docs-platform.spec.ts`, `site/tests/docs-search.spec.ts`, and others), the metrics dashboard UI (`metrics/e2e/dashboard.e2e.ts`), and the admin UI (`admin/e2e/agents-page.e2e.ts`, `admin/e2e/login-page.e2e.ts`).
 
 ## Speed budgets
 
@@ -72,7 +73,7 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 - **Time:** any production code path that calls `new Date()` / `Date.now()` non-trivially must accept a `Clock` interface; tests inject `FixedClock(t)`. Raw `Date.now()` in code under test is a bug.
 - **External HTTP:** service clients (`TaskStoreClient`, `GithubClient`, …) are interfaces with an `Http*Client` production impl; tests inject `Recorded*Client` recorded fixture doubles replaying fixture data from `src/fixtures/<service>/*.json` (versioned JSON committed to the repo).
 - **No global state:** **no `mock.module()`**, **no `global.fetch` / `global.*` overrides.** Bun runs test files in the same process, so module-level mocks and global mutation leak across sibling suites. Each test must be independently runnable, order-independent.
-- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, and `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests (suites skip automatically when the respective var is absent).
+- **Offline by default:** no live external calls. Live external service credentials must be absent for metrics unit/integration/smoke tests; `DATABASE_URL_ADMIN_TEST` must be set to a Postgres connection string for admin DB integration tests, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST` for task-store DB integration tests, and `DATABASE_URL_SHIPWRIGHT_CHAT` for chat DB integration tests (suites skip automatically when the respective var is absent).
 
 ## CI gates
 
