@@ -210,7 +210,7 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
 });
 
 describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () => {
-  it("Step 5b Instructions [D] requires a gh pr comment rebuttal gated on all-REJECT / zero files changed", () => {
+  it("Step 5b Instructions [D] requires a gh pr comment rebuttal whenever any finding was REJECTed, independent of the commit/push condition", () => {
     const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
     const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
     expect(step5bIdx).toBeGreaterThan(-1);
@@ -225,8 +225,8 @@ describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () =
 
     expect(dSection).toContain("gh pr comment");
     expect(dSection).toContain("classified REJECT");
-    expect(dSection).toContain("no files changed");
-    expect(dSection).toContain("do not commit or push");
+    expect(dSection).toContain("independent");
+    expect(dSection).toContain("regardless of whether other");
   });
 
   it("Step 5b Instructions [D] leaves the ACCEPT/MODIFY commit+push flow unchanged for the real-fix case", () => {

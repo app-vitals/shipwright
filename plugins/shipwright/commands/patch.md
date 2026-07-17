@@ -642,15 +642,20 @@ INSTRUCTIONS — follow in order:
   - Re-run until both pass cleanly
 
 [D] Commit
+  These two conditions are independent — both can fire in the same run (a mixed
+  ACCEPT+REJECT outcome), only the first can fire (all findings accepted/modified), only
+  the second can fire (all findings rejected), or neither (nothing to do).
+
   - **If at least one finding was ACCEPTED or MODIFIED** (i.e. you have file changes
     staged):
     - Stage only the files you changed: `git add {changed files}`
     - Commit with a conventional commit message describing what was fixed:
       "fix: address review findings on #{pr} — {one-line summary of changes}"
     - Push: `git push origin {branch}`
-  - **If every finding was classified REJECT in [A.5]** (premise incorrect on all of
-    them — no files changed, nothing to commit): do not commit or push. Instead, post a
-    PR-level rebuttal comment explaining why each finding was rejected, so the review is
+
+  - **If any finding was classified REJECT in [A.5]** (regardless of whether other
+    findings in the same run were ACCEPTED/MODIFIED and handled above): post a PR-level
+    rebuttal comment explaining why each REJECTed finding was rejected, so the review is
     not left looking unaddressed. Write the comment body to a temp file first to avoid
     heredoc syntax in the command string (heredocs break permission glob matching and
     cause repeated approval prompts):
@@ -664,10 +669,11 @@ INSTRUCTIONS — follow in order:
     rm /tmp/shipwright-patch-rebuttal-{pr}.txt
     ```
     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
-    across all worktrees. List every rejected finding, one bullet per finding, drawn from
-    the CONCERNS you compiled in [A.5]. This comment is what allows a future patch run to
-    recognize the review was addressed (rejected with reasoning, not ignored) instead of
-    reflagging it forever.
+    across all worktrees. List only the REJECTed findings, one bullet per finding, drawn
+    from the CONCERNS you compiled in [A.5] — do not include ACCEPTED/MODIFIED findings
+    here even if this run also produced a commit above. This comment is what allows a
+    future patch run to recognize the review was addressed (rejected with reasoning, not
+    ignored) instead of reflagging it forever.
 
     This only works for review-body-level findings, though — `hasUnaddressedFindings()`
     short-circuits to `true` whenever any unresolved **inline** thread exists, regardless
@@ -684,7 +690,8 @@ INSTRUCTIONS — follow in order:
     ```
     Run this for the Thread ID of every unresolved inline thread whose finding was
     REJECTed in [A.5] — the rebuttal comment you just posted is the explanation for why
-    that thread is being resolved without a code change.
+    that thread is being resolved without a code change. Do this whether or not the
+    commit/push condition above also fired in this same run.
 
 [E] Resolve addressed inline threads
   PR-level comments cannot be resolved programmatically — skip them here.
@@ -700,10 +707,11 @@ INSTRUCTIONS — follow in order:
   }'
   ```
   Run this for each Thread ID whose finding was fixed. Threads for REJECTed findings were
-  already resolved in [D] above — do not process them again here. Skip only threads whose
-  findings were genuinely inapplicable for some other reason (e.g., stale/already-fixed on
-  main, unrelated to this PR) without a rebuttal explaining why — those stay unresolved. Do
-  not attempt to resolve PR-level comments — they have no resolution mechanism.
+  already handled by [D]'s rebuttal+resolve condition above, whenever at least one finding
+  was REJECTed — do not process them again here. Skip only threads whose findings were
+  genuinely inapplicable for some other reason (e.g., stale/already-fixed on main,
+  unrelated to this PR) without a rebuttal explaining why — those stay unresolved. Do not
+  attempt to resolve PR-level comments — they have no resolution mechanism.
 
 [F] Report back
   At the end, output:
