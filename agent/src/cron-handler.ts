@@ -364,27 +364,36 @@ export async function handleCronRequest(
       buildTokenPayload(usage, modelUsage),
     );
 
-    const postResult = await slack.chat.postMessage({
-      channel,
-      text: formatted,
-    });
-    console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
-    if (postResult.ts) {
-      onPost?.(channel, postResult.ts);
-      if (onSession && sessionId)
-        await onSession(channel, postResult.ts, sessionId);
-    } else {
-      console.warn(
-        `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
-      );
+    // The run is already recorded as "completed" above — any error from here
+    // on (postMessage, dispatchMarkers) must be tagged before rethrowing so
+    // index.ts's outer catch doesn't create a duplicate "failed" row for a
+    // tick that already completed successfully.
+    try {
+      const postResult = await slack.chat.postMessage({
+        channel,
+        text: formatted,
+      });
+      console.log(`[agent:cron] job "${jobId}" posted to channel ${channel}`);
+      if (postResult.ts) {
+        onPost?.(channel, postResult.ts);
+        if (onSession && sessionId)
+          await onSession(channel, postResult.ts, sessionId);
+      } else {
+        console.warn(
+          `[agent:cron] job "${jobId}" postMessage returned no ts — react markers will be skipped`,
+        );
+      }
+      await dispatchMarkers(markers, {
+        client: slack,
+        channel,
+        postedTs: postResult.ts,
+        synthesizeSpeechFn,
+        voiceConfig,
+      });
+    } catch (err) {
+      markCronRunFailureReported(err);
+      throw err;
     }
-    await dispatchMarkers(markers, {
-      client: slack,
-      channel,
-      postedTs: postResult.ts,
-      synthesizeSpeechFn,
-      voiceConfig,
-    });
   } else if (user) {
     // Record completion before any Slack calls — conversations.open can also
     // fail (network error or null channel), and we must not leave the
@@ -397,33 +406,42 @@ export async function handleCronRequest(
       buildTokenPayload(usage, modelUsage),
     );
 
-    const dmResult = await slack.conversations.open({ users: user });
-    const dmChannel = dmResult.channel?.id;
-    if (!dmChannel) {
-      throw new Error(`[agent:cron] could not open DM for user ${user}`);
-    }
+    // The run is already recorded as "completed" above — any error from here
+    // on (conversations.open, postMessage, dispatchMarkers) must be tagged
+    // before rethrowing so index.ts's outer catch doesn't create a duplicate
+    // "failed" row for a tick that already completed successfully.
+    try {
+      const dmResult = await slack.conversations.open({ users: user });
+      const dmChannel = dmResult.channel?.id;
+      if (!dmChannel) {
+        throw new Error(`[agent:cron] could not open DM for user ${user}`);
+      }
 
-    const dmPostResult = await slack.chat.postMessage({
-      channel: dmChannel,
-      text: formatted,
-    });
-    console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
-    if (dmPostResult.ts) {
-      onPost?.(dmChannel, dmPostResult.ts);
-      if (onSession && sessionId)
-        await onSession(dmChannel, dmPostResult.ts, sessionId);
-    } else {
-      console.warn(
-        `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
-      );
+      const dmPostResult = await slack.chat.postMessage({
+        channel: dmChannel,
+        text: formatted,
+      });
+      console.log(`[agent:cron] job "${jobId}" posted DM to user ${user}`);
+      if (dmPostResult.ts) {
+        onPost?.(dmChannel, dmPostResult.ts);
+        if (onSession && sessionId)
+          await onSession(dmChannel, dmPostResult.ts, sessionId);
+      } else {
+        console.warn(
+          `[agent:cron] job "${jobId}" DM postMessage returned no ts — react markers will be skipped`,
+        );
+      }
+      await dispatchMarkers(markers, {
+        client: slack,
+        channel: dmChannel,
+        postedTs: dmPostResult.ts,
+        synthesizeSpeechFn,
+        voiceConfig,
+      });
+    } catch (err) {
+      markCronRunFailureReported(err);
+      throw err;
     }
-    await dispatchMarkers(markers, {
-      client: slack,
-      channel: dmChannel,
-      postedTs: dmPostResult.ts,
-      synthesizeSpeechFn,
-      voiceConfig,
-    });
   }
 }
 
