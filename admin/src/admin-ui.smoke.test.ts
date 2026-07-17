@@ -223,6 +223,9 @@ function makeMockDeps(
     agentCronRunService: {
       listForAgent: async () => ({ items: [], total: 0, limit: 20, offset: 0 }),
     },
+    agentWorkQueueService: {
+      get: async () => null,
+    },
     agentToolService: {
       list: async () => [MOCK_TOOL],
       add: async () => MOCK_TOOL,
@@ -618,6 +621,61 @@ describe("admin UI — authenticated pages", () => {
     expect(html).not.toContain("No runs");
   });
 
+  it("authenticated GET /admin/agents/:id/work-queue returns 200 with empty state", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // empty state by default in the base mock — no snapshot pushed yet
+    expect(html).toContain("No work queue snapshot");
+    expect(html).not.toContain("Last computed");
+  });
+
+  it("authenticated GET /admin/agents/:id/work-queue renders populated snapshot", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentWorkQueueService: {
+          get: async () => ({
+            id: "snap-1",
+            agentId: AGENT_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "task",
+                id: "WLS-2.2",
+                title: "Add work queue snapshot endpoints",
+                phase: "dev-task",
+                age: "2026-06-01T09:00:00Z",
+              },
+              {
+                type: "pr",
+                id: "PR-42",
+                title: "Fix flaky test",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Last computed");
+    expect(html).toContain("WLS-2.2");
+    expect(html).toContain("Add work queue snapshot endpoints");
+    expect(html).toContain("PR-42");
+    expect(html).toContain("dev-task");
+    expect(html).toContain("review");
+    expect(html).not.toContain("No work queue snapshot");
+  });
+
   it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
@@ -643,7 +701,9 @@ describe("admin UI — authenticated pages", () => {
     expect(capturedOpts).toMatchObject({ cronId: CRON_ID });
     const html = await res.text();
     // Selected cron option should carry `selected`.
-    const optionMatch = html.match(new RegExp(`<option value="${CRON_ID}"[^>]*>`));
+    const optionMatch = html.match(
+      new RegExp(`<option value="${CRON_ID}"[^>]*>`),
+    );
     expect(optionMatch).not.toBeNull();
     expect(optionMatch?.[0]).toContain("selected");
   });
@@ -682,7 +742,11 @@ describe("admin UI — authenticated pages", () => {
             capturedOpts = opts;
             return {
               items: [
-                makeCronRun({ skipped: true, outcome: null, skipReason: "pre-check failed" }),
+                makeCronRun({
+                  skipped: true,
+                  outcome: null,
+                  skipReason: "pre-check failed",
+                }),
               ],
               total: 1,
               limit: 20,

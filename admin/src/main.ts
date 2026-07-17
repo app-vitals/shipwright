@@ -600,6 +600,7 @@ async function startServer(): Promise<void> {
     agentEnvService,
     agentCronJobService,
     agentCronRunService,
+    agentWorkQueueService,
     agentToolService,
     agentTokenService,
     agentPluginService,
