@@ -582,7 +582,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v0.54.0
+    tag: chat-v0.56.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.
