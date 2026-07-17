@@ -252,6 +252,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
+**Side effect:** When `reviewState` is set to `posted` or `approved`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are cleared in the same write. This releases the review claim as soon as the review is done, so a PR awaiting patch/deploy is not held by a stale claim that the reaper would otherwise reap (which would regress `reviewState` and re-dispatch a duplicate review).
+
 #### PR lifecycle endpoints
 
 | Endpoint | Effect |

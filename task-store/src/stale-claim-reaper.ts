@@ -59,10 +59,16 @@ export class StaleClaimReaper {
         )
     `;
 
+    // A stale PR claim always releases its claim fields, but reviewState only
+    // regresses to 'pending' when it is still 'pending'/'in_progress' (an
+    // unfinished review). A record already at 'posted'/'approved' keeps its
+    // reviewState — regressing it there re-dispatches a duplicate review
+    // (app-vitals/shipwright#1016).
     const prsAffected = await this.prisma.$executeRaw`
       UPDATE "PullRequest"
       SET "reviewState" = CASE
-            WHEN "phase" = 'review' THEN 'pending'::"PrReviewState"
+            WHEN "reviewState" IN ('pending', 'in_progress')
+              THEN 'pending'::"PrReviewState"
             ELSE "reviewState"
           END,
           "claimedBy" = NULL,
