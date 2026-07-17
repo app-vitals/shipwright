@@ -214,6 +214,13 @@ export async function dispatchMarkers(
         );
         continue;
       }
+      const postSpeakTextFallback = () =>
+        client.chat
+          .postMessage({ channel, thread_ts: threadTs, text: marker.text })
+          .catch((err: unknown) =>
+            console.warn("[markers] speak text fallback post failed:", err),
+          );
+
       try {
         const audioPath = await synthesizeSpeechFn(marker.text, voiceConfig);
         if (audioPath) {
@@ -231,25 +238,14 @@ export async function dispatchMarkers(
           console.warn(
             "[markers] speak synthesis returned null — posting text fallback",
           );
-          await client.chat
-            .postMessage({ channel, thread_ts: threadTs, text: marker.text })
-            .catch((err: unknown) =>
-              console.warn("[markers] speak text fallback post failed:", err),
-            );
+          await postSpeakTextFallback();
         }
       } catch (err) {
         console.warn(
           "[markers] speak synthesis failed — posting text fallback:",
           err,
         );
-        await client.chat
-          .postMessage({ channel, thread_ts: threadTs, text: marker.text })
-          .catch((postErr: unknown) =>
-            console.warn(
-              "[markers] speak text fallback post failed:",
-              postErr,
-            ),
-          );
+        await postSpeakTextFallback();
       }
     }
   }
