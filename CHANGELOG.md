@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- This section is managed by @semantic-release/changelog. Do not edit by hand. -->
 
+## [1.7.0] - 2026-07-17
+
+### Chart — What's New
+
+#### Helm Chart (`charts/shipwright`)
+
+- **Whisper ASR model configurability** (`agent.voice.whisper.model`, PPR-2.1): set the ASR model used by the self-hosted Whisper pod (`onerahmet/openai-whisper-asr-webservice`) via a new `ASR_MODEL` env var, e.g. `tiny`, `base`, `small`, `medium`, `large-v3`, or a language-suffixed variant like `tiny.en`. Empty (default) → no `ASR_MODEL` env var is rendered and the image falls back to its own built-in default model, preserving today's behaviour on upgrade. The `resources: {}` example in `values.yaml` was also expanded into a concrete CPU/memory sizing example for a small model.
+
 ## [4.28.0] - 2026-06-17
 
 ### Plugin — What's New
