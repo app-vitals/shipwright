@@ -458,6 +458,12 @@ By default the admin service **does not** mint chat-service tokens — provision
 
 When `chat.enabled=true` and `chat.adminToken.existingSecret` is set, the chart injects `SHIPWRIGHT_CHAT_SERVICE_URL` and `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` into the admin Deployment. With those present, the provisioner mints a scoped per-agent token during `POST /agents`, stores it in the agent Secret (key `chat-service-token`), and injects it into the agent Deployment as `SHIPWRIGHT_CHAT_SERVICE_TOKEN` (via `secretKeyRef`). On agent deletion the token is revoked via `DELETE /tokens/:id`. When the admin token wiring is absent, chat-service token provisioning is disabled and agents carry no chat-service credentials.
 
+### Task-store claim TTL and the agent fleet (opt-in)
+
+Task-store and the agent are separate deployables with independent env surfaces. When provisioning a **fleet of N agents sharing one task-store**, each agent can have its own `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` (the hard session timeout, defaulting to 30 minutes), configured per-agent via the admin service's `POST`/`PATCH /agents/:id/envs` endpoints. Task-store itself has a single `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` (the claim reaping timeout, defaulting to 35 minutes) that gates how long a claim remains valid without a heartbeat.
+
+To prevent claims from being reaped mid-session when long-running agents approach their session timeout, `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` must exceed the **maximum** `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` across all provisioned agents, plus the standard 5-minute buffer. Task-store has an opt-in startup check (`checkClaimTtlBuffer` in `task-store/src/claim-ttl-buffer-check.ts`) that validates this constraint: set `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` in task-store's own env (via `taskStore.extraEnv` in the chart) to the **maximum** across your fleet, and if the resolved claim TTL is insufficient, task-store will `console.warn` at startup with both values and a suggested minimum TTL. The check is purely a warning — it does not block startup — so you can deploy and adjust the TTL upward to resolve it. When `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` is unset in task-store's env, the check is a no-op (today's default behavior). See [`configuration.md`](./configuration.md#server) for the full `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS` and `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` variable descriptions and defaults.
+
 ---
 
 ## Agent voice (STT/TTS)

@@ -558,6 +558,9 @@ taskStore:
   # wiring (e.g. SHIPWRIGHT_TASK_STORE_AGENTS_URL + AGENTS_API_KEY for the
   # scope resolver) without baking those into the chart template.
   extraEnv: []
+  # Example: opt-in claim TTL buffer check (see docs/deploy-kubernetes.md):
+  # - name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
+  #   value: "1800000"  # set to the MAX SHIPWRIGHT_CLAUDE_TIMEOUT_MS across all provisioned agents
   # -- Optional Sentry error reporting for the task-store service. Leave
   # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
   sentry:
