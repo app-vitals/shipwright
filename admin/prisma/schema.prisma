@@ -70,7 +70,7 @@ model AgentCronJob {
   user      String?  // Slack user ID for DMs
   silent    Boolean  @default(false)
   enabled   Boolean  @default(true)
-  preCheck  String?  // optional pre-check script e.g. "shipwright:check-dev-task.ts"
+  preCheck  String?  // optional pre-check script e.g. "shipwright:check-docs-freshness.ts"
   name      String?  // stable key for system crons; null for user-created crons
   system    Boolean  @default(false)
   createdAt DateTime @default(now())
