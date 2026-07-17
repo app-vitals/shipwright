@@ -22,7 +22,7 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { unlinkSync } from "node:fs";
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeWhisperSvcClient, synthesizeSpeech } from "./voice.ts";
 
 describe("makeWhisperSvcClient — onerahmet /asr contract", () => {
@@ -117,52 +117,60 @@ type SpawnFn = (
   options?: SpawnOptions,
 ) => ChildProcess;
 
-function makeSuccessSpawn(): SpawnFn {
+// Builds a fake ChildProcess and schedules `onImmediate` to fire on it once
+// stdout/stderr/stdin are wired up — mirrors the shape spawnFn callers expect
+// (proc.stdout/stderr as EventEmitters, proc.stdin.write/end) without a real
+// subprocess.
+function makeFakeSpawn(onImmediate: (proc: EventEmitter) => void): SpawnFn {
   return (_cmd, _args, _opts) => {
     // biome-ignore lint/suspicious/noExplicitAny: test helper needs dynamic property assignment
     const proc: any = new EventEmitter();
     proc.stdout = new EventEmitter();
     proc.stderr = new EventEmitter();
     proc.stdin = { write: () => {}, end: () => {} };
-    setImmediate(() => {
-      proc.emit("close", 0);
-    });
+    setImmediate(() => onImmediate(proc));
     return proc as unknown as ChildProcess;
   };
 }
 
-function makeFailExitSpawn(code: number): SpawnFn {
-  return (_cmd, _args, _opts) => {
-    // biome-ignore lint/suspicious/noExplicitAny: test helper needs dynamic property assignment
-    const proc: any = new EventEmitter();
-    proc.stdout = new EventEmitter();
-    proc.stderr = new EventEmitter();
-    proc.stdin = { write: () => {}, end: () => {} };
-    setImmediate(() => {
-      proc.stderr.emit("data", Buffer.from("piper: model load error"));
-      proc.emit("close", code);
-    });
-    return proc as unknown as ChildProcess;
-  };
-}
+const makeSuccessSpawn = () => makeFakeSpawn((proc) => proc.emit("close", 0));
 
-function makeSpawnErrorSpawn(): SpawnFn {
-  return (_cmd, _args, _opts) => {
-    // biome-ignore lint/suspicious/noExplicitAny: test helper needs dynamic property assignment
-    const proc: any = new EventEmitter();
-    proc.stdout = new EventEmitter();
-    proc.stderr = new EventEmitter();
-    proc.stdin = { write: () => {}, end: () => {} };
-    setImmediate(() => {
-      proc.emit("error", new Error("ENOENT: piper binary not found"));
-    });
-    return proc as unknown as ChildProcess;
-  };
-}
+const makeFailExitSpawn = (code: number) =>
+  makeFakeSpawn((proc) => {
+    // biome-ignore lint/suspicious/noExplicitAny: fake proc's stderr is untyped
+    (proc as any).stderr.emit(
+      "data",
+      Buffer.from("piper: model load error"),
+    );
+    proc.emit("close", code);
+  });
+
+const makeSpawnErrorSpawn = () =>
+  makeFakeSpawn((proc) =>
+    proc.emit("error", new Error("ENOENT: piper binary not found")),
+  );
 
 // ─── synthesizeSpeech dispatch — ElevenLabs vs Piper ─────────────────────────
 
 describe("synthesizeSpeech — dispatch (ElevenLabs vs Piper)", () => {
+  // Spy on console.error by swapping the bound method (not a global
+  // override) and restoring it after each test — mirrors the pattern in
+  // piper-voice.unit.test.ts.
+  let errorCalls: unknown[][] = [];
+  let originalError: typeof console.error;
+
+  beforeEach(() => {
+    errorCalls = [];
+    originalError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorCalls.push(args);
+    };
+  });
+
+  afterEach(() => {
+    console.error = originalError;
+  });
+
   test("with ELEVENLABS_API_KEY set, ElevenLabs is called and Piper's spawnFn is never invoked", async () => {
     const mockFetch = mock(
       async () => new Response(new Uint8Array([1, 2, 3]).buffer, { status: 200 }),
@@ -198,10 +206,6 @@ describe("synthesizeSpeech — dispatch (ElevenLabs vs Piper)", () => {
   });
 
   test("when Piper exits non-zero, synthesizeSpeech returns null with no throw", async () => {
-    const errorMsgs: string[] = [];
-    const origError = console.error;
-    console.error = (...args: unknown[]) => errorMsgs.push(String(args[0]));
-
     let result: string | null = null;
     let threw = false;
     try {
@@ -210,18 +214,12 @@ describe("synthesizeSpeech — dispatch (ElevenLabs vs Piper)", () => {
       threw = true;
     }
 
-    console.error = origError;
-
     expect(threw).toBe(false);
     expect(result).toBeNull();
-    expect(errorMsgs.length).toBeGreaterThan(0);
+    expect(errorCalls.length).toBeGreaterThan(0);
   });
 
   test("when the Piper spawn itself errors (binary absent), synthesizeSpeech returns null with no throw", async () => {
-    const errorMsgs: string[] = [];
-    const origError = console.error;
-    console.error = (...args: unknown[]) => errorMsgs.push(String(args[0]));
-
     let result: string | null = null;
     let threw = false;
     try {
@@ -235,10 +233,8 @@ describe("synthesizeSpeech — dispatch (ElevenLabs vs Piper)", () => {
       threw = true;
     }
 
-    console.error = origError;
-
     expect(threw).toBe(false);
     expect(result).toBeNull();
-    expect(errorMsgs.length).toBeGreaterThan(0);
+    expect(errorCalls.length).toBeGreaterThan(0);
   });
 });
