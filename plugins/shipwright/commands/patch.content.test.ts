@@ -280,11 +280,81 @@ describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () =
     expect(section).toContain("Do not post the comment here");
   });
 
-  it("Step 5c still skips Step 5c.5 (no PR record patch) on the all-REJECT no-push path", () => {
+  it("Step 5c no longer skips Step 5c.5 on the all-REJECT no-push path — it always proceeds", () => {
     const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
     const step5c5Idx = content.indexOf("### Step 5c.5:");
     const section = content.slice(step5cIdx, step5c5Idx);
 
-    expect(section).toContain("skip Step 5c.5");
+    expect(section).not.toContain("skip Step 5c.5");
+    expect(section).toMatch(/proceed(s)? to Step 5c\.5/i);
+    // Still distinguishes the all-REJECT/no-push case from the mixed/push case in prose,
+    // it just no longer skips the step for it.
+    expect(section).toContain("no-push");
+  });
+});
+
+describe("patch.md — reset reviewState to pending after all-REJECT no-diff patch cycle (RPF-1.2)", () => {
+  it("Step 5c always proceeds to Step 5c.5, carrying forward whether this was the all-REJECT/no-push/rebuttal-confirmed case", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    const section = content.slice(step5cIdx, step5c5Idx);
+
+    expect(section).toContain("DONE_WITH_CONCERNS");
+    expect(section).toMatch(/proceed(s)? to Step 5c\.5/i);
+    // Both the mixed-push case and the all-REJECT-no-push case now reach Step 5c.5.
+    expect(section.toLowerCase()).toContain("mixed");
+    expect(section).toContain("no-push");
+  });
+
+  it("Step 5c.5 conditionally PATCHes /prs/{id} with reviewState:pending, gated on the all-REJECT/no-push/rebuttal-confirmed case", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    expect(step5c5Idx).toBeGreaterThan(-1);
+    expect(step5dIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    // Existing unconditional heartbeat + commitSha patch calls remain.
+    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
+    expect(section).toContain("/prs/$PR_RECORD_ID/patch");
+    expect(section).toContain("commitSha");
+
+    // New conditional reviewState reset.
+    expect(section).toContain("-X PATCH");
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(section).toContain("reviewState");
+    expect(section).toContain("pending");
+    // It must be gated by a condition, not unconditional — expect an if-check near the
+    // reviewState reset referencing the all-REJECT/no-push/rebuttal case.
+    const reviewStateIdx = section.indexOf("reviewState");
+    const before = section.slice(Math.max(0, reviewStateIdx - 600), reviewStateIdx);
+    expect(before).toMatch(/if\s*\[/);
+  });
+
+  it("Step 5c.5's reviewState reset is scoped to the all-REJECT/no-push case, not the ACCEPT/MODIFY push case", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    // The prose around the conditional must reference the all-REJECT/no-push/rebuttal case,
+    // not fire for every patch cycle.
+    expect(section.toLowerCase()).toMatch(/all-reject/);
+    expect(section.toLowerCase()).toContain("no-push");
+  });
+
+  it("the ACCEPT/MODIFY push path text in Step 5b [D] is unchanged — still commits, pushes, and records commitSha", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5bSection = content.slice(step5bIdx, step5cIdx);
+
+    const dIdx = step5bSection.indexOf("[D] Commit");
+    const eIdx = step5bSection.indexOf("[E] Resolve addressed inline threads");
+    const dSection = step5bSection.slice(dIdx, eIdx);
+
+    expect(dSection).toContain("ACCEPTED or MODIFIED");
+    expect(dSection).toContain("git add {changed files}");
+    expect(dSection).toContain("git push origin {branch}");
+    // No reviewState reset language belongs in the subagent-dispatched commit instructions —
+    // that logic lives in Step 5c.5, driven by the orchestrator, not the subagent.
+    expect(dSection).not.toContain("reviewState");
   });
 });

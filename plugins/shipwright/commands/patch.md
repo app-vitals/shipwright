@@ -753,9 +753,11 @@ Parse the subagent's STATUS:
   already happened. If the report doesn't confirm both, treat it as a concern in the final
   report (the reflagging loop will otherwise persist via this mixed-case path, not just the
   all-REJECT path). For other, non-REJECT correctness-gap concerns, just log them in the
-  report. Either way, proceed to Step 5c.5 (upsert PR record) if a push happened (mixed
-  case — there IS a new commit SHA to record); skip Step 5c.5 only in the all-REJECT,
-  no-push case (there is no new commit SHA to record).
+  report. Either way, always proceed to Step 5c.5 (upsert PR record) — in the mixed case
+  there IS a new commit SHA to record, and in the all-REJECT, no-push case Step 5c.5 still
+  needs to run so it can reset `reviewState` to `pending` (see below), even though there is
+  no new commit SHA. Carry forward into Step 5c.5 whether this was the all-REJECT, no-push,
+  rebuttal-confirmed case — that's the condition that gates the `reviewState` reset there.
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:
@@ -786,10 +788,30 @@ if [ -n "$PR_RECORD_ID" ]; then
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
     -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
+  if [ "$ALL_REJECT_NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]; then
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+      -d '{"reviewState": "pending"}' > /dev/null 2>&1 || \
+      echo "⚠ PATCH /prs/$PR_RECORD_ID reviewState reset failed — continuing"
+  fi
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
+
+`ALL_REJECT_NO_PUSH_REBUTTAL_CONFIRMED` is the condition carried forward from Step 5c: set
+it to `true` only for the all-REJECT, no-push case — this cycle was DONE_WITH_CONCERNS with
+every finding REJECTed, zero files changed (no push — `HEAD_SHA_POST_PATCH` is unchanged
+from before dispatch), and the rebuttal comment + inline-thread resolution were confirmed
+per Step 5c. In that case alone, `headRefOid` never changes, so without this reset the PR's
+`reviewState` would stay at whatever the prior review left it and the PR could never
+re-qualify as a review candidate in `check-review.ts`'s dedup — resetting it to `pending`
+here makes it re-qualify despite the unchanged commit SHA, so a fresh review can evaluate
+the rebuttal and post an actual APPROVE. The mixed case (push happened) and the plain DONE
+case leave `ALL_REJECT_NO_PUSH_REBUTTAL_CONFIRMED` unset/`false` — they already re-qualify
+naturally via the changed commit SHA, so the `reviewState` reset must not fire there.
 
 Proceed to Step 5d (cleanup).
 
