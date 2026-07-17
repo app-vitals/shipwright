@@ -33,8 +33,9 @@ and add autonomy as you gain confidence.</p>
 <h2 id="the-ramp-up-path">The ramp-up path</h2>
 <p>Most teams start narrow and expand. Each stage adds one more phase to the autonomous loop.</p>
 <h3 id="stage-1--plan-and-build">Stage 1 — Plan and build</h3>
-<p>Enable <code>shipwright-dev-task</code>. The agent reads your task queue, picks the next ready task, builds
-it with tests, and opens a PR. You review and merge PRs yourself.</p>
+<p>Enable <code>shipwright-dev-task</code> only. Disable <code>shipwright-review</code> and <code>shipwright-patch</code>. The
+agent reads your task queue, picks the next ready task, builds it with tests, and opens a PR.
+You review and merge PRs yourself.</p>
 
 
 
@@ -56,14 +57,22 @@ it with tests, and opens a PR. You review and merge PRs yourself.</p>
 
 
 
-<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review-patch</code></td><td>off</td></tr><tr><td><code>shipwright-deploy</code></td><td>off</td></tr></tbody></table>
+
+
+
+
+<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review</code></td><td>off</td></tr><tr><td><code>shipwright-patch</code></td><td>off</td></tr><tr><td><code>shipwright-deploy</code></td><td>off</td></tr></tbody></table>
 <p>This is the entry point. The agent writes code; you stay in the loop on every PR.</p>
 <blockquote>
-<p><strong>Note:</strong> New agents start with both <code>shipwright-dev-task</code> and <code>shipwright-review-patch</code> enabled (Stage 2). Disable <code>shipwright-review-patch</code> via the admin UI to begin at Stage 1.</p>
+<p><strong>Note:</strong> New agents start with <code>shipwright-dev-task</code>, <code>shipwright-review</code>, and
+<code>shipwright-patch</code> all enabled (Stage 2). Disable <code>shipwright-review</code> and <code>shipwright-patch</code>
+via the admin UI to begin at Stage 1.</p>
 </blockquote>
 <h3 id="stage-2--add-review-and-patch">Stage 2 — Add review and patch</h3>
-<p>Enable <code>shipwright-review-patch</code>. The agent now reviews open PRs and patches any that have
-failing CI or unresolved findings. You still control merging.</p>
+<p>Enable <code>shipwright-review</code> and <code>shipwright-patch</code>. The agent now reviews open PRs and patches
+any that have failing CI or unresolved findings. These are two independent crons — review
+posts findings, patch addresses them on its own schedule — so either can be toggled alone.
+You still control merging.</p>
 
 
 
@@ -85,7 +94,11 @@ failing CI or unresolved findings. You still control merging.</p>
 
 
 
-<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review-patch</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-deploy</code></td><td>off</td></tr></tbody></table>
+
+
+
+
+<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-patch</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-deploy</code></td><td>off</td></tr></tbody></table>
 <p>At this stage, <code>auto_post_reviews</code> in <code>state/agent-policy.md</code> determines whether the agent
 posts reviews to GitHub immediately or holds them for your approval. See
 <a href="#staged-reviews">Staged reviews</a> below.</p>
@@ -113,7 +126,11 @@ The full loop runs without manual intervention: plan → build → review → pa
 
 
 
-<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review-patch</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-deploy</code></td><td><strong>on</strong></td></tr></tbody></table>
+
+
+
+
+<table><thead><tr><th>Cron</th><th>Status</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-review</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-patch</code></td><td><strong>on</strong></td></tr><tr><td><code>shipwright-deploy</code></td><td><strong>on</strong></td></tr></tbody></table>
 <p>Only enable deploy when you have the safeguards in place — CI gates, required reviewers, and
 a working <code>check-deploy</code> pre-check — so the agent can’t merge something broken.</p>
 <hr/>
@@ -121,21 +138,22 @@ a working <code>check-deploy</code> pre-check — so the agent can’t merge som
 <h3 id="hands-off-build-and-patch-skip-review">Hands-off: build and patch, skip review</h3>
 <p>Some projects don’t need the agent to post PR reviews. You just want it to build tasks and
 fix CI failures while you review PRs yourself.</p>
-<p>Enable <code>shipwright-dev-task</code> and <code>shipwright-patch</code>. Disable <code>shipwright-review-patch</code> and
-<code>shipwright-review</code>. The agent builds, opens PRs, and patches CI — but never posts a review comment.</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  patch  ✓  review-patch  ✗  deploy  ✗</span></span></code></pre>
+<p>Enable <code>shipwright-dev-task</code> and <code>shipwright-patch</code>. Disable <code>shipwright-review</code>. The agent
+builds, opens PRs, and patches CI — but never posts a review comment.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  patch  ✓  review  ✗  deploy  ✗</span></span></code></pre>
 <h3 id="staged-reviews">Staged reviews</h3>
 <p>You want the agent to review PRs but prefer to read and approve each review before it goes to
-GitHub. Set <code>auto_post_reviews: false</code> in <code>state/agent-policy.md</code>. Enable <code>shipwright-review-patch</code>.</p>
+GitHub. Set <code>auto_post_reviews: false</code> in <code>state/agent-policy.md</code>. Enable <code>shipwright-review</code>
+(and <code>shipwright-patch</code> if you also want findings addressed automatically).</p>
 <p>The agent runs its review pass and writes the findings to a local review file. Nothing is posted
 to GitHub until you approve it. Once you’ve confirmed the review looks right, post it manually
 or set <code>auto_post_reviews: true</code> to have the agent send it.</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  review-patch  ✓  deploy  ✗   (auto_post_reviews: false)</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  review  ✓  patch  ✓  deploy  ✗   (auto_post_reviews: false)</span></span></code></pre>
 <h3 id="bring-your-own-pr">Bring your own PR</h3>
 <p>You don’t have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
-anything — and Shipwright picks it up from there. With <code>review-patch</code> and <code>deploy</code> enabled,
+anything — and Shipwright picks it up from there. With <code>review</code>, <code>patch</code>, and <code>deploy</code> enabled,
 the agent will review the PR, patch any CI failures, and merge it once it’s clean.</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✗  review-patch  ✓  deploy  ✓</span></span></code></pre>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✗  review  ✓  patch  ✓  deploy  ✓</span></span></code></pre>
 <p>This works and is a reasonable way to get comfortable with the system. That said, bypassing
 <code>dev-task</code> means skipping the quality work it does before the PR exists: structured planning,
 tests-first implementation, and the pre-PR research pass. The review and deploy phases catch

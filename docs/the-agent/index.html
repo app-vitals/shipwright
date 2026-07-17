@@ -169,7 +169,7 @@ validation is an O(1) hash-index lookup with no plaintext at rest.</p>
 Set <code>SHIPWRIGHT_ENCRYPTION_KEY</code> to a 64-char hex string (32 bytes) in any real deployment — if
 unset, secrets are stored in plain text with a logged warning.</p>
 <h2 id="default-system-crons">Default system crons</h2>
-<p>Every new agent is seeded with ten system crons. Two are enabled by default; the rest are opt-in
+<p>Every new agent is seeded with eleven system crons. Three are enabled by default; the rest are opt-in
 and can be toggled in the admin UI or via <code>PATCH /agents/:id/crons/:cronId</code>.</p>
 
 
@@ -236,13 +236,7 @@ and can be toggled in the admin UI or via <code>PATCH /agents/:id/crons/:cronId<
 
 
 
-
-
-
-
-
-
-<table><thead><tr><th>Cron</th><th>Schedule</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Pick next ready task, build with tests, open PR</td></tr><tr><td><code>shipwright-review-patch</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Review open PRs and patch those failing CI or review</td></tr><tr><td><code>shipwright-review</code></td><td>every 30 min</td><td>off</td><td>Review-only pass over open PRs</td></tr><tr><td><code>shipwright-patch</code></td><td>every 30 min</td><td>off</td><td>Fix failing CI and unresolved review findings</td></tr><tr><td><code>shipwright-deploy</code></td><td>every 30 min</td><td>off</td><td>Merge approved PRs and deploy</td></tr><tr><td><code>shipwright-test-readiness</code></td><td>daily 06:00</td><td>off</td><td>Full test-readiness audit</td></tr><tr><td><code>shipwright-docs-freshness</code></td><td>daily 07:00</td><td>off</td><td>Refresh docs that drifted from the code</td></tr><tr><td><code>learn-dream</code></td><td>daily 03:00</td><td>off</td><td>Mine merged PRs for durable learnings</td></tr><tr><td><code>dependabot-triage</code></td><td>daily 08:00</td><td>off</td><td>Review and triage open Dependabot PRs</td></tr><tr><td><code>entropy-patrol-maintenance</code></td><td>weekly Mon 04:00</td><td>off</td><td>Scan for code entropy and fix what’s PR-worthy</td></tr></tbody></table>
+<table><thead><tr><th>Cron</th><th>Schedule</th><th>Default</th><th>What it does</th></tr></thead><tbody><tr><td><code>shipwright-dev-task</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Pick next ready task, build with tests, open PR</td></tr><tr><td><code>shipwright-review</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Review-only pass over open PRs</td></tr><tr><td><code>shipwright-patch</code></td><td>every 30 min</td><td><strong>on</strong></td><td>Fix failing CI and unresolved review findings</td></tr><tr><td><code>shipwright-deploy</code></td><td>every 30 min</td><td>off</td><td>Merge approved PRs and deploy</td></tr><tr><td><code>shipwright-test-readiness</code></td><td>daily 06:00</td><td>off</td><td>Full test-readiness audit</td></tr><tr><td><code>shipwright-docs-freshness</code></td><td>daily 07:00</td><td>off</td><td>Refresh docs that drifted from the code</td></tr><tr><td><code>learn-dream</code></td><td>daily 03:00</td><td>off</td><td>Mine merged PRs for durable learnings</td></tr><tr><td><code>dependabot-triage</code></td><td>daily 08:00</td><td>off</td><td>Review and triage open Dependabot PRs</td></tr><tr><td><code>entropy-patrol-maintenance</code></td><td>weekly Mon 04:00</td><td>off</td><td>Scan for code entropy and fix what’s PR-worthy</td></tr></tbody></table>
 <p>Crons run <code>silent</code> by default — they post to Slack only when there is a result worth surfacing or
 on error. Most carry a <code>preCheck</code> script whose stdout becomes the actual prompt, so a cron only
 spends a Claude turn when there is real work ready.</p>
