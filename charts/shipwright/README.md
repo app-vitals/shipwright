@@ -116,6 +116,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is always ElevenLabs. |
 | `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:latest` | Whisper ASR image (exposes `POST /asr`). Pin a concrete tag in production. |
 | `agent.voice.whisper.service.port` | `9000` | In-cluster Whisper Service port → `WHISPER_SERVICE_URL`. |
+| `agent.voice.whisper.model` | `""` | ASR model name → `ASR_MODEL` (e.g. `tiny`, `base`, `small`, `medium`, `large-v3`, `tiny.en`). Empty = no env var set, image default model is used. |
 | `agent.voice.whisper.resources` | `{}` | Whisper container resources (empty = no limits). |
 | `agent.voice.elevenlabs.apiKey` | `""` | ElevenLabs TTS key → `ELEVENLABS_API_KEY` (voice Secret). Empty = in-pod edge-tts fallback. |
 | `agent.voice.elevenlabs.voiceId` | `""` | Optional ElevenLabs voice id → `ELEVENLABS_VOICE_ID`. |
