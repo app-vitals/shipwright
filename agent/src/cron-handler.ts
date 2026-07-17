@@ -389,6 +389,7 @@ export async function handleCronRequest(
         postedTs: postResult.ts,
         synthesizeSpeechFn,
         voiceConfig,
+        postedText: formatted,
       });
     } catch (err) {
       markCronRunFailureReported(err);
@@ -437,6 +438,7 @@ export async function handleCronRequest(
         postedTs: dmPostResult.ts,
         synthesizeSpeechFn,
         voiceConfig,
+        postedText: formatted,
       });
     } catch (err) {
       markCronRunFailureReported(err);

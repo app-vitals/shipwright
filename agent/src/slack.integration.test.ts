@@ -1523,6 +1523,32 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     );
   });
 
+  test("[speak:text] in DM — skips text fallback when synthesis fails and marker echoes the posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+    createSlackApp({ synthesizeSpeechFn: mockSynthesize });
+
+    mockRunClaude.mockResolvedValueOnce({
+      result: "Here is the answer. [speak:Here is the answer]",
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D1",
+        ts: "1.1",
+        text: "speak to me",
+        channel_type: "im",
+      },
+      say,
+      client,
+    });
+
+    // The visible reply was already posted via say(); the fallback must not
+    // post a near-duplicate copy of it via chat.postMessage.
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
   test("[speak:text] in mention — synthesizes and uploads", async () => {
     const outPath = join(tmpdir(), `test-speak-mention-${Date.now()}.mp3`);
     writeFileSync(outPath, Buffer.from("fake audio"));
@@ -2700,6 +2726,38 @@ describe("dispatchMarkers — direct", () => {
       channel: "D1",
       synthesizeSpeechFn: throwingSynthesize,
       voiceConfig: {},
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
+  });
+
+  test("speak marker — skips text fallback when it duplicates the already-posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+
+    await dispatchMarkers([{ type: "speak", text: "Here is the answer" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+      postedText: "Here is the answer.",
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("speak marker — still posts text fallback when marker text differs from the already-posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+
+    await dispatchMarkers([{ type: "speak", text: "Hello" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+      postedText: "Something completely different was posted here.",
     });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
