@@ -10,17 +10,17 @@
  *   2. heartbeatAt IS NULL and claimedAt < cutoff (agent claimed but never beat)
  *
  * The cutoff is: clock.now() - ttlMs. Both Task and PullRequest claims use a
- * single unified TTL, defaulting to 2 100 000 ms (35 min) — the 30-minute
- * `claude -p` hard timeout plus a 5-minute buffer — overridable via
+ * single unified TTL, derived from the shared DEFAULT_CLAIM_TTL_MS constant
+ * in @shipwright/lib/claim-ttl (which combines the 30-minute `claude -p` hard
+ * timeout plus a 5-minute buffer) — overridable via
  * SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS.
  *
  * Usage: register via setInterval(() => reaper.reap(), 60_000) in main.ts.
  */
 
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { type Clock, SystemClock } from "./clock.ts";
 import type { PrismaClient } from "./index.ts";
-
-const DEFAULT_TTL_MS = 2_100_000;
 
 export class StaleClaimReaper {
   private readonly ttlMs: number;
@@ -32,7 +32,9 @@ export class StaleClaimReaper {
   ) {
     this.ttlMs =
       ttlMs ??
-      Number(process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_TTL_MS);
+      Number(
+        process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+      );
   }
 
   /**
