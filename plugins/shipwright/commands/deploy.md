@@ -24,13 +24,25 @@ this command always targets an explicit PR:
   defaulting to `app-vitals/shipwright`.
   **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
 - _(no arguments)_: respond `[silent]` and stop — no GitHub scan across own open PRs.
+- Optional trailing **pre-claim marker** — `[preclaim:{recordId}:{commitSha}]` — appended
+  after `org/repo#number`/`number` by the loop orchestrator (`agent/src/loop-orchestrator.ts`'s
+  `formatPreClaimMarker`, CBD-1.3) when it already claimed this PR in the task store before
+  dispatch, e.g. `app-vitals/shipwright#123 [preclaim:ckz1abc123:8cb7b38cdb6a...]`. When
+  present, strip it before parsing `org/repo#number`/`number` above — see Step 4a's
+  Pre-Claim Fast Path for how the marker is validated against the live head and used to
+  skip re-claiming. A human invoking this command directly never supplies this marker; it
+  is only ever produced by the orchestrator.
 
 ---
 
 ## Step 2: Resolve Target PR
 
 Parse `$ARGUMENTS` using the rules in the Arguments section above to extract `org`, `repo`,
-and `pr`.
+and `pr`. If `$ARGUMENTS` has a trailing `[preclaim:{recordId}:{commitSha}]` marker (see
+Arguments section), extract `PRECLAIM_RECORD_ID` and `PRECLAIM_COMMIT_SHA` from it and
+strip the marker before parsing the rest of the argument. If no marker is present, leave
+`PRECLAIM_RECORD_ID`/`PRECLAIM_COMMIT_SHA` unset — Step 4a's claim site then self-claims as
+today.
 
 Look up the task via the task store:
 
@@ -184,6 +196,23 @@ canary failure.
 
 ```bash
 HEAD_SHA_PRE_MERGE=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+**Pre-Claim Fast Path (CBD-1.6).** If a pre-claim marker was captured in Step 2, validate
+it against `HEAD_SHA_PRE_MERGE` — the live head just fetched above — before trusting it;
+the head can have moved since Step 2 (Step 3's pre-flight checks take time), so compare
+against this fresh fetch rather than trusting the Step 2 parse:
+
+- **`HEAD_SHA_PRE_MERGE == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip the claim call below** — the
+  orchestrator's pre-claim already holds this PR under `phase: "deploy"`. Proceed directly
+  to Step 4b (`PR_RECORD_ID` is reused by the post-merge update in Step 4c, same as the
+  self-claim path).
+- **`HEAD_SHA_PRE_MERGE != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed
+  between the orchestrator's claim and now) **or no marker present**: fall back to
+  self-claiming exactly as today — run the claim below unchanged.
+
+```bash
 PR_CLAIM=$(curl -s -o /tmp/pr_claim_deploy.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \

@@ -208,6 +208,64 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
   });
 });
 
+describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
+  it("Arguments section documents the [preclaim:{recordId}:{commitSha}] marker format", () => {
+    const argsMatch = content.match(/## Arguments[\s\S]*?(?=---)/);
+    expect(argsMatch).not.toBeNull();
+    const argsSection = argsMatch?.[0] ?? "";
+    expect(argsSection).toContain("[preclaim:{recordId}:{commitSha}]");
+    expect(argsSection).toContain("loop-orchestrator.ts");
+    expect(argsSection).toContain("formatPreClaimMarker");
+  });
+
+  it("Step 2 parses and strips the marker, extracting PRECLAIM_RECORD_ID/PRECLAIM_COMMIT_SHA", () => {
+    const step2Match = content.match(
+      /## Step 2: Resolve Target PR[\s\S]*?(?=\n---|\n## Step 3)/,
+    );
+    expect(step2Match).not.toBeNull();
+    const step2Section = step2Match?.[0] ?? "";
+    expect(step2Section).toContain("PRECLAIM_RECORD_ID");
+    expect(step2Section).toContain("PRECLAIM_COMMIT_SHA");
+    expect(step2Section).toContain("strip");
+  });
+
+  it("Step 4a has a Pre-Claim Fast Path section", () => {
+    const sectionIdx = content.indexOf("Pre-Claim Fast Path (CBD-1.6)");
+    expect(sectionIdx).toBeGreaterThan(-1);
+  });
+
+  it("Pre-Claim Fast Path validates the marker's commitSha against a freshly-fetched live head", () => {
+    const sectionIdx = content.indexOf("Pre-Claim Fast Path (CBD-1.6)");
+    const section = content.slice(sectionIdx, sectionIdx + 1200);
+    expect(section).toContain("PRECLAIM_COMMIT_SHA");
+    expect(section).toContain("HEAD_SHA_PRE_MERGE");
+  });
+
+  it("Pre-Claim Fast Path trusts a matching marker: sets PR_RECORD_ID = PRECLAIM_RECORD_ID and skips the claim call", () => {
+    const sectionIdx = content.indexOf("Pre-Claim Fast Path (CBD-1.6)");
+    const section = content.slice(sectionIdx, sectionIdx + 1200);
+    expect(section).toContain("PR_RECORD_ID = PRECLAIM_RECORD_ID");
+    expect(section.toLowerCase()).toContain("skip");
+  });
+
+  it("Pre-Claim Fast Path falls back to self-claiming on a stale or absent marker", () => {
+    const sectionIdx = content.indexOf("Pre-Claim Fast Path (CBD-1.6)");
+    const section = content.slice(sectionIdx, sectionIdx + 1200);
+    expect(section).toContain("HEAD_SHA_PRE_MERGE != PRECLAIM_COMMIT_SHA");
+    expect(section.toLowerCase()).toContain("no marker present");
+  });
+
+  it("Pre-Claim Fast Path appears before the self-claim POST /prs/claim call in Step 4a", () => {
+    const fastPathIdx = content.indexOf("Pre-Claim Fast Path (CBD-1.6)");
+    const claimCallIdx = content.indexOf(
+      "$SHIPWRIGHT_TASK_STORE_URL/prs/claim",
+    );
+    expect(fastPathIdx).toBeGreaterThan(-1);
+    expect(claimCallIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeLessThan(claimCallIdx);
+  });
+});
+
 describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   function extractStep5bSection(md: string): string {
     const match = md.match(
