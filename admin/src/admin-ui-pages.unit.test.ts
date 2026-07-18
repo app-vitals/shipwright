@@ -1639,8 +1639,12 @@ describe("renderTasksPage — hitl filter", () => {
       undefined,
     );
     expect(html).toMatch(/<option value=""[^>]*>Any<\/option>/);
-    expect(html).not.toMatch(/<option value="true"[^>]*selected[^>]*>Yes<\/option>/);
-    expect(html).not.toMatch(/<option value="false"[^>]*selected[^>]*>No<\/option>/);
+    expect(html).not.toMatch(
+      /<option value="true"[^>]*selected[^>]*>Yes<\/option>/,
+    );
+    expect(html).not.toMatch(
+      /<option value="false"[^>]*selected[^>]*>No<\/option>/,
+    );
   });
 
   test("makePageUrl preserves hitl filter across pagination links", () => {
@@ -2612,6 +2616,46 @@ describe("renderTaskDetailPage — back link (TBL-1.1)", () => {
       {},
       "UTC",
       undefined,
+      '/admin/tasks"><script>xss()</script>',
+    );
+    expect(html).not.toContain('"><script>xss()</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderSessionDetailPage — back link (ABL-1.1) ───────────────────────────
+
+describe("renderSessionDetailPage — back link (ABL-1.1)", () => {
+  // AC3: default back link is the bare /admin/tasks URL when backHref is omitted
+  test("defaults to bare /admin/tasks when backHref is not provided", () => {
+    const html = renderSessionDetailPage("session-abc", [], "user@example.com");
+    expect(html).toContain(
+      `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  // AC3/AC4: a provided backHref is rendered (HTML-escaped) for the ← Tasks anchor
+  test("renders the given backHref for the ← Tasks anchor", () => {
+    const backHref = "/admin/tasks?status=in_progress&page=2";
+    const html = renderSessionDetailPage(
+      "session-abc",
+      [],
+      "user@example.com",
+      false,
+      backHref,
+    );
+    expect(html).toContain(
+      `<a href="${backHref.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  // AC3: backHref is HTML-escaped to prevent attribute-breakout XSS
+  test("HTML-escapes a malicious backHref", () => {
+    const html = renderSessionDetailPage(
+      "session-abc",
+      [],
+      "user@example.com",
+      false,
       '/admin/tasks"><script>xss()</script>',
     );
     expect(html).not.toContain('"><script>xss()</script>');
@@ -3760,20 +3804,53 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
     expect(html).not.toContain("/admin/sessions/undefined");
     expect(html).not.toContain("/admin/sessions/null");
   });
+
+  // AC4: session link carries the current list URL as `from` so the Session
+  // Detail back link can return to this exact filtered/paginated view.
+  test("session cell carries the current list URL as ?from= when filters are active", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { status: "in_progress" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 2 },
+    );
+    const from = "/admin/tasks?status=in_progress&page=2";
+    expect(html).toContain(
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${encodeURIComponent(from)}"`,
+    );
+  });
+
+  // AC4: bare default list view (no filters, page 1) does not add a redundant
+  // ?from=/admin/tasks — mirrors the existing detailHrefSuffix special-case.
+  test("session cell omits ?from= when the list view is the bare default", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+    );
+    expect(html).toContain(
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}" style="color:#6366f1;text-decoration:none">`,
+    );
+  });
 });
 
 describe("renderTaskDetailPage — session link to /admin/sessions/{session}", () => {
   test("Session field links to /admin/sessions/{session}", () => {
     const task: TaskItem = { ...TASK_ITEM, session: "session-xyz" };
     const html = renderTaskDetailPage(task, USER_NAME);
-    expect(html).toContain(`<a href="/admin/sessions/session-xyz"`);
+    expect(html).toContain(`<a href="/admin/sessions/session-xyz`);
   });
 
   test("session value with special characters is URL-encoded in the link", () => {
     const task: TaskItem = { ...TASK_ITEM, session: "session/with slash" };
     const html = renderTaskDetailPage(task, USER_NAME);
     expect(html).toContain(
-      `<a href="/admin/sessions/${encodeURIComponent("session/with slash")}"`,
+      `<a href="/admin/sessions/${encodeURIComponent("session/with slash")}`,
     );
   });
 
@@ -3781,6 +3858,21 @@ describe("renderTaskDetailPage — session link to /admin/sessions/{session}", (
     const task: TaskItem = { ...TASK_ITEM, session: null };
     const html = renderTaskDetailPage(task, USER_NAME);
     expect(html).not.toContain("/admin/sessions/");
+  });
+
+  // AC4: the Session link carries this task detail page's own URL as `from`
+  // so the Session Detail back link can return to it.
+  test("Session field link carries this task detail page's URL as ?from=", () => {
+    const task: TaskItem = {
+      ...TASK_ITEM,
+      id: "TASK-9",
+      session: "session-xyz",
+    };
+    const html = renderTaskDetailPage(task, USER_NAME);
+    const from = `/admin/tasks/${encodeURIComponent("TASK-9")}`;
+    expect(html).toContain(
+      `<a href="/admin/sessions/session-xyz?from=${encodeURIComponent(from)}"`,
+    );
   });
 });
 
@@ -4678,9 +4770,9 @@ describe("renderSessionDetailPage dependency graph", () => {
     );
     const section = graphSection(html);
 
-    const nodeIds = [
-      ...section.matchAll(/data-task-id="([^"]+)"/g),
-    ].map((m) => m[1]);
+    const nodeIds = [...section.matchAll(/data-task-id="([^"]+)"/g)].map(
+      (m) => m[1],
+    );
     expect(nodeIds.sort()).toEqual(
       ["TASK-CHILD-1", "TASK-CHILD-2", "TASK-ROOT", "TASK-SINK"].sort(),
     );
@@ -4698,7 +4790,9 @@ describe("renderSessionDetailPage dependency graph", () => {
 
 // ─── computeDependencyLayout ──────────────────────────────────────────────────
 
-function depNode(overrides: Partial<DependencyNode> & { id: string }): DependencyNode {
+function depNode(
+  overrides: Partial<DependencyNode> & { id: string },
+): DependencyNode {
   return {
     id: overrides.id,
     title: overrides.title ?? overrides.id,

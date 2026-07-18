@@ -405,20 +405,44 @@ function createUIAuthMiddleware(
   };
 }
 
-// ─── Task detail back-link validation ──────────────────────────────────────────
+// ─── Back-link validation ───────────────────────────────────────────────────
 
-// Allowlist: a same-path /admin/tasks URL, optionally followed by a query
-// string. Rejects protocol-relative (//evil.com), absolute (https://evil.com),
-// javascript:, and any other-path values — those fall back to /admin/tasks so
-// the "← Tasks" anchor on the detail page can never be used as an
-// open-redirect/phishing hop off the admin domain.
+// Shared allowlist resolver: a `from` query param is only honored as a back
+// link when it matches the given same-origin pattern. Rejects protocol-relative
+// (//evil.com), absolute (https://evil.com), javascript:, and any other-path
+// values — those fall back to the given default so a "← X" anchor can never be
+// used as an open-redirect/phishing hop off the admin domain.
+function resolveBackHref(
+  fromParam: string | undefined,
+  pattern: RegExp,
+  fallback: string,
+): string {
+  if (fromParam && pattern.test(fromParam)) {
+    return fromParam;
+  }
+  return fallback;
+}
+
+// Allowlist for the Task Detail "← Tasks" back link: a same-path /admin/tasks
+// URL, optionally followed by a query string.
 const TASK_LIST_BACK_HREF_PATTERN = /^\/admin\/tasks(\?[^\s]*)?$/;
 
 function resolveTaskDetailBackHref(fromParam: string | undefined): string {
-  if (fromParam && TASK_LIST_BACK_HREF_PATTERN.test(fromParam)) {
-    return fromParam;
-  }
-  return "/admin/tasks";
+  return resolveBackHref(
+    fromParam,
+    TASK_LIST_BACK_HREF_PATTERN,
+    "/admin/tasks",
+  );
+}
+
+// Allowlist for the Session Detail "← Tasks" back link: either the tasks list
+// (/admin/tasks) or a single task detail page (/admin/tasks/:id), each
+// optionally followed by a query string — Session Detail is reachable from
+// both the tasks list and a task's Session field.
+const SESSION_BACK_HREF_PATTERN = /^\/admin\/tasks(\/[^/?\s]+)?(\?[^\s]*)?$/;
+
+function resolveSessionDetailBackHref(fromParam: string | undefined): string {
+  return resolveBackHref(fromParam, SESSION_BACK_HREF_PATTERN, "/admin/tasks");
 }
 
 // ─── App factory ──────────────────────────────────────────────────────────────
@@ -2131,6 +2155,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/sessions/:id", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const sessionId = c.req.param("id");
+    const backHref = resolveSessionDetailBackHref(c.req.query("from"));
 
     let tasks: TaskItem[] = [];
     let degraded = false;
@@ -2154,7 +2179,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     return html(
-      renderSessionDetailPage(sessionId, tasks, c.var.userEmail, degraded),
+      renderSessionDetailPage(
+        sessionId,
+        tasks,
+        c.var.userEmail,
+        degraded,
+        backHref,
+      ),
     );
   });
 
