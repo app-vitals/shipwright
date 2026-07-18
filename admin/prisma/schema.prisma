@@ -77,7 +77,17 @@ model AgentCronJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  runs AgentCronRun[]
+  // Self-relation: a parent cron can have child "phase" crons (e.g. dev-task/
+  // review/patch/deploy phases of a single logical loop). Null for top-level
+  // crons. Deleting a parent cascades to its phase children.
+  parentCronId String?
+  parentCron   AgentCronJob?  @relation("CronPhases", fields: [parentCronId], references: [id], onDelete: Cascade)
+  phases       AgentCronJob[] @relation("CronPhases")
+
+  runs      AgentCronRun[]
+  phaseRuns AgentCronRun[] @relation("PhaseRuns")
+
+  @@index([parentCronId])
 }
 
 // ─── Agent Tools ──────────────────────────────────────────────────────────────
@@ -168,10 +178,19 @@ model AgentCronRun {
                                 // "acme/x#123"); null when the tick had no dispatch
   createdAt          DateTime  @default(now())
 
+  // Secondary/denormalized pointer to the phase cron (a child AgentCronJob)
+  // this run was dispatched by, distinct from cronId which always points at
+  // the top-level cron. Null until phase crons are wired up (LPC-1.2+).
+  // SetNull (not Cascade) on delete: deleting a phase cron shouldn't delete
+  // the parent cron's run history, which cronId's own Cascade already owns.
+  phaseId   String?
+  phaseCron AgentCronJob? @relation("PhaseRuns", fields: [phaseId], references: [id], onDelete: SetNull)
+
   modelBreakdown AgentCronRunModelBreakdown[]
 
   @@index([cronId])
   @@index([agentId, startedAt])
+  @@index([phaseId])
 }
 
 // ─── Agent Cron Run Model Breakdown ──────────────────────────────────────────
