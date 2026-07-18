@@ -7,17 +7,28 @@
  * scheduled job should use.
  *
  * classifyCronJobsForScheduling(jobs) → ScheduledCronJob[]
- *   The shipwright-loop job (if present and enabled) is always included with
- *   dispatch: "loop". Every other enabled job is included with
- *   dispatch: "generic" UNLESS shipwright-loop is present and enabled AND
- *   the job's name is one of the five pipeline phase jobs
- *   (shipwright-dev-task, shipwright-review, shipwright-patch,
+ *   Any job with a non-null parentCronId is excluded unconditionally —
+ *   a row that belongs to a parent cron is config-only and never
+ *   independently scheduled, regardless of its own enabled value or
+ *   whether shipwright-loop is present/enabled (LPC-1.3). This is the
+ *   structural replacement for the enabled=false hack: previously the
+ *   generic dispatcher was kept off these rows only by force-disabling
+ *   them; now it's off by construction.
+ *
+ *   For rows with no parent, the shipwright-loop job (if present and
+ *   enabled) is always included with dispatch: "loop". Every other enabled
+ *   job is included with dispatch: "generic" UNLESS shipwright-loop is
+ *   present and enabled AND the job's name is one of the five pipeline
+ *   phase jobs (shipwright-dev-task, shipwright-review, shipwright-patch,
  *   shipwright-review-patch, shipwright-deploy) — those are excluded
  *   entirely (loop-config-only: readable by the loop handler, not
- *   independently scheduled). Disabled jobs are never included. An agent
- *   whose job list has no shipwright-loop entry at all behaves identically
- *   to one where it's present-but-disabled — both are the "unmigrated"
- *   case, and produce byte-for-byte today's scheduling behavior.
+ *   independently scheduled). This name-based fallback stays load-bearing
+ *   until every legacy pipeline-phase system cron has parentCronId
+ *   backfilled by reconcileSystemCrons() (LPC-1.2, separately gated) — do
+ *   not remove it. Disabled jobs are never included. An agent whose job
+ *   list has no shipwright-loop entry at all behaves identically to one
+ *   where it's present-but-disabled — both are the "unmigrated" case, and
+ *   produce byte-for-byte today's scheduling behavior.
  *
  * resolveLoopPhaseToggles(jobs) → LoopPhaseToggles
  *   The loop's own toggle-reading logic (consumed by the WL-3.3
@@ -44,6 +55,7 @@ export interface CronJobLike {
   id: string;
   name: string | null;
   enabled: boolean;
+  parentCronId: string | null;
 }
 
 export type CronDispatchKind = "loop" | "generic";
@@ -83,6 +95,14 @@ export function classifyCronJobsForScheduling<T extends CronJobLike>(
   const result: ScheduledCronJob<T>[] = [];
 
   for (const job of jobs) {
+    // Structural exclusion: a row that belongs to a parent cron is
+    // config-only and never independently scheduled, regardless of its own
+    // enabled value or whether shipwright-loop is present/enabled. This
+    // supersedes (but does not replace) the name-based PIPELINE_PHASE_JOB_NAMES
+    // fallback below, which stays load-bearing until every legacy pipeline-phase
+    // system cron has parentCronId backfilled (LPC-1.2).
+    if (job.parentCronId !== null) continue;
+
     if (!job.enabled) continue;
 
     if (job.name === LOOP_JOB_NAME) {

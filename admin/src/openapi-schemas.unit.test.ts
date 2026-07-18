@@ -44,6 +44,7 @@ const validCronJob = {
   preCheck: null,
   name: "morning-brief",
   system: false,
+  parentCronId: null,
   createdAt: now,
   updatedAt: now,
 };
@@ -171,6 +172,7 @@ describe("AgentCronJobSchema", () => {
       preCheck: null,
       name: null,
       system: false,
+      parentCronId: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -187,6 +189,21 @@ describe("AgentCronJobSchema", () => {
   test("rejects missing prompt", () => {
     const { prompt: _, ...noPrompt } = validCronJob;
     const result = AgentCronJobSchema.safeParse(noPrompt);
+    expect(result.success).toBe(false);
+  });
+
+  test("parses cron job with a non-null parentCronId string", () => {
+    const parented = { ...validCronJob, parentCronId: "cuid-parent" };
+    const result = AgentCronJobSchema.safeParse(parented);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.parentCronId).toBe("cuid-parent");
+    }
+  });
+
+  test("rejects missing parentCronId (required-but-nullable, matching channel/user/preCheck/name)", () => {
+    const { parentCronId: _, ...noParentCronId } = validCronJob;
+    const result = AgentCronJobSchema.safeParse(noParentCronId);
     expect(result.success).toBe(false);
   });
 });

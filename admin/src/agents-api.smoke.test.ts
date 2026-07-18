@@ -2568,6 +2568,67 @@ describe("admin API — cron runs", () => {
     expect("runCountToday" in cron).toBe(true);
     expect(typeof cron.runCountToday).toBe("number");
   });
+
+  it("GET /agents/:id/crons/summary response includes parentCronId — null for a top-level cron, set for a parented one", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentCronJobService: {
+        ...base.agentCronJobService,
+        listWithRunSummary: async () => [
+          {
+            id: CRON_ID,
+            agentId: AGENT_ID,
+            schedule: "0 9 * * 1-5",
+            prompt: "daily standup",
+            channel: "C123",
+            user: null,
+            silent: false,
+            enabled: true,
+            preCheck: null,
+            name: null,
+            system: false,
+            parentCronId: null,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            lastRun: null,
+            runCountToday: 0,
+          },
+          {
+            id: "cron-child-1",
+            agentId: AGENT_ID,
+            schedule: "0 9 * * 1-5",
+            prompt: "phase-only child cron",
+            channel: null,
+            user: null,
+            silent: true,
+            enabled: true,
+            preCheck: null,
+            name: "shipwright-dev-task",
+            system: true,
+            parentCronId: CRON_ID,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            lastRun: null,
+            runCountToday: 0,
+          },
+        ],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/summary`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.crons).toHaveLength(2);
+    const topLevel = body.crons.find((c: { id: string }) => c.id === CRON_ID);
+    const child = body.crons.find(
+      (c: { id: string }) => c.id === "cron-child-1",
+    );
+    expect(topLevel.parentCronId).toBeNull();
+    expect(child.parentCronId).toBe(CRON_ID);
+  });
 });
 
 // ─── Mock factories for run service tests ────────────────────────────────────
