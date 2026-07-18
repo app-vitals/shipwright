@@ -394,8 +394,10 @@ CONSOLIDATION SCAN COMPLETE
 - **No git operations.** Do not commit, branch, or stage anything. `git log` calls
   are read-only history inspection for churn-weighting.
 - **No PR creation and no task-store writes.** This skill never queues tasks —
-  unlike `entropy-fix`, there is currently no `consolidation-fix` counterpart;
-  proposals in `consolidation-report.md` are for human/future-task triage.
+  that is the `consolidation-fix` skill's job (the `entropy-fix` counterpart for
+  this scan). `consolidation-scan` only writes `consolidation-report.md`; queueing
+  `ready_to_propose` entries as task-store tasks happens in a separate, later run
+  of `consolidation-fix`, never inline here.
 - **Not a clone detector.** Never substitute a token/AST similarity tool or a diff-
   based heuristic for the judgment-driven comparison in Step 3 — that changes what
   this skill catches and defeats its purpose.
