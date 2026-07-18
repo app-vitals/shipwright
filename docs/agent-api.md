@@ -187,7 +187,7 @@ Body:
 | `preCheck` | no | Pre-check script path. Three formats: `"plugin:script.ts"` (relative to plugin's `scripts/` dir), `"./relative.ts"` (relative to workspace root), `"/absolute.ts"`. Pass `null` to clear. |
 | `name` | no | Human-readable identifier, e.g. `"morning-brief"` |
 
-Returns `201` with the created cron job.
+Returns `201` with the created cron job, including read-only fields: `id`, `agentId`, `system`, `parentCronId`, `createdAt`, `updatedAt`. **`parentCronId` is system-managed** and never settable by the user — it is `null` for top-level crons, and set by the system for child crons that belong to a parent orchestration job (LPC-1.3).
 
 ### List cron jobs
 
@@ -195,7 +195,7 @@ Returns `201` with the created cron job.
 GET /agents/:id/crons
 ```
 
-Returns `{ crons: AgentCronJob[] }` where each cron includes a run summary (last run timestamp, outcome, today's run count).
+Returns `{ crons: AgentCronJob[] }` where each cron includes a run summary (last run timestamp, outcome, today's run count), and the read-only `parentCronId` field (used by LPC-1.3 scheduler dispatch filtering to identify child "config-only" crons that should not be independently scheduled).
 
 ### Update cron job
 
@@ -208,8 +208,9 @@ Body fields are the same as create, all optional. Two constraints:
 - `schedule` and `prompt` must be provided together when doing a content update
 - `enabled` and `preCheck` are orthogonal — each can be sent alone or combined with any other field
 - At least one field must be present (empty body returns `400`)
+- `parentCronId` is never settable (read-only, ignored in request bodies)
 
-Returns the updated cron job.
+Returns the updated cron job with all read-only fields included (`parentCronId`, `system`, `createdAt`, `updatedAt`).
 
 ### Delete cron job
 

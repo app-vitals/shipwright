@@ -113,4 +113,13 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     preCheck: "shipwright:check-error-patrol.ts",
     enabled: false,
   },
+  {
+    name: "consolidation-patrol-maintenance",
+    schedule: "0 5 * * 1",
+    prompt:
+      '/shipwright:consolidation-scan\n/shipwright:consolidation-fix\nAfter the chain completes, write state/consolidation-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no ready_to_propose findings are found.',
+    silent: true,
+    preCheck: "shipwright:check-consolidation-patrol.ts",
+    enabled: false,
+  },
 ] as const;

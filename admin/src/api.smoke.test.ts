@@ -351,6 +351,26 @@ describe("GET /:id/crons (mounted as GET /agents/:id/crons from root)", () => {
     const body = await res.json();
     expect(body.error).toBe("Not found");
   });
+
+  test("response includes parentCronId — null for a top-level cron, set for a parented one (this is the real payload syncCrons() consumes)", async () => {
+    const topLevel = makeCron(KNOWN_AGENT_ID, "cron-top");
+    const parented = {
+      ...makeCron(KNOWN_AGENT_ID, "cron-child"),
+      name: "shipwright-dev-task",
+      parentCronId: "cron-top",
+    };
+    const app = buildApp({ crons: [topLevel, parented] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/crons`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    const top = body.find((c: { id: string }) => c.id === "cron-top");
+    const child = body.find((c: { id: string }) => c.id === "cron-child");
+    expect(top.parentCronId).toBeNull();
+    expect(child.parentCronId).toBe("cron-top");
+  });
 });
 
 // ─── Combined-server mount tests ──────────────────────────────────────────────

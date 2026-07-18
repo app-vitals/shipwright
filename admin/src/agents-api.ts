@@ -1551,6 +1551,7 @@ function serializeCronWithSummary(job: AgentCronJobWithRunSummary): z.infer<
     preCheck: job.preCheck,
     name: job.name,
     system: job.system,
+    parentCronId: job.parentCronId,
     createdAt: job.createdAt.toISOString(),
     updatedAt: job.updatedAt.toISOString(),
     lastRun: job.lastRun

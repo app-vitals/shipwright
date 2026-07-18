@@ -466,6 +466,13 @@
             "type": "boolean",
             "example": false
           },
+          "parentCronId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": null
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -489,6 +496,7 @@
           "preCheck",
           "name",
           "system",
+          "parentCronId",
           "createdAt",
           "updatedAt"
         ]

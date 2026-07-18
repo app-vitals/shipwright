@@ -12,18 +12,10 @@
  * after the first match — the selector needs the whole candidate set to pick
  * the globally-oldest ready item.
  *
- * Before collecting ready tasks, this still performs the same stale
- * in_progress guard as the plugin script:
- *   - Tasks with startedAt older than 45 minutes are reset to pending.
- *   - Tasks with no startedAt are stamped with the current time so they age
- *     out naturally on the next run (conservative — avoids disrupting tasks
- *     legitimately set to in_progress outside of dev-task).
- *
- * In_progress results are filtered to this agent's own `assignee`
- * (SHIPWRIGHT_AGENT_ID) before any of the above runs — the task-store list
- * endpoint does not reliably scope bare `status=` queries by assignee for
- * agent tokens with repo-level access, so unfiltered results can include
- * other agents' tasks.
+ * Reclaiming stale in_progress tasks is exclusively StaleClaimReaper's
+ * responsibility (task-store's own 35-minute claim-TTL reaper, wired via
+ * setInterval in task-store/src/main.ts). This module does not perform any
+ * stale-task guard of its own.
  *
  * HITL-pending notification is intentionally out of scope here — it isn't a
  * ready-work candidate for the selector, and belongs to the orchestrator
@@ -35,19 +27,12 @@ import { createTaskStoreClient } from "./check-helpers.ts";
 import type { Task } from "./check-helpers.ts";
 import type { WorkTaskCandidate } from "./work-selector.ts";
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const STALE_THRESHOLD_MS = 45 * 60 * 1000; // 45 minutes
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CheckDevTaskDeps {
   getReadyTasks: () => Promise<Task[]>;
-  getInProgressTasks: () => Promise<Task[]>;
-  resetTask: (id: string) => Promise<Task>;
-  stampTask: (id: string, startedAt: string) => Promise<Task>;
   clock: Clock;
-  /** This agent's own task-store id — used to filter out other agents' tasks. */
+  /** This agent's own task-store id. */
   agentId: string;
 }
 
@@ -64,32 +49,12 @@ function toWorkTaskCandidate(task: Task): WorkTaskCandidate {
 /**
  * Collect all ready dev-task candidates from the task store.
  *
- * Performs the stale in_progress guard (reset/stamp) as a side effect before
- * querying ready tasks, then returns the full ready set as
- * WorkTaskCandidate[] — never a single match, never {exit, output}.
+ * Returns the full ready set as WorkTaskCandidate[] — never a single match,
+ * never {exit, output}.
  */
 export async function getDevTaskCandidates(
   deps: CheckDevTaskDeps,
 ): Promise<WorkTaskCandidate[]> {
-  // The task-store list endpoint does not reliably filter by assignee for
-  // agent tokens with repo-level access — a bare `status=` query can return
-  // tasks belonging to other agents sharing the same repo. Filter to this
-  // agent's own tasks before resetting/stamping staleness, so this agent
-  // never touches another agent's in-flight work.
-  const allInProgressTasks = await deps.getInProgressTasks();
-  const inProgressTasks = allInProgressTasks.filter(
-    (t) => t.assignee === deps.agentId,
-  );
-  const now = deps.clock.now().getTime();
-
-  for (const task of inProgressTasks) {
-    if (task.startedAt === undefined) {
-      await deps.stampTask(task.id, deps.clock.now().toISOString());
-    } else if (now - new Date(task.startedAt).getTime() >= STALE_THRESHOLD_MS) {
-      await deps.resetTask(task.id);
-    }
-  }
-
   const readyTasks = await deps.getReadyTasks();
   return readyTasks.map(toWorkTaskCandidate);
 }
@@ -106,11 +71,6 @@ export function buildProductionDeps(): CheckDevTaskDeps {
 
   return {
     getReadyTasks: () => client.query(new URLSearchParams({ ready: "true" })),
-    getInProgressTasks: () =>
-      client.query(new URLSearchParams({ status: "in_progress" })),
-    resetTask: (id) =>
-      client.update(id, { status: "pending", startedAt: null }),
-    stampTask: (id, startedAt) => client.update(id, { startedAt }),
     clock: SystemClock(),
     agentId,
   };

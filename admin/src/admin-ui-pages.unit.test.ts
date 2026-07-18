@@ -10,13 +10,17 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
+  computeDependencyLayout,
+  computeDependencyNodes,
   type CronJobItem,
   type CronRunItem,
+  type DependencyNode,
   type MemberItem,
   type PluginItem,
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
+  type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
   renderAgentDetailPage,
@@ -33,6 +37,7 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
+  renderTokensPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -1892,10 +1897,12 @@ describe("renderTasksPage — blocker badges", () => {
     expect(html).toContain("badge-hitl");
   });
 
-  // AC3: dep block renders with the dep ID "Blocked: REL-2.2"
-  test("dep block renders as 'Blocked: <dep-id>'", () => {
+  // AC3: dep block renders with the dep ID "Blocked: REL-2.2", linked to the dep's task page
+  test("dep block renders as 'Blocked: <dep-id>' linked to the dep's task page", () => {
     const html = render([PENDING_TASK_DEP]);
-    expect(html).toContain("Blocked: REL-2.2");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain('<a href="/admin/tasks/REL-2.2"');
+    expect(html).toContain(">REL-2.2</a>");
     expect(html).toContain("badge-dep");
   });
 
@@ -1910,7 +1917,9 @@ describe("renderTasksPage — blocker badges", () => {
   test("task with multiple blockers renders all badges", () => {
     const html = render([PENDING_TASK_MULTI]);
     expect(html).toContain("Waiting: HITL");
-    expect(html).toContain("Blocked: REL-3.1");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain('<a href="/admin/tasks/REL-3.1"');
+    expect(html).toContain(">REL-3.1</a>");
   });
 
   // AC5: badges are visually distinct from status badges (different CSS class)
@@ -2357,6 +2366,11 @@ describe("renderTaskDetailPage — blockers", () => {
     expect(html).toContain("pending");
   });
 
+  test("dependency blocker id links to its task detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/tasks/TS-dep"');
+  });
+
   test("shows hitl blocker type", () => {
     const html = render();
     expect(html.toLowerCase()).toContain("hitl");
@@ -2401,6 +2415,66 @@ describe("renderTaskDetailPage — blockers", () => {
     expect(blockersIdx).toBeGreaterThan(-1);
     expect(descriptionIdx).toBeGreaterThan(-1);
     expect(blockersIdx).toBeLessThan(descriptionIdx);
+  });
+});
+
+describe("renderTaskDetailPage — dependencies", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+      {},
+      "UTC",
+    );
+  }
+
+  test("dependency ids link to their task detail pages", () => {
+    const html = render({ dependencies: ["TASK-A", "TASK-B"] });
+    expect(html).toContain('<a href="/admin/tasks/TASK-A"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-B"');
+  });
+
+  test("no dependencies field when dependencies is empty", () => {
+    const html = render({ dependencies: [] });
+    expect(html).not.toContain("Dependencies");
+  });
+});
+
+describe("renderTaskDetailPage — agent field linkability", () => {
+  function render(
+    task: Partial<TaskItem> = {},
+    agentNames: Record<string, string> = {},
+  ): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+      agentNames,
+      "UTC",
+    );
+  }
+
+  test("Assignee links to the agent detail page", () => {
+    const html = render({ assignee: "agent-a" });
+    expect(html).toContain('<a href="/admin/agents/agent-a"');
+  });
+
+  test("Agent Hint links to the agent detail page", () => {
+    const html = render({ agentHint: "agent-b" });
+    expect(html).toContain('<a href="/admin/agents/agent-b"');
+  });
+
+  test("Claimed By links to the agent detail page and shows display name", () => {
+    const html = render(
+      { claimedBy: "agent-c" },
+      { "agent-c": "Agent Charlie" },
+    );
+    expect(html).toContain('<a href="/admin/agents/agent-c"');
+    expect(html).toContain("Agent Charlie (agent-c)");
+  });
+
+  test("no Assignee/Agent Hint/Claimed By rows when unset", () => {
+    const html = render({ assignee: null, agentHint: null, claimedBy: null });
+    expect(html).not.toContain("/admin/agents/");
   });
 });
 
@@ -2773,6 +2847,12 @@ describe("renderPrsPage", () => {
     expect(html).toContain("Updated");
   });
 
+  test("Claimed By cell links to the claiming agent's detail page", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain('<a href="/admin/agents/agent-001"');
+    expect(html).toContain("Alpha Agent");
+  });
+
   test("renders 2+ PRs as table rows", () => {
     const html = render([PR_LIST_ITEM_1, PR_LIST_ITEM_2]);
     expect(html).toContain("org/repo-a");
@@ -3020,6 +3100,24 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("TASK-99");
   });
 
+  test("taskId links to the task's detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/tasks/TASK-99"');
+  });
+
+  test("no Task row when taskId is absent", () => {
+    const html = render({ ...PR_DETAIL, taskId: null });
+    expect(html).not.toContain("/admin/tasks/");
+  });
+
+  test("PR number links out to the GitHub PR", () => {
+    const html = render();
+    expect(html).toContain(
+      '<a href="https://github.com/org/detail-repo/pull/99"',
+    );
+    expect(html).toContain(">#99</a>");
+  });
+
   test("renders commitSha field when present", () => {
     const html = render();
     expect(html).toContain("deadbeef");
@@ -3029,6 +3127,18 @@ describe("renderPrDetailPage", () => {
     const html = render();
     // agent-x maps to "Xray Agent"
     expect(html).toContain("Xray Agent");
+  });
+
+  test("claimedBy links to the agent detail page", () => {
+    const html = render();
+    expect(html).toContain('<a href="/admin/agents/agent-x"');
+  });
+
+  test("agentId links to the agent detail page", () => {
+    const html = render();
+    const matches = html.match(/<a href="\/admin\/agents\/agent-x"/g);
+    // both Claimed By and Agent ID resolve to agent-x here, so 2 links
+    expect(matches?.length).toBe(2);
   });
 
   test("renders Timeline section with date fields", () => {
@@ -3151,7 +3261,11 @@ describe("renderCronLogsPage", () => {
       crons: [CRON, OTHER_CRON],
       runs,
       filters: opts?.filters ?? {},
-      pagination: opts?.pagination ?? { total: runs.length, limit: 20, page: 1 },
+      pagination: opts?.pagination ?? {
+        total: runs.length,
+        limit: 20,
+        page: 1,
+      },
       userName: "admin@example.com",
       timezone: "America/Los_Angeles",
     });
@@ -3231,6 +3345,18 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("*/15 * * * *");
   });
 
+  test("Cron column links to the same page filtered to that cron's id", () => {
+    const html = render([makeRun({ cron: CRON })]);
+    expect(html).toContain(
+      `<a href="/admin/agents/${CRON_AGENT.id}/cron-logs?cronId=${CRON.id}"`,
+    );
+  });
+
+  test("Cron column renders plain '—' with no link when the run has no cron", () => {
+    const html = render([makeRun({ cron: undefined })]);
+    expect(html).not.toContain("cron-logs?cronId=");
+  });
+
   test("renders empty state when no runs match", () => {
     const html = render([]);
     expect(html).toContain("No runs");
@@ -3269,6 +3395,11 @@ describe("renderCronLogsPage", () => {
     expect(html).toMatch(/badge[^>]*>\s*Task/);
   });
 
+  test("Task item id links to its task detail page", () => {
+    const html = render([makeRun({ itemType: "task", itemId: "WLS-2.2" })]);
+    expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
+  });
+
   test("renders the run's itemType/itemId as a labeled PR badge when set", () => {
     const html = render([
       makeRun({ itemType: "pr", itemId: "app-vitals/shipwright#1234" }),
@@ -3280,6 +3411,15 @@ describe("renderCronLogsPage", () => {
     const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
     expect(bodyRowMatch).not.toBeNull();
     expect(bodyRowMatch?.[1]).not.toContain(">Task<");
+  });
+
+  test("PR item id links out to the GitHub PR", () => {
+    const html = render([
+      makeRun({ itemType: "pr", itemId: "app-vitals/shipwright#1234" }),
+    ]);
+    expect(html).toContain(
+      '<a href="https://github.com/app-vitals/shipwright/pull/1234"',
+    );
   });
 
   test("renders em-dash for the Item cell when itemType/itemId are null (no dispatch)", () => {
@@ -3459,7 +3599,11 @@ describe("renderCronLogsPage", () => {
 
   test("outcome badge shows 'skipped' ahead of the outcome column value when skipped is true", () => {
     const html = render([
-      makeRun({ skipped: true, outcome: "error", skipReason: "pre-check failed" }),
+      makeRun({
+        skipped: true,
+        outcome: "error",
+        skipReason: "pre-check failed",
+      }),
     ]);
     // The badge itself renders "skipped", not "error" — mirrors
     // cronRunOutcomeLabel's skipped-takes-priority convention.
@@ -3541,6 +3685,49 @@ describe("renderTasksPage — mobile column hiding", () => {
     expect((sessionTdMatches ?? []).length).toBe(2);
     expect(repoTdMatches).not.toBeNull();
     expect((repoTdMatches ?? []).length).toBe(2);
+  });
+});
+
+// ─── renderTasksPage — readOnly suppresses internal /admin/ links ────────────
+
+describe("renderTasksPage — readOnly suppresses internal /admin/ links", () => {
+  const CLAIMED_BLOCKED_TASK: TaskItem = {
+    id: "TASK-3",
+    title: "Claimed and blocked task",
+    status: "blocked",
+    session: "session-abc",
+    repo: "org/repo",
+    assignee: null,
+    claimedBy: "agent-x",
+    blockedBy: [{ type: "dependency", id: "TASK-dep", status: "pending" }],
+  };
+
+  function render(readOnly: boolean): string {
+    return renderTasksPage(
+      [CLAIMED_BLOCKED_TASK],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      readOnly,
+    );
+  }
+
+  test("readOnly=false links the agent cell and the blocker badge", () => {
+    const html = render(false);
+    expect(html).toContain('<a href="/admin/agents/agent-x"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-dep"');
+  });
+
+  test("readOnly=true renders the same ids as plain text, no /admin/ links", () => {
+    const html = render(true);
+    expect(html).toContain("agent-x");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain("TASK-dep");
+    expect(html).not.toContain("/admin/");
   });
 });
 
@@ -4261,7 +4448,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     return html.slice(idx);
   }
 
-  test("a pending task with no unresolved blockers lands in Ready, and annotates what it needs", () => {
+  test("no Ready/In Progress/Blocked/Closed grouping headers appear in the graph card", () => {
     const a: TaskItem = {
       id: "TASK-A",
       title: "Root",
@@ -4272,73 +4459,21 @@ describe("renderSessionDetailPage dependency graph", () => {
     const b: TaskItem = {
       id: "TASK-B",
       title: "Depends on A",
-      status: "pending",
+      status: "in_progress",
       session: SESSION_ID,
       dependencies: ["TASK-A"],
       blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
     const section = graphSection(html);
-    expect(section).toContain("Ready (1)");
-    expect(section).toContain("Blocked (1)");
-    expect(section).toContain("TASK-A");
+    expect(section).not.toContain("Ready (");
+    expect(section).not.toContain("In Progress (");
+    expect(section).not.toContain("Blocked (");
+    expect(section).not.toContain("Closed (");
+    expect(section).toContain('data-task-id="TASK-A"');
+    expect(section).toContain('data-task-id="TASK-B"');
     expect(section).toContain("needs");
     expect(section).toContain('href="/admin/tasks/TASK-A"');
-  });
-
-  test("groups tasks by the ready/in_progress/blocked/closed taxonomy, matching the Tasks page", () => {
-    const ready: TaskItem = {
-      id: "TASK-READY",
-      title: "Ready root",
-      status: "pending",
-      session: SESSION_ID,
-      blockedBy: [],
-    };
-    const inProgress: TaskItem = {
-      id: "TASK-INPROG",
-      title: "Being worked",
-      status: "pr_open",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-      blockedBy: [],
-    };
-    const explicitlyBlocked: TaskItem = {
-      id: "TASK-BLOCKED",
-      title: "Explicitly blocked",
-      status: "blocked",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-    };
-    const depBlocked: TaskItem = {
-      id: "TASK-DEPBLOCKED",
-      title: "Pending with unresolved dep",
-      status: "pending",
-      session: SESSION_ID,
-      dependencies: ["TASK-INPROG"],
-      blockedBy: [{ type: "dependency", id: "TASK-INPROG", status: "pr_open" }],
-    };
-    const closed: TaskItem = {
-      id: "TASK-CLOSED",
-      title: "Done",
-      status: "done",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-    };
-    const html = renderSessionDetailPage(
-      SESSION_ID,
-      [ready, inProgress, explicitlyBlocked, depBlocked, closed],
-      USER_NAME,
-    );
-    const section = graphSection(html);
-    // Groups render in this fixed order regardless of input order.
-    const readyIdx = section.indexOf("Ready (1)");
-    const inProgressIdx = section.indexOf("In Progress (1)");
-    const blockedIdx = section.indexOf("Blocked (2)");
-    const closedIdx = section.indexOf("Closed (1)");
-    expect(readyIdx).toBeGreaterThan(-1);
-    expect(inProgressIdx).toBeGreaterThan(readyIdx);
-    expect(blockedIdx).toBeGreaterThan(inProgressIdx);
-    expect(closedIdx).toBeGreaterThan(blockedIdx);
   });
 
   test("a dependency id outside the session renders as plain unlinked text in the needs line", () => {
@@ -4354,6 +4489,8 @@ describe("renderSessionDetailPage dependency graph", () => {
     const section = graphSection(html);
     expect(section).toContain("EXTERNAL-1");
     expect(section).not.toContain('href="/admin/tasks/EXTERNAL-1"');
+    expect(section).not.toContain('data-to="EXTERNAL-1"');
+    expect(section).not.toContain('data-from="EXTERNAL-1"');
   });
 
   test("a dependency id inside the session links to that task's detail page", () => {
@@ -4379,6 +4516,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     );
     const section = graphSection(html);
     expect(section).toContain('href="/admin/tasks/TASK-ROOT"');
+    expect(section).toContain('data-from="TASK-ROOT" data-to="TASK-DEP"');
   });
 
   test("tasks with no dependency relationship at all are excluded from the graph", () => {
@@ -4415,7 +4553,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("TASK-LONER");
   });
 
-  test("same-branch tasks get a matching branch color even across different state groups (bundle)", () => {
+  test("same-branch tasks get a matching branch color", () => {
     const first: TaskItem = {
       id: "TASK-1",
       title: "models + migration",
@@ -4457,29 +4595,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(html).not.toContain("Dependency graph");
   });
 
-  test("empty state groups (e.g. no in-progress or closed tasks) are omitted", () => {
-    const a: TaskItem = {
-      id: "TASK-A",
-      title: "Root",
-      status: "pending",
-      session: SESSION_ID,
-      blockedBy: [],
-    };
-    const b: TaskItem = {
-      id: "TASK-B",
-      title: "Depends on A",
-      status: "pending",
-      session: SESSION_ID,
-      dependencies: ["TASK-A"],
-      blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
-    };
-    const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
-    const section = graphSection(html);
-    expect(section).not.toContain("In Progress (");
-    expect(section).not.toContain("Closed (");
-  });
-
-  test("a mutual dependency cycle doesn't hang rendering — each task is classified independently", () => {
+  test("a mutual dependency cycle doesn't hang rendering and still renders both nodes", () => {
     const x: TaskItem = {
       id: "TASK-X",
       title: "X",
@@ -4498,9 +4614,8 @@ describe("renderSessionDetailPage dependency graph", () => {
     };
     const html = renderSessionDetailPage(SESSION_ID, [x, y], USER_NAME);
     const section = graphSection(html);
-    expect(section).toContain("TASK-X");
-    expect(section).toContain("TASK-Y");
-    expect(section).toContain("Blocked (2)");
+    expect(section).toContain('data-task-id="TASK-X"');
+    expect(section).toContain('data-task-id="TASK-Y"');
   });
 
   test("escapes task ids, titles, and branch names in the graph to avoid XSS", () => {
@@ -4518,5 +4633,233 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("<img src=x onerror=alert(1)>");
     expect(section).not.toContain("<script>evil()</script>");
     expect(section).not.toContain("<b>dep</b>");
+  });
+
+  test("fan-out+fan-in: node count and data-from/data-to pairs match every in-session edge", () => {
+    // ROOT -> CHILD-1, ROOT -> CHILD-2, CHILD-1 -> SINK, CHILD-2 -> SINK
+    const root: TaskItem = {
+      id: "TASK-ROOT",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const child1: TaskItem = {
+      id: "TASK-CHILD-1",
+      title: "Child 1",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const child2: TaskItem = {
+      id: "TASK-CHILD-2",
+      title: "Child 2",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const sink: TaskItem = {
+      id: "TASK-SINK",
+      title: "Sink",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-CHILD-1", "TASK-CHILD-2"],
+      blockedBy: [
+        { type: "dependency", id: "TASK-CHILD-1", status: "pending" },
+        { type: "dependency", id: "TASK-CHILD-2", status: "pending" },
+      ],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [root, child1, child2, sink],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+
+    const nodeIds = [
+      ...section.matchAll(/data-task-id="([^"]+)"/g),
+    ].map((m) => m[1]);
+    expect(nodeIds.sort()).toEqual(
+      ["TASK-CHILD-1", "TASK-CHILD-2", "TASK-ROOT", "TASK-SINK"].sort(),
+    );
+
+    const edges = [
+      ...section.matchAll(/data-from="([^"]+)" data-to="([^"]+)"/g),
+    ].map((m) => [m[1], m[2]]);
+    expect(edges.length).toBe(4);
+    expect(edges).toContainEqual(["TASK-ROOT", "TASK-CHILD-1"]);
+    expect(edges).toContainEqual(["TASK-ROOT", "TASK-CHILD-2"]);
+    expect(edges).toContainEqual(["TASK-CHILD-1", "TASK-SINK"]);
+    expect(edges).toContainEqual(["TASK-CHILD-2", "TASK-SINK"]);
+  });
+});
+
+// ─── computeDependencyLayout ──────────────────────────────────────────────────
+
+function depNode(overrides: Partial<DependencyNode> & { id: string }): DependencyNode {
+  return {
+    id: overrides.id,
+    title: overrides.title ?? overrides.id,
+    status: overrides.status ?? "pending",
+    branch: overrides.branch ?? null,
+    dependsOn: overrides.dependsOn ?? [],
+  };
+}
+
+describe("computeDependencyLayout", () => {
+  test("simple linear chain: each node gets increasing depth and distinct x, same y", () => {
+    const a = depNode({ id: "TASK-A" });
+    const b = depNode({ id: "TASK-B", dependsOn: ["TASK-A"] });
+    const c = depNode({ id: "TASK-C", dependsOn: ["TASK-B"] });
+    const layout = computeDependencyLayout([a, b, c]);
+
+    const posA = layout.positions.get("TASK-A");
+    const posB = layout.positions.get("TASK-B");
+    const posC = layout.positions.get("TASK-C");
+    expect(posA).toBeDefined();
+    expect(posB).toBeDefined();
+    expect(posC).toBeDefined();
+
+    // Exact numbers, locking in the mockup's measured spacing:
+    // margin=40, card=220, columnGap=100 -> pitch=320
+    expect(posA).toEqual({ x: 40, y: 40, depth: 0 });
+    expect(posB).toEqual({ x: 360, y: 40, depth: 1 });
+    expect(posC).toEqual({ x: 680, y: 40, depth: 2 });
+
+    // Distinct x per depth, same y (single row per column).
+    expect(posA?.x).not.toBe(posB?.x);
+    expect(posB?.x).not.toBe(posC?.x);
+    expect(posA?.y).toBe(posB?.y);
+    expect(posB?.y).toBe(posC?.y);
+  });
+
+  test("fan-out: root at depth 0, children at depth 1 with distinct rows", () => {
+    const root = depNode({ id: "TASK-ROOT" });
+    const child1 = depNode({ id: "TASK-CHILD-1", dependsOn: ["TASK-ROOT"] });
+    const child2 = depNode({ id: "TASK-CHILD-2", dependsOn: ["TASK-ROOT"] });
+    const layout = computeDependencyLayout([root, child1, child2]);
+
+    expect(layout.positions.get("TASK-ROOT")?.depth).toBe(0);
+    expect(layout.positions.get("TASK-CHILD-1")?.depth).toBe(1);
+    expect(layout.positions.get("TASK-CHILD-2")?.depth).toBe(1);
+
+    // Children share a column (same x) but get distinct rows (different y).
+    const child1Pos = layout.positions.get("TASK-CHILD-1");
+    const child2Pos = layout.positions.get("TASK-CHILD-2");
+    expect(child1Pos?.x).toBe(child2Pos?.x);
+    expect(child1Pos?.y).not.toBe(child2Pos?.y);
+  });
+
+  test("fan-in: child depth is 1 + max(parents' depths) — longest path, not shortest", () => {
+    // shallow -> mid -> deep, and a separate shallow-parent directly into child.
+    const shallow = depNode({ id: "TASK-SHALLOW" });
+    const mid = depNode({ id: "TASK-MID", dependsOn: ["TASK-SHALLOW"] });
+    const deep = depNode({ id: "TASK-DEEP", dependsOn: ["TASK-MID"] });
+    const child = depNode({
+      id: "TASK-CHILD",
+      dependsOn: ["TASK-SHALLOW", "TASK-DEEP"],
+    });
+    const layout = computeDependencyLayout([shallow, mid, deep, child]);
+
+    expect(layout.positions.get("TASK-SHALLOW")?.depth).toBe(0);
+    expect(layout.positions.get("TASK-MID")?.depth).toBe(1);
+    expect(layout.positions.get("TASK-DEEP")?.depth).toBe(2);
+    // child depends on shallow (depth 0) and deep (depth 2) -> longest path wins: 1+2=3
+    expect(layout.positions.get("TASK-CHILD")?.depth).toBe(3);
+  });
+
+  test("cycle safety: mutual dependency doesn't hang and both nodes get positions", () => {
+    const x = depNode({ id: "TASK-X", dependsOn: ["TASK-Y"] });
+    const y = depNode({ id: "TASK-Y", dependsOn: ["TASK-X"] });
+    const layout = computeDependencyLayout([x, y]);
+
+    const posX = layout.positions.get("TASK-X");
+    const posY = layout.positions.get("TASK-Y");
+    expect(posX).toBeDefined();
+    expect(posY).toBeDefined();
+    expect(Number.isFinite(posX?.x)).toBe(true);
+    expect(Number.isFinite(posX?.y)).toBe(true);
+    expect(Number.isFinite(posX?.depth)).toBe(true);
+    expect(Number.isFinite(posY?.x)).toBe(true);
+    expect(Number.isFinite(posY?.y)).toBe(true);
+    expect(Number.isFinite(posY?.depth)).toBe(true);
+  });
+
+  test("deterministic ordering: same input twice yields identical layout", () => {
+    const a = depNode({ id: "TASK-A" });
+    const b = depNode({ id: "TASK-B", dependsOn: ["TASK-A"] });
+    const c = depNode({ id: "TASK-C", dependsOn: ["TASK-A"] });
+    const nodes = [a, b, c];
+
+    const layout1 = computeDependencyLayout(nodes);
+    const layout2 = computeDependencyLayout(nodes);
+
+    expect(layout1.width).toBe(layout2.width);
+    expect(layout1.height).toBe(layout2.height);
+    for (const id of ["TASK-A", "TASK-B", "TASK-C"]) {
+      expect(layout1.positions.get(id)).toEqual(layout2.positions.get(id));
+    }
+  });
+
+  test("deterministic row ordering for same-depth nodes with no dependency relationship follows input order", () => {
+    // Two independent roots, no edges between them.
+    const rootFirst = depNode({ id: "TASK-FIRST" });
+    const rootSecond = depNode({ id: "TASK-SECOND" });
+    const layout = computeDependencyLayout([rootFirst, rootSecond]);
+
+    const firstPos = layout.positions.get("TASK-FIRST");
+    const secondPos = layout.positions.get("TASK-SECOND");
+    expect(firstPos?.depth).toBe(0);
+    expect(secondPos?.depth).toBe(0);
+    // Same column.
+    expect(firstPos?.x).toBe(secondPos?.x);
+    // Row order follows input array order: first node gets the earlier row.
+    expect(firstPos?.y).toBeLessThan(secondPos?.y ?? Number.POSITIVE_INFINITY);
+  });
+
+  test("empty input returns empty positions and zeroed canvas size", () => {
+    const layout = computeDependencyLayout([]);
+    expect(layout.positions.size).toBe(0);
+    expect(layout.width).toBe(0);
+    expect(layout.height).toBe(0);
+  });
+});
+
+// ─── renderTokensPage — agent column linkability ─────────────────────────────
+
+describe("renderTokensPage — agent column linkability", () => {
+  function render(tokens: TaskStoreTokenItem[]): string {
+    return renderTokensPage(tokens, false, USER_NAME);
+  }
+
+  test("agent-scoped token links its Agent ID to the agent detail page", () => {
+    const html = render([
+      {
+        id: "tok-1",
+        label: "CI token",
+        agentId: "agent-y",
+        token: "sw_abc",
+        createdAt: "2026-06-01T10:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(html).toContain('<a href="/admin/agents/agent-y"');
+  });
+
+  test("admin token (no agentId) renders '(admin)' with no agent link", () => {
+    const html = render([
+      {
+        id: "tok-2",
+        label: "Admin token",
+        agentId: null,
+        token: "sw_def",
+        createdAt: "2026-06-01T10:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(html).toContain("(admin)");
+    expect(html).not.toContain("/admin/agents/");
   });
 });

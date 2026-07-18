@@ -10,6 +10,102 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.7.22] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.22 triggered by release tag(s): `admin-v1.8.0`, `agent-v1.17.0`
+
+## [1.7.21] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.21 triggered by release tag(s): `agent-v1.16.0`
+
+## [1.7.20] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.20 triggered by release tag(s): `agent-v1.15.2`
+
+## [1.7.19] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.19 triggered by release tag(s): `agent-v1.15.1`
+
+## [1.7.18] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.18 triggered by release tag(s): `agent-v1.15.0`
+
+## [1.7.17] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.17 triggered by release tag(s): `admin-v1.7.0`
+
+## [1.7.16] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.16 triggered by release tag(s): `agent-v1.14.2`
+
+## [1.7.15] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.15 triggered by release tag(s): `agent-v1.14.1`
+
+## [1.7.14] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.14 triggered by release tag(s): `agent-v1.14.0`
+
+## [1.7.13] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.13 triggered by release tag(s): `agent-v1.13.0`
+
+## [1.7.12] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.12 triggered by release tag(s): `agent-v1.12.1`
+
+## [1.7.11] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.11 triggered by release tag(s): `agent-v1.12.0`
+
+## [1.7.10] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.10 triggered by release tag(s): `admin-v1.6.0`, `chat-v1.1.0`, `metrics-v1.1.0`, `task-store-v1.4.0`
+
+## [1.7.9] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.9 triggered by release tag(s): `admin-v1.5.0`
+
+## [1.7.8] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.8 triggered by release tag(s): `agent-v1.11.0`
+
+## [1.7.7] - 2026-07-18
+
+### Changed
+
+- auto-bump to chart v1.7.7 triggered by release tag(s): `admin-v1.4.0`
+
 ## [1.7.6] - 2026-07-18
 
 ### Changed

@@ -1747,6 +1747,8 @@ export interface components {
             name: string | null;
             /** @example false */
             system: boolean;
+            /** @example null */
+            parentCronId: string | null;
             /**
              * Format: date-time
              * @example 2026-01-01T00:00:00.000Z

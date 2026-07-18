@@ -24,6 +24,37 @@ import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Renders a link to a task's detail page, styled like the rest of the admin UI's inline links. */
+function taskLink(taskId: string): string {
+  return `<a href="/admin/tasks/${escapeHtml(taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(taskId)}</a>`;
+}
+
+/**
+ * Renders a link to an agent's detail page. `label` defaults to the agent id
+ * but callers pass a display name (e.g. "Xray Agent (agent-x)") when one is
+ * available from an `agentNames` lookup map, keeping the link text
+ * human-readable while still routing by id.
+ */
+function agentLink(agentId: string, label?: string): string {
+  return `<a href="/admin/agents/${escapeHtml(agentId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(label ?? agentId)}</a>`;
+}
+
+/**
+ * Renders a link for a work-queue/cron-log item id, which is either a task id
+ * (e.g. "WLS-2.2") or a "repo#prNumber" PR reference (e.g. "acme/x#123") per
+ * the RankedWorkItem/CronRunItem id convention. Task ids link into the admin
+ * UI; PR references link out to GitHub since the internal PR record id isn't
+ * available in this shape. Falls back to plain escaped text if the PR
+ * reference doesn't parse.
+ */
+function workItemLink(type: "task" | "pr", id: string): string {
+  if (type === "task") return taskLink(id);
+  const match = id.match(/^(.+)#(\d+)$/);
+  if (!match) return escapeHtml(id);
+  const [, repo, prNumber] = match;
+  return `<a href="https://github.com/${escapeHtml(repo)}/pull/${escapeHtml(prNumber)}" target="_blank" rel="noopener" style="color:#6366f1;text-decoration:none">${escapeHtml(id)}</a>`;
+}
+
 /**
  * Returns a human-friendly relative timestamp.
  * Examples: "just now", "5 minutes ago", "2 hours ago", "3 days ago", "1 week ago"
@@ -1458,7 +1489,7 @@ export function renderTasksPage(
         if (b.type === "hitl") {
           return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">Waiting: HITL</span>`;
         }
-        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${escapeHtml(b.id)}</span>`;
+        return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${readOnly ? escapeHtml(b.id) : taskLink(b.id)}</span>`;
       })
       .join("");
   };
@@ -1500,7 +1531,9 @@ export function renderTasksPage(
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
             const agentCell = agentId
-              ? escapeHtml(agentNames[agentId] ?? agentId)
+              ? readOnly
+                ? escapeHtml(agentNames[agentId] ?? agentId)
+                : agentLink(agentId, agentNames[agentId] ?? agentId)
               : '<span style="color:#9ca3af">—</span>';
             const blockerBadges = renderBlockerBadges(t.blockedBy);
             const prCell =
@@ -1745,6 +1778,17 @@ export function renderTaskDetailPage(
     </tr>`;
   }
 
+  function agentField(
+    label: string,
+    agentId: string | null | undefined,
+  ): string {
+    if (!agentId) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
+    </tr>`;
+  }
+
   function linkField(
     label: string,
     url: string | null | undefined,
@@ -1757,12 +1801,16 @@ export function renderTaskDetailPage(
     </tr>`;
   }
 
-  function listField(label: string, items: string[] | undefined): string {
+  function listField(
+    label: string,
+    items: string[] | undefined,
+    linkItem = false,
+  ): string {
     if (!items || items.length === 0) return "";
     const listItems = items
       .map(
         (i) =>
-          `<li style="font-size:13px;margin-bottom:4px">${escapeHtml(i)}</li>`,
+          `<li style="font-size:13px;margin-bottom:4px">${linkItem ? taskLink(i) : escapeHtml(i)}</li>`,
       )
       .join("");
     return `<tr>
@@ -1863,7 +1911,7 @@ export function renderTaskDetailPage(
                     : "HITL gate (notification pending)";
                   return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">${escapeHtml(label)}</li>`;
                 }
-                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${escapeHtml(b.id)} (${escapeHtml(b.status)})</li>`;
+                return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${taskLink(b.id)} (${escapeHtml(b.status)})</li>`;
               })
               .join("")}
           </ul>
@@ -1876,33 +1924,9 @@ export function renderTaskDetailPage(
     field("Type", task.type),
     field("Layer", task.layer),
     field("Source", task.source),
-    field(
-      "Assignee",
-      task.assignee
-        ? agentNames[task.assignee]
-          ? `${agentNames[task.assignee]} (${task.assignee})`
-          : task.assignee
-        : null,
-      true,
-    ),
-    field(
-      "Agent Hint",
-      task.agentHint
-        ? agentNames[task.agentHint]
-          ? `${agentNames[task.agentHint]} (${task.agentHint})`
-          : task.agentHint
-        : null,
-      true,
-    ),
-    field(
-      "Claimed By",
-      task.claimedBy
-        ? agentNames[task.claimedBy]
-          ? `${agentNames[task.claimedBy]} (${task.claimedBy})`
-          : task.claimedBy
-        : null,
-      true,
-    ),
+    agentField("Assignee", task.assignee),
+    agentField("Agent Hint", task.agentHint),
+    agentField("Claimed By", task.claimedBy),
     task.session
       ? `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
@@ -1955,7 +1979,7 @@ export function renderTaskDetailPage(
 
   const depsSection =
     task.dependencies && task.dependencies.length > 0
-      ? listField("Dependencies", task.dependencies)
+      ? listField("Dependencies", task.dependencies, true)
       : "";
 
   return `<!DOCTYPE html>
@@ -2058,56 +2082,158 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-interface DependencyNode {
+export interface DependencyNode {
   id: string;
   title: string;
   status: string;
   branch: string | null;
   dependsOn: string[];
-  state: TaskState;
 }
 
 /**
  * Selects the session's tasks that participate in a dependency edge —
  * either they declare a dependency, or another task in the session declares
- * them as one — and buckets them by the same ready/in_progress/blocked/
- * closed states shown on the Tasks page, so the card answers "what can I
- * work on now" rather than an abstract structural order. Tasks with no
- * relationship are noise here and stay visible in the plain task table
- * above. Dependency ids outside the session (unknown to this task list)
- * aren't session tasks and have no status to classify by, so they never get
- * their own node — they still show up in a participating task's `dependsOn`
- * list, just unlinked (see `renderDependencyGraph`).
+ * them as one — and returns them as a flat, deterministically-ordered array
+ * for the graph card (see `renderDependencyGraph`/`computeDependencyLayout`).
+ * Tasks with no relationship are noise here and stay visible in the plain
+ * task table above. Dependency ids outside the session (unknown to this task
+ * list) aren't session tasks and have no status to classify by, so they
+ * never get their own node — they still show up in a participating task's
+ * `dependsOn` list, just unlinked.
  */
-function computeDependencyGroups(
-  tasks: TaskItem[],
-): Map<TaskState, DependencyNode[]> {
+export function computeDependencyNodes(tasks: TaskItem[]): DependencyNode[] {
   const referencedIds = new Set<string>();
   for (const t of tasks) {
     for (const dep of t.dependencies ?? []) referencedIds.add(dep);
   }
 
-  const groups = new Map<TaskState, DependencyNode[]>();
+  const nodes: DependencyNode[] = [];
   for (const t of tasks) {
     if ((t.dependencies?.length ?? 0) === 0 && !referencedIds.has(t.id)) {
       continue;
     }
-    const node: DependencyNode = {
+    nodes.push({
       id: t.id,
       title: t.title,
       status: t.status,
       branch: t.branch ?? null,
       dependsOn: t.dependencies ?? [],
-      state: classifyTaskState(t),
-    };
-    const bucket = groups.get(node.state);
-    if (bucket) bucket.push(node);
-    else groups.set(node.state, [node]);
+    });
   }
-  for (const bucket of groups.values()) {
-    bucket.sort((a, b) => a.id.localeCompare(b.id));
+  nodes.sort((a, b) => a.id.localeCompare(b.id));
+  return nodes;
+}
+
+// Layout constants for the dependency graph's SVG-style card layout, measured
+// from the approved intel mockup (session-dependency-graph.html, including
+// its 16-node fan-in/fan-out stress-test variant): fixed 220x88 cards, a
+// 320px column pitch (card + 100px gap) and 118px row pitch (card + 30px
+// gap), with a 40px margin on all sides.
+const LAYOUT_CARD_WIDTH = 220;
+const LAYOUT_CARD_HEIGHT = 88;
+const LAYOUT_COLUMN_GAP = 100;
+const LAYOUT_ROW_GAP = 30;
+const LAYOUT_MARGIN = 40;
+
+export interface DependencyLayoutPosition {
+  x: number;
+  y: number;
+  depth: number;
+}
+
+export interface DependencyLayout {
+  positions: Map<string, DependencyLayoutPosition>;
+  width: number;
+  height: number;
+}
+
+/**
+ * Pure layered-DAG layout: assigns each node a column (depth = longest path
+ * from any root, following only in-session `dependsOn` edges — ids outside
+ * the input node set aren't session participants and are ignored) and a row
+ * within that column, then converts to fixed-size-card pixel coordinates
+ * using the constants above. Callers are expected to have already filtered
+ * `nodes` down to participating tasks (see `computeDependencyNodes`) — this
+ * function does no filtering of its own.
+ *
+ * Cycle-safe: depth computation uses a Set tracking node ids on the current
+ * DFS recursion stack. Re-entering a node already on the stack (i.e. a
+ * cycle) stops that branch rather than recursing further, so every node
+ * still resolves to some finite depth and gets a position. Resolved depths
+ * are memoized so each node's longest-path depth is computed once.
+ *
+ * Row order within a column follows the input array's iteration order,
+ * which is what makes the overall layout deterministic for a given input.
+ */
+export function computeDependencyLayout(
+  nodes: DependencyNode[],
+): DependencyLayout {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const depths = new Map<string, number>();
+
+  function resolveDepth(id: string, stack: Set<string>): number {
+    const memoized = depths.get(id);
+    if (memoized !== undefined) return memoized;
+    if (stack.has(id)) return 0; // cycle guard: stop descending this branch
+
+    const node = byId.get(id);
+    const dependsOn = node?.dependsOn.filter((dep) => byId.has(dep)) ?? [];
+    if (dependsOn.length === 0) {
+      depths.set(id, 0);
+      return 0;
+    }
+
+    stack.add(id);
+    let maxParentDepth = -1;
+    for (const dep of dependsOn) {
+      const depDepth = resolveDepth(dep, stack);
+      if (depDepth > maxParentDepth) maxParentDepth = depDepth;
+    }
+    stack.delete(id);
+
+    const depth = maxParentDepth + 1;
+    depths.set(id, depth);
+    return depth;
   }
-  return groups;
+
+  for (const n of nodes) resolveDepth(n.id, new Set());
+
+  const columns = new Map<number, string[]>();
+  for (const n of nodes) {
+    const depth = depths.get(n.id) ?? 0;
+    const column = columns.get(depth);
+    if (column) column.push(n.id);
+    else columns.set(depth, [n.id]);
+  }
+
+  const positions = new Map<string, DependencyLayoutPosition>();
+  let maxRows = 0;
+  for (const [depth, ids] of columns) {
+    maxRows = Math.max(maxRows, ids.length);
+    ids.forEach((id, row) => {
+      positions.set(id, {
+        x: LAYOUT_MARGIN + depth * (LAYOUT_CARD_WIDTH + LAYOUT_COLUMN_GAP),
+        y: LAYOUT_MARGIN + row * (LAYOUT_CARD_HEIGHT + LAYOUT_ROW_GAP),
+        depth,
+      });
+    });
+  }
+
+  const numColumns = columns.size;
+  const width =
+    numColumns === 0
+      ? 0
+      : LAYOUT_MARGIN * 2 +
+        numColumns * LAYOUT_CARD_WIDTH +
+        (numColumns - 1) * LAYOUT_COLUMN_GAP;
+  const height =
+    maxRows === 0
+      ? 0
+      : LAYOUT_MARGIN * 2 +
+        maxRows * LAYOUT_CARD_HEIGHT +
+        (maxRows - 1) * LAYOUT_ROW_GAP;
+
+  return { positions, width, height };
 }
 
 // Fixed palette for branch chips — a stable hash picks a color per branch
@@ -2132,19 +2258,23 @@ function branchColor(branch: string): string {
 }
 
 /**
- * Renders the Ready/In Progress/Blocked/Closed groups as stacked rows of
- * cards, skipping empty groups. Each card gets a color-coded left
- * border/chip when its task has a branch (bundle), and its `dependsOn`
- * list links to sibling session tasks while leaving ids outside the
- * session as plain unlinked text.
+ * Renders the dependency graph as absolutely-positioned node cards over an
+ * SVG overlay of bezier edges, per the approved intel mockup
+ * (session-dependency-graph.html): `computeDependencyLayout` assigns each
+ * node an (x, y) by dependency depth, the SVG draws one arrowhead-terminated
+ * path per in-session edge (source = the depended-on task, target = the
+ * dependent task — an edge points from what's needed into what needs it),
+ * and each card keeps its raw status badge, branch chip/color, and
+ * "needs X, Y" line (linked for sibling session tasks, plain text — and no
+ * edge drawn — for dependency ids outside the session, which have no
+ * position in the layout).
  */
-function renderDependencyGraph(
-  tasks: TaskItem[],
-  groups: Map<TaskState, DependencyNode[]>,
-): string {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+function renderDependencyGraph(nodes: DependencyNode[]): string {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const layout = computeDependencyLayout(nodes);
 
   const nodeCard = (n: DependencyNode): string => {
+    const pos = layout.positions.get(n.id);
     const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
     const statusHtml = `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`;
     const titleHtml = `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`;
@@ -2166,7 +2296,9 @@ function renderDependencyGraph(
       n.branch !== null
         ? `border-left:3px solid ${branchColor(n.branch)};`
         : "";
-    return `<div style="border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;min-width:150px;background:#fff">
+    const left = pos?.x ?? 0;
+    const top = pos?.y ?? 0;
+    return `<div data-task-id="${escapeHtml(n.id)}" style="position:absolute;left:${left}px;top:${top}px;width:${LAYOUT_CARD_WIDTH}px;border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
         <div>${idHtml}${statusHtml}</div>
         ${titleHtml}
         ${dependsOnHtml}
@@ -2174,16 +2306,38 @@ function renderDependencyGraph(
       </div>`;
   };
 
-  return TASK_STATE_GROUPS.map(({ key, label }) => {
-    const nodes = groups.get(key);
-    if (!nodes || nodes.length === 0) return "";
-    return `<div style="margin-bottom:14px">
-      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label} (${nodes.length})</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${nodes.map(nodeCard).join("")}</div>
+  const edgePaths: string[] = [];
+  for (const n of nodes) {
+    const targetPos = layout.positions.get(n.id);
+    if (!targetPos) continue;
+    for (const dep of n.dependsOn) {
+      const sourcePos = layout.positions.get(dep);
+      if (!sourcePos) continue; // out-of-session dependency: no position, no line
+      const x1 = sourcePos.x + LAYOUT_CARD_WIDTH;
+      const y1 = sourcePos.y + LAYOUT_CARD_HEIGHT / 2;
+      const x2 = targetPos.x;
+      const y2 = targetPos.y + LAYOUT_CARD_HEIGHT / 2;
+      const cx1 = x1 + (x2 - x1) / 2;
+      const cx2 = cx1;
+      edgePaths.push(
+        `<path data-from="${escapeHtml(dep)}" data-to="${escapeHtml(n.id)}" d="M ${x1},${y1} C ${cx1},${y1} ${cx2},${y2} ${x2},${y2}" fill="none" stroke="#c7cad1" stroke-width="1.5" marker-end="url(#arrow)" />`,
+      );
+    }
+  }
+
+  const svgHtml = `<svg width="${layout.width}" height="${layout.height}" style="position:absolute;top:0;left:0;pointer-events:none">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#c7cad1" />
+        </marker>
+      </defs>
+      ${edgePaths.join("\n      ")}
+    </svg>`;
+
+  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px;overflow-x:auto">
+      ${svgHtml}
+      ${nodes.map(nodeCard).join("\n      ")}
     </div>`;
-  })
-    .filter(Boolean)
-    .join("");
 }
 
 /**
@@ -2216,7 +2370,7 @@ export function renderSessionDetailPage(
     else tasksByState.set(state, [t]);
   }
 
-  const dependencyGroups = computeDependencyGroups(tasks);
+  const dependencyNodes = computeDependencyNodes(tasks);
 
   function taskRow(t: TaskItem): string {
     return `<tr>
@@ -2241,10 +2395,10 @@ export function renderSessionDetailPage(
           .join("\n");
 
   const depsSection =
-    dependencyGroups.size > 0
+    dependencyNodes.length > 0
       ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
-      ${renderDependencyGraph(tasks, dependencyGroups)}
+      ${renderDependencyGraph(dependencyNodes)}
     </div>`
       : "";
 
@@ -2352,7 +2506,10 @@ export function renderPrsPage(
       : prs
           .map((pr) => {
             const claimedCell = pr.claimedBy
-              ? escapeHtml(agentNames[pr.claimedBy] ?? pr.claimedBy)
+              ? agentLink(
+                  pr.claimedBy,
+                  agentNames[pr.claimedBy] ?? pr.claimedBy,
+                )
               : '<span style="color:#9ca3af">—</span>';
             const taskCell = pr.taskId
               ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
@@ -2566,25 +2723,49 @@ export function renderPrDetailPage(
     </tr>`;
   }
 
-  const claimedByDisplay = pr.claimedBy
-    ? agentNames[pr.claimedBy]
-      ? `${agentNames[pr.claimedBy]} (${pr.claimedBy})`
-      : pr.claimedBy
-    : null;
+  function linkField(
+    label: string,
+    url: string | null | undefined,
+    text?: string,
+  ): string {
+    if (!url) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px"><a href="${escapeHtml(url)}" target="_blank" rel="noopener" style="color:#6366f1">${escapeHtml(text ?? url)}</a></td>
+    </tr>`;
+  }
+
+  function agentField(
+    label: string,
+    agentId: string | null | undefined,
+  ): string {
+    if (!agentId) return "";
+    return `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">${escapeHtml(label)}</td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px">${agentLink(agentId, agentNames[agentId] ? `${agentNames[agentId]} (${agentId})` : agentId)}</td>
+    </tr>`;
+  }
+
+  const githubPrUrl = `https://github.com/${pr.repo}/pull/${pr.prNumber}`;
 
   const metaRows = [
     field("ID", pr.id, true),
     field("Repo", pr.repo),
-    field("PR Number", String(pr.prNumber)),
-    field("Task", pr.taskId),
+    linkField("PR Number", githubPrUrl, `#${pr.prNumber}`),
+    pr.taskId
+      ? `<tr>
+      <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
+      <td style="padding:8px 12px;font-size:13px">${taskLink(pr.taskId)}</td>
+    </tr>`
+      : "",
     field("State", pr.state),
     field("Review State", pr.reviewState),
     field("Review Cycles", String(pr.reviewCycles)),
     field("Patch Cycles", String(pr.patchCycles)),
     field("Commit SHA", pr.commitSha, true),
     field("Staged", pr.staged ? "yes" : "no"),
-    field("Claimed By", claimedByDisplay, true),
-    field("Agent ID", pr.agentId, true),
+    agentField("Claimed By", pr.claimedBy),
+    agentField("Agent ID", pr.agentId),
   ]
     .filter(Boolean)
     .join("\n");
@@ -2675,7 +2856,9 @@ export function renderCronLogsPage(opts: {
     const outcomeCell = `<span class="badge" style="${badgeStyle}" title="${escapeHtml(badgeTitle)}">${escapeHtml(outcomeLabel)}</span>`;
 
     const cronLabel = r.cron ? (r.cron.name ?? r.cron.schedule) : "—";
-    const cronCell = escapeHtml(cronLabel);
+    const cronCell = r.cron
+      ? `<a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(r.cron.id)}" style="color:#6366f1;text-decoration:none">${escapeHtml(cronLabel)}</a>`
+      : escapeHtml(cronLabel);
 
     const startedIso = new Date(r.startedAt).toISOString();
     const startedFmt = new Date(r.startedAt).toLocaleString("en-US", {
@@ -2728,7 +2911,11 @@ export function renderCronLogsPage(opts: {
     // what kind of thing the id refers to.
     const itemCell =
       r.itemType && r.itemId
-        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${escapeHtml(r.itemId)}</span>`
+        ? `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[r.itemType] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[r.itemType] ?? r.itemType)}</span> <span class="mono" style="font-size:12px">${
+            r.itemType === "task" || r.itemType === "pr"
+              ? workItemLink(r.itemType, r.itemId)
+              : escapeHtml(r.itemId)
+          }</span>`
         : "—";
 
     return `<tr>
@@ -2907,8 +3094,8 @@ export function renderWorkQueuePage(opts: {
     const typeCell = `<span class="badge" style="${ITEM_TYPE_BADGE_STYLE[item.type] ?? ITEM_TYPE_BADGE_STYLE_DEFAULT}">${escapeHtml(ITEM_TYPE_LABEL[item.type] ?? item.type)}</span>`;
     const phaseCell = `<span class="badge" style="${WORK_QUEUE_PHASE_BADGE_STYLE[item.phase] ?? WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT}">${escapeHtml(item.phase)}</span>`;
     const idTitleCell = item.title
-      ? `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span> — ${escapeHtml(item.title)}`
-      : `<span class="mono" style="font-size:12px">${escapeHtml(item.id)}</span>`;
+      ? `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span> — ${escapeHtml(item.title)}`
+      : `<span class="mono" style="font-size:12px">${workItemLink(item.type, item.id)}</span>`;
     const ageDate = new Date(item.age);
     const ageIso = ageDate.toISOString();
     const ageCell = `<span title="${escapeHtml(ageIso)}">${escapeHtml(relativeTime(ageDate, now))}</span>`;
@@ -3085,7 +3272,7 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
             (t) => `<tr>
           <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
           <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.agentId ?? "(admin)")}</td>
+          <td style="font-size:12px;color:#6b7280;font-family:monospace">${t.agentId ? agentLink(t.agentId) : "(admin)"}</td>
           <td>${fmt(t.createdAt)}</td>
           <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
           <td>
