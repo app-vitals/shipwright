@@ -31,6 +31,7 @@ function makeCron(id: string): AgentCronJob {
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     system: false,
+    parentCronId: null,
   };
 }
 
