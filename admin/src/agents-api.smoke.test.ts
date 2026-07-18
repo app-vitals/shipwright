@@ -476,7 +476,6 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: "success",
         error: null,
-        phase: null,
         itemType: null,
         itemId: null,
         phaseId: null,
@@ -498,7 +497,6 @@ function makeMockDeps(): AdminDeps {
         skipReason: null,
         outcome: null,
         error: null,
-        phase: null,
         itemType: null,
         itemId: null,
         phaseId: null,
@@ -2235,8 +2233,8 @@ describe("admin API — cron runs", () => {
     expect(body.run.agentId).toBe(AGENT_ID);
   });
 
-  it("POST /agents/:id/crons/:cronId/runs accepts and round-trips an optional phase", async () => {
-    const deps = makeMockDepsWithRunService({ phase: "dev-task" });
+  it("POST /agents/:id/crons/:cronId/runs accepts and round-trips an optional phaseId", async () => {
+    const deps = makeMockDepsWithRunService({ phaseId: "phase-cron-1" });
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
       method: "POST",
@@ -2244,7 +2242,7 @@ describe("admin API — cron runs", () => {
         startedAt: "2026-01-01T08:00:00.000Z",
         skipped: false,
         outcome: "success",
-        phase: "dev-task",
+        phaseId: "phase-cron-1",
       }),
       headers: {
         "Content-Type": "application/json",
@@ -2253,10 +2251,10 @@ describe("admin API — cron runs", () => {
     });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.run.phase).toBe("dev-task");
+    expect(body.run.phaseId).toBe("phase-cron-1");
   });
 
-  it("POST /agents/:id/crons/:cronId/runs without phase returns phase: null (legacy behavior)", async () => {
+  it("POST /agents/:id/crons/:cronId/runs without phaseId returns phaseId: null (legacy behavior)", async () => {
     const deps = makeMockDepsWithRunService();
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
@@ -2273,7 +2271,7 @@ describe("admin API — cron runs", () => {
     });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.run.phase).toBeNull();
+    expect(body.run.phaseId).toBeNull();
   });
 
   it("POST /agents/:id/crons/:cronId/runs accepts and round-trips itemType/itemId for a task item", async () => {
@@ -2381,19 +2379,19 @@ describe("admin API — cron runs", () => {
     expect(typeof body.total).toBe("number");
     expect(typeof body.limit).toBe("number");
     expect(typeof body.offset).toBe("number");
-    // phase is exposed per run (null for legacy/no-phase runs)
-    expect(body.items[0].phase).toBeNull();
+    // phaseId is exposed per run (null for legacy/no-phase runs)
+    expect(body.items[0].phaseId).toBeNull();
   });
 
-  it("GET /agents/:id/crons/:cronId/runs exposes phase when the run has one", async () => {
-    const deps = makeMockDepsWithRunService({ phase: "review" });
+  it("GET /agents/:id/crons/:cronId/runs exposes phaseId when the run has one", async () => {
+    const deps = makeMockDepsWithRunService({ phaseId: "phase-cron-review" });
     const app = createAdminApp(deps);
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.items[0].phase).toBe("review");
+    expect(body.items[0].phaseId).toBe("phase-cron-review");
   });
 
   it("GET /agents/:id/crons/:cronId/runs exposes itemType/itemId when the run has them", async () => {
@@ -2646,8 +2644,8 @@ function makeMockDepsWithRunService(opts?: {
     cacheCreationTokens: number;
     costUsd: number;
   }>;
-  /** If set, create()/list() return this phase on the mock run; defaults to null. */
-  phase?: string | null;
+  /** If set, create()/list() return this phaseId on the mock run; defaults to null. */
+  phaseId?: string | null;
   /** If set, create()/list() return this itemType on the mock run; defaults to null. */
   itemType?: string | null;
   /** If set, create()/list() return this itemId on the mock run; defaults to null. */
@@ -2663,10 +2661,9 @@ function makeMockDepsWithRunService(opts?: {
     skipReason: null,
     outcome: "success",
     error: null,
-    phase: opts?.phase ?? null,
     itemType: opts?.itemType ?? null,
     itemId: opts?.itemId ?? null,
-    phaseId: null,
+    phaseId: opts?.phaseId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
 

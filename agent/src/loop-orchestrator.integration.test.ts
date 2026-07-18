@@ -146,7 +146,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
         _completedAt,
         _outcome,
         _opts,
-        _phase,
+        _phaseId,
         _itemType,
         itemId,
       ) {
@@ -247,7 +247,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
         _completedAt,
         _outcome,
         _opts,
-        _phase,
+        _phaseId,
         _itemType,
         itemId,
       ) {

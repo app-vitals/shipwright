@@ -90,6 +90,7 @@ import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
   LOOP_PHASE_JOB_NAMES,
+  resolveLoopPhaseJobId,
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
@@ -236,6 +237,13 @@ export function createLoopOrchestrator(
    * skip case — so it is recorded via skipRun rather than completeRun. Every
    * other outcome completes normally.
    *
+   * `phaseId` is the dispatched phase's child AgentCronJob id (resolved via
+   * resolveLoopPhaseJobId), threaded through to the reporter so every
+   * AgentCronRun row records which phase cron it was dispatched by (LPC-3.1).
+   * Null when the agent hasn't reconciled that phase's child row yet — the
+   * reporter is called with phaseId ?? undefined in that case, same as an
+   * unset value.
+   *
    * `itemType`/`itemId` identify the winning work item this dispatch was sent
    * against ("task" | "pr", plus its id) — threaded through to the reporter so
    * every AgentCronRun row records which task or PR a given cron run actually
@@ -248,6 +256,7 @@ export function createLoopOrchestrator(
    */
   async function dispatch(
     phase: LoopPhase,
+    phaseId: string | null,
     itemType: "task" | "pr",
     itemId: string,
     preClaimMarker?: string,
@@ -259,7 +268,7 @@ export function createLoopOrchestrator(
     const runId = await cronRunReporter.createRun(
       loopCronId,
       clock.now(),
-      phase,
+      phaseId ?? undefined,
       itemType,
       itemId,
     );
@@ -274,7 +283,7 @@ export function createLoopOrchestrator(
         clock.now(),
         "failed",
         { error: err instanceof Error ? err.message : String(err) },
-        phase,
+        phaseId ?? undefined,
         itemType,
         itemId,
       );
@@ -294,7 +303,7 @@ export function createLoopOrchestrator(
         clock.now(),
         "command:no-work",
         undefined,
-        phase,
+        phaseId ?? undefined,
         itemType,
         itemId,
       );
@@ -307,7 +316,7 @@ export function createLoopOrchestrator(
       clock.now(),
       "completed",
       buildTokenPayload(runResult.usage, runResult.modelUsage),
-      phase,
+      phaseId ?? undefined,
       itemType,
       itemId,
     );
@@ -410,6 +419,11 @@ export function createLoopOrchestrator(
         // candidates never logged a row (noise guard).
         const phase: LoopPhase =
           item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
+        const phaseId = resolveLoopPhaseJobId(
+          jobs,
+          loopCronId,
+          `shipwright-${phase}`,
+        );
         const itemId = item.type === "task" ? item.task.id : item.pr.id;
 
         // Pre-claim: a selected item must be claimed directly against the task
@@ -486,7 +500,7 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(phase, item.type, itemId, preClaimMarker);
+        await dispatch(phase, phaseId, item.type, itemId, preClaimMarker);
       }
     } finally {
       busy = false;

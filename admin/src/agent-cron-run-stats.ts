@@ -5,18 +5,24 @@
  * byModel, daily (DATE(startedAt)), byCronModel, and byPhase.
  *
  * Skipped runs (skipped=true) are always excluded from all aggregations.
- * byPhase additionally excludes runs with a null phase (legacy five-job
- * crons that predate phase tracking).
+ * byPhase additionally excludes runs with a null phaseId (legacy five-job
+ * crons, or runs that predate phase tracking, or runs whose agent hasn't
+ * reconciled its phase child rows yet).
  * Uses $queryRaw for all dimensions — Prisma groupBy doesn't support the
  * LEFT JOIN needed for byCron.
  *
- * byCron/byCronModel additionally group by phase (WL-3.5): each row carries
- * a `phase` field. A run with no phase (legacy five-job crons) has phase
- * NULL, and since SQL GROUP BY treats NULL as a single group, all of a
- * cron's legacy runs still collapse into one row — identical to today's
- * cronId-only display. Runs that do carry a phase (unified loop) produce one
- * row per (cronId, phase), surfacing the dev-task/review/patch/deploy
- * breakdown that used to be implicit in having five separate crons.
+ * byCron/byCronModel additionally group by phase (WL-3.5, LPC-3.1): each row
+ * carries a `phase` field derived by LEFT JOINing "AgentCronJob" a second
+ * time (alias `p`) on `r."phaseId" = p.id` and stripping the
+ * "shipwright-" prefix from p.name (e.g. "shipwright-dev-task" → "dev-task")
+ * so the output label matches exactly what the old `r.phase` string column
+ * used to contain. A run with no phaseId (legacy five-job crons, or an
+ * unreconciled agent) has phase NULL, and since SQL GROUP BY treats NULL as
+ * a single group, all of a cron's legacy runs still collapse into one row —
+ * identical to today's cronId-only display. Runs that do carry a phaseId
+ * (unified loop) produce one row per (cronId, phase), surfacing the
+ * dev-task/review/patch/deploy breakdown that used to be implicit in having
+ * five separate crons.
  */
 
 import { Prisma } from "../prisma/client/index.js";
@@ -319,16 +325,19 @@ export class AgentCronRunStatsService {
   }
 
   private queryByCron(filter: Prisma.Sql): Promise<ByCronRow[]> {
-    // GROUP BY includes r.phase (WL-3.5): Postgres treats NULL as a single
-    // group, so legacy runs (phase IS NULL) for a cron still collapse into
-    // one row — identical to the pre-WL-3.5 cronId-only grouping. Runs that
-    // do carry a phase produce one row per (cronId, phase).
+    // GROUP BY includes p.name (LPC-3.1, via phaseId): Postgres treats NULL
+    // as a single group, so legacy/unreconciled runs (phaseId IS NULL) for a
+    // cron still collapse into one row — identical to the pre-WL-3.5
+    // cronId-only grouping. Runs that do carry a phaseId produce one row per
+    // (cronId, phase). The "shipwright-" prefix is stripped from p.name so
+    // the label matches exactly what the old r.phase string column used to
+    // contain (e.g. "dev-task", not "shipwright-dev-task").
     return this.prisma.$queryRaw<ByCronRow[]>`
       SELECT
-        r."agentId"                  AS agent_id,
-        r."cronId"                   AS cron_id,
-        j.name                       AS cron_name,
-        r.phase                      AS phase,
+        r."agentId"                              AS agent_id,
+        r."cronId"                               AS cron_id,
+        j.name                                   AS cron_name,
+        REGEXP_REPLACE(p.name, '^shipwright-', '') AS phase,
         SUM(b."inputTokens")         AS input,
         SUM(b."outputTokens")        AS output,
         SUM(b."cacheReadTokens")     AS cache_read,
@@ -336,11 +345,12 @@ export class AgentCronRunStatsService {
         SUM(b."costUsd")             AS cost_usd
       FROM "AgentCronRun" r
       LEFT JOIN "AgentCronJob" j ON j.id = r."cronId"
+      LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
       LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
-      GROUP BY r."agentId", r."cronId", j.name, r.phase
-      ORDER BY r."agentId", r."cronId", r.phase
+      GROUP BY r."agentId", r."cronId", j.name, p.name
+      ORDER BY r."agentId", r."cronId", p.name
     `;
   }
 
@@ -384,15 +394,15 @@ export class AgentCronRunStatsService {
   }
 
   private queryByCronModel(filter: Prisma.Sql): Promise<ByCronModelRow[]> {
-    // GROUP BY includes r.phase (WL-3.5) — same NULL-collapses-to-one-group
-    // reasoning as queryByCron above.
+    // GROUP BY includes p.name (LPC-3.1, via phaseId) — same
+    // NULL-collapses-to-one-group reasoning as queryByCron above.
     return this.prisma.$queryRaw<ByCronModelRow[]>`
       SELECT
-        r."agentId"                    AS agent_id,
-        r."cronId"                     AS cron_id,
-        j.name                         AS cron_name,
-        b.model                        AS model,
-        r.phase                        AS phase,
+        r."agentId"                              AS agent_id,
+        r."cronId"                               AS cron_id,
+        j.name                                   AS cron_name,
+        b.model                                  AS model,
+        REGEXP_REPLACE(p.name, '^shipwright-', '') AS phase,
         SUM(b."inputTokens")           AS input,
         SUM(b."outputTokens")          AS output,
         SUM(b."cacheReadTokens")       AS cache_read,
@@ -400,31 +410,36 @@ export class AgentCronRunStatsService {
         SUM(b."costUsd")               AS cost_usd
       FROM "AgentCronRun" r
       LEFT JOIN "AgentCronJob" j ON j.id = r."cronId"
+      LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
       INNER JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
       WHERE r.skipped = false
       ${filter}
-      GROUP BY r."agentId", r."cronId", j.name, b.model, r.phase
-      ORDER BY r."agentId", r."cronId", b.model, r.phase
+      GROUP BY r."agentId", r."cronId", j.name, b.model, p.name
+      ORDER BY r."agentId", r."cronId", b.model, p.name
     `;
   }
 
   private queryByPhase(filter: Prisma.Sql): Promise<ByPhaseRow[]> {
-    // Runs with no phase (legacy five-job crons) are excluded — phase is
-    // additive grouping, not a replacement for totals/byAgent/etc.
+    // Runs with no phaseId (legacy five-job crons, or an unreconciled agent)
+    // are excluded — phase is additive grouping, not a replacement for
+    // totals/byAgent/etc. Label derived by LEFT JOINing "AgentCronJob" (alias
+    // p) on r."phaseId" = p.id and stripping the "shipwright-" prefix from
+    // p.name, matching what r.phase used to contain directly.
     return this.prisma.$queryRaw<ByPhaseRow[]>`
       SELECT
-        r.phase                      AS phase,
+        REGEXP_REPLACE(p.name, '^shipwright-', '') AS phase,
         SUM(b."inputTokens")         AS input,
         SUM(b."outputTokens")        AS output,
         SUM(b."cacheReadTokens")     AS cache_read,
         SUM(b."cacheCreationTokens") AS cache_creation,
         SUM(b."costUsd")             AS cost_usd
       FROM "AgentCronRun" r
+      LEFT JOIN "AgentCronJob" p ON p.id = r."phaseId"
       LEFT JOIN "AgentCronRunModelBreakdown" b ON b."cronRunId" = r.id
-      WHERE r.skipped = false AND r.phase IS NOT NULL
+      WHERE r.skipped = false AND r."phaseId" IS NOT NULL
       ${filter}
-      GROUP BY r.phase
-      ORDER BY r.phase
+      GROUP BY p.name
+      ORDER BY p.name
     `;
   }
 }

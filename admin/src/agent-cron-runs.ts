@@ -29,6 +29,7 @@ export type AgentCronRunWithCron = Prisma.AgentCronRunGetPayload<{
   include: {
     modelBreakdown: true;
     cron: { select: { id: true; name: true; schedule: true } };
+    phaseCron: { select: { id: true; name: true } };
   };
 }>;
 
@@ -39,8 +40,8 @@ export interface CreateAgentCronRunInput {
   skipReason?: string | null;
   outcome?: string | null;
   error?: string | null;
-  /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
-  phase?: string | null;
+  /** Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or runs with no phase attribution. */
+  phaseId?: string | null;
   /** Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch. */
   itemType?: string | null;
   /** Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch. */
@@ -134,7 +135,7 @@ export class AgentCronRunService {
         skipReason: input.skipReason ?? null,
         outcome: input.outcome ?? null,
         error: input.error ?? null,
-        phase: input.phase ?? null,
+        phaseId: input.phaseId ?? null,
         itemType: input.itemType ?? null,
         itemId: input.itemId ?? null,
       },
@@ -304,6 +305,7 @@ export class AgentCronRunService {
         include: {
           modelBreakdown: true,
           cron: { select: { id: true, name: true, schedule: true } },
+          phaseCron: { select: { id: true, name: true } },
         },
       }),
       this.prisma.agentCronRun.count({ where }),

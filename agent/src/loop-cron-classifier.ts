@@ -48,6 +48,16 @@
  *   redundant with what the loop does at a higher level across all four
  *   phases once shipwright-loop is enabled.
  *
+ * resolveLoopPhaseJobId(jobs, loopCronId, jobName) → string | null
+ *   Resolves a single phase job name (e.g. "shipwright-dev-task") to its
+ *   child AgentCronJob id under the given loop cron — same same-parent-name-
+ *   match semantics as resolveLoopPhaseToggles, but returning the row's id
+ *   instead of its enabled flag. Used by loop-orchestrator.ts (LPC-3.1) to
+ *   attribute each dispatch's AgentCronRun to the specific phase cron row it
+ *   was dispatched by (phaseId), rather than a loose string label. Returns
+ *   null when no matching child row exists — e.g. an agent that hasn't
+ *   reconciled since LPC-1.2/2.1 shipped.
+ *
  * Kept isolated from the loop orchestrator (WL-3.3), pure and zero-I/O, so
  * it stays cleanly unit-testable — mirrors agent/src/work-selector.ts.
  */
@@ -164,4 +174,24 @@ export function resolveLoopPhaseToggles<T extends CronJobLike>(
     patch: enabledByName("shipwright-patch"),
     deploy: enabledByName("shipwright-deploy"),
   };
+}
+
+// ─── resolveLoopPhaseJobId ──────────────────────────────────────────────────
+
+/**
+ * Resolves a single phase job name to its child AgentCronJob id under the
+ * given loop cron — same same-parent-name-match semantics as
+ * resolveLoopPhaseToggles (a same-named row that is top-level or a child of
+ * a different parent is ignored). Returns null when no matching child row
+ * exists — e.g. an unreconciled agent.
+ */
+export function resolveLoopPhaseJobId<T extends CronJobLike>(
+  jobs: T[],
+  loopCronId: string,
+  jobName: string,
+): string | null {
+  return (
+    jobs.find((job) => job.parentCronId === loopCronId && job.name === jobName)
+      ?.id ?? null
+  );
 }

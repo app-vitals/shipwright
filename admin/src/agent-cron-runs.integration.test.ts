@@ -110,25 +110,31 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     expect(run.skipReason).toBe("pre-check returned false");
   });
 
-  it("create() round-trips an optional phase field", async () => {
+  it("create() round-trips an optional phaseId field", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
+    const phaseCron = await cronJobService.create(agentId, {
+      schedule: "0 9 * * *",
+      prompt: "Test prompt",
+      silent: true,
+      name: "shipwright-dev-task",
+    });
     const startedAt = new Date();
 
     const run = await runService.create(cronId, agentId, {
       startedAt,
       skipped: false,
       outcome: "success",
-      phase: "dev-task",
+      phaseId: phaseCron.id,
     });
 
-    expect(run.phase).toBe("dev-task");
+    expect(run.phaseId).toBe(phaseCron.id);
 
     const { items } = await runService.list(cronId, agentId);
-    expect(items[0].phase).toBe("dev-task");
+    expect(items[0].phaseId).toBe(phaseCron.id);
   });
 
-  it("create() leaves phase null when not provided (legacy behavior unchanged)", async () => {
+  it("create() leaves phaseId null when not provided (legacy behavior unchanged)", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
     const startedAt = new Date();
@@ -139,10 +145,10 @@ describeOrSkip("AgentCronRunService (integration)", () => {
       outcome: "success",
     });
 
-    expect(run.phase).toBeNull();
+    expect(run.phaseId).toBeNull();
 
     const { items } = await runService.list(cronId, agentId);
-    expect(items[0].phase).toBeNull();
+    expect(items[0].phaseId).toBeNull();
   });
 
   it("create() round-trips optional itemType/itemId fields for a task item", async () => {

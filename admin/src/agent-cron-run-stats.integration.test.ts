@@ -46,6 +46,29 @@ async function createCron(
 }
 
 /**
+ * Creates a phase child AgentCronJob row (name "shipwright-<phase>") and
+ * returns its id — the value tests pass as `phaseId` on AgentCronRun fixture
+ * rows, so the stats service's LEFT JOIN on r."phaseId" = p.id resolves the
+ * same phase label the old `r.phase` string column used to carry directly
+ * (LPC-3.1). Not wired up with parentCronId — the stats queries join on id
+ * alone, mirroring how phaseId is a denormalized pointer independent of the
+ * parent/child cron-scheduling relationship.
+ */
+async function createPhaseCron(
+  cronJobService: AgentCronJobService,
+  agentId: string,
+  phase: "dev-task" | "review" | "patch" | "deploy",
+): Promise<string> {
+  const job = await cronJobService.create(agentId, {
+    schedule: "0 9 * * *",
+    prompt: "Test prompt",
+    silent: true,
+    name: `shipwright-${phase}`,
+  });
+  return job.id;
+}
+
+/**
  * Seed token usage for a run by inserting an AgentCronRunModelBreakdown row.
  *
  * Since AgentCronRun no longer stores token columns directly, all token data
@@ -292,21 +315,31 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(stats.byCron[0].input).toBe(60);
   });
 
-  it("byCron groups a single cron into separate rows per phase (WL-3.5)", async () => {
+  it("byCron groups a single cron into separate rows per phase (WL-3.5, LPC-3.1)", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId, "shipwright-loop");
+    const devTaskPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "dev-task",
+    );
+    const reviewPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "review",
+    );
 
     const devTaskRun = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-      phase: "dev-task",
+      phaseId: devTaskPhaseId,
     });
     await seedTokens(prisma, devTaskRun.id, { input: 100, output: 50 });
 
     const reviewRun = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
-      phase: "review",
+      phaseId: reviewPhaseId,
     });
     await seedTokens(prisma, reviewRun.id, { input: 200, output: 100 });
 
@@ -715,14 +748,24 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(opusRow?.output).toBe(150);
   });
 
-  it("byCronModel groups a single cron+model into separate rows per phase (WL-3.5)", async () => {
+  it("byCronModel groups a single cron+model into separate rows per phase (WL-3.5, LPC-3.1)", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId, "shipwright-loop");
+    const devTaskPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "dev-task",
+    );
+    const reviewPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "review",
+    );
 
     const devTaskRun = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-      phase: "dev-task",
+      phaseId: devTaskPhaseId,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -739,7 +782,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const reviewRun = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
-      phase: "review",
+      phaseId: reviewPhaseId,
     });
     await prisma.agentCronRunModelBreakdown.create({
       data: {
@@ -951,16 +994,26 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
   it("query() groups byPhase correctly across runs with different phases", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
+    const devTaskPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "dev-task",
+    );
+    const reviewPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "review",
+    );
 
     const run1 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-      phase: "dev-task",
+      phaseId: devTaskPhaseId,
     });
     const run2 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
-      phase: "review",
+      phaseId: reviewPhaseId,
     });
 
     await seedTokens(prisma, run1.id, { input: 100, output: 50 });
@@ -982,11 +1035,16 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     expect(review?.output).toBe(100);
   });
 
-  it("query() byPhase excludes runs with a null phase (legacy runs)", async () => {
+  it("query() byPhase excludes runs with a null phaseId (legacy runs)", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
+    const deployPhaseId = await createPhaseCron(
+      cronJobService,
+      agentId,
+      "deploy",
+    );
 
-    // Legacy run — no phase set
+    // Legacy run — no phaseId set
     const run1 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
@@ -997,13 +1055,13 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     const run2 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: false,
-      phase: "deploy",
+      phaseId: deployPhaseId,
     });
     await seedTokens(prisma, run2.id, { input: 200, output: 100 });
 
     const stats = await statsService.query();
 
-    // byPhase only surfaces runs with a non-null phase
+    // byPhase only surfaces runs with a non-null phaseId
     expect(stats.byPhase).toHaveLength(1);
     expect(stats.byPhase[0].key).toBe("deploy");
     expect(stats.byPhase[0].input).toBe(200);
@@ -1015,11 +1073,12 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
   it("query() byPhase excludes skipped runs", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
+    const patchPhaseId = await createPhaseCron(cronJobService, agentId, "patch");
 
     const run1 = await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-10T09:00:00Z"),
       skipped: false,
-      phase: "patch",
+      phaseId: patchPhaseId,
     });
     await seedTokens(prisma, run1.id, { input: 60, output: 30 });
 
@@ -1027,7 +1086,7 @@ describeOrSkip("AgentCronRunStatsService (integration)", () => {
     await runService.create(cronId, agentId, {
       startedAt: new Date("2026-01-11T09:00:00Z"),
       skipped: true,
-      phase: "patch",
+      phaseId: patchPhaseId,
     });
 
     const stats = await statsService.query();
