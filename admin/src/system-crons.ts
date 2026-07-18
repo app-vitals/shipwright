@@ -114,6 +114,14 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     enabled: false,
   },
   {
+    name: "security-patrol-maintenance",
+    schedule: "0 6 * * 1",
+    prompt:
+      '/shipwright:security-scan\n/shipwright:security-fix\nAfter the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.',
+    silent: true,
+    enabled: false,
+  },
+  {
     name: "consolidation-patrol-maintenance",
     schedule: "0 5 * * 1",
     prompt:

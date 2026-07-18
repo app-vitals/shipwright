@@ -87,6 +87,7 @@ describe("SYSTEM_CRONS pipeline schedule staggering", () => {
       "dependabot-triage": "0 8 * * *",
       "entropy-patrol-maintenance": "0 4 * * 1",
       "error-patrol-maintenance": "0 4 * * *",
+      "security-patrol-maintenance": "0 6 * * 1",
       "consolidation-patrol-maintenance": "0 5 * * 1",
     };
     for (const [name, schedule] of Object.entries(expected)) {
@@ -97,11 +98,11 @@ describe("SYSTEM_CRONS pipeline schedule staggering", () => {
 });
 
 describe("SYSTEM_CRONS", () => {
-  test("exports exactly twelve crons", () => {
-    expect(SYSTEM_CRONS).toHaveLength(12);
+  test("exports exactly thirteen crons", () => {
+    expect(SYSTEM_CRONS).toHaveLength(13);
   });
 
-  test("cron names are the twelve expected crons", () => {
+  test("cron names are the thirteen expected crons", () => {
     const names = SYSTEM_CRONS.map((c) => c.name);
     expect(names).toContain("shipwright-dev-task");
     expect(names).toContain("shipwright-patch");
@@ -113,6 +114,7 @@ describe("SYSTEM_CRONS", () => {
     expect(names).toContain("dependabot-triage");
     expect(names).toContain("entropy-patrol-maintenance");
     expect(names).toContain("error-patrol-maintenance");
+    expect(names).toContain("security-patrol-maintenance");
     expect(names).toContain("consolidation-patrol-maintenance");
     expect(names).toContain("shipwright-loop");
   });
@@ -254,6 +256,7 @@ describe("SYSTEM_CRONS", () => {
         c.name !== "dependabot-triage" &&
         c.name !== "entropy-patrol-maintenance" &&
         c.name !== "error-patrol-maintenance" &&
+        c.name !== "security-patrol-maintenance" &&
         c.name !== "consolidation-patrol-maintenance" &&
         c.name !== "shipwright-loop",
     );
@@ -330,6 +333,49 @@ describe("SYSTEM_CRONS", () => {
     expect(cron?.prompt).toContain("/shipwright:entropy-fix");
     expect(cron?.prompt).not.toContain("entropy-patrol:");
     expect(cron?.prompt).toContain("entropy-patrol-last-run.json");
+  });
+
+  test("security-patrol-maintenance cron has schedule 0 6 * * 1", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.schedule).toBe("0 6 * * 1");
+  });
+
+  test("security-patrol-maintenance cron has enabled: false", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.enabled).toBe(false);
+  });
+
+  test("security-patrol-maintenance cron has no preCheck", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.preCheck).toBeUndefined();
+  });
+
+  test("security-patrol-maintenance prompt invokes /shipwright:security-scan and /shipwright:security-fix", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.prompt).toContain("/shipwright:security-scan");
+    expect(cron?.prompt).toContain("/shipwright:security-fix");
+  });
+
+  test("security-patrol-maintenance prompt writes security-patrol-last-run.json", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.prompt).toContain("security-patrol-last-run.json");
+  });
+
+  test("security-patrol-maintenance prompt uses [silent] when no pr_worthy findings are found", () => {
+    const cron = SYSTEM_CRONS.find(
+      (c) => c.name === "security-patrol-maintenance",
+    );
+    expect(cron?.prompt).toContain("[silent]");
   });
 
   test("error-patrol-maintenance cron has schedule 0 4 * * *", () => {
