@@ -792,13 +792,13 @@
             ],
             "example": null
           },
-          "phase": {
+          "phaseId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
-            "example": "dev-task"
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.",
+            "example": "clx0987654321"
           },
           "itemType": {
             "type": [
@@ -866,7 +866,7 @@
           "skipReason",
           "outcome",
           "error",
-          "phase",
+          "phaseId",
           "itemType",
           "itemId",
           "inputTokens",
@@ -928,13 +928,13 @@
             ],
             "example": null
           },
-          "phase": {
+          "phaseId": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Pipeline phase this run served (dev-task/review/patch/deploy)",
-            "example": "dev-task"
+            "description": "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)",
+            "example": "clx0987654321"
           },
           "itemType": {
             "type": [
