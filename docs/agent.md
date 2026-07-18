@@ -150,6 +150,7 @@ note and the fix (enable `shipwright-loop`).
 | `dependabot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open Dependabot PRs. |
 | `entropy-patrol-maintenance` | `0 4 * * 1` (weekly, Mon 04:00) | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | `0 4 * * *` (daily, 04:00) | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
+| `consolidation-patrol-maintenance` | `0 5 * * 1` (weekly, Mon 05:00) | off | Scans for emerging duplicate/similar code patterns that have stabilized across multiple runs and proposes consolidation for what's ready. Recommended to stay disabled after merge until `state/consolidation-ledger.json` has accumulated a few weeks of real signal. |
 
 ## Environment
 
