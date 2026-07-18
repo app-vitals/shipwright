@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
+  buildProductionDeps,
   buildReviewStateProductionDeps,
   type GhPrView,
   type PrOpenTaskRecord,
@@ -33,6 +34,11 @@ import {
 interface ListPrsCall {
   repo: string;
   state: string;
+  limit: number;
+  offset: number;
+}
+
+interface ListTasksCall {
   limit: number;
   offset: number;
 }
@@ -87,10 +93,12 @@ function makeDeps({
   listCalls: ListPrsCall[];
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
+  listPrOpenTasksCalls: ListTasksCall[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
+  const listPrOpenTasksCalls: ListTasksCall[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -111,7 +119,10 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async () => prOpenTasks,
+    listPrOpenTasks: async (limit: number, offset: number) => {
+      listPrOpenTasksCalls.push({ limit, offset });
+      return prOpenTasks.slice(offset, offset + limit);
+    },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       taskPatchCalls.push({ id, fields });
     },
@@ -135,7 +146,7 @@ function makeDeps({
     },
   };
 
-  return { deps, listCalls, patchCalls, taskPatchCalls };
+  return { deps, listCalls, patchCalls, taskPatchCalls, listPrOpenTasksCalls };
 }
 
 function makeRecord(overrides: Partial<PrStateRecord> = {}): PrStateRecord {
@@ -1027,6 +1038,153 @@ describe("buildReviewStateProductionDeps", () => {
   });
 });
 
+describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", () => {
+  /**
+   * Fake fetchFn that simulates the task-store's GET /tasks?status=<status>
+   * pagination contract: returns up to `limit` records starting at `offset`
+   * from a fixed per-status backing array. Records every request's status,
+   * limit, and offset so tests can assert the full paging sequence.
+   */
+  function makeFakeTaskStoreFetch(opts: {
+    tasksByStatus: Record<string, PrOpenTaskRecord[]>;
+  }): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<{ status: string; limit: number; offset: number }>;
+  } {
+    const calls: Array<{ status: string; limit: number; offset: number }> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      const status = parsed.searchParams.get("status") ?? "";
+      const limit = Number(parsed.searchParams.get("limit"));
+      const offset = Number(parsed.searchParams.get("offset"));
+      calls.push({ status, limit, offset });
+      const all = opts.tasksByStatus[status] ?? [];
+      const page = all.slice(offset, offset + limit);
+      return new Response(JSON.stringify({ tasks: page }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  const savedTaskStoreEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
+      process.env.SHIPWRIGHT_TASK_STORE_URL;
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
+  });
+
+  afterEach(() => {
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_URL =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("listPrOpenTasks issues a single GET when under the page limit", async () => {
+    const tasks = [{ id: "t1", repo: "acme/example-repo", pr: 1 }];
+    const { fetchFn, calls } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pr_open: tasks },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listPrOpenTasks(50, 0);
+
+    expect(result).toEqual(tasks);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ status: "pr_open", limit: 50, offset: 0 });
+  });
+
+  test("listOrphanCandidateTasks pages past the default 50-row task-store page for both statuses (regression: previously silently truncated at 50)", async () => {
+    // 62 pending + 55 in_progress tasks, all orphan candidates (branch set,
+    // no pr linked) — mirrors the live truncation this finding reported
+    // (GET /tasks?status=pending had total: 62, but returned only 50).
+    const pending = Array.from({ length: 62 }, (_, i) => ({
+      id: `pending-${i}`,
+      repo: "acme/example-repo",
+      branch: `feat/pending-${i}`,
+    }));
+    const inProgress = Array.from({ length: 55 }, (_, i) => ({
+      id: `in-progress-${i}`,
+      repo: "acme/example-repo",
+      branch: `feat/in-progress-${i}`,
+    }));
+    const { fetchFn, calls } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pending, in_progress: inProgress },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listOrphanCandidateTasks();
+
+    // All 117 orphan candidates returned — not truncated at 50.
+    expect(result).toHaveLength(117);
+    expect(result.map((t) => t.id)).toEqual([
+      ...pending.map((t) => t.id),
+      ...inProgress.map((t) => t.id),
+    ]);
+
+    // "pending" paged across 2 requests (50 + 12), "in_progress" across 2 (50 + 5).
+    const pendingCalls = calls.filter((c) => c.status === "pending");
+    const inProgressCalls = calls.filter((c) => c.status === "in_progress");
+    expect(pendingCalls).toEqual([
+      { status: "pending", limit: 50, offset: 0 },
+      { status: "pending", limit: 50, offset: 50 },
+    ]);
+    expect(inProgressCalls).toEqual([
+      { status: "in_progress", limit: 50, offset: 0 },
+      { status: "in_progress", limit: 50, offset: 50 },
+    ]);
+  });
+
+  test("listOrphanCandidateTasks still filters out tasks with no branch or an existing pr across paginated pages", async () => {
+    const pending = [
+      { id: "keep-1", repo: "acme/example-repo", branch: "feat/keep-1" },
+      { id: "no-branch", repo: "acme/example-repo" },
+      {
+        id: "has-pr",
+        repo: "acme/example-repo",
+        branch: "feat/has-pr",
+        pr: 5,
+      },
+    ];
+    const { fetchFn } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pending, in_progress: [] },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listOrphanCandidateTasks();
+
+    expect(result.map((t) => t.id)).toEqual(["keep-1"]);
+  });
+});
+
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
   test("pr_open task with merged PR (direct path) is reconciled to merged, using GitHub's mergedAt", async () => {
     const task: PrOpenTaskRecord = {
@@ -1227,6 +1385,34 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     await reconcilePrState(deps);
 
     expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("listPrOpenTasks paginates beyond the default page limit — scans a second page", async () => {
+    const page1 = Array.from({ length: 2 }, (_, i) => ({
+      id: `task-p1-${i}`,
+      repo: "acme/example-repo",
+      pr: 100 + i,
+    }));
+    const page2: PrOpenTaskRecord[] = [
+      { id: "task-p2-0", repo: "acme/example-repo", pr: 200 },
+    ];
+    const ghResults: Record<string, GhPrView> = {};
+    for (const t of [...page1, ...page2]) {
+      ghResults[`acme/example-repo#${t.pr}`] = { state: "OPEN", mergedAt: null };
+    }
+
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: [...page1, ...page2],
+      ghResults,
+      pageLimit: 2,
+    });
+
+    await reconcilePrState(deps);
+
+    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
+    expect(listPrOpenTasksCalls).toHaveLength(2);
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
+    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
   });
 });
 

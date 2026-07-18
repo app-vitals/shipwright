@@ -91,8 +91,11 @@ export interface PrStateReconcilerDeps {
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
   /** Fetch live GitHub state for a single PR. Throws on lookup failure. */
   ghViewPr: (repo: string, prNumber: number) => Promise<GhPrView>;
-  /** List every task-store Task with status "pr_open" (DSR-1.1). */
-  listPrOpenTasks: () => Promise<PrOpenTaskRecord[]>;
+  /** List one page of task-store Tasks with status "pr_open" (DSR-1.1). */
+  listPrOpenTasks: (
+    limit: number,
+    offset: number,
+  ) => Promise<PrOpenTaskRecord[]>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
   updateTaskStatus: (
     id: string,
@@ -106,7 +109,14 @@ export interface PrStateReconcilerDeps {
   /**
    * List every task-store Task with status "pending" or "in_progress" that
    * has a `branch` set and no `pr` linked (TCR-1.2). The `PrOpenTaskRecord`
-   * shape is reused as-is — no new record type needed.
+   * shape is reused as-is — no new record type needed. Unlike
+   * `listPrOpenTasks` (a single status, paged one page at a time by the
+   * module-level `listAllPrOpenTasks` loop), this dep's contract is to
+   * already page BOTH the "pending" and "in_progress" queries to completion
+   * internally and return the fully-merged, filtered result — because a
+   * single (limit, offset) pair can't address two independently-paginated
+   * upstream queries being unioned together. See `buildProductionDeps`'s
+   * implementation below for the two independent pagination loops.
    */
   listOrphanCandidateTasks: () => Promise<PrOpenTaskRecord[]>;
   /**
@@ -210,6 +220,29 @@ async function listAllOpenRecords(
   }
 
   return records;
+}
+
+/**
+ * List every task-store Task with status "pr_open" (DSR-1.1), paging through
+ * the task-store's default 50-record page until a page returns fewer than
+ * `limit` records — same loop shape as `listAllOpenRecords` above (TCR-1.2
+ * follow-up: this dep was previously unpaginated).
+ */
+async function listAllPrOpenTasks(
+  deps: PrStateReconcilerDeps,
+): Promise<PrOpenTaskRecord[]> {
+  const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
+  const tasks: PrOpenTaskRecord[] = [];
+  let offset = 0;
+
+  for (;;) {
+    const page = await deps.listPrOpenTasks(limit, offset);
+    tasks.push(...page);
+    if (page.length < limit) break;
+    offset += limit;
+  }
+
+  return tasks;
 }
 
 /**
@@ -330,7 +363,7 @@ export async function reconcilePrOpenTasks(
 ): Promise<void> {
   let tasks: PrOpenTaskRecord[];
   try {
-    tasks = await deps.listPrOpenTasks();
+    tasks = await listAllPrOpenTasks(deps);
   } catch (err) {
     console.error(
       "[pr-state-reconciler] failed to list pr_open tasks:",
@@ -683,20 +716,29 @@ interface TaskListResponseJson {
 }
 
 /**
- * Shared GET /tasks?status=<status> helper for both `listPrOpenTasks` and
- * `listOrphanCandidateTasks` (TCR-1.2) — the task-store's GET /tasks only
- * accepts one status value at a time (no comma-separated multi-status
- * support), so `listOrphanCandidateTasks` below issues two of these calls
- * (one per status) and merges the results client-side.
+ * Shared GET /tasks?status=<status>&limit=<limit>&offset=<offset> helper for
+ * both `listPrOpenTasks` and `listOrphanCandidateTasks` (TCR-1.2) — the
+ * task-store's GET /tasks only accepts one status value at a time (no
+ * comma-separated multi-status support), so `listOrphanCandidateTasks` below
+ * issues two of these paginated calls (one per status) and merges the
+ * results client-side. `limit`/`offset` are passed straight through, same as
+ * `listOpenPrRecords`'s own GET /prs helper, so the module-level
+ * `listAllPrOpenTasks`/`listAllOrphanCandidateTasks` pagination loops above
+ * can page each status to completion instead of only ever seeing the
+ * task-store's default first page.
  */
 function makeListTasksByStatus(opts: {
   baseUrl: string;
   headers: Record<string, string>;
   doFetch: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-}): (status: string) => Promise<PrOpenTaskRecord[]> {
+}): (status: string, limit: number, offset: number) => Promise<PrOpenTaskRecord[]> {
   const { baseUrl, headers, doFetch } = opts;
-  return async (status: string) => {
-    const params = new URLSearchParams({ status });
+  return async (status: string, limit: number, offset: number) => {
+    const params = new URLSearchParams({
+      status,
+      limit: String(limit),
+      offset: String(offset),
+    });
     const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
     if (!res.ok) {
       throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
@@ -727,6 +769,31 @@ export function buildProductionDeps(opts: {
   const doFetch = opts.fetchFn ?? fetch;
   const listTasksByStatus = makeListTasksByStatus({ baseUrl, headers, doFetch });
 
+  /**
+   * Page a single status query to completion (TCR-1.2) — same loop shape as
+   * `listAllOpenRecords`/`listAllPendingReviewRecords` elsewhere in this
+   * file, but over `listTasksByStatus` instead of a per-repo dep. Used by
+   * `listOrphanCandidateTasks` below to fully page both "pending" and
+   * "in_progress" before merging, since a single (limit, offset) pair can't
+   * address two independently-paginated queries being unioned together.
+   */
+  const listAllTasksByStatus = async (
+    status: string,
+  ): Promise<PrOpenTaskRecord[]> => {
+    const limit = DEFAULT_PAGE_LIMIT;
+    const tasks: PrOpenTaskRecord[] = [];
+    let offset = 0;
+
+    for (;;) {
+      const page = await listTasksByStatus(status, limit, offset);
+      tasks.push(...page);
+      if (page.length < limit) break;
+      offset += limit;
+    }
+
+    return tasks;
+  };
+
   return {
     repos,
     getScopedRepos: opts.getScopedRepos,
@@ -756,7 +823,8 @@ export function buildProductionDeps(opts: {
         "state,mergedAt",
       ]);
     },
-    listPrOpenTasks: () => listTasksByStatus("pr_open"),
+    listPrOpenTasks: (limit: number, offset: number) =>
+      listTasksByStatus("pr_open", limit, offset),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
@@ -783,11 +851,15 @@ export function buildProductionDeps(opts: {
     },
     // TCR-1.2: the task-store's GET /tasks only accepts one status value at
     // a time and has no server-side "has a branch AND no pr" filter, so this
-    // issues two requests (one per status) and filters client-side.
+    // pages each status to completion (via listAllTasksByStatus — fixes a
+    // live truncation bug where the default 50-record page was silently
+    // dropping candidates once pending+in_progress volume exceeded 50:
+    // verified live, `GET /tasks?status=pending` had `total: 62`) and
+    // filters the merged result client-side.
     listOrphanCandidateTasks: async () => {
       const [pending, inProgress] = await Promise.all([
-        listTasksByStatus("pending"),
-        listTasksByStatus("in_progress"),
+        listAllTasksByStatus("pending"),
+        listAllTasksByStatus("in_progress"),
       ]);
       return [...pending, ...inProgress].filter(
         (task) => !!task.branch && !task.pr,
