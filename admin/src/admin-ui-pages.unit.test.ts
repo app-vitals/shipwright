@@ -4521,7 +4521,6 @@ function depNode(overrides: Partial<DependencyNode> & { id: string }): Dependenc
     status: overrides.status ?? "pending",
     branch: overrides.branch ?? null,
     dependsOn: overrides.dependsOn ?? [],
-    state: overrides.state ?? "ready",
   };
 }
 

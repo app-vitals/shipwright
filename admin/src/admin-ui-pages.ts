@@ -2064,7 +2064,6 @@ export interface DependencyNode {
   status: string;
   branch: string | null;
   dependsOn: string[];
-  state: TaskState;
 }
 
 /**
@@ -2095,7 +2094,6 @@ export function computeDependencyNodes(tasks: TaskItem[]): DependencyNode[] {
       status: t.status,
       branch: t.branch ?? null,
       dependsOn: t.dependencies ?? [],
-      state: classifyTaskState(t),
     });
   }
   nodes.sort((a, b) => a.id.localeCompare(b.id));
