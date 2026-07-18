@@ -216,17 +216,28 @@ For every fingerprint match found in Step 5:
    entry's most recently recorded `history` entry:
    - If the new instance's description and the "why they look like the same
      responsibility" reasoning are **consistent** with the prior recorded shape
-     (same responsibility, same general approach — e.g. still "retry with
-     exponential backoff," not now "retry with a fixed delay and no backoff") →
+     (same responsibility, same general approach — e.g. still "retry a flaky
+     network call with backoff," implemented the same way structurally) →
      **increment `consecutive_stable_runs` by 1**.
    - If the new instance's implementation approach has **diverged meaningfully**
      from what was previously recorded (a different algorithm, a materially
      different scope, or the responsibility has forked into something no longer
      well-described by the stored description) → **reset `consecutive_stable_runs`
-     to 0**. Rule of Three applies to the *shape* stabilizing, not just the raw
-     count — a candidate that keeps reappearing but keeps changing shape is not
-     ready to propose a single canonical replacement for, because there's no
-     settled target shape yet to propose.
+     to 0**. Note this only fires on an existing fingerprint match — since the
+     fingerprint (Step 5) is keyed on the description text, a change large enough
+     to alter the *generic* description itself (e.g. "retry with exponential
+     backoff" becoming "retry with a fixed delay and no backoff") would already
+     produce a different fingerprint and register as a new candidate in Step 5,
+     never reaching this branch. What lands here instead is a matched fingerprint
+     (same generic description, same files) whose recorded "why they look like the
+     same responsibility" reasoning has drifted — e.g. the description still reads
+     "retry a flaky network call with backoff" but this run's notes show the
+     backoff calculation changed from exponential-with-jitter to a hardcoded fixed
+     delay, a structural change not reflected in the (still-accurate-enough)
+     generic description. Rule of Three applies to the *shape* stabilizing, not
+     just the raw count — a candidate that keeps reappearing but keeps changing
+     shape is not ready to propose a single canonical replacement for, because
+     there's no settled target shape yet to propose.
    - This is a judgment call, not a mechanical diff — use the same reading
      comparison approach as Step 3. When genuinely unsure whether a change counts
      as divergence, treat it as divergence (reset) — the cost of under-promoting is
