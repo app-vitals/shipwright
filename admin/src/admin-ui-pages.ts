@@ -1516,8 +1516,9 @@ export function renderTasksPage(
 
   // The URL the user is currently viewing. When it differs from the bare
   // /admin/tasks default (any filter, state, or page > 1 active), row links
-  // into the detail page carry it as `?from=` so the "← Tasks" back link on
-  // the detail page can return here instead of the cleared default view.
+  // into the Task Detail and Session Detail pages carry it as `?from=` so
+  // their "← Tasks" back link can return here instead of the cleared default
+  // view.
   const currentListUrl = makePageUrl(page);
   const detailHrefSuffix =
     currentListUrl === "/admin/tasks"
@@ -1552,7 +1553,7 @@ export function renderTasksPage(
       t.session
         ? readOnly
           ? escapeHtml(t.session)
-          : `<a href="/admin/sessions/${encodeURIComponent(t.session)}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
+          : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
         : '<span style="color:#9ca3af">—</span>'
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -1930,7 +1931,7 @@ export function renderTaskDetailPage(
     task.session
       ? `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Session</td>
-      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px"><a href="/admin/sessions/${encodeURIComponent(task.session)}" style="color:#6366f1">${escapeHtml(task.session)}</a></td>
+      <td style="padding:8px 12px;font-size:13px;font-family:monospace;font-size:12px"><a href="/admin/sessions/${encodeURIComponent(task.session)}?from=${encodeURIComponent(`/admin/tasks/${encodeURIComponent(task.id)}`)}" style="color:#6366f1">${escapeHtml(task.session)}</a></td>
     </tr>`
       : "",
     field("Repo", task.repo, true),
@@ -2351,6 +2352,7 @@ export function renderSessionDetailPage(
   tasks: TaskItem[],
   userName: string,
   degraded = false,
+  backHref = "/admin/tasks",
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">Task store unavailable — data shown may be stale or empty.</div>`
@@ -2425,7 +2427,7 @@ export function renderSessionDetailPage(
   ${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
+      <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
       <h1 class="page-title" style="margin:0;flex:1">Session <span class="mono">${escapeHtml(sessionId)}</span></h1>
     </div>
     ${degradedHtml}

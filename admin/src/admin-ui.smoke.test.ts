@@ -4593,6 +4593,83 @@ describe("admin UI — session detail page", () => {
     expect(capturedParams[0].get("sort")).toBe("desc");
   });
 
+  it("GET /admin/sessions/:id?from=<valid task list URL> round-trips into the ← Tasks back link", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const from = "/admin/tasks?status=in_progress&page=2";
+    const res = await app.request(
+      `/admin/sessions/session-abc?from=${encodeURIComponent(from)}`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      `<a href="${from.replace(/&/g, "&amp;")}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  it("GET /admin/sessions/:id?from=<valid task detail URL> round-trips into the ← Tasks back link", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const from = "/admin/tasks/task-42";
+    const res = await app.request(
+      `/admin/sessions/session-abc?from=${encodeURIComponent(from)}`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      `<a href="${from}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  it.each([
+    ["https://evil.com", "absolute URL"],
+    ["//evil.com", "protocol-relative URL"],
+    ["javascript:alert(1)", "javascript: URI"],
+    ["/admin/other", "different admin path"],
+  ])(
+    "GET /admin/sessions/:id?from=<malicious %s (%s)> falls back to /admin/tasks",
+    async (maliciousFrom) => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTasks: async () => ({
+            tasks: [],
+            total: 0,
+            limit: 500,
+            offset: 0,
+          }),
+        }),
+      );
+      const res = await app.request(
+        `/admin/sessions/session-abc?from=${encodeURIComponent(maliciousFrom)}`,
+        { headers: { Cookie: `admin_session=${cookie}` } },
+      );
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain(
+        `<a href="/admin/tasks" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+      );
+      expect(html).not.toContain(maliciousFrom);
+    },
+  );
+
   it("GET /admin/sessions/:id unauthenticated redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/sessions/session-abc");
@@ -4608,6 +4685,97 @@ describe("admin UI — session detail page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Task store unavailable");
+  });
+
+  // AC4/AC5: full round-trip — tasks list (with filters/page) → Session Detail
+  // → back link returns to the exact originating list URL.
+  it("round-trip: tasks list → Session Detail → back link returns to the originating list view", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "in_progress",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const listRes = await app.request(
+      "/admin/tasks?status=in_progress&page=2",
+      {
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(listRes.status).toBe(200);
+    const listHtml = await listRes.text();
+    const match = listHtml.match(
+      /<a href="(\/admin\/sessions\/session-abc\?from=[^"]+)"/,
+    );
+    expect(match).not.toBeNull();
+    const sessionHref = (match as RegExpMatchArray)[1].replace(/&amp;/g, "&");
+
+    const sessionRes = await app.request(sessionHref, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(sessionRes.status).toBe(200);
+    const sessionHtml = await sessionRes.text();
+    expect(sessionHtml).toContain(
+      `<a href="/admin/tasks?status=in_progress&amp;page=2" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
+  });
+
+  // AC4/AC5: full round-trip — Task Detail → Session Detail → back link
+  // returns to the originating task detail page.
+  it("round-trip: Task Detail → Session Detail → back link returns to the originating task detail page", async () => {
+    const mockTask = {
+      id: "task-42",
+      title: "Build the thing",
+      status: "in_progress",
+      session: "session-abc",
+      repo: "org/repo",
+    };
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-42" ? mockTask : null,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 500,
+          offset: 0,
+        }),
+      }),
+    );
+    const taskRes = await app.request("/admin/tasks/task-42", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(taskRes.status).toBe(200);
+    const taskHtml = await taskRes.text();
+    const match = taskHtml.match(
+      /<a href="(\/admin\/sessions\/session-abc\?from=[^"]+)"/,
+    );
+    expect(match).not.toBeNull();
+    const sessionHref = (match as RegExpMatchArray)[1].replace(/&amp;/g, "&");
+
+    const sessionRes = await app.request(sessionHref, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(sessionRes.status).toBe(200);
+    const sessionHtml = await sessionRes.text();
+    expect(sessionHtml).toContain(
+      `<a href="/admin/tasks/task-42" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>`,
+    );
   });
 });
 
