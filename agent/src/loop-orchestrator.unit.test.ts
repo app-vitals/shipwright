@@ -32,7 +32,7 @@ import {
 
 interface CreateCall {
   cronId: string;
-  phase?: string;
+  phaseId?: string;
   itemType?: string;
   itemId?: string;
 }
@@ -40,7 +40,7 @@ interface CompleteCall {
   cronId: string;
   runId: string | null;
   outcome: "completed" | "failed";
-  phase?: string;
+  phaseId?: string;
   itemType?: string;
   itemId?: string;
 }
@@ -48,7 +48,7 @@ interface SkipCall {
   cronId: string;
   runId: string | null;
   skipReason: string;
-  phase?: string;
+  phaseId?: string;
   itemType?: string;
   itemId?: string;
 }
@@ -65,8 +65,8 @@ function makeRecordingReporter(): {
   let counter = 0;
 
   const reporter: CronRunReporter = {
-    async createRun(cronId, _startedAt, phase, itemType, itemId) {
-      creates.push({ cronId, phase, itemType, itemId });
+    async createRun(cronId, _startedAt, phaseId, itemType, itemId) {
+      creates.push({ cronId, phaseId, itemType, itemId });
       counter += 1;
       return `run-${counter}`;
     },
@@ -76,11 +76,11 @@ function makeRecordingReporter(): {
       _completedAt,
       outcome,
       _opts,
-      phase,
+      phaseId,
       itemType,
       itemId,
     ) {
-      completes.push({ cronId, runId, outcome, phase, itemType, itemId });
+      completes.push({ cronId, runId, outcome, phaseId, itemType, itemId });
     },
     async skipRun(
       cronId,
@@ -88,11 +88,11 @@ function makeRecordingReporter(): {
       _completedAt,
       skipReason,
       _opts,
-      phase,
+      phaseId,
       itemType,
       itemId,
     ) {
-      skips.push({ cronId, runId, skipReason, phase, itemType, itemId });
+      skips.push({ cronId, runId, skipReason, phaseId, itemType, itemId });
     },
   };
 
@@ -747,8 +747,14 @@ describe("createLoopOrchestrator", () => {
     ]);
 
     // Two dispatches → two create/complete pairs, deploy first (older).
-    expect(creates.map((c) => c.phase)).toEqual(["deploy", "dev-task"]);
-    expect(completes.map((c) => c.phase)).toEqual(["deploy", "dev-task"]);
+    expect(creates.map((c) => c.phaseId)).toEqual([
+      "shipwright-deploy",
+      "shipwright-dev-task",
+    ]);
+    expect(completes.map((c) => c.phaseId)).toEqual([
+      "shipwright-deploy",
+      "shipwright-dev-task",
+    ]);
     expect(completes.every((c) => c.outcome === "completed")).toBe(true);
     expect(creates.every((c) => c.cronId === "shipwright-loop")).toBe(true);
     expect(skips).toEqual([]);
@@ -873,9 +879,9 @@ describe("createLoopOrchestrator", () => {
 
     await loop([job("shipwright-dev-task", true)]);
 
-    expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
+    expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
     expect(completes).toEqual([]);
-    expect(skips.map((s) => s.phase)).toEqual(["dev-task"]);
+    expect(skips.map((s) => s.phaseId)).toEqual(["shipwright-dev-task"]);
 
     // The skipped run still records which task-type item was dispatched.
     expect(
@@ -907,13 +913,13 @@ describe("createLoopOrchestrator", () => {
 
     // The run was created and then completed with outcome "failed" — never
     // silently dropped — and the error propagated instead of being swallowed.
-    expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
+    expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
     expect(completes).toEqual([
       {
         cronId: "shipwright-loop",
         runId: "run-1",
         outcome: "failed",
-        phase: "dev-task",
+        phaseId: "shipwright-dev-task",
         itemType: "task",
         itemId: "SWC-1.1",
       },
@@ -923,7 +929,7 @@ describe("createLoopOrchestrator", () => {
     // The SAME closure's busy flag is released — a subsequent tick on it is
     // not blocked (all phases disabled here, so it just no-ops on candidates).
     await loop([job("shipwright-dev-task", false)]);
-    expect(creates.map((c) => c.phase)).toEqual(["dev-task"]);
+    expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
   });
 
   test("releases the busy flag even when an iteration throws", async () => {

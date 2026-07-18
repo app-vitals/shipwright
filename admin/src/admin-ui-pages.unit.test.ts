@@ -3418,13 +3418,18 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("—");
   });
 
-  test("renders the run's phase when set", () => {
-    const html = render([makeRun({ phase: "dev-task" })]);
+  test("renders the run's phase (via phaseCron, prefix stripped) when set", () => {
+    const html = render([
+      makeRun({
+        phaseId: "some-id",
+        phaseCron: { id: "some-id", name: "shipwright-dev-task" },
+      }),
+    ]);
     expect(html).toContain("dev-task");
   });
 
-  test("renders an em-dash for the phase cell when phase is null (legacy run)", () => {
-    const html = render([makeRun({ phase: null })]);
+  test("renders an em-dash for the phase cell when phaseCron is null (legacy run or no phase attribution)", () => {
+    const html = render([makeRun({ phaseId: null, phaseCron: null })]);
     // Locate the tbody row specifically (not the thead row) to check the
     // phase cell — the last <td> in the row.
     const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);

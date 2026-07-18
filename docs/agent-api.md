@@ -272,7 +272,6 @@ Body:
 | `skipped` | no | `true` if the pre-check returned false |
 | `skipReason` | no | Reason the run was skipped |
 | `outcome` | no | `"success"` or `"error"` |
-| `phase` | no | Pipeline phase this run served (`"dev-task"`, `"review"`, `"patch"`, `"deploy"`). Set by the unified `shipwright-loop` cron, which reports many distinct phase invocations under one `cronId`; null for legacy five-job crons where `cronId` itself was the phase signal. |
 | `itemType` | no | Work item type this run was dispatched against (`"task"` or `"pr"`). Set by the unified `shipwright-loop` cron alongside `itemId`; null when the tick had no dispatch (skipped tick, empty queue). Write-once at creation — not accepted on the PATCH endpoint. |
 | `itemId` | no | Work item id this run was dispatched against (e.g. `"WLS-2.2"` for a task, `"acme/x#123"` for a PR). Null when the tick had no dispatch. Write-once at creation — not accepted on the PATCH endpoint. |
 
@@ -286,7 +285,7 @@ GET /agents/:id/crons/:cronId/runs
 
 Query params: `limit` (default 20), `offset` (default 0). Returns `{ items: AgentCronRun[], total: number }`.
 
-Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phase`, `itemType`, `itemId`, `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. Note: the `AgentCronRun` Prisma model also has a `phaseId` column (nullable, denormalized pointer to the phase cron this run was dispatched by; reserved for LPC-1.2+ phase orchestration), but it is DB-only for now — not yet included in `AgentCronRunSchema` or serialized by this endpoint.
+Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phaseId` (nullable; child `AgentCronJob` id (FK) of the pipeline phase this run served — dev-task/review/patch/deploy; null for legacy five-job crons or runs with no phase attribution), `itemType`, `itemId`, `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. The legacy `phase` string field was replaced by a `phaseId` foreign key (LPC-3.1). Note: the resolved `phaseCron` relation (`{ id, name }`) is only included by `listForAgent()`, used by the HTML cron-logs page — not by this JSON endpoint.
 
 ### Update cron run
 
@@ -318,7 +317,7 @@ Returns:
 }
 ```
 
-`byCron` and `byCronModel` rows include a `phase` field (dev-task/review/patch/deploy) for runs that specify it, or `null` for legacy five-job crons that predate phase tracking. `byPhase` groups token stats by the `phase` field set on `AgentCronRun`; runs with no phase (legacy five-job crons) are excluded from this dimension only — they still count toward `totals` and the other dimensions.
+`byCron` and `byCronModel` rows include a `phase` field (populated from the `phaseCron.name` relation, e.g., "dev-task"/"review"/"patch"/"deploy") for runs that have a `phaseId`, or `null` for runs with no phase attribution (legacy five-job crons and runs dispatched without a phase cron). `byPhase` groups token stats by the resolved phase cron name; runs with no phase attribution are excluded from this dimension only — they still count toward `totals` and the other dimensions.
 
 ---
 

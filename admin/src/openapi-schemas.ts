@@ -250,13 +250,13 @@ export const AgentCronRunSchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().openapi({ example: "success" }),
     error: z.string().nullable().openapi({ example: null }),
-    phase: z
+    phaseId: z
       .string()
       .nullable()
       .openapi({
-        example: "dev-task",
+        example: "clx0987654321",
         description:
-          "Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.",
+          "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.",
       }),
     itemType: z
       .string()
@@ -319,14 +319,14 @@ export const CreateAgentCronRunBodySchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().optional().openapi({ example: "success" }),
     error: z.string().nullable().optional().openapi({ example: null }),
-    phase: z
+    phaseId: z
       .string()
       .nullable()
       .optional()
       .openapi({
-        example: "dev-task",
+        example: "clx0987654321",
         description:
-          "Pipeline phase this run served (dev-task/review/patch/deploy)",
+          "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)",
       }),
     itemType: z
       .string()

@@ -636,7 +636,8 @@ describe("admin UI — authenticated pages", () => {
       skipReason: string | null;
       outcome: string | null;
       error: string | null;
-      phase: string | null;
+      phaseId: string | null;
+      phaseCron: { id: string; name: string | null } | null;
       modelBreakdown: {
         id: string;
         cronRunId: string;
@@ -659,10 +660,10 @@ describe("admin UI — authenticated pages", () => {
       skipReason: null,
       outcome: "posted",
       error: null,
-      phase: null,
       itemType: null,
       itemId: null,
       phaseId: null,
+      phaseCron: null,
       createdAt: new Date("2026-06-01T10:00:00Z"),
       modelBreakdown: [] as {
         id: string;

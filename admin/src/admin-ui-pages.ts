@@ -169,8 +169,13 @@ export interface CronRunItem {
   skipReason: string | null;
   error: string | null;
   modelBreakdown?: ModelBreakdownEntry[];
-  /** Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons. */
-  phase?: string | null;
+  phaseId?: string | null;
+  /**
+   * The phase cron's own id/name — the child AgentCronJob this run's phaseId
+   * points at. Present when the run has a phaseId; null/absent for legacy
+   * runs or runs with no phase attribution.
+   */
+  phaseCron?: { id: string; name: string | null } | null;
   /**
    * The work item ("task" | "pr") and its id (e.g. "WLS-2.2" or "acme/x#123")
    * that this run's dispatched command targeted. Both null for a tick with no
@@ -2967,8 +2972,14 @@ export function renderCronLogsPage(opts: {
             .join('<br style="line-height:6px" />')
         : "—";
 
-    // Legacy five-job crons never set phase — em-dash rather than a blank cell.
-    const phaseCell = r.phase ? escapeHtml(r.phase) : "—";
+    // Legacy five-job crons and runs with no phase attribution (including an
+    // agent that hasn't reconciled its phase child rows yet) never set
+    // phaseId — em-dash rather than a blank cell. Resolved by joining through
+    // phaseId to the child AgentCronJob row's name and stripping the
+    // "shipwright-" prefix to match the old string column's short-form display.
+    const phaseCell = r.phaseCron?.name
+      ? escapeHtml(r.phaseCron.name.replace(/^shipwright-/, ""))
+      : "—";
 
     // A run with no dispatch (skipped tick, empty queue) leaves itemType/itemId
     // null — em-dash rather than a blank cell, same convention as phaseCell.

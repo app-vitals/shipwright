@@ -23,23 +23,23 @@ export interface CronRunReporter {
    * Called at run start — returns the runId to use for completion (null for
    * no-op).
    *
-   * `phase` tags the run with the pipeline phase it serves (dev-task / review /
-   * patch / deploy). Under the single-cron loop model every invocation shares
-   * one cronId, so the phase is the only way to attribute a run to a specific
-   * command in the admin UI and metrics dashboard. Optional and additive —
-   * callers that don't pass it (e.g. the generic cron handler) keep working
-   * unchanged.
+   * `phaseId` tags the run with the dispatched phase's child AgentCronJob id
+   * (dev-task / review / patch / deploy). Under the single-cron loop model
+   * every invocation shares one cronId, so phaseId is the only way to
+   * attribute a run to a specific command in the admin UI and metrics
+   * dashboard. Optional and additive — callers that don't pass it (e.g. the
+   * generic cron handler) keep working unchanged.
    *
    * `itemType`/`itemId` tag the run with the work item ("task" | "pr") the
    * dispatched command was invoked against (e.g. itemType "task", itemId
    * "WLS-2.2", or itemType "pr", itemId "acme/x#123"). Optional and additive,
-   * same as `phase` — a tick with no dispatch (skipped tick, empty queue)
+   * same as `phaseId` — a tick with no dispatch (skipped tick, empty queue)
    * passes neither.
    */
   createRun(
     cronId: string,
     startedAt: Date,
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<string | null>;
@@ -57,7 +57,7 @@ export interface CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<void>;
@@ -68,7 +68,7 @@ export interface CronRunReporter {
     completedAt: Date,
     skipReason: string,
     opts?: { error?: string },
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<void>;
@@ -112,7 +112,7 @@ export class HttpCronRunReporter implements CronRunReporter {
   async createRun(
     cronId: string,
     startedAt: Date,
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<string | null> {
@@ -122,7 +122,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     const startBody: Record<string, unknown> = {
       startedAt: startedAt.toISOString(),
     };
-    if (phase !== undefined) startBody.phase = phase;
+    if (phaseId !== undefined) startBody.phaseId = phaseId;
     if (itemType !== undefined) startBody.itemType = itemType;
     if (itemId !== undefined) startBody.itemId = itemId;
 
@@ -164,7 +164,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<void> {
@@ -186,7 +186,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       body.cacheCreationTokens = opts.cacheCreationTokens;
     if (opts?.modelBreakdown !== undefined)
       body.modelBreakdown = opts.modelBreakdown;
-    if (phase !== undefined) body.phase = phase;
+    if (phaseId !== undefined) body.phaseId = phaseId;
     if (itemType !== undefined) body.itemType = itemType;
     if (itemId !== undefined) body.itemId = itemId;
 
@@ -199,7 +199,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     completedAt: Date,
     skipReason: string,
     opts?: { error?: string },
-    phase?: string,
+    phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<void> {
@@ -214,7 +214,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       skipReason,
     };
     if (opts?.error !== undefined) body.error = opts.error;
-    if (phase !== undefined) body.phase = phase;
+    if (phaseId !== undefined) body.phaseId = phaseId;
     if (itemType !== undefined) body.itemType = itemType;
     if (itemId !== undefined) body.itemId = itemId;
 
@@ -226,7 +226,7 @@ export class NoopCronRunReporter implements CronRunReporter {
   async createRun(
     _cronId: string,
     _startedAt: Date,
-    _phase?: string,
+    _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
   ): Promise<string | null> {
@@ -246,7 +246,7 @@ export class NoopCronRunReporter implements CronRunReporter {
       cacheCreationTokens?: number;
       modelBreakdown?: ModelBreakdownEntry[];
     },
-    _phase?: string,
+    _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
   ): Promise<void> {
@@ -259,7 +259,7 @@ export class NoopCronRunReporter implements CronRunReporter {
     _completedAt: Date,
     _skipReason: string,
     _opts?: { error?: string },
-    _phase?: string,
+    _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
   ): Promise<void> {

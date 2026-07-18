@@ -1247,7 +1247,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       skipReason: body.skipReason,
       outcome: body.outcome,
       error: body.error,
-      phase: body.phase,
+      phaseId: body.phaseId,
       itemType: body.itemType,
       itemId: body.itemId,
     });
@@ -1578,7 +1578,7 @@ function serializeCronRun(run: {
   skipReason: string | null;
   outcome: string | null;
   error: string | null;
-  phase: string | null;
+  phaseId: string | null;
   itemType: string | null;
   itemId: string | null;
   createdAt: Date;
@@ -1619,7 +1619,7 @@ function serializeCronRun(run: {
     skipReason: run.skipReason,
     outcome: run.outcome,
     error: run.error,
-    phase: run.phase,
+    phaseId: run.phaseId,
     itemType: run.itemType,
     itemId: run.itemId,
     ...tokenTotals,
