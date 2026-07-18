@@ -129,7 +129,7 @@
 | `plugins/shipwright/scripts/check-deploy.ts`, `check-review.ts`, `check-patch.ts`, `check-dev-task.ts` (cron prechecks) | 2. Service-boundary code | integration | critical | n/a |
 | `plugins/shipwright/scripts/check-helpers.ts` (`isCleanApproveBody`, GitHub wrappers) | 1. Pure business logic (parsing) + 2. service-boundary (`ghJson`) | unit (pure parts) / integration (I/O parts) | critical | n/a |
 | `plugins/shipwright/scripts/check-banned-strings.ts` (`scanForBannedStrings`) | 1. Pure business logic | unit | high | n/a |
-| `plugins/shipwright/scripts/check-docs-freshness.ts`, `check-dependabot-triage.ts`, `check-error-patrol.ts`, `check-learn-dream.ts`, `check-review-patch.ts`, `check-test-readiness.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
+| `plugins/shipwright/scripts/check-consolidation-patrol.ts`, `check-docs-freshness.ts`, `check-dependabot-triage.ts`, `check-error-patrol.ts`, `check-learn-dream.ts`, `check-review-patch.ts`, `check-test-readiness.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
 | `plugins/shipwright/scripts/classify_test_layer.ts` (`classifyPath`) | 1. Pure business logic | unit | high | n/a |
 | `plugins/shipwright/scripts/ci-checks.ts` (`parseActionsChecks`) | 1. Pure business logic | unit | medium | n/a |
 | `plugins/shipwright/scripts/clock.ts` | 1. Pure business logic | unit | medium | n/a |

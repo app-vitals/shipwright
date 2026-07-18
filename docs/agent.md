@@ -122,7 +122,7 @@ All child models cascade-delete with their `Agent` (including `AgentCronRun` via
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
+Every new agent is seeded with twelve system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
 
 The four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
 `shipwright-deploy`) are **loop-driven, item-addressed executors, not self-discovering
