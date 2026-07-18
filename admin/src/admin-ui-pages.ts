@@ -149,6 +149,7 @@ export interface CronJobItem {
   enabled: boolean;
   name: string | null;
   system: boolean;
+  parentCronId: string | null;
   preCheck?: string | null;
   lastRun?: {
     startedAt: Date;
@@ -684,13 +685,19 @@ export function renderAgentDetailPage(
           )
           .join("\n");
 
-  const systemCrons = crons.filter((c) => c.system);
-  const customCrons = crons.filter((c) => !c.system);
+  // Top-level rows exclude any cron parented under another (e.g. shipwright-loop's
+  // dev-task/review/patch/deploy phases) — those render nested beneath their
+  // parent instead. `crons` (unfiltered) stays available below to look up each
+  // top-level cron's children by parentCronId.
+  const topLevelCrons = crons.filter((c) => !c.parentCronId);
+  const systemCrons = topLevelCrons.filter((c) => c.system);
+  const customCrons = topLevelCrons.filter((c) => !c.system);
 
-  function renderCronRow(c: CronJobItem): string {
+  /** Renders the reusable Logs/Toggle[/Delete] action cell shared by top-level and nested cron rows. */
+  function renderCronActions(c: CronJobItem): string {
     const toggleLabel = c.enabled ? "Disable" : "Enable";
     const toggleTarget = c.enabled ? "false" : "true";
-    const actions = `
+    return `
       <a href="/admin/agents/${escapeHtml(agent.id)}/cron-logs?cronId=${escapeHtml(c.id)}" class="btn btn-secondary" style="font-size:11px;padding:3px 8px;margin-right:4px;text-decoration:none">Logs</a>
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/crons/${escapeHtml(c.id)}/toggle" style="display:inline">
         <input type="hidden" name="enabled" value="${toggleTarget}" />
@@ -703,6 +710,59 @@ export function renderAgentDetailPage(
       </form>`
           : ""
       }`;
+  }
+
+  /**
+   * Renders the nested "Phases of <parent>" block for a top-level cron's
+   * children (e.g. shipwright-loop's dev-task/review/patch/deploy phases).
+   * Returns "" when there are no children, so parents without phases (all
+   * custom crons, and any system cron other than shipwright-loop) render
+   * exactly as before — no empty block.
+   */
+  function renderNestedPhasesRow(parent: CronJobItem, children: CronJobItem[]): string {
+    if (children.length === 0) return "";
+    const parentLabel = parent.name ?? parent.id;
+    const childRows = children
+      .map((child) => {
+        const lastRunOutcomeLabel = child.lastRun
+          ? cronRunOutcomeLabel(child.lastRun)
+          : null;
+        return `<tr>
+          <td style="padding-left:20px">${escapeHtml(child.name ? `${child.name}: ${child.prompt}` : child.prompt)}</td>
+          <td class="mono">${escapeHtml(child.schedule)}</td>
+          <td><span class="badge ${child.enabled ? "badge-green" : "badge-gray"}">${child.enabled ? "enabled" : "disabled"}</span></td>
+          <td style="font-size:11px">${
+            child.lastRun?.startedAt
+              ? `<span class="badge" style="${cronOutcomeStyle(lastRunOutcomeLabel)}">${escapeHtml(lastRunOutcomeLabel ?? "unknown")}</span>`
+              : `<span style="color:#d1d5db">never</span>`
+          }</td>
+          <td style="white-space:nowrap">${renderCronActions(child)}</td>
+        </tr>`;
+      })
+      .join("\n");
+    return `<tr>
+      <td colspan="7" style="background:#f9fafb;padding:12px 12px 12px 32px">
+        <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Phases of ${escapeHtml(parentLabel)}</div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Phase</th>
+              <th>Schedule</th>
+              <th>Status</th>
+              <th>Last run</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${childRows}
+          </tbody>
+        </table>
+      </td>
+    </tr>`;
+  }
+
+  function renderCronRow(c: CronJobItem): string {
+    const actions = renderCronActions(c);
     // Full inline edit (schedule, prompt, channel, preCheck), collapsed behind a
     // <details> so the table stays readable. Posts to /update → cronService.update.
     // System crons get NO edit form — their contents are owned by
@@ -732,6 +792,9 @@ export function renderAgentDetailPage(
       <div style="font-size:11px;color:#6b7280;margin-top:4px">${c.runCountToday ?? 0} run${(c.runCountToday ?? 0) === 1 ? "" : "s"}</div>`
       : `<div style="color:#d1d5db">never</div>`;
 
+    const children = crons.filter((child) => child.parentCronId === c.id);
+    const nestedPhasesRow = renderNestedPhasesRow(c, children);
+
     return `<tr>
       <td class="mono">${escapeHtml(c.schedule)}</td>
       <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis">${escapeHtml(c.name ? `${c.name}: ${c.prompt}` : c.prompt)}</td>
@@ -740,7 +803,8 @@ export function renderAgentDetailPage(
       <td><span class="badge ${c.enabled ? "badge-green" : "badge-gray"}">${c.enabled ? "enabled" : "disabled"}</span></td>
       <td style="font-size:11px">${lastRunHtml}</td>
       <td style="white-space:nowrap">${actions}${editForm}</td>
-    </tr>`;
+    </tr>
+    ${nestedPhasesRow}`;
   }
 
   const systemCronRows =

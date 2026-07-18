@@ -75,6 +75,7 @@ const SYSTEM_CRON: CronJobItem = {
   enabled: true,
   name: "health-check",
   system: true,
+  parentCronId: null,
   preCheck: "shipwright:check-dev-task.ts",
 };
 
@@ -87,6 +88,7 @@ const CUSTOM_CRON: CronJobItem = {
   enabled: false,
   name: null,
   system: false,
+  parentCronId: null,
 };
 
 const TOOL_ENABLED: ToolItem = {
