@@ -400,4 +400,33 @@ describeOrSkip("AgentCronJobService (integration)", () => {
       expect(cron?.parentCronId).toBe(loopCron?.id as string);
     }
   });
+
+  it("reconcileSystemCrons() clears a stale parentCronId back to null when the entry no longer declares a resolvable parentCron", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
+    const unrelated = jobs.find((j) => j.name === "shipwright-test-readiness");
+    expect(loopCron).toBeDefined();
+    expect(unrelated).toBeDefined();
+
+    // Simulate a stale link: SYSTEM_CRONS never declares parentCron for
+    // "shipwright-test-readiness", but its row has a non-null parentCronId
+    // — e.g. left over from a since-removed parentCron declaration, or from
+    // a name that used to resolve and no longer does.
+    await prisma.agentCronJob.update({
+      where: { id: unrelated?.id as string },
+      data: { parentCronId: loopCron?.id as string },
+    });
+
+    const result = await service.reconcileSystemCrons(agentId);
+    expect(result.created).toBe(0);
+
+    const jobsAfter = await service.list(agentId);
+    const unrelatedAfter = jobsAfter.find(
+      (j) => j.name === "shipwright-test-readiness",
+    );
+    expect(unrelatedAfter?.parentCronId).toBeNull();
+  });
 });

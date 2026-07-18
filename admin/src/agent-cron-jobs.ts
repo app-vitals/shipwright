@@ -371,8 +371,12 @@ export class AgentCronJobService {
    *
    * Pass 2 — for each entry that declares `parentCron`, resolves the
    * parent's row id from the name → id map built in pass 1 and sets
-   * parentCronId on the child. Self-heals the link on every reconcile call
-   * (e.g. if it was previously null on a pre-existing row).
+   * parentCronId on the child. If an entry does not declare `parentCron`
+   * (or declares one that doesn't resolve to a known row), any existing
+   * non-null parentCronId on that row is cleared back to null. Self-heals
+   * the link on every reconcile call in both directions — null→set (e.g.
+   * a pre-existing row from before parentCron was introduced) and set→null
+   * (e.g. a parentCron declaration removed from SYSTEM_CRONS).
    *
    * Orphan pass: delete any cron with system=true whose name is no longer in SYSTEM_CRONS.
    *
@@ -448,15 +452,30 @@ export class AgentCronJobService {
 
       // Pass 2: link declared parent/child crons now that every row in this
       // reconcile has a known id, regardless of array order or first-boot.
+      // Also clears parentCronId back to null when an entry no longer
+      // declares a resolvable parentCron, so the link self-heals in both
+      // directions rather than only null→set.
       for (const systemCron of SYSTEM_CRONS) {
-        if (!systemCron.parentCron) continue;
         const childId = idByName.get(systemCron.name);
-        const parentId = idByName.get(systemCron.parentCron);
-        if (!childId || !parentId) continue;
-        await tx.agentCronJob.update({
-          where: { id: childId },
-          data: { parentCronId: parentId },
-        });
+        if (!childId) continue;
+        const parentId = systemCron.parentCron
+          ? idByName.get(systemCron.parentCron)
+          : undefined;
+
+        if (parentId) {
+          await tx.agentCronJob.update({
+            where: { id: childId },
+            data: { parentCronId: parentId },
+          });
+        } else {
+          const existing = existingByName.get(systemCron.name);
+          if (existing && existing.parentCronId !== null) {
+            await tx.agentCronJob.update({
+              where: { id: childId },
+              data: { parentCronId: null },
+            });
+          }
+        }
       }
 
       // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.
