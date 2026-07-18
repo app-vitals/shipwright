@@ -60,7 +60,7 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
       /\*\*Found, `status == "in_progress"`\*\*:[\s\S]*?(?=\n- \*\*Found)/,
     );
     expect(inProgressBulletMatch).not.toBeNull();
-    const bullet = inProgressBulletMatch![0];
+    const bullet = inProgressBulletMatch?.[0];
     expect(bullet).toMatch(/Same-Branch Sibling Check/i);
   });
 });
