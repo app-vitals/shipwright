@@ -546,6 +546,72 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
+  it("nests shipwright-loop phase crons under the loop row instead of listing them flat", async () => {
+    const LOOP_ID = "cron-loop-1";
+    const PHASES = ["shipwright-dev-task", "shipwright-review", "shipwright-patch", "shipwright-deploy"];
+    const phaseCrons = PHASES.map((name, i) => ({
+      ...MOCK_CRON,
+      id: `cron-phase-${i}`,
+      name,
+      system: true,
+      parentCronId: LOOP_ID,
+      lastRun: null,
+      runCountToday: 0,
+    }));
+    const loopCron = {
+      ...MOCK_CRON,
+      id: LOOP_ID,
+      name: "shipwright-loop",
+      system: true,
+      parentCronId: null,
+      lastRun: null,
+      runCountToday: 0,
+    };
+
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentCronJobService: {
+          list: async () => [loopCron, ...phaseCrons],
+          listWithRunSummary: async () => [loopCron, ...phaseCrons],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async () => ({
+            created: 0,
+            updated: 0,
+            deleted: 0,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    // Nested section is clearly labeled as belonging to shipwright-loop.
+    const labelIndex = html.indexOf("Phases of shipwright-loop");
+    expect(labelIndex).toBeGreaterThan(-1);
+
+    // Each phase's toggle form is present and wired to the existing toggle route.
+    for (const phase of phaseCrons) {
+      const toggleAction = `action="/admin/agents/${AGENT_ID}/crons/${phase.id}/toggle"`;
+      expect(html).toContain(toggleAction);
+      // The toggle form must appear after the "Phases of shipwright-loop" label,
+      // i.e. nested beneath the loop row rather than as a flat top-level row.
+      const toggleIndex = html.indexOf(toggleAction);
+      expect(toggleIndex).toBeGreaterThan(labelIndex);
+    }
+
+    // The loop's own toggle form is still rendered as the top-level row.
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT_ID}/crons/${LOOP_ID}/toggle"`,
+    );
+  });
+
   it("authenticated GET /admin/agents/:id/cron-logs returns 200 with empty state", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
