@@ -113,16 +113,21 @@ Example flags:
 - "⚠ The spec adds X to the billing API but the billing service has no test coverage — any change here is risky without tests first"
 - "⚠ This feature requires a new abstraction that doesn't exist yet — adds ~2h of foundational work before the feature itself"
 
-**Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks:
+**Data-backfill migrations need a live-data check, not just a design review.** If a task involves a migration that assigns or attributes existing rows by pattern-matching a column (mapping an existing value to a new one), flag that the task's acceptance criteria must require querying the live table for its actual distinct values and confirming every distinct group is covered — not just checking the mapping against docs/config/API references. Test fixtures for that migration must be seeded from the same live-distinct-values check. A mapping that looks complete against documentation can still miss a real data shape that only a live query would surface.
+
+This is likely **HITL** — see the conditional judgment step in Step 5.5.
+
+**Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks; for a constraint addition (see below), verify backfill completeness against live data instead:
 
 - **DB**: dropping or renaming a table or column — who reads or writes it?
+- **DB**: adding a `NOT NULL`, foreign key, or other constraint to a column on a table that already has rows — has the existing data been backfilled to satisfy it? Adding the constraint before the backfill is complete will fail on (or corrupt) existing rows.
 - **API**: removing or renaming an endpoint or response field — who calls it?
 - **Client/types**: removing or renaming a method or interface — who imports it?
 - **Release/deployment pipeline**: the pipeline itself is an interface with external consumers. Changes to how artifacts are built, packaged, or published; where they land; what events or signals are emitted during the process; or what triggers downstream workflows — any of these can silently break systems in other repos that depend on the current behavior. Those consumers won't appear in a local grep and won't error loudly; they'll just stop running. Before designing any task that modifies the build, release, or deploy pipeline, identify what depends on its current behavior and how the change affects each dependency.
 
 List every consumer found. A task that drops the old interface while leaving consumers on the old code creates a broken intermediate state that cannot be deployed safely.
 
-Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames, removals, and substitutions that change behavior.
+Additions (new tables, nullable columns, new endpoints, new optional fields, new methods) are safe. Flag only renames, removals, and substitutions that change behavior — and constraint additions (`NOT NULL`, foreign key, unique) on a column with existing rows, which behave like a breaking change even though they read like an addition.
 
 ---
 
@@ -237,14 +242,16 @@ Task         | Depends on  | Blocks | HITL
 
 ### Breaking Change Safety
 
-Before finalizing the task list, check each task for renames or removals flagged in Step 2. For each one, the task must do one of:
+Before finalizing the task list, check each task for renames, removals, or constraint additions flagged in Step 2. For each one, the task must do one of:
 
 1. **Atomic update** — include all consumer updates in the same task. One PR removes the old thing and updates every caller.
 2. **Add → migrate → remove** — split into three sequential tasks: (a) add the new thing alongside the old, (b) migrate all consumers to the new, (c) remove the old.
 
 A task that drops or renames something while a later task updates the consumers is not safe to deploy independently — that gap is a broken intermediate state in production.
 
-If a task has no renames or removals, mark it: `Safe to deploy standalone: yes`.
+**Same pattern for new constraints on existing tables.** A task that adds a `NOT NULL`, foreign key, or unique constraint to a column on a table with existing rows must split into sequential tasks the same way: (a) add the column/relation nullable, (b) backfill existing rows (with a task depending on (a), acceptance criteria requiring the live-data check above), (c) a later task adds the constraint — and only once (b)'s backfill has actually run and verified zero gaps, not just once its code has merged. A task that adds the constraint in the same migration as the backfill, or before the backfill task, risks failing on (or silently corrupting) existing rows.
+
+If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
 
@@ -272,6 +279,7 @@ Even without a keyword match, flag the task HITL if it fundamentally requires:
 - Provisioning or rotating a credential, secret, or API key
 - Approving a privileged workflow that requires human authorization
 - Any action that cannot be expressed as a CLI command the agent can run
+- Reading live production data to verify something (a backfill/attribution mapping, a data shape assumption) in a repo where the dev-task agent's normal execution environment cannot reach production databases directly — check the repo's `CLAUDE.md` for a rule to this effect. The keyword scan above won't catch this on its own since the trigger words (`kubectl`, `Cloud SQL`, etc.) typically show up only in acceptance criteria, not the task title/description — apply this judgment check explicitly for any backfill/migration task.
 
 **CI workflow secret scan**: if a task adds or modifies a CI workflow file, extract every `${{ secrets.* }}` reference in the changed file and check whether each secret name already appears in other workflow files in the repo. Any secret that is net-new — not referenced anywhere else — requires a human to provision it. Flag the task HITL and list the new secret names in the `## Human steps` section.
 
