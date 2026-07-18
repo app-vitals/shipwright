@@ -19,6 +19,7 @@ function makeJob(overrides: Partial<CronJobLike> = {}): CronJobLike {
     id: "job-1",
     name: "some-job",
     enabled: true,
+    parentCronId: null,
     ...overrides,
   };
 }
@@ -136,6 +137,75 @@ describe("classifyCronJobsForScheduling", () => {
     const nullEntry = result.find((r) => r.job.id === "null-name");
     expect(nullEntry).toBeDefined();
     expect(nullEntry?.dispatch).toBe("generic");
+  });
+
+  it("a job with parentCronId set and enabled: true is excluded regardless of shipwright-loop being absent", () => {
+    const jobs = [
+      makeJob({
+        id: "parented-1",
+        name: "some-child-job",
+        enabled: true,
+        parentCronId: "parent-1",
+      }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.some((r) => r.job.id === "parented-1")).toBe(false);
+  });
+
+  it("a job with parentCronId set and enabled: true is excluded regardless of shipwright-loop being present and disabled", () => {
+    const jobs = [
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: false }),
+      makeJob({
+        id: "parented-1",
+        name: "some-child-job",
+        enabled: true,
+        parentCronId: "parent-1",
+      }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.some((r) => r.job.id === "parented-1")).toBe(false);
+  });
+
+  it("a job with parentCronId set and enabled: true is excluded regardless of shipwright-loop being present and enabled", () => {
+    const jobs = [
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: true }),
+      makeJob({
+        id: "parented-1",
+        name: "some-child-job",
+        enabled: true,
+        parentCronId: "parent-1",
+      }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.some((r) => r.job.id === "parented-1")).toBe(false);
+  });
+
+  it("a parented job with enabled: false is still excluded (belt-and-suspenders with the pre-existing disabled check)", () => {
+    const jobs = [
+      makeJob({
+        id: "parented-disabled",
+        name: "some-child-job",
+        enabled: false,
+        parentCronId: "parent-1",
+      }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    expect(result.some((r) => r.job.id === "parented-disabled")).toBe(false);
+  });
+
+  it("a same-agent top-level cron (parentCronId: null, enabled: true, arbitrary name) is NOT excluded — no regression", () => {
+    const jobs = [
+      makeJob({
+        id: "top-level-1",
+        name: "some-arbitrary-cron",
+        enabled: true,
+        parentCronId: null,
+      }),
+    ];
+    const result = classifyCronJobsForScheduling(jobs);
+    const entry = result.find((r) => r.job.id === "top-level-1");
+    expect(entry).toBeDefined();
+    expect(entry?.dispatch).toBe("generic");
   });
 });
 

@@ -153,6 +153,7 @@ export const AgentCronJobSchema = z
       .openapi({ example: "shipwright:check-dev-task.ts" }),
     name: z.string().nullable().openapi({ example: "morning-brief" }),
     system: z.boolean().openapi({ example: false }),
+    parentCronId: z.string().nullable().openapi({ example: null }),
     createdAt: z
       .string()
       .datetime()
