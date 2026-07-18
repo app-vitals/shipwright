@@ -93,7 +93,7 @@ authoritatively before promotion (Step 7, which is the actual gate).
          "firstSeen": "<ISO8601>",
          "lastSeen": "<ISO8601>",
          "history": [
-           { "run": "<ISO8601>", "description": "<description as observed that run>", "files": ["<path>", "..."] }
+           { "run": "<ISO8601>", "description": "<description as observed that run>", "notes": "<why-they-look-like-the-same-responsibility note as observed that run>", "files": ["<path>", "..."] }
          ]
        }
      }
@@ -128,7 +128,9 @@ SonarQube CPD, or a diff-based similarity tool. Instead:
    - The **involved files** (each file/module implementing the responsibility
      independently), with line ranges where practical
    - A short note on **why they look like the same responsibility** (what's
-     structurally or behaviorally shared, even if no lines are shared verbatim)
+     structurally or behaviorally shared, even if no lines are shared verbatim) —
+     retain this note; it is persisted to the ledger's `history` in Step 6 and is
+     what future runs compare against to judge shape stability
 4. Before finalizing a candidate, loosely check it against the suppression list from
    Step 1 — if a suppression's pattern description clearly matches, you may skip
    spending further effort refining that candidate's description now (it will be
@@ -244,8 +246,8 @@ For every fingerprint match found in Step 5:
      low (it just tracks one more run), while the cost of over-promoting a still-
      shifting pattern is a report entry proposing a canonical shape that's already
      stale.
-3. Append this run's observation (description, files, timestamp) to the entry's
-   `history` array — never truncate or overwrite prior history entries.
+3. Append this run's observation (description, files, notes, timestamp) to the
+   entry's `history` array — never truncate or overwrite prior history entries.
 4. Update `lastSeen` to this run's timestamp and `files` to this run's observed file
    list (the most recent observation, for report display — `history` retains the
    full trail).

@@ -47,16 +47,19 @@ append-only within that entry.
     {
       "run": "2026-06-27T09:00:00.000Z",
       "description": "Retry a flaky network call with exponential backoff",
+      "notes": "Both implement a shared exponential-backoff-with-jitter delay helper before retrying",
       "files": ["src/services/payments/retry.ts", "src/lib/http/fetchWithBackoff.ts"]
     },
     {
       "run": "2026-07-04T09:00:00.000Z",
       "description": "Retry a flaky network call with exponential backoff",
+      "notes": "All three compute the same exponential-with-jitter delay before retrying a failed call",
       "files": ["src/services/payments/retry.ts", "src/services/notifications/sendWithRetry.ts", "src/lib/http/fetchWithBackoff.ts"]
     },
     {
       "run": "2026-07-18T09:00:00.000Z",
       "description": "Retry a flaky network call with exponential backoff",
+      "notes": "All three compute the same exponential-with-jitter delay before retrying a failed call",
       "files": ["src/services/payments/retry.ts", "src/services/notifications/sendWithRetry.ts", "src/lib/http/fetchWithBackoff.ts"]
     }
   ]
@@ -72,7 +75,7 @@ append-only within that entry.
 | `status` | `"tracking"` \| `"ready_to_propose"` | `"tracking"` until promotion criteria are met (see below); `"ready_to_propose"` once promoted. Can move back to `"tracking"` if a suppression is added after promotion. |
 | `firstSeen` | ISO-8601 string | Timestamp of the run that first created this entry. |
 | `lastSeen` | ISO-8601 string | Timestamp of the most recent run that observed this fingerprint. |
-| `history` | array | Append-only trail of every observation of this fingerprint: `{ run, description, files }` per run. Never truncated or rewritten — this is the evidence trail for stability judgments in future runs. |
+| `history` | array | Append-only trail of every observation of this fingerprint: `{ run, description, notes, files }` per run. Never truncated or rewritten — this is the evidence trail for stability judgments in future runs. |
 
 ---
 
