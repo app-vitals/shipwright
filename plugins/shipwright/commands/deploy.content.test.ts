@@ -323,3 +323,30 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
     expect(content).toContain("Re-surface this message every 5 minutes");
   });
 });
+
+describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
+  it("Step 4b contains exactly one unconditional --admin merge command", () => {
+    const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
+    const occurrences = content.split(adminMergeCommand).length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("does not contain a --auto merge command anywhere in the file", () => {
+    expect(content).not.toContain("--auto");
+  });
+
+  it("Step 4b's merge command selection is no longer branched on approval_source", () => {
+    const step4bMatch = content.match(
+      /### 4b\. Squash Merge[\s\S]*?(?=\n### 4c)/,
+    );
+    expect(step4bMatch).not.toBeNull();
+    const step4bSection = step4bMatch?.[0] ?? "";
+    // No conditional branching by approval source (the two-way GitHub-vs-self-review
+    // command selection this task removes) — informational mentions of
+    // approval_source are fine, but not a per-branch label distinguishing merge commands.
+    expect(step4bSection).not.toContain("**GitHub approval**");
+    expect(step4bSection).not.toContain("**Self-review**");
+    expect(step4bSection).not.toContain('approval_source == "github"');
+    expect(step4bSection).not.toContain('approval_source == "self_review"');
+  });
+});
