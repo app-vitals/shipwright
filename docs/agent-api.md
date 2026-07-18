@@ -237,9 +237,11 @@ Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harne
 
 **How reconciliation works:**
 
-- **Existing crons:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from `SYSTEM_CRONS`, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out.
-- **New crons:** Crons in `SYSTEM_CRONS` that don't yet exist are created with their default enabled state.
-- **Orphaned crons:** System crons whose names are no longer in `SYSTEM_CRONS` are deleted.
+The process runs in three passes within a single transaction for atomicity:
+
+- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from `SYSTEM_CRONS`, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Crons in `SYSTEM_CRONS` that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
+- **Pass 2 — Link parents:** For each `SYSTEM_CRONS` entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. This self-heals the parent/child link on every reconcile call (e.g., if it was previously null on a pre-existing row). The order of entries in `SYSTEM_CRONS` does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
+- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in `SYSTEM_CRONS` are deleted.
 
 ### Cron summary
 

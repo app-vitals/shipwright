@@ -122,18 +122,18 @@ All child models cascade-delete with their `Agent` (including `AgentCronRun` via
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
+Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Reconciliation uses a two-pass strategy: Pass 1 creates or updates each system cron entry (preserving existing IDs for FK stability), recording each into a name → id map. Pass 2 resolves parent/child links by looking up parent cron names in the map and setting `parentCronId` on declared child crons — self-healing the link on every agent boot with no manual migration. Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
 
 The four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
 `shipwright-deploy`) are **loop-driven, item-addressed executors, not self-discovering
-standalone crons.** `shipwright-loop` is the sole supported driver for these four phases: its
-in-process candidate providers (`agent/src/check-dev-task.ts`, `check-review.ts`,
-`check-patch.ts`, `check-deploy.ts`) select a winning candidate each tick and
-`loop-orchestrator.ts` dispatches the matching command with an explicit task id or
-`org/repo#number` embedded in the prompt. None of the four commands scans for its own work
-— each responds `[silent]` and exits immediately if invoked with no target. This means a
-standalone pipeline cron (`shipwright-loop` disabled) is **silently inert**: its stored
-prompt (e.g. `/shipwright:dev-task`) carries no target, so every tick dispatches, goes
+standalone crons.** They are linked as child crons of `shipwright-loop` (via `parentCronId`),
+which is the sole supported driver for these four phases: its in-process candidate providers
+(`agent/src/check-dev-task.ts`, `check-review.ts`, `check-patch.ts`, `check-deploy.ts`) select
+a winning candidate each tick and `loop-orchestrator.ts` dispatches the matching command with an
+explicit task id or `org/repo#number` embedded in the prompt. None of the four commands scans
+for its own work — each responds `[silent]` and exits immediately if invoked with no target.
+This means a standalone pipeline cron (`shipwright-loop` disabled) is **silently inert**: its
+stored prompt (e.g. `/shipwright:dev-task`) carries no target, so every tick dispatches, goes
 `[silent]`, and does nothing. See [migration.md](./migration.md) for the breaking-change
 note and the fix (enable `shipwright-loop`).
 
