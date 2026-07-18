@@ -11,6 +11,7 @@ import {
   type AgentDetail,
   type AgentListItem,
   computeDependencyLayout,
+  computeDependencyNodes,
   type CronJobItem,
   type CronRunItem,
   type DependencyNode,
@@ -4263,7 +4264,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     return html.slice(idx);
   }
 
-  test("a pending task with no unresolved blockers lands in Ready, and annotates what it needs", () => {
+  test("no Ready/In Progress/Blocked/Closed grouping headers appear in the graph card", () => {
     const a: TaskItem = {
       id: "TASK-A",
       title: "Root",
@@ -4274,73 +4275,21 @@ describe("renderSessionDetailPage dependency graph", () => {
     const b: TaskItem = {
       id: "TASK-B",
       title: "Depends on A",
-      status: "pending",
+      status: "in_progress",
       session: SESSION_ID,
       dependencies: ["TASK-A"],
       blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
     };
     const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
     const section = graphSection(html);
-    expect(section).toContain("Ready (1)");
-    expect(section).toContain("Blocked (1)");
-    expect(section).toContain("TASK-A");
+    expect(section).not.toContain("Ready (");
+    expect(section).not.toContain("In Progress (");
+    expect(section).not.toContain("Blocked (");
+    expect(section).not.toContain("Closed (");
+    expect(section).toContain('data-task-id="TASK-A"');
+    expect(section).toContain('data-task-id="TASK-B"');
     expect(section).toContain("needs");
     expect(section).toContain('href="/admin/tasks/TASK-A"');
-  });
-
-  test("groups tasks by the ready/in_progress/blocked/closed taxonomy, matching the Tasks page", () => {
-    const ready: TaskItem = {
-      id: "TASK-READY",
-      title: "Ready root",
-      status: "pending",
-      session: SESSION_ID,
-      blockedBy: [],
-    };
-    const inProgress: TaskItem = {
-      id: "TASK-INPROG",
-      title: "Being worked",
-      status: "pr_open",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-      blockedBy: [],
-    };
-    const explicitlyBlocked: TaskItem = {
-      id: "TASK-BLOCKED",
-      title: "Explicitly blocked",
-      status: "blocked",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-    };
-    const depBlocked: TaskItem = {
-      id: "TASK-DEPBLOCKED",
-      title: "Pending with unresolved dep",
-      status: "pending",
-      session: SESSION_ID,
-      dependencies: ["TASK-INPROG"],
-      blockedBy: [{ type: "dependency", id: "TASK-INPROG", status: "pr_open" }],
-    };
-    const closed: TaskItem = {
-      id: "TASK-CLOSED",
-      title: "Done",
-      status: "done",
-      session: SESSION_ID,
-      dependencies: ["TASK-READY"],
-    };
-    const html = renderSessionDetailPage(
-      SESSION_ID,
-      [ready, inProgress, explicitlyBlocked, depBlocked, closed],
-      USER_NAME,
-    );
-    const section = graphSection(html);
-    // Groups render in this fixed order regardless of input order.
-    const readyIdx = section.indexOf("Ready (1)");
-    const inProgressIdx = section.indexOf("In Progress (1)");
-    const blockedIdx = section.indexOf("Blocked (2)");
-    const closedIdx = section.indexOf("Closed (1)");
-    expect(readyIdx).toBeGreaterThan(-1);
-    expect(inProgressIdx).toBeGreaterThan(readyIdx);
-    expect(blockedIdx).toBeGreaterThan(inProgressIdx);
-    expect(closedIdx).toBeGreaterThan(blockedIdx);
   });
 
   test("a dependency id outside the session renders as plain unlinked text in the needs line", () => {
@@ -4356,6 +4305,8 @@ describe("renderSessionDetailPage dependency graph", () => {
     const section = graphSection(html);
     expect(section).toContain("EXTERNAL-1");
     expect(section).not.toContain('href="/admin/tasks/EXTERNAL-1"');
+    expect(section).not.toContain('data-to="EXTERNAL-1"');
+    expect(section).not.toContain('data-from="EXTERNAL-1"');
   });
 
   test("a dependency id inside the session links to that task's detail page", () => {
@@ -4381,6 +4332,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     );
     const section = graphSection(html);
     expect(section).toContain('href="/admin/tasks/TASK-ROOT"');
+    expect(section).toContain('data-from="TASK-ROOT" data-to="TASK-DEP"');
   });
 
   test("tasks with no dependency relationship at all are excluded from the graph", () => {
@@ -4417,7 +4369,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("TASK-LONER");
   });
 
-  test("same-branch tasks get a matching branch color even across different state groups (bundle)", () => {
+  test("same-branch tasks get a matching branch color", () => {
     const first: TaskItem = {
       id: "TASK-1",
       title: "models + migration",
@@ -4459,29 +4411,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(html).not.toContain("Dependency graph");
   });
 
-  test("empty state groups (e.g. no in-progress or closed tasks) are omitted", () => {
-    const a: TaskItem = {
-      id: "TASK-A",
-      title: "Root",
-      status: "pending",
-      session: SESSION_ID,
-      blockedBy: [],
-    };
-    const b: TaskItem = {
-      id: "TASK-B",
-      title: "Depends on A",
-      status: "pending",
-      session: SESSION_ID,
-      dependencies: ["TASK-A"],
-      blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
-    };
-    const html = renderSessionDetailPage(SESSION_ID, [a, b], USER_NAME);
-    const section = graphSection(html);
-    expect(section).not.toContain("In Progress (");
-    expect(section).not.toContain("Closed (");
-  });
-
-  test("a mutual dependency cycle doesn't hang rendering — each task is classified independently", () => {
+  test("a mutual dependency cycle doesn't hang rendering and still renders both nodes", () => {
     const x: TaskItem = {
       id: "TASK-X",
       title: "X",
@@ -4500,9 +4430,8 @@ describe("renderSessionDetailPage dependency graph", () => {
     };
     const html = renderSessionDetailPage(SESSION_ID, [x, y], USER_NAME);
     const section = graphSection(html);
-    expect(section).toContain("TASK-X");
-    expect(section).toContain("TASK-Y");
-    expect(section).toContain("Blocked (2)");
+    expect(section).toContain('data-task-id="TASK-X"');
+    expect(section).toContain('data-task-id="TASK-Y"');
   });
 
   test("escapes task ids, titles, and branch names in the graph to avoid XSS", () => {
@@ -4520,6 +4449,66 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("<img src=x onerror=alert(1)>");
     expect(section).not.toContain("<script>evil()</script>");
     expect(section).not.toContain("<b>dep</b>");
+  });
+
+  test("fan-out+fan-in: node count and data-from/data-to pairs match every in-session edge", () => {
+    // ROOT -> CHILD-1, ROOT -> CHILD-2, CHILD-1 -> SINK, CHILD-2 -> SINK
+    const root: TaskItem = {
+      id: "TASK-ROOT",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const child1: TaskItem = {
+      id: "TASK-CHILD-1",
+      title: "Child 1",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const child2: TaskItem = {
+      id: "TASK-CHILD-2",
+      title: "Child 2",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const sink: TaskItem = {
+      id: "TASK-SINK",
+      title: "Sink",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-CHILD-1", "TASK-CHILD-2"],
+      blockedBy: [
+        { type: "dependency", id: "TASK-CHILD-1", status: "pending" },
+        { type: "dependency", id: "TASK-CHILD-2", status: "pending" },
+      ],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [root, child1, child2, sink],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+
+    const nodeIds = [
+      ...section.matchAll(/data-task-id="([^"]+)"/g),
+    ].map((m) => m[1]);
+    expect(nodeIds.sort()).toEqual(
+      ["TASK-CHILD-1", "TASK-CHILD-2", "TASK-ROOT", "TASK-SINK"].sort(),
+    );
+
+    const edges = [
+      ...section.matchAll(/data-from="([^"]+)" data-to="([^"]+)"/g),
+    ].map((m) => [m[1], m[2]]);
+    expect(edges.length).toBe(4);
+    expect(edges).toContainEqual(["TASK-ROOT", "TASK-CHILD-1"]);
+    expect(edges).toContainEqual(["TASK-ROOT", "TASK-CHILD-2"]);
+    expect(edges).toContainEqual(["TASK-CHILD-1", "TASK-SINK"]);
+    expect(edges).toContainEqual(["TASK-CHILD-2", "TASK-SINK"]);
   });
 });
 

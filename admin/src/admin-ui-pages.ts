@@ -2070,44 +2070,36 @@ export interface DependencyNode {
 /**
  * Selects the session's tasks that participate in a dependency edge —
  * either they declare a dependency, or another task in the session declares
- * them as one — and buckets them by the same ready/in_progress/blocked/
- * closed states shown on the Tasks page, so the card answers "what can I
- * work on now" rather than an abstract structural order. Tasks with no
- * relationship are noise here and stay visible in the plain task table
- * above. Dependency ids outside the session (unknown to this task list)
- * aren't session tasks and have no status to classify by, so they never get
- * their own node — they still show up in a participating task's `dependsOn`
- * list, just unlinked (see `renderDependencyGraph`).
+ * them as one — and returns them as a flat, deterministically-ordered array
+ * for the graph card (see `renderDependencyGraph`/`computeDependencyLayout`).
+ * Tasks with no relationship are noise here and stay visible in the plain
+ * task table above. Dependency ids outside the session (unknown to this task
+ * list) aren't session tasks and have no status to classify by, so they
+ * never get their own node — they still show up in a participating task's
+ * `dependsOn` list, just unlinked.
  */
-function computeDependencyGroups(
-  tasks: TaskItem[],
-): Map<TaskState, DependencyNode[]> {
+export function computeDependencyNodes(tasks: TaskItem[]): DependencyNode[] {
   const referencedIds = new Set<string>();
   for (const t of tasks) {
     for (const dep of t.dependencies ?? []) referencedIds.add(dep);
   }
 
-  const groups = new Map<TaskState, DependencyNode[]>();
+  const nodes: DependencyNode[] = [];
   for (const t of tasks) {
     if ((t.dependencies?.length ?? 0) === 0 && !referencedIds.has(t.id)) {
       continue;
     }
-    const node: DependencyNode = {
+    nodes.push({
       id: t.id,
       title: t.title,
       status: t.status,
       branch: t.branch ?? null,
       dependsOn: t.dependencies ?? [],
       state: classifyTaskState(t),
-    };
-    const bucket = groups.get(node.state);
-    if (bucket) bucket.push(node);
-    else groups.set(node.state, [node]);
+    });
   }
-  for (const bucket of groups.values()) {
-    bucket.sort((a, b) => a.id.localeCompare(b.id));
-  }
-  return groups;
+  nodes.sort((a, b) => a.id.localeCompare(b.id));
+  return nodes;
 }
 
 // Layout constants for the dependency graph's SVG-style card layout, measured
@@ -2139,7 +2131,7 @@ export interface DependencyLayout {
  * the input node set aren't session participants and are ignored) and a row
  * within that column, then converts to fixed-size-card pixel coordinates
  * using the constants above. Callers are expected to have already filtered
- * `nodes` down to participating tasks (see `computeDependencyGroups`) — this
+ * `nodes` down to participating tasks (see `computeDependencyNodes`) — this
  * function does no filtering of its own.
  *
  * Cycle-safe: depth computation uses a Set tracking node ids on the current
@@ -2244,19 +2236,23 @@ function branchColor(branch: string): string {
 }
 
 /**
- * Renders the Ready/In Progress/Blocked/Closed groups as stacked rows of
- * cards, skipping empty groups. Each card gets a color-coded left
- * border/chip when its task has a branch (bundle), and its `dependsOn`
- * list links to sibling session tasks while leaving ids outside the
- * session as plain unlinked text.
+ * Renders the dependency graph as absolutely-positioned node cards over an
+ * SVG overlay of bezier edges, per the approved intel mockup
+ * (session-dependency-graph.html): `computeDependencyLayout` assigns each
+ * node an (x, y) by dependency depth, the SVG draws one arrowhead-terminated
+ * path per in-session edge (source = the depended-on task, target = the
+ * dependent task — an edge points from what's needed into what needs it),
+ * and each card keeps its raw status badge, branch chip/color, and
+ * "needs X, Y" line (linked for sibling session tasks, plain text — and no
+ * edge drawn — for dependency ids outside the session, which have no
+ * position in the layout).
  */
-function renderDependencyGraph(
-  tasks: TaskItem[],
-  groups: Map<TaskState, DependencyNode[]>,
-): string {
-  const byId = new Map(tasks.map((t) => [t.id, t]));
+function renderDependencyGraph(nodes: DependencyNode[]): string {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const layout = computeDependencyLayout(nodes);
 
   const nodeCard = (n: DependencyNode): string => {
+    const pos = layout.positions.get(n.id);
     const idHtml = `<a href="/admin/tasks/${escapeHtml(n.id)}" class="mono" style="font-size:12px;color:#6366f1;text-decoration:none;font-weight:600">${escapeHtml(n.id)}</a>`;
     const statusHtml = `<span class="badge ${statusBadgeClass(n.status)}" style="margin-left:6px;font-size:10px">${escapeHtml(n.status)}</span>`;
     const titleHtml = `<div style="font-size:12px;color:#374151;margin-top:2px">${escapeHtml(n.title)}</div>`;
@@ -2278,7 +2274,9 @@ function renderDependencyGraph(
       n.branch !== null
         ? `border-left:3px solid ${branchColor(n.branch)};`
         : "";
-    return `<div style="border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;min-width:150px;background:#fff">
+    const left = pos?.x ?? 0;
+    const top = pos?.y ?? 0;
+    return `<div data-task-id="${escapeHtml(n.id)}" style="position:absolute;left:${left}px;top:${top}px;width:${LAYOUT_CARD_WIDTH}px;border:1px solid #e5e7eb;${borderLeft}border-radius:6px;padding:8px 10px;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.03)">
         <div>${idHtml}${statusHtml}</div>
         ${titleHtml}
         ${dependsOnHtml}
@@ -2286,16 +2284,38 @@ function renderDependencyGraph(
       </div>`;
   };
 
-  return TASK_STATE_GROUPS.map(({ key, label }) => {
-    const nodes = groups.get(key);
-    if (!nodes || nodes.length === 0) return "";
-    return `<div style="margin-bottom:14px">
-      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">${label} (${nodes.length})</div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap">${nodes.map(nodeCard).join("")}</div>
+  const edgePaths: string[] = [];
+  for (const n of nodes) {
+    const targetPos = layout.positions.get(n.id);
+    if (!targetPos) continue;
+    for (const dep of n.dependsOn) {
+      const sourcePos = layout.positions.get(dep);
+      if (!sourcePos) continue; // out-of-session dependency: no position, no line
+      const x1 = sourcePos.x + LAYOUT_CARD_WIDTH;
+      const y1 = sourcePos.y + LAYOUT_CARD_HEIGHT / 2;
+      const x2 = targetPos.x;
+      const y2 = targetPos.y + LAYOUT_CARD_HEIGHT / 2;
+      const cx1 = x1 + (x2 - x1) / 2;
+      const cx2 = cx1;
+      edgePaths.push(
+        `<path data-from="${escapeHtml(dep)}" data-to="${escapeHtml(n.id)}" d="M ${x1},${y1} C ${cx1},${y1} ${cx2},${y2} ${x2},${y2}" fill="none" stroke="#c7cad1" stroke-width="1.5" marker-end="url(#arrow)" />`,
+      );
+    }
+  }
+
+  const svgHtml = `<svg width="${layout.width}" height="${layout.height}" style="position:absolute;top:0;left:0;pointer-events:none">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#c7cad1" />
+        </marker>
+      </defs>
+      ${edgePaths.join("\n      ")}
+    </svg>`;
+
+  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px;overflow-x:auto">
+      ${svgHtml}
+      ${nodes.map(nodeCard).join("\n      ")}
     </div>`;
-  })
-    .filter(Boolean)
-    .join("");
 }
 
 /**
@@ -2328,7 +2348,7 @@ export function renderSessionDetailPage(
     else tasksByState.set(state, [t]);
   }
 
-  const dependencyGroups = computeDependencyGroups(tasks);
+  const dependencyNodes = computeDependencyNodes(tasks);
 
   function taskRow(t: TaskItem): string {
     return `<tr>
@@ -2353,10 +2373,10 @@ export function renderSessionDetailPage(
           .join("\n");
 
   const depsSection =
-    dependencyGroups.size > 0
+    dependencyNodes.length > 0
       ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
-      ${renderDependencyGraph(tasks, dependencyGroups)}
+      ${renderDependencyGraph(dependencyNodes)}
     </div>`
       : "";
 
