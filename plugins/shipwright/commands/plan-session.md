@@ -115,9 +115,9 @@ Example flags:
 
 **Data-backfill migrations need a live-data check, not just a design review.** If a task involves a migration that assigns or attributes existing rows by pattern-matching a column (mapping an existing value to a new one), flag that the task's acceptance criteria must require querying the live table for its actual distinct values and confirming every distinct group is covered — not just checking the mapping against docs/config/API references. Test fixtures for that migration must be seeded from the same live-distinct-values check. A mapping that looks complete against documentation can still miss a real data shape that only a live query would surface.
 
-Mark this task **HITL** — see the judgment step in Step 5.5.
+This is likely **HITL** — see the conditional judgment step in Step 5.5.
 
-**Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks:
+**Breaking Change Scan** — additions are safe to deploy at any time; renames and removals are not. For any rename or removal in the spec, grep for all current callers before proposing tasks; for a constraint addition (see below), verify backfill completeness against live data instead:
 
 - **DB**: dropping or renaming a table or column — who reads or writes it?
 - **DB**: adding a `NOT NULL`, foreign key, or other constraint to a column on a table that already has rows — has the existing data been backfilled to satisfy it? Adding the constraint before the backfill is complete will fail on (or corrupt) existing rows.
