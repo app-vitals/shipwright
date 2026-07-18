@@ -93,6 +93,50 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 Post the message above and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
 
+### Same-Branch Sibling Check
+
+Some tasks are bundled onto an existing branch by prose in their `description` rather than
+a tracked `dependencies` entry (e.g. "joins branch X, land after task Y is merged"). Before
+claiming (pending) or resuming (in_progress) this task, check whether another task is
+already actively working the same `{branch}` — claiming (or continuing to hold a claim on)
+a task whose same-branch prerequisite is still mid-flight wastes a claim cycle and starves
+the prerequisite. This applies regardless of this task's own status.
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}&status=in_progress" | jq '.tasks'
+```
+
+Exclude this task's own `{id}` from the results — a task's own in_progress claim is not a
+sibling. For each remaining same-branch task, determine freshness using the same two-case
+formula the task-store's stale-claim reaper uses (`DEFAULT_CLAIM_TTL_MS` in
+`lib/claim-ttl.ts` — 35 minutes: the 30-minute `claude -p` session timeout plus a 5-minute
+buffer):
+
+- heartbeatAt is set and heartbeatAt is within the last 35 minutes → **fresh**
+- heartbeatAt is null and claimedAt is within the last 35 minutes → **fresh**
+- Otherwise → **stale** (indistinguishable from a crashed/stuck claim the reaper hasn't
+  caught yet — not legitimate concurrent work)
+
+**If any sibling is fresh:** defer — a same-branch prerequisite is still being actively
+worked. Release this task's own claim (a no-op if this task was never claimed):
+
+```bash
+curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/release" | jq .
+```
+
+Print:
+```
+⏭ Deferring to same-branch sibling {sibling-id} (in_progress, heartbeat fresh) — released own claim.
+```
+Respond `[silent]` and stop.
+
+**If no sibling is fresh** (none exist, or all are stale): no legitimate concurrent work to
+defer to — proceeds normally. A stale sibling's abandoned branch/PR (if any) is exactly
+what Step 4's Branch/PR Reality Check's existing incomplete/stale recovery path already
+handles, unchanged.
+
 Print:
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
