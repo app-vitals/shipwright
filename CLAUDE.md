@@ -180,3 +180,4 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/test-readiness/naming.md** — file-suffix → layer naming convention and the `bunfig.toml` runner-exclusion config (e2e + reserved canary suffix), gating M1 rename tasks
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
 - **docs/observability.md** — Sentry error/log reporting: what's collected, what's scrubbed, how to disable, and self-hosted Sentry support
+- **docs/consolidation.md** — consolidation-patrol system: the ledger format, the decisions registry, and the cron (disabled by default, opt-in per agent)
