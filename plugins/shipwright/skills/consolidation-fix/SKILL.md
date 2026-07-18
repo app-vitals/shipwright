@@ -63,7 +63,18 @@ Before starting, check for flags:
    here; the report's presence of an entry already means the gate was met.
 2. If `--pattern` was passed, filter to only the entry whose `**Fingerprint:**`
    matches. If no entry matches, print: "No ready_to_propose entry with fingerprint
-   `{pattern}`. Nothing to queue." and stop.
+   `{pattern}`. Nothing to queue." and stop. If the prefix matches more than one
+   entry — fingerprints are truncated hashes (per `consolidation-scan`'s Step 5.3),
+   so prefix collisions across two different entries in the same report are
+   possible — print all matching fingerprints and stop, asking the caller to
+   disambiguate:
+   ```
+   Ambiguous --pattern `{pattern}` matches {N} entries:
+     {fingerprint-1} — {pattern description}
+     {fingerprint-2} — {pattern description}
+     ...
+   Re-run with a longer prefix to disambiguate.
+   ```
 3. For each remaining entry, extract: fingerprint, pattern description, occurrence
    list (`file:line — note`), proposed canonical shape, first/last seen, and
    stability history.
@@ -213,9 +224,10 @@ and its execution plan before building the task JSON in Step 8.
      checkpoint each subsequent PR against this same plan before rolling out to the
      rest, rather than improvising a different approach partway through.
    - **Eliminate.** Once every occurrence has been migrated and validated, remove
-     the old implementation(s) in a final small PR (a pure deletion, ideally
-     `hitl: false` on its own even if the overall pattern was `hitl: true`, since by
-     that point nothing else references the old code).
+     the old implementation(s) in a final small PR (a pure deletion — low risk since
+     by that point nothing else references the old code). This step is covered by
+     the task's single `hitl` classification (Step 7) like every other step; it does
+     not get its own separate `hitl` value.
    - Cap each step's estimated diff size in the task description so the executor
      (human or `dev-task`) doesn't bundle multiple call-site migrations into one PR.
      A one-line rule of thumb: **one call site (or a small batch of near-identical
