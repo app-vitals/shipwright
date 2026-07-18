@@ -50,7 +50,18 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
     // by the unconditional Branch/PR Reality Check in Step 4.
     expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
     expect(content).not.toContain("### Orphan Check (prior session recovery)");
-    expect(content).toMatch(/skip\s+Step 2's claim and proceed directly to Step 3/i);
+    expect(content).toMatch(/skip\s+Step 2's claim[\s\S]*?then proceed to Step 3/i);
+  });
+
+  it("in_progress path is explicitly routed through the Same-Branch Sibling Check before Step 3", () => {
+    // The in_progress bullet must not just skip to Step 3 — it must pass through the
+    // Same-Branch Sibling Check first, or a resumed task never runs that check.
+    const inProgressBulletMatch = content.match(
+      /\*\*Found, `status == "in_progress"`\*\*:[\s\S]*?(?=\n- \*\*Found)/,
+    );
+    expect(inProgressBulletMatch).not.toBeNull();
+    const bullet = inProgressBulletMatch![0];
+    expect(bullet).toMatch(/Same-Branch Sibling Check/i);
   });
 });
 

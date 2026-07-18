@@ -45,11 +45,12 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 - **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
 - **Found, `status == "in_progress"`**: a prior session left this task in progress (or a
   human is manually re-running dev-task against it) — the task is already claimed, so skip
-  Step 2's claim and proceed directly to Step 3. Step 4's Branch/PR Reality Check (below)
-  runs unconditionally before worktree creation regardless of this status, so any stale
-  branch/PR left behind by the prior session is discovered and handled there — no separate
-  orphan-recovery path is needed here. Record `task_started_at` (current ISO timestamp) for
-  metrics.
+  Step 2's claim, run the Same-Branch Sibling Check (below) — it applies to resumed
+  in_progress tasks too, see that section — then proceed to Step 3. Step 4's Branch/PR
+  Reality Check (below) runs unconditionally before worktree creation regardless of this
+  status, so any stale branch/PR left behind by the prior session is discovered and handled
+  there — no separate orphan-recovery path is needed here. Record `task_started_at` (current
+  ISO timestamp) for metrics.
 - **Found, `status == "pending"`**: check dependency satisfaction before claiming (see
   "Dependency Check" below). If satisfied, proceed to Step 2's Mark In-Progress with this
   task.
