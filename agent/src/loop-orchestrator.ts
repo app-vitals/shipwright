@@ -317,6 +317,15 @@ export function createLoopOrchestrator(
     if (busy) return;
     busy = true;
 
+    // Per-tick guard (CBD-2.1): task ids whose pre-claim threw (e.g. a 5xx
+    // from task-store) during this tick. Unlike a 409 conflict, a throw means
+    // the claim never actually succeeded — the task-store record is still
+    // pending and getDevTaskCandidates() will keep returning it every
+    // iteration. Without this filter the drain would re-select and re-throw
+    // on the same oldest candidate forever within the tick. Scoped to this
+    // call so a later tick gets a fresh chance at the same task.
+    const failedPreClaimTaskIds = new Set<string>();
+
     try {
       // Drain until dry: keep selecting-and-dispatching while work remains.
       // Each iteration re-reads toggles and re-collects candidates so a phase
@@ -325,7 +334,9 @@ export function createLoopOrchestrator(
         const toggles = resolveLoopPhaseToggles(jobs);
 
         const tasks: WorkTaskCandidate[] = toggles.devTask
-          ? await getDevTaskCandidates()
+          ? (await getDevTaskCandidates()).filter(
+              (t) => !failedPreClaimTaskIds.has(t.id),
+            )
           : [];
 
         const prs: WorkPrCandidate[] = [];
@@ -363,7 +374,22 @@ export function createLoopOrchestrator(
         // append to the dispatched command string below.
         let preClaimMarker: string | undefined;
         if (item.type === "task") {
-          const claimed = await claimTask(itemId);
+          let claimed: boolean;
+          try {
+            claimed = await claimTask(itemId);
+          } catch (err) {
+            // CBD-2.1: a thrown pre-claim (e.g. task-store 5xx) must not
+            // abort the whole drain — skip this item for the rest of the
+            // tick and keep draining the next candidate. Logged so repeated
+            // claim failures stay observable (Sentry-eligible) instead of
+            // being silently swallowed.
+            console.warn(
+              `Pre-claim failed for task ${itemId}, skipping for this tick: ` +
+                `${err instanceof Error ? err.message : String(err)}`,
+            );
+            failedPreClaimTaskIds.add(itemId);
+            continue;
+          }
           if (!claimed) continue;
         } else {
           const claimResult = await claimPr(item.pr);
