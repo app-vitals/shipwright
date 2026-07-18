@@ -103,6 +103,24 @@ export interface PrStateReconcilerDeps {
     repo: string,
     branch: string,
   ) => Promise<Array<{ number: number }>>;
+  /**
+   * List every task-store Task with status "pending" or "in_progress" that
+   * has a `branch` set and no `pr` linked (TCR-1.2). The `PrOpenTaskRecord`
+   * shape is reused as-is — no new record type needed.
+   */
+  listOrphanCandidateTasks: () => Promise<PrOpenTaskRecord[]>;
+  /**
+   * Branch lookup for a real, currently-OPEN PR (`gh pr list --head <branch>
+   * --state open`) — the TCR-1.2 counterpart to `ghListMergedPrsForBranch`
+   * above, but for OPEN PRs, and additionally returning `createdAt` since
+   * the orphan pass needs the PR's actual creation time for `prCreatedAt`
+   * (unlike the merged-task branch-fallback path, this pass has no `now()`
+   * fallback requirement).
+   */
+  ghListOpenPrsForBranch: (
+    repo: string,
+    branch: string,
+  ) => Promise<Array<{ number: number; createdAt: string }>>;
   /** Look up a task-store PullRequest record by repo+prNumber, for the taskId backfill (DSR-1.1). */
   findPrRecordByRepoAndPrNumber: (
     repo: string,
@@ -333,6 +351,79 @@ export async function reconcilePrOpenTasks(
   }
 }
 
+/**
+ * Reconcile one orphaned pending/in_progress task against live GitHub state
+ * (TCR-1.2 — closes the gap behind 5+ documented recurrences: LCT-3.1,
+ * CHU-2.2, PSF-2.1, ADS-1.2, TS-web-hitl-filter/PR#1789, where a dev-task
+ * session pushes a commit and opens a real PR on GitHub but gets interrupted
+ * before the final task-store PATCH to status:"pr_open" — leaving the task
+ * stuck at pending/in_progress forever with an orphaned, never-linked PR).
+ *
+ * Causally, this pass runs FIRST in the chain: it heals pending/in_progress
+ * → pr_open drift, i.e. it's what gets a task INTO the state the existing
+ * `reconcilePrOpenTasks` pass above then watches for merges/closes on
+ * (pr_open → merged drift). A task only ever needs this pass once, before it
+ * would ever reach the existing one.
+ *
+ * `deps.listOrphanCandidateTasks()` is defined to only return
+ * pending/in_progress tasks with a branch set and no pr linked — a task
+ * already at pr_open is never returned by a correct implementation, so no
+ * extra status filtering happens here (matches every other list* dep in this
+ * file: filtering is the dep's contract, not this function's job).
+ */
+async function reconcileOrphanedTask(
+  deps: PrStateReconcilerDeps,
+  task: PrOpenTaskRecord,
+): Promise<void> {
+  const taskRepo = resolveTaskRepo(deps, task);
+  if (!taskRepo) return; // no repo to resolve against — skip defensively
+
+  if (!task.branch) return; // shouldn't happen given the dep contract, but defend anyway
+
+  const open = await deps.ghListOpenPrsForBranch(taskRepo, task.branch);
+  const first = open[0];
+  if (!first) return; // no open PR found for this branch yet — no-op
+
+  await deps.updateTaskStatus(task.id, {
+    status: "pr_open",
+    pr: first.number,
+    prCreatedAt: first.createdAt,
+  });
+}
+
+/**
+ * Scan every orphan-candidate task (pending/in_progress, branch set, no pr
+ * linked), resolve a real open PR on GitHub for its branch, and PATCH the
+ * task to pr_open when one is found (TCR-1.2). A single per-task failure is
+ * logged and does not abort reconciliation of the rest of the batch —
+ * mirrors `reconcilePrOpenTasks`'s own per-task error isolation above.
+ */
+export async function reconcileOrphanedTasks(
+  deps: PrStateReconcilerDeps,
+): Promise<void> {
+  let tasks: PrOpenTaskRecord[];
+  try {
+    tasks = await deps.listOrphanCandidateTasks();
+  } catch (err) {
+    console.error(
+      "[pr-state-reconciler] failed to list orphan-candidate tasks:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return;
+  }
+
+  for (const task of tasks) {
+    try {
+      await reconcileOrphanedTask(deps, task);
+    } catch (err) {
+      console.error(
+        `[pr-state-reconciler] failed to reconcile orphan-candidate task ${task.id}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+}
+
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -340,7 +431,8 @@ export async function reconcilePrOpenTasks(
  * GitHub state, and PATCH only the ones that disagree (GitHub shows
  * MERGED/CLOSED but the record still says "open"). A single per-PR gh
  * lookup failure is logged and does not abort reconciliation of the rest
- * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) so
+ * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) and
+ * the orphaned pending/in_progress-task reconciliation pass (TCR-1.2) so
  * agent/src/index.ts's single call site doesn't need to change.
  */
 export async function reconcilePrState(
@@ -374,6 +466,7 @@ export async function reconcilePrState(
   }
 
   await reconcilePrOpenTasks(deps);
+  await reconcileOrphanedTasks(deps);
 }
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
@@ -589,6 +682,32 @@ interface TaskListResponseJson {
   tasks: PrOpenTaskRecord[];
 }
 
+/**
+ * Shared GET /tasks?status=<status> helper for both `listPrOpenTasks` and
+ * `listOrphanCandidateTasks` (TCR-1.2) — the task-store's GET /tasks only
+ * accepts one status value at a time (no comma-separated multi-status
+ * support), so `listOrphanCandidateTasks` below issues two of these calls
+ * (one per status) and merges the results client-side.
+ */
+function makeListTasksByStatus(opts: {
+  baseUrl: string;
+  headers: Record<string, string>;
+  doFetch: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}): (status: string) => Promise<PrOpenTaskRecord[]> {
+  const { baseUrl, headers, doFetch } = opts;
+  return async (status: string) => {
+    const params = new URLSearchParams({ status });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    // Same legacy-bare-array tolerance as createTaskStoreClient's query().
+    if (Array.isArray(data)) return data as PrOpenTaskRecord[];
+    return (data as TaskListResponseJson).tasks;
+  };
+}
+
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -606,6 +725,7 @@ export function buildProductionDeps(opts: {
     "Content-Type": "application/json",
   };
   const doFetch = opts.fetchFn ?? fetch;
+  const listTasksByStatus = makeListTasksByStatus({ baseUrl, headers, doFetch });
 
   return {
     repos,
@@ -636,17 +756,7 @@ export function buildProductionDeps(opts: {
         "state,mergedAt",
       ]);
     },
-    listPrOpenTasks: async () => {
-      const params = new URLSearchParams({ status: "pr_open" });
-      const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
-      if (!res.ok) {
-        throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
-      }
-      const data = (await res.json()) as unknown;
-      // Same legacy-bare-array tolerance as createTaskStoreClient's query().
-      if (Array.isArray(data)) return data as PrOpenTaskRecord[];
-      return (data as TaskListResponseJson).tasks;
-    },
+    listPrOpenTasks: () => listTasksByStatus("pr_open"),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
@@ -669,6 +779,32 @@ export function buildProductionDeps(opts: {
         repo,
         "--json",
         "number",
+      ]);
+    },
+    // TCR-1.2: the task-store's GET /tasks only accepts one status value at
+    // a time and has no server-side "has a branch AND no pr" filter, so this
+    // issues two requests (one per status) and filters client-side.
+    listOrphanCandidateTasks: async () => {
+      const [pending, inProgress] = await Promise.all([
+        listTasksByStatus("pending"),
+        listTasksByStatus("in_progress"),
+      ]);
+      return [...pending, ...inProgress].filter(
+        (task) => !!task.branch && !task.pr,
+      );
+    },
+    ghListOpenPrsForBranch: async (repo: string, branch: string) => {
+      return await ghJson<Array<{ number: number; createdAt: string }>>([
+        "pr",
+        "list",
+        "--head",
+        branch,
+        "--state",
+        "open",
+        "--repo",
+        repo,
+        "--json",
+        "number,createdAt",
       ]);
     },
     // createPrRecordQuery (check-helpers.ts) already implements exactly this

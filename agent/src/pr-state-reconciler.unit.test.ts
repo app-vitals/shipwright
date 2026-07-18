@@ -61,6 +61,13 @@ interface MakeDepsOptions {
   now?: () => string;
   /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
   getScopedRepos?: () => string[];
+  /** orphan-candidate (pending/in_progress, branch set, no pr linked) tasks for the TCR-1.2 pass; defaults to [] so existing tests are unaffected. */
+  orphanCandidateTasks?: PrOpenTaskRecord[];
+  /** "repo#branch" -> open-PR-list result, or an Error to throw, for the TCR-1.2 orphan pass. */
+  openBranchResults?: Record<
+    string,
+    Array<{ number: number; createdAt: string }> | Error
+  >;
 }
 
 function makeDeps({
@@ -73,6 +80,8 @@ function makeDeps({
   prRecords = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
+  orphanCandidateTasks = [],
+  openBranchResults = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -117,6 +126,13 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
+    listOrphanCandidateTasks: async () => orphanCandidateTasks,
+    ghListOpenPrsForBranch: async (repo: string, branch: string) => {
+      const key = `${repo}#${branch}`;
+      const result = openBranchResults[key];
+      if (result instanceof Error) throw result;
+      return result ?? [];
+    },
   };
 
   return { deps, listCalls, patchCalls, taskPatchCalls };
@@ -1210,6 +1226,165 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
     await reconcilePrState(deps);
 
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+});
+
+describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
+  test("orphaned pending task with a real open PR on its branch self-heals to pr_open", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-1",
+      repo: "acme/example-repo",
+      branch: "feat/tcr-1-2-orphan",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {
+        "acme/example-repo#feat/tcr-1-2-orphan": [
+          { number: 99, createdAt: "2026-07-16T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-1");
+    expect(taskPatchCalls[0].fields.status).toBe("pr_open");
+    expect(taskPatchCalls[0].fields.pr).toBe(99);
+    expect(taskPatchCalls[0].fields.prCreatedAt).toBe(
+      "2026-07-16T00:00:00.000Z",
+    );
+  });
+
+  test("orphan candidate task with a branch but no matching open PR is left untouched — no PATCH", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-2",
+      repo: "acme/example-repo",
+      branch: "feat/tcr-1-2-no-pr-yet",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {},
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("a task already at pr_open is not touched by this pass (no double-processing with the existing pr_open pass)", async () => {
+    // listOrphanCandidateTasks, per its contract, only ever returns
+    // pending/in_progress tasks — a correct production implementation would
+    // never include a pr_open task here. This fixture asserts the reconciler
+    // doesn't blow up or double-count when a pr_open task coexists in the
+    // data: it's returned by listPrOpenTasks (the existing pass) but NOT by
+    // listOrphanCandidateTasks (this new pass).
+    const prOpenTask: PrOpenTaskRecord = {
+      id: "task-already-pr-open",
+      repo: "acme/example-repo",
+      pr: 123,
+      branch: "feat/already-open",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      prOpenTasks: [prOpenTask],
+      orphanCandidateTasks: [], // correctly excludes the pr_open task
+      ghResults: {
+        "acme/example-repo#123": { state: "OPEN", mergedAt: null },
+      },
+      openBranchResults: {
+        "acme/example-repo#feat/already-open": [
+          { number: 123, createdAt: "2026-07-16T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    // Still open on GitHub via the existing pr_open pass — no merge PATCH —
+    // and the orphan pass never even sees this task, so no pr_open PATCH either.
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("orphan candidate task with no branch set is skipped defensively — no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-no-branch",
+      repo: "acme/example-repo",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("ghListOpenPrsForBranch failure for one orphan task does not abort reconciliation of the others", async () => {
+    const taskA: PrOpenTaskRecord = {
+      id: "task-orphan-fail",
+      repo: "acme/example-repo",
+      branch: "feat/will-fail",
+    };
+    const taskB: PrOpenTaskRecord = {
+      id: "task-orphan-ok",
+      repo: "acme/example-repo",
+      branch: "feat/will-succeed",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [taskA, taskB],
+      openBranchResults: {
+        "acme/example-repo#feat/will-fail": new Error(
+          "gh pr list failed: rate limited",
+        ),
+        "acme/example-repo#feat/will-succeed": [
+          { number: 200, createdAt: "2026-07-17T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-ok");
+    expect(taskPatchCalls[0].fields.pr).toBe(200);
+  });
+
+  test("multiple candidate tasks where only some have a matching open PR", async () => {
+    const taskMatch: PrOpenTaskRecord = {
+      id: "task-orphan-match",
+      repo: "acme/example-repo",
+      branch: "feat/has-pr",
+    };
+    const taskNoMatch: PrOpenTaskRecord = {
+      id: "task-orphan-no-match",
+      repo: "acme/example-repo",
+      branch: "feat/no-pr-yet",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [taskMatch, taskNoMatch],
+      openBranchResults: {
+        "acme/example-repo#feat/has-pr": [
+          { number: 300, createdAt: "2026-07-18T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-match");
+  });
+
+  test("listOrphanCandidateTasks failure is logged and does not abort the rest of reconcilePrState", async () => {
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [],
+    });
+    deps.listOrphanCandidateTasks = async () => {
+      throw new Error("task-store GET /tasks failed");
+    };
+
+    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
   });
 });
