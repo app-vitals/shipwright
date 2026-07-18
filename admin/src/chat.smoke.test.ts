@@ -179,6 +179,7 @@ const MOCK_CRON = {
   enabled: true,
   name: null,
   system: false,
+  parentCronId: null,
   silent: false,
   preCheck: null,
   createdAt: new Date("2024-01-01"),

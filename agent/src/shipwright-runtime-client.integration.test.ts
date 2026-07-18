@@ -38,6 +38,7 @@ const SAMPLE_CRONS: AgentCronJob[] = [
     enabled: true,
     preCheck: null,
     system: false,
+    parentCronId: null,
     createdAt: new Date("2025-01-01T00:00:00Z"),
     updatedAt: new Date("2025-01-01T00:00:00Z"),
   },

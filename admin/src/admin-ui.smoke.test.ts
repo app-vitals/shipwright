@@ -40,6 +40,7 @@ const MOCK_CRON = {
   enabled: true,
   name: null,
   system: false,
+  parentCronId: null,
   silent: false,
   preCheck: null,
   createdAt: new Date("2024-01-01"),
@@ -595,6 +596,7 @@ describe("admin UI — authenticated pages", () => {
       phase: null,
       itemType: null,
       itemId: null,
+      phaseId: null,
       createdAt: new Date("2026-06-01T10:00:00Z"),
       modelBreakdown: [] as {
         id: string;
