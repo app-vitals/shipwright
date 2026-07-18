@@ -122,7 +122,7 @@ All child models cascade-delete with their `Agent` (including `AgentCronRun` via
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
+Every new agent is seeded with twelve system crons (the canonical definitions live in [`admin/src/system-crons.ts`](../admin/src/system-crons.ts) and are reconciled onto each agent at startup via `POST /agents/:id/crons/reconcile`). Three are **enabled by default** (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`); the rest are opt-in (toggle in the admin UI or via `PATCH /agents/:id/crons/:cronId`). All run `silent` (they post to Slack only on a result worth surfacing, or on error). Some carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only spends a Claude turn when there is real work ready.
 
 The four pipeline crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
 `shipwright-deploy`) are **loop-driven, item-addressed executors, not self-discovering
@@ -150,6 +150,7 @@ note and the fix (enable `shipwright-loop`).
 | `dependabot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open Dependabot PRs. |
 | `entropy-patrol-maintenance` | `0 4 * * 1` (weekly, Mon 04:00) | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | `0 4 * * *` (daily, 04:00) | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
+| `consolidation-patrol-maintenance` | `0 5 * * 1` (weekly, Mon 05:00) | off | Scans for emerging duplicate/similar code patterns that have stabilized across multiple runs and proposes consolidation for what's ready. Recommended to stay disabled after merge until `state/consolidation-ledger.json` has accumulated a few weeks of real signal. |
 
 ## Environment
 
