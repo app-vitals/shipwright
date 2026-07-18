@@ -190,6 +190,31 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(enabled).toHaveLength(1);
   });
 
+  it("listEnabled() excludes an enabled child row with parentCronId set, but still returns a same-agent enabled top-level cron", async () => {
+    const agentId = await createAgent(prisma);
+    const parent = await service.create(agentId, {
+      schedule: "* * * * *",
+      prompt: "Parent loop",
+      channel: "C1",
+      enabled: true,
+    });
+    const child = await service.create(agentId, {
+      schedule: "0,30 * * * *",
+      prompt: "Child phase",
+      channel: "C2",
+      enabled: true,
+    });
+    await prisma.agentCronJob.update({
+      where: { id: child.id },
+      data: { parentCronId: parent.id },
+    });
+
+    const enabled = await service.listEnabled();
+    const enabledIds = enabled.map((j) => j.id);
+    expect(enabledIds).toContain(parent.id);
+    expect(enabledIds).not.toContain(child.id);
+  });
+
   // ─── update ─────────────────────────────────────────────────────────────────
 
   it("update() changes schedule and prompt", async () => {
