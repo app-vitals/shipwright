@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
+  buildProductionDeps,
   buildReviewStateProductionDeps,
   type GhPrView,
   type PrOpenTaskRecord,
@@ -33,6 +34,11 @@ import {
 interface ListPrsCall {
   repo: string;
   state: string;
+  limit: number;
+  offset: number;
+}
+
+interface ListTasksCall {
   limit: number;
   offset: number;
 }
@@ -61,6 +67,13 @@ interface MakeDepsOptions {
   now?: () => string;
   /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
   getScopedRepos?: () => string[];
+  /** orphan-candidate (pending/in_progress, branch set, no pr linked) tasks for the TCR-1.2 pass; defaults to [] so existing tests are unaffected. */
+  orphanCandidateTasks?: PrOpenTaskRecord[];
+  /** "repo#branch" -> open-PR-list result, or an Error to throw, for the TCR-1.2 orphan pass. */
+  openBranchResults?: Record<
+    string,
+    Array<{ number: number; createdAt: string }> | Error
+  >;
 }
 
 function makeDeps({
@@ -73,15 +86,19 @@ function makeDeps({
   prRecords = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
+  orphanCandidateTasks = [],
+  openBranchResults = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
+  listPrOpenTasksCalls: ListTasksCall[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
+  const listPrOpenTasksCalls: ListTasksCall[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -102,7 +119,10 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async () => prOpenTasks,
+    listPrOpenTasks: async (limit: number, offset: number) => {
+      listPrOpenTasksCalls.push({ limit, offset });
+      return prOpenTasks.slice(offset, offset + limit);
+    },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       taskPatchCalls.push({ id, fields });
     },
@@ -117,9 +137,16 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
+    listOrphanCandidateTasks: async () => orphanCandidateTasks,
+    ghListOpenPrsForBranch: async (repo: string, branch: string) => {
+      const key = `${repo}#${branch}`;
+      const result = openBranchResults[key];
+      if (result instanceof Error) throw result;
+      return result ?? [];
+    },
   };
 
-  return { deps, listCalls, patchCalls, taskPatchCalls };
+  return { deps, listCalls, patchCalls, taskPatchCalls, listPrOpenTasksCalls };
 }
 
 function makeRecord(overrides: Partial<PrStateRecord> = {}): PrStateRecord {
@@ -1011,6 +1038,153 @@ describe("buildReviewStateProductionDeps", () => {
   });
 });
 
+describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", () => {
+  /**
+   * Fake fetchFn that simulates the task-store's GET /tasks?status=<status>
+   * pagination contract: returns up to `limit` records starting at `offset`
+   * from a fixed per-status backing array. Records every request's status,
+   * limit, and offset so tests can assert the full paging sequence.
+   */
+  function makeFakeTaskStoreFetch(opts: {
+    tasksByStatus: Record<string, PrOpenTaskRecord[]>;
+  }): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<{ status: string; limit: number; offset: number }>;
+  } {
+    const calls: Array<{ status: string; limit: number; offset: number }> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      const status = parsed.searchParams.get("status") ?? "";
+      const limit = Number(parsed.searchParams.get("limit"));
+      const offset = Number(parsed.searchParams.get("offset"));
+      calls.push({ status, limit, offset });
+      const all = opts.tasksByStatus[status] ?? [];
+      const page = all.slice(offset, offset + limit);
+      return new Response(JSON.stringify({ tasks: page }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  const savedTaskStoreEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
+      process.env.SHIPWRIGHT_TASK_STORE_URL;
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
+  });
+
+  afterEach(() => {
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_URL =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("listPrOpenTasks issues a single GET when under the page limit", async () => {
+    const tasks = [{ id: "t1", repo: "acme/example-repo", pr: 1 }];
+    const { fetchFn, calls } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pr_open: tasks },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listPrOpenTasks(50, 0);
+
+    expect(result).toEqual(tasks);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ status: "pr_open", limit: 50, offset: 0 });
+  });
+
+  test("listOrphanCandidateTasks pages past the default 50-row task-store page for both statuses (regression: previously silently truncated at 50)", async () => {
+    // 62 pending + 55 in_progress tasks, all orphan candidates (branch set,
+    // no pr linked) — mirrors the live truncation this finding reported
+    // (GET /tasks?status=pending had total: 62, but returned only 50).
+    const pending = Array.from({ length: 62 }, (_, i) => ({
+      id: `pending-${i}`,
+      repo: "acme/example-repo",
+      branch: `feat/pending-${i}`,
+    }));
+    const inProgress = Array.from({ length: 55 }, (_, i) => ({
+      id: `in-progress-${i}`,
+      repo: "acme/example-repo",
+      branch: `feat/in-progress-${i}`,
+    }));
+    const { fetchFn, calls } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pending, in_progress: inProgress },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listOrphanCandidateTasks();
+
+    // All 117 orphan candidates returned — not truncated at 50.
+    expect(result).toHaveLength(117);
+    expect(result.map((t) => t.id)).toEqual([
+      ...pending.map((t) => t.id),
+      ...inProgress.map((t) => t.id),
+    ]);
+
+    // "pending" paged across 2 requests (50 + 12), "in_progress" across 2 (50 + 5).
+    const pendingCalls = calls.filter((c) => c.status === "pending");
+    const inProgressCalls = calls.filter((c) => c.status === "in_progress");
+    expect(pendingCalls).toEqual([
+      { status: "pending", limit: 50, offset: 0 },
+      { status: "pending", limit: 50, offset: 50 },
+    ]);
+    expect(inProgressCalls).toEqual([
+      { status: "in_progress", limit: 50, offset: 0 },
+      { status: "in_progress", limit: 50, offset: 50 },
+    ]);
+  });
+
+  test("listOrphanCandidateTasks still filters out tasks with no branch or an existing pr across paginated pages", async () => {
+    const pending = [
+      { id: "keep-1", repo: "acme/example-repo", branch: "feat/keep-1" },
+      { id: "no-branch", repo: "acme/example-repo" },
+      {
+        id: "has-pr",
+        repo: "acme/example-repo",
+        branch: "feat/has-pr",
+        pr: 5,
+      },
+    ];
+    const { fetchFn } = makeFakeTaskStoreFetch({
+      tasksByStatus: { pending, in_progress: [] },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listOrphanCandidateTasks();
+
+    expect(result.map((t) => t.id)).toEqual(["keep-1"]);
+  });
+});
+
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
   test("pr_open task with merged PR (direct path) is reconciled to merged, using GitHub's mergedAt", async () => {
     const task: PrOpenTaskRecord = {
@@ -1210,6 +1384,193 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
     await reconcilePrState(deps);
 
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("listPrOpenTasks paginates beyond the default page limit — scans a second page", async () => {
+    const page1 = Array.from({ length: 2 }, (_, i) => ({
+      id: `task-p1-${i}`,
+      repo: "acme/example-repo",
+      pr: 100 + i,
+    }));
+    const page2: PrOpenTaskRecord[] = [
+      { id: "task-p2-0", repo: "acme/example-repo", pr: 200 },
+    ];
+    const ghResults: Record<string, GhPrView> = {};
+    for (const t of [...page1, ...page2]) {
+      ghResults[`acme/example-repo#${t.pr}`] = { state: "OPEN", mergedAt: null };
+    }
+
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: [...page1, ...page2],
+      ghResults,
+      pageLimit: 2,
+    });
+
+    await reconcilePrState(deps);
+
+    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
+    expect(listPrOpenTasksCalls).toHaveLength(2);
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
+    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
+  });
+});
+
+describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
+  test("orphaned pending task with a real open PR on its branch self-heals to pr_open", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-1",
+      repo: "acme/example-repo",
+      branch: "feat/tcr-1-2-orphan",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {
+        "acme/example-repo#feat/tcr-1-2-orphan": [
+          { number: 99, createdAt: "2026-07-16T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-1");
+    expect(taskPatchCalls[0].fields.status).toBe("pr_open");
+    expect(taskPatchCalls[0].fields.pr).toBe(99);
+    expect(taskPatchCalls[0].fields.prCreatedAt).toBe(
+      "2026-07-16T00:00:00.000Z",
+    );
+  });
+
+  test("orphan candidate task with a branch but no matching open PR is left untouched — no PATCH", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-2",
+      repo: "acme/example-repo",
+      branch: "feat/tcr-1-2-no-pr-yet",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {},
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("a task already at pr_open is not touched by this pass (no double-processing with the existing pr_open pass)", async () => {
+    // listOrphanCandidateTasks, per its contract, only ever returns
+    // pending/in_progress tasks — a correct production implementation would
+    // never include a pr_open task here. This fixture asserts the reconciler
+    // doesn't blow up or double-count when a pr_open task coexists in the
+    // data: it's returned by listPrOpenTasks (the existing pass) but NOT by
+    // listOrphanCandidateTasks (this new pass).
+    const prOpenTask: PrOpenTaskRecord = {
+      id: "task-already-pr-open",
+      repo: "acme/example-repo",
+      pr: 123,
+      branch: "feat/already-open",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      prOpenTasks: [prOpenTask],
+      orphanCandidateTasks: [], // correctly excludes the pr_open task
+      ghResults: {
+        "acme/example-repo#123": { state: "OPEN", mergedAt: null },
+      },
+      openBranchResults: {
+        "acme/example-repo#feat/already-open": [
+          { number: 123, createdAt: "2026-07-16T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    // Still open on GitHub via the existing pr_open pass — no merge PATCH —
+    // and the orphan pass never even sees this task, so no pr_open PATCH either.
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("orphan candidate task with no branch set is skipped defensively — no throw", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-orphan-no-branch",
+      repo: "acme/example-repo",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  test("ghListOpenPrsForBranch failure for one orphan task does not abort reconciliation of the others", async () => {
+    const taskA: PrOpenTaskRecord = {
+      id: "task-orphan-fail",
+      repo: "acme/example-repo",
+      branch: "feat/will-fail",
+    };
+    const taskB: PrOpenTaskRecord = {
+      id: "task-orphan-ok",
+      repo: "acme/example-repo",
+      branch: "feat/will-succeed",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [taskA, taskB],
+      openBranchResults: {
+        "acme/example-repo#feat/will-fail": new Error(
+          "gh pr list failed: rate limited",
+        ),
+        "acme/example-repo#feat/will-succeed": [
+          { number: 200, createdAt: "2026-07-17T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-ok");
+    expect(taskPatchCalls[0].fields.pr).toBe(200);
+  });
+
+  test("multiple candidate tasks where only some have a matching open PR", async () => {
+    const taskMatch: PrOpenTaskRecord = {
+      id: "task-orphan-match",
+      repo: "acme/example-repo",
+      branch: "feat/has-pr",
+    };
+    const taskNoMatch: PrOpenTaskRecord = {
+      id: "task-orphan-no-match",
+      repo: "acme/example-repo",
+      branch: "feat/no-pr-yet",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [taskMatch, taskNoMatch],
+      openBranchResults: {
+        "acme/example-repo#feat/has-pr": [
+          { number: 300, createdAt: "2026-07-18T00:00:00.000Z" },
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-match");
+  });
+
+  test("listOrphanCandidateTasks failure is logged and does not abort the rest of reconcilePrState", async () => {
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [],
+    });
+    deps.listOrphanCandidateTasks = async () => {
+      throw new Error("task-store GET /tasks failed");
+    };
+
+    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
   });
 });
