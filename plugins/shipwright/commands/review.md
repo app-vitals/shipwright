@@ -472,15 +472,30 @@ should be held; the inline comments convey the specific feedback to the author.
 
 ### If `auto_post_reviews` is true (policy):
 
-1. Submit via GitHub API:
+1. Submit via GitHub API, capturing both the exit status and the response body:
    ```bash
-   gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
-     --input state/reviews/pr_review_{pr}.json
+   POST_RESPONSE=$(gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
+     --input state/reviews/pr_review_{pr}.json)
+   POST_EXIT=$?
    ```
-2. Capture `html_url` from response
-3. Run Step 11b to mark the PR record posted.
-4. Print: `Posted review for #{pr}: {html_url}`
-5. Post Slack message (see below)
+2. Capture `html_url` from `$POST_RESPONSE` (e.g. `echo "$POST_RESPONSE" | jq -r '.html_url'`).
+3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `html_url` both count as failure:
+   - **Success** (`POST_EXIT == 0` and `html_url` present): continue to steps 4-6 below.
+   - **Failure**: the GitHub post did not land, so nothing was actually reviewed at HEAD.
+     Do not run Step 11b — marking the record posted here would let
+     `check-review.ts`'s `commitSha`/`reviewState` dedup permanently hide this PR from
+     future review candidacy even though no review exists on GitHub. Instead:
+     1. Release the claim so the record returns to `reviewState: "pending"`:
+        ```bash
+        curl -s -o /dev/null -X POST \
+          -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+          "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/release"
+        ```
+     2. Print a warning: `Warning: review post for #{pr} failed (exit {POST_EXIT}) — released claim, will retry next pass.`
+     3. Stop — do not proceed to Step 11b or the Slack message below.
+4. Run Step 11b to mark the PR record posted.
+5. Print: `Posted review for #{pr}: {html_url}`
+6. Post Slack message (see below)
 
 ### If `auto_post_reviews` is false (default):
 

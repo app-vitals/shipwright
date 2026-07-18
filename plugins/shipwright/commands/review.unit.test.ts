@@ -128,3 +128,45 @@ describe("review.md — WLS-3.2 explicit-target-only", () => {
     expect(content.includes("Skip Step 3 (queue building)")).toBe(false);
   });
 });
+
+describe("review.md — RPF-1.4 verify review post before complete", () => {
+  let autoPostSection: string;
+
+  beforeAll(() => {
+    const startIdx = content.indexOf("### If `auto_post_reviews` is true (policy):");
+    const endIdx = content.indexOf("### If `auto_post_reviews` is false (default):");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    autoPostSection = content.slice(startIdx, endIdx);
+  });
+
+  it("checks that the GitHub post succeeded before proceeding to Step 11b", () => {
+    // Must reference checking success (exit status / html_url) before invoking Step 11b
+    const step11bIdx = autoPostSection.indexOf("Step 11b");
+    expect(step11bIdx).toBeGreaterThan(-1);
+    const beforeStep11b = autoPostSection.slice(0, step11bIdx);
+    expect(beforeStep11b.toLowerCase()).toMatch(/success|succeed|failed|failure|exit/);
+    expect(beforeStep11b.includes("html_url")).toBe(true);
+  });
+
+  it("on post failure, calls POST /prs/{PR_RECORD_ID}/release instead of Step 11b", () => {
+    expect(autoPostSection.includes("/release")).toBe(true);
+  });
+
+  it("on post failure, does not proceed to Step 11b", () => {
+    const failureIdx = autoPostSection.toLowerCase().indexOf("**failure**");
+    expect(failureIdx).toBeGreaterThan(-1);
+    const releaseIdx = autoPostSection.indexOf("/release");
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeGreaterThan(failureIdx);
+    // The failure branch must explicitly say to stop instead of running Step 11b
+    const failureBranch = autoPostSection.slice(failureIdx, releaseIdx + 500);
+    expect(failureBranch.includes("do not proceed to Step 11b")).toBe(true);
+  });
+
+  it("the success path still runs Step 11b, unchanged in behavior", () => {
+    expect(autoPostSection.includes("Run Step 11b to mark the PR record posted")).toBe(
+      true,
+    );
+  });
+});
