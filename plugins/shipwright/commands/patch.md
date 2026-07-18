@@ -28,6 +28,15 @@ Parse `$ARGUMENTS`:
   Step 3 onward.
 - _(no arguments)_: not supported — respond `[silent]` and stop, with no GitHub scan across
   all open PRs (see Step 0).
+- Optional trailing **pre-claim marker** — `[preclaim:{recordId}:{commitSha}]` — appended
+  after `org/repo#number` by the loop orchestrator (`agent/src/loop-orchestrator.ts`'s
+  `formatPreClaimMarker`, CBD-1.3) when it already claimed this PR in the task store before
+  dispatch, e.g. `app-vitals/shipwright#123 [preclaim:ckz1abc123:8cb7b38cdb6a...]`. When
+  present, strip it before parsing `org/repo#number` above — Step 2 extracts
+  `PRECLAIM_RECORD_ID`/`PRECLAIM_COMMIT_SHA` from it once, and each claim site's Pre-Claim
+  Fast Path (Steps 4a.6/5a.6/6b.5) independently re-validates the marker against that site's
+  freshly-fetched live head before trusting it. A human invoking this command directly never
+  supplies this marker; it is only ever produced by the loop orchestrator.
 
 ---
 
@@ -54,8 +63,13 @@ CURRENT_USER=$(gh api /user -q '.login')
 
 ## Step 2: Resolve Target PR
 
-Parse `$ARGUMENTS` for the `org/repo#number` target (per the Arguments section above), then
-fetch that PR:
+Parse `$ARGUMENTS` for the `org/repo#number` target (per the Arguments section above). If
+`$ARGUMENTS` has a trailing `[preclaim:{recordId}:{commitSha}]` marker (see Arguments
+section), extract `PRECLAIM_RECORD_ID` and `PRECLAIM_COMMIT_SHA` from it and **strip the
+marker** before parsing the rest of the argument — do this once here; each of the three
+claim sites (Steps 4a.6/5a.6/6b.5) re-validates the same marker against its own live head
+later. If no marker is present, leave `PRECLAIM_RECORD_ID`/`PRECLAIM_COMMIT_SHA` unset — the
+claim sites then self-claim as today. Then fetch that PR:
 
 ```bash
 gh pr view {number} --repo {org}/{repo} \
@@ -320,6 +334,24 @@ could both dispatch competing fix subagents against the same branch. Claim the P
 with `phase: "patch"` now, before starting the merge/resolve, mirroring deploy.md's Step
 4a pre-merge claim:
 
+**Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
+it against this site's live head before trusting it — the head can have moved since Step 2
+(or since an earlier List's fix ran), so re-fetch fresh here rather than trusting the
+Step 2 parse:
+
+```bash
+headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+- **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
+  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
+  directly to Step 4b (`PR_RECORD_ID` is reused by the post-fix update in Step 4c.5, same
+  as the self-claim path).
+- **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
+  orchestrator's claim and now) **or no marker present**: fall back to self-claiming
+  exactly as today — run the claim below unchanged.
+
 ```bash
 HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
 PR_CLAIM=$(curl -s -o /tmp/pr_claim_patch.json -w '%{http_code}' -X POST \
@@ -531,6 +563,23 @@ released or reaped). Without a pre-work claim, two overlapping patch runs could 
 dispatch competing fix subagents against the same branch. Claim the PR record with
 `phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
 claim:
+
+**Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
+it against this site's live head before trusting it — the head can have moved since Step 2
+(or since List C's fix ran), so re-fetch fresh here rather than trusting the Step 2 parse:
+
+```bash
+headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+- **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
+  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
+  directly to Step 5b (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same
+  as the self-claim path).
+- **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
+  orchestrator's claim and now) **or no marker present**: fall back to self-claiming
+  exactly as today — run the claim below unchanged.
 
 ```bash
 HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
@@ -870,6 +919,24 @@ released or reaped). Without a pre-work claim, two overlapping patch runs could 
 dispatch competing fix subagents against the same branch. Claim the PR record with
 `phase: "patch"` now, before starting the fix, mirroring deploy.md's Step 4a pre-merge
 claim:
+
+**Pre-Claim Fast Path (CBD-1.5).** If a pre-claim marker was captured in Step 2, validate
+it against this site's live head before trusting it — the head can have moved since Step 2
+(or since List C's/List A's fix ran), so re-fetch fresh here rather than trusting the
+Step 2 parse:
+
+```bash
+headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+- **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
+  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
+  directly to Step 6c (`PR_RECORD_ID` is reused by the post-fix update in Step 6d.5, same
+  as the self-claim path).
+- **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
+  orchestrator's claim and now) **or no marker present**: fall back to self-claiming
+  exactly as today — run the claim below unchanged.
 
 ```bash
 HEAD_SHA_PRE_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)

@@ -28,6 +28,14 @@ Parse `$ARGUMENTS`:
   review it fresh. This command never posts a staged review — use `/shipwright:review-staged`
   for that.
 - `number` or `#number`: same, using the repo from the task store API
+- Optional trailing **pre-claim marker** — `[preclaim:{recordId}:{commitSha}]` — appended
+  after `org/repo#number`/`number` by the loop orchestrator (`agent/src/loop-orchestrator.ts`'s
+  `formatPreClaimMarker`, CBD-1.3) when it already claimed this PR in the task store before
+  dispatch, e.g. `app-vitals/shipwright#123 [preclaim:ckz1abc123:8cb7b38cdb6a...]`. When
+  present, strip it before parsing `org/repo#number`/`number` above — see Step 14's
+  Pre-Claim Fast Path for how the marker is validated against the live head and used to
+  skip re-claiming. A human invoking this command directly never supplies this marker; it
+  is only ever produced by the orchestrator.
 
 **No arguments**: respond `[silent]` and stop immediately — before any GitHub or task
 store query (i.e. before Step 1). This is the expected outcome for a manual invocation
@@ -124,6 +132,10 @@ git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
 ```
 
 ### Claim using pre-captured commit SHA
+
+**Skip this subsection if `PR_RECORD_ID` was already set by Step 14's Pre-Claim Fast Path**
+(CBD-1.4) — the orchestrator's `/prs/claim` call already holds the claim; proceed directly
+to Step 5. Otherwise (no valid marker), self-claim as today:
 
 `LAST_REVIEWED_COMMIT` was already captured in Step 14 from the PR record fetched during
 the dedup check (empty if no record existed). The claim will overwrite `commitSha` with the
@@ -579,14 +591,40 @@ This command always runs against a single explicitly-named PR (e.g.
 `/shipwright:review app-vitals/shipwright#123` or `/shipwright:review 123`) — see the
 Arguments section for the required no-argument `[silent]` stop.
 
-1. Parse the argument: extract `org`, `repo`, and `pr` number. For bare numbers,
-   infer `org/repo` via:
+1. Parse the argument: extract `org`, `repo`, and `pr` number. If `$ARGUMENTS` has a
+   trailing `[preclaim:{recordId}:{commitSha}]` marker (see Arguments section), extract
+   `PRECLAIM_RECORD_ID` and `PRECLAIM_COMMIT_SHA` from it and strip the marker before
+   parsing the rest of the argument. For bare numbers, infer `org/repo` via:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
      "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.repos[0] // empty'
    ```
    Fall back to the current workspace repo if the command fails.
    **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
+
+### Pre-Claim Fast Path (CBD-1.4)
+
+If a pre-claim marker was captured above, validate it against the live head before
+trusting it — a marker is only safe to trust if nothing has changed since the orchestrator
+claimed this PR:
+
+```bash
+headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+- **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
+  `PR_RECORD_ID = PRECLAIM_RECORD_ID` and skip the record fetch, staged-review check, and
+  dedup check below entirely — the orchestrator's candidate provider (`check-review.ts`)
+  already qualified this PR fresh, and its `/prs/claim` call already flipped `reviewState`
+  to `in_progress` server-side. `LAST_REVIEWED_COMMIT` is unset on this path (no record
+  fetch happened) — Step 5's Unresolved Comment Check treats this the same as a first
+  review and runs its checks. Go directly to **Step 4**, skipping Step 4's own
+  `/prs/claim` call (the "Claim using pre-captured commit SHA" subsection) since this PR
+  is already claimed under `PR_RECORD_ID`.
+- **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between
+  orchestrator selection and dispatch) **or no marker present**: fall back to
+  self-claiming exactly as today — continue with step 2 below unchanged.
+
 2. Fetch the PR record from the task store:
    ```bash
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \

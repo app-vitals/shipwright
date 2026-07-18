@@ -19,10 +19,19 @@
  *      one array.
  *   3. Call work-selector.ts's selectNextWorkItem(tasks, mergedPrs) exactly
  *      once — strict age-based FIFO across both entity types, no phase bias.
- *   4. If it returns an item, dispatch the correct one-shot command by the
- *      item's type (task → /shipwright:dev-task) or its phase tag (pr →
- *      /shipwright:review | /shipwright:patch | /shipwright:deploy) via the
- *      injected claude runner, and report the run.
+ *   4. If it returns an item, pre-claim it against the task store BEFORE
+ *      dispatch — task items via claimTask (CBD-1.2), PR items via claimPr
+ *      (CBD-1.3, POST /prs/claim). A 409 conflict (another replica already
+ *      claimed it) skips dispatch entirely (no runner() call, no cron-run
+ *      row) and the drain loop re-collects and continues. On a successful PR
+ *      pre-claim, a marker carrying the claimed record's id + commitSha
+ *      (see formatPreClaimMarker) is appended to the dispatched command
+ *      string so a future downstream skill (CBD-1.4/1.5/1.6) can recognize
+ *      and trust it instead of re-claiming and 409ing against itself. Then
+ *      dispatch the correct one-shot command by the item's type (task →
+ *      /shipwright:dev-task) or its phase tag (pr → /shipwright:review |
+ *      /shipwright:patch | /shipwright:deploy) via the injected claude
+ *      runner, and report the run.
  *   5. Repeat immediately (not waiting for the next cron tick) while work
  *      remains. Stop when nothing is selected, or if an iteration throws.
  *
@@ -63,6 +72,7 @@ import {
   getCurrentUser,
   ghGraphql,
   ghJson,
+  parseCandidateId,
 } from "./check-helpers.ts";
 import {
   buildProductionDeps as buildPatchDeps,
@@ -114,6 +124,21 @@ export interface LoopOrchestratorDeps {
    * "task"` — PR items (review/patch/deploy) are never pre-claimed here.
    */
   claimTask: (taskId: string) => Promise<boolean>;
+  /**
+   * Pre-claim (CBD-1.3): claims a PR candidate (review/patch/deploy) directly
+   * against the task store, POSTing /prs/claim, BEFORE it is dispatched.
+   * Resolves the claimed record's {id, commitSha} on success (200/201) — used
+   * to build the pre-claim marker appended to the dispatched command string
+   * (see formatPreClaimMarker) so a future downstream skill can recognize and
+   * trust it instead of re-claiming and 409ing against itself. Resolves null
+   * on a 409 conflict (another agent replica already claimed this PR at this
+   * commit) — the item is skipped entirely (no dispatch, no cron-run row) and
+   * the drain loop re-collects candidates and continues. Only called for
+   * `item.type === "pr"` — task items are pre-claimed via claimTask.
+   */
+  claimPr: (
+    pr: WorkPrCandidate,
+  ) => Promise<{ id: string; commitSha: string } | null>;
   /** The claude runner — sends a one-shot slash-command message. */
   runner: (message: string) => Promise<ClaudeRunResult>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
@@ -151,6 +176,25 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
  */
 const SPIN_DETECTION_THRESHOLD = 3;
 
+/**
+ * Format the pre-claim marker (CBD-1.3) appended to a dispatched PR command
+ * string on a successful pre-claim. Bracket-delimited to match the codebase's
+ * existing marker convention (see markers.ts's [silent]/[upload:...]) — but
+ * carried on the *input* dispatched command rather than an *output* response.
+ * A future downstream skill (CBD-1.4/1.5/1.6) parses it to recognize a PR the
+ * loop already claimed, so it trusts the claim instead of re-claiming and
+ * 409ing against itself.
+ *
+ * recordId is a CUID and commitSha a git SHA — both plain alphanumeric with no
+ * colons — so splitting on ":" is unambiguous for that future parser.
+ */
+export function formatPreClaimMarker(
+  recordId: string,
+  commitSha: string,
+): string {
+  return `[preclaim:${recordId}:${commitSha}]`;
+}
+
 // ─── Factory ────────────────────────────────────────────────────────────────
 
 /**
@@ -167,6 +211,7 @@ export function createLoopOrchestrator(
     getPatchCandidates,
     getDeployCandidates,
     claimTask,
+    claimPr,
     runner,
     cronRunReporter,
     workQueueReporter,
@@ -194,13 +239,21 @@ export function createLoopOrchestrator(
    * against ("task" | "pr", plus its id) — threaded through to the reporter so
    * every AgentCronRun row records which task or PR a given cron run actually
    * touched (WLS-2.2).
+   *
+   * `preClaimMarker` (CBD-1.3), when present, is appended to the command string
+   * after the item id (e.g. "/shipwright:review acme/x#1 [preclaim:<id>:<sha>]")
+   * so the downstream PR skill can recognize the loop already claimed this PR
+   * and trust that claim instead of re-claiming. Only ever set for PR items.
    */
   async function dispatch(
     phase: LoopPhase,
     itemType: "task" | "pr",
     itemId: string,
+    preClaimMarker?: string,
   ): Promise<void> {
-    const command = `${PHASE_COMMANDS[phase]} ${itemId}`;
+    const command = preClaimMarker
+      ? `${PHASE_COMMANDS[phase]} ${itemId} ${preClaimMarker}`
+      : `${PHASE_COMMANDS[phase]} ${itemId}`;
     const message = formatCronMessage(loopCronId, command);
     const runId = await cronRunReporter.createRun(
       loopCronId,
@@ -298,17 +351,27 @@ export function createLoopOrchestrator(
           item.type === "task" ? "dev-task" : (item.pr.phase ?? "review");
         const itemId = item.type === "task" ? item.task.id : item.pr.id;
 
-        // Pre-claim (CBD-1.2): a dev-task item must be claimed directly
-        // against the task store before dispatch. A 409 means another agent
-        // replica claimed it first since this item was collected — skip
-        // dispatch entirely (no runner() call, no cronRunReporter, no spin-
-        // detection accounting for this iteration) and `continue` the while
-        // loop so the next iteration re-reads toggles and re-collects
-        // candidates fresh, naturally excluding the now-claimed item. PR
-        // items (review/patch/deploy) are never pre-claimed here.
+        // Pre-claim: a selected item must be claimed directly against the task
+        // store before dispatch — dev-task items via claimTask (CBD-1.2), PR
+        // items via claimPr (CBD-1.3). A 409 means another agent replica
+        // claimed it first since this item was collected — skip dispatch
+        // entirely (no runner() call, no cronRunReporter, no spin-detection
+        // accounting for this iteration) and `continue` the while loop so the
+        // next iteration re-reads toggles and re-collects candidates fresh,
+        // naturally excluding the now-claimed item. On a successful PR
+        // pre-claim, capture the marker (claimed record id + commitSha) to
+        // append to the dispatched command string below.
+        let preClaimMarker: string | undefined;
         if (item.type === "task") {
           const claimed = await claimTask(itemId);
           if (!claimed) continue;
+        } else {
+          const claimResult = await claimPr(item.pr);
+          if (!claimResult) continue;
+          preClaimMarker = formatPreClaimMarker(
+            claimResult.id,
+            claimResult.commitSha,
+          );
         }
 
         // Spin detection: track consecutive dispatches of the same itemId.
@@ -331,7 +394,7 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(phase, item.type, itemId);
+        await dispatch(phase, item.type, itemId, preClaimMarker);
       }
     } finally {
       busy = false;
@@ -434,6 +497,20 @@ export async function createProductionLoopOrchestrator(
     getPatchCandidates: () => getPatchCandidates(patchDeps),
     getDeployCandidates: () => getDeployCandidates(deployDeps),
     claimTask: (id) => taskStoreClient.claim(id),
+    claimPr: (pr) => {
+      const parsed = parseCandidateId(pr.id);
+      if (!parsed) {
+        throw new Error(
+          `invalid PR candidate id (expected org/repo#number): ${pr.id}`,
+        );
+      }
+      return taskStoreClient.claimPr({
+        repo: parsed.repo,
+        prNumber: parsed.prNumber,
+        commitSha: pr.commitSha,
+        phase: pr.phase ?? "review",
+      });
+    },
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,
