@@ -30,15 +30,23 @@
  *   where it's present-but-disabled — both are the "unmigrated" case, and
  *   produce byte-for-byte today's scheduling behavior.
  *
- * resolveLoopPhaseToggles(jobs) → LoopPhaseToggles
+ * resolveLoopPhaseToggles(jobs, loopCronId) → LoopPhaseToggles
  *   The loop's own toggle-reading logic (consumed by the WL-3.3
  *   drain-until-dry orchestrator in loop-orchestrator.ts). Resolves
- *   dev-task/review/patch/deploy as
- *   four independent, non-mutually-exclusive phase booleans looked up by
- *   job name (false when the named job is absent). Deliberately never reads
- *   or references shipwright-review-patch — its internal review-vs-patch
- *   selection is redundant with what the loop does at a higher level across
- *   all four phases once shipwright-loop is enabled.
+ *   dev-task/review/patch/deploy as four independent, non-mutually-exclusive
+ *   phase booleans, each read exclusively from a CHILD row — one whose
+ *   parentCronId equals the given loopCronId — matched by name (LPC-2.1).
+ *   A same-named row that is top-level (parentCronId: null) or a child of a
+ *   different parent is ignored; the phase resolves false in either case,
+ *   as it does when no matching child row exists at all. This relies on
+ *   reconcileSystemCrons() (LPC-1.2) having already run for the given agent
+ *   to populate parentCronId on its four phase rows — an agent that hasn't
+ *   reconciled since LPC-1.2 deployed will see zero active phases here
+ *   (soft-fail: the loop simply pauses dispatch, not an error) until its
+ *   next reconcile. Deliberately never reads or references
+ *   shipwright-review-patch — its internal review-vs-patch selection is
+ *   redundant with what the loop does at a higher level across all four
+ *   phases once shipwright-loop is enabled.
  *
  * Kept isolated from the loop orchestrator (WL-3.3), pure and zero-I/O, so
  * it stays cleanly unit-testable — mirrors agent/src/work-selector.ts.
@@ -83,6 +91,21 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
   "shipwright-review-patch",
   "shipwright-deploy",
 ]);
+
+/**
+ * The four phase job names resolveLoopPhaseToggles() reads — deliberately
+ * excludes shipwright-review-patch (see the module docstring above). Exported
+ * so callers that need to reason about "does this agent have any of the four
+ * loop-phase child rows reconciled yet" (e.g. loop-orchestrator.ts's
+ * unreconciled-agent guard) share this list instead of duplicating the
+ * literal names.
+ */
+export const LOOP_PHASE_JOB_NAMES = [
+  "shipwright-dev-task",
+  "shipwright-review",
+  "shipwright-patch",
+  "shipwright-deploy",
+] as const;
 
 // ─── classifyCronJobsForScheduling ─────────────────────────────────────────────
 
@@ -129,9 +152,11 @@ export function classifyCronJobsForScheduling<T extends CronJobLike>(
 
 export function resolveLoopPhaseToggles<T extends CronJobLike>(
   jobs: T[],
+  loopCronId: string,
 ): LoopPhaseToggles {
   const enabledByName = (name: string): boolean =>
-    jobs.find((job) => job.name === name)?.enabled === true;
+    jobs.find((job) => job.parentCronId === loopCronId && job.name === name)
+      ?.enabled === true;
 
   return {
     devTask: enabledByName("shipwright-dev-task"),

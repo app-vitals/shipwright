@@ -22,8 +22,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { ClaudeRunResult } from "./claude.ts";
 import { createTaskStoreClient } from "./check-helpers.ts";
+import type { ClaudeRunResult } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
@@ -32,7 +32,7 @@ import type { WorkQueueReporter } from "./work-queue-reporter.ts";
 import type { WorkPrCandidate, WorkTaskCandidate } from "./work-selector.ts";
 
 function job(name: string, enabled: boolean): CronJobLike {
-  return { id: name, name, enabled, parentCronId: null };
+  return { id: name, name, enabled, parentCronId: "shipwright-loop" };
 }
 
 const ALL_PHASES_ON: CronJobLike[] = [
@@ -41,6 +41,23 @@ const ALL_PHASES_ON: CronJobLike[] = [
   job("shipwright-patch", true),
   job("shipwright-deploy", true),
 ];
+
+/**
+ * Builds a CronJobLike fixture representing a child phase row exactly as
+ * reconcileSystemCrons() (admin/src/system-crons.ts, LPC-1.2) produces it —
+ * parentCronId set to the loop row's own id. Distinct from the local job()
+ * helper above (which defaults parentCronId to the CBD-2.1 test's fixed
+ * "shipwright-loop" id) since this section's tests use their own explicit
+ * parent loop id to make the parent/child relationship visible in the
+ * fixtures themselves.
+ */
+function childPhaseJob(
+  name: string,
+  enabled: boolean,
+  parentCronId: string,
+): CronJobLike {
+  return { id: `${parentCronId}-${name}`, name, enabled, parentCronId };
+}
 
 function task(id: string, createdAt: string): WorkTaskCandidate {
   return { id, createdAt };
@@ -170,8 +187,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
         devTaskCallCount += 1;
         return devTaskCandidates;
       },
-      getReviewCandidates: async () =>
-        reviewConsumed ? [] : reviewCandidates,
+      getReviewCandidates: async () => (reviewConsumed ? [] : reviewCandidates),
       getPatchCandidates: async () => [],
       getDeployCandidates: async () => [],
       claimTask: realClaim,
@@ -203,5 +219,128 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
     // attempt, PR dispatch, final dry-check) — three iterations here, not an
     // unbounded spin on the same failed item.
     expect(devTaskCallCount).toBe(3);
+  });
+});
+
+describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
+  // No Bun.serve stub needed here — this suite exercises the real
+  // createLoopOrchestrator() end-to-end against resolveLoopPhaseToggles'
+  // child-row-scoped resolution, not the real task-store HTTP claim client
+  // (that seam is covered by the CBD-2.1 suite above). Stub claim functions
+  // are used per this repo's isolation contract (no real I/O needed to prove
+  // this behavior).
+
+  const PARENT_LOOP_ID = "loop-abc";
+
+  function makeRecordingReporter(): {
+    reporter: CronRunReporter;
+    completedItemIds: string[];
+  } {
+    const completedItemIds: string[] = [];
+    const reporter: CronRunReporter = {
+      async createRun() {
+        return "run-1";
+      },
+      async completeRun(
+        _cronId,
+        _runId,
+        _completedAt,
+        _outcome,
+        _opts,
+        _phase,
+        _itemType,
+        itemId,
+      ) {
+        if (itemId) completedItemIds.push(itemId);
+      },
+      async skipRun() {},
+    };
+    return { reporter, completedItemIds };
+  }
+
+  const noopWorkQueueReporter: WorkQueueReporter = {
+    async reportSnapshot() {},
+  };
+
+  /**
+   * A realistic reconciled cron-job set: a parent loop row plus four child
+   * phase rows (parentCronId: PARENT_LOOP_ID), mirroring exactly what
+   * reconcileSystemCrons() produces per admin/src/system-crons.ts's
+   * parentCron: "shipwright-loop" declarations. Only the dev-task child's
+   * enabled flag varies between fixtures below.
+   */
+  function reconciledJobs(devTaskEnabled: boolean): CronJobLike[] {
+    return [
+      {
+        id: PARENT_LOOP_ID,
+        name: "shipwright-loop",
+        enabled: true,
+        parentCronId: null,
+      },
+      childPhaseJob("shipwright-dev-task", devTaskEnabled, PARENT_LOOP_ID),
+      childPhaseJob("shipwright-review", false, PARENT_LOOP_ID),
+      childPhaseJob("shipwright-patch", false, PARENT_LOOP_ID),
+      childPhaseJob("shipwright-deploy", false, PARENT_LOOP_ID),
+    ];
+  }
+
+  test("dispatches dev-task candidates when the dev-task child row is enabled; disabling it stops dispatch; re-enabling resumes it", async () => {
+    const { reporter, completedItemIds } = makeRecordingReporter();
+    const messages: string[] = [];
+    const runner = async (message: string): Promise<ClaudeRunResult> => {
+      messages.push(message);
+      return { result: "done" };
+    };
+
+    // Fresh consumed-tracking pool per makeLoop() call so each of the three
+    // runs below (enabled / disabled / re-enabled) gets its own "fresh
+    // candidate pool" per the AC's re-run wording, without spinning forever
+    // on the same already-dispatched item within a single run.
+    const makeLoop = () => {
+      const consumed = new Set<string>();
+      return createLoopOrchestrator({
+        getDevTaskCandidates: async () =>
+          consumed.has("SWC-1") ? [] : [task("SWC-1", "2026-01-01T00:00:00Z")],
+        getReviewCandidates: async () => [],
+        getPatchCandidates: async () => [],
+        getDeployCandidates: async () => [],
+        claimTask: async (id) => {
+          consumed.add(id);
+          return true;
+        },
+        claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+        runner,
+        cronRunReporter: reporter,
+        workQueueReporter: noopWorkQueueReporter,
+        loopCronId: PARENT_LOOP_ID,
+        clock: FixedClock(new Date("2026-07-18T00:00:00Z")),
+      });
+    };
+
+    // 1. dev-task child row enabled — the loop reads the toggle from the
+    // child row (parentCronId: PARENT_LOOP_ID), not any top-level lookup —
+    // and dispatches the only candidate.
+    await makeLoop()(reconciledJobs(true));
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("/shipwright:dev-task SWC-1");
+    expect(completedItemIds).toEqual(["SWC-1"]);
+
+    // 2. Disabling the dev-task child row's enabled flag (fresh jobs array,
+    // same parent) stops dispatch entirely — a fresh candidate pool yields
+    // nothing dispatched (AC #2, disable half).
+    messages.length = 0;
+    completedItemIds.length = 0;
+    await makeLoop()(reconciledJobs(false));
+    expect(messages).toHaveLength(0);
+    expect(completedItemIds).toHaveLength(0);
+
+    // 3. Re-enabling (a third seeded jobs array, identical to the first)
+    // resumes dispatch (AC #2, re-enable half).
+    messages.length = 0;
+    completedItemIds.length = 0;
+    await makeLoop()(reconciledJobs(true));
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("/shipwright:dev-task SWC-1");
+    expect(completedItemIds).toEqual(["SWC-1"]);
   });
 });

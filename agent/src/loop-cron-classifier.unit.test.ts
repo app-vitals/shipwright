@@ -212,14 +212,36 @@ describe("classifyCronJobsForScheduling", () => {
 // ─── resolveLoopPhaseToggles ────────────────────────────────────────────────
 
 describe("resolveLoopPhaseToggles", () => {
-  it("resolves four independent booleans 1:1 from the four named jobs' enabled states", () => {
+  const LOOP_ID = "loop-1";
+
+  it("resolves four independent booleans 1:1 from the four named child rows' enabled states (parentCronId = loop id)", () => {
     const jobs = [
-      makeJob({ id: "1", name: "shipwright-dev-task", enabled: true }),
-      makeJob({ id: "2", name: "shipwright-review", enabled: false }),
-      makeJob({ id: "3", name: "shipwright-patch", enabled: true }),
-      makeJob({ id: "4", name: "shipwright-deploy", enabled: false }),
+      makeJob({
+        id: "1",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "2",
+        name: "shipwright-review",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "3",
+        name: "shipwright-patch",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "4",
+        name: "shipwright-deploy",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
     ];
-    const toggles = resolveLoopPhaseToggles(jobs);
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
     expect(toggles).toEqual({
       devTask: true,
       review: false,
@@ -228,11 +250,16 @@ describe("resolveLoopPhaseToggles", () => {
     });
   });
 
-  it("returns false for a phase whose job is absent", () => {
+  it("returns false for a phase whose child row is absent", () => {
     const jobs = [
-      makeJob({ id: "1", name: "shipwright-dev-task", enabled: true }),
+      makeJob({
+        id: "1",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
     ];
-    const toggles = resolveLoopPhaseToggles(jobs);
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
     expect(toggles).toEqual({
       devTask: true,
       review: false,
@@ -243,12 +270,32 @@ describe("resolveLoopPhaseToggles", () => {
 
   it("all phases independently on is a valid, correctly-resolved combination", () => {
     const jobs = [
-      makeJob({ id: "1", name: "shipwright-dev-task", enabled: true }),
-      makeJob({ id: "2", name: "shipwright-review", enabled: true }),
-      makeJob({ id: "3", name: "shipwright-patch", enabled: true }),
-      makeJob({ id: "4", name: "shipwright-deploy", enabled: true }),
+      makeJob({
+        id: "1",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "2",
+        name: "shipwright-review",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "3",
+        name: "shipwright-patch",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "4",
+        name: "shipwright-deploy",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
     ];
-    const toggles = resolveLoopPhaseToggles(jobs);
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
     expect(toggles).toEqual({
       devTask: true,
       review: true,
@@ -259,25 +306,55 @@ describe("resolveLoopPhaseToggles", () => {
 
   it("shipwright-review-patch's enabled state has no effect on the output — identical toggles regardless of its presence/enabled state", () => {
     const baseJobs = [
-      makeJob({ id: "1", name: "shipwright-dev-task", enabled: true }),
-      makeJob({ id: "2", name: "shipwright-review", enabled: false }),
-      makeJob({ id: "3", name: "shipwright-patch", enabled: true }),
-      makeJob({ id: "4", name: "shipwright-deploy", enabled: false }),
+      makeJob({
+        id: "1",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "2",
+        name: "shipwright-review",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "3",
+        name: "shipwright-patch",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
+      makeJob({
+        id: "4",
+        name: "shipwright-deploy",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
     ];
 
     const withReviewPatchEnabled = [
       ...baseJobs,
-      makeJob({ id: "rp-1", name: "shipwright-review-patch", enabled: true }),
+      makeJob({
+        id: "rp-1",
+        name: "shipwright-review-patch",
+        enabled: true,
+        parentCronId: LOOP_ID,
+      }),
     ];
     const withReviewPatchDisabled = [
       ...baseJobs,
-      makeJob({ id: "rp-2", name: "shipwright-review-patch", enabled: false }),
+      makeJob({
+        id: "rp-2",
+        name: "shipwright-review-patch",
+        enabled: false,
+        parentCronId: LOOP_ID,
+      }),
     ];
     const withoutReviewPatch = [...baseJobs];
 
-    const togglesA = resolveLoopPhaseToggles(withReviewPatchEnabled);
-    const togglesB = resolveLoopPhaseToggles(withReviewPatchDisabled);
-    const togglesC = resolveLoopPhaseToggles(withoutReviewPatch);
+    const togglesA = resolveLoopPhaseToggles(withReviewPatchEnabled, LOOP_ID);
+    const togglesB = resolveLoopPhaseToggles(withReviewPatchDisabled, LOOP_ID);
+    const togglesC = resolveLoopPhaseToggles(withoutReviewPatch, LOOP_ID);
 
     expect(togglesA).toEqual(togglesB);
     expect(togglesB).toEqual(togglesC);
@@ -285,6 +362,69 @@ describe("resolveLoopPhaseToggles", () => {
       devTask: true,
       review: false,
       patch: true,
+      deploy: false,
+    });
+  });
+
+  it("ignores a top-level job (parentCronId: null) with a matching phase name — not a child of the loop", () => {
+    const jobs = [
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: true }),
+      makeJob({
+        id: "top-level-dev-task",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: null,
+      }),
+    ];
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
+    expect(toggles).toEqual({
+      devTask: false,
+      review: false,
+      patch: false,
+      deploy: false,
+    });
+  });
+
+  it("ignores a child row under a different parent even when the name matches (e.g. a future multi-loop-per-agent scenario, or leftover unreconciled rows)", () => {
+    const jobs = [
+      makeJob({
+        id: "other-loop-dev-task",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: "some-other-loop-id",
+      }),
+    ];
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
+    expect(toggles).toEqual({
+      devTask: false,
+      review: false,
+      patch: false,
+      deploy: false,
+    });
+  });
+
+  it("soft-fail: an agent with no child rows at all (pre-LPC-1.2-reconcile state) resolves all four toggles to false, not an error", () => {
+    const jobs = [
+      makeJob({ id: "loop-1", name: "shipwright-loop", enabled: true }),
+      makeJob({
+        id: "top-level-dev-task",
+        name: "shipwright-dev-task",
+        enabled: true,
+        parentCronId: null,
+      }),
+      makeJob({
+        id: "top-level-review",
+        name: "shipwright-review",
+        enabled: true,
+        parentCronId: null,
+      }),
+    ];
+    expect(() => resolveLoopPhaseToggles(jobs, LOOP_ID)).not.toThrow();
+    const toggles = resolveLoopPhaseToggles(jobs, LOOP_ID);
+    expect(toggles).toEqual({
+      devTask: false,
+      review: false,
+      patch: false,
       deploy: false,
     });
   });

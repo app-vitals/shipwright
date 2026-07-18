@@ -84,11 +84,12 @@ import {
 } from "./check-review.ts";
 import type { ClaudeRunResult } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
+import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
+  LOOP_PHASE_JOB_NAMES,
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
@@ -337,7 +338,47 @@ export function createLoopOrchestrator(
       // Each iteration re-reads toggles and re-collects candidates so a phase
       // toggled off mid-drain (or freshly-consumed work) is reflected at once.
       while (true) {
-        const toggles = resolveLoopPhaseToggles(jobs);
+        const toggles = resolveLoopPhaseToggles(jobs, loopCronId);
+
+        // Unreconciled-agent guard (LPC-2.1 follow-up): resolveLoopPhaseToggles
+        // reads phases exclusively from child rows (parentCronId === loopCronId).
+        // An agent whose four phase rows haven't been backfilled with a
+        // parentCronId yet by reconcileSystemCrons() (LPC-1.2) will have a
+        // shipwright-loop row present but zero children — every toggle resolves
+        // false and the drain simply stops with no candidates collected. Without
+        // this warn that state is indistinguishable from a legitimately idle or
+        // all-phases-disabled tick. Logged so it stays observable (Sentry-eligible)
+        // instead of the loop silently going quiet.
+        //
+        // Checked per-phase-name (not "any child row exists at all under this
+        // parent") because reconciliation can be partial: e.g. only the
+        // dev-task row has been backfilled with parentCronId so far, the
+        // other three haven't. In that case at least one job matches
+        // `parentCronId === loopCronId`, but all four toggles can still
+        // resolve false — this warn exists specifically to catch that gap.
+        // The discriminator against a legitimate all-phases-disabled tick
+        // (four reconciled child rows, all enabled: false) is whether every
+        // phase name HAS a same-parent child row: if it does, its false
+        // toggle is a real "disabled" choice, not a reconciliation gap. So
+        // the warn fires whenever AT LEAST ONE of the four phase names still
+        // lacks a same-parent child row entirely — not only when all four do.
+        if (
+          !toggles.devTask &&
+          !toggles.review &&
+          !toggles.patch &&
+          !toggles.deploy &&
+          jobs.some((job) => job.name === "shipwright-loop") &&
+          LOOP_PHASE_JOB_NAMES.some(
+            (name) =>
+              !jobs.some(
+                (job) => job.parentCronId === loopCronId && job.name === name,
+              ),
+          )
+        ) {
+          console.warn(
+            `shipwright-loop ${loopCronId} has no child phase rows — all phases resolved false. If this agent hasn't reconciled since LPC-1.2/2.1 shipped, run reconcileSystemCrons() to backfill parentCronId on its phase rows.`,
+          );
+        }
 
         const tasks: WorkTaskCandidate[] = toggles.devTask
           ? (await getDevTaskCandidates()).filter(
