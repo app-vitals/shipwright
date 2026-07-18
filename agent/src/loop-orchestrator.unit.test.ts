@@ -347,7 +347,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
 // ─── Job fixtures ────────────────────────────────────────────────────────────
 
 function job(name: string, enabled: boolean): CronJobLike {
-  return { id: name, name, enabled, parentCronId: null };
+  return { id: name, name, enabled, parentCronId: "shipwright-loop" };
 }
 
 const ALL_PHASES_ON: CronJobLike[] = [

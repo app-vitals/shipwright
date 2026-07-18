@@ -84,8 +84,8 @@ import {
 } from "./check-review.ts";
 import type { ClaudeRunResult } from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
-import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
+import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
@@ -337,7 +337,7 @@ export function createLoopOrchestrator(
       // Each iteration re-reads toggles and re-collects candidates so a phase
       // toggled off mid-drain (or freshly-consumed work) is reflected at once.
       while (true) {
-        const toggles = resolveLoopPhaseToggles(jobs);
+        const toggles = resolveLoopPhaseToggles(jobs, loopCronId);
 
         const tasks: WorkTaskCandidate[] = toggles.devTask
           ? (await getDevTaskCandidates()).filter(
