@@ -2058,7 +2058,7 @@ const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
   { key: "closed", label: "Closed" },
 ];
 
-interface DependencyNode {
+export interface DependencyNode {
   id: string;
   title: string;
   status: string;
@@ -2108,6 +2108,118 @@ function computeDependencyGroups(
     bucket.sort((a, b) => a.id.localeCompare(b.id));
   }
   return groups;
+}
+
+// Layout constants for the dependency graph's SVG-style card layout, measured
+// from the approved intel mockup (session-dependency-graph.html, including
+// its 16-node fan-in/fan-out stress-test variant): fixed 220x88 cards, a
+// 320px column pitch (card + 100px gap) and 118px row pitch (card + 30px
+// gap), with a 40px margin on all sides.
+const LAYOUT_CARD_WIDTH = 220;
+const LAYOUT_CARD_HEIGHT = 88;
+const LAYOUT_COLUMN_GAP = 100;
+const LAYOUT_ROW_GAP = 30;
+const LAYOUT_MARGIN = 40;
+
+export interface DependencyLayoutPosition {
+  x: number;
+  y: number;
+  depth: number;
+}
+
+export interface DependencyLayout {
+  positions: Map<string, DependencyLayoutPosition>;
+  width: number;
+  height: number;
+}
+
+/**
+ * Pure layered-DAG layout: assigns each node a column (depth = longest path
+ * from any root, following only in-session `dependsOn` edges — ids outside
+ * the input node set aren't session participants and are ignored) and a row
+ * within that column, then converts to fixed-size-card pixel coordinates
+ * using the constants above. Callers are expected to have already filtered
+ * `nodes` down to participating tasks (see `computeDependencyGroups`) — this
+ * function does no filtering of its own.
+ *
+ * Cycle-safe: depth computation uses a Set tracking node ids on the current
+ * DFS recursion stack. Re-entering a node already on the stack (i.e. a
+ * cycle) stops that branch rather than recursing further, so every node
+ * still resolves to some finite depth and gets a position. Resolved depths
+ * are memoized so each node's longest-path depth is computed once.
+ *
+ * Row order within a column follows the input array's iteration order,
+ * which is what makes the overall layout deterministic for a given input.
+ */
+export function computeDependencyLayout(
+  nodes: DependencyNode[],
+): DependencyLayout {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const depths = new Map<string, number>();
+
+  function resolveDepth(id: string, stack: Set<string>): number {
+    const memoized = depths.get(id);
+    if (memoized !== undefined) return memoized;
+    if (stack.has(id)) return 0; // cycle guard: stop descending this branch
+
+    const node = byId.get(id);
+    const dependsOn = node?.dependsOn.filter((dep) => byId.has(dep)) ?? [];
+    if (dependsOn.length === 0) {
+      depths.set(id, 0);
+      return 0;
+    }
+
+    stack.add(id);
+    let maxParentDepth = -1;
+    for (const dep of dependsOn) {
+      const depDepth = resolveDepth(dep, stack);
+      if (depDepth > maxParentDepth) maxParentDepth = depDepth;
+    }
+    stack.delete(id);
+
+    const depth = maxParentDepth + 1;
+    depths.set(id, depth);
+    return depth;
+  }
+
+  for (const n of nodes) resolveDepth(n.id, new Set());
+
+  const columns = new Map<number, string[]>();
+  for (const n of nodes) {
+    const depth = depths.get(n.id) ?? 0;
+    const column = columns.get(depth);
+    if (column) column.push(n.id);
+    else columns.set(depth, [n.id]);
+  }
+
+  const positions = new Map<string, DependencyLayoutPosition>();
+  let maxRows = 0;
+  for (const [depth, ids] of columns) {
+    maxRows = Math.max(maxRows, ids.length);
+    ids.forEach((id, row) => {
+      positions.set(id, {
+        x: LAYOUT_MARGIN + depth * (LAYOUT_CARD_WIDTH + LAYOUT_COLUMN_GAP),
+        y: LAYOUT_MARGIN + row * (LAYOUT_CARD_HEIGHT + LAYOUT_ROW_GAP),
+        depth,
+      });
+    });
+  }
+
+  const numColumns = columns.size;
+  const width =
+    numColumns === 0
+      ? 0
+      : LAYOUT_MARGIN * 2 +
+        numColumns * LAYOUT_CARD_WIDTH +
+        (numColumns - 1) * LAYOUT_COLUMN_GAP;
+  const height =
+    maxRows === 0
+      ? 0
+      : LAYOUT_MARGIN * 2 +
+        maxRows * LAYOUT_CARD_HEIGHT +
+        (maxRows - 1) * LAYOUT_ROW_GAP;
+
+  return { positions, width, height };
 }
 
 // Fixed palette for branch chips — a stable hash picks a color per branch

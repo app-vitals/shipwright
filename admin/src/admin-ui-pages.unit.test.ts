@@ -10,8 +10,10 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
+  computeDependencyLayout,
   type CronJobItem,
   type CronRunItem,
+  type DependencyNode,
   type MemberItem,
   type PluginItem,
   type PrListItem,
@@ -4518,5 +4520,137 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(section).not.toContain("<img src=x onerror=alert(1)>");
     expect(section).not.toContain("<script>evil()</script>");
     expect(section).not.toContain("<b>dep</b>");
+  });
+});
+
+// ─── computeDependencyLayout ──────────────────────────────────────────────────
+
+function depNode(overrides: Partial<DependencyNode> & { id: string }): DependencyNode {
+  return {
+    id: overrides.id,
+    title: overrides.title ?? overrides.id,
+    status: overrides.status ?? "pending",
+    branch: overrides.branch ?? null,
+    dependsOn: overrides.dependsOn ?? [],
+    state: overrides.state ?? "ready",
+  };
+}
+
+describe("computeDependencyLayout", () => {
+  test("simple linear chain: each node gets increasing depth and distinct x, same y", () => {
+    const a = depNode({ id: "TASK-A" });
+    const b = depNode({ id: "TASK-B", dependsOn: ["TASK-A"] });
+    const c = depNode({ id: "TASK-C", dependsOn: ["TASK-B"] });
+    const layout = computeDependencyLayout([a, b, c]);
+
+    const posA = layout.positions.get("TASK-A");
+    const posB = layout.positions.get("TASK-B");
+    const posC = layout.positions.get("TASK-C");
+    expect(posA).toBeDefined();
+    expect(posB).toBeDefined();
+    expect(posC).toBeDefined();
+
+    // Exact numbers, locking in the mockup's measured spacing:
+    // margin=40, card=220, columnGap=100 -> pitch=320
+    expect(posA).toEqual({ x: 40, y: 40, depth: 0 });
+    expect(posB).toEqual({ x: 360, y: 40, depth: 1 });
+    expect(posC).toEqual({ x: 680, y: 40, depth: 2 });
+
+    // Distinct x per depth, same y (single row per column).
+    expect(posA?.x).not.toBe(posB?.x);
+    expect(posB?.x).not.toBe(posC?.x);
+    expect(posA?.y).toBe(posB?.y);
+    expect(posB?.y).toBe(posC?.y);
+  });
+
+  test("fan-out: root at depth 0, children at depth 1 with distinct rows", () => {
+    const root = depNode({ id: "TASK-ROOT" });
+    const child1 = depNode({ id: "TASK-CHILD-1", dependsOn: ["TASK-ROOT"] });
+    const child2 = depNode({ id: "TASK-CHILD-2", dependsOn: ["TASK-ROOT"] });
+    const layout = computeDependencyLayout([root, child1, child2]);
+
+    expect(layout.positions.get("TASK-ROOT")?.depth).toBe(0);
+    expect(layout.positions.get("TASK-CHILD-1")?.depth).toBe(1);
+    expect(layout.positions.get("TASK-CHILD-2")?.depth).toBe(1);
+
+    // Children share a column (same x) but get distinct rows (different y).
+    const child1Pos = layout.positions.get("TASK-CHILD-1");
+    const child2Pos = layout.positions.get("TASK-CHILD-2");
+    expect(child1Pos?.x).toBe(child2Pos?.x);
+    expect(child1Pos?.y).not.toBe(child2Pos?.y);
+  });
+
+  test("fan-in: child depth is 1 + max(parents' depths) — longest path, not shortest", () => {
+    // shallow -> mid -> deep, and a separate shallow-parent directly into child.
+    const shallow = depNode({ id: "TASK-SHALLOW" });
+    const mid = depNode({ id: "TASK-MID", dependsOn: ["TASK-SHALLOW"] });
+    const deep = depNode({ id: "TASK-DEEP", dependsOn: ["TASK-MID"] });
+    const child = depNode({
+      id: "TASK-CHILD",
+      dependsOn: ["TASK-SHALLOW", "TASK-DEEP"],
+    });
+    const layout = computeDependencyLayout([shallow, mid, deep, child]);
+
+    expect(layout.positions.get("TASK-SHALLOW")?.depth).toBe(0);
+    expect(layout.positions.get("TASK-MID")?.depth).toBe(1);
+    expect(layout.positions.get("TASK-DEEP")?.depth).toBe(2);
+    // child depends on shallow (depth 0) and deep (depth 2) -> longest path wins: 1+2=3
+    expect(layout.positions.get("TASK-CHILD")?.depth).toBe(3);
+  });
+
+  test("cycle safety: mutual dependency doesn't hang and both nodes get positions", () => {
+    const x = depNode({ id: "TASK-X", dependsOn: ["TASK-Y"] });
+    const y = depNode({ id: "TASK-Y", dependsOn: ["TASK-X"] });
+    const layout = computeDependencyLayout([x, y]);
+
+    const posX = layout.positions.get("TASK-X");
+    const posY = layout.positions.get("TASK-Y");
+    expect(posX).toBeDefined();
+    expect(posY).toBeDefined();
+    expect(Number.isFinite(posX?.x)).toBe(true);
+    expect(Number.isFinite(posX?.y)).toBe(true);
+    expect(Number.isFinite(posX?.depth)).toBe(true);
+    expect(Number.isFinite(posY?.x)).toBe(true);
+    expect(Number.isFinite(posY?.y)).toBe(true);
+    expect(Number.isFinite(posY?.depth)).toBe(true);
+  });
+
+  test("deterministic ordering: same input twice yields identical layout", () => {
+    const a = depNode({ id: "TASK-A" });
+    const b = depNode({ id: "TASK-B", dependsOn: ["TASK-A"] });
+    const c = depNode({ id: "TASK-C", dependsOn: ["TASK-A"] });
+    const nodes = [a, b, c];
+
+    const layout1 = computeDependencyLayout(nodes);
+    const layout2 = computeDependencyLayout(nodes);
+
+    expect(layout1.width).toBe(layout2.width);
+    expect(layout1.height).toBe(layout2.height);
+    for (const id of ["TASK-A", "TASK-B", "TASK-C"]) {
+      expect(layout1.positions.get(id)).toEqual(layout2.positions.get(id));
+    }
+  });
+
+  test("deterministic row ordering for same-depth nodes with no dependency relationship follows input order", () => {
+    // Two independent roots, no edges between them.
+    const rootFirst = depNode({ id: "TASK-FIRST" });
+    const rootSecond = depNode({ id: "TASK-SECOND" });
+    const layout = computeDependencyLayout([rootFirst, rootSecond]);
+
+    const firstPos = layout.positions.get("TASK-FIRST");
+    const secondPos = layout.positions.get("TASK-SECOND");
+    expect(firstPos?.depth).toBe(0);
+    expect(secondPos?.depth).toBe(0);
+    // Same column.
+    expect(firstPos?.x).toBe(secondPos?.x);
+    // Row order follows input array order: first node gets the earlier row.
+    expect(firstPos?.y).toBeLessThan(secondPos?.y ?? Number.POSITIVE_INFINITY);
+  });
+
+  test("empty input returns empty positions and zeroed canvas size", () => {
+    const layout = computeDependencyLayout([]);
+    expect(layout.positions.size).toBe(0);
+    expect(layout.width).toBe(0);
+    expect(layout.height).toBe(0);
   });
 });
