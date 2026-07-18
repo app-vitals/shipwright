@@ -339,6 +339,28 @@ export function createLoopOrchestrator(
       while (true) {
         const toggles = resolveLoopPhaseToggles(jobs, loopCronId);
 
+        // Unreconciled-agent guard (LPC-2.1 follow-up): resolveLoopPhaseToggles
+        // reads phases exclusively from child rows (parentCronId === loopCronId).
+        // An agent whose four phase rows haven't been backfilled with a
+        // parentCronId yet by reconcileSystemCrons() (LPC-1.2) will have a
+        // shipwright-loop row present but zero children — every toggle resolves
+        // false and the drain simply stops with no candidates collected. Without
+        // this warn that state is indistinguishable from a legitimately idle or
+        // all-phases-disabled tick. Logged so it stays observable (Sentry-eligible)
+        // instead of the loop silently going quiet.
+        if (
+          !toggles.devTask &&
+          !toggles.review &&
+          !toggles.patch &&
+          !toggles.deploy &&
+          jobs.some((job) => job.name === "shipwright-loop") &&
+          !jobs.some((job) => job.parentCronId === loopCronId)
+        ) {
+          console.warn(
+            `shipwright-loop ${loopCronId} has no child phase rows — all phases resolved false. If this agent hasn't reconciled since LPC-1.2/2.1 shipped, run reconcileSystemCrons() to backfill parentCronId on its phase rows.`,
+          );
+        }
+
         const tasks: WorkTaskCandidate[] = toggles.devTask
           ? (await getDevTaskCandidates()).filter(
               (t) => !failedPreClaimTaskIds.has(t.id),

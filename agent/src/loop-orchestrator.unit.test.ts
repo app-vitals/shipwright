@@ -1073,6 +1073,83 @@ describe("createLoopOrchestrator", () => {
     expect(spinWarnings).toHaveLength(0);
   });
 
+  // ─── Unreconciled-agent warn tests (LPC-2.1 follow-up) ──────────────────────
+
+  test("unreconciled-agent warn fires when shipwright-loop is present but no child phase rows exist", async () => {
+    const deps = makeDeps();
+    const loop = createLoopOrchestrator(deps);
+
+    // shipwright-loop itself has no parentCronId, and there are no other rows
+    // at all — the "never reconciled" case.
+    const loopOnly: CronJobLike = {
+      id: "shipwright-loop",
+      name: "shipwright-loop",
+      enabled: true,
+      parentCronId: null,
+    };
+
+    const warnMessages = await withCapturedWarnings(async () => {
+      await loop([loopOnly]);
+    });
+
+    const unreconciledWarnings = warnMessages.filter((msg) =>
+      msg.includes("no child phase rows"),
+    );
+    expect(unreconciledWarnings).toHaveLength(1);
+    expect(unreconciledWarnings[0]).toContain("shipwright-loop");
+  });
+
+  test("unreconciled-agent warn does not fire on a normal idle tick with reconciled child rows all disabled", async () => {
+    const deps = makeDeps();
+    const loop = createLoopOrchestrator(deps);
+
+    const warnMessages = await withCapturedWarnings(async () => {
+      await loop([
+        job("shipwright-dev-task", false),
+        job("shipwright-review", false),
+        job("shipwright-patch", false),
+        job("shipwright-deploy", false),
+      ]);
+    });
+
+    const unreconciledWarnings = warnMessages.filter((msg) =>
+      msg.includes("no child phase rows"),
+    );
+    expect(unreconciledWarnings).toHaveLength(0);
+  });
+
+  test("unreconciled-agent warn does not fire when at least one phase is legitimately enabled", async () => {
+    const consumed = new Set<string>();
+    const deps = makeDeps({
+      devTaskCandidates: [],
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const warnMessages = await withCapturedWarnings(async () => {
+      await loop(ALL_PHASES_ON);
+    });
+
+    const unreconciledWarnings = warnMessages.filter((msg) =>
+      msg.includes("no child phase rows"),
+    );
+    expect(unreconciledWarnings).toHaveLength(0);
+  });
+
+  test("unreconciled-agent warn does not fire when no shipwright-loop row is present at all (unmigrated agent)", async () => {
+    const deps = makeDeps();
+    const loop = createLoopOrchestrator(deps);
+
+    const warnMessages = await withCapturedWarnings(async () => {
+      await loop([]);
+    });
+
+    const unreconciledWarnings = warnMessages.filter((msg) =>
+      msg.includes("no child phase rows"),
+    );
+    expect(unreconciledWarnings).toHaveLength(0);
+  });
+
   // ─── Pre-claim tests (CBD-1.2) ──────────────────────────────────────────────
 
   test("a successful pre-claim (claimTask resolves true) proceeds to dispatch as before", async () => {
