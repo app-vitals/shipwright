@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.7.5] - 2026-07-18
+
+### Changed
+
+- docs: remove remaining edge-tts references from Piper docstring and Helm chart comments/README (PPR-1.4)
+
 ## [1.7.4] - 2026-07-18
 
 ### Changed

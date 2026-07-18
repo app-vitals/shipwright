@@ -254,7 +254,7 @@ async function synthesizeElevenLabs(
 
 /**
  * Synthesize speech via the self-hosted Piper TTS binary baked into the
- * image. Unlike edge-tts (an external network service), Piper is a local
+ * image. Unlike a network-based TTS provider, Piper is a local
  * binary that reads text from stdin and writes audio directly to
  * `--output_file`. It never requires the network and produces WAV — not
  * MP3 — output, since ffmpeg stays absent from the image (no transcode
