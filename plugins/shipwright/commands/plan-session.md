@@ -242,7 +242,7 @@ Task         | Depends on  | Blocks | HITL
 
 ### Breaking Change Safety
 
-Before finalizing the task list, check each task for renames or removals flagged in Step 2. For each one, the task must do one of:
+Before finalizing the task list, check each task for renames, removals, or constraint additions flagged in Step 2. For each one, the task must do one of:
 
 1. **Atomic update** — include all consumer updates in the same task. One PR removes the old thing and updates every caller.
 2. **Add → migrate → remove** — split into three sequential tasks: (a) add the new thing alongside the old, (b) migrate all consumers to the new, (c) remove the old.
@@ -251,7 +251,7 @@ A task that drops or renames something while a later task updates the consumers 
 
 **Same pattern for new constraints on existing tables.** A task that adds a `NOT NULL`, foreign key, or unique constraint to a column on a table with existing rows must split into sequential tasks the same way: (a) add the column/relation nullable, (b) backfill existing rows (with a task depending on (a), acceptance criteria requiring the live-data check above), (c) a later task adds the constraint — and only once (b)'s backfill has actually run and verified zero gaps, not just once its code has merged. A task that adds the constraint in the same migration as the backfill, or before the backfill task, risks failing on (or silently corrupting) existing rows.
 
-If a task has no renames or removals, mark it: `Safe to deploy standalone: yes`.
+If a task has no renames, removals, or constraint additions, mark it: `Safe to deploy standalone: yes`.
 
 Present the task list and dependency map as a first pass. The engineer reviews and iterates — they may catch implementation details, missing edge cases, or better task splits. Iterate until approved.
 
