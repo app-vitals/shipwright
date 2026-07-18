@@ -89,6 +89,7 @@ import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import {
   type CronJobLike,
+  LOOP_PHASE_JOB_NAMES,
   resolveLoopPhaseToggles,
 } from "./loop-cron-classifier.ts";
 import { parseMarkers } from "./markers.ts";
@@ -348,13 +349,31 @@ export function createLoopOrchestrator(
         // this warn that state is indistinguishable from a legitimately idle or
         // all-phases-disabled tick. Logged so it stays observable (Sentry-eligible)
         // instead of the loop silently going quiet.
+        //
+        // Checked per-phase-name (not "any child row exists at all under this
+        // parent") because reconciliation can be partial: e.g. only the
+        // dev-task row has been backfilled with parentCronId so far, the
+        // other three haven't. In that case at least one job matches
+        // `parentCronId === loopCronId`, but all four toggles can still
+        // resolve false — this warn exists specifically to catch that gap.
+        // The discriminator against a legitimate all-phases-disabled tick
+        // (four reconciled child rows, all enabled: false) is whether every
+        // phase name HAS a same-parent child row: if it does, its false
+        // toggle is a real "disabled" choice, not a reconciliation gap. So
+        // the warn fires whenever AT LEAST ONE of the four phase names still
+        // lacks a same-parent child row entirely — not only when all four do.
         if (
           !toggles.devTask &&
           !toggles.review &&
           !toggles.patch &&
           !toggles.deploy &&
           jobs.some((job) => job.name === "shipwright-loop") &&
-          !jobs.some((job) => job.parentCronId === loopCronId)
+          LOOP_PHASE_JOB_NAMES.some(
+            (name) =>
+              !jobs.some(
+                (job) => job.parentCronId === loopCronId && job.name === name,
+              ),
+          )
         ) {
           console.warn(
             `shipwright-loop ${loopCronId} has no child phase rows — all phases resolved false. If this agent hasn't reconciled since LPC-1.2/2.1 shipped, run reconcileSystemCrons() to backfill parentCronId on its phase rows.`,

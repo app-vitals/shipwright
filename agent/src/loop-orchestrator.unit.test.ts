@@ -1150,6 +1150,57 @@ describe("createLoopOrchestrator", () => {
     expect(unreconciledWarnings).toHaveLength(0);
   });
 
+  test("unreconciled-agent warn fires on partial reconciliation — one of four phase names has a same-parent child row, the rest don't", async () => {
+    const deps = makeDeps();
+    const loop = createLoopOrchestrator(deps);
+
+    // shipwright-loop present; only shipwright-dev-task has been backfilled
+    // with parentCronId === loopCronId so far. review/patch/deploy are still
+    // top-level (unreconciled) rows, so they're ignored by
+    // resolveLoopPhaseToggles and every toggle resolves false — but
+    // `jobs.some((job) => job.parentCronId === loopCronId)` is true because
+    // of the dev-task row alone. This is exactly the partial-reconciliation
+    // gap the warn must catch.
+    const loopJob: CronJobLike = {
+      id: "shipwright-loop",
+      name: "shipwright-loop",
+      enabled: true,
+      parentCronId: null,
+    };
+    const partiallyReconciled: CronJobLike[] = [
+      loopJob,
+      job("shipwright-dev-task", false),
+      {
+        id: "shipwright-review",
+        name: "shipwright-review",
+        enabled: true,
+        parentCronId: null,
+      },
+      {
+        id: "shipwright-patch",
+        name: "shipwright-patch",
+        enabled: true,
+        parentCronId: null,
+      },
+      {
+        id: "shipwright-deploy",
+        name: "shipwright-deploy",
+        enabled: true,
+        parentCronId: null,
+      },
+    ];
+
+    const warnMessages = await withCapturedWarnings(async () => {
+      await loop(partiallyReconciled);
+    });
+
+    const unreconciledWarnings = warnMessages.filter((msg) =>
+      msg.includes("no child phase rows"),
+    );
+    expect(unreconciledWarnings).toHaveLength(1);
+    expect(unreconciledWarnings[0]).toContain("shipwright-loop");
+  });
+
   // ─── Pre-claim tests (CBD-1.2) ──────────────────────────────────────────────
 
   test("a successful pre-claim (claimTask resolves true) proceeds to dispatch as before", async () => {

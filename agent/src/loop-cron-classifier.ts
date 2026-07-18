@@ -92,6 +92,21 @@ const PIPELINE_PHASE_JOB_NAMES = new Set<string>([
   "shipwright-deploy",
 ]);
 
+/**
+ * The four phase job names resolveLoopPhaseToggles() reads — deliberately
+ * excludes shipwright-review-patch (see the module docstring above). Exported
+ * so callers that need to reason about "does this agent have any of the four
+ * loop-phase child rows reconciled yet" (e.g. loop-orchestrator.ts's
+ * unreconciled-agent guard) share this list instead of duplicating the
+ * literal names.
+ */
+export const LOOP_PHASE_JOB_NAMES = [
+  "shipwright-dev-task",
+  "shipwright-review",
+  "shipwright-patch",
+  "shipwright-deploy",
+] as const;
+
 // ─── classifyCronJobsForScheduling ─────────────────────────────────────────────
 
 export function classifyCronJobsForScheduling<T extends CronJobLike>(
