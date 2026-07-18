@@ -353,8 +353,8 @@ advisory — CI can run and still not gate `main`.
   intended fail-open behavior documented in `ci.yml`'s own comments).
 - **Require branches up to date before merging** — yes.
 - **Require conversation resolution before merging** — yes.
-- **Required approving reviews:** ≥1 — two-person team (Dan, Dave) per `TEAM.md`; ≥2
-  would deadlock a two-person repo whenever one reviewer is the PR author. Keep at 1.
+- **Required approving reviews:** ≥1 — small team; ≥2 would deadlock a repo whenever
+  the sole other reviewer is the PR author. Keep at 1.
 - **Enforce on admins:** yes, recommended — document a break-glass procedure (direct
   push only for a CI outage or emergency rollback, immediately followed by a
   retroactive PR) rather than leaving admins permanently exempt.
