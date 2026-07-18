@@ -343,4 +343,61 @@ describeOrSkip("AgentCronJobService (integration)", () => {
     expect(survivingRun).not.toBeNull();
     expect(survivingRun?.cronId).toBe(originalId);
   });
+
+  it("reconcileSystemCrons() links the four legacy phase crons to shipwright-loop as parent on a fresh agent's first reconcile", async () => {
+    const agentId = await createAgent(prisma);
+    // Fresh agent: no shipwright-loop row exists yet before this call, so the
+    // parent id must be resolved within the same reconcile that creates it.
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
+    expect(loopCron).toBeDefined();
+
+    const legacyNames = [
+      "shipwright-dev-task",
+      "shipwright-patch",
+      "shipwright-review",
+      "shipwright-deploy",
+    ];
+    for (const name of legacyNames) {
+      const cron = jobs.find((j) => j.name === name);
+      expect(cron).toBeDefined();
+      expect(cron?.parentCronId).toBe(loopCron?.id as string);
+    }
+
+    // Other system crons (not part of the phase pipeline) must not be linked.
+    const loopSelf = jobs.find((j) => j.name === "shipwright-loop");
+    expect(loopSelf?.parentCronId).toBeNull();
+    const unrelated = jobs.find((j) => j.name === "shipwright-test-readiness");
+    expect(unrelated?.parentCronId).toBeNull();
+  });
+
+  it("reconcileSystemCrons() self-heals the parentCronId link on a subsequent reconcile", async () => {
+    const agentId = await createAgent(prisma);
+    await service.reconcileSystemCrons(agentId);
+
+    // Simulate a pre-LPC-1.2 agent state: clear the parent link as if these
+    // rows were seeded before parentCron was introduced.
+    await prisma.agentCronJob.updateMany({
+      where: { agentId, system: true },
+      data: { parentCronId: null },
+    });
+
+    await service.reconcileSystemCrons(agentId);
+
+    const jobs = await service.list(agentId);
+    const loopCron = jobs.find((j) => j.name === "shipwright-loop");
+    expect(loopCron).toBeDefined();
+
+    for (const name of [
+      "shipwright-dev-task",
+      "shipwright-patch",
+      "shipwright-review",
+      "shipwright-deploy",
+    ]) {
+      const cron = jobs.find((j) => j.name === name);
+      expect(cron?.parentCronId).toBe(loopCron?.id as string);
+    }
+  });
 });

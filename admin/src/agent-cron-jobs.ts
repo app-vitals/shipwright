@@ -356,15 +356,27 @@ export class AgentCronJobService {
   /**
    * Reconcile system crons for the given agent.
    *
-   * For each entry in SYSTEM_CRONS:
+   * Two passes so parent/child links resolve regardless of SYSTEM_CRONS
+   * array order or whether this is the agent's very first reconcile (i.e.
+   * the parent row may not exist yet when a child entry is processed):
+   *
+   * Pass 1 — for each entry in SYSTEM_CRONS:
    *   - If an existing system cron with matching name exists: update it in
    *     place with the current SYSTEM_CRONS definition, preserving its id and
    *     existing enabled state. Updating in place (rather than delete+create)
    *     keeps the row's id stable across restarts so AgentCronRun history
    *     (FK onDelete: Cascade) is never wiped out from under it.
    *   - If no matching cron exists: create it with SYSTEM_CRONS default enabled.
+   *   Records each entry's resulting row id in a name → id map as it goes.
+   *
+   * Pass 2 — for each entry that declares `parentCron`, resolves the
+   * parent's row id from the name → id map built in pass 1 and sets
+   * parentCronId on the child. Self-heals the link on every reconcile call
+   * (e.g. if it was previously null on a pre-existing row).
    *
    * Orphan pass: delete any cron with system=true whose name is no longer in SYSTEM_CRONS.
+   *
+   * All three passes run inside a single transaction for atomicity.
    *
    * Returns a summary { created, updated, deleted }.
    */
@@ -394,7 +406,8 @@ export class AgentCronJobService {
     // Wrap all mutations in a transaction so a crash mid-loop cannot leave
     // the agent missing required system crons (e.g. shipwright-dev-task).
     await this.prisma.$transaction(async (tx) => {
-      // Reconcile each SYSTEM_CRON entry
+      // Pass 1: reconcile each SYSTEM_CRON entry, recording name → row id.
+      const idByName = new Map<string, string>();
       for (const systemCron of SYSTEM_CRONS) {
         const existing = existingByName.get(systemCron.name);
 
@@ -411,9 +424,10 @@ export class AgentCronJobService {
               preCheck: systemCron.preCheck ?? null,
             },
           });
+          idByName.set(systemCron.name, existing.id);
           updated++;
         } else {
-          await tx.agentCronJob.create({
+          const createdCron = await tx.agentCronJob.create({
             data: {
               agentId,
               name: systemCron.name,
@@ -427,8 +441,22 @@ export class AgentCronJobService {
               enabled: systemCron.enabled,
             },
           });
+          idByName.set(systemCron.name, createdCron.id);
           created++;
         }
+      }
+
+      // Pass 2: link declared parent/child crons now that every row in this
+      // reconcile has a known id, regardless of array order or first-boot.
+      for (const systemCron of SYSTEM_CRONS) {
+        if (!systemCron.parentCron) continue;
+        const childId = idByName.get(systemCron.name);
+        const parentId = idByName.get(systemCron.parentCron);
+        if (!childId || !parentId) continue;
+        await tx.agentCronJob.update({
+          where: { id: childId },
+          data: { parentCronId: parentId },
+        });
       }
 
       // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.

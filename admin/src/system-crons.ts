@@ -14,6 +14,14 @@ export interface SystemCron {
   silent?: boolean;
   preCheck?: string;
   enabled: boolean;
+  /**
+   * Name of another SYSTEM_CRONS entry this cron is a phase/child of (e.g.
+   * the four legacy pipeline crons are phases of "shipwright-loop"). When
+   * set, reconcileSystemCrons() resolves the parent's row id for the same
+   * agent and sets it as this cron's parentCronId — self-healing the link
+   * on every agent boot with no manual migration step.
+   */
+  parentCron?: string;
 }
 
 export const SYSTEM_CRONS: readonly SystemCron[] = [
@@ -23,6 +31,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     prompt: "/shipwright:dev-task",
     silent: true,
     enabled: true,
+    parentCron: "shipwright-loop",
   },
   {
     name: "shipwright-patch",
@@ -30,6 +39,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     prompt: "/shipwright:patch",
     silent: true,
     enabled: true,
+    parentCron: "shipwright-loop",
   },
   {
     name: "shipwright-review",
@@ -37,6 +47,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     prompt: "/shipwright:review",
     silent: true,
     enabled: true,
+    parentCron: "shipwright-loop",
   },
   {
     name: "shipwright-deploy",
@@ -44,6 +55,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
     prompt: "/shipwright:deploy",
     silent: true,
     enabled: false,
+    parentCron: "shipwright-loop",
   },
   {
     name: "shipwright-loop",
