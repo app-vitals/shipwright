@@ -688,6 +688,40 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("dev-task");
     expect(html).toContain("review");
     expect(html).not.toContain("No work queue snapshot");
+    // task item links to its admin task detail page
+    expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
+  });
+
+  it("work queue PR item links out to GitHub using the repo#prNumber id", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentWorkQueueService: {
+          get: async () => ({
+            id: "snap-2",
+            agentId: AGENT_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "pr",
+                id: "app-vitals/shipwright#4321",
+                title: "Fix flaky test",
+                phase: "review",
+                age: "2026-06-01T08:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain(
+      '<a href="https://github.com/app-vitals/shipwright/pull/4321"',
+    );
   });
 
   it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
@@ -4941,6 +4975,40 @@ describe("admin UI — public task board", () => {
     expect(html).not.toContain("Release");
     expect(html).not.toContain("/admin/");
     expect(html).not.toContain("admin_session");
+  });
+
+  it("GET /public/tasks does not leak /admin/ links for claimed or blocked tasks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [
+            {
+              id: "pub-task-3",
+              title: "Public task gamma",
+              status: "blocked",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              assignee: null,
+              claimedBy: "agent-pub",
+              blockedBy: [
+                { type: "dependency", id: "pub-task-1", status: "pending" },
+              ],
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Public task gamma");
+    expect(html).toContain("Blocked:");
+    expect(html).toContain("agent-pub");
+    expect(html).not.toContain("/admin/");
   });
 
   it("GET /public/tasks renders 200 even when no publicRepo configured (degraded mode)", async () => {
