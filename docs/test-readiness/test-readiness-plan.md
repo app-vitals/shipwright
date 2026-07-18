@@ -228,11 +228,12 @@ per-repo narrative file under the plugin's own `references/`).
 
 **Status as of this refresh (2026-07-18, checked against the task store):** T-064 is
 `deployed`. T-065 and T-066 were not found in the task store under the
-`test-t-0NN-shipwright` ID pattern used by this cycle's tasks — unlike T-048 through
-T-064, their creation could not be confirmed, so their status is left as originally
-generated pending a follow-up check.
+`test-t-0NN-shipwright` ID pattern used by this cycle's tasks, but both are also
+`deployed` — their work landed on `main` via PR #1712 (T-065, merge commit `0d4b1221`)
+and PR #1713 (T-066, merge commit `2b97e674`), both ancestors of this branch, so the
+lack of a matching task-store ID doesn't mean the work is outstanding.
 
-- T-064 (deployed), T-065, T-066 (3 tasks — see Task list)
+- T-064, T-065, T-066 (3 tasks, all deployed — see Task list)
 
 ## 5. Task list
 
@@ -251,10 +252,14 @@ rename cluster). `starting_offset = 47 + 1 = 48`. Numbering below starts at `T-0
 review feedback on this PR): `test-t-048-shipwright` through `test-t-064-shipwright`
 already exist in the task store from a prior run of this same pipeline. All are
 `deployed` except `test-t-051-shipwright`, which is `pending`. `test-t-065-shipwright`
-and `test-t-066-shipwright` were not found under this ID pattern. **This means most of
+and `test-t-066-shipwright` were not found under this ID pattern, but their described
+work (T-065's rename, T-066's skill-doc fold) is confirmed `deployed` on `main` via
+merged PRs #1712 and #1713, both ancestors of this branch — so they're complete despite
+the task-store lookup miss. **This means most of
 the rows below are already-completed work, not an open queue** — the Status column
-reflects the task store's current state; treat only rows marked `pending`/`open` (or
-unconfirmed) as actionable. Do not re-run these as if they were new tasks; a future
+reflects the task store's current state (or, for T-065/T-066, direct PR-merge
+confirmation); treat only rows marked `pending`/`open` as actionable. Do not re-run
+these as if they were new tasks; a future
 `/test-migration` + `/test-roadmap` pass against current `main` is recommended before
 using this list as a live execution queue again.
 
@@ -277,8 +282,8 @@ using this list as a live execution queue again.
 | T-062 | 4 | `mcp-server/src/tool-caller.integration.test.ts` (new), `mcp-server` fixtures (new) | integration | net-new | `mcp-server/src/tool-caller.ts`'s real proxied-call path has a recorded-fixture integration test, companion to the existing `tool-caller.unit.test.ts` (pure proxy-mapping logic) | `bun test mcp-server/src/tool-caller.integration.test.ts` | **deployed** |
 | T-063 | 4 | `lib/org-repo.unit.test.ts` (new) | unit | net-new | `isOrgRepo` has direct unit coverage (valid/invalid-string cases) | `bun test lib/org-repo.unit.test.ts` | **deployed** |
 | T-064 | 5 | `plugins/shipwright/agents/learning-dreamer.integration.test.ts` → `plugins/shipwright/agents/learning-dreamer.content.test.ts` (rename) | content | promote (rename) | File correctly labeled as content-layer (markdown-prose assertions, no I/O boundary) instead of misfiled under `.integration.` | `bun test plugins/shipwright/agents/learning-dreamer.content.test.ts && ! test -f plugins/shipwright/agents/learning-dreamer.integration.test.ts` | **deployed** |
-| T-065 | 5 | `lib/task-store-types.integration.test.ts` → `lib/task-store-types.unit.test.ts` (rename) | unit | promote (rename) | File correctly labeled as unit-layer (codegen-freshness string check, no I/O boundary) instead of misfiled under `.integration.` | `bun test lib/task-store-types.unit.test.ts && ! test -f lib/task-store-types.integration.test.ts` | not found in task store — unconfirmed |
-| T-066 | 5 | one relevant skill/doc (e.g. `plugins/shipwright/skills/test-roadmap/SKILL.md` or `plugins/shipwright/skills/repo-config/SKILL.md`, whichever the concrete learning applies to) or a `# Harness TODO` entry within it | content | net-new | Plugin feedback collector: fold any generalized, repo-agnostic learning from this cycle (e.g. "verify `Recorded*Client` coverage against the working tree before trusting a Phase-2 greenfield estimate — Phase 2 doesn't read existing tests") into the relevant skill doc directly, per `learning-capture`'s routing and the SKILL's explicit anti-pattern guardrail against a new per-repo narrative file under the plugin's own `references/` | `git diff --stat plugins/shipwright/skills/` shows a change to an existing skill doc, not a new file under `references/` | not found in task store — unconfirmed |
+| T-065 | 5 | `lib/task-store-types.integration.test.ts` → `lib/task-store-types.unit.test.ts` (rename) | unit | promote (rename) | File correctly labeled as unit-layer (codegen-freshness string check, no I/O boundary) instead of misfiled under `.integration.` | `bun test lib/task-store-types.unit.test.ts && ! test -f lib/task-store-types.integration.test.ts` | **deployed** — not found under the `test-t-0NN-shipwright` ID pattern, but confirmed landed via PR #1712 (merge commit `0d4b1221`), an ancestor of this branch |
+| T-066 | 5 | one relevant skill/doc (e.g. `plugins/shipwright/skills/test-roadmap/SKILL.md` or `plugins/shipwright/skills/repo-config/SKILL.md`, whichever the concrete learning applies to) or a `# Harness TODO` entry within it | content | net-new | Plugin feedback collector: fold any generalized, repo-agnostic learning from this cycle (e.g. "verify `Recorded*Client` coverage against the working tree before trusting a Phase-2 greenfield estimate — Phase 2 doesn't read existing tests") into the relevant skill doc directly, per `learning-capture`'s routing and the SKILL's explicit anti-pattern guardrail against a new per-repo narrative file under the plugin's own `references/` | `git diff --stat plugins/shipwright/skills/` shows a change to an existing skill doc, not a new file under `references/` | **deployed** — not found under the `test-t-0NN-shipwright` ID pattern, but confirmed landed via PR #1713 (merge commit `2b97e674`), an ancestor of this branch |
 
 ### Audit task decision rows
 
