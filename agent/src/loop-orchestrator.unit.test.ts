@@ -1252,6 +1252,81 @@ describe("createLoopOrchestrator", () => {
     expect(getCandidatesCalls).toBe(2);
   });
 
+  test("a thrown PR pre-claim (e.g. task-store 5xx) is caught per-item, skips only the offending PR, and the drain still dispatches a younger candidate of a different type in the same tick", async () => {
+    // acme/x#9 (older review candidate) always throws on claimPr — unlike a
+    // 409, the throw means the claim never actually succeeded, so the
+    // task-store record stays unclaimed and would keep reappearing from
+    // getReviewCandidates() forever without the fix's per-tick filter.
+    // SWC-YOUNG (younger dev-task — a different item type) must still
+    // dispatch in the same tick.
+    const consumed = new Set<string>();
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-YOUNG", "2026-01-02T00:00:00Z")];
+    const reviewCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "review")];
+    const { runner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates, review: reviewCandidates },
+      consumed,
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+      reporter,
+      claimPr: async () => {
+        throw new Error("task-store POST /prs/claim → 500");
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const warnings = await withCapturedWarnings(async () => {
+      await loop(ALL_PHASES_ON);
+    });
+
+    // The whole tick did NOT abort — the dev-task candidate still dispatched
+    // (with claimTask's default stub, which resolves true).
+    expectDispatchedCommands(messages, ["/shipwright:dev-task SWC-YOUNG"]);
+    expect(creates.map((c) => c.itemId)).toEqual(["SWC-YOUNG"]);
+    expect(completes.map((c) => c.itemId)).toEqual(["SWC-YOUNG"]);
+    expect(skips).toEqual([]);
+
+    // The failure is logged, observable, and identifies the offending item.
+    expect(
+      warnings.some((w) => w.includes("acme/x#9") && w.includes("500")),
+    ).toBe(true);
+  });
+
+  test("repeated claimPr throws for the same item do not spin-loop it within one tick", async () => {
+    // Only one PR candidate exists and its claim always throws. Without the
+    // per-tick failedPreClaimPrIds filter, the drain would re-select and
+    // re-throw on it forever (getReviewCandidates keeps returning it since
+    // it was never actually claimed) — this test bounds that: the loop must
+    // terminate after exactly one claim attempt.
+    const reviewCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "review")];
+    let claimAttempts = 0;
+    let getCandidatesCalls = 0;
+    const deps = makeDeps({
+      reviewCandidates: async () => {
+        getCandidatesCalls += 1;
+        return reviewCandidates;
+      },
+      claimPr: async () => {
+        claimAttempts += 1;
+        throw new Error("task-store POST /prs/claim → 500");
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await withCapturedWarnings(async () => {
+      await loop([job("shipwright-review", true)]);
+    });
+
+    expect(claimAttempts).toBe(1);
+    // Candidates are re-collected once more after the failed claim (to
+    // confirm the drain is dry) but the same item is never re-claimed.
+    expect(getCandidatesCalls).toBe(2);
+  });
+
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
 
   for (const phase of ["review", "patch", "deploy"] as const) {

@@ -325,6 +325,12 @@ export function createLoopOrchestrator(
     // on the same oldest candidate forever within the tick. Scoped to this
     // call so a later tick gets a fresh chance at the same task.
     const failedPreClaimTaskIds = new Set<string>();
+    // Per-tick guard (CBD-2.1): the PR-path analog of failedPreClaimTaskIds
+    // above. claimPr's production implementation throws the identical
+    // task-store-5xx error claimTask does — without this filter a thrown PR
+    // pre-claim would leave the same candidate re-selected and re-thrown on
+    // every iteration for the rest of the tick.
+    const failedPreClaimPrIds = new Set<string>();
 
     try {
       // Drain until dry: keep selecting-and-dispatching while work remains.
@@ -339,10 +345,13 @@ export function createLoopOrchestrator(
             )
           : [];
 
-        const prs: WorkPrCandidate[] = [];
-        if (toggles.review) prs.push(...(await getReviewCandidates()));
-        if (toggles.patch) prs.push(...(await getPatchCandidates()));
-        if (toggles.deploy) prs.push(...(await getDeployCandidates()));
+        const allPrs: WorkPrCandidate[] = [];
+        if (toggles.review) allPrs.push(...(await getReviewCandidates()));
+        if (toggles.patch) allPrs.push(...(await getPatchCandidates()));
+        if (toggles.deploy) allPrs.push(...(await getDeployCandidates()));
+        const prs: WorkPrCandidate[] = allPrs.filter(
+          (p) => !failedPreClaimPrIds.has(p.id),
+        );
 
         // Full-queue observability snapshot — fires every iteration
         // (dispatch or idle), deliberately with no noise guard. See the
@@ -392,7 +401,23 @@ export function createLoopOrchestrator(
           }
           if (!claimed) continue;
         } else {
-          const claimResult = await claimPr(item.pr);
+          let claimResult: { id: string; commitSha: string } | null;
+          try {
+            claimResult = await claimPr(item.pr);
+          } catch (err) {
+            // CBD-2.1: completes the throw-isolation fix for the PR path —
+            // a thrown pre-claim (e.g. task-store 5xx) must not abort the
+            // whole drain here either. Skip this item for the rest of the
+            // tick and keep draining the next candidate. Logged so repeated
+            // claim failures stay observable (Sentry-eligible) instead of
+            // being silently swallowed.
+            console.warn(
+              `Pre-claim failed for PR ${itemId}, skipping for this tick: ` +
+                `${err instanceof Error ? err.message : String(err)}`,
+            );
+            failedPreClaimPrIds.add(itemId);
+            continue;
+          }
           if (!claimResult) continue;
           preClaimMarker = formatPreClaimMarker(
             claimResult.id,
