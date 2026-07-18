@@ -356,15 +356,31 @@ export class AgentCronJobService {
   /**
    * Reconcile system crons for the given agent.
    *
-   * For each entry in SYSTEM_CRONS:
+   * Two passes so parent/child links resolve regardless of SYSTEM_CRONS
+   * array order or whether this is the agent's very first reconcile (i.e.
+   * the parent row may not exist yet when a child entry is processed):
+   *
+   * Pass 1 — for each entry in SYSTEM_CRONS:
    *   - If an existing system cron with matching name exists: update it in
    *     place with the current SYSTEM_CRONS definition, preserving its id and
    *     existing enabled state. Updating in place (rather than delete+create)
    *     keeps the row's id stable across restarts so AgentCronRun history
    *     (FK onDelete: Cascade) is never wiped out from under it.
    *   - If no matching cron exists: create it with SYSTEM_CRONS default enabled.
+   *   Records each entry's resulting row id in a name → id map as it goes.
+   *
+   * Pass 2 — for each entry that declares `parentCron`, resolves the
+   * parent's row id from the name → id map built in pass 1 and sets
+   * parentCronId on the child. If an entry does not declare `parentCron`
+   * (or declares one that doesn't resolve to a known row), any existing
+   * non-null parentCronId on that row is cleared back to null. Self-heals
+   * the link on every reconcile call in both directions — null→set (e.g.
+   * a pre-existing row from before parentCron was introduced) and set→null
+   * (e.g. a parentCron declaration removed from SYSTEM_CRONS).
    *
    * Orphan pass: delete any cron with system=true whose name is no longer in SYSTEM_CRONS.
+   *
+   * All three passes run inside a single transaction for atomicity.
    *
    * Returns a summary { created, updated, deleted }.
    */
@@ -394,7 +410,8 @@ export class AgentCronJobService {
     // Wrap all mutations in a transaction so a crash mid-loop cannot leave
     // the agent missing required system crons (e.g. shipwright-dev-task).
     await this.prisma.$transaction(async (tx) => {
-      // Reconcile each SYSTEM_CRON entry
+      // Pass 1: reconcile each SYSTEM_CRON entry, recording name → row id.
+      const idByName = new Map<string, string>();
       for (const systemCron of SYSTEM_CRONS) {
         const existing = existingByName.get(systemCron.name);
 
@@ -411,9 +428,10 @@ export class AgentCronJobService {
               preCheck: systemCron.preCheck ?? null,
             },
           });
+          idByName.set(systemCron.name, existing.id);
           updated++;
         } else {
-          await tx.agentCronJob.create({
+          const createdCron = await tx.agentCronJob.create({
             data: {
               agentId,
               name: systemCron.name,
@@ -427,7 +445,36 @@ export class AgentCronJobService {
               enabled: systemCron.enabled,
             },
           });
+          idByName.set(systemCron.name, createdCron.id);
           created++;
+        }
+      }
+
+      // Pass 2: link declared parent/child crons now that every row in this
+      // reconcile has a known id, regardless of array order or first-boot.
+      // Also clears parentCronId back to null when an entry no longer
+      // declares a resolvable parentCron, so the link self-heals in both
+      // directions rather than only null→set.
+      for (const systemCron of SYSTEM_CRONS) {
+        const childId = idByName.get(systemCron.name);
+        if (!childId) continue;
+        const parentId = systemCron.parentCron
+          ? idByName.get(systemCron.parentCron)
+          : undefined;
+
+        if (parentId) {
+          await tx.agentCronJob.update({
+            where: { id: childId },
+            data: { parentCronId: parentId },
+          });
+        } else {
+          const existing = existingByName.get(systemCron.name);
+          if (existing && existing.parentCronId !== null) {
+            await tx.agentCronJob.update({
+              where: { id: childId },
+              data: { parentCronId: null },
+            });
+          }
         }
       }
 
