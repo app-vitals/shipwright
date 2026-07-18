@@ -329,12 +329,24 @@ curl -sf -X PATCH \
 
 ### 5a. No-Pipeline Detection
 
-Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls):
+Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls).
+
+**Implementation: inline in-Bash sleep loop.** Do not wait between polls via a
+scheduled wakeup mechanism that resumes the session later (each resumption is a
+brand-new process invocation — costly and unnecessary here). Instead, run the
+30-second-interval checks as a shell-level loop inside a single Bash tool call. The
+full 5-minute/10-poll budget fits comfortably within one Bash call, well under Bash's
+practical ~10-minute ceiling, so — unlike Step 5b's 30-minute watch — no chaining
+across multiple Bash calls is needed here:
 
 ```bash
-REPO="{org}/{repo}"
-gh api "repos/$REPO/actions/runs?per_page=50" \
-  --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\" and .name == \"Deploy\") | {id, name, status, conclusion}]"
+for i in $(seq 1 10); do
+  REPO="{org}/{repo}"
+  gh api "repos/$REPO/actions/runs?per_page=50" \
+    --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\" and .name == \"Deploy\") | {id, name, status, conclusion}]"
+  # break out of the loop immediately once a Deploy workflow run appears
+  sleep 30
+done
 ```
 
 - **Deploy workflow appears**: Break the 5-minute poll early and proceed to the main pipeline watch (Step 5b).

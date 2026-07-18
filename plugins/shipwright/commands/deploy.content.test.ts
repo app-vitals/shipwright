@@ -324,6 +324,59 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   });
 });
 
+describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
+  function extractStep5aSection(md: string): string {
+    const match = md.match(
+      /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
+    );
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).toContain("sleep 30");
+    const hasForLoop =
+      /for\s+\w+\s+in\s+\$\(seq/.test(step5aSection) ||
+      step5aSection.includes("for i in");
+    expect(hasForLoop).toBe(true);
+  });
+
+  it("Step 5a's polling section does NOT instruct a per-poll ScheduleWakeup call or equivalent backgrounding language", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).not.toContain("ScheduleWakeup");
+    const lower = step5aSection.toLowerCase();
+    expect(lower).not.toContain("wait for the notification");
+    expect(lower).not.toContain("run it in the background");
+  });
+
+  it("Step 5a explicitly states the implementation is chained in-Bash sleep loops, ruling out a scheduled wakeup mechanism", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("implementation");
+    expect(lower).toContain("in-bash sleep loop");
+    expect(lower).toContain("scheduled wakeup mechanism");
+  });
+
+  it("preserves the 5-minute budget and 30-second poll interval wording in Step 5a", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).toContain("5 minutes");
+    expect(step5aSection).toContain("30 seconds");
+  });
+
+  it("preserves the break-early-on-Deploy-workflow-appearing behavior in Step 5a", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection.toLowerCase()).toContain("break");
+    expect(step5aSection).toContain("Step 5b");
+  });
+
+  it("preserves the no-Deploy-workflow-after-5-minutes fallback to Step 5c in Step 5a", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).toContain("No Deploy workflow triggered");
+    expect(step5aSection).toContain("Step 5c");
+  });
+});
+
 describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
   it("Step 4b contains exactly one unconditional --admin merge command", () => {
     const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
