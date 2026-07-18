@@ -177,16 +177,12 @@ export class AgentCronJobService {
   }
 
   /**
-   * List all enabled cron jobs across all agents, for the runtime sync loop's
-   * generic per-minute dispatch scheduling (fetched on startup and every
-   * 60s). Excludes rows with a non-null parentCronId regardless of their own
-   * enabled value — a parented row is a phase of another cron (config only,
-   * e.g. read by the loop orchestrator) and must never be independently
-   * scheduled, structurally rather than via an enabled-flag convention.
+   * List all enabled cron jobs across all agents.
+   * Used by the runtime sync loop on startup and every 60s.
    */
   async listEnabled(): Promise<AgentCronJob[]> {
     return this.prisma.agentCronJob.findMany({
-      where: { enabled: true, parentCronId: null },
+      where: { enabled: true },
       orderBy: { createdAt: "asc" },
     });
   }
