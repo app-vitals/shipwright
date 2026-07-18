@@ -486,10 +486,11 @@ Enable it with `agent.voice.enabled=true` and pick an STT provider:
   `GROQ_API_KEY` is stored in the chart-managed voice `Secret` and injected into
   the admin (and provisioned agents) via `secretKeyRef`.
 
-TTS is **ElevenLabs** for both providers (the agent falls back to an in-pod
-`edge-tts` if no key is set). The ElevenLabs key + optional voice id and the Groq
-key live in the chart-managed voice `Secret`; non-secret values (the Whisper
-Service URL, the voice id) are plain Deployment env.
+TTS is **ElevenLabs** for both providers (the agent falls back to the self-hosted
+**Piper TTS** binary baked into the image if no key is set). The ElevenLabs key +
+optional voice id and the Groq key live in the chart-managed voice `Secret`; Piper
+voice configuration (the voice name and optional voice ID) and non-secret values
+(the Whisper Service URL) are plain Deployment env.
 
 > Voice env reaches provisioned agent pods through the admin provisioner:
 > `agent.voice.*` → admin Deployment env → `admin/src/main.ts` `buildProvisioner`
@@ -511,7 +512,7 @@ agent:
       model: ""                  # ASR model name → ASR_MODEL (e.g. tiny, base, small, medium, large-v3, tiny.en); empty = image default
       resources: {}              # ASR is heavy; size for your model
     elevenlabs:
-      apiKey: ""                 # → ELEVENLABS_API_KEY (TTS); empty → edge-tts fallback
+      apiKey: ""                 # → ELEVENLABS_API_KEY (TTS); empty → Piper TTS fallback
       voiceId: ""                # → ELEVENLABS_VOICE_ID (optional)
     groq:
       apiKey: ""                 # → GROQ_API_KEY (only used when provider=groq)

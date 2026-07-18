@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resolvePiperVoicePaths, validatePiperVoice } from "./piper-voice.ts";
 
 const VOICE_DIR = join(tmpdir(), "shipwright-agent-voice");
 const WHISPER_MAX_BYTES = 25 * 1024 * 1024; // 25MB
@@ -186,11 +187,12 @@ export async function transcribeAudio(
 }
 
 /**
- * Synthesize speech from text using ElevenLabs (if key available) or edge-tts fallback.
+ * Synthesize speech from text using ElevenLabs (if key available) or the
+ * self-hosted Piper TTS binary baked into the image.
  * Returns the path to the generated audio file, or null on failure.
  *
  * Accepts an optional fetchFn for DI in tests (avoids global.fetch mocking).
- * Accepts an optional spawnFn for edge-tts injection in tests.
+ * Accepts an optional spawnFn for Piper subprocess injection in tests.
  */
 export async function synthesizeSpeech(
   text: string,
@@ -210,7 +212,7 @@ export async function synthesizeSpeech(
     );
   }
 
-  return synthesizeEdgeTTS(text, spawnFn);
+  return synthesizePiper(text, voiceConfig, spawnFn);
 }
 
 async function synthesizeElevenLabs(
@@ -250,27 +252,43 @@ async function synthesizeElevenLabs(
   return outPath;
 }
 
-function synthesizeEdgeTTS(
+/**
+ * Synthesize speech via the self-hosted Piper TTS binary baked into the
+ * image. Unlike edge-tts (an external network service), Piper is a local
+ * binary that reads text from stdin and writes audio directly to
+ * `--output_file`. It never requires the network and produces WAV — not
+ * MP3 — output, since ffmpeg stays absent from the image (no transcode
+ * step; Piper's native WAV output is used directly).
+ *
+ * The voice is resolved via validatePiperVoice() (falls back to
+ * DEFAULT_PIPER_VOICE when voiceConfig.piperVoice is unset or not
+ * discovered) and resolvePiperVoicePaths() (only the .onnx model path is
+ * needed for --model — Piper auto-discovers the sibling .onnx.json).
+ *
+ * Never throws — resolves null on every failure path (spawn error, non-zero
+ * exit), mirroring synthesizeElevenLabs's never-throw contract.
+ */
+function synthesizePiper(
   text: string,
+  voiceConfig: VoiceConfig = {},
   spawnFn: SpawnFn = defaultSpawn,
 ): Promise<string | null> {
-  const outPath = join(VOICE_DIR, `${Date.now()}-response.mp3`);
+  const outPath = join(VOICE_DIR, `${Date.now()}-response.wav`);
+
+  const voiceName = validatePiperVoice(voiceConfig.piperVoice);
+  const { onnxPath } = resolvePiperVoicePaths(voiceName);
 
   return new Promise((resolve) => {
     let proc: ReturnType<typeof spawn>;
     try {
-      proc = spawnFn("edge-tts", [
-        "--voice",
-        "en-US-GuyNeural",
-        // edge-tts validates pitch as `[+-]\d+Hz` — `%` is only valid for rate/volume.
-        "--pitch=-15Hz",
-        "--text",
-        text,
-        "--write-media",
+      proc = spawnFn("piper", [
+        "--model",
+        onnxPath,
+        "--output_file",
         outPath,
       ]);
     } catch (err) {
-      console.error("[voice] edge-tts spawn error:", err);
+      console.error("[voice] piper spawn error:", err);
       resolve(null);
       return;
     }
@@ -281,7 +299,7 @@ function synthesizeEdgeTTS(
     let errorFired = false;
     proc.on("error", (err) => {
       errorFired = true;
-      console.error("[voice] edge-tts spawn error:", err);
+      console.error("[voice] piper spawn error:", err);
       resolve(null);
     });
 
@@ -289,11 +307,14 @@ function synthesizeEdgeTTS(
       if (errorFired) return;
       if (code !== 0) {
         const stderr = Buffer.concat(stderrChunks).toString();
-        console.error("[voice] edge-tts failed with exit code", code, stderr);
+        console.error("[voice] piper failed with exit code", code, stderr);
         resolve(null);
         return;
       }
       resolve(outPath);
     });
+
+    proc.stdin?.write(text);
+    proc.stdin?.end();
   });
 }

@@ -1497,7 +1497,7 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     unlinkSync(outPath);
   });
 
-  test("[speak:text] in DM — skips upload when synthesis returns null", async () => {
+  test("[speak:text] in DM — posts text fallback when synthesis returns null", async () => {
     const mockSynthesize = mock(async () => null);
     createSlackApp({ synthesizeSpeechFn: mockSynthesize });
 
@@ -1518,6 +1518,70 @@ describe("voice integration — [speak:text] marker dispatch", () => {
     });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "hello" }),
+    );
+  });
+
+  test("[speak:text] in DM — skips text fallback when synthesis fails and marker echoes the posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+    createSlackApp({ synthesizeSpeechFn: mockSynthesize });
+
+    mockRunClaude.mockResolvedValueOnce({
+      result: "Here is the answer. [speak:Here is the answer]",
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D1",
+        ts: "1.1",
+        text: "speak to me",
+        channel_type: "im",
+      },
+      say,
+      client,
+    });
+
+    // The visible reply was already posted via say(); the fallback must not
+    // post a near-duplicate copy of it via chat.postMessage.
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("[silent] + [speak:text] in channel — synthesis failure still posts fallback (suppressed reply must not count as posted)", async () => {
+    const mockSynthesize = mock(async () => null);
+    createSlackApp({
+      synthesizeSpeechFn: mockSynthesize,
+      getSessionFn: mock(async () => "sess-xyz"),
+    });
+
+    // [silent] suppresses the say() reply in a non-DM channel, but the
+    // [speak:text] marker echoes the suppressed `cleaned` text. Since the
+    // text was never actually posted, the duplicate-content guard must not
+    // treat it as already-shown — the fallback should still post.
+    mockRunClaude.mockResolvedValueOnce({
+      result: "Here is the answer. [speak:Here is the answer] [silent]",
+    });
+    const client = makeMockClient();
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "C123",
+        ts: "2.0",
+        thread_ts: "1.0",
+        text: "hi",
+        channel_type: "channel",
+      },
+      say,
+      client,
+    });
+
+    expect(say).not.toHaveBeenCalled();
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ text: "Here is the answer" }),
+    );
   });
 
   test("[speak:text] in mention — synthesizes and uploads", async () => {
@@ -2671,7 +2735,7 @@ describe("dispatchMarkers — direct", () => {
     unlinkSync(outPath);
   });
 
-  test("speak marker — skips upload when synthesis returns null", async () => {
+  test("speak marker — posts text fallback when synthesis returns null", async () => {
     const mockSynthesize = mock(async () => null);
 
     await dispatchMarkers([{ type: "speak", text: "Hello" }], {
@@ -2682,6 +2746,59 @@ describe("dispatchMarkers — direct", () => {
     });
 
     expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
+  });
+
+  test("speak marker — posts text fallback when synthesizeSpeechFn throws", async () => {
+    const throwingSynthesize = mock(async () => {
+      throw new Error("synthesis blew up");
+    });
+
+    await dispatchMarkers([{ type: "speak", text: "Hello" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: throwingSynthesize,
+      voiceConfig: {},
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
+  });
+
+  test("speak marker — skips text fallback when it duplicates the already-posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+
+    await dispatchMarkers([{ type: "speak", text: "Here is the answer" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+      postedText: "Here is the answer.",
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("speak marker — still posts text fallback when marker text differs from the already-posted reply", async () => {
+    const mockSynthesize = mock(async () => null);
+
+    await dispatchMarkers([{ type: "speak", text: "Hello" }], {
+      client,
+      channel: "D1",
+      synthesizeSpeechFn: mockSynthesize,
+      voiceConfig: {},
+      postedText: "Something completely different was posted here.",
+    });
+
+    expect(client.files.uploadV2).not.toHaveBeenCalled();
+    expect(client.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "D1", text: "Hello" }),
+    );
   });
 
   test("speak marker — skipped gracefully when synthesizeSpeechFn is absent", async () => {

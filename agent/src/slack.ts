@@ -146,6 +146,21 @@ export type ResolveUserFn = (
   client: any,
 ) => Promise<string>;
 
+// Normalizes text for the speak-marker fallback's duplicate-content check:
+// lowercased, trimmed, trailing punctuation stripped, internal whitespace
+// collapsed. Deliberately simple — not fuzzy matching, just enough to catch
+// the common "Here is the answer. [speak:Here is the answer]" pattern where
+// the marker text is a near-verbatim echo of the already-posted reply.
+function normalizeForComparison(text: string | undefined): string {
+  if (!text) return "";
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!?]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export async function dispatchMarkers(
   markers: Marker[],
   {
@@ -156,6 +171,7 @@ export async function dispatchMarkers(
     workspace,
     synthesizeSpeechFn,
     voiceConfig = {},
+    postedText,
   }: {
     // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
     client: any;
@@ -165,6 +181,10 @@ export async function dispatchMarkers(
     workspace?: string;
     synthesizeSpeechFn?: SynthesizeSpeechFn;
     voiceConfig?: VoiceConfig;
+    // The already-posted visible reply text (e.g. `cleaned`/`formatted`), if
+    // any. Used so the speak-marker text fallback can skip posting when it
+    // would just duplicate content the user already sees.
+    postedText?: string;
   },
 ): Promise<void> {
   for (const marker of markers) {
@@ -214,6 +234,24 @@ export async function dispatchMarkers(
         );
         continue;
       }
+      const postSpeakTextFallback = () => {
+        const normalizedPosted = normalizeForComparison(postedText);
+        if (
+          normalizedPosted.length > 0 &&
+          normalizedPosted === normalizeForComparison(marker.text)
+        ) {
+          console.warn(
+            "[markers] speak text fallback skipped — duplicates already-posted reply",
+          );
+          return Promise.resolve();
+        }
+        return client.chat
+          .postMessage({ channel, thread_ts: threadTs, text: marker.text })
+          .catch((err: unknown) =>
+            console.warn("[markers] speak text fallback post failed:", err),
+          );
+      };
+
       try {
         const audioPath = await synthesizeSpeechFn(marker.text, voiceConfig);
         if (audioPath) {
@@ -229,11 +267,16 @@ export async function dispatchMarkers(
             );
         } else {
           console.warn(
-            "[markers] speak synthesis returned null — no audio uploaded",
+            "[markers] speak synthesis returned null — posting text fallback",
           );
+          await postSpeakTextFallback();
         }
       } catch (err) {
-        console.warn("[markers] speak synthesis failed:", err);
+        console.warn(
+          "[markers] speak synthesis failed — posting text fallback:",
+          err,
+        );
+        await postSpeakTextFallback();
       }
     }
   }
@@ -486,6 +529,7 @@ export function createSlackApp(
         threadTs: msg.thread_ts ?? msg.ts,
         synthesizeSpeechFn,
         voiceConfig,
+        postedText: shouldSuppress ? undefined : cleaned,
       });
     } catch (err) {
       console.error("[slack] error:", err);
@@ -620,6 +664,7 @@ export function createSlackApp(
         threadTs: replyTs,
         synthesizeSpeechFn,
         voiceConfig,
+        postedText: isSilent ? undefined : cleaned,
       });
     } catch (err) {
       console.error("[slack] error:", err);
@@ -705,6 +750,7 @@ export function createSlackApp(
         postedTs,
         threadTs: ev.item.ts,
         synthesizeSpeechFn,
+        postedText: cleaned,
         voiceConfig,
       });
     } catch (err) {

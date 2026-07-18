@@ -11,6 +11,10 @@
  *
  * These tests use an injected fetchFn (no global.fetch mutation) per the
  * test-isolation contract.
+ *
+ * synthesizeSpeech dispatch coverage (ElevenLabs vs Piper, including the
+ * fs-touching Piper success/failure paths) lives in voice.integration.test.ts
+ * — this file is pure logic, no I/O of any kind, per docs/test-readiness/test-system.md.
  */
 
 import { describe, expect, mock, test } from "bun:test";
