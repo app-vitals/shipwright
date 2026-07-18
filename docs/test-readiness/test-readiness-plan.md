@@ -24,7 +24,7 @@
 ### Local-runnable status
 
 - **Tests that run locally with zero external network:** effectively 100% of the 224 files use injected doubles / recorded fixtures / real local-service-container Postgres — Phase 3's isolation-contract audit (grep for `mock.module(`, `global.fetch =`, `global.console =`, stray `DATABASE_URL` in unit tests) found **zero real violations** across all 224 files.
-- **Tests blocked on external services:** none. The `chat` DB-integration gap (below) is a CI-wiring gap, not an external-service dependency — Postgres is already the local substitute pattern for the other two Prisma services.
+- **Tests blocked on external services:** none. The `chat` DB-integration CI-wiring item noted below (T-049/T-054-056) is already resolved on `main` as of this writing — Postgres is now the local substitute pattern for all three Prisma services, chat included.
 
 ### Canary status
 
@@ -110,15 +110,17 @@ well-aligned with its own blueprint**. Concretely:
   2's "roughly a dozen more" framing to a concrete 5-file task list (see Milestone 4).
 - **Canary suite size vs. target:** not applicable — 0 vs. 0, both correctly empty under
   the `direct` deploy model. No gap to close.
-- **Chat DB-integration CI wiring:** confirmed gap — `ci.yml`'s Postgres service
-  container provisions `shipwright_admin_test` and `shipwright_task_store_test` but never
-  `shipwright_chat_test`, and never runs `prisma migrate deploy
-  --schema=chat/prisma/schema.prisma`. Zero `chat/src/*.integration.test.ts` files exist
-  today, confirmed by direct listing (`chat/src` has smoke + unit files only — `app.smoke
-  .test.ts`, `auth.smoke.test.ts`, `messages.smoke.test.ts`, `threads.smoke.test.ts`,
-  `tokens.smoke.test.ts`, `generate-spec.unit.test.ts`, `openapi-schemas.unit.test.ts`).
-  Blocks 3 net-new integration tests (message/thread/token services) until fixed —
-  wired as a real `depends_on` in the Task list, not a synthetic parent.
+- **Chat DB-integration CI wiring:** **already resolved on `main`** as of this writing
+  (T-049 / PR #1687, an ancestor of this branch's own base commit) — `ci.yml`'s Postgres
+  service container now provisions `shipwright_admin_test`, `shipwright_task_store_test`,
+  and `shipwright_chat_test`, and runs `prisma migrate deploy
+  --schema=chat/prisma/schema.prisma`. `chat/src/message-service.integration.test.ts`,
+  `chat/src/thread-service.integration.test.ts`, and
+  `chat/src/token-service.integration.test.ts` (T-054/T-055/T-056) already exist. Task
+  store confirms `test-t-049-shipwright`, `test-t-054-shipwright`,
+  `test-t-055-shipwright`, and `test-t-056-shipwright` are all `deployed`. This gap and
+  the task rows it drove are retained below for the roadmap's historical record, not as
+  an open queue item — see the Task list's status column.
 - **`.github/pull_request_template.md`:** confirmed absent (`ls` returns nothing).
   Small, standalone M1 task.
 - **Branch-protection required-checks list:** Phase 2 flagged this needs live-API
@@ -155,15 +157,12 @@ creation task — the SKILL still requires this task to exist explicitly per its
 always include" language, even when the target state is already met, so the verification
 is captured as a real, closeable unit of work rather than silently assumed.
 
-Remaining M1 work: wire chat's Postgres DB into CI (a step inside the existing,
-already-required `ci` job — no new job name, so **no paired branch-protection task** per
-the pairing rule's own scope: the rule triggers on a new required-check *name*, and
-adding a step to an already-required job doesn't change what's required — see task note),
-add the missing PR template, and verify the live branch-protection required-checks list
-matches `ci.yml`'s actual job names (a precondition for the pairing rule elsewhere in this
-plan being enforceable at all).
+**Status as of this refresh (2026-07-18, checked against the task store):** T-048,
+T-049, and T-050 are already `deployed` — chat's Postgres DB is wired into CI and the PR
+template exists on `main`. Only **T-051** (verifying the live branch-protection
+required-checks list) is still `pending` and remains open work.
 
-- T-048, T-049, T-050, T-051 (4 tasks — see Task list)
+- T-048 (deployed), T-049 (deployed), T-050 (deployed), T-051 (**pending — open**) (4 tasks — see Task list)
 
 ### Milestone 2 — Critical-path coverage
 **DOD:** 100% of `critical` tier inventory items have passing tests at the prescribed layer.
@@ -174,7 +173,10 @@ dependency: `task-store/src/ready.ts` (`resolveReadyTasks`) and
 indirectly as imports inside sibling test files — neither has a direct test of its own
 public contract.
 
-- T-052, T-053 (2 tasks — see Task list)
+**Status as of this refresh (2026-07-18, checked against the task store):** both
+`deployed` — this milestone is already complete.
+
+- T-052 (deployed), T-053 (deployed) (2 tasks — see Task list)
 
 ### Milestone 3 — Canary suite live
 **DOD:** Smoke + E2E canary-eligible tests run green against the deployed env in <60s wall time.
@@ -204,7 +206,12 @@ along since it's a trivial small-effort item with no milestone of its own in the
 5-milestone structure. One additional medium-tier item (`lib/org-repo.ts`) is included
 here for the same reason.
 
-- T-054, T-055, T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063 (10 tasks — see Task list)
+**Status as of this refresh (2026-07-18, checked against the task store):** all 10 tasks
+in this milestone are already `deployed` — this milestone is already complete, including
+the chat Prisma-service integration tests (T-054/T-055/T-056), which were unblocked once
+T-049 (chat CI DB wiring) landed on `main`.
+
+- T-054, T-055, T-056, T-057, T-058, T-059, T-060, T-061, T-062, T-063 (10 tasks, all deployed — see Task list)
 
 ### Milestone 5 — Cleanup
 **DOD:** Zero tests in `rebuild` or `delete (redundant)` buckets. CI green.
@@ -219,7 +226,13 @@ task, routed per the SKILL's anti-pattern guidance (a generalized, repo-agnostic
 instruction folded into the relevant skill doc / a `# Harness TODO` entry — never a new
 per-repo narrative file under the plugin's own `references/`).
 
-- T-064, T-065, T-066 (3 tasks — see Task list)
+**Status as of this refresh (2026-07-18, checked against the task store):** T-064 is
+`deployed`. T-065 and T-066 were not found in the task store under the
+`test-t-0NN-shipwright` ID pattern used by this cycle's tasks — unlike T-048 through
+T-064, their creation could not be confirmed, so their status is left as originally
+generated pending a follow-up check.
+
+- T-064 (deployed), T-065, T-066 (3 tasks — see Task list)
 
 ## 5. Task list
 
@@ -234,27 +247,38 @@ check-learn-dream.test.ts to .unit.test.ts (T-003g)" — part of the prior cycle
 rename cluster). `starting_offset = 47 + 1 = 48`. Numbering below starts at `T-048`, not
 `T-001`, to avoid colliding with that prior cycle's already-shipped work.
 
-| ID | M | Files | Layer | Bucket | Outcome | Verify |
-|---|---|---|---|---|---|---|
-| T-048 | 1 | `docs/test-readiness/naming.md`, `bunfig.toml`, `plugins/shipwright/test/test-naming-convention.content.test.ts` | infra | reuse (verify) | Confirm the naming convention doc and `bunfig.toml`'s `pathIgnorePatterns` stay in sync (both already correct) and each runner discovers only its own layer's files | `bun test plugins/shipwright/test/test-naming-convention.content.test.ts && bun test --filter integration 2>&1 \| grep -qv '\.spec\.ts\|\.e2e\.ts\|\.canary\.'` |
-| T-049 | 1 | `.github/workflows/ci.yml` | infra | net-new | Add `shipwright_chat_test` DB provisioning + `prisma migrate deploy --schema=chat/prisma/schema.prisma` to the existing `ci` job (new step in an already-required job — **no paired branch-protection task**: the pairing rule triggers on a new required-check *name*, and this doesn't add one; see `repo-config/SKILL.md` and Milestone 1 note) | `PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_chat_test;" && bunx prisma migrate deploy --schema=chat/prisma/schema.prisma` succeeds in the `ci` job |
-| T-050 | 1 | `.github/pull_request_template.md` (new) | infra | net-new | Add a PR template with a Closing Checklist requiring verification-command output (or a CI run link) pasted into the PR body before merge | `test -f .github/pull_request_template.md && grep -q "Verification" .github/pull_request_template.md` |
-| T-051 | 1 | none (GitHub branch-protection settings for `main`) | infra | net-new | Verify (and correct if needed) that `main`'s required status checks match `.github/workflows/ci.yml`'s actual job names (`lint / typecheck / test`, `site build / brand-lint / smoke`, `admin-docker-build`, `agent-docker-build`, `metrics-docker-build`, `e2e`, `admin-e2e`) — this is the precondition the pairing rule in T-049's note relies on being true | `gh api repos/app-vitals/shipwright/branches/main/protection --jq '.required_status_checks.contexts'` lists all 7 job names above |
-| T-052 | 2 | `task-store/src/ready.unit.test.ts` (new) | unit | net-new | `resolveReadyTasks` has direct unit coverage of its dependency-satisfaction logic (currently only exercised indirectly via imports in sibling tests) | `bun test task-store/src/ready.unit.test.ts` |
-| T-053 | 2 | `task-store/src/statuses.unit.test.ts` (new) | unit | net-new | `CLOSED_STATUSES`/`OPEN_STATUSES` and status-transition rules have direct unit coverage of their own contract | `bun test task-store/src/statuses.unit.test.ts` |
-| T-054 | 4 | `chat/src/message-service.integration.test.ts` (new) | integration | net-new | `message-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/message-service.integration.test.ts` — depends_on: T-049 |
-| T-055 | 4 | `chat/src/thread-service.integration.test.ts` (new) | integration | net-new | `thread-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/thread-service.integration.test.ts` — depends_on: T-049 |
-| T-056 | 4 | `chat/src/token-service.integration.test.ts` (new) | integration | net-new | `token-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/token-service.integration.test.ts` — depends_on: T-049 |
-| T-057 | 4 | `lib/secret-env-vars.unit.test.ts` (new) | unit | net-new | `SECRET_ENV_VARS` constant has its own direct test (list contents, no duplicates) instead of only being exercised as fixture input inside `lib/sentry.unit.test.ts` | `bun test lib/secret-env-vars.unit.test.ts` |
-| T-058 | 4 | `metrics/src/lib/task-store-client.integration.test.ts` (new), `metrics/src/fixtures/task-store/*.json` (new) | integration | net-new | `HttpTaskStoreClient` has a recorded-fixture integration test alongside its existing `task-store-client.unit.test.ts` (pagination/date-filter/repo-filter logic), extending the proven `Recorded*Client` pattern | `bun test metrics/src/lib/task-store-client.integration.test.ts` |
-| T-059 | 4 | `metrics/src/lib/accounts-client.integration.test.ts` (new), `metrics/src/fixtures/accounts/*.json` (new) | integration | net-new | `metrics/src/lib/accounts-client.ts` has a recorded-fixture integration test | `bun test metrics/src/lib/accounts-client.integration.test.ts` |
-| T-060 | 4 | `agent/src/http-chat-service-client.integration.test.ts` (new), `agent/src/fixtures/chat-service/*.json` (new) | integration | net-new | `agent/src/http-chat-service-client.ts` has a recorded-fixture integration test (the existing `http-chat-service-client.unit.test.ts` only covers pure request-shaping logic via an injected double) | `bun test agent/src/http-chat-service-client.integration.test.ts` |
-| T-061 | 4 | `admin/src/http-chat-client.integration.test.ts` (new), `admin/src/fixtures/*.json` (new) | integration | net-new | `admin/src/http-chat-client.ts` has a recorded-fixture integration test | `bun test admin/src/http-chat-client.integration.test.ts` |
-| T-062 | 4 | `mcp-server/src/tool-caller.integration.test.ts` (new), `mcp-server` fixtures (new) | integration | net-new | `mcp-server/src/tool-caller.ts`'s real proxied-call path has a recorded-fixture integration test, companion to the existing `tool-caller.unit.test.ts` (pure proxy-mapping logic) | `bun test mcp-server/src/tool-caller.integration.test.ts` |
-| T-063 | 4 | `lib/org-repo.unit.test.ts` (new) | unit | net-new | `isOrgRepo` has direct unit coverage (valid/invalid-string cases) | `bun test lib/org-repo.unit.test.ts` |
-| T-064 | 5 | `plugins/shipwright/agents/learning-dreamer.integration.test.ts` → `plugins/shipwright/agents/learning-dreamer.content.test.ts` (rename) | content | promote (rename) | File correctly labeled as content-layer (markdown-prose assertions, no I/O boundary) instead of misfiled under `.integration.` | `bun test plugins/shipwright/agents/learning-dreamer.content.test.ts && ! test -f plugins/shipwright/agents/learning-dreamer.integration.test.ts` |
-| T-065 | 5 | `lib/task-store-types.integration.test.ts` → `lib/task-store-types.unit.test.ts` (rename) | unit | promote (rename) | File correctly labeled as unit-layer (codegen-freshness string check, no I/O boundary) instead of misfiled under `.integration.` | `bun test lib/task-store-types.unit.test.ts && ! test -f lib/task-store-types.integration.test.ts` |
-| T-066 | 5 | one relevant skill/doc (e.g. `plugins/shipwright/skills/test-roadmap/SKILL.md` or `plugins/shipwright/skills/repo-config/SKILL.md`, whichever the concrete learning applies to) or a `# Harness TODO` entry within it | content | net-new | Plugin feedback collector: fold any generalized, repo-agnostic learning from this cycle (e.g. "verify `Recorded*Client` coverage against the working tree before trusting a Phase-2 greenfield estimate — Phase 2 doesn't read existing tests") into the relevant skill doc directly, per `learning-capture`'s routing and the SKILL's explicit anti-pattern guardrail against a new per-repo narrative file under the plugin's own `references/` | `git diff --stat plugins/shipwright/skills/` shows a change to an existing skill doc, not a new file under `references/` |
+**Re-verified against the task store on 2026-07-18** (this refresh, in response to
+review feedback on this PR): `test-t-048-shipwright` through `test-t-064-shipwright`
+already exist in the task store from a prior run of this same pipeline. All are
+`deployed` except `test-t-051-shipwright`, which is `pending`. `test-t-065-shipwright`
+and `test-t-066-shipwright` were not found under this ID pattern. **This means most of
+the rows below are already-completed work, not an open queue** — the Status column
+reflects the task store's current state; treat only rows marked `pending`/`open` (or
+unconfirmed) as actionable. Do not re-run these as if they were new tasks; a future
+`/test-migration` + `/test-roadmap` pass against current `main` is recommended before
+using this list as a live execution queue again.
+
+| ID | M | Files | Layer | Bucket | Outcome | Verify | Status (2026-07-18) |
+|---|---|---|---|---|---|---|---|
+| T-048 | 1 | `docs/test-readiness/naming.md`, `bunfig.toml`, `plugins/shipwright/test/test-naming-convention.content.test.ts` | infra | reuse (verify) | Confirm the naming convention doc and `bunfig.toml`'s `pathIgnorePatterns` stay in sync (both already correct) and each runner discovers only its own layer's files | `bun test plugins/shipwright/test/test-naming-convention.content.test.ts && bun test --filter integration 2>&1 \| grep -qv '\.spec\.ts\|\.e2e\.ts\|\.canary\.'` | **deployed** |
+| T-049 | 1 | `.github/workflows/ci.yml` | infra | net-new | Add `shipwright_chat_test` DB provisioning + `prisma migrate deploy --schema=chat/prisma/schema.prisma` to the existing `ci` job (new step in an already-required job — **no paired branch-protection task**: the pairing rule triggers on a new required-check *name*, and this doesn't add one; see `repo-config/SKILL.md` and Milestone 1 note) | `PGPASSWORD=shipwright psql -h localhost -U shipwright -d shipwright_admin_test -c "CREATE DATABASE shipwright_chat_test;" && bunx prisma migrate deploy --schema=chat/prisma/schema.prisma` succeeds in the `ci` job | **deployed** — landed via PR #1687, ancestor of this branch's base commit |
+| T-050 | 1 | `.github/pull_request_template.md` (new) | infra | net-new | Add a PR template with a Closing Checklist requiring verification-command output (or a CI run link) pasted into the PR body before merge | `test -f .github/pull_request_template.md && grep -q "Verification" .github/pull_request_template.md` | **deployed** |
+| T-051 | 1 | none (GitHub branch-protection settings for `main`) | infra | net-new | Verify (and correct if needed) that `main`'s required status checks match `.github/workflows/ci.yml`'s actual job names (`lint / typecheck / test`, `site build / brand-lint / smoke`, `admin-docker-build`, `agent-docker-build`, `metrics-docker-build`, `e2e`, `admin-e2e`) — this is the precondition the pairing rule in T-049's note relies on being true | `gh api repos/app-vitals/shipwright/branches/main/protection --jq '.required_status_checks.contexts'` lists all 7 job names above | **pending — still open** |
+| T-052 | 2 | `task-store/src/ready.unit.test.ts` (new) | unit | net-new | `resolveReadyTasks` has direct unit coverage of its dependency-satisfaction logic (currently only exercised indirectly via imports in sibling tests) | `bun test task-store/src/ready.unit.test.ts` | **deployed** |
+| T-053 | 2 | `task-store/src/statuses.unit.test.ts` (new) | unit | net-new | `CLOSED_STATUSES`/`OPEN_STATUSES` and status-transition rules have direct unit coverage of their own contract | `bun test task-store/src/statuses.unit.test.ts` | **deployed** |
+| T-054 | 4 | `chat/src/message-service.integration.test.ts` (new) | integration | net-new | `message-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/message-service.integration.test.ts` — depends_on: T-049 | **deployed** |
+| T-055 | 4 | `chat/src/thread-service.integration.test.ts` (new) | integration | net-new | `thread-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/thread-service.integration.test.ts` — depends_on: T-049 | **deployed** |
+| T-056 | 4 | `chat/src/token-service.integration.test.ts` (new) | integration | net-new | `token-service.ts`'s Prisma-backed CRUD has real-DB integration coverage against `shipwright_chat_test` | `bun test chat/src/token-service.integration.test.ts` — depends_on: T-049 | **deployed** |
+| T-057 | 4 | `lib/secret-env-vars.unit.test.ts` (new) | unit | net-new | `SECRET_ENV_VARS` constant has its own direct test (list contents, no duplicates) instead of only being exercised as fixture input inside `lib/sentry.unit.test.ts` | `bun test lib/secret-env-vars.unit.test.ts` | **deployed** |
+| T-058 | 4 | `metrics/src/lib/task-store-client.integration.test.ts` (new), `metrics/src/fixtures/task-store/*.json` (new) | integration | net-new | `HttpTaskStoreClient` has a recorded-fixture integration test alongside its existing `task-store-client.unit.test.ts` (pagination/date-filter/repo-filter logic), extending the proven `Recorded*Client` pattern | `bun test metrics/src/lib/task-store-client.integration.test.ts` | **deployed** |
+| T-059 | 4 | `metrics/src/lib/accounts-client.integration.test.ts` (new), `metrics/src/fixtures/accounts/*.json` (new) | integration | net-new | `metrics/src/lib/accounts-client.ts` has a recorded-fixture integration test | `bun test metrics/src/lib/accounts-client.integration.test.ts` | **deployed** |
+| T-060 | 4 | `agent/src/http-chat-service-client.integration.test.ts` (new), `agent/src/fixtures/chat-service/*.json` (new) | integration | net-new | `agent/src/http-chat-service-client.ts` has a recorded-fixture integration test (the existing `http-chat-service-client.unit.test.ts` only covers pure request-shaping logic via an injected double) | `bun test agent/src/http-chat-service-client.integration.test.ts` | **deployed** |
+| T-061 | 4 | `admin/src/http-chat-client.integration.test.ts` (new), `admin/src/fixtures/*.json` (new) | integration | net-new | `admin/src/http-chat-client.ts` has a recorded-fixture integration test | `bun test admin/src/http-chat-client.integration.test.ts` | **deployed** |
+| T-062 | 4 | `mcp-server/src/tool-caller.integration.test.ts` (new), `mcp-server` fixtures (new) | integration | net-new | `mcp-server/src/tool-caller.ts`'s real proxied-call path has a recorded-fixture integration test, companion to the existing `tool-caller.unit.test.ts` (pure proxy-mapping logic) | `bun test mcp-server/src/tool-caller.integration.test.ts` | **deployed** |
+| T-063 | 4 | `lib/org-repo.unit.test.ts` (new) | unit | net-new | `isOrgRepo` has direct unit coverage (valid/invalid-string cases) | `bun test lib/org-repo.unit.test.ts` | **deployed** |
+| T-064 | 5 | `plugins/shipwright/agents/learning-dreamer.integration.test.ts` → `plugins/shipwright/agents/learning-dreamer.content.test.ts` (rename) | content | promote (rename) | File correctly labeled as content-layer (markdown-prose assertions, no I/O boundary) instead of misfiled under `.integration.` | `bun test plugins/shipwright/agents/learning-dreamer.content.test.ts && ! test -f plugins/shipwright/agents/learning-dreamer.integration.test.ts` | **deployed** |
+| T-065 | 5 | `lib/task-store-types.integration.test.ts` → `lib/task-store-types.unit.test.ts` (rename) | unit | promote (rename) | File correctly labeled as unit-layer (codegen-freshness string check, no I/O boundary) instead of misfiled under `.integration.` | `bun test lib/task-store-types.unit.test.ts && ! test -f lib/task-store-types.integration.test.ts` | not found in task store — unconfirmed |
+| T-066 | 5 | one relevant skill/doc (e.g. `plugins/shipwright/skills/test-roadmap/SKILL.md` or `plugins/shipwright/skills/repo-config/SKILL.md`, whichever the concrete learning applies to) or a `# Harness TODO` entry within it | content | net-new | Plugin feedback collector: fold any generalized, repo-agnostic learning from this cycle (e.g. "verify `Recorded*Client` coverage against the working tree before trusting a Phase-2 greenfield estimate — Phase 2 doesn't read existing tests") into the relevant skill doc directly, per `learning-capture`'s routing and the SKILL's explicit anti-pattern guardrail against a new per-repo narrative file under the plugin's own `references/` | `git diff --stat plugins/shipwright/skills/` shows a change to an existing skill doc, not a new file under `references/` | not found in task store — unconfirmed |
 
 ### Audit task decision rows
 
@@ -283,11 +307,10 @@ task is emitted here.
   should be treated as upper bounds requiring Phase 4 ground-truth verification before
   becoming tasks — which is exactly what happened here, but is worth flagging so a future
   cycle doesn't skip the verification step and over-schedule already-done work.
-- **Chat DB CI-wiring sequencing.** T-054/T-055/T-056 `depends_on: T-049` is a real
-  technical dependency (the tests need `shipwright_chat_test` to exist to pass in CI, not
-  just locally against a developer's own Postgres). If T-049 is deferred or reverted,
-  these three tasks cannot land independently — they would fail CI even if the test code
-  itself is correct.
+- ~~Chat DB CI-wiring sequencing~~ **No longer a risk — resolved.** T-049 is `deployed`
+  on `main` (PR #1687), and T-054/T-055/T-056 (which `depends_on: T-049`) are also
+  `deployed`. Retained here only as a historical note of the dependency that existed
+  during this cycle's original planning pass.
 - **Milestone 3 (canary) permanently empty under the current deploy model.** Not a risk to
   this cycle, but worth a standing note: if `app-vitals/shipwright` ever moves to a staged
   deploy model (staging → canary → promote), the next `/test-roadmap` run needs to

@@ -38,7 +38,7 @@ documents the existing choices as the target, not a hypothetical.
 | Layer | Framework | Rationale |
 |---|---|---|
 | Unit | `bun test` | Matches the stack matrix default for TypeScript (Bun). Already the repo's exclusive unit runner (`*.unit.test.ts`, no `pathIgnorePatterns` entry — discovered by the default root scan). No I/O, no framework boot — Bun's runner is fast enough that no alternative is justified. |
-| Integration | `bun test` + recorded-fixture doubles (hand-authored JSON, e.g. `RecordedKubernetesClient`, `RecordedTaskStoreClient`, `RecordedGithubClient`) for internal/third-party HTTP; **real Postgres via a GitHub Actions `postgres:16` service container** for the two Prisma-backed DB integration suites (admin, task-store) | Matches the stack matrix default (`bun test` + testcontainers-equivalent). The repo already runs real Postgres for DB integration tests via a CI service container rather than testcontainers proper — functionally equivalent (real DB per test run) and cheaper in CI (no per-job container-runtime bootstrap beyond the `services:` block Actions already manages). Chat's Prisma layer does not yet have this pattern wired — flagged as a gap below. |
+| Integration | `bun test` + recorded-fixture doubles (hand-authored JSON, e.g. `RecordedKubernetesClient`, `RecordedTaskStoreClient`, `RecordedGithubClient`) for internal/third-party HTTP; **real Postgres via a GitHub Actions `postgres:16` service container** for all three Prisma-backed DB integration suites (admin, task-store, chat) | Matches the stack matrix default (`bun test` + testcontainers-equivalent). The repo already runs real Postgres for DB integration tests via a CI service container rather than testcontainers proper — functionally equivalent (real DB per test run) and cheaper in CI (no per-job container-runtime bootstrap beyond the `services:` block Actions already manages). Chat's Prisma layer now has this pattern wired too (see below — resolved on `main` via PR #1687, ahead of this doc's own base commit). |
 | Smoke | `bun test` + Hono `app.request()` (in-process, no real socket); `Bun.serve()` + `fetch()` only where no Hono app-factory seam exists (e.g. `agent/src/health.ts`) | Matches the stack matrix's "supertest / Hono test client" cell. `app.request()` is strictly cheaper than supertest (no socket, no port allocation) and is already the repo's documented convention (`docs/testing.md`, this repo's own `test-system.md` predecessor). The real-socket exception is narrow and already named in CLAUDE.md's Test conventions table. |
 | E2E | Playwright (`@playwright/test`) | Matches the stack matrix default. Already wired for three surfaces: `site/` (`site/playwright.config.ts`, `*.spec.ts`), `metrics/` (`metrics/playwright.config.ts`, `metrics/e2e/*.e2e.ts`), `admin/` (`admin/playwright.config.ts`, `admin/e2e/*.e2e.ts`). All three are excluded from the root `bun test` scan via `bunfig.toml` `pathIgnorePatterns` and run via dedicated `task e2e` / `task e2e:admin` / `cd site && npm test` entry points. |
 | Content (repo-specific fifth layer) | `bun test` | Not in the rubric's stack matrix — a repo-specific layer for markdown/prompt-content assertions (commands, skills, agent prompts, reference docs). No I/O boundary beyond static file reads (`existsSync`/`readFileSync`); no separate framework needed. Runs in the same `bun test` invocation as unit (no `pathIgnorePatterns` entry, discovered by default). |
@@ -52,7 +52,7 @@ service or a developer manually starting one.
 | Dependency | Local substitute | Setup file |
 |---|---|---|
 | Postgres (admin, task-store) | Real DB per test run — GitHub Actions `postgres:16` service container in CI; `task db:provision` (`prisma migrate deploy`) locally against a developer-run Postgres. **Pattern already in place:** Prisma calls are wrapped in a typed service layer (`admin/src/agent-envs.ts` etc., `task-store/src/task-service.ts` / `pull-request-service.ts` / `token-service.ts`); integration tests hit real Postgres through that layer; unit tests never touch Prisma. | `.github/workflows/ci.yml` (`services.postgres`, `DATABASE_URL_ADMIN_TEST`, `DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST`); local equivalent documented in `docs/task-store.md` / `docs/agent.md`. |
-| Postgres (chat) | **Gap.** `chat/src/message-service.ts` / `thread-service.ts` / `token-service.ts` are Prisma-backed per the inventory, but `chat/prisma/schema.prisma` has no matching `DATABASE_URL_SHIPWRIGHT_CHAT_TEST` wiring in `ci.yml`'s `postgres` service container (only `admin` and `task-store` test DBs are created/migrated there). `chat/src/test-fakes.ts` (noted in the inventory as test infra) may already substitute for this at the unit/smoke layer, but DB integration coverage for chat's service layer is not provably running in CI today. | **Blocker — flagged below.** Extend `ci.yml`'s `Create task-store test database` + `Sync test DB schema` steps to also create `shipwright_chat_test` and run `prisma migrate deploy --schema=chat/prisma/schema.prisma`, and add `DATABASE_URL_CHAT_TEST` / `DATABASE_URL_SHIPWRIGHT_CHAT` env entries alongside the existing admin/task-store pair. |
+| Postgres (chat) | **Resolved.** `chat/src/message-service.ts` / `thread-service.ts` / `token-service.ts` are Prisma-backed per the inventory, and `chat/prisma/schema.prisma` now has matching `DATABASE_URL_SHIPWRIGHT_CHAT` wiring in `ci.yml`'s `postgres` service container alongside `admin` and `task-store` — this landed via PR #1687 ("feat: provision shipwright_chat_test DB and run chat prisma migrations in CI"), which is an ancestor of this branch's own base commit. `chat/src/message-service.integration.test.ts`, `chat/src/thread-service.integration.test.ts`, and `chat/src/token-service.integration.test.ts` already exist and exercise this. | **No action needed.** `ci.yml` creates `shipwright_chat_test` and runs `prisma migrate deploy --schema=chat/prisma/schema.prisma` alongside the existing admin/task-store steps; `DATABASE_URL_SHIPWRIGHT_CHAT` is set. |
 | Redis | Not named in the inventory — no service in this repo uses Redis. No substitute needed. | — |
 | S3 / blob storage | Not named in the inventory. No substitute needed. | — |
 | Internal HTTP service (task-store client, GitHub App API, K8s API, chat-service client, accounts client, admin-metrics client) | Recorded fixture doubles (hand-authored JSON + a `Recorded*Client` implementing the same interface as the `Http*Client`), per the repo's existing pattern — already implemented for `admin/src/kubernetes-client.ts` (`RecordedKubernetesClient`), `metrics/src/providers/task-store-recorded.ts`, `agent/src/shipwright-config-client.ts`. This design extends the same pattern to every remaining `Http*Client` named in the inventory (`metrics/src/lib/task-store-client.ts`, `metrics/src/lib/accounts-client.ts`, `metrics/src/lib/admin-metrics-client.ts`, `agent/src/github-app-auth.ts`, `agent/src/http-chat-service-client.ts`, `agent/src/shipwright-runtime-client.ts`, `admin/src/*-provisioning-client.ts`, `mcp-server/src/tool-caller.ts`). | `<workspace>/src/fixtures/` — already exists per-workspace (`admin/src/fixtures`, `metrics/src/fixtures`, `agent/src/fixtures`, `plugins/shipwright/tests/fixtures`, `plugins/shipwright/scripts/test-helpers/fixtures`). No new directory needed; new fixtures land alongside existing ones. |
@@ -61,11 +61,10 @@ service or a developer manually starting one.
 | Webhook receiver | Not named in the inventory as a distinct component — GitHub App webhook-equivalent traffic is inbound via polling (`agent/src/loop-orchestrator.ts`, `check-*.ts`), not a receiver endpoint. No substitute needed. | — |
 
 **Blockers (no clean local substitute):** none from the inventory's external-dependency
-list itself. The one open item is the **chat Postgres CI-wiring gap** above — not a
-missing local-substitute *pattern* (the pattern exists and works for admin/task-store),
-but a wiring gap where chat's Prisma layer isn't provably exercised against a real DB in
-CI. This is a Phase 4 (`test-roadmap`) task, not a design blocker: the substitute
-technique is proven, it just needs to be applied to the third service.
+list itself. The chat Postgres CI-wiring gap previously noted here is **resolved on
+`main`** (PR #1687, ancestor of this branch's base commit) — the substitute technique
+proven for admin/task-store is now also applied to chat, with real DB integration
+coverage running in CI for all three Prisma-backed services.
 
 ## Canary execution contract
 
@@ -414,11 +413,12 @@ initial fixture-authoring tasks — sequence it after.
 For Phase 4 (`test-roadmap`) triage — every item below is a **design decision or gap**,
 not an existing-test audit finding (that's Phase 3):
 
-1. **Chat service has no DB-integration CI wiring** (`ci.yml`'s Postgres service
-   container provisions `shipwright_admin_test` and creates `shipwright_task_store_test`
-   alongside it, but never a `shipwright_chat_test`, and never runs
-   `prisma migrate deploy --schema=chat/prisma/schema.prisma`). Extend the existing
-   pattern to the third Prisma schema.
+1. ~~Chat service has no DB-integration CI wiring~~ **Resolved on `main`** (PR #1687,
+   ancestor of this branch's base commit) — `ci.yml`'s Postgres service container now
+   also creates `shipwright_chat_test` and runs
+   `prisma migrate deploy --schema=chat/prisma/schema.prisma`, and the chat integration
+   test files (`chat/src/{message,thread,token}-service.integration.test.ts`) already
+   exist. No further action needed here.
 2. **`.github/pull_request_template.md` does not exist.** Add per Step 10.
 3. **Recorded-fixture coverage is partial.** Three `Recorded*Client` implementations
    exist; the inventory names roughly a dozen more `Http*Client`/SDK-wrapper modules
