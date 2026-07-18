@@ -94,7 +94,7 @@ describe("SKILL.md — Tier 1 pinned-version + sha256 download steps", () => {
     expect(content).toContain("github.com/google/osv-scanner/releases/download");
     expect(content).toContain("github.com/anchore/grype/releases/download");
     expect(content).toContain("github.com/anchore/syft/releases/download");
-    expect(content).toContain("github.com/woodruffw/zizmor/releases/download");
+    expect(content).toContain("github.com/zizmorcore/zizmor/releases/download");
   });
 });
 

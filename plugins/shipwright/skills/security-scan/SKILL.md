@@ -105,14 +105,16 @@ verification fails for a specific tool, do **not** abort the scan. Instead:
 The overall scan must **never fail** just because one tool's binary couldn't be fetched or
 verified.
 
-> **Checksum note — verify before production use.** Only the `gitleaks` sha256 below is a
-> real, verified value (copied from `ci.yml`). The other four checksums are marked
-> `<VERIFY-BEFORE-USE>` and **must be replaced with the vendor's published SHA256 for the
-> exact pinned version** (from each project's release `checksums.txt` / `SHA256SUMS` /
-> `*.sha256` file) before this skill is trusted in production. Do **not** substitute a
-> fabricated hash — an unverified-but-plausible hash defeats the entire purpose of checksum
-> verification. If you cannot verify a tool's checksum, treat that tool as unavailable and use
-> its per-tool fallback rather than shipping a fake hash.
+> **Checksum provenance.** All five checksums below were independently verified — downloaded
+> and hashed locally, then cross-checked against each vendor's published manifest
+> (`gitleaks`: `ci.yml`'s existing value; `osv-scanner`: `osv-scanner_SHA256SUMS`; `grype` /
+> `syft`: `{tool}_{version}_checksums.txt`; `zizmor`: no vendor checksums.txt is published for
+> this release, so its digest is GitHub's own release-asset SHA256, confirmed by an
+> independent local download+hash). Whenever a pinned version is bumped, the new checksum
+> **must** be re-verified the same way — download the asset, `sha256sum` it locally, and
+> cross-check against the vendor's manifest where one exists. Never substitute a
+> plausible-looking but unverified hash. If a tool's checksum cannot be verified, treat that
+> tool as unavailable and use its per-tool fallback rather than shipping a fake hash.
 
 ### 3.1 gitleaks — secret scan (full history)
 
@@ -131,12 +133,12 @@ Record each finding in the common finding-record shape (Step 6).
 
 ### 3.2 osv-scanner — lockfile / dependency CVEs
 
-osv-scanner ships a bare linux amd64 binary named `osv-scanner_{version}_linux_amd64` plus a
-`SHA256SUMS` manifest per release.
+osv-scanner ships a bare linux amd64 binary named `osv-scanner_linux_amd64` (no version in
+the filename) plus a `osv-scanner_SHA256SUMS` manifest per release.
 
 ```bash
-curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_2.0.2_linux_amd64" -o osv-scanner
-echo "<VERIFY-BEFORE-USE>  osv-scanner" | sha256sum -c
+curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o osv-scanner
+echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  osv-scanner" | sha256sum -c
 chmod +x osv-scanner
 ./osv-scanner scan --recursive --format json --output osv-report.json .
 ```
@@ -148,7 +150,7 @@ Anchore projects publish `grype_{version}_linux_amd64.tar.gz` plus a
 
 ```bash
 curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o grype.tar.gz
-echo "<VERIFY-BEFORE-USE>  grype.tar.gz" | sha256sum -c
+echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  grype.tar.gz" | sha256sum -c
 tar -xz -f grype.tar.gz grype
 ./grype dir:. -o json --file grype-report.json
 ```
@@ -161,7 +163,7 @@ feeds Tier 3's SBOM-presence posture check.
 
 ```bash
 curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o syft.tar.gz
-echo "<VERIFY-BEFORE-USE>  syft.tar.gz" | sha256sum -c
+echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  syft.tar.gz" | sha256sum -c
 tar -xz -f syft.tar.gz syft
 ./syft dir:. -o cyclonedx-json=sbom.cyclonedx.json
 ```
@@ -170,13 +172,17 @@ The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for.
 
 ### 3.5 zizmor — GitHub Actions workflow lint
 
-zizmor is a Rust/cargo-dist project; its linux release asset is
-`zizmor-{version}-x86_64-unknown-linux-gnu.tar.gz` with per-asset `*.sha256` files.
+zizmor is a Rust/cargo-dist project; it moved from `woodruffw/zizmor` to the `zizmorcore/zizmor`
+org, and its linux release asset is `zizmor-x86_64-unknown-linux-gnu.tar.gz` (no version in
+the filename, and the tarball contains the `zizmor` binary directly — no subdirectory to
+strip). No vendor `checksums.txt` is published for this release; GitHub computes and exposes
+a SHA256 digest for each release asset, which was independently confirmed by downloading the
+asset and hashing it locally.
 
 ```bash
-curl -sSfL "https://github.com/woodruffw/zizmor/releases/download/v1.5.2/zizmor-1.5.2-x86_64-unknown-linux-gnu.tar.gz" -o zizmor.tar.gz
-echo "<VERIFY-BEFORE-USE>  zizmor.tar.gz" | sha256sum -c
-tar -xz -f zizmor.tar.gz --strip-components=1 zizmor-1.5.2-x86_64-unknown-linux-gnu/zizmor
+curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v1.27.0/zizmor-x86_64-unknown-linux-gnu.tar.gz" -o zizmor.tar.gz
+echo "277f2bd8fd37cf60c42ab7afca6faa884e65440fa31e02b44bdaae60f62a358f  zizmor.tar.gz" | sha256sum -c
+tar -xz -f zizmor.tar.gz zizmor
 ./zizmor --format json .github/workflows/ > zizmor-report.json
 ```
 
