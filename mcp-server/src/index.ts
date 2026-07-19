@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { generatedTools } from "./generated-tools.ts";
+import { mountMcpHttpTransport } from "./http-transport.ts";
 import { allowedTools } from "./tool-allowlist.ts";
 import { createMcpServer } from "./mcp-server.ts";
 
@@ -8,6 +9,10 @@ export const app = new Hono();
 app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
+
+// The MCP protocol over Streamable HTTP — POST/GET/DELETE on /mcp, per the
+// MCP spec. Remote clients (e.g. Claude Desktop custom connectors) use this.
+mountMcpHttpTransport(app);
 
 // Lightweight discovery route: lists the MCP tools this server exposes.
 // The MCP protocol itself is served over a transport (stdio / Streamable HTTP /
