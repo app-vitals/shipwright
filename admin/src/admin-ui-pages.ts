@@ -3002,8 +3002,8 @@ export function renderCronLogsPage(opts: {
       <td style="font-size:12px">${cronCell}</td>
       <td style="font-size:12px">${startedCell}</td>
       <td class="mono" style="font-size:12px">${durationCell}</td>
-      <td class="mono" style="font-size:12px">${tokensCell}</td>
-      <td style="font-size:12px">${modelCell}</td>
+      <td class="col-tokens mono" style="font-size:12px">${tokensCell}</td>
+      <td class="col-model" style="font-size:12px">${modelCell}</td>
       <td style="font-size:12px">${phaseCell}</td>
       <td style="font-size:12px">${itemCell}</td>
     </tr>`;
@@ -3064,9 +3064,6 @@ export function renderCronLogsPage(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cron Logs — ${escapeHtml(agent.name)} — Shipwright Admin</title>
   <style>${baseStyles()}
-    .runs-table { width:100%;border-collapse:collapse; }
-    .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
-    .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
   </style>
 </head>
 <body>
@@ -3099,15 +3096,16 @@ export function renderCronLogsPage(opts: {
     </div>
 
     <div class="card">
-      <table class="runs-table">
+      <div class="data-table-wrapper">
+      <table class="data-table">
         <thead>
           <tr>
             <th>Outcome</th>
             <th>Cron</th>
             <th>Started</th>
             <th>Duration</th>
-            <th>Tokens</th>
-            <th>Model</th>
+            <th class="col-tokens">Tokens</th>
+            <th class="col-model">Model</th>
             <th>Phase</th>
             <th>Item</th>
           </tr>
@@ -3116,6 +3114,7 @@ export function renderCronLogsPage(opts: {
           ${bodyRows}
         </tbody>
       </table>
+      </div>
       ${paginationHtml}
     </div>
   </div>
