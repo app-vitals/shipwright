@@ -309,8 +309,8 @@ budget:
 
 - **Unit:** 1.05s–2.50s per package (well under the <30s suite target)
 - **Integration:** 0.15s–5.35s per package (well under the <3 min suite target)
-- **Smoke:** 1.5s–4.6s per package (well under the <30s/<60s suite target;
-  `speed-baseline.md`'s per-package rows show 3.24s for admin and 4.62s for metrics)
+- **Smoke:** 3.24s–4.62s per package (admin, metrics — the only two packages with
+  smoke-layer tests today), well under the <30s/<60s suite target
 - **E2E:** 4s–40s via CI (metrics dashboard, admin UI, and site), well under the <30s
   per-test 95p / <90s hard cap
 - **Full suite:** 34.23s wall-clock (3842 pass, 242 skip, 4084 tests across 198 files),
