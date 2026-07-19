@@ -3197,24 +3197,26 @@ export function renderWorkQueuePage(opts: {
     </div>`
       : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
     <div class="card">
-      <table class="runs-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Type</th>
-            <th>Phase</th>
-            <th>Item</th>
-            <th>Age</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            snapshot.items.length === 0
-              ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
-              : snapshot.items.map(row).join("\n")
-          }
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Phase</th>
+              <th>Item</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              snapshot.items.length === 0
+                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
+                : snapshot.items.map(row).join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -3223,11 +3225,7 @@ export function renderWorkQueuePage(opts: {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Work Queue — ${escapeHtml(agent.name)} — Shipwright Admin</title>
-  <style>${baseStyles()}
-    .runs-table { width:100%;border-collapse:collapse; }
-    .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
-    .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
-  </style>
+  <style>${baseStyles()}</style>
 </head>
 <body>
   ${renderAdminToolbar(userName, "/admin/agents")}
