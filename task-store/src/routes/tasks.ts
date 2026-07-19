@@ -9,7 +9,8 @@
  * Agent tokens (agentId set) are scoped to their own tasks:
  *   - reads return only tasks where assignee === agentId
  *   - writes are blocked on tasks owned by other agents (403)
- *   - creates force assignee = agentId
+ *   - creates leave assignee as supplied by the caller, defaulting to
+ *     null/unassigned (pool task) when omitted — not forced to agentId
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
@@ -551,10 +552,6 @@ export function createTasksRoutes(
       );
     }
     validateRepo(body.repo, agentId !== null ? repos : null);
-    // Agent tokens force assignee to their own ID.
-    if (agentId !== null) {
-      body.assignee = agentId;
-    }
     const created = await taskService.create(body as Prisma.TaskCreateInput);
     return c.json(created, 201);
   });
@@ -582,14 +579,7 @@ export function createTasksRoutes(
       }
       validateRepo(task.repo, agentId !== null ? repos : null);
     }
-    const tasks =
-      agentId !== null
-        ? (body as Record<string, unknown>[]).map((t) => ({
-            ...t,
-            assignee: agentId,
-          }))
-        : body;
-    const result = await taskService.bulk(tasks as Prisma.TaskCreateInput[]);
+    const result = await taskService.bulk(body as Prisma.TaskCreateInput[]);
     return c.json(result, 200);
   });
 
