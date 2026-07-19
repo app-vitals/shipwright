@@ -2585,12 +2585,12 @@ export function renderPrsPage(
             const taskCell = pr.taskId
               ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
               : '<span style="color:#9ca3af">—</span>';
-            const updatedCell = pr.updatedAt
+            const createdCell = pr.createdAt
               ? escapeHtml(
                   (() => {
-                    const d = new Date(pr.updatedAt);
+                    const d = new Date(pr.createdAt);
                     return Number.isNaN(d.getTime())
-                      ? pr.updatedAt
+                      ? pr.createdAt
                       : d.toLocaleString("en-US", {
                           dateStyle: "medium",
                           timeStyle: "short",
@@ -2608,7 +2608,7 @@ export function renderPrsPage(
     <td class="col-review-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.reviewCycles))}</td>
     <td class="col-patch-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.patchCycles))}</td>
     <td class="col-claimed-by" style="font-size:12px">${claimedCell}</td>
-    <td style="font-size:12px">${updatedCell}</td>
+    <td style="font-size:12px">${createdCell}</td>
   </tr>`;
           })
           .join("\n");
@@ -2723,24 +2723,26 @@ export function renderPrsPage(
       </form>
     </div>
     <div class="card">
-      <table class="data-table" style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">PR#</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
-            <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review Cycles</th>
-            <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
-            <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
-            <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Updated</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">PR#</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Repo</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Task</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">State</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review State</th>
+              <th class="col-review-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Review Cycles</th>
+              <th class="col-patch-cycles" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Patch Cycles</th>
+              <th class="col-claimed-by" style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Claimed By</th>
+              <th style="text-align:left;padding:8px 12px;font-size:11px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb">Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
       ${paginationHtml}
     </div>
   </div>
