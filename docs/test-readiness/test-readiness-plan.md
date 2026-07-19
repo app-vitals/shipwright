@@ -128,19 +128,21 @@ No layer is flagged over its hard cap. The only real action item is formalizing 
 ### Milestone 1 — Infrastructure baseline
 **DOD:** Runners, local substitutes, CI pipeline shape in place; the existing speed baseline is cross-referenced into `test-system.md` so future cycles stop re-flagging it as unmeasured. No new feature tests written yet — just the rails.
 
-This milestone carries one mandatory task by construction (the SKILL's naming-convention verification, always present in M1) plus one task to close the documentation gap identified above:
+This milestone carries one mandatory task by construction (the SKILL's naming-convention verification, always present in M1) plus one task to close the documentation gap identified above, plus a successor to the previously-tracked T-051:
 
 1. **T-067 — Fold the existing speed baseline into `test-system.md` (not a re-measurement).** `speed-baseline.md`'s numbers are real and current (measured 2026-07-15, no material suite-shape change since per Phase 1-3's file-count deltas). This task copies/links the per-layer table into `test-system.md`'s Speed budgets section and adds an explicit cross-reference so `/test-migration`'s method note stops describing this as "not run." **This is not the SKILL's 3-cycle-escalation task** — that escalation does not apply here (see the correction above); this is a lower-priority doc-hygiene task, sequenced in M1 because it's cheap and unblocks accurate reporting in the next `/test-migration` pass.
 2. **T-068 — Naming convention + runner-exclusion verification (mandatory, always-present M1 task).** The naming convention and `bunfig.toml` exclusion config already exist and are documented (`docs/test-readiness/naming.md`); this task is a live verification pass (run each entry point in isolation, confirm zero cross-layer bleed) rather than a build-from-scratch task, since Phase 2/3 confirm the config is already correct.
+3. **T-071 — Verify main's live branch-protection required-checks list against `ci.yml`'s actual job names (successor to T-051).** The prior cycle's `test-t-051-shipwright` task tracked this same gap as `pending — still open`; this rewrite's task list omitted it without a resolution note. It is not resolved — `test-system.md`'s gaps-summary item 4 still calls it open ("should be verified against the live GitHub API, not assumed from `ci.yml`'s job list alone"), and the required-checks list in this doc's own Repo configuration reference is itself sourced from `ci.yml`'s job list, not the live API. This task queries the live GitHub branch-protection API for `main` and confirms its required-status-checks list matches `ci.yml`'s actual job names 1:1 (accounting for the `changes` job's fail-open path-filter behavior noted in `test-system.md`), updating either doc if a mismatch is found.
 
 | Task | Files to touch | Layer | Bucket origin | Expected outcome | Verification command |
 |---|---|---|---|---|---|
 | T-067 | `docs/test-readiness/test-system.md` (Speed budgets section) | infra | reuse (doc cross-link, no new measurement) | `test-system.md`'s Speed budgets table cites `speed-baseline.md`'s real numbers instead of "not measured"; future `/test-migration` passes stop flagging this as an open item | Manual doc review — table present, numbers match `speed-baseline.md`, cross-reference link resolves |
 | T-068 | (verification only — no source changes) | infra | reuse | Confirm `bun test`, Playwright (3 configs), and coverage config each discover only their own layer's files, zero cross-layer bleed | Run each entry point in isolation per `docs/test-readiness/naming.md`'s verification steps; confirm zero unexpected matches |
+| T-071 | (verification only — no source changes, unless a mismatch requires a doc update) | infra | reuse (successor to T-051) | Live GitHub branch-protection required-checks list for `main` confirmed to match `ci.yml`'s actual job names; `test-system.md`'s gaps-summary item 4 closed once confirmed | Query the live branch-protection API for `main` (e.g. `gh api repos/{owner}/{repo}/branches/main/protection`) and diff its `required_status_checks.contexts` against `ci.yml`'s job names |
 
 **No PR-template task is emitted** — `.github/PULL_REQUEST_TEMPLATE.md` already exists and is deployed (T-050, PR #1684); see the correction above.
 
-**Note on the pairing rule:** neither T-067 nor T-068 creates or modifies a CI workflow file, so no paired branch-protection task applies per `repo-config/SKILL.md`.
+**Note on the pairing rule:** neither T-067 nor T-068 creates or modifies a CI workflow file, so no paired branch-protection task applies to them per `repo-config/SKILL.md`. T-071 exists independently of that pairing rule — it verifies the existing branch-protection config against `ci.yml` as it stands today, not as a consequence of a new CI workflow change in this cycle.
 
 ### Milestone 2 — Critical-path coverage
 **DOD:** 100% of `critical` tier inventory items have passing tests at the prescribed layer.
@@ -179,6 +181,7 @@ Flat, ordered, agent-executable. Numbering continues from `starting_offset = 67`
 | T-068 | 1 | (verification only) | infra | reuse | Confirm each runner discovers only its own layer, zero cross-layer bleed | Isolated per-entry-point run per `docs/test-readiness/naming.md` | — |
 | T-069 | 4 | `admin/src/agent-work-queue.integration.test.ts` | integration | net-new | Upsert + no-snapshot-yet read covered | `bun test admin/src/agent-work-queue.integration.test.ts` | — |
 | T-070 | 4 | `admin/src/server.smoke.test.ts` | smoke | net-new | One thin "mounts correctly" smoke test | `bun test admin/src/server.smoke.test.ts` | — |
+| T-071 | 1 | (verification only, successor to T-051) | infra | reuse | Live branch-protection required-checks list for `main` confirmed to match `ci.yml`'s job names | `gh api repos/{owner}/{repo}/branches/main/protection`, diff against `ci.yml` job names | — |
 
 No task in this cycle exceeds the ~1000-line cap, touches more than one functional concern, or represents an N-service repeated operation — no task splitting was required.
 
@@ -196,6 +199,7 @@ No task in this cycle exceeds the ~1000-line cap, touches more than one function
 - **Recorded-fixture coverage breadth** (Phase 2's gaps-summary item 2: ~9 remaining `Http*Client` modules that could extend the `Recorded*Client` pattern) is a design-level backlog item, not a migration-bucket verdict on any existing file — no task emitted this cycle since Phase 3 found no test currently missing coverage because of it. Revisit if a future inventory pass tags one of those clients as critical/high with no test.
 - **`agent/src/piper-voice.ts` reclassification watch item** (Phase 1/2: unit today, integration once Piper synthesis lands per PPR-1.2) — no action needed until that lands; flagged so a future Phase 3 doesn't silently miss the transition.
 - **Recorded-fixture maintenance loop remains deferred** (`repo-config/SKILL.md` §5) — correctly not scheduled this cycle; sequence after fixture-authoring work matures, per Phase 2's explicit guidance.
+- **T-051 (branch-protection required-checks verification) is not resolved — carried forward as T-071, not dropped.** The prior cycle's task list tracked `test-t-051-shipwright` (verify `main`'s live branch-protection required-checks list against `ci.yml`'s job names) as `pending — still open`. This rewrite's renumbered task list omitted it from the initial draft with no successor or resolution note; that was an oversight, not a finding that the gap closed. `test-system.md`'s gaps-summary item 4 still calls the underlying check open, and this doc's own Repo configuration reference (Milestone 1 above) is itself sourced from `ci.yml`'s job list rather than a live API query — so the pairing-rule dependency Section 6 previously flagged still exists. T-071 (Milestone 1, Section 5) is the successor task; it is not resolved out-of-band.
 
 ---
 

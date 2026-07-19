@@ -33,11 +33,15 @@ would miss:
 5. Confirmed `.github/pull_request_template.md` and `bunfig.toml`'s `pathIgnorePatterns`
    directly rather than trusting the prior doc's snapshot.
 
-**Speed measurement: not run**, same reasoning as the prior two passes — no local
-Postgres in this sandbox (`DATABASE_URL_SHIPWRIGHT_*` unset), so a `bun test` run here
+**Speed measurement: not re-run this pass**, same reasoning as the prior two passes — no
+local Postgres in this sandbox (`DATABASE_URL_SHIPWRIGHT_*` unset), so a `bun test` run here
 would silently skip every DB-backed integration test and produce misleading timings.
 Static review (line counts, import/mock shape) was used instead; no evidence found of any
-test breaching a hard cap. See `project_shipwright_metrics_full_suite_flake` and
+test breaching a hard cap. **Note (see Speed measurement section below for the full
+correction): a real per-layer measurement already exists at `docs/test-readiness/speed-baseline.md`
+on `main` since 2026-07-15 — none of the three `/test-migration` passes to date checked
+for it, so "not run" below describes this pass's own static-review method, not the
+repo's actual measurement state.** See `project_shipwright_metrics_full_suite_flake` and
 `project_shipwright_admin_full_suite_flake` in memory for the two known pre-existing
 full-suite flakes (unrelated to layer/speed, not relevant to this audit).
 
@@ -237,28 +241,30 @@ prior passes.
 
 ## Speed measurement
 
-- **Measured:** no (no local Postgres available in this sandbox; see Method note above)
-- **Current per-layer p95:** not measured this pass. Phase 2's Speed budgets section
-  continues to cite CI's own historical "low minutes" full-suite wall time as the standing
-  reference; no per-layer breakdown has been captured across any of the three
-  `/test-migration` passes to date.
-- **Tests over hard cap:** none identified via static review. `admin/src/admin-ui.smoke.test.ts`
+- **Measured:** no local re-measurement this pass (no local Postgres available in this
+  sandbox; see Method note above) — **but see correction below: a real measurement
+  already exists on `main` and was simply never cross-referenced into this pass's docs.**
+- **Current per-layer p95:** not measured *by this pass*, but a full, real, `time`-wrapped
+  per-layer measurement already exists at `docs/test-readiness/speed-baseline.md` on
+  `main` (committed `8a037efc`, PR #1580, merged 2026-07-15 — before this pass and its two
+  predecessors). None of the three `/test-migration` passes to date referenced it, so it
+  was missed in prose, not superseded or invalidated.
+- **Tests over hard cap:** none identified via static review, consistent with
+  `speed-baseline.md`'s measured numbers (every layer comfortably within budget). `admin/src/admin-ui.smoke.test.ts`
   and `admin/src/admin-ui-pages.unit.test.ts` remain the two largest files by line count
   (unchanged from last pass, both large due to test-case count, not per-test slowness).
 
-**Carried-forward measurement-only item:** the "speed measurement not run" gap has now
-been carried across all **3** consecutive `/test-migration` cycles (2026-07-16 initial
-pass — not shown in this doc's history but referenced by the prior artifact's own method
-note — plus this pass's two predecessors at commit `ebde3ca1`/`8cfc3683` and today's
-`c42b6346`/`1a44baef`). Per SKILL's explicit guidance on this exact pattern, this has now
-**hit the 3-cycle threshold** and must be surfaced as a first-class item, not left to be
-noticed in prose: **`/test-roadmap` must place "run the full suite against a real
-Postgres instance once (in CI or a dev sandbox with DB access) and record actual
-per-layer p95 timings" as the first Milestone 1 (M1) task**, by construction, the same way
-the naming-convention task is guaranteed an M1 slot. This is infrastructure the audit
-sandbox itself cannot provide (no local Postgres, no `pg_isready`) — it requires either a
-CI run with `--reporter=json` timing capture or a developer sandbox with
-`DATABASE_URL_SHIPWRIGHT_*` set, neither available to this automated pipeline pass.
+**Correction — the 3-cycle escalation does not apply here.** A prior draft of this
+section treated "speed measurement not run" as carried across all 3 consecutive
+`/test-migration` cycles and hitting the SKILL's 3-cycle escalation threshold. Re-verified
+directly against the working tree: **that premise is false.** `speed-baseline.md` was
+committed to `main` on 2026-07-15, and none of the three `/test-migration` passes to date
+checked for it — each treated the gap as "not measured" without listing `docs/test-readiness/`
+on `main`. This is cycle 1 of "measured but not yet folded into the standing docs," not
+cycle 3 of "never measured." The SKILL's 3-cycle-escalation rule is real and would apply
+if the premise held, but it does not hold, so **no escalation task is warranted.** See
+`test-readiness-plan.md`'s "Correction to Phase 3's carry-forward claims" section (Phase 4,
+same repo state) for the full re-verification.
 
 ## Next step
 
@@ -266,7 +272,9 @@ Run `/test-roadmap` to synthesize this migration audit with the Phase 1 inventor
 Phase 2 blueprint into the executable roadmap. Candidate Phase 4 inputs from this
 document: 3 small net-new test items (0 critical, 0 high, 2 medium, 1 optional-low), 0
 net-new infra items (the `pull_request_template.md` item is closed this pass — see
-Resolved since the 2026-07-16 pass above), and the **mandatory M1-slot speed-measurement
-task** now triggered by the 3-cycle carry-forward threshold above — this is the most
-actionable finding of this pass, since the prior two passes' open items are now fully
-closed.
+Resolved since the 2026-07-16 pass above), and **one doc-hygiene M1 task to fold the
+existing, already-real `speed-baseline.md` measurements into `test-system.md`'s Speed
+budgets section** — not a re-measurement task, and not a 3-cycle-escalation task (see the
+correction above). This is the most actionable finding of this pass, since the prior two
+passes' open items are now fully closed and the speed-measurement gap turned out to be a
+doc cross-reference gap rather than a missing measurement.
