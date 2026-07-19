@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { app } from "./index.js";
+import { createApp } from "./index.js";
 import { EXCLUDED_TOOLS } from "./tool-allowlist.js";
 
 const ALLOWED_TOOL_NAMES = [
@@ -14,6 +14,9 @@ const ALLOWED_TOOL_NAMES = [
   "prs_update",
 ] as const;
 
+const TEST_TOKEN = "test-mcp-server-token";
+const app = createApp({ token: TEST_TOKEN });
+
 describe("mcp-server", () => {
   it("exports an app", () => {
     expect(app).toBeDefined();
@@ -26,7 +29,9 @@ describe("mcp-server", () => {
   });
 
   it("GET /mcp/tools returns only the 9 allowed tools", async () => {
-    const res = await app.request("/mcp/tools");
+    const res = await app.request("/mcp/tools", {
+      headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+    });
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as { tools: Array<{ name: string; description: string }> };
