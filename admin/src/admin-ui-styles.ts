@@ -272,6 +272,7 @@ export function baseStyles(): string {
     @media (max-width: 640px) {
       .col-session, .col-repo { display: none; }
       .col-review-cycles, .col-patch-cycles, .col-claimed-by { display: none; }
+      .col-created { display: none; }
       .state-tab { padding: 13px 14px; }
       .vos-page {
         padding: 16px 12px 48px;
