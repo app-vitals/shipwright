@@ -59,7 +59,10 @@ For the current tool-by-tool reference (name, description, HTTP method, path, pa
 
 **Transport:**
 
-The server is transport-agnostic. The primary entry point is `mcp-server/src/serve.ts`, which launches the server over **stdio** — the standard transport MCP clients (e.g. Claude Code) expect.
+The server is transport-agnostic and supports two entry points:
+
+- **Stdio** (`mcp-server/src/serve.ts`) — launches the server over stdin/stdout, the standard transport for MCP clients like Claude Code.
+- **HTTP** (`mcp-server/src/main.ts`) — serves the MCP protocol over Streamable HTTP via `Bun.serve()`. The HTTP transport is mounted on the Hono app at POST/GET/DELETE `/mcp`, supporting session-based stateful MCP (each `initialize` request generates a unique session ID; follow-up requests use the `mcp-session-id` header to route to the same transport instance). This enables remote MCP clients (e.g. Claude Desktop custom connectors, external applications) to communicate with the server without stdio.
 
 **Tool execution:**
 
