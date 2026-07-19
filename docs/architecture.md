@@ -57,12 +57,16 @@ A Model Context Protocol (MCP) server that exposes a curated subset of the task-
 
 For the current tool-by-tool reference (name, description, HTTP method, path, parameters, body) — kept in sync automatically as tools are added or removed — see the generated **[mcp-tools.md](./mcp-tools.md)**. Regenerate it with `bun run generate:mcp-docs` after any change to the OpenAPI spec or the allowlist.
 
+**Inbound auth (TSM-2.6):**
+
+The HTTP entry point (`mcp-server/src/main.ts`) requires an inbound bearer token on every request except `/health` (which stays unauthenticated for Kubernetes liveness/readiness probes). This prevents unauthorized access to the tool proxy surface, since the server holds `SHIPWRIGHT_TASK_STORE_TOKEN` and proxies fully-authenticated calls into the task store on behalf of any connected client. Env var: `SHIPWRIGHT_MCP_SERVER_TOKEN` (required — the service fails closed and refuses to start if unset). Bearer auth is enforced by `createBearerAuthMiddleware` (defined in `mcp-server/src/auth.ts`) and uses constant-time comparison to avoid leaking the secret's length or content via timing side channels.
+
 **Transport:**
 
 The server is transport-agnostic and supports two entry points:
 
 - **Stdio** (`mcp-server/src/serve.ts`) — launches the server over stdin/stdout, the standard transport for MCP clients like Claude Code.
-- **HTTP** (`mcp-server/src/main.ts`) — serves the MCP protocol over Streamable HTTP via `Bun.serve()`. The HTTP transport is mounted on the Hono app at POST/GET/DELETE `/mcp`, supporting session-based stateful MCP (each `initialize` request generates a unique session ID; follow-up requests use the `mcp-session-id` header to route to the same transport instance). This enables remote MCP clients (e.g. Claude Desktop custom connectors, external applications) to communicate with the server without stdio.
+- **HTTP** (`mcp-server/src/main.ts`) — serves the MCP protocol over Streamable HTTP via `Bun.serve()`. The HTTP transport is mounted on the Hono app at POST/GET/DELETE `/mcp`, supporting session-based stateful MCP (each `initialize` request generates a unique session ID; follow-up requests use the `mcp-session-id` header to route to the same transport instance). This enables remote MCP clients (e.g. Claude Desktop custom connectors, external applications) to communicate with the server without stdio. **Auth note:** stdio transport (direct process spawning) has no inbound auth gate — auth is only enforced on the HTTP entry point.
 
 **Tool execution:**
 
@@ -70,7 +74,7 @@ The server proxies tool calls to the task-store HTTP API; `SHIPWRIGHT_TASK_STORE
 
 **Discovery:**
 
-The Hono app (`mcp-server/src/index.ts`) also exposes a lightweight `GET /mcp/tools` endpoint for humans to inspect the tool catalog without speaking the MCP protocol.
+The Hono app (`mcp-server/src/index.ts`) exposes a lightweight `GET /mcp/tools` endpoint for humans to inspect the tool catalog without speaking the MCP protocol. This endpoint is gated by the same bearer-auth middleware as all other routes (except `/health`), preventing unauthenticated enumeration of the server's capabilities.
 
 ## Chat Service
 
