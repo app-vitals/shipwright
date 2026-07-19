@@ -36,18 +36,6 @@
  * repo-iteration/page-until-partial/continue-on-error scaffolding and reuses
  * the SAME setInterval tick in agent/src/index.ts — not a second timer.
  *
- * DSR-2.1 adds a fourth pass, `reconcileDeployingTasks()`: self-heals
- * task-store Tasks left status:"deploying" forever when their deploy
- * actually succeeded. The deploying→deployed PATCH is the last step of the
- * /shipwright:deploy command (an agent action, not a workflow step) —
- * promote.yml has no task-store write of its own — so an interrupted agent
- * session strands the task even though the code shipped normally on GitHub.
- * This is the same class of bug DSR-1.1 fixed one status earlier (an
- * agent-owned status write that silently doesn't happen), just at the next
- * transition in the lifecycle. Registered as its own independent call in
- * agent/src/index.ts's reconciler tick (the `reconcileReviewState`
- * precedent), NOT nested inside `reconcilePrState` like
- * `reconcilePrOpenTasks`/`reconcileOrphanedTasks` are.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
@@ -165,19 +153,6 @@ export interface PrStateReconcilerDeps {
    * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
-  /** List one page of task-store Tasks with status "deploying" (DSR-2.1). */
-  listDeployingTasks: (
-    limit: number,
-    offset: number,
-  ) => Promise<PrOpenTaskRecord[]>;
-  /** List the newest workflow runs for a given workflow name, newest-first (DSR-2.1). */
-  ghListWorkflowRuns: (
-    repo: string,
-    workflow: string,
-    limit: number,
-  ) => Promise<
-    Array<{ createdAt: string; conclusion: string | null; id: number }>
-  >;
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -479,114 +454,6 @@ export async function reconcileOrphanedTasks(
     } catch (err) {
       console.error(
         `[pr-state-reconciler] failed to reconcile orphan-candidate task ${task.id}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-}
-
-/** Number of newest workflow runs to fetch per lookup, matching check-deploy.ts's `fetchCiRuns` `per_page=20` convention (DSR-2.1). */
-const PROMOTE_RUNS_LOOKUP_LIMIT = 20;
-
-/** Workflow name to look up for the deploying→deployed pass (DSR-2.1). */
-const PROMOTE_WORKFLOW_NAME = "Promote to Prod";
-
-/**
- * List every task-store Task with status "deploying" (DSR-2.1), paging
- * through the task-store's default 50-record page until a page returns
- * fewer than `limit` records — same loop shape as `listAllPrOpenTasks`/
- * `listAllOpenRecords` elsewhere in this file.
- */
-async function listAllDeployingTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<PrOpenTaskRecord[]> {
-  const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
-  const tasks: PrOpenTaskRecord[] = [];
-  let offset = 0;
-
-  for (;;) {
-    const page = await deps.listDeployingTasks(limit, offset);
-    tasks.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
-  }
-
-  return tasks;
-}
-
-/**
- * Reconcile one deploying task against live GitHub workflow-run state
- * (DSR-2.1). The deploying→deployed PATCH is normally the last step of the
- * /shipwright:deploy command (an agent action) — promote.yml itself has no
- * task-store write — so an interrupted agent session strands the task even
- * though the code shipped normally. PATCHes to status:"deployed" only when
- * a SUCCESSFUL "Promote to Prod" run's createdAt is strictly after the
- * task's mergedAt; deployedAt is always that run's createdAt, NEVER
- * `now()` — there is no clock fallback for this pass, unlike
- * `reconcilePrOpenTask`'s `deps.now()` fallback, because a reconcile-time
- * stamp would silently inflate every cycle-time metric it touches.
- */
-async function reconcileDeployingTask(
-  deps: PrStateReconcilerDeps,
-  task: PrOpenTaskRecord,
-): Promise<void> {
-  const taskRepo = resolveTaskRepo(deps, task);
-  if (!taskRepo) return; // no repo to resolve against — skip defensively
-
-  if (!task.mergedAt) {
-    console.error(
-      `[pr-state-reconciler] deploying task ${task.id} has no mergedAt — skipping rather than guessing`,
-    );
-    return;
-  }
-
-  const runs = await deps.ghListWorkflowRuns(
-    taskRepo,
-    PROMOTE_WORKFLOW_NAME,
-    PROMOTE_RUNS_LOOKUP_LIMIT,
-  );
-  const latestSuccess = runs.find((r) => r.conclusion === "success");
-  if (!latestSuccess) return; // no successful promote run — leave untouched
-
-  const mergedAtMs = new Date(task.mergedAt).getTime();
-  const runCreatedAtMs = new Date(latestSuccess.createdAt).getTime();
-  if (!(runCreatedAtMs > mergedAtMs)) return; // not strictly after mergedAt — leave untouched
-
-  await deps.updateTaskStatus(task.id, {
-    status: "deployed",
-    deployedAt: latestSuccess.createdAt,
-  });
-}
-
-/**
- * Scan every deploying task, resolve the latest successful "Promote to
- * Prod" workflow run for its repo, and PATCH the task to deployed when that
- * run's createdAt confirms the deploy actually happened after the merge
- * (DSR-2.1). A single per-task failure is logged and does not abort
- * reconciliation of the rest of the batch — mirrors
- * `reconcilePrOpenTasks`/`reconcileOrphanedTasks`'s own per-task error
- * isolation above.
- */
-export async function reconcileDeployingTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<void> {
-  let tasks: PrOpenTaskRecord[];
-  try {
-    tasks = await listAllDeployingTasks(deps);
-  } catch (err) {
-    console.error(
-      "[pr-state-reconciler] failed to list deploying tasks:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return;
-  }
-
-  for (const task of tasks) {
-    try {
-      await reconcileDeployingTask(deps, task);
-    } catch (err) {
-      console.error(
-        `[pr-state-reconciler] failed to reconcile deploying task ${task.id}:`,
         err instanceof Error ? err.message : String(err),
       );
     }
@@ -1032,50 +899,6 @@ export function buildProductionDeps(opts: {
       fetchFn: opts.fetchFn,
     }),
     now: () => new Date().toISOString(),
-    listDeployingTasks: (limit: number, offset: number) =>
-      listTasksByStatus("deploying", limit, offset),
-    // Server-side scoped by workflow (fixes a live bug: a client-side-filtered
-    // `actions/runs?per_page=N` repo-wide fetch can miss the target workflow
-    // entirely when unrelated workflows are noisy — confirmed live in
-    // production, e.g. bursts of "Bump Shipwright Chart" runs pushing a real
-    // "Promote to Prod" run outside a top-20 window). GitHub's workflow-scoped
-    // runs endpoint (`actions/workflows/{workflow_id_or_file_name}/runs`)
-    // requires a numeric workflow id or the workflow file's basename — NOT
-    // its display `name:` — so this first resolves `workflow` (a display
-    // name, e.g. "Promote to Prod") to its numeric id via the "list repo
-    // workflows" endpoint, then queries that workflow's runs directly. This
-    // genuinely mirrors check-deploy.ts's fetchActiveDeployRuns/fetchCiRuns
-    // precedent, which also filter server-side (`status=`/`head_sha=`), not
-    // just newest-first ordering as the removed comment claimed.
-    ghListWorkflowRuns: async (
-      repo: string,
-      workflow: string,
-      limit: number,
-    ) => {
-      const [org, repoName] = splitOrgRepo(repo);
-      const workflowsData = await ghJson<{
-        workflows: Array<{ id: number; name: string }>;
-      }>(["api", `repos/${org}/${repoName}/actions/workflows?per_page=100`]);
-      const match = workflowsData.workflows.find((w) => w.name === workflow);
-      if (!match) return []; // no such workflow configured for this repo — nothing to reconcile against
-
-      const data = await ghJson<{
-        workflow_runs: Array<{
-          status: string;
-          conclusion: string | null;
-          created_at: string;
-          id?: number;
-        }>;
-      }>([
-        "api",
-        `repos/${org}/${repoName}/actions/workflows/${match.id}/runs?per_page=${limit}`,
-      ]);
-      return data.workflow_runs.map((r) => ({
-        createdAt: r.created_at,
-        conclusion: r.conclusion,
-        id: r.id ?? 0,
-      }));
-    },
   };
 }
 
