@@ -23,6 +23,8 @@ import {
   type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
+  type WorkQueueItem,
+  type WorkQueueSnapshotItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatPage,
@@ -38,6 +40,7 @@ import {
   renderTaskDetailPage,
   renderTasksPage,
   renderTokensPage,
+  renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -4988,5 +4991,106 @@ describe("renderTokensPage — agent column linkability", () => {
     ]);
     expect(html).toContain("(admin)");
     expect(html).not.toContain("/admin/agents/");
+  });
+});
+
+describe("renderWorkQueuePage", () => {
+  const QUEUE_AGENT = { id: "agent-123", name: "Test Agent" };
+
+  function makeItem(overrides?: Partial<WorkQueueItem>): WorkQueueItem {
+    return {
+      type: "task",
+      id: "TSK-1",
+      title: "Sample task",
+      phase: "dev-task",
+      age: "2026-06-01T09:00:00Z",
+      ...overrides,
+    };
+  }
+
+  function render(
+    snapshot: WorkQueueSnapshotItem | null,
+    opts?: { now?: Date },
+  ): string {
+    return renderWorkQueuePage({
+      agent: QUEUE_AGENT,
+      snapshot,
+      userName: "admin@example.com",
+      now: opts?.now ?? new Date("2026-06-01T10:00:00Z"),
+    });
+  }
+
+  test("renders a valid HTML document", () => {
+    const html = render({
+      computedAt: new Date("2026-06-01T09:55:00Z"),
+      items: [makeItem()],
+    });
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+    expect(html).toContain(
+      "<title>Work Queue — Test Agent — Shipwright Admin</title>",
+    );
+  });
+
+  test("renders empty state when snapshot is null", () => {
+    const html = render(null);
+    expect(html).toContain("No work queue snapshot yet");
+    expect(html).toContain("shipwright-loop cron ticks");
+  });
+
+  test("renders empty state when snapshot has no items", () => {
+    const html = render({
+      computedAt: new Date("2026-06-01T09:55:00Z"),
+      items: [],
+    });
+    expect(html).toContain("Queue is empty — nothing pending");
+  });
+
+  test("renders table wrapped in data-table-wrapper with class data-table", () => {
+    const html = render({
+      computedAt: new Date("2026-06-01T09:55:00Z"),
+      items: [makeItem()],
+    });
+    expect(html).toContain('<div class="data-table-wrapper">');
+    expect(html).toContain('<table class="data-table">');
+  });
+
+  test("renders queue items with correct columns", () => {
+    const html = render({
+      computedAt: new Date("2026-06-01T09:55:00Z"),
+      items: [
+        makeItem({
+          type: "task",
+          id: "TSK-1",
+          title: "First task",
+          phase: "dev-task",
+          age: "2026-06-01T09:00:00Z",
+        }),
+        makeItem({
+          type: "pr",
+          id: "PR-123",
+          title: "Review PR",
+          phase: "review",
+          age: "2026-06-01T08:30:00Z",
+        }),
+      ],
+    });
+    expect(html).toContain("<th>#</th>");
+    expect(html).toContain("<th>Type</th>");
+    expect(html).toContain("<th>Phase</th>");
+    expect(html).toContain("<th>Item</th>");
+    expect(html).toContain("<th>Age</th>");
+    expect(html).toContain("First task");
+    expect(html).toContain("Review PR");
+  });
+
+  test("renders a back link to the agent detail page", () => {
+    const html = render({
+      computedAt: new Date("2026-06-01T09:55:00Z"),
+      items: [makeItem()],
+    });
+    expect(html).toContain('href="/admin/agents/agent-123"');
+    expect(html).toContain("Test Agent");
   });
 });
