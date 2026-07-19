@@ -519,3 +519,87 @@ describe("patch.md — reset reviewState to pending after a no-push, rebuttal-co
     expect(dSection).not.toContain("reviewState");
   });
 });
+
+describe("patch.md — escalate to HITL instead of looping on a second-round disagreement (RPF-1.3)", () => {
+  function getStep5a7Section() {
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(step5a7Idx).toBeGreaterThan(-1);
+    expect(step5bIdx).toBeGreaterThan(-1);
+    return content.slice(step5a7Idx, step5bIdx);
+  }
+
+  it("Step 5a.7 exists between Step 5a.6 (claim) and Step 5b (dispatch)", () => {
+    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(step5a6Idx).toBeGreaterThan(-1);
+    expect(step5a7Idx).toBeGreaterThan(step5a6Idx);
+    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
+  });
+
+  it("the claim step (5a.6) hands off to 5a.7, not straight to 5b", () => {
+    const step5a6Idx = content.indexOf("### Step 5a.6: Claim PR Record (pre-work lock)");
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const section = content.slice(step5a6Idx, step5a7Idx);
+    expect(section).toContain("Proceed to Step 5a.7");
+  });
+
+  it("second-round detection compares an author-reply comment's createdAt against the qualifying review's submittedAt", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("CURRENT_USER");
+    expect(section).toContain("createdAt");
+    expect(section).toContain("submittedAt");
+    expect(section).toContain("before");
+    expect(section).toContain("isAddressedByAuthorReply");
+  });
+
+  it("distinguishes this check from isAddressedByAuthorReply's direction (reply after vs. before the review)", () => {
+    const section = getStep5a7Section();
+    expect(section.toLowerCase()).toContain("opposite direction");
+    expect(section).toContain("reply *after* a review marks");
+    expect(section).toContain("reply dated *before* the");
+  });
+
+  it("escalation case resolves the linked task via the PR record and PATCHes hitl: true", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(section).toContain("PR_TASK_ID");
+    expect(section).toContain("taskId");
+    expect(section).toContain("-X PATCH");
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(section).toContain('"hitl": true');
+  });
+
+  it("escalation case posts exactly one PR comment via a temp file scoped by PR number", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("gh pr comment {pr} --repo {org}/{repo} --body-file");
+    expect(section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(section).toContain("rm /tmp/shipwright-patch-escalation-{pr}.txt");
+  });
+
+  it("escalation case releases the pre-work claim and skips to the next PR without dispatching a fix subagent", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("do not dispatch the fix subagent");
+    expect(section).toContain("do not post another rebuttal");
+    expect(section).toContain("do not reset");
+    expect(section).toContain("Move to the next qualifying PR in List A");
+  });
+
+  it("first-round rebuttals (no prior author reply before the current review) proceed normally to Step 5b", () => {
+    const section = getStep5a7Section();
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("proceed normally to Step 5b");
+    expect(otherwiseSection).toContain("RPF-1.1/1.2 behavior applies as before");
+  });
+
+  it("frames the escalation as a human-judgment deadlock, explicitly skipping the reviewState reset", () => {
+    const section = getStep5a7Section();
+    expect(section.toLowerCase()).toContain("human-judgment deadlock");
+    expect(section).toContain("do not reset");
+    expect(section).toContain("reviewState");
+  });
+});
