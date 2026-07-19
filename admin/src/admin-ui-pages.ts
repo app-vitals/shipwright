@@ -3454,19 +3454,21 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
     ${errorBanner}
     ${rawTokenBanner}
     <div class="card" style="overflow:auto">
-      <table class="data-table" style="width:100%">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Label</th>
-            <th>Agent</th>
-            <th>Created</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Label</th>
+              <th>Agent</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>
     ${createForm}
   </div>

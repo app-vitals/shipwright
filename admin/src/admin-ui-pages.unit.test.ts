@@ -5185,6 +5185,22 @@ describe("renderTokensPage — agent column linkability", () => {
     expect(html).toContain("(admin)");
     expect(html).not.toContain("/admin/agents/");
   });
+
+  test("table is wrapped in .data-table-wrapper", () => {
+    const html = render([
+      {
+        id: "tok-1",
+        label: "CI token",
+        agentId: "agent-y",
+        token: "sw_abc",
+        createdAt: "2026-06-01T10:00:00Z",
+        revokedAt: null,
+      },
+    ]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table"/,
+    );
+  });
 });
 
 describe("renderWorkQueuePage", () => {
