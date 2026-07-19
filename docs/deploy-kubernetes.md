@@ -506,7 +506,7 @@ agent:
     enabled: true
     provider: whisper            # "whisper" (self-hosted pod) | "groq" (cloud STT)
     whisper:
-      image: onerahmet/openai-whisper-asr-webservice:latest  # pin a concrete tag in prod
+      image: onerahmet/openai-whisper-asr-webservice:v1.3.0  # default; do not float to :latest — the plain-text /asr contract is tightly coupled to this tag
       service:
         port: 9000               # in-cluster Service port → WHISPER_SERVICE_URL
       model: ""                  # ASR model name → ASR_MODEL (e.g. tiny, base, small, medium, large-v3, tiny.en); empty = image default
