@@ -301,6 +301,25 @@ this repo does not tighten any budget below the default.
   condition (a) (budget miss) is the trigger to revisit, not a fixed test-count
   threshold.
 
+**Measured baseline (T-067, folding in T-002):** the default budget table above is no
+longer just a target — real per-layer numbers now exist in
+[`speed-baseline.md`](./speed-baseline.md), measured across all five workspaces (plugin,
+metrics dashboard, agent, admin, site). Every measured layer falls comfortably within
+budget:
+
+- **Unit:** 1.05s–2.50s per package (well under the <30s suite target)
+- **Integration:** 0.15s–5.35s per package (well under the <3 min suite target)
+- **Smoke:** 1.5s–4.6s per package (well under the <30s/<60s suite target;
+  `speed-baseline.md`'s per-package rows show 3.24s for admin and 4.62s for metrics)
+- **E2E:** 4s–40s via CI (metrics dashboard, admin UI, and site), well under the <30s
+  per-test 95p / <90s hard cap
+- **Full suite:** 34.23s wall-clock (3842 pass, 242 skip, 4084 tests across 198 files),
+  well within the <15 min full-PR budget
+
+See `speed-baseline.md` for the full per-package breakdown, methodology, and the exact
+verification command output. Future `/test-migration` passes should cite this baseline
+rather than re-flagging speed as "not measured."
+
 ## Shared helpers / utilities to build
 
 Per Step 9 — most of these already exist; only additions/extensions are called out
