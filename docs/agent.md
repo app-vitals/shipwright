@@ -4,7 +4,7 @@
 
 ## Overview
 
-The agent owns ten first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `AgentCronRunModelBreakdown` for per-model token/cost breakdown and `AgentChatTokenUsageDailyByModel` for daily token usage rollups) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
+The agent owns eleven first-class Prisma models (`Agent` and its `Env` / `CronJob` / `CronRun` / `Tool` / `Token` / `Plugin` / `Member` children, plus `AgentCronRunModelBreakdown` for per-model token/cost breakdown, `AgentChatTokenUsageDailyByModel` for daily token usage rollups, and `AgentWorkQueueSnapshot` for the agent's latest ranked work-queue snapshot) on a **dedicated database** (`DATABASE_URL_SHIPWRIGHT_ADMIN`). Secrets at rest (env values, Slack/Anthropic keys) are AES-256-GCM encrypted at the service layer; agent API tokens are stored only as SHA-256 hashes.
 
 > The Dockerfile `ENTRYPOINT` is `bun run admin/src/main.ts`, which runs migrations, constructs all services, and mounts all admin + runtime routes. The implemented HTTP surfaces are the admin CRUD API (`admin/src/agents-api.ts`, auth via `api-auth.ts`), the runtime API (`admin/src/api.ts`), the server-rendered admin UI (`admin/src/admin-ui.ts`), the public read-only task board (`GET /public/tasks` — no auth, configurable repo scope), the Prisma store + service classes (all in the `@shipwright/admin` package), the Slack event handler (`slack.ts`), and the cron runtime (`cron-handler.ts`). On startup the runner calls `POST /agents/:id/crons/reconcile` to sync system crons.
 
@@ -57,6 +57,7 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 | Tokens | `POST` / `GET` `/agents/:id/tokens`, `DELETE /agents/:id/tokens/:tokenId` |
 | Chat Tokens | `POST /agents/:id/chat-tokens/daily` (daily upsert: atomically accumulates Slack chat session token usage by `(agentId, date, model)`; body: `{date: YYYY-MM-DD, modelBreakdown: [{model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd}]}`; returns an array of updated daily rows `[{id, agentId, date, model, ...}]`), `GET /agents/chat-tokens/daily/stats` (admin-only: aggregated chat-token daily stats across all agents; query params: `from` / `to` (optional YYYY-MM-DD date strings); returns `{totals, byAgent, byModel, daily}`) |
 | Plugins | `POST` / `GET` / `PATCH` `/agents/:id/plugins`, `DELETE /agents/:id/plugins` |
+| Work Queue | `POST /agents/:id/work-queue` (pushes/upserts the agent's ranked work-queue snapshot, overwriting any prior snapshot; body: `{computedAt, items}`), `GET /agents/:id/work-queue` (fetches the latest snapshot; `404` if none pushed yet) |
 
 Token creation returns the **raw token once** at creation; only its SHA-256 hash is persisted, so validation is an O(1) hash-index lookup.
 
@@ -117,6 +118,7 @@ There is no HTTP chat endpoint on the agent. Chat flows through the chat service
 | `AgentToken` | Scoped API tokens | `token` (SHA-256 hash), `label`, `revokedAt`. |
 | `AgentPlugin` | Installed Claude Code plugins | `name` (package), `version` (null = latest), `enabled`, `createdAt`, `updatedAt`; unique per `[agentId, name]`. |
 | `AgentMember` | Authorized human members | `email`; unique per `[agentId, email]`. |
+| `AgentWorkQueueSnapshot` | Latest ranked work-queue snapshot | `agentId` (unique — one row per agent), `computedAt`, `items` (JSON `RankedWorkItem[]`). Upserted by `POST /agents/:id/work-queue`; overwrites any prior snapshot — there is no history, only the latest state. |
 
 All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob`).
 
