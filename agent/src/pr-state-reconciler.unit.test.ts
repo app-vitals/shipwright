@@ -1882,3 +1882,88 @@ describe("reconcileDeployingTasks", () => {
     expect(taskPatchCalls).toHaveLength(0);
   });
 });
+
+describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by workflow (DSR-2.1 review fix)", () => {
+  /**
+   * Regression coverage for the finding on PR #1941: a client-side-filtered
+   * `actions/runs?per_page=N` repo-wide fetch can miss the target workflow's
+   * real recent runs when unrelated workflows are noisy (confirmed live on
+   * vitals-os — bursts of unrelated workflow runs pushed a real "Promote to
+   * Prod" run outside a top-20 window). This asserts `ghListWorkflowRuns`
+   * now resolves the workflow's id via the "list repo workflows" endpoint
+   * and queries that workflow's own runs endpoint — server-side scoped, so a
+   * burst of unrelated workflow activity can never push the target workflow's
+   * runs out of the page.
+   */
+  test("resolves the workflow id by name, then fetches only that workflow's runs", async () => {
+    const calls: string[] = [];
+    const ghJson = async <T>(args: string[]): Promise<T> => {
+      const path = args[1] ?? "";
+      calls.push(path);
+      if (path.startsWith("repos/acme/example-repo/actions/workflows?")) {
+        return {
+          workflows: [
+            { id: 111, name: "Bump Shipwright Chart" },
+            { id: 222, name: "Promote to Prod" },
+          ],
+        } as T;
+      }
+      if (path === "repos/acme/example-repo/actions/workflows/222/runs?per_page=20") {
+        return {
+          workflow_runs: [
+            {
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-07-19T12:00:00.000Z",
+              id: 999,
+            },
+          ],
+        } as T;
+      }
+      throw new Error(`unexpected gh api call: ${path}`);
+    };
+    const deps = buildProductionDeps({
+      ghJson,
+      getScopedRepos: () => [],
+    });
+
+    const runs = await deps.ghListWorkflowRuns(
+      "acme/example-repo",
+      "Promote to Prod",
+      20,
+    );
+
+    expect(runs).toEqual([
+      {
+        createdAt: "2026-07-19T12:00:00.000Z",
+        conclusion: "success",
+        id: 999,
+      },
+    ]);
+    // Only the scoped workflow-runs endpoint is queried for run data — never
+    // the unscoped repo-wide `actions/runs` endpoint a noisy burst of other
+    // workflows (like "Bump Shipwright Chart") could crowd out.
+    expect(calls).toEqual([
+      "repos/acme/example-repo/actions/workflows?per_page=100",
+      "repos/acme/example-repo/actions/workflows/222/runs?per_page=20",
+    ]);
+  });
+
+  test("returns an empty list when no workflow matches the given name, rather than falling back to an unscoped fetch", async () => {
+    const ghJson = async <T>(): Promise<T> => {
+      return { workflows: [{ id: 111, name: "Bump Shipwright Chart" }] } as T;
+    };
+    const deps = buildProductionDeps({
+      ghJson,
+      getScopedRepos: () => [],
+    });
+
+    const runs = await deps.ghListWorkflowRuns(
+      "acme/example-repo",
+      "Promote to Prod",
+      20,
+    );
+
+    expect(runs).toEqual([]);
+  });
+});

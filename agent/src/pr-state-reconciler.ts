@@ -1034,31 +1034,47 @@ export function buildProductionDeps(opts: {
     now: () => new Date().toISOString(),
     listDeployingTasks: (limit: number, offset: number) =>
       listTasksByStatus("deploying", limit, offset),
-    // Mirrors check-deploy.ts's buildProductionDeps fetchActiveDeployRuns/
-    // fetchCiRuns precedent exactly: the GitHub Actions API already returns
-    // runs newest-first, so no client-side re-sort is needed here either.
+    // Server-side scoped by workflow (fixes a live bug: a client-side-filtered
+    // `actions/runs?per_page=N` repo-wide fetch can miss the target workflow
+    // entirely when unrelated workflows are noisy — confirmed live on
+    // vitals-os, e.g. bursts of "Bump Shipwright Chart" runs pushing a real
+    // "Promote to Prod" run outside a top-20 window). GitHub's workflow-scoped
+    // runs endpoint (`actions/workflows/{workflow_id_or_file_name}/runs`)
+    // requires a numeric workflow id or the workflow file's basename — NOT
+    // its display `name:` — so this first resolves `workflow` (a display
+    // name, e.g. "Promote to Prod") to its numeric id via the "list repo
+    // workflows" endpoint, then queries that workflow's runs directly. This
+    // genuinely mirrors check-deploy.ts's fetchActiveDeployRuns/fetchCiRuns
+    // precedent, which also filter server-side (`status=`/`head_sha=`), not
+    // just newest-first ordering as the removed comment claimed.
     ghListWorkflowRuns: async (
       repo: string,
       workflow: string,
       limit: number,
     ) => {
       const [org, repoName] = splitOrgRepo(repo);
+      const workflowsData = await ghJson<{
+        workflows: Array<{ id: number; name: string }>;
+      }>(["api", `repos/${org}/${repoName}/actions/workflows?per_page=100`]);
+      const match = workflowsData.workflows.find((w) => w.name === workflow);
+      if (!match) return []; // no such workflow configured for this repo — nothing to reconcile against
+
       const data = await ghJson<{
         workflow_runs: Array<{
-          name: string;
           status: string;
           conclusion: string | null;
           created_at: string;
           id?: number;
         }>;
-      }>(["api", `repos/${org}/${repoName}/actions/runs?per_page=${limit}`]);
-      return data.workflow_runs
-        .filter((r) => r.name === workflow)
-        .map((r) => ({
-          createdAt: r.created_at,
-          conclusion: r.conclusion,
-          id: r.id ?? 0,
-        }));
+      }>([
+        "api",
+        `repos/${org}/${repoName}/actions/workflows/${match.id}/runs?per_page=${limit}`,
+      ]);
+      return data.workflow_runs.map((r) => ({
+        createdAt: r.created_at,
+        conclusion: r.conclusion,
+        id: r.id ?? 0,
+      }));
     },
   };
 }
