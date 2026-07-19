@@ -1,5 +1,14 @@
 # Deploy-Status Reconciliation — `deploying → deployed` pass
 
+> **STATUS: Implemented.** This pass shipped in PR #1941 (merged 2026-07-19T16:20:52Z), in
+> `agent/src/pr-state-reconciler.ts`'s `reconcileDeployingTasks(deps)` — same function name,
+> same injected `ghListWorkflowRuns` dependency shape, same per-task error isolation, and the
+> same "`deployedAt` is the promote run's `createdAt`, never `now()`" constraint this spec
+> describes below. Full test coverage for every case in this doc's Testing section already
+> exists in `agent/src/pr-state-reconciler.unit.test.ts` (`describe("reconcileDeployingTasks", …)`).
+> Do not queue a new DSR-2.1 implementation task off this spec — the rest of the document is
+> kept as the historical design record for what was built and why.
+
 **Date**: 2026-07-19
 **Session**: `deploy-status-reconciliation`
 **Task**: `DSR-2.1`
