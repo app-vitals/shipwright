@@ -141,14 +141,14 @@ task already owns this ID/branch namespace.
 
 ### Example: Multi-Repo Collision
 
-Two repos (`app-vitals/shipwright` and `app-vitals/vitals-os`) are scanned in the same
-ISO week (W23) for the same rule (`dead_exports`). Without repo-slug scoping, both would
-generate the same task ID (`entropy-dead_exports-2026-W23`), causing the second repo's
-findings to overwrite the first in the queue (or be silently rejected as a duplicate).
+Two repos (`org/shipwright` and `org/other-repo`) are scanned in the same ISO week (W23)
+for the same rule (`dead_exports`). Without repo-slug scoping, both would generate the
+same task ID (`entropy-dead_exports-2026-W23`), causing the second repo's findings to
+overwrite the first in the queue (or be silently rejected as a duplicate).
 
 With repo-slug scoping:
-- Shipwright: `entropy-dead_exports-shipwright-2026-W23` ✓ unique
-- Vitals OS: `entropy-dead_exports-vitals-os-2026-W23` ✓ unique
+- `org/shipwright`: `entropy-dead_exports-shipwright-2026-W23` ✓ unique
+- `org/other-repo`: `entropy-dead_exports-other-repo-2026-W23` ✓ unique
 
 Each skill that generates task IDs already encodes repo-slug in the ID format — verify
 this is being done when you implement the fix skill, and trust the dedup check in your
