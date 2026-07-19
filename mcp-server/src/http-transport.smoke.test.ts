@@ -48,16 +48,20 @@ async function parseMcpResponse(res: Response): Promise<JsonRpcResponse> {
   return JSON.parse(text);
 }
 
-function buildApp(fetchImpl?: typeof fetch): Hono {
+function buildApp(
+  fetchImpl?: typeof fetch,
+  overrides: { idleTimeoutMs?: number; sweepIntervalMs?: number } = {},
+): { app: Hono; stop: () => void } {
   const app = new Hono();
-  mountMcpHttpTransport(app, {
+  const { stop } = mountMcpHttpTransport(app, {
     config: {
       baseUrl: "http://localhost:3002",
       token: "test-token",
       fetchImpl,
     },
+    ...overrides,
   });
-  return app;
+  return { app, stop };
 }
 
 async function initialize(
@@ -89,7 +93,7 @@ async function initialize(
 
 describe("MCP Streamable HTTP transport", () => {
   it("completes an initialize handshake and returns a session id", async () => {
-    const app = buildApp();
+    const { app } = buildApp();
     const { sessionId, body } = await initialize(app);
 
     expect(sessionId).toBeTruthy();
@@ -101,7 +105,7 @@ describe("MCP Streamable HTTP transport", () => {
   });
 
   it("tools/list over HTTP returns the same 9 allowlisted tools as stdio", async () => {
-    const app = buildApp();
+    const { app } = buildApp();
     const { sessionId } = await initialize(app);
 
     const res = await app.request("/mcp", {
@@ -144,7 +148,7 @@ describe("MCP Streamable HTTP transport", () => {
       );
     }) as typeof fetch;
 
-    const app = buildApp(fetchImpl);
+    const { app } = buildApp(fetchImpl);
     const { sessionId } = await initialize(app);
 
     const res = await app.request("/mcp", {
@@ -174,7 +178,7 @@ describe("MCP Streamable HTTP transport", () => {
   });
 
   it("rejects a non-initialize POST with no session id", async () => {
-    const app = buildApp();
+    const { app } = buildApp();
     const res = await app.request("/mcp", {
       method: "POST",
       headers: {
@@ -189,5 +193,41 @@ describe("MCP Streamable HTTP transport", () => {
       }),
     });
     expect(res.status).toBe(400);
+  });
+
+  it("reaps a session that goes idle past idleTimeoutMs", async () => {
+    const { app, stop } = buildApp(undefined, {
+      idleTimeoutMs: 10,
+      sweepIntervalMs: 10,
+    });
+    try {
+      const { sessionId } = await initialize(app);
+
+      // Wait past the idle timeout + at least one sweep tick, without
+      // sending any further requests for this session.
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const res = await app.request("/mcp", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-session-id": sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/list",
+          params: {},
+        }),
+      });
+
+      // The session's transport was reaped, so it's no longer a known
+      // session: the request is rejected the same way an unknown/invalid
+      // session id would be.
+      expect(res.status).toBe(400);
+    } finally {
+      stop();
+    }
   });
 });

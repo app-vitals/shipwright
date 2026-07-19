@@ -7,8 +7,9 @@
  * human-readable /mcp/tools listing) via Bun.serve. Remote MCP clients
  * (e.g. Claude Desktop custom connectors) connect to POST/GET/DELETE /mcp.
  *
- * This service has no database and no background jobs — unlike task-store's
- * main.ts, there's no migration preflight or reaper to run here.
+ * This service has no database — unlike task-store's main.ts, there's no
+ * migration preflight to run here. It does run one lightweight background
+ * job: `mountMcpHttpTransport`'s idle-session reaper (see http-transport.ts).
  *
  *   bun run mcp-server/src/main.ts
  */
