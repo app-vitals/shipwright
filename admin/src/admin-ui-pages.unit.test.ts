@@ -3546,11 +3546,18 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
     expect(html).toContain("Tokens");
-    expect(html).toContain("<th>Model</th>");
+    expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
     expect(html).toContain("<th>Item</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
+  });
+
+  test("wraps the table in a .data-table-wrapper and uses the shared .data-table class instead of the bespoke .runs-table", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain('<div class="data-table-wrapper">');
+    expect(html).toContain('<table class="data-table">');
+    expect(html).not.toContain('class="runs-table"');
   });
 
   test("renders per-model badges with cost for a multi-model run", () => {
