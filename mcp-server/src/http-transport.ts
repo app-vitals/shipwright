@@ -17,17 +17,26 @@
  * via `options.parsedBody` so the transport doesn't re-read the stream.
  *
  * Idle sessions are reclaimed by a periodic sweep: each session's
- * last-activity timestamp is refreshed on every POST/GET/DELETE it handles,
- * and a `setInterval` reaper evicts (and closes) any transport that's gone
- * quiet for longer than `idleTimeoutMs`. Without this, a remote client that
- * disconnects, crashes, or never sends `DELETE /mcp` would otherwise leak its
- * transport + `createMcpServer()` instance in the `transports` Map forever.
+ * last-activity timestamp is refreshed on every POST/GET/DELETE it handles
+ * and on every server-initiated message pushed over its SSE stream (so a
+ * push-only stream that a client leaves open — e.g. the SDK's standalone GET
+ * SSE stream — is never mistaken for idle), and a `setInterval` reaper evicts
+ * (and closes) any transport that's gone quiet for longer than
+ * `idleTimeoutMs`. Without this, a remote client that disconnects, crashes,
+ * or never sends `DELETE /mcp` would otherwise leak its transport +
+ * `createMcpServer()` instance in the `transports` Map forever.
+ *
+ * The reaper's time source is an injectable `Clock` (see ./clock.ts, mirrored
+ * from task-store/src/clock.ts) — defaults to `SystemClock()` in production,
+ * swappable for a `FixedClock()` in tests so reaping can be exercised without
+ * real timers.
  */
 
 import { randomUUID } from "node:crypto";
 import type { Context, Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { type Clock, SystemClock } from "./clock.ts";
 import { type CreateMcpServerOptions, createMcpServer } from "./mcp-server.ts";
 
 const MCP_PATH = "/mcp";
@@ -43,6 +52,9 @@ export interface MountMcpHttpTransportOptions extends CreateMcpServerOptions {
   idleTimeoutMs?: number;
   /** How often to sweep for idle sessions, in ms (default: 5 minutes). */
   sweepIntervalMs?: number;
+  /** Time source for the idle reaper (default: `SystemClock()`). Inject a
+   * `FixedClock()` in tests to exercise reaping without real timers. */
+  clock?: Clock;
 }
 
 /**
@@ -61,6 +73,7 @@ export function mountMcpHttpTransport(
   const {
     idleTimeoutMs = DEFAULT_IDLE_TIMEOUT_MS,
     sweepIntervalMs = DEFAULT_SWEEP_INTERVAL_MS,
+    clock = SystemClock(),
     ...serverOptions
   } = options;
 
@@ -71,7 +84,7 @@ export function mountMcpHttpTransport(
   const lastActivity = new Map<string, number>();
 
   const touch = (sessionId: string | undefined): void => {
-    if (sessionId) lastActivity.set(sessionId, Date.now());
+    if (sessionId) lastActivity.set(sessionId, clock.now().getTime());
   };
 
   const evict = (sessionId: string): void => {
@@ -84,7 +97,7 @@ export function mountMcpHttpTransport(
   };
 
   const sweep = (): void => {
-    const cutoff = Date.now() - idleTimeoutMs;
+    const cutoff = clock.now().getTime() - idleTimeoutMs;
     for (const [sessionId, lastSeen] of lastActivity) {
       if (lastSeen < cutoff) evict(sessionId);
     }
@@ -132,6 +145,16 @@ export function mountMcpHttpTransport(
         transports.delete(transport.sessionId);
         lastActivity.delete(transport.sessionId);
       }
+    };
+    // The SDK's Server pushes every outbound message — responses *and*
+    // server-initiated notifications on the standalone GET SSE stream —
+    // through `transport.send()`. Touch on each one so a session that's only
+    // ever receiving pushes (no further client requests) isn't reaped as
+    // idle out from under an active stream.
+    const originalSend = transport.send.bind(transport);
+    transport.send = async (...args) => {
+      touch(transport.sessionId);
+      return originalSend(...args);
     };
 
     const server = createMcpServer(serverOptions);

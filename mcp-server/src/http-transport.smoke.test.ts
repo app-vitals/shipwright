@@ -13,6 +13,7 @@
 
 import { describe, expect, it } from "bun:test";
 import { Hono } from "hono";
+import type { Clock } from "./clock.ts";
 import { mountMcpHttpTransport } from "./http-transport.ts";
 
 const ALLOWED_TOOL_NAMES = [
@@ -50,7 +51,11 @@ async function parseMcpResponse(res: Response): Promise<JsonRpcResponse> {
 
 function buildApp(
   fetchImpl?: typeof fetch,
-  overrides: { idleTimeoutMs?: number; sweepIntervalMs?: number } = {},
+  overrides: {
+    idleTimeoutMs?: number;
+    sweepIntervalMs?: number;
+    clock?: Clock;
+  } = {},
 ): { app: Hono; stop: () => void } {
   const app = new Hono();
   const { stop } = mountMcpHttpTransport(app, {
@@ -196,15 +201,23 @@ describe("MCP Streamable HTTP transport", () => {
   });
 
   it("reaps a session that goes idle past idleTimeoutMs", async () => {
+    // Drive the reaper with a FixedClock we advance manually — no real
+    // setTimeout waits, per this repo's Clock-injection test-isolation
+    // convention (see task-store/src/stale-claim-reaper.ts).
+    const start = new Date("2026-01-01T00:00:00.000Z");
+    const clock = { now: () => new Date(start) };
     const { app, stop } = buildApp(undefined, {
       idleTimeoutMs: 10,
       sweepIntervalMs: 10,
+      clock,
     });
     try {
       const { sessionId } = await initialize(app);
 
-      // Wait past the idle timeout + at least one sweep tick, without
-      // sending any further requests for this session.
+      // Advance the injected clock past the idle timeout, without sending
+      // any further requests for this session, then let the already-running
+      // sweep interval fire against the new time.
+      clock.now = () => new Date(start.getTime() + 1000);
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       const res = await app.request("/mcp", {
@@ -226,6 +239,77 @@ describe("MCP Streamable HTTP transport", () => {
       // session: the request is rejected the same way an unknown/invalid
       // session id would be.
       expect(res.status).toBe(400);
+    } finally {
+      stop();
+    }
+  });
+
+  it("touches session activity on every transport.send() (server push), not just at request-open", async () => {
+    // Regression test for the touch-on-push fix: the SDK's Server routes
+    // every outbound message — request responses *and* server-initiated
+    // notifications on the standalone GET SSE stream — through
+    // `transport.send()` (see the SDK's own comment: "This will be handled
+    // by the send() method when responses are ready"). http-transport.ts
+    // wraps `transport.send` to call `touch()` on every invocation, so a
+    // session that's only ever receiving pushes (no further client
+    // POST/GET/DELETE) still counts as active.
+    //
+    // We exercise this by advancing the clock close to (but under) the idle
+    // cutoff between request-open and response-send, then confirming a
+    // subsequent sweep — anchored on the send()-refreshed timestamp, not the
+    // request-open timestamp — does not reap the session.
+    const start = new Date("2026-01-01T00:00:00.000Z");
+    const clock = { now: () => new Date(start) };
+    const { app, stop } = buildApp(undefined, {
+      idleTimeoutMs: 500,
+      sweepIntervalMs: 10,
+      clock,
+    });
+    try {
+      const { sessionId } = await initialize(app);
+
+      // Advance past what would be the idle cutoff measured from
+      // request-open, then let the request complete: its `send()` call
+      // (touch-on-push) should refresh activity to this later time.
+      clock.now = () => new Date(start.getTime() + 600);
+      const res = await app.request("/mcp", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-session-id": sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 5,
+          method: "tools/list",
+          params: {},
+        }),
+      });
+      expect(res.status).toBe(200);
+
+      // Advance again, past idleTimeoutMs from request-open (t=0) but still
+      // within idleTimeoutMs of the send()-refreshed activity (t=600), and
+      // let the sweep run. If `send()` weren't touching activity, this
+      // session would already be stale relative to t=0 and get reaped.
+      clock.now = () => new Date(start.getTime() + 1000);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const res2 = await app.request("/mcp", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-session-id": sessionId,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 6,
+          method: "tools/list",
+          params: {},
+        }),
+      });
+      expect(res2.status).toBe(200);
     } finally {
       stop();
     }
