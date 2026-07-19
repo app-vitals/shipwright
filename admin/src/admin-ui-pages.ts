@@ -2450,7 +2450,7 @@ function renderDependencyGraph(nodes: DependencyNode[]): string {
       ${edgePaths.join("\n      ")}
     </svg>`;
 
-  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px;overflow-x:auto">
+  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px">
       ${svgHtml}
       ${nodes.map(nodeCard).join("\n      ")}
     </div>`;
@@ -2515,7 +2515,9 @@ export function renderSessionDetailPage(
     dependencyNodes.length > 0
       ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
+      <div class="data-table-wrapper">
       ${renderDependencyGraph(dependencyNodes)}
+    </div>
     </div>`
       : "";
 
