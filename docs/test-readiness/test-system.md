@@ -455,11 +455,12 @@ advisory — CI can run and still not gate `main`.
 
 ### PR template
 
-Add `.github/pull_request_template.md` with a Closing Checklist requiring the
-verification-command output (e.g. `task ci` output, or a CI run link) to be pasted into
-the PR description before merge. **Confirmed still absent this pass** — verified
-directly (`ls .github/pull_request_template.md` → not found) rather than assumed from
-the prior doc. Still a Phase 4 task.
+**Already exists — under a different, more canonical filename.** Direct listing this
+pass confirms `.github/PULL_REQUEST_TEMPLATE.md` exists (916 bytes); the earlier
+"confirmed still absent" claim came from a case-sensitive `ls
+.github/pull_request_template.md` check, which missed the file under its actual
+uppercase name. See `test-readiness-plan.md`'s correction for the full history (Task
+T-050, PR #1684). No Phase 4 task is needed for this item.
 
 ### Recorded-fixture maintenance loop — deferred
 
@@ -479,8 +480,11 @@ fixture-authoring tasks — sequence it after.
 For Phase 4 (`test-roadmap`) triage — every item below is a **design decision or gap**,
 not an existing-test audit finding (that's Phase 3):
 
-1. **`.github/pull_request_template.md` does not exist.** Re-verified this pass by
-   direct filesystem check. Add per Step 10.
+1. **`.github/PULL_REQUEST_TEMPLATE.md` already exists — not a gap.** Corrected this
+   pass: the prior "does not exist" claim came from a case-sensitive
+   `ls .github/pull_request_template.md` check that missed the file's actual (uppercase)
+   name. See `test-readiness-plan.md`'s correction (Task T-050, PR #1684). No Phase 4
+   action needed.
 2. **Recorded-fixture coverage is partial.** Four `Recorded*`/offline-fixture
    implementations exist (`RecordedKubernetesClient`, `task-store-recorded.ts`,
    `task-store-fixtures.ts`, `shipwright-config-client.ts`); the inventory names

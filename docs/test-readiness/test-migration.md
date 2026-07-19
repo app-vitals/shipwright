@@ -49,7 +49,7 @@ full-suite flakes (unrelated to layer/speed, not relevant to this audit).
 | Promote / deepen | 0 | 0 | — |
 | Rebuild | 0 | 0 | — |
 | Trim (redundant assertion) | 0 | 0 | — |
-| Net-new | 3 | 1 | small each |
+| Net-new | 3 | 0 | small each |
 
 **Total existing test files discovered:** 111 unit + 53 integration + 39 smoke + 23
 content = 226 `bun test`-scanned files, + 12 `site/` Playwright `*.spec.ts` + 3 Playwright
@@ -57,11 +57,14 @@ content = 226 `bun test`-scanned files, + 12 `site/` Playwright `*.spec.ts` + 3 
 the last pass (+17, matching Phase 1's "~17 new source files" delta almost file-for-file).
 
 **Headline finding: every open item from the 2026-07-16 report is now closed.** All 6
-net-new tests, both promote/rename fixes, and one of the two net-new infra items from the
-prior pass exist on this branch today (verified by direct file read, not assumed). The
-suite continues to track its own blueprint closely — of the ~17 new source files
-introduced since the last inventory, all but 3 already have matching test coverage at the
-correct layer. See Resolved-since-last-pass and Net-new sections below.
+net-new tests, both promote/rename fixes, and both of the two net-new infra items from the
+prior pass exist on this branch today (verified by direct file read, not assumed) — the
+`.github/pull_request_template.md` item is closed too, corrected this pass: the file
+exists under its actual (uppercase) name, `.github/PULL_REQUEST_TEMPLATE.md`; see
+Resolved-since-last-pass below. The suite continues to track its own blueprint closely —
+of the ~17 new source files introduced since the last inventory, all but 3 already have
+matching test coverage at the correct layer. See Resolved-since-last-pass and Net-new
+sections below.
 
 ## Resolved since the 2026-07-16 pass
 
@@ -78,7 +81,7 @@ Verified directly against the current tree (not carried forward from memory):
 | `plugins/shipwright/agents/learning-dreamer.integration.test.ts` — misfiled (no real I/O) | promote (rename) | **Resolved.** File no longer exists under that name; only `.content.test.ts` and `.unit.test.ts` remain — rename landed as prescribed. |
 | `lib/task-store-types.integration.test.ts` — misfiled (no real I/O) | promote (rename) | **Resolved.** File now exists as `lib/task-store-types.unit.test.ts`. |
 | `shipwright_chat_test` Postgres provisioning in `ci.yml` | net-new infra | **Resolved.** `ci.yml` line 112 sets `DATABASE_URL_SHIPWRIGHT_CHAT`; `CREATE DATABASE shipwright_chat_test` and `prisma migrate deploy --schema=chat/prisma/schema.prisma` steps are present. |
-| `.github/pull_request_template.md` does not exist | net-new infra (carried from Phase 2) | **Still open.** Re-verified this pass (`ls` → not found). Not a test-file gap; re-surfaced below per Step 6. |
+| `.github/pull_request_template.md` does not exist | net-new infra (carried from Phase 2) | **Resolved — false premise.** The file exists at `.github/PULL_REQUEST_TEMPLATE.md` (916 bytes); the "not found" verdict came from a case-sensitive `ls .github/pull_request_template.md` check that missed the actual (uppercase) filename. See `test-readiness-plan.md`'s correction (Task T-050, PR #1684). Not a test-file gap; no further action needed. |
 
 ## Isolation contract audit
 
@@ -205,13 +208,11 @@ None.
   out in Phase 2's Shared helpers section as something Phase 3 should confirm exists —
   it does, colocated builder functions are already the pattern in `admin/src/agent-envs.integration.test.ts`
   and siblings; no new shared helper is needed for this net-new test.
-- **`.github/pull_request_template.md`** — still does not exist. Carried forward
-  unresolved from Phase 2 (gaps-summary item 1) and the 2026-07-16 migration pass. This
-  is the **first item in this pipeline to be carried forward across 2 consecutive
-  `/test-migration` cycles** (2026-07-16 → 2026-07-19) without being actioned. Per SKILL's
-  failure-modes guidance, tracking starts now: 2 cycles carried, below the 3-cycle
-  mandatory-surfacing threshold, but flagged explicitly here so `/test-roadmap` can choose
-  to act early rather than wait for the threshold.
+
+`.github/pull_request_template.md` is no longer listed here — corrected this pass and
+moved to Resolved since the 2026-07-16 pass above; the file exists under its actual
+(uppercase) name, `.github/PULL_REQUEST_TEMPLATE.md`, so the 2-cycle carry-forward this
+item had accumulated is now closed, not escalating toward the 3-cycle threshold.
 
 ## Risk callouts
 
@@ -248,8 +249,9 @@ CI run with `--reporter=json` timing capture or a developer sandbox with
 
 Run `/test-roadmap` to synthesize this migration audit with the Phase 1 inventory and
 Phase 2 blueprint into the executable roadmap. Candidate Phase 4 inputs from this
-document: 3 small net-new test items (0 critical, 0 high, 2 medium, 1 optional-low), 1
-net-new infra item still open across 2 cycles (`pull_request_template.md`), and the
-**mandatory M1-slot speed-measurement task** now triggered by the 3-cycle carry-forward
-threshold above — this is the most actionable finding of this pass, since the prior two
-passes' open items are now fully closed.
+document: 3 small net-new test items (0 critical, 0 high, 2 medium, 1 optional-low), 0
+net-new infra items (the `pull_request_template.md` item is closed this pass — see
+Resolved since the 2026-07-16 pass above), and the **mandatory M1-slot speed-measurement
+task** now triggered by the 3-cycle carry-forward threshold above — this is the most
+actionable finding of this pass, since the prior two passes' open items are now fully
+closed.
