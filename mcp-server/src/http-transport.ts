@@ -18,7 +18,7 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { type CreateMcpServerOptions, createMcpServer } from "./mcp-server.ts";
@@ -26,7 +26,7 @@ import { type CreateMcpServerOptions, createMcpServer } from "./mcp-server.ts";
 const MCP_PATH = "/mcp";
 const SESSION_ID_HEADER = "mcp-session-id";
 
-export interface MountMcpHttpTransportOptions extends CreateMcpServerOptions {}
+export type MountMcpHttpTransportOptions = CreateMcpServerOptions;
 
 /**
  * Mount the MCP Streamable HTTP endpoint (`/mcp`) on `app`, handling
@@ -82,21 +82,15 @@ export function mountMcpHttpTransport(
     return transport.handleRequest(c.req.raw, { parsedBody });
   });
 
-  app.get(MCP_PATH, async (c) => {
+  const handleSessionRequest = async (c: Context): Promise<Response> => {
     const sessionId = c.req.header(SESSION_ID_HEADER);
     const transport = sessionId ? transports.get(sessionId) : undefined;
     if (!transport) {
       return new Response("Invalid or missing session ID", { status: 400 });
     }
     return transport.handleRequest(c.req.raw);
-  });
+  };
 
-  app.delete(MCP_PATH, async (c) => {
-    const sessionId = c.req.header(SESSION_ID_HEADER);
-    const transport = sessionId ? transports.get(sessionId) : undefined;
-    if (!transport) {
-      return new Response("Invalid or missing session ID", { status: 400 });
-    }
-    return transport.handleRequest(c.req.raw);
-  });
+  app.get(MCP_PATH, handleSessionRequest);
+  app.delete(MCP_PATH, handleSessionRequest);
 }
