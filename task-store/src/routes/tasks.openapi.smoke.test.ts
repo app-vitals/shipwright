@@ -141,29 +141,11 @@ function fakeTaskService(
   };
 }
 
-/** Build a typed parent app that injects admin context (agentId=null, repos=null). */
-function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
-  const parent = new OpenAPIHono<TaskStoreAuthEnv>();
-  parent.use("*", async (c, next) => {
-    c.set("agentId", null);
-    c.set("repos", null);
-    await next();
-  });
-  parent.onError((err, c) => {
-    if (err instanceof ApiError) {
-      return c.json({ error: err.message }, err.statusCode as 400);
-    }
-    return c.json({ error: "internal error" }, 500);
-  });
-  parent.route("/", app);
-  return parent;
-}
-
-/** Build a typed parent app that injects agent-token context (agentId set, scoped repos). */
-function makeAgentParent(
+/** Build a typed parent app that injects the given auth context (agentId, repos). */
+function makeParent(
   app: OpenAPIHono<TaskStoreAuthEnv>,
-  agentId: string,
-  repos: string[] | null = [],
+  agentId: string | null,
+  repos: string[] | null,
 ) {
   const parent = new OpenAPIHono<TaskStoreAuthEnv>();
   parent.use("*", async (c, next) => {
@@ -179,6 +161,20 @@ function makeAgentParent(
   });
   parent.route("/", app);
   return parent;
+}
+
+/** Build a typed parent app that injects admin context (agentId=null, repos=null). */
+function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
+  return makeParent(app, null, null);
+}
+
+/** Build a typed parent app that injects agent-token context (agentId set, scoped repos). */
+function makeAgentParent(
+  app: OpenAPIHono<TaskStoreAuthEnv>,
+  agentId: string,
+  repos: string[] | null = [],
+) {
+  return makeParent(app, agentId, repos);
 }
 
 describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
