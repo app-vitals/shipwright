@@ -1887,8 +1887,8 @@ describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by wo
   /**
    * Regression coverage for the finding on PR #1941: a client-side-filtered
    * `actions/runs?per_page=N` repo-wide fetch can miss the target workflow's
-   * real recent runs when unrelated workflows are noisy (confirmed live on
-   * vitals-os — bursts of unrelated workflow runs pushed a real "Promote to
+   * real recent runs when unrelated workflows are noisy (confirmed live in
+   * production — bursts of unrelated workflow runs pushed a real "Promote to
    * Prod" run outside a top-20 window). This asserts `ghListWorkflowRuns`
    * now resolves the workflow's id via the "list repo workflows" endpoint
    * and queries that workflow's own runs endpoint — server-side scoped, so a

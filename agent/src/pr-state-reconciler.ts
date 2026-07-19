@@ -1036,8 +1036,8 @@ export function buildProductionDeps(opts: {
       listTasksByStatus("deploying", limit, offset),
     // Server-side scoped by workflow (fixes a live bug: a client-side-filtered
     // `actions/runs?per_page=N` repo-wide fetch can miss the target workflow
-    // entirely when unrelated workflows are noisy — confirmed live on
-    // vitals-os, e.g. bursts of "Bump Shipwright Chart" runs pushing a real
+    // entirely when unrelated workflows are noisy — confirmed live in
+    // production, e.g. bursts of "Bump Shipwright Chart" runs pushing a real
     // "Promote to Prod" run outside a top-20 window). GitHub's workflow-scoped
     // runs endpoint (`actions/workflows/{workflow_id_or_file_name}/runs`)
     // requires a numeric workflow id or the workflow file's basename — NOT
