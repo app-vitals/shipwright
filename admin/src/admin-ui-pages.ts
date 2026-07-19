@@ -3097,23 +3097,23 @@ export function renderCronLogsPage(opts: {
 
     <div class="card">
       <div class="data-table-wrapper">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Outcome</th>
-            <th>Cron</th>
-            <th>Started</th>
-            <th>Duration</th>
-            <th class="col-tokens">Tokens</th>
-            <th class="col-model">Model</th>
-            <th>Phase</th>
-            <th>Item</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${bodyRows}
-        </tbody>
-      </table>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Outcome</th>
+              <th>Cron</th>
+              <th>Started</th>
+              <th>Duration</th>
+              <th class="col-tokens">Tokens</th>
+              <th class="col-model">Model</th>
+              <th>Phase</th>
+              <th>Item</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+          </tbody>
+        </table>
       </div>
       ${paginationHtml}
     </div>
