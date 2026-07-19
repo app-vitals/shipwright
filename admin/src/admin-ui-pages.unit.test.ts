@@ -10,8 +10,6 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
-  computeDependencyLayout,
-  computeDependencyNodes,
   type CronJobItem,
   type CronRunItem,
   type DependencyNode,
@@ -23,6 +21,8 @@ import {
   type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
+  computeDependencyLayout,
+  computeDependencyNodes,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatPage,
@@ -2890,7 +2890,33 @@ describe("renderPrsPage", () => {
     expect(html).toContain("Review State");
     expect(html).toContain("Patch Cycles");
     expect(html).toContain("Claimed By");
-    expect(html).toContain("Updated");
+    expect(html).toContain("Created");
+  });
+
+  test("table markup is wrapped in .data-table-wrapper", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain('<div class="data-table-wrapper">');
+  });
+
+  test("Created column renders pr.createdAt, not pr.updatedAt", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    // PR_LIST_ITEM_1 has distinct createdAt (09:00) and updatedAt (10:00) values.
+    const createdFormatted = new Date(
+      PR_LIST_ITEM_1.createdAt as string,
+    ).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "America/Los_Angeles",
+    });
+    const updatedFormatted = new Date(
+      PR_LIST_ITEM_1.updatedAt as string,
+    ).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(html).toContain(createdFormatted);
+    expect(html).not.toContain(updatedFormatted);
   });
 
   test("Claimed By cell links to the claiming agent's detail page", () => {
