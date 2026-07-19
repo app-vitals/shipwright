@@ -787,24 +787,50 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
-- **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
+- **DONE**: Record the findings addressed. A `DONE` status always followed a push (no-push
+  cycles only ever report `DONE_WITH_CONCERNS` per Step 5b Instructions [D]), so this cycle
+  does not qualify for the `reviewState` reset:
+  ```bash
+  NO_PUSH_REBUTTAL_CONFIRMED=false
+  ```
+  Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
   Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
-  whether that was the *only* outcome (the all-REJECT, no-diff path) or one branch of a
-  mixed ACCEPT+REJECT run where a push also happened), confirm the subagent's CONCERNS
-  text reports both that it already posted the required `gh pr comment` rebuttal AND that
-  it resolved the inline threads for the REJECTed findings. Both are needed — the rebuttal
-  activates the `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but
+  whether every finding in the run was REJECTed with no push at all, one branch of a mixed
+  ACCEPT+REJECT run where a push also happened, or a mixed run where no push happened
+  because every ACCEPTED/MODIFIED finding in that run resolved to a zero-diff no-op
+  alongside the REJECTed one(s)), confirm the subagent's CONCERNS text reports both that it
+  already posted the required `gh pr comment` rebuttal AND that it resolved the inline
+  threads for the REJECTed findings. Both are needed — the rebuttal activates the
+  `isAddressedByAuthorReply` escape hatch in `check-patch.ts`, but
   `hasUnaddressedFindings()` short-circuits to `true` on any unresolved inline thread before
   that escape hatch is even consulted, so the threads must also be resolved or the review
   stops being reflagged only for body-level findings, not inline ones (the common case).
   Do not post the comment here or resolve the threads here; Step 5c only verifies it
   already happened. If the report doesn't confirm both, treat it as a concern in the final
-  report (the reflagging loop will otherwise persist via this mixed-case path, not just the
-  all-REJECT path). For other, non-REJECT correctness-gap concerns, just log them in the
-  report. Either way, proceed to Step 5c.5 (upsert PR record) if a push happened (mixed
-  case — there IS a new commit SHA to record); skip Step 5c.5 only in the all-REJECT,
-  no-push case (there is no new commit SHA to record).
+  report (the reflagging loop will otherwise persist regardless of which no-push variant
+  produced it). For other, non-REJECT correctness-gap concerns, just log them in the
+  report. Either way, always proceed to Step 5c.5 (upsert PR record) — when a push happened
+  there IS a new commit SHA to record, and when no push happened Step 5c.5 still needs to
+  run so it can reset `reviewState` to `pending` (see below), even though there is no new
+  commit SHA. Carry forward into Step 5c.5 whether this cycle had no push
+  (`HEAD_SHA_POST_PATCH` unchanged from before dispatch) with at least one REJECTed finding
+  rebuttal-confirmed — regardless of whether every finding in the run was REJECTed — that's
+  the condition that gates the `reviewState` reset there. Make this explicit by setting
+  `NO_PUSH_REBUTTAL_CONFIRMED` before proceeding to Step 5c.5:
+  ```bash
+  if [ "$HEAD_SHA_POST_PATCH" = "$HEAD_SHA_PRE_PATCH" ] && \
+     [ <at least one REJECTed finding this cycle, with rebuttal comment posted and its
+        inline thread(s) resolved, per the confirmation check above> ]; then
+    NO_PUSH_REBUTTAL_CONFIRMED=true
+  else
+    NO_PUSH_REBUTTAL_CONFIRMED=false
+  fi
+  ```
+  The second condition is a judgment call from the subagent's STATUS/CONCERNS report, not a
+  literal shell test — evaluate it the same way you just evaluated the "confirm ... rebuttal
+  ... AND ... resolved the inline threads" check earlier in this bullet, then set the
+  variable accordingly before Step 5c.5 reads it.
 - **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
   run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
   never completed, so nothing is actually in flight:
@@ -835,10 +861,30 @@ if [ -n "$PR_RECORD_ID" ]; then
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
     -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
+  if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]; then
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+      -d '{"reviewState": "pending"}' > /dev/null 2>&1 || \
+      echo "⚠ PATCH /prs/$PR_RECORD_ID reviewState reset failed — continuing"
+  fi
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
+
+`NO_PUSH_REBUTTAL_CONFIRMED` is assigned in Step 5c, before this step runs — see there for
+the exact condition. It does not require every finding in the run to be REJECTed — a mixed
+run where the ACCEPTED/MODIFIED findings all resolved to zero-diff no-ops still qualifies,
+since what matters for the commit-SHA-based dedup is whether the SHA actually changed, not
+how the findings were classified. The rest of this paragraph is the "why": in this no-push
+case, `headRefOid` never changes, so without this reset the PR's `reviewState` would stay
+at whatever the prior review left it and the PR could never re-qualify as a review
+candidate in `check-review.ts`'s dedup — resetting it to `pending` here makes it re-qualify
+despite the unchanged commit SHA, so a fresh review can evaluate the rebuttal and post an
+actual APPROVE. Any cycle where a push did happen re-qualifies naturally via the changed
+commit SHA, so the `reviewState` reset must not fire there.
 
 Proceed to Step 5d (cleanup).
 
