@@ -93,6 +93,26 @@ No cross-runner discovery gaps found. This is a point-in-time confirmation, not 
 enforced regression test — the automated guard against doc/config drift is
 `plugins/shipwright/test/test-naming-convention.content.test.ts`, described above.
 
+**Re-confirmed (T-068):** re-ran the isolation check per-entry-point, since Phase 2/3
+rename work landed since T-048:
+
+- `bun test`'s default scan discovered 226 files / 331 tests with zero `*.spec.ts`,
+  `*.e2e.ts`, or `*.canary.test.ts` matches — confirmed via the file list Bun itself
+  reports, not just static glob inspection.
+- `bunx playwright test --list` against `metrics/playwright.config.ts` discovered 31
+  tests in exactly 1 file (`dashboard.e2e.ts`); against `admin/playwright.config.ts`, 21
+  tests in exactly 2 files (`agents-page.e2e.ts`, `login-page.e2e.ts`) — no
+  unit/integration/smoke/content file picked up by either.
+- `site/tests/` still contains only `*.spec.ts` files (12) plus the non-test
+  `helpers.ts` — no bare `*.test.ts` file present.
+- Coverage (`bun test --coverage`) has no separate `pathIgnorePatterns` — it reuses the
+  same `[test]` config, so it inherits the same zero-bleed isolation as the `bun test`
+  scan above.
+- `plugins/shipwright/test/test-naming-convention.content.test.ts` (the automated
+  regression guard) passes: 11/11 tests.
+
+Still no cross-runner discovery gaps.
+
 ## Collision rules
 
 1. **One suffix per file.** A test file must match exactly one row in the suffix table.
