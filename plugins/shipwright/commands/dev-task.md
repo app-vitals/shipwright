@@ -52,8 +52,8 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   there — no separate orphan-recovery path is needed here. Record `task_started_at` (current
   ISO timestamp) for metrics.
 - **Found, `status == "pending"`**: check dependency satisfaction before claiming (see
-  "Dependency Check" below). If satisfied, proceed to Step 2's Mark In-Progress with this
-  task.
+  "Dependency Check" below). If satisfied, run the Same-Branch Sibling Check (below), then
+  proceed to Step 2's Mark In-Progress with this task.
 - **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
   `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
 
@@ -105,8 +105,15 @@ the prerequisite. This applies regardless of this task's own status.
 
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}&status=in_progress" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}&status=in_progress&repo={repo}" | jq '.tasks'
 ```
+
+Scoping by `{repo}` matters for repo-scoped agent tokens: the task-store's list handler
+filters those via `agentScope: { agentId, repos }` — an OR union across every repo in the
+token's scope, not a single repo. An unscoped `branch`+`status` query from an agent whose
+token spans multiple repos could match an in_progress task on an identically-named branch in
+a different scoped repo, causing a false-positive deferral. `?repo=` applies as an additional
+AND condition on top of `agentScope`'s OR, narrowing correctly to this task's own repo.
 
 Exclude this task's own `{id}` from the results — a task's own in_progress claim is not a
 sibling. For each remaining same-branch task, determine freshness using the same two-case
