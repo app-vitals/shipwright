@@ -45,16 +45,28 @@ full-suite flakes (unrelated to layer/speed, not relevant to this audit).
 
 | Bucket | Test count | Infra count | Effort |
 |---|---|---|---|
-| Reuse as-is | ~232 | 6 | — |
+| Reuse as-is | ~234 | 6 | — |
 | Promote / deepen | 0 | 0 | — |
 | Rebuild | 0 | 0 | — |
 | Trim (redundant assertion) | 0 | 0 | — |
-| Net-new | 3 | 0 | small each |
+| Net-new | 1 | 0 | small |
 
-**Total existing test files discovered:** 111 unit + 53 integration + 39 smoke + 23
-content = 226 `bun test`-scanned files, + 12 `site/` Playwright `*.spec.ts` + 3 Playwright
-`*.e2e.ts` (2 `admin/e2e/`, 1 `metrics/e2e/`) = **241 test files total** — up from 224 at
-the last pass (+17, matching Phase 1's "~17 new source files" delta almost file-for-file).
+**Total existing test files discovered:** 111 unit + 54 integration + 40 smoke + 23
+content = 228 `bun test`-scanned files, + 12 `site/` Playwright `*.spec.ts` + 3 Playwright
+`*.e2e.ts` (2 `admin/e2e/`, 1 `metrics/e2e/`) = **243 test files total** — up from 224 at
+the last pass (+19, 2 of which — `admin/src/agent-work-queue.integration.test.ts` (#1933)
+and `admin/src/server.smoke.test.ts` (#1935) — landed on `main` after this pass's audit was
+written and are folded in here via the `main` merge; see Update note below).
+
+**Update (merged from `main`, 2026-07-19):** both of this pass's originally-flagged
+Net-new gaps — `admin/src/agent-work-queue.ts` integration coverage and `admin/src/server.ts`'s
+thin composition smoke test — landed on `main` as T-069 (PR #1933) and T-070 (PR #1935)
+while this branch was open. Verified directly against the merged tree: both files exist,
+match the prescribed layer and scope from the Net-new table below (single Prisma-backed
+upsert/read pair for the former; one thin "mounts correctly" smoke test for the latter, not
+a re-test of every sub-app route). Reuse-as-is and Net-new bucket counts above are updated
+accordingly — only `admin/src/clock.ts` (low-priority, optional per the repo's own
+`Clock`-file convention) remains open.
 
 **Headline finding: every open item from the 2026-07-16 report is now closed.** All 6
 net-new tests, both promote/rename fixes, and both of the two net-new infra items from the
@@ -63,8 +75,8 @@ prior pass exist on this branch today (verified by direct file read, not assumed
 exists under its actual (uppercase) name, `.github/PULL_REQUEST_TEMPLATE.md`; see
 Resolved-since-last-pass below. The suite continues to track its own blueprint closely —
 of the ~17 new source files introduced since the last inventory, all but 3 already have
-matching test coverage at the correct layer. See Resolved-since-last-pass and Net-new
-sections below.
+matching test coverage at the correct layer, and both of those 3 gaps are now closed too
+(see Update note above). See Resolved-since-last-pass and Net-new sections below.
 
 ## Resolved since the 2026-07-16 pass
 
@@ -82,10 +94,12 @@ Verified directly against the current tree (not carried forward from memory):
 | `lib/task-store-types.integration.test.ts` — misfiled (no real I/O) | promote (rename) | **Resolved.** File now exists as `lib/task-store-types.unit.test.ts`. |
 | `shipwright_chat_test` Postgres provisioning in `ci.yml` | net-new infra | **Resolved.** `ci.yml` line 112 sets `DATABASE_URL_SHIPWRIGHT_CHAT`; `CREATE DATABASE shipwright_chat_test` and `prisma migrate deploy --schema=chat/prisma/schema.prisma` steps are present. |
 | `.github/pull_request_template.md` does not exist | net-new infra (carried from Phase 2) | **Resolved — false premise.** The file exists at `.github/PULL_REQUEST_TEMPLATE.md` (916 bytes); the "not found" verdict came from a case-sensitive `ls .github/pull_request_template.md` check that missed the actual (uppercase) filename. See `test-readiness-plan.md`'s correction (Task T-050, PR #1684). Not a test-file gap; no further action needed. |
+| `admin/src/agent-work-queue.ts` integration coverage | net-new, medium | **Resolved.** `admin/src/agent-work-queue.integration.test.ts` landed on `main` as T-069 (PR #1933) while this branch was open; folded in via the `main` merge. |
+| `admin/src/server.ts` composition smoke test | net-new, medium | **Resolved.** `admin/src/server.smoke.test.ts` landed on `main` as T-070 (PR #1935) while this branch was open; folded in via the `main` merge — a single thin "mounts correctly" test, matching Phase 2's scoping. |
 
 ## Isolation contract audit
 
-Grepped the full current suite (241 files) for the three hard-rule signals from root
+Grepped the full current suite (243 files) for the three hard-rule signals from root
 `CLAUDE.md`'s Test isolation section and `references/principles.md`'s `t1_no_global_mocking`:
 
 | Signal | Files matched | Real violations |
@@ -125,7 +139,7 @@ not re-read in full where unchanged.
 | `lib/` | `pricing`, `org-repo`, `request-context`, `sentry`, `web/toolbar`, `claim-ttl`, `task-store-types` (`.unit.test.ts`) | unit | Cross-service pure helpers | `claim-ttl.unit.test.ts` (new since 2026-07-16) covers `DEFAULT_CLAIM_TTL_MS` and related constants — matches Phase 1's critical ranking. |
 | `metrics/src/*` | ~9 top-level + ~6 `lib/` (incl. new `task-store-client.integration.test.ts`) + 2 `providers/` + 1 `dashboard/` | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes | Recorded-fixture integration gap for `HttpTaskStoreClient` (flagged net-new last pass) is now closed. |
 | `agent/src/*` | ~44 files (incl. new `chat-poller.{unit,integration}`, `cron-failure-reporter.unit`, `agent-repos-ref.unit`, `loop-jobs-ref.unit`, `piper-voice.unit`, `work-queue-reporter.unit`) | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, new chat-poller loop | All new client/service wrappers use injected fetch/spawn doubles or a `Clock`, consistent with the isolation contract. `chat-poller.integration.test.ts` mirrors `loop-orchestrator.integration.test.ts`'s established pattern (real `Bun.serve()` stub, no `mock.module()`). |
-| `admin/src/*` | ~50 files (incl. new `agent-chat-tokens.{integration,smoke}`) | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup | `agent-chat-tokens.integration.test.ts` correctly exercises the atomic-upsert daily-rollup logic against real Postgres; `agent-chat-tokens.smoke.test.ts` covers its routed surface — non-duplicative. |
+| `admin/src/*` | ~52 files (incl. new `agent-chat-tokens.{integration,smoke}`, `agent-work-queue.integration.test.ts` (T-069, PR #1933), `server.smoke.test.ts` (T-070, PR #1935)) | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup, work-queue snapshots, server composition | `agent-chat-tokens.integration.test.ts` correctly exercises the atomic-upsert daily-rollup logic against real Postgres; `agent-chat-tokens.smoke.test.ts` covers its routed surface — non-duplicative. `agent-work-queue.integration.test.ts` and `server.smoke.test.ts` landed on `main` after this pass's audit was written and are folded in here via the merge — both close out this pass's only two Net-new items (see Update note above). `server.smoke.test.ts` verifies composition of the admin app factories once mounted together as the root app, per Phase 2's thin-smoke-test scoping. |
 | `task-store/src/*` | ~24 files (incl. new `ready.unit`, `statuses.unit`, `claim-ttl-buffer-check.unit`) | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | Both zero-coverage items flagged in the 2026-07-16 report (`ready.ts`, `statuses.ts`) are now covered. |
 | `chat/src/*` | 10 files (incl. new `{message,thread,token}-service.integration.test.ts`, `generate-spec.unit.test.ts`) | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator | The chat DB-integration gap flagged at both Phase 1 and the 2026-07-16 migration pass is fully closed — service-layer integration tests exist and `ci.yml` provisions `shipwright_chat_test`. |
 | `mcp-server/src/*` | 5 files | unit/smoke | Tool allowlist, tool-caller proxy, MCP wire protocol | Unchanged from last pass. |
@@ -152,13 +166,14 @@ None. See Trim analysis above.
 
 ### Net-new
 
-Sorted by inventory criticality (all remaining items are low-to-medium; nothing critical
-or high is uncovered this pass, a first for this pipeline's three runs to date).
+Sorted by inventory criticality. Both medium-criticality items this pass originally
+flagged (`agent-work-queue.ts`, `server.ts`) landed on `main` as T-069/T-070 while this
+branch was open and are now folded in via the `main` merge — see Update note in the
+Summary section and Resolved-since-last-pass above. Only the low-priority, optional
+`admin/src/clock.ts` item remains open.
 
 | Inventory item | Prescribed layer | Criticality | Estimated effort |
 |---|---|---|---|
-| `admin/src/agent-work-queue.ts` (`AgentWorkQueueService` — per-agent work-queue snapshot upsert/read) | integration | medium | small — single Prisma-backed upsert/read pair, one happy-path + one no-snapshot-yet case, same shape as `agent-chat-tokens.integration.test.ts`'s already-landed sibling |
-| `admin/src/server.ts` (composition entrypoint mounting `admin-ui.ts` + `agents-api.ts` + `api.ts`) | smoke | medium | small — Phase 2 explicitly scopes this to **one thin "mounts correctly" smoke test**, not a re-test of every sub-app route (flagged in Phase 2's gaps-summary item 6 to prevent over-scoping) |
 | `admin/src/clock.ts` (new `Clock`/`SystemClock`/`FixedClock` implementation for admin) | unit | low | trivial, optional — the three sibling `Clock` files (`agent/src/clock.ts`, `metrics/src/lib/clock.ts`, `plugins/shipwright/scripts/clock.ts`) all lack a dedicated test file too; this is near-zero logic (two one-line methods) and the repo's own established convention is to leave these untested directly, proven correct via consumers. Listed for completeness per Step 2's exhaustive discovery, not because it's an actual coverage risk. |
 
 ## Infrastructure — bucketed
@@ -202,12 +217,12 @@ None.
 
 ### Net-new
 
-- **`admin/src/agent-work-queue.ts` integration test** — the test-file half of the
-  Net-new items table above; listed here too per Step 6's "bucket the infrastructure"
-  instruction, since the fixture/seed pattern it needs (a test-agent factory) is called
-  out in Phase 2's Shared helpers section as something Phase 3 should confirm exists —
-  it does, colocated builder functions are already the pattern in `admin/src/agent-envs.integration.test.ts`
-  and siblings; no new shared helper is needed for this net-new test.
+None remaining. The `admin/src/agent-work-queue.ts` integration test previously listed
+here (the test-file half of the Net-new items table above) landed on `main` as T-069
+(PR #1933) while this branch was open — the fixture/seed pattern it needed (a test-agent
+factory) is the same colocated-builder-function pattern already used in
+`admin/src/agent-envs.integration.test.ts` and siblings, confirmed present, so no new
+shared helper was needed.
 
 `.github/pull_request_template.md` is no longer listed here — corrected this pass and
 moved to Resolved since the 2026-07-16 pass above; the file exists under its actual
