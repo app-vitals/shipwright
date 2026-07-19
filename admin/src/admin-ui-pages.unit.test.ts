@@ -80,6 +80,7 @@ const SYSTEM_CRON: CronJobItem = {
   system: true,
   parentCronId: null,
   preCheck: "shipwright:check-dev-task.ts",
+  createdAt: new Date("2024-02-01T00:00:00Z"),
 };
 
 const CUSTOM_CRON: CronJobItem = {
@@ -92,18 +93,21 @@ const CUSTOM_CRON: CronJobItem = {
   name: null,
   system: false,
   parentCronId: null,
+  createdAt: new Date("2024-02-15T00:00:00Z"),
 };
 
 const TOOL_ENABLED: ToolItem = {
   id: "tool-1",
   pattern: "Bash(git:*)",
   enabled: true,
+  createdAt: new Date("2024-03-05T00:00:00Z"),
 };
 
 const TOOL_DISABLED: ToolItem = {
   id: "tool-2",
   pattern: "Read(**)",
   enabled: false,
+  createdAt: new Date("2024-03-06T00:00:00Z"),
 };
 
 const TOKEN_ACTIVE: TokenItem = {
@@ -125,6 +129,7 @@ const PLUGIN_ENABLED: PluginItem = {
   name: "shipwright",
   version: "1.2.3",
   enabled: true,
+  createdAt: new Date("2024-04-01T00:00:00Z"),
 };
 
 const PLUGIN_DISABLED: PluginItem = {
@@ -132,6 +137,7 @@ const PLUGIN_DISABLED: PluginItem = {
   name: "entropy-patrol",
   version: null,
   enabled: false,
+  createdAt: new Date("2024-04-02T00:00:00Z"),
 };
 
 const USER_NAME = "alice";
@@ -393,6 +399,24 @@ describe("renderAgentDetailPage — members section", () => {
     expect(html).toContain("No members yet");
   });
 
+  test("Members table is wrapped in .data-table-wrapper", () => {
+    const html = renderAgentDetailPage(
+      AGENT,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [MEMBER],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Email<\/th>/,
+    );
+  });
+
   test("XSS: member email is escaped", () => {
     const xssMember: MemberItem = {
       id: "m-xss",
@@ -623,6 +647,13 @@ describe("renderAgentDetailPage — env vars", () => {
     expect(html).not.toContain("<img src=x");
     expect(html).not.toContain("onerror=alert");
     expect(html).toContain("••••••••");
+  });
+
+  test("Env Vars table is wrapped in .data-table-wrapper", () => {
+    const html = render(ENV_VARS);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Key<\/th>/,
+    );
   });
 });
 
@@ -855,6 +886,47 @@ describe("renderAgentDetailPage — crons", () => {
     expect(html).toContain(">skipped<");
     expect(html).not.toContain(">unknown<");
   });
+
+  test("System Crons table is wrapped in .data-table-wrapper", () => {
+    const html = render([SYSTEM_CRON]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Schedule<\/th>/,
+    );
+  });
+
+  test("Custom Crons table is wrapped in .data-table-wrapper", () => {
+    const html = render([CUSTOM_CRON]);
+    // Both System and Custom crons tables share the same header shape —
+    // assert there are two independent wrapper+table+Schedule occurrences.
+    const matches = html.match(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Schedule<\/th>/g,
+    );
+    expect(matches?.length).toBe(2);
+  });
+
+  test("System/Custom Crons table has a 'Created' column header", () => {
+    const html = render([SYSTEM_CRON]);
+    const createdHeaderCount = (
+      html.match(/<th class="col-created">Created<\/th>/g) ?? []
+    ).length;
+    expect(createdHeaderCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test("System/Custom Crons table still has 'Last run' column header alongside Created", () => {
+    const html = render([SYSTEM_CRON]);
+    expect(html).toContain("<th>Last run</th>");
+    expect(html).toContain('<th class="col-created">Created</th>');
+  });
+
+  test("cron createdAt renders in the Created column", () => {
+    const html = render([SYSTEM_CRON]);
+    // SYSTEM_CRON.createdAt = 2024-02-01T00:00:00Z formatted en-US/UTC
+    expect(html).toContain(
+      new Date(SYSTEM_CRON.createdAt).toLocaleDateString("en-US", {
+        timeZone: "UTC",
+      }),
+    );
+  });
 });
 
 // ─── renderAgentDetailPage — tools section ───────────────────────────────────
@@ -925,6 +997,27 @@ describe("renderAgentDetailPage — tools", () => {
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain(">alert(1)<");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("Tools table is wrapped in .data-table-wrapper", () => {
+    const html = render([TOOL_ENABLED]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Pattern<\/th>/,
+    );
+  });
+
+  test("Tools table has a 'Created' column header", () => {
+    const html = render([TOOL_ENABLED]);
+    expect(html).toContain("<th>Created</th>");
+  });
+
+  test("tool createdAt renders in the Created column", () => {
+    const html = render([TOOL_ENABLED]);
+    expect(html).toContain(
+      new Date(TOOL_ENABLED.createdAt).toLocaleDateString("en-US", {
+        timeZone: "UTC",
+      }),
+    );
   });
 });
 
@@ -1011,6 +1104,13 @@ describe("renderAgentDetailPage — tokens", () => {
     expect(html).not.toContain(">steal()<");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  test("Task Store Tokens table is wrapped in .data-table-wrapper", () => {
+    const html = render([TOKEN_ACTIVE]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Label<\/th>/,
+    );
+  });
 });
 
 // ─── renderAgentDetailPage — plugins section ─────────────────────────────────
@@ -1072,6 +1172,27 @@ describe("renderAgentDetailPage — plugins", () => {
     // The raw XSS payload must not appear unescaped in the output
     expect(html).not.toContain(">bad()<");
     expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("Plugins table is wrapped in .data-table-wrapper", () => {
+    const html = render([PLUGIN_ENABLED]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Package<\/th>/,
+    );
+  });
+
+  test("Plugins table has a 'Created' column header", () => {
+    const html = render([PLUGIN_ENABLED]);
+    expect(html).toContain("<th>Created</th>");
+  });
+
+  test("plugin createdAt renders in the Created column", () => {
+    const html = render([PLUGIN_ENABLED]);
+    expect(html).toContain(
+      new Date(PLUGIN_ENABLED.createdAt).toLocaleDateString("en-US", {
+        timeZone: "UTC",
+      }),
+    );
   });
 });
 
@@ -1740,6 +1861,13 @@ describe("renderAgentDetailPage — repos", () => {
     const html = render(["my-org/my-repo"]);
     expect(html).toContain(`action="/admin/agents/${AGENT.id}/repos/delete"`);
     expect(html).toContain('value="my-org/my-repo"');
+  });
+
+  test("Repos table is wrapped in .data-table-wrapper", () => {
+    const html = render(["my-org/my-repo"]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Repo<\/th>/,
+    );
   });
 });
 
