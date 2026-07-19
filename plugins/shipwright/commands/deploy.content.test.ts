@@ -10,6 +10,22 @@ beforeAll(() => {
   content = readFileSync(DEPLOY_MD_PATH, "utf-8");
 });
 
+function extractStep5aSection(md: string): string {
+  const match = md.match(
+    /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+function extractStep5bSection(md: string): string {
+  const match = md.match(
+    /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");
@@ -267,14 +283,6 @@ describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
-  function extractStep5bSection(md: string): string {
-    const match = md.match(
-      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5b's polling implementation uses a chained in-Bash sleep loop (shell for-loop + sleep 60)", () => {
     const step5bSection = extractStep5bSection(content);
     expect(step5bSection).toContain("sleep 60");
@@ -325,14 +333,6 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
-  function extractStep5aSection(md: string): string {
-    const match = md.match(
-      /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
     const step5aSection = extractStep5aSection(content);
     expect(step5aSection).toContain("sleep 30");
@@ -378,22 +378,6 @@ describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
 });
 
 describe("deploy.md — read target repo's Deploy model before polling (DPS-2.1)", () => {
-  function extractStep5aSection(md: string): string {
-    const match = md.match(
-      /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
-  function extractStep5bSection(md: string): string {
-    const match = md.match(
-      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5a instructs the agent to check the target repo's CLAUDE.md 'Deploy model' section before polling", () => {
     const step5aSection = extractStep5aSection(content);
     expect(step5aSection).toContain("CLAUDE.md");
