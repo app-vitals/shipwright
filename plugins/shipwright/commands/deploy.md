@@ -277,6 +277,14 @@ Then print and stop:
   Check the PR on GitHub — it may require a human to resolve a merge conflict or branch protection issue.
 ```
 
+**Do not PATCH the task to `status: "blocked"` here.** A merge conflict is routine and
+self-recoverable — `check-patch.ts`'s candidate logic already detects any `DIRTY` PR
+independent of task status and fixes it automatically, no human required. Marking the task
+`blocked` would hide it from `check-deploy.ts`'s candidate list (which explicitly skips PRs
+whose linked task is `blocked`) even after patch resolves the conflict, stranding it until a
+human notices and corrects the record by hand. Leave the task's status exactly as it was;
+`check-deploy.ts` will reconsider the PR once `mergeStateStatus` clears.
+
 Print:
 ```
 ✓ Merged PR #{pr} → main
