@@ -493,6 +493,7 @@ export function createTasksRoutes(
     const result = await taskService.list({
       status: c.req.query("status"),
       state,
+      source: c.req.query("source"),
       session: c.req.query("session"),
       repo: c.req.query("repo"),
       claimedBy: c.req.query("claimedBy"),

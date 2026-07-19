@@ -377,6 +377,7 @@ export const TaskListQuerySchema = z.object({
     .enum(["open", "closed", "in_progress", "ready", "blocked"])
     .optional()
     .openapi({ example: "open" }),
+  source: z.string().optional().openapi({ example: "entropy-fix" }),
   session: z.string().optional().openapi({ example: "session-123" }),
   repo: z.string().optional().openapi({ example: "org/repo" }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),
