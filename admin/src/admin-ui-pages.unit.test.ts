@@ -5015,6 +5015,79 @@ describe("renderSessionDetailPage dependency graph", () => {
     expect(edges).toContainEqual(["TASK-CHILD-1", "TASK-SINK"]);
     expect(edges).toContainEqual(["TASK-CHILD-2", "TASK-SINK"]);
   });
+
+  test("graph is wrapped in .data-table-wrapper for horizontal scroll on mobile", () => {
+    const root: TaskItem = {
+      id: "TASK-ROOT",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const dependent: TaskItem = {
+      id: "TASK-DEP",
+      title: "Depends on root",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-ROOT"],
+      blockedBy: [{ type: "dependency", id: "TASK-ROOT", status: "pending" }],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [root, dependent],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+    expect(section).toMatch(
+      /<div class="data-table-wrapper">\s*<div style="position:relative;/,
+    );
+  });
+
+  test("2-depth-column graph: wrapper (not inner graph div) carries overflow-x:auto, and inner width exceeds a phone viewport", () => {
+    const root: TaskItem = {
+      id: "TASK-A",
+      title: "Root",
+      status: "pending",
+      session: SESSION_ID,
+      blockedBy: [],
+    };
+    const dependent: TaskItem = {
+      id: "TASK-B",
+      title: "Depends on A",
+      status: "pending",
+      session: SESSION_ID,
+      dependencies: ["TASK-A"],
+      blockedBy: [{ type: "dependency", id: "TASK-A", status: "pending" }],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [root, dependent],
+      USER_NAME,
+    );
+    const section = graphSection(html);
+
+    // Wrapper carries the (class-based) overflow-x:auto; the inner graph div
+    // is exactly sized to its own content and must not duplicate it inline.
+    expect(section).toContain('<div class="data-table-wrapper">');
+    const innerDivMatch = section.match(
+      /<div style="position:relative;[^"]*"/,
+    );
+    expect(innerDivMatch).not.toBeNull();
+    expect(innerDivMatch?.[0]).not.toContain("overflow-x:auto");
+
+    // Confirm this is genuinely a 2-depth-column graph whose width exceeds a
+    // 375px phone viewport, so the wrapper's scroll is actually needed.
+    const layout = computeDependencyLayout(
+      computeDependencyNodes([root, dependent]),
+    );
+    const depths = [...layout.positions.values()].map((p) => p.depth);
+    const numColumns = new Set(depths).size;
+    expect(numColumns).toBe(2);
+    expect(layout.width).toBe(
+      40 * 2 + numColumns * 220 + (numColumns - 1) * 100,
+    );
+    expect(layout.width).toBeGreaterThan(375);
+  });
 });
 
 // ─── computeDependencyLayout ──────────────────────────────────────────────────
