@@ -575,8 +575,8 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
 - **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
   `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
   — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
-  directly to Step 5b (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same
-  as the self-claim path).
+  to Step 5a.7 (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same as the
+  self-claim path).
 - **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
   orchestrator's claim and now) **or no marker present**: fall back to self-claiming
   exactly as today — run the claim below unchanged.
