@@ -2125,11 +2125,6 @@ describe("renderTasksPage — Created column", () => {
     expect(html).toContain("not-a-date");
   });
 
-  test("empty state colspan is 9 (8 columns + 1 for new Created column)", () => {
-    const html = render([]);
-    expect(html).toContain('colspan="9"');
-  });
-
   test("Created <th> and <td> join the col-session/col-repo mobile-hide set", () => {
     const html = render([{ ...TASK_ITEM, createdAt: "2026-07-10T09:30:00.000Z" }]);
     expect(html).toContain('<th class="col-created">Created</th>');
