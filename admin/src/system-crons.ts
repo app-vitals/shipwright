@@ -27,7 +27,7 @@ export interface SystemCron {
 export const SYSTEM_CRONS: readonly SystemCron[] = [
   {
     name: "shipwright-dev-task",
-    schedule: "0,30 * * * *",
+    schedule: "* * * * *",
     prompt: "/shipwright:dev-task",
     silent: true,
     enabled: true,
@@ -35,7 +35,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
   },
   {
     name: "shipwright-patch",
-    schedule: "5,35 * * * *",
+    schedule: "* * * * *",
     prompt: "/shipwright:patch",
     silent: true,
     enabled: true,
@@ -43,7 +43,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
   },
   {
     name: "shipwright-review",
-    schedule: "15,45 * * * *",
+    schedule: "* * * * *",
     prompt: "/shipwright:review",
     silent: true,
     enabled: true,
@@ -51,7 +51,7 @@ export const SYSTEM_CRONS: readonly SystemCron[] = [
   },
   {
     name: "shipwright-deploy",
-    schedule: "20,50 * * * *",
+    schedule: "* * * * *",
     prompt: "/shipwright:deploy",
     silent: true,
     enabled: false,
