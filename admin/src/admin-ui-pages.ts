@@ -1565,6 +1565,7 @@ export function renderTasksPage(
   opts?: { error?: string; agentFilterActive?: boolean },
   suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
   readOnly = false,
+  timezone = "America/Los_Angeles",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -1625,7 +1626,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="8" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="9" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -1641,6 +1642,20 @@ export function renderTasksPage(
                 : t.prUrl
                   ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
                   : '<span style="color:#9ca3af">—</span>';
+            const createdCell = t.createdAt
+              ? escapeHtml(
+                  (() => {
+                    const d = new Date(t.createdAt as string);
+                    return Number.isNaN(d.getTime())
+                      ? (t.createdAt as string)
+                      : d.toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                          timeZone: timezone,
+                        });
+                  })(),
+                )
+              : '<span style="color:#9ca3af">—</span>';
             const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
             return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
@@ -1656,6 +1671,7 @@ export function renderTasksPage(
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
+    <td class="col-created" style="font-size:12px">${createdCell}</td>
     ${
       readOnly
         ? ""
@@ -1817,6 +1833,7 @@ export function renderTasksPage(
               <th class="col-session">Session</th>
               <th class="col-repo">Repo</th>
               <th>PR</th>
+              <th class="col-created">Created</th>
               <th></th>
             </tr>
           </thead>

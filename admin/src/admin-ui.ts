@@ -2082,6 +2082,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           agentFilterActive: agentFilterIds !== null,
         },
         suggestions,
+        false,
+        timezone,
       ),
     );
   });
@@ -2833,6 +2835,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         undefined,
         undefined,
         true, // readOnly
+        timezone,
       ),
     );
   });

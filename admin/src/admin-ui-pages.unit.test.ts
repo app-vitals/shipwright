@@ -2156,9 +2156,9 @@ describe("renderTasksPage — PR column", () => {
     expect(html).toContain("—");
   });
 
-  test("empty state colspan is 8 (7 columns + 1 for new PR column)", () => {
+  test("empty state colspan is 9 (8 columns + 1 for new Created column)", () => {
     const html = render([]);
-    expect(html).toContain('colspan="8"');
+    expect(html).toContain('colspan="9"');
   });
 
   test("task with pr value uses indigo link color matching ID column style", () => {
@@ -2197,6 +2197,71 @@ describe("renderTasksPage — PR column", () => {
     const html = render([xssTask]);
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — Created column (ATC-1.5) ──────────────────────────────
+
+describe("renderTasksPage — Created column", () => {
+  function render(tasks: TaskItem[]): string {
+    return renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  test("Created column header is present with col-created class", () => {
+    const html = render([]);
+    expect(html).toContain('<th class="col-created">Created</th>');
+  });
+
+  test("task with createdAt renders formatted date in Created cell", () => {
+    const taskWithCreatedAt: TaskItem = {
+      ...TASK_ITEM,
+      createdAt: "2026-07-10T09:30:00.000Z",
+    };
+    const html = render([taskWithCreatedAt]);
+    const expected = new Date(
+      taskWithCreatedAt.createdAt as string,
+    ).toLocaleString("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "America/Los_Angeles",
+    });
+    expect(html).toContain(expected);
+  });
+
+  test("task without createdAt shows em-dash in Created cell", () => {
+    const taskWithoutCreatedAt: TaskItem = {
+      ...TASK_ITEM,
+      createdAt: null,
+    };
+    const html = render([taskWithoutCreatedAt]);
+    const createdTdPattern =
+      /<td class="col-created"[^>]*>\s*<span style="color:#9ca3af">—<\/span>\s*<\/td>/;
+    expect(html).toMatch(createdTdPattern);
+  });
+
+  test("task with invalid createdAt falls back to raw string (NaN guard)", () => {
+    const taskWithInvalidCreatedAt: TaskItem = {
+      ...TASK_ITEM,
+      createdAt: "not-a-date",
+    };
+    const html = render([taskWithInvalidCreatedAt]);
+    expect(html).toContain("not-a-date");
+  });
+
+  test("Created <th> and <td> join the col-session/col-repo mobile-hide set", () => {
+    const html = render([{ ...TASK_ITEM, createdAt: "2026-07-10T09:30:00.000Z" }]);
+    expect(html).toContain('<th class="col-created">Created</th>');
+    const createdTdPattern = /<td[^>]*class="[^"]*col-created[^"]*"[^>]*>/;
+    expect(html).toMatch(createdTdPattern);
   });
 });
 
