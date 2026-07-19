@@ -45,14 +45,15 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 - **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
 - **Found, `status == "in_progress"`**: a prior session left this task in progress (or a
   human is manually re-running dev-task against it) — the task is already claimed, so skip
-  Step 2's claim and proceed directly to Step 3. Step 4's Branch/PR Reality Check (below)
-  runs unconditionally before worktree creation regardless of this status, so any stale
-  branch/PR left behind by the prior session is discovered and handled there — no separate
-  orphan-recovery path is needed here. Record `task_started_at` (current ISO timestamp) for
-  metrics.
+  Step 2's claim, run the Same-Branch Sibling Check (below) — it applies to resumed
+  in_progress tasks too, see that section — then proceed to Step 3. Step 4's Branch/PR
+  Reality Check (below) runs unconditionally before worktree creation regardless of this
+  status, so any stale branch/PR left behind by the prior session is discovered and handled
+  there — no separate orphan-recovery path is needed here. Record `task_started_at` (current
+  ISO timestamp) for metrics.
 - **Found, `status == "pending"`**: check dependency satisfaction before claiming (see
-  "Dependency Check" below). If satisfied, proceed to Step 2's Mark In-Progress with this
-  task.
+  "Dependency Check" below). If satisfied, run the Same-Branch Sibling Check (below), then
+  proceed to Step 2's Mark In-Progress with this task.
 - **Found, any other status** (e.g. `pr_open`, `blocked`, `merged`): not workable. Print
   `⚠ Task {task-id} has status "{status}" — nothing to do.` and stop.
 
@@ -92,6 +93,57 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 Post the message above and stop. A missing branch cannot be recovered from at runtime — worktree creation will fail silently if attempted.
+
+### Same-Branch Sibling Check
+
+Some tasks are bundled onto an existing branch by prose in their `description` rather than
+a tracked `dependencies` entry (e.g. "joins branch X, land after task Y is merged"). Before
+claiming (pending) or resuming (in_progress) this task, check whether another task is
+already actively working the same `{branch}` — claiming (or continuing to hold a claim on)
+a task whose same-branch prerequisite is still mid-flight wastes a claim cycle and starves
+the prerequisite. This applies regardless of this task's own status.
+
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}&status=in_progress&repo={repo}" | jq '.tasks'
+```
+
+Scoping by `{repo}` matters for repo-scoped agent tokens: the task-store's list handler
+filters those via `agentScope: { agentId, repos }` — an OR union across every repo in the
+token's scope, not a single repo. An unscoped `branch`+`status` query from an agent whose
+token spans multiple repos could match an in_progress task on an identically-named branch in
+a different scoped repo, causing a false-positive deferral. `?repo=` applies as an additional
+AND condition on top of `agentScope`'s OR, narrowing correctly to this task's own repo.
+
+Exclude this task's own `{id}` from the results — a task's own in_progress claim is not a
+sibling. For each remaining same-branch task, determine freshness using the same two-case
+formula the task-store's stale-claim reaper uses (`DEFAULT_CLAIM_TTL_MS` in
+`lib/claim-ttl.ts` — 35 minutes: the 30-minute `claude -p` session timeout plus a 5-minute
+buffer):
+
+- heartbeatAt is set and heartbeatAt is within the last 35 minutes → **fresh**
+- heartbeatAt is null and claimedAt is within the last 35 minutes → **fresh**
+- Otherwise → **stale** (indistinguishable from a crashed/stuck claim the reaper hasn't
+  caught yet — not legitimate concurrent work)
+
+**If any sibling is fresh:** defer — a same-branch prerequisite is still being actively
+worked. Release this task's own claim (a no-op if this task was never claimed):
+
+```bash
+curl -sf -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}/release" | jq .
+```
+
+Print:
+```
+⏭ Deferring to same-branch sibling {sibling-id} (in_progress, heartbeat fresh) — released own claim.
+```
+Respond `[silent]` and stop.
+
+**If no sibling is fresh** (none exist, or all are stale): no legitimate concurrent work to
+defer to — proceeds normally. A stale sibling's abandoned branch/PR (if any) is exactly
+what Step 4's Branch/PR Reality Check's existing incomplete/stale recovery path already
+handles, unchanged.
 
 Print:
 ```

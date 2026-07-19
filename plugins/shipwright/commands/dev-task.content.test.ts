@@ -36,7 +36,12 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
   });
 
   it("removes the in_progress resume-check query from Step 1", () => {
-    expect(content).not.toContain("status=in_progress");
+    // The old bare self-scan (`?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID`, unscoped
+    // to any specific task) must be gone. The Same-Branch Sibling Check's targeted
+    // `?branch={branch}&status=in_progress` lookup is a different, legitimate query and is
+    // not banned by this guard.
+    expect(content).not.toContain("tasks?status=in_progress&assignee=$SHIPWRIGHT_AGENT_ID");
+    expect(content).not.toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress"');
     expect(content).not.toContain("Resuming interrupted task");
   });
 
@@ -45,7 +50,18 @@ describe("dev-task.md — explicit-target-only argument contract", () => {
     // by the unconditional Branch/PR Reality Check in Step 4.
     expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
     expect(content).not.toContain("### Orphan Check (prior session recovery)");
-    expect(content).toMatch(/skip\s+Step 2's claim and proceed directly to Step 3/i);
+    expect(content).toMatch(/skip\s+Step 2's claim[\s\S]*?then proceed to Step 3/i);
+  });
+
+  it("in_progress path is explicitly routed through the Same-Branch Sibling Check before Step 3", () => {
+    // The in_progress bullet must not just skip to Step 3 — it must pass through the
+    // Same-Branch Sibling Check first, or a resumed task never runs that check.
+    const inProgressBulletMatch = content.match(
+      /\*\*Found, `status == "in_progress"`\*\*:[\s\S]*?(?=\n- \*\*Found)/,
+    );
+    expect(inProgressBulletMatch).not.toBeNull();
+    const bullet = inProgressBulletMatch?.[0];
+    expect(bullet).toMatch(/Same-Branch Sibling Check/i);
   });
 });
 
@@ -155,6 +171,81 @@ describe("Step 4 — stale bundle branch detection", () => {
     // The check must derive the repo slug from git remote get-url and pass it as --repo.
     expect(content).toContain('--repo "$GH_REPO"');
     expect(content).toContain("remote get-url origin");
+  });
+});
+
+describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)", () => {
+  it("adds a Same-Branch Sibling Check section after branch validation and before the TASK banner", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+
+    const branchValidationIdx = content.indexOf("**Validate required fields.**");
+    const bannerIdx = content.indexOf("TASK: {id}");
+    expect(branchValidationIdx).toBeGreaterThan(-1);
+    expect(bannerIdx).toBeGreaterThan(-1);
+    expect(branchValidationIdx).toBeLessThan(siblingCheckIdx);
+    expect(siblingCheckIdx).toBeLessThan(bannerIdx);
+  });
+
+  it("runs before Step 2's claim, avoiding a wasted claim-then-release cycle", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    const claimIdx = content.indexOf("/tasks/{id}/claim");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    expect(claimIdx).toBeGreaterThan(-1);
+    expect(siblingCheckIdx).toBeLessThan(claimIdx);
+  });
+
+  it("queries the task store for other in_progress tasks on the same branch", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
+    expect(section).toContain("/tasks?branch={branch}&status=in_progress");
+  });
+
+  it("excludes the current task's own id from the sibling results", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
+    expect(section).toMatch(/exclude.{0,60}own.{0,10}\{id\}|own.{0,10}\{id\}.{0,60}not a\s+sibling/is);
+  });
+
+  it("computes sibling freshness using the 35-minute claim TTL, mirroring the stale-claim reaper's two-case formula", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
+    expect(section).toContain("DEFAULT_CLAIM_TTL_MS");
+    expect(section).toContain("lib/claim-ttl.ts");
+    expect(section).toMatch(/35.{0,10}minute/i);
+    expect(section).toMatch(/heartbeatAt.{0,80}within the last 35 minutes/is);
+    expect(section).toMatch(/heartbeatAt is null.{0,80}claimedAt.{0,80}within the last 35 minutes/is);
+  });
+
+  it("when a sibling is fresh: releases this task's own claim and stops silently, without proceeding", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 3500);
+    expect(section).toMatch(/if any sibling is fresh/i);
+    expect(section).toContain("/tasks/{id}/release");
+    const releaseIdx = section.indexOf("/tasks/{id}/release");
+    const before = section.slice(Math.max(0, releaseIdx - 200), releaseIdx);
+    expect(before).toMatch(/-X POST/);
+    expect(section).toContain("[silent]");
+  });
+
+  it("when no sibling is fresh (none exist, or all stale): proceeds normally — no behavior change for genuinely orphaned/stale work", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 4000);
+    expect(section).toMatch(/if no sibling is fresh/i);
+    expect(section).toMatch(/proceed(s|ing)? normally/i);
+    expect(section).toMatch(/Branch\/PR Reality Check.{0,120}unchanged|unchanged.{0,120}Branch\/PR Reality Check/is);
+  });
+
+  it("applies regardless of this task's own status (pending or resumed in_progress)", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 1000);
+    expect(section).toMatch(/regardless of this task's own status/i);
   });
 });
 
