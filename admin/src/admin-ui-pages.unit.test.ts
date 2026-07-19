@@ -10,6 +10,8 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
+  computeDependencyLayout,
+  computeDependencyNodes,
   type CronJobItem,
   type CronRunItem,
   type DependencyNode,
@@ -21,8 +23,6 @@ import {
   type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
-  computeDependencyLayout,
-  computeDependencyNodes,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatPage,
