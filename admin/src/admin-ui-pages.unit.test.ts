@@ -903,14 +903,16 @@ describe("renderAgentDetailPage — crons", () => {
 
   test("System/Custom Crons table has a 'Created' column header", () => {
     const html = render([SYSTEM_CRON]);
-    const createdHeaderCount = (html.match(/<th>Created<\/th>/g) ?? []).length;
+    const createdHeaderCount = (
+      html.match(/<th class="col-created">Created<\/th>/g) ?? []
+    ).length;
     expect(createdHeaderCount).toBeGreaterThanOrEqual(2);
   });
 
   test("System/Custom Crons table still has 'Last run' column header alongside Created", () => {
     const html = render([SYSTEM_CRON]);
     expect(html).toContain("<th>Last run</th>");
-    expect(html).toContain("<th>Created</th>");
+    expect(html).toContain('<th class="col-created">Created</th>');
   });
 
   test("cron createdAt renders in the Created column", () => {
