@@ -6,6 +6,7 @@
   "main": "src/index.ts",
   "description": "Shipwright MCP server — Model Context Protocol service for agent integration",
   "scripts": {
+    "start": "bun run src/main.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
