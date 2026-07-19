@@ -1536,6 +1536,7 @@ export function renderTasksPage(
   opts?: { error?: string; agentFilterActive?: boolean },
   suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
   readOnly = false,
+  timezone = "America/Los_Angeles",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -1621,6 +1622,7 @@ export function renderTasksPage(
                       : d.toLocaleString("en-US", {
                           dateStyle: "medium",
                           timeStyle: "short",
+                          timeZone: timezone,
                         });
                   })(),
                 )

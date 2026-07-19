@@ -2101,6 +2101,7 @@ describe("renderTasksPage — Created column", () => {
     ).toLocaleString("en-US", {
       dateStyle: "medium",
       timeStyle: "short",
+      timeZone: "America/Los_Angeles",
     });
     expect(html).toContain(expected);
   });
