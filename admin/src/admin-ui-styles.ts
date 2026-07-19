@@ -270,7 +270,7 @@ export function baseStyles(): string {
     }
     .state-tab { padding: 5px 14px; }
     @media (max-width: 640px) {
-      .col-session, .col-repo { display: none; }
+      .col-session, .col-repo, .col-created { display: none; }
       .col-review-cycles, .col-patch-cycles, .col-claimed-by { display: none; }
       .col-tokens, .col-model { display: none; }
       .state-tab { padding: 13px 14px; }

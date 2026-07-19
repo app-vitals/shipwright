@@ -158,6 +158,7 @@ export interface CronJobItem {
     outcome: string | null;
   } | null;
   runCountToday?: number;
+  createdAt: Date;
 }
 
 export interface CronRunItem {
@@ -250,6 +251,7 @@ export interface ToolItem {
   id: string;
   pattern: string;
   enabled: boolean;
+  createdAt: Date;
 }
 
 export interface TokenItem {
@@ -264,6 +266,7 @@ export interface PluginItem {
   name: string;
   version: string | null;
   enabled: boolean;
+  createdAt: Date;
 }
 
 export interface MemberItem {
@@ -724,7 +727,10 @@ export function renderAgentDetailPage(
    * custom crons, and any system cron other than shipwright-loop) render
    * exactly as before — no empty block.
    */
-  function renderNestedPhasesRow(parent: CronJobItem, children: CronJobItem[]): string {
+  function renderNestedPhasesRow(
+    parent: CronJobItem,
+    children: CronJobItem[],
+  ): string {
     if (children.length === 0) return "";
     const parentLabel = parent.name ?? parent.id;
     const childRows = children
@@ -746,7 +752,7 @@ export function renderAgentDetailPage(
       })
       .join("\n");
     return `<tr>
-      <td colspan="7" style="background:#f9fafb;padding:12px 12px 12px 32px">
+      <td colspan="8" style="background:#f9fafb;padding:12px 12px 12px 32px">
         <div style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Phases of ${escapeHtml(parentLabel)}</div>
         <table class="data-table">
           <thead>
@@ -807,6 +813,7 @@ export function renderAgentDetailPage(
       <td>${c.channel ? escapeHtml(c.channel) : c.user ? escapeHtml(c.user) : "—"}</td>
       <td><span class="badge ${c.enabled ? "badge-green" : "badge-gray"}">${c.enabled ? "enabled" : "disabled"}</span></td>
       <td style="font-size:11px">${lastRunHtml}</td>
+      <td class="col-created">${escapeHtml(new Date(c.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
       <td style="white-space:nowrap">${actions}${editForm}</td>
     </tr>
     ${nestedPhasesRow}`;
@@ -814,22 +821,23 @@ export function renderAgentDetailPage(
 
   const systemCronRows =
     systemCrons.length === 0
-      ? `<tr><td colspan="7" class="empty-state">No system crons configured.</td></tr>`
+      ? `<tr><td colspan="8" class="empty-state">No system crons configured.</td></tr>`
       : systemCrons.map(renderCronRow).join("\n");
 
   const customCronRows =
     customCrons.length === 0
-      ? `<tr><td colspan="7" class="empty-state">No custom crons yet.</td></tr>`
+      ? `<tr><td colspan="8" class="empty-state">No custom crons yet.</td></tr>`
       : customCrons.map(renderCronRow).join("\n");
 
   const toolRows =
     tools.length === 0
-      ? `<tr><td colspan="3" class="empty-state">No tools configured.</td></tr>`
+      ? `<tr><td colspan="4" class="empty-state">No tools configured.</td></tr>`
       : tools
           .map(
             (t) => `<tr>
       <td class="mono">${escapeHtml(t.pattern)}</td>
       <td><span class="badge ${t.enabled ? "badge-green" : "badge-gray"}">${t.enabled ? "enabled" : "disabled"}</span></td>
+      <td>${escapeHtml(new Date(t.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
       <td style="white-space:nowrap">
         <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/tools/${escapeHtml(t.id)}/toggle" style="display:inline">
           <input type="hidden" name="enabled" value="${t.enabled ? "false" : "true"}" />
@@ -865,13 +873,14 @@ export function renderAgentDetailPage(
 
   const pluginRows =
     plugins.length === 0
-      ? `<tr><td colspan="3" class="empty-state">No plugins installed.</td></tr>`
+      ? `<tr><td colspan="4" class="empty-state">No plugins installed.</td></tr>`
       : plugins
           .map(
             (p) => `<tr>
       <td class="mono">${escapeHtml(p.name)}</td>
       <td class="mono">${p.version ? escapeHtml(p.version) : "latest"}</td>
       <td><span class="badge ${p.enabled ? "badge-green" : "badge-gray"}">${p.enabled ? "enabled" : "disabled"}</span></td>
+      <td>${escapeHtml(new Date(p.createdAt).toLocaleDateString("en-US", { timeZone: timezone }))}</td>
     </tr>`,
           )
           .join("\n");
@@ -905,18 +914,20 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary">Add</button>
         </div>
       </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Added</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${memberRows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Added</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${memberRows}
+          </tbody>
+        </table>
+      </div>
     </div>`;
 
   const errorHtml = opts?.error
@@ -998,18 +1009,20 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary">Add</button>
         </div>
       </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Value</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${envRows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Key</th>
+              <th>Value</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${envRows}
+          </tbody>
+        </table>
+      </div>
     </div>`
         : ""
     }
@@ -1024,20 +1037,21 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary">Add</button>
         </div>
       </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Repo</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            agent.repos.length === 0
-              ? `<tr><td colspan="2" class="empty-state">No repos configured.</td></tr>`
-              : agent.repos
-                  .map(
-                    (repo) => `<tr>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Repo</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              agent.repos.length === 0
+                ? `<tr><td colspan="2" class="empty-state">No repos configured.</td></tr>`
+                : agent.repos
+                    .map(
+                      (repo) => `<tr>
             <td class="mono">${escapeHtml(repo)}</td>
             <td>
               <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/delete" style="display:inline">
@@ -1046,11 +1060,12 @@ export function renderAgentDetailPage(
               </form>
             </td>
           </tr>`,
-                  )
-                  .join("\n")
-          }
-        </tbody>
-      </table>
+                    )
+                    .join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card">
@@ -1064,22 +1079,25 @@ export function renderAgentDetailPage(
 
       <div style="margin-bottom:20px">
         <div style="font-size:12px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">System</div>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Schedule</th>
-              <th>Prompt</th>
-              <th>Pre-check</th>
-              <th>Target</th>
-              <th>Status</th>
-              <th>Last run</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${systemCronRows}
-          </tbody>
-        </table>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Schedule</th>
+                <th>Prompt</th>
+                <th>Pre-check</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Last run</th>
+                <th class="col-created">Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${systemCronRows}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div>
@@ -1102,22 +1120,25 @@ export function renderAgentDetailPage(
             <button type="submit" class="btn btn-primary">Add Cron</button>
           </div>
         </form>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Schedule</th>
-              <th>Prompt</th>
-              <th>Pre-check</th>
-              <th>Target</th>
-              <th>Status</th>
-              <th>Last run</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            ${customCronRows}
-          </tbody>
-        </table>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Schedule</th>
+                <th>Prompt</th>
+                <th>Pre-check</th>
+                <th>Target</th>
+                <th>Status</th>
+                <th>Last run</th>
+                <th class="col-created">Created</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${customCronRows}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1131,18 +1152,21 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary">Add</button>
         </div>
       </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Pattern</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${toolRows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Pattern</th>
+              <th>Status</th>
+              <th>Created</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${toolRows}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card">
@@ -1155,19 +1179,21 @@ export function renderAgentDetailPage(
           <button type="submit" class="btn btn-primary">Create Token</button>
         </div>
       </form>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Label</th>
-            <th>Created</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tokenRows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tokenRows}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     ${
@@ -1186,18 +1212,21 @@ export function renderAgentDetailPage(
 
     <div class="card">
       <div class="card-title">Plugins</div>
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Package</th>
-            <th>Version</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pluginRows}
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Package</th>
+              <th>Version</th>
+              <th>Status</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pluginRows}
+          </tbody>
+        </table>
+      </div>
     </div>
 
     ${isAdmin ? membersSection : ""}
@@ -1536,6 +1565,7 @@ export function renderTasksPage(
   opts?: { error?: string; agentFilterActive?: boolean },
   suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
   readOnly = false,
+  timezone = "America/Los_Angeles",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -1596,7 +1626,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="8" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="9" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -1612,6 +1642,20 @@ export function renderTasksPage(
                 : t.prUrl
                   ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
                   : '<span style="color:#9ca3af">—</span>';
+            const createdCell = t.createdAt
+              ? escapeHtml(
+                  (() => {
+                    const d = new Date(t.createdAt as string);
+                    return Number.isNaN(d.getTime())
+                      ? (t.createdAt as string)
+                      : d.toLocaleString("en-US", {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                          timeZone: timezone,
+                        });
+                  })(),
+                )
+              : '<span style="color:#9ca3af">—</span>';
             const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
             return `<tr${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}>
     <td class="mono" style="font-size:11px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none" title="View details">${escapeHtml(t.id)}</a>`}</td>
@@ -1627,6 +1671,7 @@ export function renderTasksPage(
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
+    <td class="col-created" style="font-size:12px">${createdCell}</td>
     ${
       readOnly
         ? ""
@@ -1788,6 +1833,7 @@ export function renderTasksPage(
               <th class="col-session">Session</th>
               <th class="col-repo">Repo</th>
               <th>PR</th>
+              <th class="col-created">Created</th>
               <th></th>
             </tr>
           </thead>
@@ -2404,7 +2450,7 @@ function renderDependencyGraph(nodes: DependencyNode[]): string {
       ${edgePaths.join("\n      ")}
     </svg>`;
 
-  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px;overflow-x:auto">
+  return `<div style="position:relative;width:${layout.width}px;height:${layout.height}px">
       ${svgHtml}
       ${nodes.map(nodeCard).join("\n      ")}
     </div>`;
@@ -2469,7 +2515,9 @@ export function renderSessionDetailPage(
     dependencyNodes.length > 0
       ? `<div class="card" style="margin-bottom:16px">
       <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em">Dependency graph</div>
+      <div class="data-table-wrapper">
       ${renderDependencyGraph(dependencyNodes)}
+    </div>
     </div>`
       : "";
 
@@ -3196,24 +3244,26 @@ export function renderWorkQueuePage(opts: {
     </div>`
       : `<div style="margin-bottom:12px;font-size:12px;color:#6b7280">Last computed: ${escapeHtml(relativeTime(snapshot.computedAt, now))}</div>
     <div class="card">
-      <table class="runs-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Type</th>
-            <th>Phase</th>
-            <th>Item</th>
-            <th>Age</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            snapshot.items.length === 0
-              ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
-              : snapshot.items.map(row).join("\n")
-          }
-        </tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>Phase</th>
+              <th>Item</th>
+              <th>Age</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              snapshot.items.length === 0
+                ? `<tr><td colspan="5" class="empty-state">Queue is empty — nothing pending.</td></tr>`
+                : snapshot.items.map(row).join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
     </div>`;
 
   return `<!DOCTYPE html>
@@ -3222,11 +3272,7 @@ export function renderWorkQueuePage(opts: {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Work Queue — ${escapeHtml(agent.name)} — Shipwright Admin</title>
-  <style>${baseStyles()}
-    .runs-table { width:100%;border-collapse:collapse; }
-    .runs-table th { text-align:left;padding:8px 12px;font-size:12px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;text-transform:uppercase;letter-spacing:.05em; }
-    .runs-table td { padding:8px 12px;border-bottom:1px solid #f3f4f6; }
-  </style>
+  <style>${baseStyles()}</style>
 </head>
 <body>
   ${renderAdminToolbar(userName, "/admin/agents")}
@@ -3409,19 +3455,21 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
     ${errorBanner}
     ${rawTokenBanner}
     <div class="card" style="overflow:auto">
-      <table class="data-table" style="width:100%">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Label</th>
-            <th>Agent</th>
-            <th>Created</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
+      <div class="data-table-wrapper">
+        <table class="data-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Label</th>
+              <th>Agent</th>
+              <th>Created</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
     </div>
     ${createForm}
   </div>
