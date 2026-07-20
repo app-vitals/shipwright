@@ -487,6 +487,12 @@ export function createPrRecordQuery<T>(opts?: {
 export interface LinkedTaskInfo {
   status: TaskStatus;
   createdAt?: string;
+  /**
+   * hitl:true on the linked task — surfaced so callers (e.g. check-patch.ts)
+   * can pass it through to WorkPrCandidate.hitl and let the loop orchestrator
+   * (CBD-2.2) exclude an already-escalated PR from dispatch.
+   */
+  hitl?: boolean;
 }
 
 /**
@@ -545,7 +551,7 @@ export function createTaskStatusQuery(opts?: {
     }
     const task = tasks[0];
     if (!task) return null;
-    return { status: task.status, createdAt: task.createdAt };
+    return { status: task.status, createdAt: task.createdAt, hitl: task.hitl };
   };
 }
 

@@ -445,6 +445,7 @@ export async function getPatchCandidates(
       phase: "patch",
       title: pr.title,
       commitSha: pr.headRefOid,
+      hitl: linkedTask?.hitl,
     });
   }
 

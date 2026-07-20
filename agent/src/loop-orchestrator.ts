@@ -179,6 +179,43 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
 const SPIN_DETECTION_THRESHOLD = 3;
 
 /**
+ * Cooldown window (CBD-2.2) for re-dispatching a PR whose preclaimed
+ * commitSha hasn't changed since its last dispatch. Set below the documented
+ * ~30min dev-task/loop cadence so a genuinely new cron tick still gets
+ * through, while re-fires far tighter than that cadence (the observed bug —
+ * vitals-os#3318 was re-dispatched every 2-5 minutes for hours on an
+ * unchanged commit) are suppressed.
+ */
+const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
+
+/**
+ * A PR item should be excluded from this tick's candidate pool when either:
+ *  - its linked task-store task is hitl:true (a human needs to act — nothing
+ *    changes about that by re-dispatching patch/review/deploy again), or
+ *  - it was already dispatched at this exact commitSha within the cooldown
+ *    window (nothing new to act on since the last dispatch).
+ *
+ * `lastDispatch` is keyed by item id and persists across ticks (closure
+ * state, like lastDispatchedItemId below) so the suppression holds across
+ * many cron ticks, not just within one drain.
+ */
+function isPrDispatchSuppressed(
+  pr: WorkPrCandidate,
+  lastDispatch: ReadonlyMap<
+    string,
+    { commitSha: string; dispatchedAt: number }
+  >,
+  nowMs: number,
+): boolean {
+  if (pr.hitl === true) return true;
+
+  const last = lastDispatch.get(pr.id);
+  if (!last || last.commitSha !== pr.commitSha) return false;
+
+  return nowMs - last.dispatchedAt < PR_REDISPATCH_COOLDOWN_MS;
+}
+
+/**
  * Format the pre-claim marker (CBD-1.3) appended to a dispatched PR command
  * string on a successful pre-claim. Bracket-delimited to match the codebase's
  * existing marker convention (see markers.ts's [silent]/[upload:...]) — but
@@ -228,6 +265,14 @@ export function createLoopOrchestrator(
   // repeat count to warn when the same item is dispatched repeatedly.
   let lastDispatchedItemId: string | null = null;
   let consecutiveDispatchCount = 0;
+
+  // Redispatch-cooldown state (CBD-2.2): tracks the commitSha and timestamp
+  // of each PR item's most recent dispatch, persisted across ticks — see
+  // isPrDispatchSuppressed above.
+  const lastPrDispatch = new Map<
+    string,
+    { commitSha: string; dispatchedAt: number }
+  >();
 
   /**
    * Dispatch one selected phase's one-shot command (with the winning item's
@@ -399,8 +444,11 @@ export function createLoopOrchestrator(
         if (toggles.review) allPrs.push(...(await getReviewCandidates()));
         if (toggles.patch) allPrs.push(...(await getPatchCandidates()));
         if (toggles.deploy) allPrs.push(...(await getDeployCandidates()));
+        const nowMs = clock.now().getTime();
         const prs: WorkPrCandidate[] = allPrs.filter(
-          (p) => !failedPreClaimPrIds.has(p.id),
+          (p) =>
+            !failedPreClaimPrIds.has(p.id) &&
+            !isPrDispatchSuppressed(p, lastPrDispatch, nowMs),
         );
 
         // Full-queue observability snapshot — fires every iteration
@@ -501,6 +549,17 @@ export function createLoopOrchestrator(
         }
 
         await dispatch(phase, phaseId, item.type, itemId, preClaimMarker);
+
+        // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
+        // tick can suppress a redundant re-dispatch at the same commit within
+        // the cooldown window. Recorded only after dispatch() resolves
+        // without throwing — a thrown dispatch aborts the whole tick anyway.
+        if (item.type === "pr") {
+          lastPrDispatch.set(itemId, {
+            commitSha: item.pr.commitSha,
+            dispatchedAt: clock.now().getTime(),
+          });
+        }
       }
     } finally {
       busy = false;

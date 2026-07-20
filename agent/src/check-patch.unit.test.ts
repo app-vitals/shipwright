@@ -1320,6 +1320,44 @@ describe("getPatchCandidates", () => {
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
+  // ─── hitl passthrough (CBD-2.2) ────────────────────────────────────────────
+
+  test("candidate carries hitl:true from the linked task, for the loop orchestrator to exclude from dispatch", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "pr_open",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      hitl: true,
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result[0].hitl).toBe(true);
+  });
+
+  test("candidate's hitl is undefined when the linked task has hitl:false or no linked task exists", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "pr_open",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      hitl: false,
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result[0].hitl).toBe(false);
+
+    deps.queryTaskStatus = async () => null;
+    const resultNoTask = await getPatchCandidates(deps);
+    expect(resultNoTask[0].hitl).toBeUndefined();
+  });
+
   // ─── claim gating (LPF-2.2) ────────────────────────────────────────────────
 
   test("excludes a PR whose task-store record has claimedBy set, even though it otherwise needs patch attention", async () => {
