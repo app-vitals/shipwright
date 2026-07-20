@@ -320,6 +320,17 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
+    hitl: z.boolean().default(false).openapi({ example: false }),
+    hitlNotifiedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    blockedReason: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "no linked task" }),
     createdAt: z
       .string()
       .datetime()
@@ -377,6 +388,7 @@ export const TaskListQuerySchema = z.object({
     .enum(["open", "closed", "in_progress", "ready", "blocked"])
     .optional()
     .openapi({ example: "open" }),
+  source: z.string().optional().openapi({ example: "entropy-fix" }),
   session: z.string().optional().openapi({ example: "session-123" }),
   repo: z.string().optional().openapi({ example: "org/repo" }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),

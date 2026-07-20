@@ -849,6 +849,51 @@ describe("admin API — cron jobs", () => {
     expect(res.status).toBe(400);
   });
 
+  it("PATCH /agents/:id/crons/:cronId on a system cron with content update returns 403", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentCronJobService: {
+        ...base.agentCronJobService,
+        get: async () => ({ ...MOCK_CRON, system: true }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        schedule: "0 10 * * 1-5",
+        prompt: "updated standup",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("PATCH /agents/:id/crons/:cronId on a system cron with an orthogonal-field-only update returns 403", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentCronJobService: {
+        ...base.agentCronJobService,
+        get: async () => ({ ...MOCK_CRON, system: true }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("DELETE /agents/:id/crons/:cronId returns 204", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}`, {

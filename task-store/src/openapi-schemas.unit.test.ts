@@ -100,6 +100,9 @@ const validPullRequest = {
   readyForReviewAt: yesterday,
   readyForPatchAt: null,
   readyForDeployAt: null,
+  hitl: false,
+  hitlNotifiedAt: null,
+  blockedReason: null,
   createdAt: yesterday,
   updatedAt: now,
 };
@@ -404,6 +407,29 @@ describe("PullRequestSchema", () => {
       expect(result.data.patchCycles).toBe(5);
       expect(result.data.reviewCycles).toBe(3);
     }
+  });
+
+  test("parses pull request with hitl/hitlNotifiedAt/blockedReason set", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      hitl: true,
+      hitlNotifiedAt: yesterday,
+      blockedReason: "no linked task",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.hitl).toBe(true);
+      expect(result.data.hitlNotifiedAt).toBe(yesterday);
+      expect(result.data.blockedReason).toBe("no linked task");
+    }
+  });
+
+  test("rejects non-boolean hitl", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      hitl: "yes",
+    });
+    expect(result.success).toBe(false);
   });
 });
 

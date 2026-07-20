@@ -577,6 +577,44 @@ describe("PullRequestService.release()", () => {
   });
 });
 
+describe("PullRequestService.update() hitl/hitlNotifiedAt/blockedReason pass-through", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("update() persists hitl/hitlNotifiedAt/blockedReason and returns them", async () => {
+    const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.update("pr-1", {
+      hitl: true,
+      hitlNotifiedAt: NOW.toISOString(),
+      blockedReason: "no linked task",
+    });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.hitl).toBe(true);
+    expect(data.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(data.blockedReason).toBe("no linked task");
+    expect(result.hitl).toBe(true);
+    expect(result.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(result.blockedReason).toBe("no linked task");
+  });
+
+  test("update() omitting hitl/hitlNotifiedAt/blockedReason does not touch them", async () => {
+    const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.update("pr-1", { commitSha: "sha-unrelated" });
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("hitl" in data).toBe(false);
+    expect("hitlNotifiedAt" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+  });
+});
+
 describe("PullRequestService.complete() claim release", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);

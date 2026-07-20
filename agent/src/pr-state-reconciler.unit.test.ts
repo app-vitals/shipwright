@@ -25,7 +25,6 @@ import {
   type PrStateRecord,
   buildProductionDeps,
   buildReviewStateProductionDeps,
-  reconcileDeployingTasks,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -75,13 +74,6 @@ interface MakeDepsOptions {
     string,
     Array<{ number: number; createdAt: string }> | Error
   >;
-  /** deploying tasks for the DSR-2.1 pass; defaults to [] so existing tests are unaffected. */
-  deployingTasks?: PrOpenTaskRecord[];
-  /** repo -> newest-first "Promote to Prod" workflow runs, or an Error to throw, for the DSR-2.1 pass. */
-  workflowRunsResults?: Record<
-    string,
-    Array<{ createdAt: string; conclusion: string | null; id: number }> | Error
-  >;
 }
 
 function makeDeps({
@@ -96,21 +88,17 @@ function makeDeps({
   getScopedRepos = () => repos,
   orphanCandidateTasks = [],
   openBranchResults = {},
-  deployingTasks = [],
-  workflowRunsResults = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
-  listDeployingTasksCalls: ListTasksCall[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
-  const listDeployingTasksCalls: ListTasksCall[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -156,19 +144,6 @@ function makeDeps({
       if (result instanceof Error) throw result;
       return result ?? [];
     },
-    listDeployingTasks: async (limit: number, offset: number) => {
-      listDeployingTasksCalls.push({ limit, offset });
-      return deployingTasks.slice(offset, offset + limit);
-    },
-    ghListWorkflowRuns: async (
-      repo: string,
-      _workflow: string,
-      _limit: number,
-    ) => {
-      const result = workflowRunsResults[repo];
-      if (result instanceof Error) throw result;
-      return result ?? [];
-    },
   };
 
   return {
@@ -177,7 +152,6 @@ function makeDeps({
     patchCalls,
     taskPatchCalls,
     listPrOpenTasksCalls,
-    listDeployingTasksCalls,
   };
 }
 
@@ -469,6 +443,8 @@ interface MakeReviewStateDepsOptions {
   repos?: string[];
   /** repo -> full page of reviewState:"pending" records (pagination simulated by slicing). */
   pendingRecords?: Record<string, PrReviewStateRecord[]>;
+  /** repo -> full page of reviewState:"posted" records (pagination simulated by slicing). */
+  postedRecords?: Record<string, PrReviewStateRecord[]>;
   /** "repo#prNumber" -> review data, or an Error to throw for that fetch. */
   reviewResults?: Record<string, PrReviewData | Error>;
   pageLimit?: number;
@@ -479,6 +455,7 @@ interface MakeReviewStateDepsOptions {
 function makeReviewStateDeps({
   repos = ["acme/example-repo"],
   pendingRecords = {},
+  postedRecords = {},
   reviewResults = {},
   pageLimit = 50,
   clock = FixedClock(new Date("2026-07-15T12:00:00.000Z")),
@@ -486,10 +463,12 @@ function makeReviewStateDeps({
 }: MakeReviewStateDepsOptions = {}): {
   deps: PrReviewStateReconcilerDeps;
   listCalls: ListReviewCall[];
+  listPostedCalls: ListReviewCall[];
   patchCalls: ReviewPatchCall[];
   fetchCalls: string[];
 } {
   const listCalls: ListReviewCall[] = [];
+  const listPostedCalls: ListReviewCall[] = [];
   const patchCalls: ReviewPatchCall[] = [];
   const fetchCalls: string[] = [];
 
@@ -507,6 +486,15 @@ function makeReviewStateDeps({
       const all = pendingRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
+    listPostedReviewRecords: async (
+      repo: string,
+      limit: number,
+      offset: number,
+    ) => {
+      listPostedCalls.push({ repo, limit, offset });
+      const all = postedRecords[repo] ?? [];
+      return all.slice(offset, offset + limit);
+    },
     patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
       patchCalls.push({ id, fields });
     },
@@ -521,7 +509,7 @@ function makeReviewStateDeps({
     },
   };
 
-  return { deps, listCalls, patchCalls, fetchCalls };
+  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls };
 }
 
 function makeReviewStateRecord(
@@ -1014,6 +1002,303 @@ describe("reconcileReviewState", () => {
 
     expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
+  });
+});
+
+// ─── reconcileReviewState — posted-scan pass (CHU-2.4) ──────────────────────────
+
+describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
+  test("#1814 case: posted record, all reviews at a stale commit, no review at current head at all — PATCH back to pending", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-1814",
+      prNumber: 1814,
+    });
+    // A new commit landed since the posted verdict; the only review on file
+    // targets the prior (now-stale) commit, so nothing at all qualifies at
+    // the current head.
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "stale-sha" },
+            body: "Please fix the auth flow.",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1814": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-1814");
+    expect(patchCalls[0].fields).toEqual({ reviewState: "pending" });
+  });
+
+  test("posted record with a genuine unresolved finding at the new head — left untouched, no PATCH", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-real-finding",
+      prNumber: 1815,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "new-head-sha" },
+            body: "This still breaks the auth flow, please fix.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: false })] },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1815": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("posted record with a genuine finding via non-empty body only (threads resolved) at new head — left untouched, no PATCH", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-real-finding-body",
+      prNumber: 1816,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "new-head-sha" },
+            body: "Please rename this variable before merging.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1816": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("posted record still terminal/clean at head (e.g. still approved) — no PATCH, nothing changed", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-still-approved",
+      prNumber: 1817,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1817": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("actively-claimed posted record is skipped without any GitHub call", async () => {
+    const clock = FixedClock(new Date("2026-07-15T12:00:00.000Z"));
+    const record = makeReviewStateRecord({
+      id: "pr-posted-claimed",
+      prNumber: 1818,
+      claimedBy: "some-agent",
+      // 5 minutes ago — well within the default 35-minute TTL.
+      heartbeatAt: "2026-07-15T11:55:00.000Z",
+    });
+    const { deps, patchCalls, fetchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      clock,
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test("posted scan paginates beyond the default page limit", async () => {
+    const page1 = Array.from({ length: 2 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-p1-${i}`, prNumber: 300 + i }),
+    );
+    const page2 = Array.from({ length: 1 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-p2-${i}`, prNumber: 400 + i }),
+    );
+    const reviewResults: Record<string, PrReviewData> = {};
+    for (const r of [...page1, ...page2]) {
+      // All still terminal/clean at head — nothing should PATCH, this test
+      // only cares about the pagination call shape.
+      reviewResults[`acme/example-repo#${r.prNumber}`] = makeReviewData({
+        headRefOid: "head-sha",
+        reviews: {
+          nodes: [
+            makeReviewNode({
+              state: "APPROVED",
+              commit: { oid: "head-sha" },
+              body: "",
+            }),
+          ],
+        },
+      });
+    }
+
+    const { deps, listPostedCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [...page1, ...page2] },
+      reviewResults,
+      pageLimit: 2,
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(listPostedCalls).toHaveLength(2);
+    expect(listPostedCalls[0]).toMatchObject({
+      repo: "acme/example-repo",
+      limit: 2,
+      offset: 0,
+    });
+    expect(listPostedCalls[1]).toMatchObject({
+      repo: "acme/example-repo",
+      limit: 2,
+      offset: 2,
+    });
+  });
+
+  test("posted-list fetch failure for one repo does not abort the pending scan or other repos' posted scans", async () => {
+    const pendingRecord = makeReviewStateRecord({
+      id: "pr-pending-ok",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const postedRecordB = makeReviewStateRecord({
+      id: "pr-posted-ok-b",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const approveReview = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+    });
+    const noReviewAtHead = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: { nodes: [] },
+    });
+
+    const deps: PrReviewStateReconcilerDeps = {
+      repos: ["acme/repo-a", "acme/repo-b"],
+      pageLimit: 50,
+      clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
+      listPendingReviewRecords: async (repo: string) => {
+        if (repo === "acme/repo-a") return [pendingRecord];
+        return [];
+      },
+      listPostedReviewRecords: async (repo: string) => {
+        if (repo === "acme/repo-a") {
+          throw new Error("task-store GET /prs → 503");
+        }
+        return [postedRecordB];
+      },
+      patchPrRecord: async () => {},
+      fetchPrReviews: async (org: string, repo: string, prNumber: number) => {
+        const key = `${org}/${repo}#${prNumber}`;
+        if (key === "acme/repo-a#1") return approveReview;
+        if (key === "acme/repo-b#1") return noReviewAtHead;
+        throw new Error(`no fake review result configured for ${key}`);
+      },
+    };
+    const patchCalls: ReviewPatchCall[] = [];
+    deps.patchPrRecord = async (id: string, fields: Record<string, unknown>) => {
+      patchCalls.push({ id, fields });
+    };
+
+    await reconcileReviewState(deps);
+
+    // repo-a's pending scan still succeeds (approved), and repo-b's posted
+    // scan still runs and PATCHes back to pending — the repo-a posted-list
+    // failure is isolated to that repo/pass only.
+    expect(patchCalls).toHaveLength(2);
+    const byId = Object.fromEntries(patchCalls.map((c) => [c.id, c.fields]));
+    expect(byId["pr-pending-ok"]).toEqual({ reviewState: "approved" });
+    expect(byId["pr-posted-ok-b"]).toEqual({ reviewState: "pending" });
+  });
+
+  test("scans multiple repos independently for the posted pass", async () => {
+    const recordA = makeReviewStateRecord({
+      id: "pr-posted-repoA",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const recordB = makeReviewStateRecord({
+      id: "pr-posted-repoB",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const noReviewAtHead = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: { nodes: [] },
+    });
+    const stillApproved = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      postedRecords: {
+        "acme/repo-a": [recordA],
+        "acme/repo-b": [recordB],
+      },
+      reviewResults: {
+        "acme/repo-a#1": noReviewAtHead,
+        "acme/repo-b#1": stillApproved,
+      },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-posted-repoA");
+    expect(patchCalls[0].fields).toEqual({ reviewState: "pending" });
   });
 });
 
@@ -1607,363 +1892,5 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
 
     await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
-  });
-});
-
-describe("reconcileDeployingTasks", () => {
-  test("deploying task whose merge is followed by a successful promote transitions to deployed, using the run's createdAt (not now())", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-1",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-      now: () => "2026-07-19T00:00:00.000Z",
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-deploying-1");
-    expect(taskPatchCalls[0].fields).toEqual({
-      status: "deployed",
-      deployedAt: "2026-07-17T00:10:00.000Z",
-    });
-  });
-
-  test("deploying task with no successful promote after its merge is left untouched", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-2",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a task in any status other than deploying is never modified — listDeployingTasks contract means non-deploying tasks are never seen by this pass", async () => {
-    const prOpenTask: PrOpenTaskRecord = {
-      id: "task-not-deploying",
-      repo: "acme/example-repo",
-      pr: 5,
-    };
-    const { deps, taskPatchCalls, listDeployingTasksCalls } = makeDeps({
-      prOpenTasks: [prOpenTask],
-      deployingTasks: [], // correctly excludes the pr_open task
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(listDeployingTasksCalls.length).toBeGreaterThan(0);
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a task with a null mergedAt is skipped and logged, never guessed at", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-null-merged-at",
-      repo: "acme/example-repo",
-      mergedAt: null,
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    const originalError = console.error;
-    const errorCalls: unknown[][] = [];
-    console.error = (...args: unknown[]) => {
-      errorCalls.push(args);
-    };
-    try {
-      await reconcileDeployingTasks(deps);
-    } finally {
-      console.error = originalError;
-    }
-
-    expect(taskPatchCalls).toHaveLength(0);
-    expect(
-      errorCalls.some((call) =>
-        call.some(
-          (arg) =>
-            typeof arg === "string" &&
-            arg.includes("task-deploying-null-merged-at"),
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  test("a single task's workflow-run lookup failure does not abort reconciliation of the rest of the batch", async () => {
-    const taskA: PrOpenTaskRecord = {
-      id: "task-deploying-fail",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const taskB: PrOpenTaskRecord = {
-      id: "task-deploying-ok",
-      repo: "other-org/other-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [taskA, taskB],
-      workflowRunsResults: {
-        "acme/example-repo": new Error("gh api failed: rate limited"),
-        "other-org/other-repo": [
-          {
-            id: 2,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-deploying-ok");
-  });
-
-  test("a tick with nothing to reconcile performs zero writes; an immediate re-run is a no-op", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [],
-    });
-
-    await reconcileDeployingTasks(deps);
-    expect(taskPatchCalls).toHaveLength(0);
-
-    await reconcileDeployingTasks(deps);
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a run with conclusion !== 'success' is ignored even if newest", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-failed-run",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "failure",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-          {
-            id: 2,
-            conclusion: "success",
-            createdAt: "2026-07-16T23:00:00.000Z", // older, before mergedAt
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a run createdAt exactly equal to (not strictly after) mergedAt is NOT reconciled", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-exact-equal",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:10:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("listDeployingTasks paginates beyond the default page limit — scans a second page", async () => {
-    const page1 = Array.from({ length: 2 }, (_, i) => ({
-      id: `task-deploying-p1-${i}`,
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    }));
-    const page2: PrOpenTaskRecord[] = [
-      {
-        id: "task-deploying-p2-0",
-        repo: "acme/example-repo",
-        mergedAt: "2026-07-17T00:00:00.000Z",
-      },
-    ];
-    const { deps, listDeployingTasksCalls, taskPatchCalls } = makeDeps({
-      deployingTasks: [...page1, ...page2],
-      workflowRunsResults: {
-        "acme/example-repo": [],
-      },
-      pageLimit: 2,
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
-    expect(listDeployingTasksCalls).toHaveLength(2);
-    expect(listDeployingTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
-    expect(listDeployingTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
-    // No successful runs configured — nothing is reconciled, but all 3 tasks were scanned.
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("task.repo without a slash and no configured repos is skipped defensively — no throw", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-no-repo",
-      repo: "example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      repos: [],
-      deployingTasks: [task],
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("listDeployingTasks failure is logged and does not throw", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [],
-    });
-    deps.listDeployingTasks = async () => {
-      throw new Error("task-store GET /tasks failed");
-    };
-
-    await expect(reconcileDeployingTasks(deps)).resolves.toBeUndefined();
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-});
-
-describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by workflow (DSR-2.1 review fix)", () => {
-  /**
-   * Regression coverage for the finding on PR #1941: a client-side-filtered
-   * `actions/runs?per_page=N` repo-wide fetch can miss the target workflow's
-   * real recent runs when unrelated workflows are noisy (confirmed live in
-   * production — bursts of unrelated workflow runs pushed a real "Promote to
-   * Prod" run outside a top-20 window). This asserts `ghListWorkflowRuns`
-   * now resolves the workflow's id via the "list repo workflows" endpoint
-   * and queries that workflow's own runs endpoint — server-side scoped, so a
-   * burst of unrelated workflow activity can never push the target workflow's
-   * runs out of the page.
-   */
-  test("resolves the workflow id by name, then fetches only that workflow's runs", async () => {
-    const calls: string[] = [];
-    const ghJson = async <T>(args: string[]): Promise<T> => {
-      const path = args[1] ?? "";
-      calls.push(path);
-      if (path.startsWith("repos/acme/example-repo/actions/workflows?")) {
-        return {
-          workflows: [
-            { id: 111, name: "Bump Shipwright Chart" },
-            { id: 222, name: "Promote to Prod" },
-          ],
-        } as T;
-      }
-      if (path === "repos/acme/example-repo/actions/workflows/222/runs?per_page=20") {
-        return {
-          workflow_runs: [
-            {
-              status: "completed",
-              conclusion: "success",
-              created_at: "2026-07-19T12:00:00.000Z",
-              id: 999,
-            },
-          ],
-        } as T;
-      }
-      throw new Error(`unexpected gh api call: ${path}`);
-    };
-    const deps = buildProductionDeps({
-      ghJson,
-      getScopedRepos: () => [],
-    });
-
-    const runs = await deps.ghListWorkflowRuns(
-      "acme/example-repo",
-      "Promote to Prod",
-      20,
-    );
-
-    expect(runs).toEqual([
-      {
-        createdAt: "2026-07-19T12:00:00.000Z",
-        conclusion: "success",
-        id: 999,
-      },
-    ]);
-    // Only the scoped workflow-runs endpoint is queried for run data — never
-    // the unscoped repo-wide `actions/runs` endpoint a noisy burst of other
-    // workflows (like "Bump Shipwright Chart") could crowd out.
-    expect(calls).toEqual([
-      "repos/acme/example-repo/actions/workflows?per_page=100",
-      "repos/acme/example-repo/actions/workflows/222/runs?per_page=20",
-    ]);
-  });
-
-  test("returns an empty list when no workflow matches the given name, rather than falling back to an unscoped fetch", async () => {
-    const ghJson = async <T>(): Promise<T> => {
-      return { workflows: [{ id: 111, name: "Bump Shipwright Chart" }] } as T;
-    };
-    const deps = buildProductionDeps({
-      ghJson,
-      getScopedRepos: () => [],
-    });
-
-    const runs = await deps.ghListWorkflowRuns(
-      "acme/example-repo",
-      "Promote to Prod",
-      20,
-    );
-
-    expect(runs).toEqual([]);
   });
 });

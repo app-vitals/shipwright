@@ -220,8 +220,9 @@ function pr(
   id: string,
   age: string,
   phase: "review" | "patch" | "deploy",
+  overrides: Partial<WorkPrCandidate> = {},
 ): WorkPrCandidate {
-  return { id, age, phase, commitSha: `${id}-sha` };
+  return { id, age, phase, commitSha: `${id}-sha`, ...overrides };
 }
 
 /**
@@ -1563,6 +1564,93 @@ describe("createLoopOrchestrator", () => {
       expect(creates.map((c) => c.itemId)).toEqual(["app-vitals/shipwright#2"]);
     });
   }
+
+  // ─── Redispatch-cooldown tests (CBD-2.2) ────────────────────────────────────
+  //
+  // hitl:true exclusion is NOT tested here — that gate lives at the candidate
+  // collector level (check-patch.ts, check-review.ts skip a hitl'd PR before
+  // it's ever returned as a WorkPrCandidate), not in the orchestrator. See
+  // check-patch.unit.test.ts / check-review.unit.test.ts for that coverage.
+
+  /** A Clock whose now() can be advanced between calls, for cooldown tests. */
+  function makeMutableClock(initialIso: string): {
+    clock: import("./clock.ts").Clock;
+    advanceMs: (ms: number) => void;
+  } {
+    let current = new Date(initialIso);
+    return {
+      clock: { now: () => current },
+      advanceMs: (ms: number) => {
+        current = new Date(current.getTime() + ms);
+      },
+    };
+  }
+
+  test("a PR redispatched at the same commitSha within the cooldown window is suppressed on the next tick", async () => {
+    const { clock } = makeMutableClock("2026-01-01T00:00:00Z");
+    const { reporter, creates } = makeRecordingReporter();
+    const patchCandidate = pr("acme/x#5", "2026-01-01T00:00:00Z", "patch");
+    // Same unresolved candidate returned every tick — mirrors the real bug:
+    // the PR still needs patch attention at the same commit every time it's
+    // re-collected (e.g. CI still failing, findings still unaddressed).
+    const deps = {
+      ...makeDeps({ patchCandidates: [patchCandidate], reporter }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    // First tick: dispatches normally.
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(1);
+
+    // Second tick, no time elapsed (well within the cooldown): suppressed.
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(1);
+  });
+
+  test("a PR redispatch is allowed again once the cooldown window elapses", async () => {
+    const { clock, advanceMs } = makeMutableClock("2026-01-01T00:00:00Z");
+    const { reporter, creates } = makeRecordingReporter();
+    const patchCandidate = pr("acme/x#5", "2026-01-01T00:00:00Z", "patch");
+    const deps = {
+      ...makeDeps({ patchCandidates: [patchCandidate], reporter }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(1);
+
+    // Past the 25-minute cooldown — a genuinely new cron tick's worth of time.
+    advanceMs(26 * 60 * 1000);
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(2);
+  });
+
+  test("a PR redispatch is allowed immediately once its commitSha changes, even within the cooldown window", async () => {
+    const { clock } = makeMutableClock("2026-01-01T00:00:00Z");
+    const { reporter, creates } = makeRecordingReporter();
+    let patchCandidate = pr("acme/x#5", "2026-01-01T00:00:00Z", "patch", {
+      commitSha: "sha-v1",
+    });
+    const deps = {
+      ...makeDeps({
+        patchCandidates: () => Promise.resolve([patchCandidate]),
+        reporter,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(1);
+
+    // A new commit landed (e.g. the author pushed a fix) — no time elapsed,
+    // but the commitSha differs, so it must dispatch again right away.
+    patchCandidate = { ...patchCandidate, commitSha: "sha-v2" };
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(2);
+  });
 
   test("the pre-claim marker is appended in the exact [preclaim:id:sha] format", async () => {
     const consumed = new Set<string>();

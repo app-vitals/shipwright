@@ -36,18 +36,16 @@
  * repo-iteration/page-until-partial/continue-on-error scaffolding and reuses
  * the SAME setInterval tick in agent/src/index.ts — not a second timer.
  *
- * DSR-2.1 adds a fourth pass, `reconcileDeployingTasks()`: self-heals
- * task-store Tasks left status:"deploying" forever when their deploy
- * actually succeeded. The deploying→deployed PATCH is the last step of the
- * /shipwright:deploy command (an agent action, not a workflow step) —
- * promote.yml has no task-store write of its own — so an interrupted agent
- * session strands the task even though the code shipped normally on GitHub.
- * This is the same class of bug DSR-1.1 fixed one status earlier (an
- * agent-owned status write that silently doesn't happen), just at the next
- * transition in the lifecycle. Registered as its own independent call in
- * agent/src/index.ts's reconciler tick (the `reconcileReviewState`
- * precedent), NOT nested inside `reconcilePrState` like
- * `reconcilePrOpenTasks`/`reconcileOrphanedTasks` are.
+ * CHU-2.4 extends `reconcileReviewState()` with the mirror-image healing
+ * direction of CHU-2.2's pending→terminal pass above: a record stuck at
+ * reviewState:"posted" whose review(s) are no longer at the current head
+ * commit at all (a new commit landed since the posted verdict, but nothing
+ * reset reviewState back to pending — confirmed live on
+ * app-vitals/shipwright#1814) gets PATCHed back to "pending" so
+ * check-review.ts's dedup guard (`commitSha === headRefOid && reviewState
+ * !== "pending" -> skip`) stops trapping the PR out of every phase's
+ * candidate set. Runs as a second per-repo pass inside the same
+ * `reconcileReviewState()` function — no new setInterval tick.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
@@ -165,19 +163,6 @@ export interface PrStateReconcilerDeps {
    * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
-  /** List one page of task-store Tasks with status "deploying" (DSR-2.1). */
-  listDeployingTasks: (
-    limit: number,
-    offset: number,
-  ) => Promise<PrOpenTaskRecord[]>;
-  /** List the newest workflow runs for a given workflow name, newest-first (DSR-2.1). */
-  ghListWorkflowRuns: (
-    repo: string,
-    workflow: string,
-    limit: number,
-  ) => Promise<
-    Array<{ createdAt: string; conclusion: string | null; id: number }>
-  >;
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -200,6 +185,18 @@ export interface PrReviewStateReconcilerDeps {
   claimTtlMs?: number;
   /** List one page of state:"open" && reviewState:"pending" PR records for a repo. */
   listPendingReviewRecords: (
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>;
+  /**
+   * List one page of state:"open" && reviewState:"posted" PR records for a
+   * repo (CHU-2.4) — mirrors `listPendingReviewRecords`'s exact signature,
+   * paged the same way, but for the mirror-image healing direction: a
+   * posted verdict that's gone stale because a new commit landed with no
+   * review targeting it yet.
+   */
+  listPostedReviewRecords: (
     repo: string,
     limit: number,
     offset: number,
@@ -485,114 +482,6 @@ export async function reconcileOrphanedTasks(
   }
 }
 
-/** Number of newest workflow runs to fetch per lookup, matching check-deploy.ts's `fetchCiRuns` `per_page=20` convention (DSR-2.1). */
-const PROMOTE_RUNS_LOOKUP_LIMIT = 20;
-
-/** Workflow name to look up for the deploying→deployed pass (DSR-2.1). */
-const PROMOTE_WORKFLOW_NAME = "Promote to Prod";
-
-/**
- * List every task-store Task with status "deploying" (DSR-2.1), paging
- * through the task-store's default 50-record page until a page returns
- * fewer than `limit` records — same loop shape as `listAllPrOpenTasks`/
- * `listAllOpenRecords` elsewhere in this file.
- */
-async function listAllDeployingTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<PrOpenTaskRecord[]> {
-  const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
-  const tasks: PrOpenTaskRecord[] = [];
-  let offset = 0;
-
-  for (;;) {
-    const page = await deps.listDeployingTasks(limit, offset);
-    tasks.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
-  }
-
-  return tasks;
-}
-
-/**
- * Reconcile one deploying task against live GitHub workflow-run state
- * (DSR-2.1). The deploying→deployed PATCH is normally the last step of the
- * /shipwright:deploy command (an agent action) — promote.yml itself has no
- * task-store write — so an interrupted agent session strands the task even
- * though the code shipped normally. PATCHes to status:"deployed" only when
- * a SUCCESSFUL "Promote to Prod" run's createdAt is strictly after the
- * task's mergedAt; deployedAt is always that run's createdAt, NEVER
- * `now()` — there is no clock fallback for this pass, unlike
- * `reconcilePrOpenTask`'s `deps.now()` fallback, because a reconcile-time
- * stamp would silently inflate every cycle-time metric it touches.
- */
-async function reconcileDeployingTask(
-  deps: PrStateReconcilerDeps,
-  task: PrOpenTaskRecord,
-): Promise<void> {
-  const taskRepo = resolveTaskRepo(deps, task);
-  if (!taskRepo) return; // no repo to resolve against — skip defensively
-
-  if (!task.mergedAt) {
-    console.error(
-      `[pr-state-reconciler] deploying task ${task.id} has no mergedAt — skipping rather than guessing`,
-    );
-    return;
-  }
-
-  const runs = await deps.ghListWorkflowRuns(
-    taskRepo,
-    PROMOTE_WORKFLOW_NAME,
-    PROMOTE_RUNS_LOOKUP_LIMIT,
-  );
-  const latestSuccess = runs.find((r) => r.conclusion === "success");
-  if (!latestSuccess) return; // no successful promote run — leave untouched
-
-  const mergedAtMs = new Date(task.mergedAt).getTime();
-  const runCreatedAtMs = new Date(latestSuccess.createdAt).getTime();
-  if (!(runCreatedAtMs > mergedAtMs)) return; // not strictly after mergedAt — leave untouched
-
-  await deps.updateTaskStatus(task.id, {
-    status: "deployed",
-    deployedAt: latestSuccess.createdAt,
-  });
-}
-
-/**
- * Scan every deploying task, resolve the latest successful "Promote to
- * Prod" workflow run for its repo, and PATCH the task to deployed when that
- * run's createdAt confirms the deploy actually happened after the merge
- * (DSR-2.1). A single per-task failure is logged and does not abort
- * reconciliation of the rest of the batch — mirrors
- * `reconcilePrOpenTasks`/`reconcileOrphanedTasks`'s own per-task error
- * isolation above.
- */
-export async function reconcileDeployingTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<void> {
-  let tasks: PrOpenTaskRecord[];
-  try {
-    tasks = await listAllDeployingTasks(deps);
-  } catch (err) {
-    console.error(
-      "[pr-state-reconciler] failed to list deploying tasks:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return;
-  }
-
-  for (const task of tasks) {
-    try {
-      await reconcileDeployingTask(deps, task);
-    } catch (err) {
-      console.error(
-        `[pr-state-reconciler] failed to reconcile deploying task ${task.id}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-}
-
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -640,6 +529,27 @@ export async function reconcilePrState(
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
 
+/** Filter a PR's reviews down to only those submitted at the current head commit. */
+function reviewsAtHeadCommit(data: PrReviewData): PrReviewData["reviews"]["nodes"] {
+  const { headRefOid, reviews } = data;
+  return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
+}
+
+/**
+ * CHU-2.4: does ANY review at all exist at the PR's current head commit?
+ * Extracted out of `classifyReviewState`'s existing `reviewsAtHead.length ===
+ * 0` check so the posted-scan pass can distinguish this specific null case
+ * ("nothing at head at all" — a posted verdict has gone stale because a new
+ * commit landed with no review yet targeting it) from the OTHER null case
+ * `classifyReviewState` returns (a genuine unresolved finding at head, which
+ * must leave a posted record untouched). `classifyReviewState`'s own
+ * existing behavior/signature is unchanged — it still returns null for both
+ * cases, exactly as before.
+ */
+function hasAnyReviewAtHead(data: PrReviewData): boolean {
+  return reviewsAtHeadCommit(data).length > 0;
+}
+
 /**
  * Classify a PR's review state from live GitHub review data. Mirrors the
  * SHAPE of check-patch.ts's private `hasUnaddressedFindings` filtering
@@ -666,10 +576,8 @@ export async function reconcilePrState(
  *     the record completely untouched.
  */
 function classifyReviewState(data: PrReviewData): "approved" | "posted" | null {
-  const { headRefOid, reviews, reviewThreads } = data;
-  const reviewsAtHead = reviews.nodes.filter(
-    (r) => r.commit.oid === headRefOid,
-  );
+  const { reviewThreads } = data;
+  const reviewsAtHead = reviewsAtHeadCommit(data);
   if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
 
   const qualifyingReviews = reviewsAtHead.filter(
@@ -718,20 +626,28 @@ function isActivelyClaimed(
 }
 
 /**
- * List every reviewState:"pending" PR record for a repo, paging through the
- * task-store's default 50-record page until a page returns fewer than
- * `limit` records.
+ * List every record a paginated per-repo list-fn returns for a repo, paging
+ * through the task-store's default 50-record page until a page returns
+ * fewer than `limit` records. Shared pagination-until-partial-page loop for
+ * both the reviewState:"pending" scan (`listPendingReviewRecords`) and the
+ * reviewState:"posted" scan (`listPostedReviewRecords`, CHU-2.4) — the loop
+ * body is identical, only the underlying dep function differs.
  */
-async function listAllPendingReviewRecords(
+async function listAllReviewRecords(
   deps: PrReviewStateReconcilerDeps,
   repo: string,
+  listFn: (
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>,
 ): Promise<PrReviewStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrReviewStateRecord[] = [];
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listPendingReviewRecords(repo, limit, offset);
+    const page = await listFn(repo, limit, offset);
     records.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -768,12 +684,52 @@ async function reconcileReviewStateRecord(
 }
 
 /**
+ * Reconcile a single reviewState:"posted" record against live GitHub review
+ * data (CHU-2.4 — the mirror-image direction of
+ * `reconcileReviewStateRecord` above). Skips actively-claimed records
+ * without any GitHub call, same as the pending-scan guard.
+ *
+ * Unlike the pending-scan reconciler, this does NOT use
+ * `classifyReviewState()`'s return value directly — that function collapses
+ * "nothing at head at all" and "a genuine finding exists at head" into the
+ * same `null`, which is the right no-op for a *pending* record but wrong
+ * for a *posted* one. Here the two cases must be told apart:
+ *
+ *   - NO review at all at the current head commit (confirmed live on
+ *     app-vitals/shipwright#1814: a new commit landed one commit past every
+ *     review on file) means the posted verdict is stale — PATCH back to
+ *     "pending" so check-review.ts re-selects the PR for a fresh review.
+ *   - Anything else (a genuine unresolved finding at head, a still-terminal
+ *     review, or a still-approved review) leaves the record completely
+ *     untouched — there's nothing to heal.
+ */
+async function reconcilePostedReviewStateRecord(
+  deps: PrReviewStateReconcilerDeps,
+  record: PrReviewStateRecord,
+): Promise<void> {
+  const claimTtlMs = deps.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
+  if (isActivelyClaimed(record, deps.clock, claimTtlMs)) return; // live claim — never overwrite
+
+  const [org, repoName] = splitOrgRepo(record.repo);
+  const reviewData = await deps.fetchPrReviews(org, repoName, record.prNumber);
+  if (hasAnyReviewAtHead(reviewData)) return; // something at head (finding or terminal) — untouched
+
+  await deps.patchPrRecord(record.id, { reviewState: "pending" });
+}
+
+/**
  * Scan every repo's reviewState:"pending" PR records, compare each against
  * live GitHub review data, and PATCH only the ones that have gone terminal
  * at the current head commit (an out-of-band reviewer posted an APPROVED or
- * clean-approve-shaped/terminal review directly to GitHub). A single
- * per-record failure (claim check aside) is logged and does not abort
- * reconciliation of the rest of the batch.
+ * clean-approve-shaped/terminal review directly to GitHub). Then runs the
+ * mirror-image reviewState:"posted" scan (CHU-2.4): a posted verdict whose
+ * review(s) are no longer at the current head commit at all (a new commit
+ * landed since the posted verdict, but nothing reset reviewState back to
+ * pending) gets PATCHed back to "pending" so check-review.ts's dedup guard
+ * (`commitSha === headRefOid && reviewState !== "pending" -> skip`) stops
+ * trapping the PR out of every phase's candidate set. A single per-record
+ * failure (claim check aside) is logged and does not abort reconciliation
+ * of the rest of the batch, for either scan.
  */
 export async function reconcileReviewState(
   deps: PrReviewStateReconcilerDeps,
@@ -781,7 +737,11 @@ export async function reconcileReviewState(
   for (const repo of deps.repos) {
     let records: PrReviewStateRecord[];
     try {
-      records = await listAllPendingReviewRecords(deps, repo);
+      records = await listAllReviewRecords(
+        deps,
+        repo,
+        deps.listPendingReviewRecords,
+      );
     } catch (err) {
       console.error(
         `[pr-state-reconciler:review] failed to list pending-review PRs for ${repo}:`,
@@ -796,6 +756,34 @@ export async function reconcileReviewState(
       } catch (err) {
         console.error(
           `[pr-state-reconciler:review] failed to reconcile ${repo}#${record.prNumber}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+  }
+
+  for (const repo of deps.repos) {
+    let postedRecords: PrReviewStateRecord[];
+    try {
+      postedRecords = await listAllReviewRecords(
+        deps,
+        repo,
+        deps.listPostedReviewRecords,
+      );
+    } catch (err) {
+      console.error(
+        `[pr-state-reconciler:review] failed to list posted-review PRs for ${repo}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      continue;
+    }
+
+    for (const record of postedRecords) {
+      try {
+        await reconcilePostedReviewStateRecord(deps, record);
+      } catch (err) {
+        console.error(
+          `[pr-state-reconciler:review] failed to reconcile posted ${repo}#${record.prNumber}:`,
           err instanceof Error ? err.message : String(err),
         );
       }
@@ -1032,50 +1020,6 @@ export function buildProductionDeps(opts: {
       fetchFn: opts.fetchFn,
     }),
     now: () => new Date().toISOString(),
-    listDeployingTasks: (limit: number, offset: number) =>
-      listTasksByStatus("deploying", limit, offset),
-    // Server-side scoped by workflow (fixes a live bug: a client-side-filtered
-    // `actions/runs?per_page=N` repo-wide fetch can miss the target workflow
-    // entirely when unrelated workflows are noisy — confirmed live in
-    // production, e.g. bursts of "Bump Shipwright Chart" runs pushing a real
-    // "Promote to Prod" run outside a top-20 window). GitHub's workflow-scoped
-    // runs endpoint (`actions/workflows/{workflow_id_or_file_name}/runs`)
-    // requires a numeric workflow id or the workflow file's basename — NOT
-    // its display `name:` — so this first resolves `workflow` (a display
-    // name, e.g. "Promote to Prod") to its numeric id via the "list repo
-    // workflows" endpoint, then queries that workflow's runs directly. This
-    // genuinely mirrors check-deploy.ts's fetchActiveDeployRuns/fetchCiRuns
-    // precedent, which also filter server-side (`status=`/`head_sha=`), not
-    // just newest-first ordering as the removed comment claimed.
-    ghListWorkflowRuns: async (
-      repo: string,
-      workflow: string,
-      limit: number,
-    ) => {
-      const [org, repoName] = splitOrgRepo(repo);
-      const workflowsData = await ghJson<{
-        workflows: Array<{ id: number; name: string }>;
-      }>(["api", `repos/${org}/${repoName}/actions/workflows?per_page=100`]);
-      const match = workflowsData.workflows.find((w) => w.name === workflow);
-      if (!match) return []; // no such workflow configured for this repo — nothing to reconcile against
-
-      const data = await ghJson<{
-        workflow_runs: Array<{
-          status: string;
-          conclusion: string | null;
-          created_at: string;
-          id?: number;
-        }>;
-      }>([
-        "api",
-        `repos/${org}/${repoName}/actions/workflows/${match.id}/runs?per_page=${limit}`,
-      ]);
-      return data.workflow_runs.map((r) => ({
-        createdAt: r.created_at,
-        conclusion: r.conclusion,
-        id: r.id ?? 0,
-      }));
-    },
   };
 }
 
@@ -1103,21 +1047,23 @@ export function buildReviewStateProductionDeps(opts: {
   };
   const doFetch = opts.fetchFn ?? fetch;
 
-  return {
-    repos,
-    clock: opts.clock ?? SystemClock(),
-    claimTtlMs: Number(
-      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
-    ),
-    listPendingReviewRecords: async (
-      repo: string,
-      limit: number,
-      offset: number,
-    ) => {
+  /**
+   * Shared GET /prs?repo=<repo>&state=open&reviewState=<reviewState> helper
+   * for both the pending scan and the posted scan (CHU-2.4) — identical
+   * request shape, only the `reviewState` query value differs.
+   */
+  const listReviewRecordsByState = (
+    reviewState: "pending" | "posted",
+  ): ((
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>) => {
+    return async (repo: string, limit: number, offset: number) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
-        reviewState: "pending",
+        reviewState,
         limit: String(limit),
         offset: String(offset),
       });
@@ -1127,7 +1073,17 @@ export function buildReviewStateProductionDeps(opts: {
       }
       const data = (await res.json()) as PrReviewListResponseJson;
       return data.prs;
-    },
+    };
+  };
+
+  return {
+    repos,
+    clock: opts.clock ?? SystemClock(),
+    claimTtlMs: Number(
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+    ),
+    listPendingReviewRecords: listReviewRecordsByState("pending"),
+    listPostedReviewRecords: listReviewRecordsByState("posted"),
     patchPrRecord: makePatchPrRecord({ baseUrl, headers, doFetch }),
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
       const query = `{

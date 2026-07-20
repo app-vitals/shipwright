@@ -168,6 +168,9 @@ model PullRequest {
   readyForReviewAt  String?
   readyForPatchAt   String?
   readyForDeployAt  String?
+  hitl              Boolean       @default(false)
+  hitlNotifiedAt    String?
+  blockedReason     String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

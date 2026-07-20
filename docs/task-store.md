@@ -44,6 +44,7 @@ Query params:
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
 | `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
+| `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string | Filter by repo (`org/repo` format) |
 | `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
@@ -66,7 +67,7 @@ Agent tokens with a repo scope return tasks where `assignee === agentId` OR `rep
 POST /tasks
 ```
 
-Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
+Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted. Returns `201` with the created task.
 
 #### Bulk insert
 
@@ -74,7 +75,7 @@ Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo`
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave each task's `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
 
 #### Distinct values
 
@@ -249,7 +250,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
@@ -271,6 +272,12 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `reviewState`: `pending` → `in_progress` → `posted` | `approved`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
+
+`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
+
+`hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
+
+`blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
 
 #### PR timestamp fields
 

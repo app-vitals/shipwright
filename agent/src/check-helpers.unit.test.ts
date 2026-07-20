@@ -26,6 +26,8 @@ import {
   createTaskStoreClient,
   getCurrentUser,
   isCleanApproveBody,
+  isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   parseCandidateId,
   resolveAllRepos,
   resolveRepos,
@@ -1447,5 +1449,77 @@ describe("mapReposTolerant", () => {
     );
     expect(result).toEqual([]);
     expect(called).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTaskBlockedForDispatch
+// ---------------------------------------------------------------------------
+
+describe("isTaskBlockedForDispatch", () => {
+  test("returns true when hitl is true", () => {
+    expect(
+      isTaskBlockedForDispatch({ status: "pr_open", hitl: true }),
+    ).toBe(true);
+  });
+
+  test("returns true when status is 'blocked'", () => {
+    expect(
+      isTaskBlockedForDispatch({ status: "blocked", hitl: false }),
+    ).toBe(true);
+  });
+
+  test("returns true when both hitl:true and status:'blocked'", () => {
+    expect(
+      isTaskBlockedForDispatch({ status: "blocked", hitl: true }),
+    ).toBe(true);
+  });
+
+  test("returns false when hitl is false and status is not 'blocked'", () => {
+    expect(
+      isTaskBlockedForDispatch({ status: "pending", hitl: false }),
+    ).toBe(false);
+  });
+
+  test("returns false when hitl is undefined and status is not 'blocked'", () => {
+    expect(isTaskBlockedForDispatch({ status: "pr_open" })).toBe(false);
+  });
+
+  test("returns false for a null task", () => {
+    expect(isTaskBlockedForDispatch(null)).toBe(false);
+  });
+
+  test("returns false for an undefined task", () => {
+    expect(isTaskBlockedForDispatch(undefined)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isPrRecordBlockedForDispatch
+// ---------------------------------------------------------------------------
+
+describe("isPrRecordBlockedForDispatch", () => {
+  test("returns true when hitl is true", () => {
+    expect(isPrRecordBlockedForDispatch({ hitl: true })).toBe(true);
+  });
+
+  test("returns false when hitl is false", () => {
+    expect(isPrRecordBlockedForDispatch({ hitl: false })).toBe(false);
+  });
+
+  test("returns false when hitl is undefined", () => {
+    expect(isPrRecordBlockedForDispatch({})).toBe(false);
+  });
+
+  test("returns false when hitl is null", () => {
+    expect(isPrRecordBlockedForDispatch({ hitl: null })).toBe(false);
+  });
+
+  test("returns false for a null record", () => {
+    expect(isPrRecordBlockedForDispatch(null)).toBe(false);
+  });
+
+  test("returns false for an undefined record", () => {
+    expect(isPrRecordBlockedForDispatch(undefined)).toBe(false);
   });
 });
