@@ -1172,6 +1172,11 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       );
     }
 
+    const existing = await agentCronJobService.get(agentId, cronId);
+    if (existing.system) {
+      throw new ForbiddenError("system crons cannot be updated");
+    }
+
     let cron: Awaited<ReturnType<AgentCronJobService["update"]>> | undefined;
     if (hasSchedule && hasPrompt) {
       // Content update — preCheck and enabled are folded into update()
