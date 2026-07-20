@@ -14,14 +14,17 @@
     "build:check": "astro build && npm run brand-lint"
   },
   "dependencies": {
-    "@astrojs/mdx": "4",
-    "@astrojs/sitemap": "^3.2.1",
+    "@astrojs/mdx": "^6.0.3",
+    "@astrojs/sitemap": "^3.7.3",
     "@astrojs/tailwind": "^6.0.2",
-    "astro": "^5.2.0",
+    "astro": "^6.4.8",
     "tailwindcss": "^3.4.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "pagefind": "^1.5.2"
+  },
+  "overrides": {
+    "esbuild": "0.28.1"
   }
 }
