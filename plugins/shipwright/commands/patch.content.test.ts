@@ -587,6 +587,21 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("Move to the next qualifying PR in List A");
   });
 
+  it("escalation case resolves the unresolved inline threads for the qualifying second-round review before releasing the claim", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("resolveReviewThread");
+    expect(section).toContain("re-flag this same PR next");
+    const resolveIdx = section.indexOf("resolveReviewThread");
+    const releaseIdx = section.indexOf("/prs/$PR_RECORD_ID/release");
+    expect(resolveIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeGreaterThan(resolveIdx);
+  });
+
+  it("does not reference commit.oid, a field Step 3a's reviews query never fetches", () => {
+    const section = getStep5a7Section();
+    expect(section).not.toContain("commit.oid");
+  });
+
   it("first-round rebuttals (no prior author reply before the current review) proceed normally to Step 5b", () => {
     const section = getStep5a7Section();
     const otherwiseIdx = section.indexOf("**Otherwise**");

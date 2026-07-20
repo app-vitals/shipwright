@@ -614,7 +614,7 @@ lives, in Step 5b Instructions [D]), check whether this PR's List A finding is a
 round of the same disagreement.
 
 For each qualifying review from Step 3a (`state == "COMMENTED"` or `"CHANGES_REQUESTED"`,
-`commit.oid == headRefOid`, contributing to this PR's List A membership), check the PR-level
+contributing to this PR's List A membership), check the PR-level
 comments already fetched in Step 3a (`comments.nodes`) for an author reply: a comment whose
 `author.login == CURRENT_USER` with `createdAt` **before** that review's `submittedAt`. This
 mirrors `check-patch.ts`'s `isAddressedByAuthorReply` (an author reply *after* a review marks
@@ -657,18 +657,36 @@ do not reset `reviewState`.
    ```
    The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
    across all worktrees.
-4. Release the pre-work claim from Step 5a.6 — no fix is in flight, this cycle intentionally
+4. Resolve the unresolved inline threads (from Step 3a) belonging to each qualifying
+   second-round review — escalating without resolving them would leave those threads
+   `isResolved == false`, so Step 3a's List A criteria would re-flag this same PR next
+   cycle and re-fire this same escalation indefinitely. Use the same mutation as Step 5b
+   [D]/[E]:
+   ```bash
+   gh api graphql -f query='
+   mutation {
+     resolveReviewThread(input: {threadId: "{thread.id}"}) {
+       thread { isResolved }
+     }
+   }'
+   ```
+   Run this for the Thread ID of every unresolved inline thread whose comment belongs to a
+   qualifying second-round review — the PR comment posted in step 3 above is the record of
+   why these are being resolved without a further code change. If a qualifying review has
+   no unresolved inline threads (its finding was a bare review-body comment with no inline
+   thread), there is nothing to resolve for that review — move on.
+5. Release the pre-work claim from Step 5a.6 — no fix is in flight, this cycle intentionally
    stops short of dispatching one:
    ```bash
    curl -s -o /dev/null -X POST \
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
    ```
-5. Print:
+6. Print:
    ```
    ⏸ PR #{pr} — second-round disagreement detected, escalating to HITL (task {PR_TASK_ID or "none"}). Skipping rebuttal/reset for this cycle.
    ```
-6. Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
+7. Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
 
 **Otherwise** (no qualifying review has an author-reply comment dated before its
 `submittedAt` — a first-round rebuttal, or no rebuttal history at all): this is unaffected
