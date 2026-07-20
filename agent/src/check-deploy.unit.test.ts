@@ -464,7 +464,10 @@ describe("getDeployCandidates", () => {
   // ─── age field sourcing ────────────────────────────────────────────────────
 
   test("age is sourced from the linked task's createdAt when a task is linked", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -478,7 +481,10 @@ describe("getDeployCandidates", () => {
   });
 
   test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null)", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -489,7 +495,10 @@ describe("getDeployCandidates", () => {
   });
 
   test("queryPrRecord's readyForDeployAt is never used for age sourcing", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -512,7 +521,10 @@ describe("getDeployCandidates", () => {
     // Regression guard for the LPF-2.2 trap: a record with claimedBy set
     // means another agent currently holds the claim on this PR — excluded,
     // mirroring check-review.ts.
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -523,7 +535,10 @@ describe("getDeployCandidates", () => {
   });
 
   test("does NOT exclude a PR when queryPrRecord resolves null (no record yet — e.g. self-authored PR skipped by claim() under allow_self_review: false)", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -534,7 +549,10 @@ describe("getDeployCandidates", () => {
   });
 
   test("does NOT exclude a PR when queryPrRecord throws (transient task-store error) — falls back to createdAt", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
@@ -588,6 +606,36 @@ describe("getDeployCandidates", () => {
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
+    const result = await getDeployCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  // ─── task hitl:true exclusion (CBD-2.2) ─────────────────────────────────
+
+  test("APPROVED + green CI + linked task hitl:true is excluded from candidates, even with status pr_open (not blocked)", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: true });
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("APPROVED + green CI + linked task hitl:false is still an eligible candidate", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: false });
     const result = await getDeployCandidates(deps);
     expect(result).toHaveLength(1);
   });
