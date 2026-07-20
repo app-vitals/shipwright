@@ -47,8 +47,9 @@ function makeDeps(
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null> = async () => null,
-  getScopedRepos: () => string[] = () =>
-    [...new Set(prs.map((pr) => pr.repo ?? ""))],
+  getScopedRepos: () => string[] = () => [
+    ...new Set(prs.map((pr) => pr.repo ?? "")),
+  ],
   hasScopeSynced: () => boolean = () => true,
 ): CheckReviewDeps {
   return {
@@ -150,7 +151,8 @@ describe("getReviewCandidates", () => {
     ];
     const result = await getReviewCandidates(
       makeDeps([...prs], async (_repo, prNumber) => {
-        if (prNumber === 1) return { commitSha: "sha-A", reviewState: "posted" };
+        if (prNumber === 1)
+          return { commitSha: "sha-A", reviewState: "posted" };
         return { commitSha: "sha-B-old", reviewState: "posted" };
       }),
     );
@@ -302,17 +304,16 @@ describe("getReviewCandidates", () => {
       "example-org/repo-b#2",
       "example-org/repo-c#3",
     ]);
-    expect(result.map((c) => c.commitSha)).toEqual([
-      "sha-1",
-      "sha-2",
-      "sha-3",
-    ]);
+    expect(result.map((c) => c.commitSha)).toEqual(["sha-1", "sha-2", "sha-3"]);
   });
 
   // ─── age field sourcing ──────────────────────────────────────────────────
 
   test("age is sourced from the linked task's createdAt when a task is linked, even when a task-store PR record exists", async () => {
-    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makePr({
+      headRefOid: "newsha",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const result = await getReviewCandidates(
       makeDeps(
         [pr],
@@ -333,7 +334,10 @@ describe("getReviewCandidates", () => {
   });
 
   test("age falls back to PR createdAt when no task is linked (queryTaskStatus resolves null), even when a task-store record exists", async () => {
-    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makePr({
+      headRefOid: "newsha",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
         commitSha: "oldsha",
@@ -367,8 +371,84 @@ describe("getReviewCandidates", () => {
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
+  // ─── hitl / blocked exclusion (CBD-2.2, PRB-2.3) ─────────────────────────────
+
+  test("a PR whose linked task is hitl:true is excluded from review candidacy (isTaskBlockedForDispatch)", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "pr_open", hitl: true }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR whose linked task has status:blocked is excluded from review candidacy (new behavior)", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "blocked", hitl: false }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR whose PR-record has hitl:true is excluded from review candidacy, even with no linked task at all", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: null,
+          reviewState: "pending",
+          hitl: true,
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR is still an eligible candidate when the linked task has hitl:false or no linked task exists", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "pr_open", hitl: false }),
+      ),
+    );
+    expect(result).toHaveLength(1);
+
+    const resultNoTask = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+      ),
+    );
+    expect(resultNoTask).toHaveLength(1);
+  });
+
   test("readyForReviewAt is never used for age sourcing when a task is linked", async () => {
-    const pr = makePr({ headRefOid: "newsha", createdAt: "2026-06-01T00:00:00.000Z" });
+    const pr = makePr({
+      headRefOid: "newsha",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
     const result = await getReviewCandidates(
       makeDeps(
         [pr],

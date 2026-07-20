@@ -443,6 +443,8 @@ interface MakeReviewStateDepsOptions {
   repos?: string[];
   /** repo -> full page of reviewState:"pending" records (pagination simulated by slicing). */
   pendingRecords?: Record<string, PrReviewStateRecord[]>;
+  /** repo -> full page of reviewState:"posted" records (pagination simulated by slicing). */
+  postedRecords?: Record<string, PrReviewStateRecord[]>;
   /** "repo#prNumber" -> review data, or an Error to throw for that fetch. */
   reviewResults?: Record<string, PrReviewData | Error>;
   pageLimit?: number;
@@ -453,6 +455,7 @@ interface MakeReviewStateDepsOptions {
 function makeReviewStateDeps({
   repos = ["acme/example-repo"],
   pendingRecords = {},
+  postedRecords = {},
   reviewResults = {},
   pageLimit = 50,
   clock = FixedClock(new Date("2026-07-15T12:00:00.000Z")),
@@ -460,10 +463,12 @@ function makeReviewStateDeps({
 }: MakeReviewStateDepsOptions = {}): {
   deps: PrReviewStateReconcilerDeps;
   listCalls: ListReviewCall[];
+  listPostedCalls: ListReviewCall[];
   patchCalls: ReviewPatchCall[];
   fetchCalls: string[];
 } {
   const listCalls: ListReviewCall[] = [];
+  const listPostedCalls: ListReviewCall[] = [];
   const patchCalls: ReviewPatchCall[] = [];
   const fetchCalls: string[] = [];
 
@@ -481,6 +486,15 @@ function makeReviewStateDeps({
       const all = pendingRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
+    listPostedReviewRecords: async (
+      repo: string,
+      limit: number,
+      offset: number,
+    ) => {
+      listPostedCalls.push({ repo, limit, offset });
+      const all = postedRecords[repo] ?? [];
+      return all.slice(offset, offset + limit);
+    },
     patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
       patchCalls.push({ id, fields });
     },
@@ -495,7 +509,7 @@ function makeReviewStateDeps({
     },
   };
 
-  return { deps, listCalls, patchCalls, fetchCalls };
+  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls };
 }
 
 function makeReviewStateRecord(
@@ -988,6 +1002,303 @@ describe("reconcileReviewState", () => {
 
     expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
+  });
+});
+
+// ─── reconcileReviewState — posted-scan pass (CHU-2.4) ──────────────────────────
+
+describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
+  test("#1814 case: posted record, all reviews at a stale commit, no review at current head at all — PATCH back to pending", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-1814",
+      prNumber: 1814,
+    });
+    // A new commit landed since the posted verdict; the only review on file
+    // targets the prior (now-stale) commit, so nothing at all qualifies at
+    // the current head.
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "stale-sha" },
+            body: "Please fix the auth flow.",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1814": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-1814");
+    expect(patchCalls[0].fields).toEqual({ reviewState: "pending" });
+  });
+
+  test("posted record with a genuine unresolved finding at the new head — left untouched, no PATCH", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-real-finding",
+      prNumber: 1815,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "new-head-sha" },
+            body: "This still breaks the auth flow, please fix.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: false })] },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1815": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("posted record with a genuine finding via non-empty body only (threads resolved) at new head — left untouched, no PATCH", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-real-finding-body",
+      prNumber: 1816,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "new-head-sha" },
+            body: "Please rename this variable before merging.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1816": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("posted record still terminal/clean at head (e.g. still approved) — no PATCH, nothing changed", async () => {
+    const record = makeReviewStateRecord({
+      id: "pr-posted-still-approved",
+      prNumber: 1817,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      reviewResults: { "acme/example-repo#1817": reviewData },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+  });
+
+  test("actively-claimed posted record is skipped without any GitHub call", async () => {
+    const clock = FixedClock(new Date("2026-07-15T12:00:00.000Z"));
+    const record = makeReviewStateRecord({
+      id: "pr-posted-claimed",
+      prNumber: 1818,
+      claimedBy: "some-agent",
+      // 5 minutes ago — well within the default 35-minute TTL.
+      heartbeatAt: "2026-07-15T11:55:00.000Z",
+    });
+    const { deps, patchCalls, fetchCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [record] },
+      clock,
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+    expect(fetchCalls).toHaveLength(0);
+  });
+
+  test("posted scan paginates beyond the default page limit", async () => {
+    const page1 = Array.from({ length: 2 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-p1-${i}`, prNumber: 300 + i }),
+    );
+    const page2 = Array.from({ length: 1 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-p2-${i}`, prNumber: 400 + i }),
+    );
+    const reviewResults: Record<string, PrReviewData> = {};
+    for (const r of [...page1, ...page2]) {
+      // All still terminal/clean at head — nothing should PATCH, this test
+      // only cares about the pagination call shape.
+      reviewResults[`acme/example-repo#${r.prNumber}`] = makeReviewData({
+        headRefOid: "head-sha",
+        reviews: {
+          nodes: [
+            makeReviewNode({
+              state: "APPROVED",
+              commit: { oid: "head-sha" },
+              body: "",
+            }),
+          ],
+        },
+      });
+    }
+
+    const { deps, listPostedCalls } = makeReviewStateDeps({
+      postedRecords: { "acme/example-repo": [...page1, ...page2] },
+      reviewResults,
+      pageLimit: 2,
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(listPostedCalls).toHaveLength(2);
+    expect(listPostedCalls[0]).toMatchObject({
+      repo: "acme/example-repo",
+      limit: 2,
+      offset: 0,
+    });
+    expect(listPostedCalls[1]).toMatchObject({
+      repo: "acme/example-repo",
+      limit: 2,
+      offset: 2,
+    });
+  });
+
+  test("posted-list fetch failure for one repo does not abort the pending scan or other repos' posted scans", async () => {
+    const pendingRecord = makeReviewStateRecord({
+      id: "pr-pending-ok",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const postedRecordB = makeReviewStateRecord({
+      id: "pr-posted-ok-b",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const approveReview = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+    });
+    const noReviewAtHead = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: { nodes: [] },
+    });
+
+    const deps: PrReviewStateReconcilerDeps = {
+      repos: ["acme/repo-a", "acme/repo-b"],
+      pageLimit: 50,
+      clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
+      listPendingReviewRecords: async (repo: string) => {
+        if (repo === "acme/repo-a") return [pendingRecord];
+        return [];
+      },
+      listPostedReviewRecords: async (repo: string) => {
+        if (repo === "acme/repo-a") {
+          throw new Error("task-store GET /prs → 503");
+        }
+        return [postedRecordB];
+      },
+      patchPrRecord: async () => {},
+      fetchPrReviews: async (org: string, repo: string, prNumber: number) => {
+        const key = `${org}/${repo}#${prNumber}`;
+        if (key === "acme/repo-a#1") return approveReview;
+        if (key === "acme/repo-b#1") return noReviewAtHead;
+        throw new Error(`no fake review result configured for ${key}`);
+      },
+    };
+    const patchCalls: ReviewPatchCall[] = [];
+    deps.patchPrRecord = async (id: string, fields: Record<string, unknown>) => {
+      patchCalls.push({ id, fields });
+    };
+
+    await reconcileReviewState(deps);
+
+    // repo-a's pending scan still succeeds (approved), and repo-b's posted
+    // scan still runs and PATCHes back to pending — the repo-a posted-list
+    // failure is isolated to that repo/pass only.
+    expect(patchCalls).toHaveLength(2);
+    const byId = Object.fromEntries(patchCalls.map((c) => [c.id, c.fields]));
+    expect(byId["pr-pending-ok"]).toEqual({ reviewState: "approved" });
+    expect(byId["pr-posted-ok-b"]).toEqual({ reviewState: "pending" });
+  });
+
+  test("scans multiple repos independently for the posted pass", async () => {
+    const recordA = makeReviewStateRecord({
+      id: "pr-posted-repoA",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const recordB = makeReviewStateRecord({
+      id: "pr-posted-repoB",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const noReviewAtHead = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: { nodes: [] },
+    });
+    const stillApproved = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+    });
+    const { deps, patchCalls } = makeReviewStateDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      postedRecords: {
+        "acme/repo-a": [recordA],
+        "acme/repo-b": [recordB],
+      },
+      reviewResults: {
+        "acme/repo-a#1": noReviewAtHead,
+        "acme/repo-b#1": stillApproved,
+      },
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-posted-repoA");
+    expect(patchCalls[0].fields).toEqual({ reviewState: "pending" });
   });
 });
 

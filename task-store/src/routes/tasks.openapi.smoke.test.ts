@@ -80,7 +80,11 @@ function withBlockedBy(task: Task) {
 }
 
 function fakeTaskService(
-  opts: { tasks?: Task[]; onList?: (filters: unknown) => void } = {},
+  opts: {
+    tasks?: Task[];
+    onList?: (filters: unknown) => void;
+    onBulk?: (tasks: unknown) => void;
+  } = {},
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
   return {
@@ -127,7 +131,8 @@ function fakeTaskService(
     async release(id: string) {
       return makeTask({ id, status: "pending" });
     },
-    async bulk() {
+    async bulk(data) {
+      opts.onBulk?.(data);
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
@@ -136,12 +141,16 @@ function fakeTaskService(
   };
 }
 
-/** Build a typed parent app that injects admin context (agentId=null, repos=null). */
-function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
+/** Build a typed parent app that injects the given auth context (agentId, repos). */
+function makeParent(
+  app: OpenAPIHono<TaskStoreAuthEnv>,
+  agentId: string | null,
+  repos: string[] | null,
+) {
   const parent = new OpenAPIHono<TaskStoreAuthEnv>();
   parent.use("*", async (c, next) => {
-    c.set("agentId", null);
-    c.set("repos", null);
+    c.set("agentId", agentId);
+    c.set("repos", repos);
     await next();
   });
   parent.onError((err, c) => {
@@ -152,6 +161,20 @@ function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
   });
   parent.route("/", app);
   return parent;
+}
+
+/** Build a typed parent app that injects admin context (agentId=null, repos=null). */
+function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
+  return makeParent(app, null, null);
+}
+
+/** Build a typed parent app that injects agent-token context (agentId set, scoped repos). */
+function makeAgentParent(
+  app: OpenAPIHono<TaskStoreAuthEnv>,
+  agentId: string,
+  repos: string[] | null = [],
+) {
+  return makeParent(app, agentId, repos);
 }
 
 describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
@@ -302,6 +325,42 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(res.status).toBe(400);
   });
 
+  it("GET /?source=entropy-fix passes source through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?source=entropy-fix");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { source?: string }).source).toBe("entropy-fix");
+  });
+
+  it("GET / with no source param passes source: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { source?: string }).source).toBeUndefined();
+  });
+
   it("GET /?hitl=true passes hitl: true through to taskService.list()", async () => {
     const task = makeTask({ id: "t-1", hitl: true });
     let receivedFilters: unknown;
@@ -373,5 +432,104 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     const body = (await res.json()) as { sessions: string[]; repos: string[] };
     expect(Array.isArray(body.sessions)).toBe(true);
     expect(Array.isArray(body.repos)).toBe(true);
+  });
+});
+
+describe("POST / (create) — agent-token default assignee (UTA-1.1)", () => {
+  it("agent token, no assignee in body -> created task has assignee: null (unassigned pool task)", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "New task",
+        status: "pending",
+        repo: null,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.assignee).toBeNull();
+  });
+
+  it("agent token, explicit assignee in body -> honored, not overwritten to caller's own agentId", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "New task",
+        status: "pending",
+        repo: null,
+        assignee: "some-other-agent",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.assignee).toBe("some-other-agent");
+  });
+});
+
+describe("POST /bulk — agent-token default assignee (UTA-1.1)", () => {
+  it("agent token, tasks with no assignee field -> assignee stays unset/null per task", async () => {
+    let received: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onBulk: (tasks) => {
+          received = tasks;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        { title: "Task A", status: "pending", repo: null },
+        { title: "Task B", status: "pending", repo: null },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const tasks = received as Record<string, unknown>[];
+    expect(tasks).toHaveLength(2);
+    for (const t of tasks) {
+      expect(t.assignee).toBeUndefined();
+    }
+  });
+
+  it("agent token, explicit assignee per task -> honored, not overwritten", async () => {
+    let received: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onBulk: (tasks) => {
+          received = tasks;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        {
+          title: "Task A",
+          status: "pending",
+          repo: null,
+          assignee: "some-other-agent",
+        },
+        { title: "Task B", status: "pending", repo: null, assignee: "agent-1" },
+      ]),
+    });
+    expect(res.status).toBe(200);
+    const tasks = received as Record<string, unknown>[];
+    expect(tasks).toHaveLength(2);
+    expect(tasks[0]?.assignee).toBe("some-other-agent");
+    expect(tasks[1]?.assignee).toBe("agent-1");
   });
 });

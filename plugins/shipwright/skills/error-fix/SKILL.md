@@ -99,6 +99,23 @@ If either call fails for a given issue (non-2xx), note it and skip that issue fo
 do not queue a task built on incomplete information. Include skipped-on-fetch-failure issues
 in the final summary as a distinct line (not the same as "already active" or "unmapped").
 
+Run each mapped issue fetched above through the pre-filing verification checklist —
+`references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
+any further toward becoming a task. This re-verifies the finding against the current repo
+state (the Sentry issue and the report snapshot may already be stale by the time this skill
+runs) and catches task ID / branch collisions early. Treat
+`references/pre-filing-verification.md` as canonical for how to apply the checklist. Per its
+four checks:
+- Drop issues whose cited call site no longer exists or whose described gap is already fixed
+  (Checklist Items 1–2) — do not queue a primary or companion task for them. Log them the same
+  way as other skipped issues (Step 10 summary).
+- Route issues that can't be confirmed by a literal check to HITL rather than assuming they're
+  safe to drop (Checklist Item 3) — this feeds into the `hitl` computation in Step 6/Step 7.
+- Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 5 dedup
+  check; no separate action is needed here beyond noting the overlap.
+This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the real queue
+path (Step 5 onward) operate on the same already-verified issue set.
+
 ---
 
 ## Step 4: Dry-Run Output (if --dry-run)
@@ -251,7 +268,7 @@ For each issue with a primary fix task to queue:
 {
   "id": "error-{sentry-issue-id}-{slug}",
   "title": "Error fix: {issue title}",
-  "source": "shipwright",
+  "source": "error-fix",
   "repo": "<repo dir name from error-report.md's Service → Repo Mapping table, or re-derived from state/error-patrol-ledger.json's serviceRepoMap if the report is stale>",
   "branch": "fix/error-{sentry-issue-id}-{slug}",
   "layer": "Background",
@@ -267,7 +284,7 @@ For each companion observability-fix task to queue:
 {
   "id": "error-{sentry-issue-id}-obs-{slug}",
   "title": "Error fix (observability): {call site description}",
-  "source": "shipwright",
+  "source": "error-fix",
   "repo": "<same repo derivation as the primary task>",
   "branch": "fix/error-{sentry-issue-id}-obs-{slug}",
   "layer": "Background",

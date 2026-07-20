@@ -277,6 +277,14 @@ Then print and stop:
   Check the PR on GitHub — it may require a human to resolve a merge conflict or branch protection issue.
 ```
 
+**Do not PATCH the task to `status: "blocked"` here.** A merge conflict is routine and
+self-recoverable — `check-patch.ts`'s candidate logic already detects any `DIRTY` PR
+independent of task status and fixes it automatically, no human required. Marking the task
+`blocked` would hide it from `check-deploy.ts`'s candidate list (which explicitly skips PRs
+whose linked task is `blocked`) even after patch resolves the conflict, stranding it until a
+human notices and corrects the record by hand. Leave the task's status exactly as it was;
+`check-deploy.ts` will reconsider the PR once `mergeStateStatus` clears.
+
 Print:
 ```
 ✓ Merged PR #{pr} → main
@@ -328,6 +336,20 @@ curl -sf -X PATCH \
 ```
 
 ### 5a. No-Pipeline Detection
+
+**Check the target repo's Deploy model first.** The target repo's own `CLAUDE.md` is
+already in your context from the worktree checkout earlier in this flow — no new file
+read or tool call is needed. Look for a `## Deploy model` section:
+
+- **Clearly states there is no deploy pipeline** (e.g. a `direct` model, or explicit
+  language like "no deploy pipeline" / "ships via container/Helm/direct push with no
+  staging/canary/promote stages" — shipwright's own repo is an example: `Deploy model:
+  direct` — "ships via Helm chart + GHCR-pinned image tags, with no staging/production
+  GitHub Environments and no deploy-staging→canary→promote-to-production pipeline"):
+  skip the 5-minute poll below entirely and go straight to Step 5c.
+- **Describes a pipeline, is ambiguous, is absent, or you're not confident in your
+  read**: fall back to exactly today's behavior below — run the full 5-minute poll.
+  **Never guess.** When in doubt, poll.
 
 Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls).
 
@@ -397,13 +419,22 @@ Print the handoff block (Step 9) with `Pipeline: post-merge CI ({pipeline_minute
 ✗ Post-merge CI failed — {name}
   Logs: gh run view {id} --log --failed
 ```
-Update via task store — skip if deploy-only mode:
+Update via task store if a task is linked; otherwise flag the PR record for human
+attention (deploy-only mode):
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"blocked\", \"note\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"blocked\", \"note\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"hitl\": true, \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+fi
 ```
 Stop.
 
@@ -412,13 +443,23 @@ Stop.
 ⚠ Post-merge CI still pending after 10 minutes — marking deployed.
   Check manually: gh api repos/{org}/{repo}/actions/runs?head_sha={SQUASH_SHA}
 ```
-Update the task store to `status=deployed` — skip if deploy-only mode:
+Update the task store to `status=deployed` if a task is linked; otherwise flag the PR
+record for human attention (deploy-only mode) — the deploy itself is marked done, but a
+human should still check the pending runs manually:
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"deployed\", \"deployedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"hitl\": true, \"blockedReason\": \"Post-merge CI still pending after 10 minutes — marking deployed, check manually\"}" | jq .
+fi
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
 
@@ -455,6 +496,14 @@ call 2 covers minutes 8-16, call 3 covers minutes 16-24, call 4 covers minutes 2
 call may run fewer than 8 iterations to land on the 30-minute mark). Break out of the loop
 (and stop chaining further Bash calls) as soon as any terminal condition below is met —
 do not keep polling once Deploy has failed, Canary has resolved, or Promote has resolved.
+
+**Stage names: check the Deploy model section again.** If the target repo's `CLAUDE.md`
+`## Deploy model` section (same already-in-context read as Step 5a — no new file read)
+explicitly names its pipeline stages/workflow names, use those stage names for the
+progress labels and terminal-condition checks below in place of the defaults. If it
+doesn't name stages, is ambiguous, is absent, or you're not confident in your read,
+keep exactly today's literal `"Deploy"`/`"Canary"`/`"Promote to Prod"` three-stage table
+and print format unchanged — never guess.
 
 Track three stages by workflow name (`.name`):
 
@@ -511,13 +560,22 @@ Re-surface this message every 5 minutes while the queue remains stuck.
   Run ID: {id}
   Collect logs: gh run view {id} --log --failed
 ```
-Update via task store — skip if deploy-only mode:
+Update via task store if a task is linked; otherwise flag the PR record for human
+attention (deploy-only mode):
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"blocked\", \"note\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"blocked\", \"note\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"hitl\": true, \"blockedReason\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+fi
 ```
 Stop.
 
@@ -531,13 +589,22 @@ Go to Step 6.
   Check: gh api repos/{org}/{repo}/actions/runs?per_page=10 --jq '.workflow_runs[] | select(.name == "Promote to Prod")'
   Likely cause: Promote workflow's `workflow_run.conclusion` did not match `success`.
 ```
-Update via task store — skip if deploy-only mode:
+Update via task store if a task is linked; otherwise flag the PR record for human
+attention (deploy-only mode):
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d '{"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"}' | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d '{"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"}' | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d '{"hitl": true, "blockedReason": "canary_blocked: Promote skipped after canary success"}' | jq .
+fi
 ```
 Stop.
 
@@ -552,13 +619,22 @@ Go to Step 7.
     Canary:  {status}/{conclusion}
     Promote: {status}/{conclusion}
 ```
-Update via task store — skip if deploy-only mode:
+Update via task store if a task is linked; otherwise flag the PR record for human
+attention (deploy-only mode):
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d '{"status": "blocked", "note": "Pipeline timeout after 30 minutes"}' | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d '{"status": "blocked", "note": "Pipeline timeout after 30 minutes"}' | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d '{"hitl": true, "blockedReason": "Pipeline timeout after 30 minutes"}' | jq .
+fi
 ```
 Stop.
 
@@ -617,14 +693,23 @@ Canary logs: gh run view {canary_run_id} --log --failed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
-Update via task store — skip if deploy-only mode:
+Update via task store if a task is linked; otherwise flag the PR record for human
+attention (deploy-only mode):
 
 ```bash
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"blocked\", \"blockedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\", \"note\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"hitl\": true, \"blockedReason\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+fi
 ```
 
 Stop.

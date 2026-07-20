@@ -48,6 +48,7 @@ export interface TaskListFilters {
   status?: string;
   /** High-level lifecycle filter: "open" | "closed" | "in_progress". */
   state?: "open" | "closed" | "in_progress";
+  source?: string;
   session?: string;
   repo?: string;
   assignee?: string;
@@ -127,6 +128,7 @@ export class TaskService implements TaskServiceLike {
     } else if (filters.state === "in_progress") {
       where.status = { in: ["in_progress", "pr_open", "approved"] };
     }
+    if (filters.source) where.source = filters.source;
     if (filters.session) where.session = filters.session;
     if (filters.claimedBy) where.claimedBy = filters.claimedBy;
     if (filters.pr !== undefined) where.pr = filters.pr;

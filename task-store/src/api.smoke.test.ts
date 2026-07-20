@@ -395,7 +395,7 @@ describe("task-store API (smoke)", () => {
 
   // ─── Agent token scoping ──────────────────────────────────────────────────
 
-  it("POST /tasks with agent token forces assignee to the agent's ID", async () => {
+  it("POST /tasks with agent token and no assignee in body defaults to unassigned (null)", async () => {
     const app = makeApp({
       tokenService: fakeAgentTokenService(),
       scopeResolver: makeScopeResolver(["example-org/repo"]),
@@ -414,7 +414,30 @@ describe("task-store API (smoke)", () => {
     });
     expect(res.status).toBe(201);
     const body = (await res.json()) as Task;
-    expect(body.assignee).toBe("agent-1");
+    expect(body.assignee).toBeNull();
+  });
+
+  it("POST /tasks with agent token honors an explicit assignee in the body", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      scopeResolver: makeScopeResolver(["example-org/repo"]),
+    });
+    const res = await app.request("/tasks", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${AGENT_TOKEN}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        title: "New task",
+        status: "pending",
+        repo: "example-org/repo",
+        assignee: "agent-2",
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as Task;
+    expect(body.assignee).toBe("agent-2");
   });
 
   it("GET /tasks/:id returns 403 when agent token tries to read a task owned by a different agent", async () => {

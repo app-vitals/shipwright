@@ -203,12 +203,13 @@ Returns `{ crons: AgentCronJob[] }` where each cron includes a run summary (last
 PATCH /agents/:id/crons/:cronId
 ```
 
-Body fields are the same as create, all optional. Two constraints:
+Body fields are the same as create, all optional. Constraints:
 
 - `schedule` and `prompt` must be provided together when doing a content update
 - `enabled` and `preCheck` are orthogonal — each can be sent alone or combined with any other field
 - At least one field must be present (empty body returns `400`)
 - `parentCronId` is never settable (read-only, ignored in request bodies)
+- System crons (flagged `system=true`) cannot be updated — returns `403`
 
 Returns the updated cron job with all read-only fields included (`parentCronId`, `system`, `createdAt`, `updatedAt`).
 

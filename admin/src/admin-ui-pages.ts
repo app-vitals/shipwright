@@ -1551,6 +1551,7 @@ export function renderTasksPage(
     state?: "ready" | "in_progress" | "blocked" | "closed";
     session?: string;
     repo?: string;
+    source?: string;
     agent?: string;
     hitl?: "true" | "false";
   },
@@ -1606,6 +1607,7 @@ export function renderTasksPage(
     else if (filters.state) params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
+    if (filters.source) params.set("source", filters.source);
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (p > 1) params.set("page", String(p));
@@ -1626,7 +1628,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="9" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="10" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -1670,6 +1672,7 @@ export function renderTasksPage(
         : '<span style="color:#9ca3af">—</span>'
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
     <td class="col-created" style="font-size:12px">${createdCell}</td>
     ${
@@ -1693,6 +1696,7 @@ export function renderTasksPage(
     p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
+    if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
     const qs = p.toString();
@@ -1810,6 +1814,10 @@ export function renderTasksPage(
           <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo"${suggestions?.repos?.length ? ' list="repos-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Source</label>
+          <input name="source" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.source ?? "")}" placeholder="source" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Agent</label>
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
@@ -1832,6 +1840,7 @@ export function renderTasksPage(
               <th>Assignee</th>
               <th class="col-session">Session</th>
               <th class="col-repo">Repo</th>
+              <th class="col-source">Source</th>
               <th>PR</th>
               <th class="col-created">Created</th>
               <th></th>
@@ -2497,16 +2506,17 @@ export function renderSessionDetailPage(
     <td style="font-size:12px">${t.layer ? escapeHtml(t.layer) : '<span style="color:#9ca3af">—</span>'}</td>
     <td style="font-size:12px">${t.hours !== null && t.hours !== undefined ? escapeHtml(String(t.hours)) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
   </tr>`;
   }
 
   const tableRows =
     tasks.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tasks found for this session.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No tasks found for this session.</td></tr>`
       : TASK_STATE_GROUPS.map(({ key, label }) => {
           const group = tasksByState.get(key);
           if (!group || group.length === 0) return "";
-          return `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
+          return `<tr><td colspan="7" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
         })
           .filter(Boolean)
           .join("\n");
@@ -2570,6 +2580,7 @@ export function renderSessionDetailPage(
               <th>Layer</th>
               <th>Hours</th>
               <th>Repo</th>
+              <th class="col-source">Source</th>
             </tr>
           </thead>
           <tbody>

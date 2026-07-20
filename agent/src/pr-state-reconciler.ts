@@ -36,6 +36,16 @@
  * repo-iteration/page-until-partial/continue-on-error scaffolding and reuses
  * the SAME setInterval tick in agent/src/index.ts — not a second timer.
  *
+ * CHU-2.4 extends `reconcileReviewState()` with the mirror-image healing
+ * direction of CHU-2.2's pending→terminal pass above: a record stuck at
+ * reviewState:"posted" whose review(s) are no longer at the current head
+ * commit at all (a new commit landed since the posted verdict, but nothing
+ * reset reviewState back to pending — confirmed live on
+ * app-vitals/shipwright#1814) gets PATCHed back to "pending" so
+ * check-review.ts's dedup guard (`commitSha === headRefOid && reviewState
+ * !== "pending" -> skip`) stops trapping the PR out of every phase's
+ * candidate set. Runs as a second per-repo pass inside the same
+ * `reconcileReviewState()` function — no new setInterval tick.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
@@ -175,6 +185,18 @@ export interface PrReviewStateReconcilerDeps {
   claimTtlMs?: number;
   /** List one page of state:"open" && reviewState:"pending" PR records for a repo. */
   listPendingReviewRecords: (
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>;
+  /**
+   * List one page of state:"open" && reviewState:"posted" PR records for a
+   * repo (CHU-2.4) — mirrors `listPendingReviewRecords`'s exact signature,
+   * paged the same way, but for the mirror-image healing direction: a
+   * posted verdict that's gone stale because a new commit landed with no
+   * review targeting it yet.
+   */
+  listPostedReviewRecords: (
     repo: string,
     limit: number,
     offset: number,
@@ -507,6 +529,27 @@ export async function reconcilePrState(
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
 
+/** Filter a PR's reviews down to only those submitted at the current head commit. */
+function reviewsAtHeadCommit(data: PrReviewData): PrReviewData["reviews"]["nodes"] {
+  const { headRefOid, reviews } = data;
+  return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
+}
+
+/**
+ * CHU-2.4: does ANY review at all exist at the PR's current head commit?
+ * Extracted out of `classifyReviewState`'s existing `reviewsAtHead.length ===
+ * 0` check so the posted-scan pass can distinguish this specific null case
+ * ("nothing at head at all" — a posted verdict has gone stale because a new
+ * commit landed with no review yet targeting it) from the OTHER null case
+ * `classifyReviewState` returns (a genuine unresolved finding at head, which
+ * must leave a posted record untouched). `classifyReviewState`'s own
+ * existing behavior/signature is unchanged — it still returns null for both
+ * cases, exactly as before.
+ */
+function hasAnyReviewAtHead(data: PrReviewData): boolean {
+  return reviewsAtHeadCommit(data).length > 0;
+}
+
 /**
  * Classify a PR's review state from live GitHub review data. Mirrors the
  * SHAPE of check-patch.ts's private `hasUnaddressedFindings` filtering
@@ -533,10 +576,8 @@ export async function reconcilePrState(
  *     the record completely untouched.
  */
 function classifyReviewState(data: PrReviewData): "approved" | "posted" | null {
-  const { headRefOid, reviews, reviewThreads } = data;
-  const reviewsAtHead = reviews.nodes.filter(
-    (r) => r.commit.oid === headRefOid,
-  );
+  const { reviewThreads } = data;
+  const reviewsAtHead = reviewsAtHeadCommit(data);
   if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
 
   const qualifyingReviews = reviewsAtHead.filter(
@@ -585,20 +626,28 @@ function isActivelyClaimed(
 }
 
 /**
- * List every reviewState:"pending" PR record for a repo, paging through the
- * task-store's default 50-record page until a page returns fewer than
- * `limit` records.
+ * List every record a paginated per-repo list-fn returns for a repo, paging
+ * through the task-store's default 50-record page until a page returns
+ * fewer than `limit` records. Shared pagination-until-partial-page loop for
+ * both the reviewState:"pending" scan (`listPendingReviewRecords`) and the
+ * reviewState:"posted" scan (`listPostedReviewRecords`, CHU-2.4) — the loop
+ * body is identical, only the underlying dep function differs.
  */
-async function listAllPendingReviewRecords(
+async function listAllReviewRecords(
   deps: PrReviewStateReconcilerDeps,
   repo: string,
+  listFn: (
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>,
 ): Promise<PrReviewStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrReviewStateRecord[] = [];
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listPendingReviewRecords(repo, limit, offset);
+    const page = await listFn(repo, limit, offset);
     records.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -635,12 +684,52 @@ async function reconcileReviewStateRecord(
 }
 
 /**
+ * Reconcile a single reviewState:"posted" record against live GitHub review
+ * data (CHU-2.4 — the mirror-image direction of
+ * `reconcileReviewStateRecord` above). Skips actively-claimed records
+ * without any GitHub call, same as the pending-scan guard.
+ *
+ * Unlike the pending-scan reconciler, this does NOT use
+ * `classifyReviewState()`'s return value directly — that function collapses
+ * "nothing at head at all" and "a genuine finding exists at head" into the
+ * same `null`, which is the right no-op for a *pending* record but wrong
+ * for a *posted* one. Here the two cases must be told apart:
+ *
+ *   - NO review at all at the current head commit (confirmed live on
+ *     app-vitals/shipwright#1814: a new commit landed one commit past every
+ *     review on file) means the posted verdict is stale — PATCH back to
+ *     "pending" so check-review.ts re-selects the PR for a fresh review.
+ *   - Anything else (a genuine unresolved finding at head, a still-terminal
+ *     review, or a still-approved review) leaves the record completely
+ *     untouched — there's nothing to heal.
+ */
+async function reconcilePostedReviewStateRecord(
+  deps: PrReviewStateReconcilerDeps,
+  record: PrReviewStateRecord,
+): Promise<void> {
+  const claimTtlMs = deps.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
+  if (isActivelyClaimed(record, deps.clock, claimTtlMs)) return; // live claim — never overwrite
+
+  const [org, repoName] = splitOrgRepo(record.repo);
+  const reviewData = await deps.fetchPrReviews(org, repoName, record.prNumber);
+  if (hasAnyReviewAtHead(reviewData)) return; // something at head (finding or terminal) — untouched
+
+  await deps.patchPrRecord(record.id, { reviewState: "pending" });
+}
+
+/**
  * Scan every repo's reviewState:"pending" PR records, compare each against
  * live GitHub review data, and PATCH only the ones that have gone terminal
  * at the current head commit (an out-of-band reviewer posted an APPROVED or
- * clean-approve-shaped/terminal review directly to GitHub). A single
- * per-record failure (claim check aside) is logged and does not abort
- * reconciliation of the rest of the batch.
+ * clean-approve-shaped/terminal review directly to GitHub). Then runs the
+ * mirror-image reviewState:"posted" scan (CHU-2.4): a posted verdict whose
+ * review(s) are no longer at the current head commit at all (a new commit
+ * landed since the posted verdict, but nothing reset reviewState back to
+ * pending) gets PATCHed back to "pending" so check-review.ts's dedup guard
+ * (`commitSha === headRefOid && reviewState !== "pending" -> skip`) stops
+ * trapping the PR out of every phase's candidate set. A single per-record
+ * failure (claim check aside) is logged and does not abort reconciliation
+ * of the rest of the batch, for either scan.
  */
 export async function reconcileReviewState(
   deps: PrReviewStateReconcilerDeps,
@@ -648,7 +737,11 @@ export async function reconcileReviewState(
   for (const repo of deps.repos) {
     let records: PrReviewStateRecord[];
     try {
-      records = await listAllPendingReviewRecords(deps, repo);
+      records = await listAllReviewRecords(
+        deps,
+        repo,
+        deps.listPendingReviewRecords,
+      );
     } catch (err) {
       console.error(
         `[pr-state-reconciler:review] failed to list pending-review PRs for ${repo}:`,
@@ -663,6 +756,34 @@ export async function reconcileReviewState(
       } catch (err) {
         console.error(
           `[pr-state-reconciler:review] failed to reconcile ${repo}#${record.prNumber}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+    }
+  }
+
+  for (const repo of deps.repos) {
+    let postedRecords: PrReviewStateRecord[];
+    try {
+      postedRecords = await listAllReviewRecords(
+        deps,
+        repo,
+        deps.listPostedReviewRecords,
+      );
+    } catch (err) {
+      console.error(
+        `[pr-state-reconciler:review] failed to list posted-review PRs for ${repo}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      continue;
+    }
+
+    for (const record of postedRecords) {
+      try {
+        await reconcilePostedReviewStateRecord(deps, record);
+      } catch (err) {
+        console.error(
+          `[pr-state-reconciler:review] failed to reconcile posted ${repo}#${record.prNumber}:`,
           err instanceof Error ? err.message : String(err),
         );
       }
@@ -926,21 +1047,23 @@ export function buildReviewStateProductionDeps(opts: {
   };
   const doFetch = opts.fetchFn ?? fetch;
 
-  return {
-    repos,
-    clock: opts.clock ?? SystemClock(),
-    claimTtlMs: Number(
-      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
-    ),
-    listPendingReviewRecords: async (
-      repo: string,
-      limit: number,
-      offset: number,
-    ) => {
+  /**
+   * Shared GET /prs?repo=<repo>&state=open&reviewState=<reviewState> helper
+   * for both the pending scan and the posted scan (CHU-2.4) — identical
+   * request shape, only the `reviewState` query value differs.
+   */
+  const listReviewRecordsByState = (
+    reviewState: "pending" | "posted",
+  ): ((
+    repo: string,
+    limit: number,
+    offset: number,
+  ) => Promise<PrReviewStateRecord[]>) => {
+    return async (repo: string, limit: number, offset: number) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
-        reviewState: "pending",
+        reviewState,
         limit: String(limit),
         offset: String(offset),
       });
@@ -950,7 +1073,17 @@ export function buildReviewStateProductionDeps(opts: {
       }
       const data = (await res.json()) as PrReviewListResponseJson;
       return data.prs;
-    },
+    };
+  };
+
+  return {
+    repos,
+    clock: opts.clock ?? SystemClock(),
+    claimTtlMs: Number(
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+    ),
+    listPendingReviewRecords: listReviewRecordsByState("pending"),
+    listPostedReviewRecords: listReviewRecordsByState("posted"),
     patchPrRecord: makePatchPrRecord({ baseUrl, headers, doFetch }),
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
       const query = `{

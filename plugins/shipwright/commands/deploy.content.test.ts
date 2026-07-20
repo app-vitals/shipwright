@@ -10,6 +10,22 @@ beforeAll(() => {
   content = readFileSync(DEPLOY_MD_PATH, "utf-8");
 });
 
+function extractStep5aSection(md: string): string {
+  const match = md.match(
+    /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+function extractStep5bSection(md: string): string {
+  const match = md.match(
+    /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");
@@ -206,6 +222,20 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
     const claimIdx = content.indexOf("/prs/claim");
     expect(releaseIdx).toBeGreaterThan(claimIdx);
   });
+
+  it("does not PATCH task status to blocked on a merge-timeout/conflict failure", () => {
+    // Merge conflicts are routine and self-recoverable (check-patch.ts fixes any DIRTY
+    // PR regardless of task status) — writing status:"blocked" here would hide the PR
+    // from check-deploy.ts's candidate list even after patch resolves it, stranding the
+    // task until a human notices. This section must leave task status untouched.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("### 4c.", timeoutIdx);
+    expect(nextSectionIdx).toBeGreaterThan(timeoutIdx);
+    const failureSection = content.slice(timeoutIdx, nextSectionIdx);
+    expect(failureSection).not.toContain('"status": "blocked"');
+    expect(failureSection.toLowerCase()).toContain("do not patch the task");
+  });
 });
 
 describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
@@ -267,14 +297,6 @@ describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
-  function extractStep5bSection(md: string): string {
-    const match = md.match(
-      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5b's polling implementation uses a chained in-Bash sleep loop (shell for-loop + sleep 60)", () => {
     const step5bSection = extractStep5bSection(content);
     expect(step5bSection).toContain("sleep 60");
@@ -325,14 +347,6 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
-  function extractStep5aSection(md: string): string {
-    const match = md.match(
-      /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
     const step5aSection = extractStep5aSection(content);
     expect(step5aSection).toContain("sleep 30");
@@ -377,6 +391,53 @@ describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
   });
 });
 
+describe("deploy.md — read target repo's Deploy model before polling (DPS-2.1)", () => {
+  it("Step 5a instructs the agent to check the target repo's CLAUDE.md 'Deploy model' section before polling", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).toContain("CLAUDE.md");
+    expect(step5aSection).toContain("Deploy model");
+  });
+
+  it("Step 5a instructs skipping straight to Step 5c when the Deploy model section clearly states there is no pipeline", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("no deploy pipeline");
+    expect(step5aSection).toContain("skip");
+    expect(step5aSection).toContain("Step 5c");
+  });
+
+  it("Step 5a states the fallback: ambiguous/absent/low-confidence reads fall back to today's unchanged poll behavior — never guess", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("ambiguous");
+    expect(lower).toContain("never guess");
+  });
+
+  it("Step 5a's Deploy-model check reads only already-in-context CLAUDE.md — no new file read or tool call", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("already in");
+    expect(lower).toContain("context");
+  });
+
+  it("Step 5b instructs using stage names from the Deploy model section when given", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("Deploy model");
+    const lower = step5bSection.toLowerCase();
+    expect(lower).toContain("stage name");
+  });
+
+  it("Step 5b preserves the literal Deploy/Canary/Promote to Prod defaults for the fallback case", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain('`"Deploy"`');
+    expect(step5bSection).toContain('`"Canary"`');
+    expect(step5bSection).toContain('`"Promote to Prod"`');
+    expect(step5bSection).toContain(
+      "[{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}",
+    );
+  });
+});
+
 describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
   it("Step 4b contains exactly one unconditional --admin merge command", () => {
     const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
@@ -401,5 +462,106 @@ describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
     expect(step4bSection).not.toContain("**Self-review**");
     expect(step4bSection).not.toContain('approval_source == "github"');
     expect(step4bSection).not.toContain('approval_source == "self_review"');
+  });
+});
+
+describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (PRB-3.2)", () => {
+  // The 6 escalation/failure sites that must now PATCH /prs/$PR_RECORD_ID with
+  // hitl:true + blockedReason when TASK_ID is empty (deploy-only mode), instead of
+  // silently skipping. Each is identified by a unique anchor string near its bash
+  // block, and the original TASK_ID-non-empty PATCH body that must remain unchanged.
+  const sites = [
+    {
+      name: "Post-merge CI failed (Step 5c)",
+      anchor: "Post-merge CI failed — {name}",
+      taskBody: '\\"status\\": \\"blocked\\", \\"note\\": \\"Post-merge CI failed — run ID: {id}\\"',
+    },
+    {
+      name: "Post-merge CI still pending after 10 minutes (Step 5c budget exhausted)",
+      anchor: "Post-merge CI still pending after 10 minutes",
+      taskBody:
+        '\\"status\\": \\"deployed\\", \\"deployedAt\\": \\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\"',
+    },
+    {
+      name: "Deploy stage failed (Step 5b terminal conditions)",
+      anchor: "Deploy stage failed — nothing reached prod.",
+      taskBody: '\\"status\\": \\"blocked\\", \\"note\\": \\"Deploy stage failed — run ID: {id}\\"',
+    },
+    {
+      name: "Canary passed but Promote skipped (Step 5b terminal conditions)",
+      anchor: "Canary passed but Promote was skipped.",
+      taskBody: '"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"',
+    },
+    {
+      name: "Pipeline timeout after 30 minutes (Step 5b terminal conditions)",
+      anchor: "Pipeline timeout after 30 minutes.",
+      taskBody: '"status": "blocked", "note": "Pipeline timeout after 30 minutes"',
+    },
+    {
+      name: "Canary failed — revert PR opened (Step 6)",
+      anchor: "CANARY FAILED — REVERT PR OPENED",
+      taskBody:
+        '\\"status\\": \\"blocked\\", \\"blockedAt\\": \\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\", \\"note\\": \\"Canary failed after deploy. Revert PR opened: {revert_pr_url}\\"',
+    },
+  ];
+
+  function extractSiteSection(anchor: string): string {
+    const anchorIdx = content.indexOf(anchor);
+    expect(anchorIdx).toBeGreaterThan(-1);
+    // Grab a generous window after the anchor covering the print block + PATCH bash block.
+    return content.slice(anchorIdx, anchorIdx + 1200);
+  }
+
+  for (const site of sites) {
+    describe(site.name, () => {
+      it("PATCHes /prs/$PR_RECORD_ID with hitl:true + blockedReason when TASK_ID is empty", () => {
+        const section = extractSiteSection(site.anchor);
+        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID");
+        expect(section).toContain("hitl");
+        expect(section).toContain("true");
+        expect(section).toContain("blockedReason");
+      });
+
+      it("still PATCHes /tasks/$TASK_ID with the original unchanged body when TASK_ID is non-empty", () => {
+        const section = extractSiteSection(site.anchor);
+        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID");
+        expect(section).toContain(site.taskBody);
+      });
+
+      it("branches explicitly on whether TASK_ID is set (if/else), not a blanket skip", () => {
+        const section = extractSiteSection(site.anchor);
+        const hasConditional =
+          /if\s*\[\s*-n\s*"\$TASK_ID"\s*\]/.test(section) ||
+          /if\s*\[\s*-z\s*"\$TASK_ID"\s*\]/.test(section);
+        expect(hasConditional).toBe(true);
+      });
+    });
+  }
+
+  it("does not touch the 4 success-path deploy-only-mode sites (task merged, task deploying, post-merge-CI-passed, final handoff)", () => {
+    // Task merged (Step 4b)
+    const mergedIdx = content.indexOf("Mark the task merged via the task store");
+    expect(mergedIdx).toBeGreaterThan(-1);
+    const mergedSection = content.slice(mergedIdx, mergedIdx + 400);
+    expect(mergedSection).not.toContain("/prs/$PR_RECORD_ID\"");
+    expect(mergedSection).not.toContain('"hitl"');
+
+    // Task deploying (Step 5 intro)
+    const deployingIdx = content.indexOf("is the deploy duration). Skip if in deploy-only mode:");
+    expect(deployingIdx).toBeGreaterThan(-1);
+    const deployingSection = content.slice(deployingIdx, deployingIdx + 400);
+    expect(deployingSection).not.toContain('"hitl"');
+
+    // Post-merge CI passed -> deployed (Step 5c success)
+    const ciPassedIdx = content.indexOf("Post-merge CI passed ({elapsed}m)");
+    expect(ciPassedIdx).toBeGreaterThan(-1);
+    const ciPassedSection = content.slice(ciPassedIdx, ciPassedIdx + 400);
+    expect(ciPassedSection).not.toContain('"hitl"');
+
+    // Final handoff -> deployed (Step 8b)
+    const handoffIdx = content.indexOf("Skip if no task was found (deploy-only mode):");
+    expect(handoffIdx).toBeGreaterThan(-1);
+    const handoffSection = content.slice(handoffIdx, handoffIdx + 400);
+    expect(handoffSection).not.toContain('"hitl"');
   });
 });

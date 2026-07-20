@@ -33,6 +33,8 @@ import {
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
+  isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -60,6 +62,7 @@ export interface PrRecord {
   reviewState: string;
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
+  hitl?: boolean | null;
 }
 
 export interface CheckReviewDeps {
@@ -131,10 +134,10 @@ export async function getReviewCandidates(
       // Query failed → treat as eligible (no dedup)
     }
 
-    // Task-store task lookup, used purely to source the age field from the
-    // linked task's createdAt (LPF-3.2) — not a gating check. A thrown error
-    // is treated as "no linked task" so it never disqualifies an otherwise-
-    // eligible PR from review candidacy.
+    // Task-store task lookup, used to source the age field from the linked
+    // task's createdAt (LPF-3.2) and to gate on hitl (CBD-2.2). A thrown error
+    // is treated as "no linked task" so a lookup failure never disqualifies
+    // an otherwise-eligible PR from review candidacy.
     let linkedTask: LinkedTaskInfo | null = null;
     if (deps.queryTaskStatus) {
       try {
@@ -143,6 +146,12 @@ export async function getReviewCandidates(
         linkedTask = null;
       }
     }
+
+    // Skip PRs whose linked task is hitl:true or status:"blocked" — a human
+    // has already been escalated to (or the task is otherwise blocked) and
+    // needs to act before review tries again (CBD-2.2, PRB-2.3).
+    if (isTaskBlockedForDispatch(linkedTask)) continue;
+
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
     // No record → eligible
@@ -164,8 +173,18 @@ export async function getReviewCandidates(
     // missing record here must stay distinguishable from "no record yet").
     if (record.claimedBy != null) continue;
 
+    // A PR-record with hitl:true means a human has already been escalated to
+    // on this PR — applies independently of whether a task is linked
+    // (PRB-2.3, PRB-3.1: patch.md Step 5a.7's second-round-disagreement
+    // escalation writes hitl:true directly on the PR record when there's no
+    // linked task to flag).
+    if (isPrRecordBlockedForDispatch(record)) continue;
+
     // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip
-    if (record.commitSha === pr.headRefOid && record.reviewState !== "pending") {
+    if (
+      record.commitSha === pr.headRefOid &&
+      record.reviewState !== "pending"
+    ) {
       continue;
     }
 

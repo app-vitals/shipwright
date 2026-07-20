@@ -848,6 +848,59 @@ describeOrSkip("Task store schema (integration)", () => {
     ).rejects.toThrow();
   });
 
+  // ─── TaskService.list() source filter ───────────────────────────────────────
+
+  it("list({ source }) returns only tasks whose source exactly matches, excluding other/null sources", async () => {
+    const taskService = new TaskService(prisma);
+
+    const matchingTask = await prisma.task.create({
+      data: {
+        title: "Entropy fix task",
+        status: "pending",
+        source: "entropy-fix",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Plan session task",
+        status: "pending",
+        source: "plan-session",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "No source task",
+        status: "pending",
+      },
+    });
+
+    const result = await taskService.list({ source: "entropy-fix" });
+
+    expect(result.tasks.map((t) => t.id)).toEqual([matchingTask.id]);
+  });
+
+  it("list() without source returns tasks regardless of source (preserves current unfiltered behavior)", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Entropy fix task",
+        status: "pending",
+        source: "entropy-fix",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "No source task",
+        status: "pending",
+      },
+    });
+
+    const result = await taskService.list({});
+
+    expect(result.total).toBe(2);
+  });
+
   // ─── TaskService.list() blockedBy dependency lookup scoping ────────────────
 
   it("resolves blockedBy for a dependency outside the current page/pagination window", async () => {
