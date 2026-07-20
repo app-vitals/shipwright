@@ -72,6 +72,22 @@ Load the same principles file that the scan used, filtered the same way:
    Run /entropy-scan to refresh the report.
    ```
    Then stop.
+7. Run each surviving finding through the pre-filing verification checklist —
+   `references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
+   any further. This re-verifies the finding against the current repo state (the scan report
+   is a snapshot that may already be stale by the time this skill runs) and catches task ID /
+   branch collisions early. Treat `references/pre-filing-verification.md` as canonical for how
+   to apply the checklist. Per its four checks:
+   - Drop findings whose file/line no longer exists or whose described gap is already fixed
+     (Checklist Items 1–2) — do not queue a task for them. Log them the same way as other
+     skipped findings (Step 6q.6 summary).
+   - Route findings that can't be confirmed by a literal check to HITL rather than assuming
+     they're safe to drop (Checklist Item 3) — this feeds into the `hitl` computation in
+     Step 6q.4.
+   - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own 6q.1 dedup
+     check; no separate action is needed here beyond noting the overlap.
+   This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the real queue
+   path (Step 6) operate on the same already-verified finding set.
 
 ---
 
@@ -187,7 +203,7 @@ detected in 6q.1 — do not re-derive them:
 {
   "id": "entropy-{rule-id}-{repo-slug}-{YYYY-Www}",
   "title": "Entropy fix: {rule.description}",
-  "source": "shipwright",
+  "source": "entropy-fix",
   "repo": "<repo, as detected in 6q.1>",
   "branch": "fix/entropy-{rule-id}-{short-description}",
   "layer": "Shared",
