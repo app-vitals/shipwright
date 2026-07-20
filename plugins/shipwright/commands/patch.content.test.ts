@@ -573,14 +573,16 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
 
   it("escalation case with no linked task PATCHes the PR record itself with hitl: true and a blockedReason, not just a warning", () => {
     const section = getStep5a7Section();
+    const patchPrSnippet =
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"hitl": true, "blockedReason"';
     expect(section).toContain("PR_TASK_ID` is empty");
     expect(section).not.toContain("log a warning and skip the");
     expect(section).toContain(
-      'curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n     -H "Content-Type: application/json" \\\n     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"hitl": true, "blockedReason"',
+      `curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n     -H "Content-Type: application/json" \\\n     ${patchPrSnippet}`,
     );
     expect(section).toContain("second-round disagreement");
     const emptyBranchIdx = section.indexOf("PR_TASK_ID` is empty");
-    const patchPrIdx = section.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"hitl": true, "blockedReason"');
+    const patchPrIdx = section.indexOf(patchPrSnippet);
     expect(patchPrIdx).toBeGreaterThan(emptyBranchIdx);
   });
 
