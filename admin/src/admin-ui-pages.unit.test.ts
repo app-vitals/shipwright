@@ -2156,9 +2156,9 @@ describe("renderTasksPage — PR column", () => {
     expect(html).toContain("—");
   });
 
-  test("empty state colspan is 9 (8 columns + 1 for new Created column)", () => {
+  test("empty state colspan is 10 (9 columns + 1 for new Source column)", () => {
     const html = render([]);
-    expect(html).toContain('colspan="9"');
+    expect(html).toContain('colspan="10"');
   });
 
   test("task with pr value uses indigo link color matching ID column style", () => {
@@ -2197,6 +2197,100 @@ describe("renderTasksPage — PR column", () => {
     const html = render([xssTask]);
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — source filter (CTV-4.2) ───────────────────────────────
+
+describe("renderTasksPage — source filter", () => {
+  function render(
+    tasks: TaskItem[],
+    filters: Parameters<typeof renderTasksPage>[1] = {},
+  ): string {
+    return renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+  }
+
+  test("filter form has a source text input", () => {
+    const html = render([]);
+    expect(html).toContain('name="source"');
+    expect(html).toContain('placeholder="source"');
+  });
+
+  test("source input value round-trips from filters.source", () => {
+    const html = render([], { source: "entropy-fix" });
+    expect(html).toContain('value="entropy-fix"');
+  });
+
+  test("source input escapes HTML in filters.source", () => {
+    const html = render([], { source: '"><script>xss()</script>' });
+    expect(html).not.toContain('"><script>xss()</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("table header includes a Source column", () => {
+    const html = render([]);
+    expect(html).toContain('<th class="col-source">Source</th>');
+  });
+
+  test("row renders task.source value in the Source column", () => {
+    const taskWithSource: TaskItem = { ...TASK_ITEM, source: "entropy-fix" };
+    const html = render([taskWithSource]);
+    expect(html).toContain("entropy-fix");
+  });
+
+  test("row without source shows em-dash placeholder", () => {
+    const taskWithoutSource: TaskItem = { ...TASK_ITEM, source: null };
+    const html = render([taskWithoutSource]);
+    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+  });
+
+  test("row escapes HTML in task.source", () => {
+    const xssTask: TaskItem = {
+      ...TASK_ITEM,
+      source: '"><script>xss()</script>',
+    };
+    const html = render([xssTask]);
+    expect(html).not.toContain('"><script>xss()</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("makePageUrl carries filters.source into pagination links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { source: "entropy-fix" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain("source=entropy-fix");
+  });
+
+  test("makeStateParams carries filters.source into state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "ready", source: "entropy-fix" },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      `href="/admin/tasks?state=in_progress&source=entropy-fix"`,
+    );
   });
 });
 
