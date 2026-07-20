@@ -60,6 +60,7 @@ const mockRunClaude = mock(
     usage?: TokenUsage;
     totalCostUsd?: number;
     modelUsage?: ModelUsage;
+    streamIncomplete?: boolean;
   }> => ({
     result: "Claude response text",
     sessionId: "sess-xyz",
@@ -484,6 +485,22 @@ describe("message handler — DM routing", () => {
     await invokeDM({ channel: "D1", ts: "1.1" });
     expect(capturedErrors.length).toBe(1);
     expect((capturedErrors[0] as Error).message).toBe("boom");
+  });
+
+  test("streamIncomplete:true is treated as an error, not a silent empty success (CSU-1.1 regression)", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: "",
+      streamIncomplete: true,
+    });
+    const { say } = await invokeDM({ channel: "D1", ts: "1.1" });
+
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toContain(
+      "stream ended without a terminal result event",
+    );
+    // An error reply is posted — a truncated stream must not look like a
+    // normal empty/markers-only response with no Slack post at all.
+    expect(say).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -958,6 +975,20 @@ describe("app_mention handler", () => {
     await invokeMention({ channel: "C1", ts: "2.2" });
     expect(capturedErrors.length).toBe(1);
     expect((capturedErrors[0] as Error).message).toBe("oops");
+  });
+
+  test("streamIncomplete:true on mention is treated as an error, not a silent empty success (CSU-1.1 regression)", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: "",
+      streamIncomplete: true,
+    });
+    const { say } = await invokeMention({ channel: "C1", ts: "2.2" });
+
+    expect(capturedErrors.length).toBe(1);
+    expect((capturedErrors[0] as Error).message).toContain(
+      "stream ended without a terminal result event",
+    );
+    expect(say).toHaveBeenCalledTimes(1);
   });
 
   test("app_mention in active thread: runClaude not called when session exists", async () => {
@@ -1968,6 +1999,15 @@ describe("reaction_added handler", () => {
     )[0];
     expect(callArg.channel).toBe("D1");
     expect(callArg.text).toContain("Logged your walk!");
+  });
+
+  test("streamIncomplete:true does not post — treated as a failed run, not a silent success (CSU-1.1 regression)", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: "",
+      streamIncomplete: true,
+    });
+    const { client } = await invokeReactionAdded({});
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
   });
 
   test("skips post when Claude returns [silent]", async () => {

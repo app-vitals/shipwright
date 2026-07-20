@@ -53,6 +53,7 @@ const mockRunner = mock(
     usage?: TokenUsage;
     totalCostUsd?: number;
     modelUsage?: ModelUsage;
+    streamIncomplete?: boolean;
   }> => Promise.resolve({ result: "claude reply", sessionId: "sess-1" }),
 );
 
@@ -1195,6 +1196,34 @@ describe("handleCronRequest — CronRunReporter", () => {
     const patchBody = patchReq?.body as Record<string, unknown>;
     expect(patchBody.outcome).toBe("failed");
     expect(patchBody.error).toBe("runner exploded");
+  });
+
+  test("streamIncomplete:true → run recorded 'failed', no Slack post (CSU-1.1 regression)", async () => {
+    mockRunner.mockResolvedValueOnce({
+      result: "",
+      streamIncomplete: true,
+    });
+
+    const reporter = makeHttpReporter();
+    await expect(
+      handleCronRequest(
+        { jobId: "incomplete-test", prompt: "hello", channel: "C-X" },
+        { ...deps, cronRunReporter: reporter, clock: FixedClock(FIXED_TIME) },
+      ),
+    ).rejects.toThrow("stream ended without a terminal result event");
+
+    expect(mockPostMessage).not.toHaveBeenCalled();
+
+    const patchReq = reporterState.requests.find((r) => r.method === "PATCH");
+    expect(patchReq).toBeDefined();
+    expect(patchReq?.url).toContain(
+      `/agents/${AGENT_ID}/crons/incomplete-test/runs/run-test-1`,
+    );
+    const patchBody = patchReq?.body as Record<string, unknown>;
+    expect(patchBody.outcome).toBe("failed");
+    expect(patchBody.error).toContain(
+      "stream ended without a terminal result event",
+    );
   });
 
   test("preCheck not found → skipRun called with skipped:true, skipReason:'preCheck:not-found'", async () => {
