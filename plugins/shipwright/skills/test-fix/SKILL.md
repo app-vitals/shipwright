@@ -79,8 +79,8 @@ Before starting, check for flags:
      produce).
    - **Route rows whose target-file or fixture existence can't be confirmed by a literal
      check to HITL, rather than assuming they're safe to drop or safe to file clean**
-     (Checklist Item 3). This is the exact failure mode that caused the `test-t-130-vitals-os`
-     false negative: a grep-based existence check missed a fixture that was referenced via
+     (Checklist Item 3). This is the exact failure mode that caused task T-130's false
+     negative: a grep-based existence check missed a fixture that was referenced via
      `path.join()` construction rather than a literal import or string match, so the row was
      treated as a confirmed pass when the fixture's real status couldn't actually be
      determined that way. When a row's target file or fixture is referenced indirectly —
@@ -319,8 +319,8 @@ classification. Default `hitl: false`, except:
     same "no default lean, judge each row on its own facts, no numeric backstop" philosophy
     that governs (a)–(c) and this whole section applies to (d) too.
   - **Carry-forward from Step 2's pre-filing check:** an unconfirmable indirect-reference row
-    from Step 2's pre-filing verification (Checklist Item 3 — the `test-t-130-vitals-os` false-
-    negative pattern) is itself a path to `hitl: true` here. It is not a fifth numbered rule
+    from Step 2's pre-filing verification (Checklist Item 3 — the T-130 false-negative
+    pattern) is itself a path to `hitl: true` here. It is not a fifth numbered rule
     the way (a)–(d) are — it's carried forward from Step 2's per-row verification — but the
     `hitl` value it produces lands in this same field, so treat it as already-decided input
     alongside (a)–(d) rather than re-litigating it.
