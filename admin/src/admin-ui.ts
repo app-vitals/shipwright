@@ -1976,6 +1976,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           : undefined;
     const session = c.req.query("session") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
+    const source = c.req.query("source") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;
     const hitlRaw = c.req.query("hitl");
     const hitl: "true" | "false" | undefined =
@@ -2009,6 +2010,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (state) params.set("state", state);
       if (session) params.set("session", session);
       if (repo) params.set("repo", repo);
+      if (source) params.set("source", source);
       if (hitl) params.set("hitl", hitl);
       // Agent-name filtering is done client-side, so we fetch a larger slice
       // when an agent filter is active to avoid under-counting across pages.
@@ -2072,7 +2074,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { status, state, session, repo, agent, hitl },
+        { status, state, session, repo, source, agent, hitl },
         degraded,
         c.var.userEmail,
         agentNames,
@@ -2803,6 +2805,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // Mutation methods (POST/PUT/DELETE) fall through to Hono's 404 default.
 
   app.get("/public/tasks", publicNoAuthMiddleware, async (c) => {
+    const source = c.req.query("source") ?? undefined;
     let tasks: TaskItem[] = [];
     let total = 0;
     let degraded = false;
@@ -2812,6 +2815,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } else {
       const params = new URLSearchParams();
       params.set("repo", publicRepo);
+      if (source) params.set("source", source);
       params.set("limit", "50");
       params.set("offset", "0");
       params.set("sort", "desc");
@@ -2827,7 +2831,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { repo: publicRepo },
+        { repo: publicRepo, source },
         degraded,
         "",
         {},
