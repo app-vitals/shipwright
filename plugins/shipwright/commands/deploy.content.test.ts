@@ -417,3 +417,104 @@ describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
     expect(step4bSection).not.toContain('approval_source == "self_review"');
   });
 });
+
+describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (PRB-3.2)", () => {
+  // The 6 escalation/failure sites that must now PATCH /prs/$PR_RECORD_ID with
+  // hitl:true + blockedReason when TASK_ID is empty (deploy-only mode), instead of
+  // silently skipping. Each is identified by a unique anchor string near its bash
+  // block, and the original TASK_ID-non-empty PATCH body that must remain unchanged.
+  const sites = [
+    {
+      name: "Post-merge CI failed (Step 5c)",
+      anchor: "Post-merge CI failed — {name}",
+      taskBody: '\\"status\\": \\"blocked\\", \\"note\\": \\"Post-merge CI failed — run ID: {id}\\"',
+    },
+    {
+      name: "Post-merge CI still pending after 10 minutes (Step 5c budget exhausted)",
+      anchor: "Post-merge CI still pending after 10 minutes",
+      taskBody:
+        '\\"status\\": \\"deployed\\", \\"deployedAt\\": \\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\"',
+    },
+    {
+      name: "Deploy stage failed (Step 5b terminal conditions)",
+      anchor: "Deploy stage failed — nothing reached prod.",
+      taskBody: '\\"status\\": \\"blocked\\", \\"note\\": \\"Deploy stage failed — run ID: {id}\\"',
+    },
+    {
+      name: "Canary passed but Promote skipped (Step 5b terminal conditions)",
+      anchor: "Canary passed but Promote was skipped.",
+      taskBody: '"status": "blocked", "note": "canary_blocked: Promote skipped after canary success"',
+    },
+    {
+      name: "Pipeline timeout after 30 minutes (Step 5b terminal conditions)",
+      anchor: "Pipeline timeout after 30 minutes.",
+      taskBody: '"status": "blocked", "note": "Pipeline timeout after 30 minutes"',
+    },
+    {
+      name: "Canary failed — revert PR opened (Step 6)",
+      anchor: "CANARY FAILED — REVERT PR OPENED",
+      taskBody:
+        '\\"status\\": \\"blocked\\", \\"blockedAt\\": \\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\", \\"note\\": \\"Canary failed after deploy. Revert PR opened: {revert_pr_url}\\"',
+    },
+  ];
+
+  function extractSiteSection(anchor: string): string {
+    const anchorIdx = content.indexOf(anchor);
+    expect(anchorIdx).toBeGreaterThan(-1);
+    // Grab a generous window after the anchor covering the print block + PATCH bash block.
+    return content.slice(anchorIdx, anchorIdx + 1200);
+  }
+
+  for (const site of sites) {
+    describe(site.name, () => {
+      it("PATCHes /prs/$PR_RECORD_ID with hitl:true + blockedReason when TASK_ID is empty", () => {
+        const section = extractSiteSection(site.anchor);
+        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID");
+        expect(section).toContain("hitl");
+        expect(section).toContain("true");
+        expect(section).toContain("blockedReason");
+      });
+
+      it("still PATCHes /tasks/$TASK_ID with the original unchanged body when TASK_ID is non-empty", () => {
+        const section = extractSiteSection(site.anchor);
+        expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID");
+        expect(section).toContain(site.taskBody);
+      });
+
+      it("branches explicitly on whether TASK_ID is set (if/else), not a blanket skip", () => {
+        const section = extractSiteSection(site.anchor);
+        const hasConditional =
+          /if\s*\[\s*-n\s*"\$TASK_ID"\s*\]/.test(section) ||
+          /if\s*\[\s*-z\s*"\$TASK_ID"\s*\]/.test(section);
+        expect(hasConditional).toBe(true);
+      });
+    });
+  }
+
+  it("does not touch the 4 success-path deploy-only-mode sites (task merged, task deploying, post-merge-CI-passed, final handoff)", () => {
+    // Task merged (Step 4b)
+    const mergedIdx = content.indexOf("Mark the task merged via the task store");
+    expect(mergedIdx).toBeGreaterThan(-1);
+    const mergedSection = content.slice(mergedIdx, mergedIdx + 400);
+    expect(mergedSection).not.toContain("/prs/$PR_RECORD_ID\"");
+    expect(mergedSection).not.toContain('"hitl"');
+
+    // Task deploying (Step 5 intro)
+    const deployingIdx = content.indexOf("is the deploy duration). Skip if in deploy-only mode:");
+    expect(deployingIdx).toBeGreaterThan(-1);
+    const deployingSection = content.slice(deployingIdx, deployingIdx + 400);
+    expect(deployingSection).not.toContain('"hitl"');
+
+    // Post-merge CI passed -> deployed (Step 5c success)
+    const ciPassedIdx = content.indexOf("Post-merge CI passed ({elapsed}m)");
+    expect(ciPassedIdx).toBeGreaterThan(-1);
+    const ciPassedSection = content.slice(ciPassedIdx, ciPassedIdx + 400);
+    expect(ciPassedSection).not.toContain('"hitl"');
+
+    // Final handoff -> deployed (Step 8b)
+    const handoffIdx = content.indexOf("Skip if no task was found (deploy-only mode):");
+    expect(handoffIdx).toBeGreaterThan(-1);
+    const handoffSection = content.slice(handoffIdx, handoffIdx + 400);
+    expect(handoffSection).not.toContain('"hitl"');
+  });
+});
