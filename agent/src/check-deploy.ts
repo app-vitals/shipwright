@@ -28,6 +28,8 @@ import {
   createTaskStatusQuery,
   getCurrentUser,
   isCleanApproveBody,
+  isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -70,6 +72,7 @@ export interface WorkflowRun {
 export interface PrRecord {
   readyForDeployAt?: string | null;
   claimedBy?: string | null;
+  hitl?: boolean | null;
 }
 
 export interface CheckDeployDeps {
@@ -233,9 +236,11 @@ export async function getDeployCandidates(
       // human has already been escalated to and needs to act; a task can be
       // hitl:true while still status:"pr_open", e.g. CI later goes green on
       // an already-escalated commit, so hitl and status are checked
-      // independently, not just status). A confirmed empty result (no linked
-      // task) is not disqualifying, but a lookup FAILURE fails CLOSED —
-      // deploy is consequential enough that "unknown" must not be treated as
+      // independently, not just status), routed through the shared
+      // isTaskBlockedForDispatch helper (PRB-2.1) instead of hand-rolled
+      // checks. A confirmed empty result (no linked task) is not
+      // disqualifying, but a lookup FAILURE fails CLOSED — deploy is
+      // consequential enough that "unknown" must not be treated as
       // "confirmed ready".
       let linkedTask: LinkedTaskInfo | null = null;
       if (deps.queryTaskStatus) {
@@ -247,8 +252,7 @@ export async function getDeployCandidates(
           );
           continue;
         }
-        if (linkedTask?.status === "blocked") continue;
-        if (linkedTask?.hitl === true) continue;
+        if (isTaskBlockedForDispatch(linkedTask)) continue;
       }
 
       if (deps.isBundleComplete) {
@@ -274,6 +278,10 @@ export async function getDeployCandidates(
         // NOT be treated as claimed — only an explicit claimedBy gates
         // candidacy, mirroring check-review.ts.
         if (record?.claimedBy != null) continue;
+        // A PR-record hitl:true gate (PRB-2.4) — lets a PR with no linked
+        // task at all still be excluded via its own PR-record hitl flag,
+        // alongside the linked-task hitl/blocked check above.
+        if (isPrRecordBlockedForDispatch(record)) continue;
       }
 
       candidates.push({
