@@ -249,7 +249,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
@@ -271,6 +271,12 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `reviewState`: `pending` → `in_progress` → `posted` | `approved`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
+
+`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used to pause a PR with no linked task. Set via `PATCH /prs/:id`.
+
+`hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
+
+`blockedReason`: optional string — human-readable explanation for why this PR is blocked (e.g., `"no linked task"`). Set via `PATCH /prs/:id`.
 
 #### PR timestamp fields
 
