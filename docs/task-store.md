@@ -181,11 +181,21 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `sort`, `updatedSince`.
+Query params:
 
-`ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
-
-`sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
+| Param | Type | Description |
+|-------|------|-------------|
+| `repo` | string | Filter by repo (`org/repo` format) |
+| `prNumber` | number | Filter by PR number |
+| `taskId` | string | Filter by associated task ID |
+| `state` | string | Filter by PR state (`open`, `merged`, `closed`) |
+| `reviewState` | string | Filter by review state (`pending`, `in_progress`, `posted`, `approved`) |
+| `staged` | boolean | Filter by staged flag |
+| `limit` | number | Page size |
+| `offset` | number | Page offset |
+| `ready` | `true` | Returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. Composes with other filters (e.g. `?ready=true&repo=org/repo`). Claim staleness is handled by the `StaleClaimReaper` background job. |
+| `sort` | string | `asc` (default, oldest first) or `desc` (newest first) — orders results by `createdAt`. Unrelated to `claim-next`'s own deterministic ordering. |
+| `updatedSince` | string | ISO timestamp. Only return PRs with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
 
 Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
 
