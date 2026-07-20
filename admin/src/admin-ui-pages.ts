@@ -2506,16 +2506,17 @@ export function renderSessionDetailPage(
     <td style="font-size:12px">${t.layer ? escapeHtml(t.layer) : '<span style="color:#9ca3af">—</span>'}</td>
     <td style="font-size:12px">${t.hours !== null && t.hours !== undefined ? escapeHtml(String(t.hours)) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
   </tr>`;
   }
 
   const tableRows =
     tasks.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tasks found for this session.</td></tr>`
+      ? `<tr><td colspan="7" class="empty-state">No tasks found for this session.</td></tr>`
       : TASK_STATE_GROUPS.map(({ key, label }) => {
           const group = tasksByState.get(key);
           if (!group || group.length === 0) return "";
-          return `<tr><td colspan="6" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
+          return `<tr><td colspan="7" style="background:#f9fafb;font-size:11px;font-weight:600;color:#374151;padding:6px 12px;text-transform:uppercase;letter-spacing:.05em">${label} (${group.length})</td></tr>${group.map(taskRow).join("\n")}`;
         })
           .filter(Boolean)
           .join("\n");
@@ -2579,6 +2580,7 @@ export function renderSessionDetailPage(
               <th>Layer</th>
               <th>Hours</th>
               <th>Repo</th>
+              <th class="col-source">Source</th>
             </tr>
           </thead>
           <tbody>
