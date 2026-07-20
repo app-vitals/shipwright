@@ -575,8 +575,8 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
 - **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
   `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
   — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
-  directly to Step 5b (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same
-  as the self-claim path).
+  to Step 5a.7 (`PR_RECORD_ID` is reused by the post-fix update in Step 5c.5, same as the
+  self-claim path).
 - **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
   orchestrator's claim and now) **or no marker present**: fall back to self-claiming
   exactly as today — run the claim below unchanged.
@@ -600,7 +600,101 @@ Skip the rest of Step 5 for this PR. Move to the next qualifying PR in List A. I
 candidates remain, continue to Step 6.
 
 **Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
-post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5b.
+post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step 5a.7.
+
+### Step 5a.7: Second-Round Escalation Check (RPF-1.3)
+
+RPF-1.1/1.2 let a REJECTed finding get rebutted (a PR-author comment posted via
+`gh pr comment`) and `reviewState` reset to `pending` so a fresh review can re-evaluate the
+rebuttal. If that fresh review still flags the same (or an equivalent) issue, another
+rebuttal+reset cycle would repeat indefinitely — the reviewer and the fix subagent disagree,
+and that is a genuine human-judgment deadlock, not something another automated pass will
+resolve. Before dispatching the fix subagent (which is where RPF-1.1's rebuttal-comment step
+lives, in Step 5b Instructions [D]), check whether this PR's List A finding is a *second*
+round of the same disagreement.
+
+For each qualifying review from Step 3a (`state == "COMMENTED"` or `"CHANGES_REQUESTED"`,
+contributing to this PR's List A membership), check the PR-level
+comments already fetched in Step 3a (`comments.nodes`) for an author reply: a comment whose
+`author.login == CURRENT_USER` with `createdAt` **before** that review's `submittedAt`. This
+mirrors `check-patch.ts`'s `isAddressedByAuthorReply` (an author reply *after* a review marks
+that review addressed) but checks the opposite direction — a reply dated *before* the
+current review means we already rebutted once, the reviewer looked at that rebuttal, and
+still raised a finding this round.
+
+**If any qualifying review has an author-reply comment dated before its `submittedAt`**
+(second round on the same disagreement): escalate instead of looping. Skip the rest of Step
+5 for this PR entirely — do not dispatch the fix subagent, do not post another rebuttal, and
+do not reset `reviewState`.
+
+1. Resolve the linked task from the PR record claimed in Step 5a.6:
+   ```bash
+   PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" | jq -r '.taskId // empty')
+   ```
+2. If `PR_TASK_ID` is non-empty, PATCH it to `hitl: true` so the task is flagged for a human
+   decision:
+   ```bash
+   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+     -d '{"hitl": true}' > /dev/null 2>&1 || \
+     echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+   ```
+   If `PR_TASK_ID` is empty (no linked task on the PR record), log a warning and skip the
+   PATCH — still post the PR comment below.
+3. Post a single PR comment stating a human decision is needed. Write the body to a temp
+   file first, same convention as the rebuttal comment in Step 5b [D] (heredocs break
+   permission glob matching):
+   ```bash
+   # Write to /tmp/shipwright-patch-escalation-{pr}.txt:
+   #   This finding was already rebutted once and the review still disagrees after
+   #   re-evaluating that rebuttal — this looks like a genuine disagreement between the
+   #   reviewer and the automated fix, not something another automated pass will resolve.
+   #   Flagging for a human decision instead of rebutting again.
+   gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-escalation-{pr}.txt
+   rm /tmp/shipwright-patch-escalation-{pr}.txt
+   ```
+   The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+   across all worktrees.
+4. Resolve **all** currently-unresolved inline threads on this PR (from Step 3a's
+   `reviewThreads.nodes[]`) — not just threads tied to the qualifying second-round review.
+   Step 3a's query carries no field linking a thread back to the review that raised it
+   (only `id`, `isResolved`, and the first comment's `author.login`/`body`/`path`/`line`),
+   so scoping resolution to "threads belonging to" a specific review isn't something this
+   step can actually determine. Escalating already means giving up on automated resolution
+   for this cycle — the PR comment posted in step 3 above tells the human reader that
+   everything was escalated for manual review, not silently fixed, so resolving every
+   open thread here carries no silent-dismissal risk. Leaving any thread unresolved,
+   however, would leave it `isResolved == false`, so Step 3a's List A criteria would
+   re-flag this same PR next cycle and re-fire this same escalation indefinitely — the
+   exact loop this step exists to close. Use the same mutation as Step 5b [D]/[E]:
+   ```bash
+   gh api graphql -f query='
+   mutation {
+     resolveReviewThread(input: {threadId: "{thread.id}"}) {
+       thread { isResolved }
+     }
+   }'
+   ```
+   Run this for the Thread ID of every thread in Step 3a's `reviewThreads.nodes[]` with
+   `isResolved == false`. If there are none, there is nothing to resolve — move on.
+5. Release the pre-work claim from Step 5a.6 — no fix is in flight, this cycle intentionally
+   stops short of dispatching one:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+   ```
+6. Print:
+   ```
+   ⏸ PR #{pr} — second-round disagreement detected, escalating to HITL (task {PR_TASK_ID or "none"}). Skipping rebuttal/reset for this cycle.
+   ```
+7. Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
+
+**Otherwise** (no qualifying review has an author-reply comment dated before its
+`submittedAt` — a first-round rebuttal, or no rebuttal history at all): this is unaffected
+by RPF-1.3 — proceed normally to Step 5b, and RPF-1.1/1.2 behavior applies as before.
 
 ### Step 5b: Dispatch Fix Subagent
 
