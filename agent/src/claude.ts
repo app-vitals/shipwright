@@ -56,7 +56,21 @@ export interface ClaudeRunResult {
   totalCostUsd?: number;
   modelUsage?: ModelUsage;
   recoveredFromError?: boolean;
+  /**
+   * True when the stream ended cleanly (no process error) but never emitted a
+   * terminal `result` event. In that case `result` is empty and `modelUsage`
+   * carries whatever per-model usage was accumulated from the `assistant`
+   * lines (costUSD unknown → 0), rather than throwing all of it away.
+   */
+  streamIncomplete?: boolean;
 }
+
+/**
+ * Callback fired as each new assistant turn/message completes (a new distinct
+ * `message.id` is observed), receiving the running accumulated per-model total.
+ * The passed map is a fresh snapshot — safe to retain without it mutating.
+ */
+export type ProgressCallback = (modelUsage: ModelUsage) => void;
 
 /**
  * Returns the model name with the highest outputTokens from the CLI's
@@ -74,7 +88,14 @@ export function dominantModel(modelUsage: ModelUsage): string | undefined {
   return best;
 }
 
-interface ClaudeJsonOutput {
+/**
+ * The terminal `result` stream event. Its fields are byte-identical in shape to
+ * what the old `--output-format json` single-blob mode returned, plus the
+ * stream discriminator (`type`/`subtype`).
+ */
+interface ClaudeResultEvent {
+  type: "result";
+  subtype?: string;
   result: string;
   session_id: string;
   is_error: boolean;
@@ -84,12 +105,25 @@ interface ClaudeJsonOutput {
   modelUsage?: ModelUsage;
 }
 
+/** One `assistant` stream event — carries a turn's usage keyed by message id. */
+interface ClaudeAssistantEvent {
+  type: "assistant";
+  message: {
+    id: string;
+    role?: string;
+    model?: string;
+    usage?: TokenUsage;
+  };
+}
+
 export class ClaudeRunError extends Error {
   constructor(
     message: string,
     readonly apiErrorStatus: number | undefined,
     readonly resultMessage: string,
     readonly sessionId: string | undefined,
+    /** Accumulated per-model usage at the point of failure, if any. */
+    readonly modelUsage?: ModelUsage,
   ) {
     super(message);
     this.name = "ClaudeRunError";
@@ -97,7 +131,11 @@ export class ClaudeRunError extends Error {
 }
 
 export class ClaudeTimeoutError extends Error {
-  constructor(readonly timeoutMs: number) {
+  constructor(
+    readonly timeoutMs: number,
+    /** Per-model usage accumulated before the process was killed, if any. */
+    readonly modelUsage?: ModelUsage,
+  ) {
     super(`Claude session timed out after ${timeoutMs / 1000}s`);
     this.name = "ClaudeTimeoutError";
   }
@@ -127,6 +165,7 @@ export function createRunClaude(
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
   timeoutMs: number = 30 * 60 * 1000,
+  onProgress: ProgressCallback | undefined = undefined,
 ): (message: string, sessionKey?: string) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
@@ -159,7 +198,8 @@ export function createRunClaude(
     const args = [
       "-p",
       "--output-format",
-      "json",
+      "stream-json",
+      "--verbose",
       "--permission-mode",
       "acceptEdits",
       "--allowedTools",
@@ -191,12 +231,101 @@ export function createRunClaude(
     return args;
   }
 
-  function _tryParseJson(stdout: string): ClaudeJsonOutput | undefined {
-    try {
-      return JSON.parse(stdout) as ClaudeJsonOutput;
-    } catch {
-      return undefined;
+  /** Deep-clone a ModelUsage map so callbacks get an immutable snapshot. */
+  function _snapshotUsage(usage: ModelUsage): ModelUsage {
+    const out: ModelUsage = {};
+    for (const [model, entry] of Object.entries(usage)) {
+      out[model] = { ...entry };
     }
+    return out;
+  }
+
+  /**
+   * Consume a stream-json NDJSON stdout stream incrementally, accumulating
+   * per-model usage from `assistant` lines (deduped by message id) and
+   * capturing the terminal `result` event if one arrives. Malformed / non-JSON
+   * lines are skipped rather than aborting the whole parse.
+   */
+  async function _consumeStream(stream: ReadableStream<Uint8Array>): Promise<{
+    result?: ClaudeResultEvent;
+    modelUsage: ModelUsage;
+    raw: string;
+  }> {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    const accumulated: ModelUsage = {};
+    const seenMessageIds = new Set<string>();
+    let result: ClaudeResultEvent | undefined;
+    let buffer = "";
+    let raw = "";
+
+    const handleLine = (raw: string) => {
+      const line = raw.trim();
+      if (!line) return;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        return; // skip stray non-JSON lines without losing prior accumulation
+      }
+      if (!parsed || typeof parsed !== "object") return;
+      const event = parsed as { type?: string };
+
+      if (event.type === "result") {
+        result = parsed as ClaudeResultEvent;
+        return;
+      }
+      if (event.type !== "assistant") return; // ignore system/user/etc.
+
+      const { message } = parsed as ClaudeAssistantEvent;
+      if (!message?.id || !message.usage) return;
+      if (seenMessageIds.has(message.id)) return; // dedupe repeated turn lines
+      seenMessageIds.add(message.id);
+
+      const model = message.model ?? "unknown";
+      let entry = accumulated[model];
+      if (!entry) {
+        entry = {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+          costUSD: 0, // authoritative cost is only known from the result event
+        };
+        accumulated[model] = entry;
+      }
+      entry.inputTokens += message.usage.input_tokens ?? 0;
+      entry.outputTokens += message.usage.output_tokens ?? 0;
+      entry.cacheReadInputTokens += message.usage.cache_read_input_tokens ?? 0;
+      entry.cacheCreationInputTokens +=
+        message.usage.cache_creation_input_tokens ?? 0;
+
+      onProgress?.(_snapshotUsage(accumulated));
+    };
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        raw += chunk;
+        buffer += chunk;
+        let nl = buffer.indexOf("\n");
+        while (nl !== -1) {
+          handleLine(buffer.slice(0, nl));
+          buffer = buffer.slice(nl + 1);
+          nl = buffer.indexOf("\n");
+        }
+      }
+      const tail = decoder.decode();
+      raw += tail;
+      buffer += tail;
+      handleLine(buffer); // trailing line without a newline
+    } finally {
+      reader.releaseLock();
+    }
+
+    return { result, modelUsage: accumulated, raw };
   }
 
   async function _spawn(args: string[]): Promise<ClaudeRunResult> {
@@ -213,51 +342,68 @@ export function createRunClaude(
       proc.kill();
     }, timeoutMs);
 
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
+    const [{ result, modelUsage, raw }, stderr, exitCode] = await Promise.all([
+      _consumeStream(proc.stdout),
       new Response(proc.stderr).text(),
       proc.exited,
     ]).finally(() => clearTimeout(timer));
 
     if (timedOut) {
-      throw new ClaudeTimeoutError(timeoutMs);
+      throw new ClaudeTimeoutError(timeoutMs, modelUsage);
     }
 
-    const structured = _tryParseJson(stdout);
     if (exitCode !== 0) {
-      if (structured?.is_error) {
+      if (result?.is_error) {
         throw new ClaudeRunError(
-          `claude exited ${exitCode}: api_error_status=${structured.api_error_status ?? "unknown"} ${structured.result}`,
-          structured.api_error_status,
-          structured.result,
-          structured.session_id,
+          `claude exited ${exitCode}: api_error_status=${result.api_error_status ?? "unknown"} ${result.result}`,
+          result.api_error_status,
+          result.result,
+          result.session_id,
+          result.modelUsage ?? modelUsage,
+        );
+      }
+      // A truncated stream that still carried some usage: surface it on the
+      // error rather than discarding it.
+      if (Object.keys(modelUsage).length > 0) {
+        throw new ClaudeRunError(
+          `claude exited ${exitCode}: ${stderr.trim() || "stream truncated"}`,
+          undefined,
+          result?.result ?? "",
+          result?.session_id,
+          modelUsage,
         );
       }
       throw new Error(
-        `claude exited ${exitCode}: ${stderr.trim() || stdout.trim()}`,
+        `claude exited ${exitCode}: ${stderr.trim() || raw.trim()}`,
       );
     }
 
-    if (!structured) {
-      throw new Error(
-        `claude returned non-JSON stdout: ${stdout.slice(0, 200)}`,
-      );
+    if (!result) {
+      // Clean exit, but the stream ended without a terminal result event.
+      // Surface the accumulated partial usage via a distinct return shape
+      // instead of throwing everything away.
+      return {
+        result: "",
+        modelUsage,
+        streamIncomplete: true,
+      };
     }
-    if (structured.is_error) {
+    if (result.is_error) {
       throw new ClaudeRunError(
-        `claude error: ${structured.result}`,
-        structured.api_error_status,
-        structured.result,
-        structured.session_id,
+        `claude error: ${result.result}`,
+        result.api_error_status,
+        result.result,
+        result.session_id,
+        result.modelUsage ?? modelUsage,
       );
     }
 
     return {
-      result: structured.result,
-      sessionId: structured.session_id,
-      usage: structured.usage,
-      totalCostUsd: structured.total_cost_usd,
-      modelUsage: structured.modelUsage,
+      result: result.result,
+      sessionId: result.session_id,
+      usage: result.usage,
+      totalCostUsd: result.total_cost_usd,
+      modelUsage: result.modelUsage,
     };
   }
 
