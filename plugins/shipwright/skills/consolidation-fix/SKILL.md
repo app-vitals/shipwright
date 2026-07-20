@@ -119,6 +119,32 @@ Never trust the report's promotion decision as still current; re-check live.
 5. This is a judgment-based match, not exact string equality — read both
    descriptions and decide whether they describe the same duplication, the same
    comparison style Step 3 of `consolidation-scan` uses when surveying.
+6. For each entry that survives the decisions-registry check above, also run it
+   through the pre-filing verification checklist —
+   `references/pre-filing-verification.md` (relative to the plugin root) — before it
+   proceeds any further. The registry check above only re-verifies suppression
+   status; it says nothing about whether the occurrence list itself is still
+   accurate, since the report is a snapshot that may already be stale by the time
+   this skill runs. Treat `references/pre-filing-verification.md` as canonical for
+   how to apply the checklist. Per its four checks:
+   - For each occurrence (`file:line`) in the candidate's occurrence list, verify
+     the file/line still exists and the duplication pattern is still actually
+     present there (Checklist Items 1–2). If every occurrence has been resolved or
+     no longer matches the described pattern, drop the candidate entirely — do not
+     queue a task for it. Print: `Skipping {fingerprint} — stale, no remaining
+     occurrences match the described pattern`. If only some occurrences are stale,
+     drop those from the occurrence list and proceed with the remaining ones (the
+     Step 6 execution plan and Step 8 task JSON are built from the surviving
+     occurrences only).
+   - Route candidates whose occurrences can't be confirmed by a literal check to
+     HITL rather than assuming they're safe to drop (Checklist Item 3) — this feeds
+     into the `hitl` computation in Step 7.
+   - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's
+     own Step 5 dedup check; no separate action is needed here beyond noting the
+     overlap.
+   This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the
+   real queue path (Step 5 onward) operate on the same already-verified candidate
+   set.
 
 ---
 
@@ -285,7 +311,7 @@ For each remaining candidate, build a task object. Reuse the `repo` and
 {
   "id": "consolidation-{fingerprint-or-slug}-{repo-slug}-{YYYY-Www}",
   "title": "Consolidation: {pattern description}",
-  "source": "shipwright",
+  "source": "consolidation-fix",
   "repo": "<repo, as detected in Step 5>",
   "branch": "feat/consolidation-{fingerprint-or-slug}-{short-description}",
   "layer": "Shared",
