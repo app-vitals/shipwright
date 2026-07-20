@@ -100,6 +100,23 @@ of truth `security-fix` reads.
    Run /security-scan to refresh the report.
    ```
    Then stop.
+7. Run each surviving finding through the pre-filing verification checklist —
+   `references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
+   any further toward becoming a task. This re-verifies the finding against the current repo
+   state (the security report is a snapshot that may already be stale by the time this skill
+   runs) and catches task ID / branch collisions early. Treat
+   `references/pre-filing-verification.md` as canonical for how to apply the checklist. Per its
+   four checks:
+   - Drop findings whose file/line no longer exists or whose described gap is already fixed
+     (Checklist Items 1–2) — do not queue a task for them. Log them the same way as other
+     skipped findings (Step 6q.7 summary).
+   - Route findings that can't be confirmed by a literal check to HITL rather than assuming
+     they're safe to drop (Checklist Item 3) — this feeds into the `hitl` computation in
+     Step 6q.3.
+   - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 6q.1
+     dedup check; no separate action is needed here beyond noting the overlap.
+   This runs once, here in Step 3, so both the `--dry-run` preview (Step 4) and the real queue
+   path (Step 6) operate on the same already-verified finding set.
 
 ---
 
@@ -195,7 +212,7 @@ unchanged rather than reconstructing it:
 {
   "id": "security-{rule}-{repo-slug}-{YYYY-Www}",
   "title": "Security fix: {rule description}",
-  "source": "shipwright",
+  "source": "security-fix",
   "repo": "<repo, as detected in 6q.1>",
   "branch": "fix/security-{rule}-{short-description}",
   "layer": "Shared",
@@ -238,6 +255,43 @@ Look up the rule in the Step 2 classification table and route:
   - `hitl: true` (needs a human) when it's unclear whether the route should be public or
     not — a judgment call, not a mechanical fix.
   - No default lean either way; judge each group on its own facts.
+
+**General ambiguous-fix criterion (applies on top of the lookup table above, including to
+rule categories not yet in the Step 2 table):** the three bullets above cover the Step 2
+table's fixed classifications, but the Step 2 table is not guaranteed to be exhaustive
+forever — `security-scan` may add a new rule before this skill's Step 2 table is updated to
+classify it. For any finding — whether its rule has a Step 2 entry or not — apply this
+additional judgment, mirroring `consolidation-fix`'s Step 7 per-finding `hitl` heuristic:
+
+- `hitl: false` (autonomous) when there is a **single, obvious, canonical fix shape** with
+  **existing precedent elsewhere in the codebase** — e.g. the rule's own fix guidance in the
+  Step 2 table names one clear, mechanical remediation (as `osv-cve`'s "bump to the patched
+  version" or `secret-weak-compare`'s "swap in `crypto.timingSafeEqual`" already do), or an
+  unclassified rule's finding clearly matches a fix pattern already used successfully
+  elsewhere in this same repo.
+- `hitl: true` (needs a human) when **any** of the following hold:
+  - Multiple plausible fix approaches exist and reasonable engineers could disagree about
+    which one to apply.
+  - The fix would cross repo or service boundaries (e.g. the vulnerable code path spans both
+    `plugins/shipwright/` and `agent/`, or two separate repositories).
+  - There is no clear precedent elsewhere in the codebase for how to remediate this specific
+    finding.
+  - Default toward `hitl: true` when genuinely unsure — this is especially the lean for a
+    rule with **no Step 2 table entry at all**, since an unclassified rule has, by
+    definition, no rationale on record yet to justify autonomous action.
+
+**Worked example:** Suppose `security-scan` ships a new rule, `insecure-deserialization`,
+that is not yet in the Step 2 table. A finding flags `src/importer.ts:88` using
+`unserialize()` on untrusted input. There is no existing safe-deserialization helper anywhere
+else in the codebase, and two different plausible remediations exist — switch to a
+schema-validated parser, or sandbox the deserialization call — with no precedent for which
+this codebase prefers. Per the general criterion above, this finding is `hitl: true`: no
+clear precedent, multiple plausible shapes, and no Step 2 table entry to lean on. Contrast
+that with a second finding of the same new rule at `src/legacy-importer.ts:12`, where the
+file already imports and partially uses a `safeParse()` helper from `src/lib/safe-parse.ts`
+that another part of the codebase uses for the exact same untrusted-input pattern — here the
+fix is a single, obvious, mechanical swap to the existing helper, so this finding is
+`hitl: false` even though the rule itself still has no Step 2 table entry.
 
 ### 6q.4 Build the Description — Autonomous Tasks (`hitl: false`)
 
