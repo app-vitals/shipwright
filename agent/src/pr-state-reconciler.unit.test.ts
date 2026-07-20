@@ -82,6 +82,8 @@ interface MakeDepsOptions {
     string,
     Array<{ createdAt: string; conclusion: string | null; id: number }> | Error
   >;
+  /** Fake delay fn override; defaults to a no-op so existing tests are unaffected. */
+  delay?: (ms: number) => Promise<void>;
 }
 
 function makeDeps({
@@ -98,6 +100,7 @@ function makeDeps({
   openBranchResults = {},
   deployingTasks = [],
   workflowRunsResults = {},
+  delay,
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -105,17 +108,24 @@ function makeDeps({
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
   listDeployingTasksCalls: ListTasksCall[];
+  delayCalls: number[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
   const listDeployingTasksCalls: ListTasksCall[] = [];
+  const delayCalls: number[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
     getScopedRepos,
     pageLimit,
+    delay:
+      delay ??
+      (async (ms: number) => {
+        delayCalls.push(ms);
+      }),
     listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
       listCalls.push({ repo, state: "open", limit, offset });
       const all = openRecords[repo] ?? [];
@@ -178,6 +188,7 @@ function makeDeps({
     taskPatchCalls,
     listPrOpenTasksCalls,
     listDeployingTasksCalls,
+    delayCalls,
   };
 }
 
@@ -476,6 +487,8 @@ interface MakeReviewStateDepsOptions {
   pageLimit?: number;
   clock?: Clock;
   claimTtlMs?: number;
+  /** Fake delay fn override; defaults to a no-op so existing tests are unaffected. */
+  delay?: (ms: number) => Promise<void>;
 }
 
 function makeReviewStateDeps({
@@ -486,22 +499,30 @@ function makeReviewStateDeps({
   pageLimit = 50,
   clock = FixedClock(new Date("2026-07-15T12:00:00.000Z")),
   claimTtlMs,
+  delay,
 }: MakeReviewStateDepsOptions = {}): {
   deps: PrReviewStateReconcilerDeps;
   listCalls: ListReviewCall[];
   listPostedCalls: ListReviewCall[];
   patchCalls: ReviewPatchCall[];
   fetchCalls: string[];
+  delayCalls: number[];
 } {
   const listCalls: ListReviewCall[] = [];
   const listPostedCalls: ListReviewCall[] = [];
   const patchCalls: ReviewPatchCall[] = [];
   const fetchCalls: string[] = [];
+  const delayCalls: number[] = [];
 
   const deps: PrReviewStateReconcilerDeps = {
     repos,
     pageLimit,
     clock,
+    delay:
+      delay ??
+      (async (ms: number) => {
+        delayCalls.push(ms);
+      }),
     ...(claimTtlMs !== undefined ? { claimTtlMs } : {}),
     listPendingReviewRecords: async (
       repo: string,
@@ -535,7 +556,7 @@ function makeReviewStateDeps({
     },
   };
 
-  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls };
+  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls, delayCalls };
 }
 
 function makeReviewStateRecord(
@@ -580,6 +601,59 @@ function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
     ...overrides,
   };
 }
+
+// ─── PSR-1.2: gh-call throttling ────────────────────────────────────────────
+
+describe("reconcilePrState — gh call throttling (PSR-1.2)", () => {
+  test("delay is invoked once per record in the per-record loop, scaling with batch size", async () => {
+    const RECORD_COUNT = 25;
+    const records = Array.from({ length: RECORD_COUNT }, (_, i) =>
+      makeRecord({ id: `pr-throttle-${i}`, prNumber: 1000 + i }),
+    );
+    const ghResults: Record<string, GhPrView> = {};
+    for (const r of records) {
+      ghResults[`acme/example-repo#${r.prNumber}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, delayCalls } = makeDeps({
+      openRecords: { "acme/example-repo": records },
+      ghResults,
+    });
+
+    await reconcilePrState(deps);
+
+    // One delay call per record processed — not batched/instant.
+    expect(delayCalls).toHaveLength(RECORD_COUNT);
+  });
+
+  test("delay ms argument is a positive constant, applied consistently across calls", async () => {
+    const records = Array.from({ length: 20 }, (_, i) =>
+      makeRecord({ id: `pr-ms-${i}`, prNumber: 2000 + i }),
+    );
+    const ghResults: Record<string, GhPrView> = {};
+    for (const r of records) {
+      ghResults[`acme/example-repo#${r.prNumber}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, delayCalls } = makeDeps({
+      openRecords: { "acme/example-repo": records },
+      ghResults,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(delayCalls.length).toBeGreaterThanOrEqual(20);
+    for (const ms of delayCalls) {
+      expect(ms).toBeGreaterThan(0);
+    }
+    // Every call uses the same constant delay.
+    expect(new Set(delayCalls).size).toBe(1);
+  });
+});
 
 describe("reconcileReviewState", () => {
   test("clean APPROVE at head commit gets reconciled to reviewState:approved", async () => {
@@ -1247,6 +1321,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
       repos: ["acme/repo-a", "acme/repo-b"],
       pageLimit: 50,
       clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
+      delay: async () => {},
       listPendingReviewRecords: async (repo: string) => {
         if (repo === "acme/repo-a") return [pendingRecord];
         return [];
@@ -1325,6 +1400,56 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
     expect(patchCalls).toHaveLength(1);
     expect(patchCalls[0].id).toBe("pr-posted-repoA");
     expect(patchCalls[0].fields).toEqual({ reviewState: "pending" });
+  });
+});
+
+describe("reconcileReviewState — gh call throttling (PSR-1.2)", () => {
+  test("delay is invoked once per record in the pending-scan loop, scaling with batch size", async () => {
+    const RECORD_COUNT = 22;
+    const records = Array.from({ length: RECORD_COUNT }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-rs-throttle-${i}`, prNumber: 3000 + i }),
+    );
+    const reviewResults: Record<string, PrReviewData> = {};
+    for (const r of records) {
+      // No review at head — classifyReviewState returns null, so no PATCH,
+      // but the gh call (fetchPrReviews) still happens and delay still fires.
+      reviewResults[`acme/example-repo#${r.prNumber}`] = makeReviewData({
+        headRefOid: "head-sha",
+        reviews: { nodes: [] },
+      });
+    }
+    const { deps, delayCalls } = makeReviewStateDeps({
+      pendingRecords: { "acme/example-repo": records },
+      reviewResults,
+    });
+
+    await reconcileReviewState(deps);
+
+    // One delay call per pending record processed, plus one per posted
+    // record processed (0 here, since no posted records were configured).
+    expect(delayCalls).toHaveLength(RECORD_COUNT);
+  });
+
+  test("delay is still invoked once per record even when isActivelyClaimed() skips the gh call", async () => {
+    const RECORD_COUNT = 20;
+    const records = Array.from({ length: RECORD_COUNT }, (_, i) =>
+      makeReviewStateRecord({
+        id: `pr-rs-claimed-${i}`,
+        prNumber: 4000 + i,
+        claimedBy: "some-agent",
+        heartbeatAt: "2026-07-15T11:59:00.000Z", // fresh — within TTL of the fixed clock
+      }),
+    );
+    const { deps, delayCalls, fetchCalls } = makeReviewStateDeps({
+      pendingRecords: { "acme/example-repo": records },
+    });
+
+    await reconcileReviewState(deps);
+
+    // No gh calls at all (every record actively claimed), but delay still
+    // fires once per record — simplest correct behavior per the brief.
+    expect(fetchCalls).toHaveLength(0);
+    expect(delayCalls).toHaveLength(RECORD_COUNT);
   });
 });
 
