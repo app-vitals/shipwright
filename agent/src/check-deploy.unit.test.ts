@@ -564,6 +564,20 @@ describe("getDeployCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  test("excludes a PR whose task-store PR record itself has hitl:true (PRB-3.1 Step 5a.7 escalation — no linked task)", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      createdAt: "2026-06-01T00:00:00.000Z",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+    deps.queryPrRecord = async () => ({ hitl: true });
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
   // ─── mergeStateStatus DIRTY exclusion ──────────────────────────────────
 
   test("APPROVED + green CI + mergeStateStatus DIRTY is excluded from candidates", async () => {

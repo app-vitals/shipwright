@@ -35,6 +35,7 @@ import {
   createTaskStatusQuery,
   isCleanApproveBody,
   isMergeOnlyUpdate,
+  isPrRecordBlockedForDispatch,
   mapReposTolerant,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -90,6 +91,7 @@ export interface MergeStatusInfo {
 export interface PrRecord {
   readyForPatchAt?: string | null;
   claimedBy?: string | null;
+  hitl?: boolean | null;
 }
 
 export interface CheckPatchDeps {
@@ -424,6 +426,13 @@ export async function getPatchCandidates(
       // treated as claimed — only an explicit claimedBy gates candidacy,
       // mirroring check-review.ts.
       if (record?.claimedBy != null) continue;
+
+      // PRB-3.1: a PR record can be escalated to hitl:true directly on the
+      // PR record itself (e.g. patch.md Step 5a.7's second-round-disagreement
+      // escalation, which has no linked task to flag). Without this check
+      // such a PR would keep re-qualifying as a patch candidate every cycle
+      // despite already being escalated to a human.
+      if (isPrRecordBlockedForDispatch(record)) continue;
     }
 
     // Task-store task lookup, used to source the age field from the linked

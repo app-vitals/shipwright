@@ -1421,6 +1421,18 @@ describe("getPatchCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  test("excludes a PR whose task-store PR record itself has hitl:true (PRB-3.1 Step 5a.7 escalation — no linked task)", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => ({ hitl: true });
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
   // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
 
   test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {

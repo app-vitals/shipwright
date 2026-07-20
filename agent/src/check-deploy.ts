@@ -28,6 +28,7 @@ import {
   createTaskStatusQuery,
   getCurrentUser,
   isCleanApproveBody,
+  isPrRecordBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -70,6 +71,7 @@ export interface WorkflowRun {
 export interface PrRecord {
   readyForDeployAt?: string | null;
   claimedBy?: string | null;
+  hitl?: boolean | null;
 }
 
 export interface CheckDeployDeps {
@@ -274,6 +276,13 @@ export async function getDeployCandidates(
         // NOT be treated as claimed — only an explicit claimedBy gates
         // candidacy, mirroring check-review.ts.
         if (record?.claimedBy != null) continue;
+
+        // PRB-3.1: a PR record can be escalated to hitl:true directly on the
+        // PR record itself (e.g. patch.md Step 5a.7's second-round-disagreement
+        // escalation, which has no linked task to flag). Without this check
+        // such a PR would keep re-qualifying as a deploy candidate every cycle
+        // despite already being escalated to a human.
+        if (isPrRecordBlockedForDispatch(record)) continue;
       }
 
       candidates.push({

@@ -33,6 +33,7 @@ import {
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
+  isPrRecordBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -60,6 +61,7 @@ export interface PrRecord {
   reviewState: string;
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
+  hitl?: boolean | null;
 }
 
 export interface CheckReviewDeps {
@@ -168,6 +170,13 @@ export async function getReviewCandidates(
     // would otherwise say (this is NOT queried with ready=true, since a
     // missing record here must stay distinguishable from "no record yet").
     if (record.claimedBy != null) continue;
+
+    // PRB-3.1: a PR record can be escalated to hitl:true directly on the PR
+    // record itself (e.g. patch.md Step 5a.7's second-round-disagreement
+    // escalation, which has no linked task to flag). Without this check such
+    // a PR would keep re-qualifying as a review candidate every cycle despite
+    // already being escalated to a human.
+    if (isPrRecordBlockedForDispatch(record)) continue;
 
     // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip
     if (
