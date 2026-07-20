@@ -320,6 +320,17 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
+    hitl: z.boolean().default(false).openapi({ example: false }),
+    hitlNotifiedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    blockedReason: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "no linked task" }),
     createdAt: z
       .string()
       .datetime()
