@@ -657,11 +657,18 @@ do not reset `reviewState`.
    ```
    The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
    across all worktrees.
-4. Resolve the unresolved inline threads (from Step 3a) belonging to each qualifying
-   second-round review — escalating without resolving them would leave those threads
-   `isResolved == false`, so Step 3a's List A criteria would re-flag this same PR next
-   cycle and re-fire this same escalation indefinitely. Use the same mutation as Step 5b
-   [D]/[E]:
+4. Resolve **all** currently-unresolved inline threads on this PR (from Step 3a's
+   `reviewThreads.nodes[]`) — not just threads tied to the qualifying second-round review.
+   Step 3a's query carries no field linking a thread back to the review that raised it
+   (only `id`, `isResolved`, and the first comment's `author.login`/`body`/`path`/`line`),
+   so scoping resolution to "threads belonging to" a specific review isn't something this
+   step can actually determine. Escalating already means giving up on automated resolution
+   for this cycle — the PR comment posted in step 3 above tells the human reader that
+   everything was escalated for manual review, not silently fixed, so resolving every
+   open thread here carries no silent-dismissal risk. Leaving any thread unresolved,
+   however, would leave it `isResolved == false`, so Step 3a's List A criteria would
+   re-flag this same PR next cycle and re-fire this same escalation indefinitely — the
+   exact loop this step exists to close. Use the same mutation as Step 5b [D]/[E]:
    ```bash
    gh api graphql -f query='
    mutation {
@@ -670,11 +677,8 @@ do not reset `reviewState`.
      }
    }'
    ```
-   Run this for the Thread ID of every unresolved inline thread whose comment belongs to a
-   qualifying second-round review — the PR comment posted in step 3 above is the record of
-   why these are being resolved without a further code change. If a qualifying review has
-   no unresolved inline threads (its finding was a bare review-body comment with no inline
-   thread), there is nothing to resolve for that review — move on.
+   Run this for the Thread ID of every thread in Step 3a's `reviewThreads.nodes[]` with
+   `isResolved == false`. If there are none, there is nothing to resolve — move on.
 5. Release the pre-work claim from Step 5a.6 — no fix is in flight, this cycle intentionally
    stops short of dispatching one:
    ```bash
