@@ -191,6 +191,15 @@ export interface PrReviewStateRecord {
 
 export interface PrReviewStateReconcilerDeps {
   repos: string[];
+  /**
+   * Returns the agent's currently-configured repo scope, read fresh on
+   * every reconcileReviewState() call — mirrors PrStateReconcilerDeps's own
+   * getScopedRepos field (WL-4.4/PSR-1.3). `repos` above is the local-clone
+   * filesystem scan (built once); this filter is intersected with it at
+   * call time so a repo cloned locally for reference but absent from this
+   * list never gets reconciled.
+   */
+  getScopedRepos: () => string[];
   /** Page size for listing reviewState:"pending" records; defaults to the task-store's own default (50). */
   pageLimit?: number;
   /** Injected time source — never call Date.now()/new Date() directly. */
@@ -447,7 +456,12 @@ export async function reconcilePrOpenTasks(
     return;
   }
 
+  const scopedReposSet = new Set(deps.getScopedRepos());
+
   for (const task of tasks) {
+    const taskRepo = resolveTaskRepo(deps, task);
+    if (!taskRepo || !scopedReposSet.has(taskRepo)) continue; // out of scope — skip, zero gh calls
+
     try {
       await reconcilePrOpenTask(deps, task);
     } catch (err) {
@@ -525,7 +539,12 @@ export async function reconcileOrphanedTasks(
     return;
   }
 
+  const scopedReposSet = new Set(deps.getScopedRepos());
+
   for (const task of tasks) {
+    const taskRepo = resolveTaskRepo(deps, task);
+    if (!taskRepo || !scopedReposSet.has(taskRepo)) continue; // out of scope — skip, zero gh calls
+
     try {
       await reconcileOrphanedTask(deps, task);
     } catch (err) {
@@ -803,7 +822,10 @@ export async function reconcileReviewState(
   // regardless of record age; see its dep-interface doc comment above.
   const updatedSince = computeUpdatedSinceCutoff(deps.clock.now().getTime());
 
-  for (const repo of deps.repos) {
+  const scopedReposSet = new Set(deps.getScopedRepos());
+  const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
+
+  for (const repo of scopedRepos) {
     let records: PrReviewStateRecord[];
     try {
       records = await listAllReviewRecords(deps, repo, (r, limit, offset) =>
@@ -829,7 +851,7 @@ export async function reconcileReviewState(
     }
   }
 
-  for (const repo of deps.repos) {
+  for (const repo of scopedRepos) {
     let postedRecords: PrReviewStateRecord[];
     try {
       postedRecords = await listAllReviewRecords(
@@ -1118,6 +1140,7 @@ export function buildReviewStateProductionDeps(opts: {
   ghGraphql: <T>(query: string) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;
+  getScopedRepos: () => string[];
 }): PrReviewStateReconcilerDeps {
   const workspacePath = resolveWorkspacePath();
   const repos = resolveAllRepos(workspacePath);
@@ -1175,6 +1198,7 @@ export function buildReviewStateProductionDeps(opts: {
 
   return {
     repos,
+    getScopedRepos: opts.getScopedRepos,
     clock: opts.clock ?? SystemClock(),
     claimTtlMs: Number(
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,

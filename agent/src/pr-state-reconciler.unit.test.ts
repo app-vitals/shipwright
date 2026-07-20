@@ -484,6 +484,8 @@ interface MakeReviewStateDepsOptions {
   pageLimit?: number;
   clock?: Clock;
   claimTtlMs?: number;
+  /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
+  getScopedRepos?: () => string[];
 }
 
 function makeReviewStateDeps({
@@ -494,6 +496,7 @@ function makeReviewStateDeps({
   pageLimit = 50,
   clock = FixedClock(new Date("2026-07-15T12:00:00.000Z")),
   claimTtlMs,
+  getScopedRepos = () => repos,
 }: MakeReviewStateDepsOptions = {}): {
   deps: PrReviewStateReconcilerDeps;
   listCalls: ListReviewCall[];
@@ -508,6 +511,7 @@ function makeReviewStateDeps({
 
   const deps: PrReviewStateReconcilerDeps = {
     repos,
+    getScopedRepos,
     pageLimit,
     clock,
     ...(claimTtlMs !== undefined ? { claimTtlMs } : {}),
@@ -1055,6 +1059,68 @@ describe("reconcileReviewState", () => {
     expect(listCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
   });
+
+  // ─── scope filtering (PSR-1.3) ────────────────────────────────────────────
+
+  test("a repo present locally but absent from getScopedRepos() is excluded from both the pending and posted scans", async () => {
+    const recordInScope = makeReviewStateRecord({
+      id: "pr-repoA",
+      repo: "acme/repo-a",
+      prNumber: 1,
+    });
+    const recordOutOfScope = makeReviewStateRecord({
+      id: "pr-repoB",
+      repo: "acme/repo-b",
+      prNumber: 1,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [makeReviewNode({ state: "APPROVED" })],
+      },
+    });
+    const { deps, patchCalls, listCalls, listPostedCalls, fetchCalls } =
+      makeReviewStateDeps({
+        repos: ["acme/repo-a", "acme/repo-b"],
+        pendingRecords: {
+          "acme/repo-a": [recordInScope],
+          "acme/repo-b": [recordOutOfScope],
+        },
+        postedRecords: {
+          "acme/repo-a": [],
+          "acme/repo-b": [],
+        },
+        reviewResults: {
+          "acme/repo-a#1": reviewData,
+          "acme/repo-b#1": reviewData,
+        },
+        getScopedRepos: () => ["acme/repo-a"],
+      });
+
+    await reconcileReviewState(deps);
+
+    expect(listCalls.map((c) => c.repo)).toEqual(["acme/repo-a"]);
+    expect(listPostedCalls.map((c) => c.repo)).toEqual(["acme/repo-a"]);
+    expect(fetchCalls).toEqual(["acme/repo-a#1"]);
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-repoA");
+  });
+
+  test("getScopedRepos() returning an empty array filters out all repos — no-op, no crash", async () => {
+    const record = makeReviewStateRecord({ id: "pr-1", prNumber: 1 });
+    const { deps, patchCalls, listCalls, listPostedCalls } =
+      makeReviewStateDeps({
+        repos: ["acme/example-repo"],
+        pendingRecords: { "acme/example-repo": [record] },
+        getScopedRepos: () => [],
+      });
+
+    await reconcileReviewState(deps);
+
+    expect(listCalls).toHaveLength(0);
+    expect(listPostedCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+  });
 });
 
 // ─── reconcileReviewState — posted-scan pass (CHU-2.4) ──────────────────────────
@@ -1271,6 +1337,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
 
     const deps: PrReviewStateReconcilerDeps = {
       repos: ["acme/repo-a", "acme/repo-b"],
+      getScopedRepos: () => ["acme/repo-a", "acme/repo-b"],
       pageLimit: 50,
       clock: FixedClock(new Date("2026-07-15T12:00:00.000Z")),
       listPendingReviewRecords: async (repo: string) => {
@@ -1394,6 +1461,7 @@ describe("buildReviewStateProductionDeps", () => {
   test("claimTtlMs falls back to the default when the env var is unset", () => {
     const deps = buildReviewStateProductionDeps({
       ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
+      getScopedRepos: () => [],
     });
 
     expect(deps.claimTtlMs).toBe(2_100_000);
@@ -1404,6 +1472,7 @@ describe("buildReviewStateProductionDeps", () => {
 
     const deps = buildReviewStateProductionDeps({
       ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
+      getScopedRepos: () => [],
     });
 
     expect(deps.claimTtlMs).toBe(60_000);
@@ -1821,6 +1890,49 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
       updatedSince: "2026-07-14T23:00:00.000Z",
     });
   });
+
+  // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
+
+  test("a pr_open task whose resolveTaskRepo() is out of scope is skipped with zero gh calls, while an in-scope task in the same batch still reconciles", async () => {
+    const taskInScope: PrOpenTaskRecord = {
+      id: "task-in-scope",
+      repo: "acme/repo-a",
+      pr: 1,
+    };
+    const taskOutOfScope: PrOpenTaskRecord = {
+      id: "task-out-of-scope",
+      repo: "acme/repo-b",
+      pr: 2,
+    };
+    const ghCalls: string[] = [];
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      prOpenTasks: [taskInScope, taskOutOfScope],
+      ghResults: {
+        "acme/repo-a#1": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+        "acme/repo-b#2": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+      },
+      getScopedRepos: () => ["acme/repo-a"],
+    });
+    const originalGhViewPr = deps.ghViewPr;
+    deps.ghViewPr = async (repo: string, prNumber: number) => {
+      ghCalls.push(`${repo}#${prNumber}`);
+      return await originalGhViewPr(repo, prNumber);
+    };
+
+    await reconcilePrState(deps);
+
+    expect(ghCalls).toEqual(["acme/repo-a#1"]);
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-in-scope");
+    expect(patchCalls).toHaveLength(0);
+  });
 });
 
 describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
@@ -1992,5 +2104,45 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
 
     await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
+  });
+
+  // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
+
+  test("an orphan-candidate task whose resolveTaskRepo() is out of scope is skipped with zero gh calls, while an in-scope task in the same batch still reconciles", async () => {
+    const taskInScope: PrOpenTaskRecord = {
+      id: "task-orphan-in-scope",
+      repo: "acme/repo-a",
+      branch: "feat/in-scope",
+    };
+    const taskOutOfScope: PrOpenTaskRecord = {
+      id: "task-orphan-out-of-scope",
+      repo: "acme/repo-b",
+      branch: "feat/out-of-scope",
+    };
+    const ghCalls: string[] = [];
+    const { deps, taskPatchCalls } = makeDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      orphanCandidateTasks: [taskInScope, taskOutOfScope],
+      openBranchResults: {
+        "acme/repo-a#feat/in-scope": [
+          { number: 300, createdAt: "2026-07-18T00:00:00.000Z" },
+        ],
+        "acme/repo-b#feat/out-of-scope": [
+          { number: 301, createdAt: "2026-07-18T00:00:00.000Z" },
+        ],
+      },
+      getScopedRepos: () => ["acme/repo-a"],
+    });
+    const originalGhListOpenPrsForBranch = deps.ghListOpenPrsForBranch;
+    deps.ghListOpenPrsForBranch = async (repo: string, branch: string) => {
+      ghCalls.push(`${repo}#${branch}`);
+      return await originalGhListOpenPrsForBranch(repo, branch);
+    };
+
+    await reconcilePrState(deps);
+
+    expect(ghCalls).toEqual(["acme/repo-a#feat/in-scope"]);
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-orphan-in-scope");
   });
 });
