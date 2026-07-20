@@ -1320,7 +1320,7 @@ describe("getPatchCandidates", () => {
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  // ─── hitl exclusion (CBD-2.2) ───────────────────────────────────────────────
+  // ─── hitl + task-blocked exclusion (CBD-2.2, PRB-2.2) ───────────────────────
 
   test("a PR whose linked task is hitl:true is excluded from patch candidacy entirely", async () => {
     const pr = makeOwnPr({ number: 10 });
@@ -1376,6 +1376,35 @@ describe("getPatchCandidates", () => {
         : { status: "pr_open", createdAt: "2026-05-01T00:00:00.000Z" };
     const result = await getPatchCandidates(deps);
     expect(result.map((c) => c.id)).toEqual(["acme/example-repo#11"]);
+  });
+
+  test("a PR whose task-store PR record has hitl:true is excluded, even when there is no linked task at all (isPrRecordBlockedForDispatch)", async () => {
+    const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryPrRecord = async () => ({ hitl: true });
+    deps.queryTaskStatus = async () => null;
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("a PR whose linked task has status:\"blocked\" is excluded from patch candidacy (isTaskBlockedForDispatch, new behavior)", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "blocked",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      hitl: false,
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
   });
 
   // ─── claim gating (LPF-2.2) ────────────────────────────────────────────────
