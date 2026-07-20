@@ -4772,6 +4772,49 @@ describe("renderSessionDetailPage", () => {
     expect(html).toContain("merged");
   });
 
+  test("task table includes a Source column header", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).toContain('<th class="col-source">Source</th>');
+  });
+
+  test("row renders task.source value in the Source column", () => {
+    const taskWithSource: TaskItem = {
+      ...READY_TASK,
+      source: "entropy-fix",
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [taskWithSource], USER_NAME);
+    expect(html).toContain(
+      '<td class="col-source mono" style="font-size:11px">entropy-fix</td>',
+    );
+  });
+
+  test("row without source shows em-dash placeholder", () => {
+    const taskWithoutSource: TaskItem = { ...READY_TASK, source: null };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [taskWithoutSource],
+      USER_NAME,
+    );
+    expect(html).toContain(
+      '<td class="col-source mono" style="font-size:11px"><span style="color:#9ca3af">—</span></td>',
+    );
+  });
+
+  test("row escapes HTML in task.source", () => {
+    const xssTask: TaskItem = {
+      ...READY_TASK,
+      source: '"><script>xss()</script>',
+    };
+    const html = renderSessionDetailPage(SESSION_ID, [xssTask], USER_NAME);
+    expect(html).not.toContain("<script>xss()</script>");
+  });
+
+  test("no filter form is added to the session detail view", () => {
+    const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
+    expect(html).not.toContain('name="source"');
+    expect(html).not.toContain('placeholder="source"');
+  });
+
   test("summarizes and groups the task table by ready/in_progress/blocked/closed — matching the Tasks page taxonomy", () => {
     const html = renderSessionDetailPage(SESSION_ID, MIXED_TASKS, USER_NAME);
     // READY_TASK (pending, no blockedBy) -> ready; IN_PROGRESS_TASK (in_progress) -> in_progress;
