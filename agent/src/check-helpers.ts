@@ -496,6 +496,40 @@ export interface LinkedTaskInfo {
 }
 
 /**
+ * True when the linked task's status demands a human look before dispatch:
+ * `hitl === true` (already escalated) OR `status === "blocked"`. Checked
+ * independently — a task can be hitl:true while still status:"pr_open", so
+ * neither condition alone is sufficient.
+ *
+ * Shared by the WL-2.2 candidate providers (check-review.ts, check-patch.ts,
+ * check-deploy.ts) so all three exclude a blocked/escalated task's PR at
+ * candidate-collection time instead of each hand-rolling this check —
+ * check-deploy.ts previously checked `status === "blocked"` while
+ * check-patch.ts/check-review.ts didn't, and this function exists to close
+ * that drift (PRB-2.1).
+ */
+export function isTaskBlockedForDispatch(
+  task: Pick<LinkedTaskInfo, "status" | "hitl"> | null | undefined,
+): boolean {
+  return task?.hitl === true || task?.status === "blocked";
+}
+
+/**
+ * True when a task-store PR record has already been escalated to a human
+ * (`hitl === true`). Accepts a minimal `{ hitl }` shape so each collector's
+ * own PrRecord interface satisfies this structurally without depending on a
+ * shared PrRecord type.
+ *
+ * Companion to isTaskBlockedForDispatch — see its doc comment for the
+ * drift this pair of helpers is meant to prevent (PRB-2.1).
+ */
+export function isPrRecordBlockedForDispatch(
+  pr: { hitl?: boolean | null } | null | undefined,
+): boolean {
+  return pr?.hitl === true;
+}
+
+/**
  * Build a `(repo, prNumber) => LinkedTaskInfo | null` query function against
  * the task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null ONLY
  * on a confirmed empty result (no linked task) — a PR simply has no task yet.
