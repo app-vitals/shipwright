@@ -130,7 +130,7 @@ a T-NNN active for one repo would incorrectly block or interfere with dedup for 
 repo.
 
 Parse both `.tasks` arrays. From the combined results, collect tasks where:
-- `source == "shipwright"`, AND
+- `source == "test-fix"`, AND
 - `title` starts with `"Test readiness:"`
 
 Extract the already-active `T-NNN` IDs from the task `id` field (format:
@@ -143,7 +143,7 @@ For each row from Step 2: if its `T-NNN` is in the "already active" set, skip it
 ### 4.1 Fuzzy Near-Duplicate Check
 
 The exact-ID check above only catches literal `T-NNN` reuse, scoped to `source ==
-"shipwright"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
+"test-fix"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
 differently-numbered task that semantically duplicates existing active work — e.g. a
 finding that gets re-scoped and re-queued under a new `T-NNN` after the original active task
 was created by a different source or with a different title convention. That gap is exactly
@@ -153,7 +153,7 @@ matching the narrow `source`/prefix filter.
 To close it, run a second, wider comparison — no new API calls, no `--repo=`-scope change:
 reuse the **same combined `.tasks` array** already fetched above (the `status=pending` and
 `status=in_progress` results, both `&repo=`-scoped), but this time **do not** filter by
-`source == "shipwright"` or by the `"Test readiness:"` title prefix. Consider literally every
+`source == "test-fix"` or by the `"Test readiness:"` title prefix. Consider literally every
 active (pending + in_progress) task title for the repo, regardless of source or naming
 convention.
 
