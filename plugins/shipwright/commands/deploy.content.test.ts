@@ -10,6 +10,22 @@ beforeAll(() => {
   content = readFileSync(DEPLOY_MD_PATH, "utf-8");
 });
 
+function extractStep5aSection(md: string): string {
+  const match = md.match(
+    /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
+function extractStep5bSection(md: string): string {
+  const match = md.match(
+    /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");
@@ -281,14 +297,6 @@ describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
-  function extractStep5bSection(md: string): string {
-    const match = md.match(
-      /### 5b\. Monitor Pipeline[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5b's polling implementation uses a chained in-Bash sleep loop (shell for-loop + sleep 60)", () => {
     const step5bSection = extractStep5bSection(content);
     expect(step5bSection).toContain("sleep 60");
@@ -339,14 +347,6 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
 });
 
 describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
-  function extractStep5aSection(md: string): string {
-    const match = md.match(
-      /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
-    );
-    expect(match).not.toBeNull();
-    return match?.[0] ?? "";
-  }
-
   it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
     const step5aSection = extractStep5aSection(content);
     expect(step5aSection).toContain("sleep 30");
@@ -388,6 +388,53 @@ describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
     const step5aSection = extractStep5aSection(content);
     expect(step5aSection).toContain("No Deploy workflow triggered");
     expect(step5aSection).toContain("Step 5c");
+  });
+});
+
+describe("deploy.md — read target repo's Deploy model before polling (DPS-2.1)", () => {
+  it("Step 5a instructs the agent to check the target repo's CLAUDE.md 'Deploy model' section before polling", () => {
+    const step5aSection = extractStep5aSection(content);
+    expect(step5aSection).toContain("CLAUDE.md");
+    expect(step5aSection).toContain("Deploy model");
+  });
+
+  it("Step 5a instructs skipping straight to Step 5c when the Deploy model section clearly states there is no pipeline", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("no deploy pipeline");
+    expect(step5aSection).toContain("skip");
+    expect(step5aSection).toContain("Step 5c");
+  });
+
+  it("Step 5a states the fallback: ambiguous/absent/low-confidence reads fall back to today's unchanged poll behavior — never guess", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("ambiguous");
+    expect(lower).toContain("never guess");
+  });
+
+  it("Step 5a's Deploy-model check reads only already-in-context CLAUDE.md — no new file read or tool call", () => {
+    const step5aSection = extractStep5aSection(content);
+    const lower = step5aSection.toLowerCase();
+    expect(lower).toContain("already in");
+    expect(lower).toContain("context");
+  });
+
+  it("Step 5b instructs using stage names from the Deploy model section when given", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("Deploy model");
+    const lower = step5bSection.toLowerCase();
+    expect(lower).toContain("stage name");
+  });
+
+  it("Step 5b preserves the literal Deploy/Canary/Promote to Prod defaults for the fallback case", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain('`"Deploy"`');
+    expect(step5bSection).toContain('`"Canary"`');
+    expect(step5bSection).toContain('`"Promote to Prod"`');
+    expect(step5bSection).toContain(
+      "[{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}",
+    );
   });
 });
 

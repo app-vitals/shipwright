@@ -337,6 +337,20 @@ curl -sf -X PATCH \
 
 ### 5a. No-Pipeline Detection
 
+**Check the target repo's Deploy model first.** The target repo's own `CLAUDE.md` is
+already in your context from the worktree checkout earlier in this flow — no new file
+read or tool call is needed. Look for a `## Deploy model` section:
+
+- **Clearly states there is no deploy pipeline** (e.g. a `direct` model, or explicit
+  language like "no deploy pipeline" / "ships via container/Helm/direct push with no
+  staging/canary/promote stages" — shipwright's own repo is an example: `Deploy model:
+  direct` — "ships via Helm chart + GHCR-pinned image tags, with no staging/production
+  GitHub Environments and no deploy-staging→canary→promote-to-production pipeline"):
+  skip the 5-minute poll below entirely and go straight to Step 5c.
+- **Describes a pipeline, is ambiguous, is absent, or you're not confident in your
+  read**: fall back to exactly today's behavior below — run the full 5-minute poll.
+  **Never guess.** When in doubt, poll.
+
 Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls).
 
 **Implementation: inline in-Bash sleep loop.** Do not wait between polls via a
@@ -482,6 +496,14 @@ call 2 covers minutes 8-16, call 3 covers minutes 16-24, call 4 covers minutes 2
 call may run fewer than 8 iterations to land on the 30-minute mark). Break out of the loop
 (and stop chaining further Bash calls) as soon as any terminal condition below is met —
 do not keep polling once Deploy has failed, Canary has resolved, or Promote has resolved.
+
+**Stage names: check the Deploy model section again.** If the target repo's `CLAUDE.md`
+`## Deploy model` section (same already-in-context read as Step 5a — no new file read)
+explicitly names its pipeline stages/workflow names, use those stage names for the
+progress labels and terminal-condition checks below in place of the defaults. If it
+doesn't name stages, is ambiguous, is absent, or you're not confident in your read,
+keep exactly today's literal `"Deploy"`/`"Canary"`/`"Promote to Prod"` three-stage table
+and print format unchanged — never guess.
 
 Track three stages by workflow name (`.name`):
 
