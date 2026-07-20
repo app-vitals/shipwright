@@ -641,8 +641,17 @@ do not reset `reviewState`.
      -d '{"hitl": true}' > /dev/null 2>&1 || \
      echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
    ```
-   If `PR_TASK_ID` is empty (no linked task on the PR record), log a warning and skip the
-   PATCH — still post the PR comment below.
+   If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+   instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+   patch candidate every cycle, spinning forever:
+   ```bash
+   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+     -d '{"hitl": true, "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
+     echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+   ```
+   Still post the PR comment below either way.
 3. Post a single PR comment stating a human decision is needed. Write the body to a temp
    file first, same convention as the rebuttal comment in Step 5b [D] (heredocs break
    permission glob matching):
