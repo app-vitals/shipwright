@@ -322,6 +322,7 @@ if (runtimeClient && agentId) {
     try {
       reviewStateReconcilerDeps ??= buildReviewStateReconcilerDeps({
         ghGraphql,
+        getScopedRepos: agentReposRef.get,
       });
       await reconcileReviewState(reviewStateReconcilerDeps);
     } catch (err) {
