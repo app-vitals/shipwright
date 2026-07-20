@@ -25,7 +25,6 @@ import {
   type PrStateRecord,
   buildProductionDeps,
   buildReviewStateProductionDeps,
-  reconcileDeployingTasks,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -75,13 +74,6 @@ interface MakeDepsOptions {
     string,
     Array<{ number: number; createdAt: string }> | Error
   >;
-  /** deploying tasks for the DSR-2.1 pass; defaults to [] so existing tests are unaffected. */
-  deployingTasks?: PrOpenTaskRecord[];
-  /** repo -> newest-first "Promote to Prod" workflow runs, or an Error to throw, for the DSR-2.1 pass. */
-  workflowRunsResults?: Record<
-    string,
-    Array<{ createdAt: string; conclusion: string | null; id: number }> | Error
-  >;
 }
 
 function makeDeps({
@@ -96,21 +88,17 @@ function makeDeps({
   getScopedRepos = () => repos,
   orphanCandidateTasks = [],
   openBranchResults = {},
-  deployingTasks = [],
-  workflowRunsResults = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
-  listDeployingTasksCalls: ListTasksCall[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
-  const listDeployingTasksCalls: ListTasksCall[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -156,19 +144,6 @@ function makeDeps({
       if (result instanceof Error) throw result;
       return result ?? [];
     },
-    listDeployingTasks: async (limit: number, offset: number) => {
-      listDeployingTasksCalls.push({ limit, offset });
-      return deployingTasks.slice(offset, offset + limit);
-    },
-    ghListWorkflowRuns: async (
-      repo: string,
-      _workflow: string,
-      _limit: number,
-    ) => {
-      const result = workflowRunsResults[repo];
-      if (result instanceof Error) throw result;
-      return result ?? [];
-    },
   };
 
   return {
@@ -177,7 +152,6 @@ function makeDeps({
     patchCalls,
     taskPatchCalls,
     listPrOpenTasksCalls,
-    listDeployingTasksCalls,
   };
 }
 
@@ -1918,363 +1892,5 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
 
     await expect(reconcilePrState(deps)).resolves.toBeUndefined();
     expect(taskPatchCalls).toHaveLength(0);
-  });
-});
-
-describe("reconcileDeployingTasks", () => {
-  test("deploying task whose merge is followed by a successful promote transitions to deployed, using the run's createdAt (not now())", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-1",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-      now: () => "2026-07-19T00:00:00.000Z",
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-deploying-1");
-    expect(taskPatchCalls[0].fields).toEqual({
-      status: "deployed",
-      deployedAt: "2026-07-17T00:10:00.000Z",
-    });
-  });
-
-  test("deploying task with no successful promote after its merge is left untouched", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-2",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a task in any status other than deploying is never modified — listDeployingTasks contract means non-deploying tasks are never seen by this pass", async () => {
-    const prOpenTask: PrOpenTaskRecord = {
-      id: "task-not-deploying",
-      repo: "acme/example-repo",
-      pr: 5,
-    };
-    const { deps, taskPatchCalls, listDeployingTasksCalls } = makeDeps({
-      prOpenTasks: [prOpenTask],
-      deployingTasks: [], // correctly excludes the pr_open task
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(listDeployingTasksCalls.length).toBeGreaterThan(0);
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a task with a null mergedAt is skipped and logged, never guessed at", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-null-merged-at",
-      repo: "acme/example-repo",
-      mergedAt: null,
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    const originalError = console.error;
-    const errorCalls: unknown[][] = [];
-    console.error = (...args: unknown[]) => {
-      errorCalls.push(args);
-    };
-    try {
-      await reconcileDeployingTasks(deps);
-    } finally {
-      console.error = originalError;
-    }
-
-    expect(taskPatchCalls).toHaveLength(0);
-    expect(
-      errorCalls.some((call) =>
-        call.some(
-          (arg) =>
-            typeof arg === "string" &&
-            arg.includes("task-deploying-null-merged-at"),
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  test("a single task's workflow-run lookup failure does not abort reconciliation of the rest of the batch", async () => {
-    const taskA: PrOpenTaskRecord = {
-      id: "task-deploying-fail",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const taskB: PrOpenTaskRecord = {
-      id: "task-deploying-ok",
-      repo: "other-org/other-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [taskA, taskB],
-      workflowRunsResults: {
-        "acme/example-repo": new Error("gh api failed: rate limited"),
-        "other-org/other-repo": [
-          {
-            id: 2,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-deploying-ok");
-  });
-
-  test("a tick with nothing to reconcile performs zero writes; an immediate re-run is a no-op", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [],
-    });
-
-    await reconcileDeployingTasks(deps);
-    expect(taskPatchCalls).toHaveLength(0);
-
-    await reconcileDeployingTasks(deps);
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a run with conclusion !== 'success' is ignored even if newest", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-failed-run",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "failure",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-          {
-            id: 2,
-            conclusion: "success",
-            createdAt: "2026-07-16T23:00:00.000Z", // older, before mergedAt
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a run createdAt exactly equal to (not strictly after) mergedAt is NOT reconciled", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-exact-equal",
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:10:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [task],
-      workflowRunsResults: {
-        "acme/example-repo": [
-          {
-            id: 1,
-            conclusion: "success",
-            createdAt: "2026-07-17T00:10:00.000Z",
-          },
-        ],
-      },
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("listDeployingTasks paginates beyond the default page limit — scans a second page", async () => {
-    const page1 = Array.from({ length: 2 }, (_, i) => ({
-      id: `task-deploying-p1-${i}`,
-      repo: "acme/example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    }));
-    const page2: PrOpenTaskRecord[] = [
-      {
-        id: "task-deploying-p2-0",
-        repo: "acme/example-repo",
-        mergedAt: "2026-07-17T00:00:00.000Z",
-      },
-    ];
-    const { deps, listDeployingTasksCalls, taskPatchCalls } = makeDeps({
-      deployingTasks: [...page1, ...page2],
-      workflowRunsResults: {
-        "acme/example-repo": [],
-      },
-      pageLimit: 2,
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
-    expect(listDeployingTasksCalls).toHaveLength(2);
-    expect(listDeployingTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
-    expect(listDeployingTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
-    // No successful runs configured — nothing is reconciled, but all 3 tasks were scanned.
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("task.repo without a slash and no configured repos is skipped defensively — no throw", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-deploying-no-repo",
-      repo: "example-repo",
-      mergedAt: "2026-07-17T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      repos: [],
-      deployingTasks: [task],
-    });
-
-    await reconcileDeployingTasks(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("listDeployingTasks failure is logged and does not throw", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      deployingTasks: [],
-    });
-    deps.listDeployingTasks = async () => {
-      throw new Error("task-store GET /tasks failed");
-    };
-
-    await expect(reconcileDeployingTasks(deps)).resolves.toBeUndefined();
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-});
-
-describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by workflow (DSR-2.1 review fix)", () => {
-  /**
-   * Regression coverage for the finding on PR #1941: a client-side-filtered
-   * `actions/runs?per_page=N` repo-wide fetch can miss the target workflow's
-   * real recent runs when unrelated workflows are noisy (confirmed live in
-   * production — bursts of unrelated workflow runs pushed a real "Promote to
-   * Prod" run outside a top-20 window). This asserts `ghListWorkflowRuns`
-   * now resolves the workflow's id via the "list repo workflows" endpoint
-   * and queries that workflow's own runs endpoint — server-side scoped, so a
-   * burst of unrelated workflow activity can never push the target workflow's
-   * runs out of the page.
-   */
-  test("resolves the workflow id by name, then fetches only that workflow's runs", async () => {
-    const calls: string[] = [];
-    const ghJson = async <T>(args: string[]): Promise<T> => {
-      const path = args[1] ?? "";
-      calls.push(path);
-      if (path.startsWith("repos/acme/example-repo/actions/workflows?")) {
-        return {
-          workflows: [
-            { id: 111, name: "Bump Shipwright Chart" },
-            { id: 222, name: "Promote to Prod" },
-          ],
-        } as T;
-      }
-      if (path === "repos/acme/example-repo/actions/workflows/222/runs?per_page=20") {
-        return {
-          workflow_runs: [
-            {
-              status: "completed",
-              conclusion: "success",
-              created_at: "2026-07-19T12:00:00.000Z",
-              id: 999,
-            },
-          ],
-        } as T;
-      }
-      throw new Error(`unexpected gh api call: ${path}`);
-    };
-    const deps = buildProductionDeps({
-      ghJson,
-      getScopedRepos: () => [],
-    });
-
-    const runs = await deps.ghListWorkflowRuns(
-      "acme/example-repo",
-      "Promote to Prod",
-      20,
-    );
-
-    expect(runs).toEqual([
-      {
-        createdAt: "2026-07-19T12:00:00.000Z",
-        conclusion: "success",
-        id: 999,
-      },
-    ]);
-    // Only the scoped workflow-runs endpoint is queried for run data — never
-    // the unscoped repo-wide `actions/runs` endpoint a noisy burst of other
-    // workflows (like "Bump Shipwright Chart") could crowd out.
-    expect(calls).toEqual([
-      "repos/acme/example-repo/actions/workflows?per_page=100",
-      "repos/acme/example-repo/actions/workflows/222/runs?per_page=20",
-    ]);
-  });
-
-  test("returns an empty list when no workflow matches the given name, rather than falling back to an unscoped fetch", async () => {
-    const ghJson = async <T>(): Promise<T> => {
-      return { workflows: [{ id: 111, name: "Bump Shipwright Chart" }] } as T;
-    };
-    const deps = buildProductionDeps({
-      ghJson,
-      getScopedRepos: () => [],
-    });
-
-    const runs = await deps.ghListWorkflowRuns(
-      "acme/example-repo",
-      "Promote to Prod",
-      20,
-    );
-
-    expect(runs).toEqual([]);
   });
 });
