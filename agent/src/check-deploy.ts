@@ -29,6 +29,7 @@ import {
   getCurrentUser,
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -235,9 +236,11 @@ export async function getDeployCandidates(
       // human has already been escalated to and needs to act; a task can be
       // hitl:true while still status:"pr_open", e.g. CI later goes green on
       // an already-escalated commit, so hitl and status are checked
-      // independently, not just status). A confirmed empty result (no linked
-      // task) is not disqualifying, but a lookup FAILURE fails CLOSED —
-      // deploy is consequential enough that "unknown" must not be treated as
+      // independently, not just status), routed through the shared
+      // isTaskBlockedForDispatch helper (PRB-2.1) instead of hand-rolled
+      // checks. A confirmed empty result (no linked task) is not
+      // disqualifying, but a lookup FAILURE fails CLOSED — deploy is
+      // consequential enough that "unknown" must not be treated as
       // "confirmed ready".
       let linkedTask: LinkedTaskInfo | null = null;
       if (deps.queryTaskStatus) {
@@ -249,8 +252,7 @@ export async function getDeployCandidates(
           );
           continue;
         }
-        if (linkedTask?.status === "blocked") continue;
-        if (linkedTask?.hitl === true) continue;
+        if (isTaskBlockedForDispatch(linkedTask)) continue;
       }
 
       if (deps.isBundleComplete) {
@@ -277,11 +279,12 @@ export async function getDeployCandidates(
         // candidacy, mirroring check-review.ts.
         if (record?.claimedBy != null) continue;
 
-        // PRB-3.1: a PR record can be escalated to hitl:true directly on the
-        // PR record itself (e.g. patch.md Step 5a.7's second-round-disagreement
-        // escalation, which has no linked task to flag). Without this check
-        // such a PR would keep re-qualifying as a deploy candidate every cycle
-        // despite already being escalated to a human.
+        // A PR-record hitl:true gate (PRB-2.4) — lets a PR with no linked
+        // task at all still be excluded via its own PR-record hitl flag,
+        // alongside the linked-task hitl/blocked check above (PRB-3.1:
+        // patch.md Step 5a.7's second-round-disagreement escalation writes
+        // hitl:true directly on the PR record when there's no linked task
+        // to flag).
         if (isPrRecordBlockedForDispatch(record)) continue;
       }
 

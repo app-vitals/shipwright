@@ -371,9 +371,9 @@ describe("getReviewCandidates", () => {
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
-  // ─── hitl exclusion (CBD-2.2) ───────────────────────────────────────────────
+  // ─── hitl / blocked exclusion (CBD-2.2, PRB-2.3) ─────────────────────────────
 
-  test("a PR whose linked task is hitl:true is excluded from review candidacy entirely", async () => {
+  test("a PR whose linked task is hitl:true is excluded from review candidacy (isTaskBlockedForDispatch)", async () => {
     const pr = makePr();
     const result = await getReviewCandidates(
       makeDeps(
@@ -382,6 +382,38 @@ describe("getReviewCandidates", () => {
         "bodhi-agent",
         false,
         async () => ({ status: "pr_open", hitl: true }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR whose linked task has status:blocked is excluded from review candidacy (new behavior)", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "blocked", hitl: false }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR whose PR-record has hitl:true is excluded from review candidacy, even with no linked task at all", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: null,
+          reviewState: "pending",
+          hitl: true,
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
       ),
     );
     expect(result).toHaveLength(0);
@@ -450,18 +482,6 @@ describe("getReviewCandidates", () => {
         commitSha: null,
         reviewState: "pending",
         claimedBy: "agent-other",
-      })),
-    );
-    expect(result).toEqual([]);
-  });
-
-  test("excludes a PR whose task-store PR record itself has hitl:true (PRB-3.1 Step 5a.7 escalation — no linked task)", async () => {
-    const pr = makePr({ headRefOid: "sha111" });
-    const result = await getReviewCandidates(
-      makeDeps([pr], async () => ({
-        commitSha: null,
-        reviewState: "pending",
-        hitl: true,
       })),
     );
     expect(result).toEqual([]);

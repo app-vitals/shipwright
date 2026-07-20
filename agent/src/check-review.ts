@@ -34,6 +34,7 @@ import {
   createTaskStatusQuery,
   getCurrentUser,
   isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
@@ -146,9 +147,10 @@ export async function getReviewCandidates(
       }
     }
 
-    // Skip PRs whose linked task is hitl:true — a human has already been
-    // escalated to and needs to act before review tries again (CBD-2.2).
-    if (linkedTask?.hitl === true) continue;
+    // Skip PRs whose linked task is hitl:true or status:"blocked" — a human
+    // has already been escalated to (or the task is otherwise blocked) and
+    // needs to act before review tries again (CBD-2.2, PRB-2.3).
+    if (isTaskBlockedForDispatch(linkedTask)) continue;
 
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
@@ -171,11 +173,11 @@ export async function getReviewCandidates(
     // missing record here must stay distinguishable from "no record yet").
     if (record.claimedBy != null) continue;
 
-    // PRB-3.1: a PR record can be escalated to hitl:true directly on the PR
-    // record itself (e.g. patch.md Step 5a.7's second-round-disagreement
-    // escalation, which has no linked task to flag). Without this check such
-    // a PR would keep re-qualifying as a review candidate every cycle despite
-    // already being escalated to a human.
+    // A PR-record with hitl:true means a human has already been escalated to
+    // on this PR — applies independently of whether a task is linked
+    // (PRB-2.3, PRB-3.1: patch.md Step 5a.7's second-round-disagreement
+    // escalation writes hitl:true directly on the PR record when there's no
+    // linked task to flag).
     if (isPrRecordBlockedForDispatch(record)) continue;
 
     // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip

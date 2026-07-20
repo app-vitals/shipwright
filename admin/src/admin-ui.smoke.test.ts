@@ -4061,6 +4061,59 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].get("sort")).toBe("desc");
   });
 
+  it("GET /admin/tasks?source=entropy-fix forwards source to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?source=entropy-fix", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("source")).toBe("entropy-fix");
+  });
+
+  it("GET /admin/tasks with no source param forwards no source to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("source")).toBe(false);
+  });
+
+  it("GET /admin/tasks?source=entropy-fix round-trips into the source filter input value", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks?source=entropy-fix", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).toContain('name="source"');
+    expect(html).toContain('value="entropy-fix"');
+  });
+
   it("GET /admin/tasks renders tasks table with mock data", async () => {
     const mockTasks = [
       {
@@ -5170,6 +5223,79 @@ describe("admin UI — public task board", () => {
     await app.request("/public/tasks");
     expect(capturedParams.length).toBe(1);
     expect(capturedParams[0].get("repo")).toBe(PUBLIC_REPO);
+  });
+
+  it("GET /public/tasks?source=entropy-fix forwards source to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/public/tasks?source=entropy-fix");
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].get("source")).toBe("entropy-fix");
+  });
+
+  it("GET /public/tasks with no source param forwards no source to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/public/tasks");
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("source")).toBe(false);
+  });
+
+  it("GET /public/tasks?source=entropy-fix returns only matching rows and round-trips the filter value", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async (params) => {
+          // Simulate the task-store applying the source filter server-side.
+          const all = [
+            {
+              id: "pub-task-src-1",
+              title: "Entropy sourced task",
+              status: "pending",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              assignee: null,
+              claimedBy: null,
+              source: "entropy-fix",
+            },
+            {
+              id: "pub-task-src-2",
+              title: "Manually filed task",
+              status: "pending",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              assignee: null,
+              claimedBy: null,
+              source: "manual",
+            },
+          ];
+          const source = params.get("source");
+          const tasks = source ? all.filter((t) => t.source === source) : all;
+          return { tasks, total: tasks.length, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/public/tasks?source=entropy-fix");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Entropy sourced task");
+    expect(html).not.toContain("Manually filed task");
   });
 
   it("GET /public/tasks requests sort=desc from the task store", async () => {

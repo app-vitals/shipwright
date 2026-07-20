@@ -64,6 +64,36 @@ Before starting, check for flags:
    No parseable T-NNN task rows found in test-readiness-plan.md. Nothing to queue.
    ```
    Then stop.
+5. Run each surviving `T-NNN` row through the pre-filing verification checklist —
+   `references/pre-filing-verification.md` (relative to the plugin root) — before it proceeds
+   any further to Step 3 (repo detection), Step 4 (dedup), or Step 5 (task creation). This
+   re-verifies the row against the current repo state (`test-readiness-plan.md` is a snapshot
+   that may already be stale by the time this skill runs) and catches task ID / branch
+   collisions early. Treat `references/pre-filing-verification.md` as canonical for how to
+   apply the checklist. Per its four checks:
+   - Drop rows whose target files (the `files` column, plus any fixture/test paths the row
+     implies) no longer exist as described, or whose testing gap has already been closed by a
+     later commit on main since `test-readiness-plan.md` was generated (Checklist Items 1–2) —
+     do not build a task for them. Skip silently, matching this skill's own convention (there
+     is no separate ledger section here beyond the dedup/summary output Step 4/Step 7 already
+     produce).
+   - **Route rows whose target-file or fixture existence can't be confirmed by a literal
+     check to HITL, rather than assuming they're safe to drop or safe to file clean**
+     (Checklist Item 3). This is the exact failure mode that caused task T-130's false
+     negative: a grep-based existence check missed a fixture that was referenced via
+     `path.join()` construction rather than a literal import or string match, so the row was
+     treated as a confirmed pass when the fixture's real status couldn't actually be
+     determined that way. When a row's target file or fixture is referenced indirectly —
+     constructed paths, dynamic dispatch, reflection-based lookups, or anything else a literal
+     grep/import check can't definitively resolve — do not treat it as either a confirmed pass
+     (file exists, skip) or a confirmed absence (file missing, safe to file); route it to HITL
+     instead. This feeds directly into the `hitl` computation in Step 5.2 as an explicit path
+     to `hitl: true`.
+   - Checklist Item 4 (task ID / branch collisions) is satisfied by this skill's own Step 3 /
+     Step 4 dedup check (repo-slug-scoped task IDs, dedup query); no separate action is needed
+     here beyond noting the overlap.
+   This runs once, here in Step 2, so both the `--dry-run` preview (Step 6) and the real queue
+   path (Step 7) operate on the same already-verified row set.
 
 ---
 
@@ -100,7 +130,7 @@ a T-NNN active for one repo would incorrectly block or interfere with dedup for 
 repo.
 
 Parse both `.tasks` arrays. From the combined results, collect tasks where:
-- `source == "shipwright"`, AND
+- `source == "test-fix"`, AND
 - `title` starts with `"Test readiness:"`
 
 Extract the already-active `T-NNN` IDs from the task `id` field (format:
@@ -113,7 +143,7 @@ For each row from Step 2: if its `T-NNN` is in the "already active" set, skip it
 ### 4.1 Fuzzy Near-Duplicate Check
 
 The exact-ID check above only catches literal `T-NNN` reuse, scoped to `source ==
-"shipwright"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
+"test-fix"` tasks whose title starts with `"Test readiness:"`. It cannot catch a
 differently-numbered task that semantically duplicates existing active work — e.g. a
 finding that gets re-scoped and re-queued under a new `T-NNN` after the original active task
 was created by a different source or with a different title convention. That gap is exactly
@@ -123,7 +153,7 @@ matching the narrow `source`/prefix filter.
 To close it, run a second, wider comparison — no new API calls, no `--repo=`-scope change:
 reuse the **same combined `.tasks` array** already fetched above (the `status=pending` and
 `status=in_progress` results, both `&repo=`-scoped), but this time **do not** filter by
-`source == "shipwright"` or by the `"Test readiness:"` title prefix. Consider literally every
+`source == "test-fix"` or by the `"Test readiness:"` title prefix. Consider literally every
 active (pending + in_progress) task title for the repo, regardless of source or naming
 convention.
 
@@ -195,7 +225,7 @@ and `repo-slug` values detected in Step 3 — do not re-derive them:
 {
   "id": "test-{t-nnn}-{repo-slug}",
   "title": "Test readiness: {outcome} (T-NNN)",
-  "source": "shipwright",
+  "source": "test-fix",
   "repo": "<repo, as detected in Step 3>",
   "branch": "feat/test-{t-nnn-lower}-{slug}",
   "layer": "<test-layer from the row: unit | integration | smoke | e2e | infra>",
@@ -263,9 +293,64 @@ classification. Default `hitl: false`, except:
   This mirrors `test-roadmap`'s own Open Risks guidance: don't delete a "redundant" test
   before its replacement exists — that call needs a human to confirm the replacement is
   actually in place and adequate.
+- **(d) Ambiguous fix approach** — a general "is the fix approach obvious" judgment call,
+  modeled on `consolidation-fix/SKILL.md`'s Step 7 per-finding `hitl` classification. The
+  question here isn't "which canonical shape to converge on" (consolidation-fix's framing) —
+  it's "is there an obvious, single way to write this test that mirrors existing precedent in
+  the codebase, or is the testing approach itself ambiguous":
+  - `hitl: false` continues to apply (no change to the existing default) when there's a clear
+    existing test file/pattern nearby to mirror — the row's `files` column names a target test
+    file adjacent to (or extending) an existing suite with the same layer/suffix convention,
+    the fixture/mocking strategy already has precedent elsewhere in the codebase, and there's
+    no real ambiguity about how the test should be structured.
+  - `hitl: true` (new rule d) applies when **any** of the following hold:
+    - **No existing precedent to mirror** — the row requires a genuinely novel test-fixture
+      strategy (e.g. the first integration test against a new external dependency, or a test
+      layer/suffix that doesn't yet exist anywhere in the repo for this component) and
+      reasonable engineers could disagree about how to structure it.
+    - **The row's scope crosses component/service boundaries** in a way that makes an
+      isolated, obvious test hard to write — e.g. the row's `files` column spans multiple
+      packages/services with no existing shared test-fixture convention between them.
+    - **The row is itself an audit/judgment row** whose own audit-decision-row table (parsed
+      in Step 2) reflects unresolved ambiguity about what "correct" behavior even is — distinct
+      from rule (c)'s narrower untested-canonical-owner case, this is about the row's own
+      decision criterion being unclear, not about a deletion target.
+  - Rule (d) is evaluated **in addition to** rules (a)–(c) — it does not replace them, and the
+    same "no default lean, judge each row on its own facts, no numeric backstop" philosophy
+    that governs (a)–(c) and this whole section applies to (d) too.
+  - **Carry-forward from Step 2's pre-filing check:** an unconfirmable indirect-reference row
+    from Step 2's pre-filing verification (Checklist Item 3 — the T-130 false-negative
+    pattern) is itself a path to `hitl: true` here. It is not a fifth numbered rule
+    the way (a)–(d) are — it's carried forward from Step 2's per-row verification — but the
+    `hitl` value it produces lands in this same field, so treat it as already-decided input
+    alongside (a)–(d) rather than re-litigating it.
 
-Judge (a)/(b)/(c) against the row's own files/outcome/audit table — there is no default lean
-either way beyond `false`; these three rules are the only paths to `true`.
+Judge (a)/(b)/(c)/(d) against the row's own files/outcome/audit table — there is no default
+lean either way beyond `false`; these four rules (plus the Step 2 pre-filing carry-forward) are
+the only paths to `true`.
+
+**Worked example.**
+
+Row 1 — `hitl: false`:
+```
+T-071 | M4 | src/lib/formatCurrency.ts | unit | high-tier | add unit coverage for formatCurrency edge cases | bun test src/lib/formatCurrency.unit.test.ts
+```
+`src/lib/formatCurrency.unit.test.ts` already exists with 10 sibling unit tests covering other
+pure functions in the same file, following the same `describe`/`it` structure and no external
+fixtures. This row simply extends that suite with more cases for the same function. Clear
+existing pattern to mirror, no boundary crossing, no audit ambiguity → `hitl: false`.
+
+Row 2 — `hitl: true` under rule (d):
+```
+T-088 | M2 | src/clients/paymentsGatewayClient.ts | integration | critical-path | add integration coverage for the new paymentsGatewayClient | bun test src/clients/paymentsGatewayClient.integration.test.ts
+```
+This is the first integration test against a brand-new external payments gateway dependency —
+there is no existing `*.integration.test.ts` fixture/recording convention anywhere in the repo
+for this kind of third-party client (the repo's other integration tests all cover internal
+services with an established recorded-fixture pattern that doesn't obviously transfer to an
+external payment API's auth/retry semantics). No existing precedent to mirror, reasonable
+engineers could disagree on the fixture strategy → `hitl: true` per rule (d), even though
+neither rule (a), (b), nor (c) applies.
 
 ### 5.3 Build the `description` Field
 
@@ -434,10 +519,11 @@ Stop after printing — this is the sole final output for the regular flow.
   (printed in Step 4's output and again in Step 7.2's summary). Only the exact-ID check can
   remove a row from the Step 5 build list; a fuzzy title match is never, on its own, a reason
   to withhold a task from the bulk POST.
-- **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the three
+- **No numeric/count backstop on `hitl`** — the only paths to `hitl: true` are the four
   explicit rules in Step 5.2 (CI workflow secrets, branch protection, untested M5 deletion
-  owner). No file-count, line-count, or milestone-number threshold ever forces the
-  classification on its own.
+  owner, ambiguous fix approach) plus the Step 2 pre-filing-verification carry-forward
+  (unconfirmable indirect-reference rows). No file-count, line-count, or milestone-number
+  threshold ever forces the classification on its own.
 - **Repo-scoped task IDs** — every task ID carries the `{repo-slug}` suffix (Step 3) so
   the same `T-NNN` scanned in two different repos never collides.
 - **`test-readiness-plan.md` is not modified here** — a queued task only means a fix is

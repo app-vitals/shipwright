@@ -36,6 +36,7 @@ import {
   isCleanApproveBody,
   isMergeOnlyUpdate,
   isPrRecordBlockedForDispatch,
+  isTaskBlockedForDispatch,
   mapReposTolerant,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -427,20 +428,23 @@ export async function getPatchCandidates(
       // mirroring check-review.ts.
       if (record?.claimedBy != null) continue;
 
-      // PRB-3.1: a PR record can be escalated to hitl:true directly on the
-      // PR record itself (e.g. patch.md Step 5a.7's second-round-disagreement
-      // escalation, which has no linked task to flag). Without this check
-      // such a PR would keep re-qualifying as a patch candidate every cycle
-      // despite already being escalated to a human.
+      // Skip PRs whose task-store PR record is hitl:true — a human has
+      // already been escalated to at the PR-record level (independent of
+      // any linked task) and needs to act before patch tries again (PRB-2.2,
+      // PRB-3.1: patch.md Step 5a.7's second-round-disagreement escalation
+      // writes hitl:true directly on the PR record when there's no linked
+      // task to flag — via the shared isPrRecordBlockedForDispatch helper).
+      // Uses the same fetched `record` above — no new network call.
       if (isPrRecordBlockedForDispatch(record)) continue;
     }
 
     // Task-store task lookup, used to source the age field from the linked
-    // task's createdAt (LPF-3.2) and to gate on hitl (CBD-2.2). A thrown error
-    // is treated as "no linked task" so a lookup failure never disqualifies
-    // an otherwise-eligible PR from patch candidacy — unlike check-deploy.ts,
-    // which fails closed, patch re-dispatch is not consequential enough to
-    // block on an unreachable task-store.
+    // task's createdAt (LPF-3.2) and to gate on hitl/blocked status
+    // (CBD-2.2, PRB-2.2). A thrown error is treated as "no linked task" so a
+    // lookup failure never disqualifies an otherwise-eligible PR from patch
+    // candidacy — unlike check-deploy.ts, which fails closed, patch
+    // re-dispatch is not consequential enough to block on an unreachable
+    // task-store.
     let linkedTask: LinkedTaskInfo | null = null;
     if (deps.queryTaskStatus) {
       try {
@@ -450,12 +454,14 @@ export async function getPatchCandidates(
       }
     }
 
-    // Skip PRs whose linked task is hitl:true — a human has already been
-    // escalated to and needs to act before patch tries again (CBD-2.2:
-    // without this gate, an escalated PR whose CI stays red for the same
+    // Skip PRs whose linked task is hitl:true or status:"blocked" — a human
+    // has already been escalated to (hitl) or the task itself is blocked,
+    // and either way needs a human look before patch tries again (CBD-2.2,
+    // PRB-2.2 via the shared isTaskBlockedForDispatch helper: without this
+    // gate, an escalated/blocked PR whose CI stays red for the same
     // already-known reason gets re-selected as a candidate on every drain
     // tick, indefinitely, until a human clears the flag).
-    if (linkedTask?.hitl === true) continue;
+    if (isTaskBlockedForDispatch(linkedTask)) continue;
 
     candidates.push({
       id: candidateId(pr.repo, pr.number),
