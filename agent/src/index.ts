@@ -51,7 +51,6 @@ import { validatePiperVoice } from "./piper-voice.ts";
 import {
   buildProductionDeps as buildPrStateReconcilerDeps,
   buildReviewStateProductionDeps as buildReviewStateReconcilerDeps,
-  reconcileDeployingTasks,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -300,14 +299,6 @@ if (runtimeClient && agentId) {
 // (not a second timer): reviewState drift from an out-of-band GitHub
 // reviewer. Its own try/catch means one pass failing never prevents the
 // other from running — see reconcileReviewState() in pr-state-reconciler.ts.
-//
-// DSR-2.1 adds a third, independent reconciliation pass on this SAME tick:
-// status:"deploying" tasks left stranded when the deploy actually
-// succeeded but the completion PATCH (an agent action, not a workflow
-// step) never ran. Its own try/catch, same pattern as the review pass
-// above — see reconcileDeployingTasks() in pr-state-reconciler.ts. Reuses
-// the same reconcilerDeps object built for reconcilePrState() above; no
-// second deps object.
 if (runtimeClient && agentId) {
   let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
   let reviewStateReconcilerDeps:
@@ -336,19 +327,6 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[pr-state-reconciler:review] tick failed (non-fatal):",
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-
-    try {
-      reconcilerDeps ??= buildPrStateReconcilerDeps({
-        ghJson,
-        getScopedRepos: agentReposRef.get,
-      });
-      await reconcileDeployingTasks(reconcilerDeps);
-    } catch (err) {
-      console.error(
-        "[pr-state-reconciler:deploying] tick failed (non-fatal):",
         err instanceof Error ? err.message : String(err),
       );
     }
