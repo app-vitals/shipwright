@@ -256,19 +256,18 @@ Look up the rule in the Step 2 classification table and route:
     not — a judgment call, not a mechanical fix.
   - No default lean either way; judge each group on its own facts.
 
-**General ambiguous-fix criterion (applies on top of the lookup table above, including to
-rule categories not yet in the Step 2 table):** the three bullets above cover the Step 2
-table's fixed classifications, but the Step 2 table is not guaranteed to be exhaustive
-forever — `security-scan` may add a new rule before this skill's Step 2 table is updated to
-classify it. For any finding — whether its rule has a Step 2 entry or not — apply this
-additional judgment, mirroring `consolidation-fix`'s Step 7 per-finding `hitl` heuristic:
+**General ambiguous-fix criterion (structures the `HITL: per-finding` judgment call above):**
+the `HITL: per-finding` bullet above says to "use judgment" per finding group but doesn't
+say what that judgment should weigh. For any finding whose rule is classified
+`HITL: per-finding` in the Step 2 table (`authz-missing-check` today), apply this additional
+structure, mirroring `consolidation-fix`'s Step 7 per-finding `hitl` heuristic:
 
 - `hitl: false` (autonomous) when there is a **single, obvious, canonical fix shape** with
   **existing precedent elsewhere in the codebase** — e.g. the rule's own fix guidance in the
   Step 2 table names one clear, mechanical remediation (as `osv-cve`'s "bump to the patched
-  version" or `secret-weak-compare`'s "swap in `crypto.timingSafeEqual`" already do), or an
-  unclassified rule's finding clearly matches a fix pattern already used successfully
-  elsewhere in this same repo.
+  version" or `secret-weak-compare`'s "swap in `crypto.timingSafeEqual`" already do), or this
+  finding clearly matches a fix pattern already used successfully elsewhere in this same
+  repo.
 - `hitl: true` (needs a human) when **any** of the following hold:
   - Multiple plausible fix approaches exist and reasonable engineers could disagree about
     which one to apply.
@@ -276,22 +275,18 @@ additional judgment, mirroring `consolidation-fix`'s Step 7 per-finding `hitl` h
     `plugins/shipwright/` and `agent/`, or two separate repositories).
   - There is no clear precedent elsewhere in the codebase for how to remediate this specific
     finding.
-  - Default toward `hitl: true` when genuinely unsure — this is especially the lean for a
-    rule with **no Step 2 table entry at all**, since an unclassified rule has, by
-    definition, no rationale on record yet to justify autonomous action.
+  - Default toward `hitl: true` when genuinely unsure.
 
-**Worked example:** Suppose `security-scan` ships a new rule, `insecure-deserialization`,
-that is not yet in the Step 2 table. A finding flags `src/importer.ts:88` using
-`unserialize()` on untrusted input. There is no existing safe-deserialization helper anywhere
-else in the codebase, and two different plausible remediations exist — switch to a
-schema-validated parser, or sandbox the deserialization call — with no precedent for which
-this codebase prefers. Per the general criterion above, this finding is `hitl: true`: no
-clear precedent, multiple plausible shapes, and no Step 2 table entry to lean on. Contrast
-that with a second finding of the same new rule at `src/legacy-importer.ts:12`, where the
-file already imports and partially uses a `safeParse()` helper from `src/lib/safe-parse.ts`
-that another part of the codebase uses for the exact same untrusted-input pattern — here the
-fix is a single, obvious, mechanical swap to the existing helper, so this finding is
-`hitl: false` even though the rule itself still has no Step 2 table entry.
+**Worked example:** Two `authz-missing-check` findings from the same scan. The first flags
+`src/routes/admin-users.ts:41`, a route with no auth check at all; there's no existing
+"require-admin" middleware or equivalent pattern anywhere else in the codebase to model the
+fix on, and it's genuinely unclear whether this route was meant to be public or just never
+had auth wired up — a judgment call. Per the criterion above, this finding is `hitl: true`:
+no clear precedent, ambiguous intent. Contrast that with a second finding at
+`src/routes/billing-export.ts:19`, where the file already imports `requireAuth()` and uses
+it on every other route in the same file except this one — the fix is a single, obvious,
+mechanical addition of the same middleware call already used throughout the file, so this
+finding is `hitl: false`.
 
 ### 6q.4 Build the Description — Autonomous Tasks (`hitl: false`)
 
