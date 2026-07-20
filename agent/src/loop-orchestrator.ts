@@ -183,8 +183,8 @@ const SPIN_DETECTION_THRESHOLD = 3;
  * commitSha hasn't changed since its last dispatch. Set below the documented
  * ~30min dev-task/loop cadence so a genuinely new cron tick still gets
  * through, while re-fires far tighter than that cadence (the observed bug —
- * vitals-os#3318 was re-dispatched every 2-5 minutes for hours on an
- * unchanged commit) are suppressed.
+ * a PR was re-dispatched every 2-5 minutes for hours on an unchanged commit)
+ * are suppressed.
  */
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 
