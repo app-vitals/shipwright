@@ -156,7 +156,9 @@ export interface PrStateReconcilerDeps {
    * upstream queries being unioned together. See `buildProductionDeps`'s
    * implementation below for the two independent pagination loops.
    */
-  listOrphanCandidateTasks: (updatedSince: string) => Promise<PrOpenTaskRecord[]>;
+  listOrphanCandidateTasks: (
+    updatedSince: string,
+  ) => Promise<PrOpenTaskRecord[]>;
   /**
    * Branch lookup for a real, currently-OPEN PR (`gh pr list --head <branch>
    * --state open`) — the TCR-1.2 counterpart to `ghListMergedPrsForBranch`
@@ -274,6 +276,11 @@ const DEFAULT_PAGE_LIMIT = 50;
  */
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
+/** Cutoff ISO timestamp `ONE_HOUR_MS` before `nowMs` (epoch ms), for the `updatedSince` recency window above. */
+function computeUpdatedSinceCutoff(nowMs: number): string {
+  return new Date(nowMs - ONE_HOUR_MS).toISOString();
+}
+
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
   state: GhPrView["state"],
@@ -298,7 +305,12 @@ async function listAllOpenRecords(
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listOpenPrRecords(repo, limit, offset, updatedSince);
+    const page = await deps.listOpenPrRecords(
+      repo,
+      limit,
+      offset,
+      updatedSince,
+    );
     records.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -450,9 +462,9 @@ export async function reconcilePrOpenTasks(
 ): Promise<void> {
   // Computed once per reconcile pass (PSR-1.1) — never freshly inside the
   // page loop, so a single pass uses one consistent cutoff across all pages.
-  const updatedSince = new Date(
-    new Date(deps.now()).getTime() - ONE_HOUR_MS,
-  ).toISOString();
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
 
   let tasks: PrOpenTaskRecord[];
   try {
@@ -528,9 +540,9 @@ export async function reconcileOrphanedTasks(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
   // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
-  const updatedSince = new Date(
-    new Date(deps.now()).getTime() - ONE_HOUR_MS,
-  ).toISOString();
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
 
   let tasks: PrOpenTaskRecord[];
   try {
@@ -643,9 +655,9 @@ export async function reconcileDeployingTasks(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
   // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
-  const updatedSince = new Date(
-    new Date(deps.now()).getTime() - ONE_HOUR_MS,
-  ).toISOString();
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
 
   let tasks: PrOpenTaskRecord[];
   try {
@@ -685,9 +697,9 @@ export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
   // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
-  const updatedSince = new Date(
-    new Date(deps.now()).getTime() - ONE_HOUR_MS,
-  ).toISOString();
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
 
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
@@ -723,7 +735,9 @@ export async function reconcilePrState(
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
 
 /** Filter a PR's reviews down to only those submitted at the current head commit. */
-function reviewsAtHeadCommit(data: PrReviewData): PrReviewData["reviews"]["nodes"] {
+function reviewsAtHeadCommit(
+  data: PrReviewData,
+): PrReviewData["reviews"]["nodes"] {
   const { headRefOid, reviews } = data;
   return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
 }
@@ -932,9 +946,7 @@ export async function reconcileReviewState(
   // Deliberately only threaded into the pending-scan below —
   // listPostedReviewRecords (CHU-2.4's healing pass) must keep scanning
   // regardless of record age; see its dep-interface doc comment above.
-  const updatedSince = new Date(
-    deps.clock.now().getTime() - ONE_HOUR_MS,
-  ).toISOString();
+  const updatedSince = computeUpdatedSinceCutoff(deps.clock.now().getTime());
 
   for (const repo of deps.repos) {
     let records: PrReviewStateRecord[];

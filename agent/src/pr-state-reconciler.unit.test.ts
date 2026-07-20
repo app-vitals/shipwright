@@ -1322,7 +1322,10 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
       },
     };
     const patchCalls: ReviewPatchCall[] = [];
-    deps.patchPrRecord = async (id: string, fields: Record<string, unknown>) => {
+    deps.patchPrRecord = async (
+      id: string,
+      fields: Record<string, unknown>,
+    ) => {
       patchCalls.push({ id, fields });
     };
 
@@ -1506,7 +1509,11 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listPrOpenTasks(50, 0, "2026-07-19T22:00:00.000Z");
+    const result = await deps.listPrOpenTasks(
+      50,
+      0,
+      "2026-07-19T22:00:00.000Z",
+    );
 
     expect(result).toEqual(tasks);
     expect(calls).toHaveLength(1);
@@ -1536,7 +1543,9 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks("2026-07-19T22:00:00.000Z");
+    const result = await deps.listOrphanCandidateTasks(
+      "2026-07-19T22:00:00.000Z",
+    );
 
     // All 117 orphan candidates returned — not truncated at 50.
     expect(result).toHaveLength(117);
@@ -1578,7 +1587,9 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks("2026-07-19T22:00:00.000Z");
+    const result = await deps.listOrphanCandidateTasks(
+      "2026-07-19T22:00:00.000Z",
+    );
 
     expect(result.map((t) => t.id)).toEqual(["keep-1"]);
   });
@@ -2336,7 +2347,10 @@ describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by wo
           ],
         } as T;
       }
-      if (path === "repos/acme/example-repo/actions/workflows/222/runs?per_page=20") {
+      if (
+        path ===
+        "repos/acme/example-repo/actions/workflows/222/runs?per_page=20"
+      ) {
         return {
           workflow_runs: [
             {
@@ -2412,10 +2426,13 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
     const fetchFn = async (url: RequestInfo | URL) => {
       const parsed = new URL(String(url));
       calls.push(Object.fromEntries(parsed.searchParams.entries()));
-      return new Response(JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     };
     return { fetchFn, calls };
   }
@@ -2517,10 +2534,13 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
     const fetchFn = async (url: RequestInfo | URL) => {
       const parsed = new URL(String(url));
       calls.push(Object.fromEntries(parsed.searchParams.entries()));
-      return new Response(JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     };
     return { fetchFn, calls };
   }
@@ -2565,7 +2585,12 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
       clock.now().getTime() - 60 * 60 * 1000,
     ).toISOString();
 
-    await deps.listPendingReviewRecords("acme/example-repo", 50, 0, updatedSince);
+    await deps.listPendingReviewRecords(
+      "acme/example-repo",
+      50,
+      0,
+      updatedSince,
+    );
 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBe("2026-07-19T22:00:00.000Z");
