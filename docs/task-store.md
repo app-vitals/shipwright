@@ -272,11 +272,11 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
 
-`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used to pause a PR with no linked task. Set via `PATCH /prs/:id`.
+`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
 
 `hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
 
-`blockedReason`: optional string — human-readable explanation for why this PR is blocked (e.g., `"no linked task"`). Set via `PATCH /prs/:id`.
+`blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
 
 #### PR timestamp fields
 
