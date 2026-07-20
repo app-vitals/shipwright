@@ -175,7 +175,9 @@ export async function getReviewCandidates(
 
     // A PR-record with hitl:true means a human has already been escalated to
     // on this PR — applies independently of whether a task is linked
-    // (PRB-2.3).
+    // (PRB-2.3, PRB-3.1: patch.md Step 5a.7's second-round-disagreement
+    // escalation writes hitl:true directly on the PR record when there's no
+    // linked task to flag).
     if (isPrRecordBlockedForDispatch(record)) continue;
 
     // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip

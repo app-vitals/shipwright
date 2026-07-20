@@ -564,7 +564,7 @@ describe("getDeployCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  test("excludes a PR whose PR-record has hitl:true, even when there is no linked task at all (PRB-2.4)", async () => {
+  test("excludes a PR whose PR-record has hitl:true, even when there is no linked task at all (PRB-2.4, PRB-3.1 Step 5a.7 escalation)", async () => {
     const pr = makeGhPr({
       reviewDecision: "APPROVED",
       createdAt: "2026-06-01T00:00:00.000Z",

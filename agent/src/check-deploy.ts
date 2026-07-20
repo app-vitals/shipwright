@@ -278,9 +278,13 @@ export async function getDeployCandidates(
         // NOT be treated as claimed — only an explicit claimedBy gates
         // candidacy, mirroring check-review.ts.
         if (record?.claimedBy != null) continue;
+
         // A PR-record hitl:true gate (PRB-2.4) — lets a PR with no linked
         // task at all still be excluded via its own PR-record hitl flag,
-        // alongside the linked-task hitl/blocked check above.
+        // alongside the linked-task hitl/blocked check above (PRB-3.1:
+        // patch.md Step 5a.7's second-round-disagreement escalation writes
+        // hitl:true directly on the PR record when there's no linked task
+        // to flag).
         if (isPrRecordBlockedForDispatch(record)) continue;
       }
 

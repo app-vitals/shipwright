@@ -427,11 +427,14 @@ export async function getPatchCandidates(
       // treated as claimed — only an explicit claimedBy gates candidacy,
       // mirroring check-review.ts.
       if (record?.claimedBy != null) continue;
+
       // Skip PRs whose task-store PR record is hitl:true — a human has
       // already been escalated to at the PR-record level (independent of
       // any linked task) and needs to act before patch tries again (PRB-2.2,
-      // via the shared isPrRecordBlockedForDispatch helper). Uses the same
-      // fetched `record` above — no new network call.
+      // PRB-3.1: patch.md Step 5a.7's second-round-disagreement escalation
+      // writes hitl:true directly on the PR record when there's no linked
+      // task to flag — via the shared isPrRecordBlockedForDispatch helper).
+      // Uses the same fetched `record` above — no new network call.
       if (isPrRecordBlockedForDispatch(record)) continue;
     }
 
