@@ -426,10 +426,12 @@ export async function getPatchCandidates(
       if (record?.claimedBy != null) continue;
     }
 
-    // Task-store task lookup, used purely to source the age field from the
-    // linked task's createdAt (LPF-3.2) — not a gating check. A thrown error
-    // is treated as "no linked task" so it never disqualifies an otherwise-
-    // eligible PR from patch candidacy.
+    // Task-store task lookup, used to source the age field from the linked
+    // task's createdAt (LPF-3.2) and to gate on hitl (CBD-2.2). A thrown error
+    // is treated as "no linked task" so a lookup failure never disqualifies
+    // an otherwise-eligible PR from patch candidacy — unlike check-deploy.ts,
+    // which fails closed, patch re-dispatch is not consequential enough to
+    // block on an unreachable task-store.
     let linkedTask: LinkedTaskInfo | null = null;
     if (deps.queryTaskStatus) {
       try {
@@ -438,6 +440,13 @@ export async function getPatchCandidates(
         linkedTask = null;
       }
     }
+
+    // Skip PRs whose linked task is hitl:true — a human has already been
+    // escalated to and needs to act before patch tries again (CBD-2.2:
+    // without this gate, an escalated PR whose CI stays red for the same
+    // already-known reason gets re-selected as a candidate on every drain
+    // tick, indefinitely, until a human clears the flag).
+    if (linkedTask?.hitl === true) continue;
 
     candidates.push({
       id: candidateId(pr.repo, pr.number),

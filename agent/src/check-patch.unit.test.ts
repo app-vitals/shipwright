@@ -1320,6 +1320,64 @@ describe("getPatchCandidates", () => {
     expect(result[0].age).toBe("2026-06-01T00:00:00.000Z");
   });
 
+  // ─── hitl exclusion (CBD-2.2) ───────────────────────────────────────────────
+
+  test("a PR whose linked task is hitl:true is excluded from patch candidacy entirely", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "pr_open",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      hitl: true,
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR is still an eligible candidate when the linked task has hitl:false or no linked task exists", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async () => ({
+      status: "pr_open",
+      createdAt: "2026-05-01T00:00:00.000Z",
+      hitl: false,
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
+
+    deps.queryTaskStatus = async () => null;
+    const resultNoTask = await getPatchCandidates(deps);
+    expect(resultNoTask).toHaveLength(1);
+  });
+
+  test("a hitl:true PR does not block a different, non-hitl PR from being collected", async () => {
+    const hitlPr = makeOwnPr({ number: 10 });
+    const okPr = makeOwnPr({ number: 11, headRefOid: "ok-sha" });
+    const deps = makeDeps({
+      ownPrs: [hitlPr, okPr],
+      reviewDataByPr: {},
+      ciStatusByPr: { 10: { hasFailing: true }, 11: { hasFailing: true } },
+    });
+    deps.queryTaskStatus = async (_repo: string, prNumber: number) =>
+      prNumber === 10
+        ? {
+            status: "pr_open",
+            createdAt: "2026-05-01T00:00:00.000Z",
+            hitl: true,
+          }
+        : { status: "pr_open", createdAt: "2026-05-01T00:00:00.000Z" };
+    const result = await getPatchCandidates(deps);
+    expect(result.map((c) => c.id)).toEqual(["acme/example-repo#11"]);
+  });
+
   // ─── claim gating (LPF-2.2) ────────────────────────────────────────────────
 
   test("excludes a PR whose task-store record has claimedBy set, even though it otherwise needs patch attention", async () => {

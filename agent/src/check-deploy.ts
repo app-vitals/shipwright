@@ -229,10 +229,14 @@ export async function getDeployCandidates(
       // Skip DIRTY (merge-conflicted, unmergeable) PRs
       if (pr.mergeStateStatus === "DIRTY") continue;
 
-      // Skip PRs whose linked task is blocked. A confirmed empty result (no
-      // linked task) is not disqualifying, but a lookup FAILURE fails
-      // CLOSED — deploy is consequential enough that "unknown" must not be
-      // treated as "confirmed ready".
+      // Skip PRs whose linked task is blocked or hitl:true (CBD-2.2 — a
+      // human has already been escalated to and needs to act; a task can be
+      // hitl:true while still status:"pr_open", e.g. CI later goes green on
+      // an already-escalated commit, so hitl and status are checked
+      // independently, not just status). A confirmed empty result (no linked
+      // task) is not disqualifying, but a lookup FAILURE fails CLOSED —
+      // deploy is consequential enough that "unknown" must not be treated as
+      // "confirmed ready".
       let linkedTask: LinkedTaskInfo | null = null;
       if (deps.queryTaskStatus) {
         try {
@@ -244,6 +248,7 @@ export async function getDeployCandidates(
           continue;
         }
         if (linkedTask?.status === "blocked") continue;
+        if (linkedTask?.hitl === true) continue;
       }
 
       if (deps.isBundleComplete) {
