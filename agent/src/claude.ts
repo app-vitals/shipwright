@@ -61,6 +61,17 @@ export interface ClaudeRunResult {
    * terminal `result` event. In that case `result` is empty and `modelUsage`
    * carries whatever per-model usage was accumulated from the `assistant`
    * lines (costUSD unknown → 0), rather than throwing all of it away.
+   *
+   * Caveat: this accumulated `modelUsage` (and the partial usage attached to
+   * `ClaudeTimeoutError`/`ClaudeRunError`) undercounts `outputTokens`. Each
+   * `assistant` line's `usage.output_tokens` only reflects *visible* output —
+   * extended-thinking tokens are billed as output but often come back with an
+   * empty/redacted `thinking` field, so they never show up in that per-line
+   * total. Only the terminal `result` event's `modelUsage` is authoritative;
+   * treat any partial/incomplete usage as a lower bound, not a true count.
+   * Confirmed against real `claude -p --output-format stream-json --verbose`
+   * captures during CSU-1.1 validation — see anthropics/claude-code#27361 and
+   * #64153.
    */
   streamIncomplete?: boolean;
 }
@@ -295,6 +306,11 @@ export function createRunClaude(
         accumulated[model] = entry;
       }
       entry.inputTokens += message.usage.input_tokens ?? 0;
+      // NOTE: message.usage.output_tokens excludes extended-thinking tokens
+      // (billed as output, but the thinking content is often redacted before
+      // it reaches this line) — this accumulation undercounts true output
+      // tokens whenever the `result` event isn't reached. See the
+      // `streamIncomplete` doc comment above for the full explanation.
       entry.outputTokens += message.usage.output_tokens ?? 0;
       entry.cacheReadInputTokens += message.usage.cache_read_input_tokens ?? 0;
       entry.cacheCreationInputTokens +=
