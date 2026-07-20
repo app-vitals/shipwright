@@ -37,11 +37,13 @@ interface ListPrsCall {
   state: string;
   limit: number;
   offset: number;
+  updatedSince: string;
 }
 
 interface ListTasksCall {
   limit: number;
   offset: number;
+  updatedSince: string;
 }
 
 interface PatchCall {
@@ -105,19 +107,26 @@ function makeDeps({
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
   listDeployingTasksCalls: ListTasksCall[];
+  orphanCandidateUpdatedSinceCalls: string[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
   const listDeployingTasksCalls: ListTasksCall[] = [];
+  const orphanCandidateUpdatedSinceCalls: string[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
     getScopedRepos,
     pageLimit,
-    listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
-      listCalls.push({ repo, state: "open", limit, offset });
+    listOpenPrRecords: async (
+      repo: string,
+      limit: number,
+      offset: number,
+      updatedSince: string,
+    ) => {
+      listCalls.push({ repo, state: "open", limit, offset, updatedSince });
       const all = openRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
@@ -131,8 +140,12 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async (limit: number, offset: number) => {
-      listPrOpenTasksCalls.push({ limit, offset });
+    listPrOpenTasks: async (
+      limit: number,
+      offset: number,
+      updatedSince: string,
+    ) => {
+      listPrOpenTasksCalls.push({ limit, offset, updatedSince });
       return prOpenTasks.slice(offset, offset + limit);
     },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
@@ -149,15 +162,22 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
-    listOrphanCandidateTasks: async () => orphanCandidateTasks,
+    listOrphanCandidateTasks: async (updatedSince: string) => {
+      orphanCandidateUpdatedSinceCalls.push(updatedSince);
+      return orphanCandidateTasks;
+    },
     ghListOpenPrsForBranch: async (repo: string, branch: string) => {
       const key = `${repo}#${branch}`;
       const result = openBranchResults[key];
       if (result instanceof Error) throw result;
       return result ?? [];
     },
-    listDeployingTasks: async (limit: number, offset: number) => {
-      listDeployingTasksCalls.push({ limit, offset });
+    listDeployingTasks: async (
+      limit: number,
+      offset: number,
+      updatedSince: string,
+    ) => {
+      listDeployingTasksCalls.push({ limit, offset, updatedSince });
       return deployingTasks.slice(offset, offset + limit);
     },
     ghListWorkflowRuns: async (
@@ -178,6 +198,7 @@ function makeDeps({
     taskPatchCalls,
     listPrOpenTasksCalls,
     listDeployingTasksCalls,
+    orphanCandidateUpdatedSinceCalls,
   };
 }
 
@@ -206,6 +227,22 @@ describe("reconcilePrState", () => {
     await reconcilePrState(deps);
 
     expect(patchCalls).toHaveLength(0);
+  });
+
+  test("listOpenPrRecords is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+    const record = makeRecord({ id: "pr-1", prNumber: 1 });
+    const { deps, listCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#1": { state: "OPEN", mergedAt: null },
+      },
+      now: () => "2026-07-19T23:15:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].updatedSince).toBe("2026-07-19T22:15:00.000Z");
   });
 
   test("merged on GitHub gets reconciled — state + mergedAt synced, claim fields cleared", async () => {
@@ -458,6 +495,7 @@ interface ListReviewCall {
   repo: string;
   limit: number;
   offset: number;
+  updatedSince?: string;
 }
 
 interface ReviewPatchCall {
@@ -507,8 +545,9 @@ function makeReviewStateDeps({
       repo: string,
       limit: number,
       offset: number,
+      updatedSince: string,
     ) => {
-      listCalls.push({ repo, limit, offset });
+      listCalls.push({ repo, limit, offset, updatedSince });
       const all = pendingRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
@@ -582,6 +621,23 @@ function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
 }
 
 describe("reconcileReviewState", () => {
+  test("listPendingReviewRecords is called with updatedSince computed as now-1h via the injected clock, but listPostedReviewRecords is not (PSR-1.1)", async () => {
+    const clock = FixedClock(new Date("2026-07-19T23:15:00.000Z"));
+    const { deps, listCalls, listPostedCalls } = makeReviewStateDeps({
+      pendingRecords: {},
+      postedRecords: {},
+      clock,
+    });
+
+    await reconcileReviewState(deps);
+
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].updatedSince).toBe("2026-07-19T22:15:00.000Z");
+
+    expect(listPostedCalls).toHaveLength(1);
+    expect(listPostedCalls[0].updatedSince).toBeUndefined();
+  });
+
   test("clean APPROVE at head commit gets reconciled to reviewState:approved", async () => {
     const record = makeReviewStateRecord({ id: "pr-approve", prNumber: 1 });
     const reviewData = makeReviewData({
@@ -1450,7 +1506,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listPrOpenTasks(50, 0);
+    const result = await deps.listPrOpenTasks(50, 0, "2026-07-19T22:00:00.000Z");
 
     expect(result).toEqual(tasks);
     expect(calls).toHaveLength(1);
@@ -1480,7 +1536,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks();
+    const result = await deps.listOrphanCandidateTasks("2026-07-19T22:00:00.000Z");
 
     // All 117 orphan candidates returned — not truncated at 50.
     expect(result).toHaveLength(117);
@@ -1522,13 +1578,27 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks();
+    const result = await deps.listOrphanCandidateTasks("2026-07-19T22:00:00.000Z");
 
     expect(result.map((t) => t.id)).toEqual(["keep-1"]);
   });
 });
 
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
+  test("listPrOpenTasks is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: [],
+      now: () => "2026-07-19T23:15:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(listPrOpenTasksCalls).toHaveLength(1);
+    expect(listPrOpenTasksCalls[0].updatedSince).toBe(
+      "2026-07-19T22:15:00.000Z",
+    );
+  });
+
   test("pr_open task with merged PR (direct path) is reconciled to merged, using GitHub's mergedAt", async () => {
     const task: PrOpenTaskRecord = {
       id: "task-1",
@@ -1756,13 +1826,36 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     await reconcilePrState(deps);
 
     // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
+    // updatedSince (PSR-1.1) is FAKE_NOW minus one hour, identical on both pages —
+    // a single reconcile pass uses one consistent cutoff across all its pages.
     expect(listPrOpenTasksCalls).toHaveLength(2);
-    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
-    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
+    expect(listPrOpenTasksCalls[0]).toEqual({
+      limit: 2,
+      offset: 0,
+      updatedSince: "2026-07-14T23:00:00.000Z",
+    });
+    expect(listPrOpenTasksCalls[1]).toEqual({
+      limit: 2,
+      offset: 2,
+      updatedSince: "2026-07-14T23:00:00.000Z",
+    });
   });
 });
 
 describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
+  test("listOrphanCandidateTasks is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+    const { deps, orphanCandidateUpdatedSinceCalls } = makeDeps({
+      orphanCandidateTasks: [],
+      now: () => "2026-07-19T23:15:00.000Z",
+    });
+
+    await reconcilePrState(deps);
+
+    expect(orphanCandidateUpdatedSinceCalls).toEqual([
+      "2026-07-19T22:15:00.000Z",
+    ]);
+  });
+
   test("orphaned pending task with a real open PR on its branch self-heals to pr_open", async () => {
     const task: PrOpenTaskRecord = {
       id: "task-orphan-1",
@@ -1922,6 +2015,20 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
 });
 
 describe("reconcileDeployingTasks", () => {
+  test("listDeployingTasks is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+    const { deps, listDeployingTasksCalls } = makeDeps({
+      deployingTasks: [],
+      now: () => "2026-07-19T23:15:00.000Z",
+    });
+
+    await reconcileDeployingTasks(deps);
+
+    expect(listDeployingTasksCalls).toHaveLength(1);
+    expect(listDeployingTasksCalls[0].updatedSince).toBe(
+      "2026-07-19T22:15:00.000Z",
+    );
+  });
+
   test("deploying task whose merge is followed by a successful promote transitions to deployed, using the run's createdAt (not now())", async () => {
     const task: PrOpenTaskRecord = {
       id: "task-deploying-1",
@@ -2158,9 +2265,19 @@ describe("reconcileDeployingTasks", () => {
     await reconcileDeployingTasks(deps);
 
     // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
+    // updatedSince (PSR-1.1) is FAKE_NOW minus one hour, identical on both pages —
+    // a single reconcile pass uses one consistent cutoff across all its pages.
     expect(listDeployingTasksCalls).toHaveLength(2);
-    expect(listDeployingTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
-    expect(listDeployingTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
+    expect(listDeployingTasksCalls[0]).toEqual({
+      limit: 2,
+      offset: 0,
+      updatedSince: "2026-07-14T23:00:00.000Z",
+    });
+    expect(listDeployingTasksCalls[1]).toEqual({
+      limit: 2,
+      offset: 2,
+      updatedSince: "2026-07-14T23:00:00.000Z",
+    });
     // No successful runs configured — nothing is reconciled, but all 3 tasks were scanned.
     expect(taskPatchCalls).toHaveLength(0);
   });
@@ -2276,5 +2393,198 @@ describe("buildProductionDeps — ghListWorkflowRuns is scoped server-side by wo
     );
 
     expect(runs).toEqual([]);
+  });
+});
+
+// ─── updatedSince filtering (PSR-1.1) ───────────────────────────────────────────
+
+describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
+  /**
+   * Fake fetchFn for GET /prs?... that records every request's full query
+   * params, mirroring `makeFakeTaskStoreFetch`'s pattern above but for the
+   * PR-record list endpoint instead of /tasks.
+   */
+  function makeFakePrsFetch(): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<Record<string, string>>;
+  } {
+    const calls: Array<Record<string, string>> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      calls.push(Object.fromEntries(parsed.searchParams.entries()));
+      return new Response(JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  /** Same GET /tasks fake as the TCR-1.2 suite above, but records full params (including updatedSince). */
+  function makeFakeTasksFetch(): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<Record<string, string>>;
+  } {
+    const calls: Array<Record<string, string>> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      calls.push(Object.fromEntries(parsed.searchParams.entries()));
+      return new Response(JSON.stringify({ tasks: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  const savedTaskStoreEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
+      process.env.SHIPWRIGHT_TASK_STORE_URL;
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
+  });
+
+  afterEach(() => {
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_URL =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("listOpenPrRecords passes updatedSince computed as now-1h via the injected now()", async () => {
+    const { fetchFn, calls } = makeFakePrsFetch();
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+    // Override the injected now() with a fixed, deterministic value — matches
+    // this suite's "never Date.now()/new Date() directly" isolation contract.
+    (deps as { now: () => string }).now = () => "2026-07-19T23:00:00.000Z";
+
+    const updatedSince = new Date(
+      new Date(deps.now()).getTime() - 60 * 60 * 1000,
+    ).toISOString();
+    await deps.listOpenPrRecords("acme/example-repo", 50, 0, updatedSince);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].updatedSince).toBe("2026-07-19T22:00:00.000Z");
+  });
+
+  test("listTasksByStatus (backing listPrOpenTasks/listOrphanCandidateTasks/listDeployingTasks) passes updatedSince computed as now-1h", async () => {
+    const { fetchFn, calls } = makeFakeTasksFetch();
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+    (deps as { now: () => string }).now = () => "2026-07-19T23:00:00.000Z";
+    const updatedSince = new Date(
+      new Date(deps.now()).getTime() - 60 * 60 * 1000,
+    ).toISOString();
+
+    await deps.listPrOpenTasks(50, 0, updatedSince);
+    await deps.listDeployingTasks(50, 0, updatedSince);
+    await deps.listOrphanCandidateTasks(updatedSince);
+
+    expect(calls.length).toBeGreaterThanOrEqual(4); // pr_open, deploying, pending, in_progress
+    for (const call of calls) {
+      expect(call.updatedSince).toBe("2026-07-19T22:00:00.000Z");
+    }
+  });
+});
+
+describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", () => {
+  function makeFakePrsFetch(): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<Record<string, string>>;
+  } {
+    const calls: Array<Record<string, string>> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      calls.push(Object.fromEntries(parsed.searchParams.entries()));
+      return new Response(JSON.stringify({ prs: [], total: 0, limit: 50, offset: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  const savedTaskStoreEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
+      process.env.SHIPWRIGHT_TASK_STORE_URL;
+    savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
+    process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
+  });
+
+  afterEach(() => {
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_URL;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_URL =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL;
+    }
+    if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    } else {
+      process.env.SHIPWRIGHT_TASK_STORE_TOKEN =
+        savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN;
+    }
+  });
+
+  test("listPendingReviewRecords passes updatedSince computed as now-1h via the injected clock", async () => {
+    const { fetchFn, calls } = makeFakePrsFetch();
+    const clock = FixedClock(new Date("2026-07-19T23:00:00.000Z"));
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
+      fetchFn,
+      clock,
+    });
+    const updatedSince = new Date(
+      clock.now().getTime() - 60 * 60 * 1000,
+    ).toISOString();
+
+    await deps.listPendingReviewRecords("acme/example-repo", 50, 0, updatedSince);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].updatedSince).toBe("2026-07-19T22:00:00.000Z");
+    expect(calls[0].reviewState).toBe("pending");
+  });
+
+  test("listPostedReviewRecords does NOT receive an updatedSince param — CHU-2.4's healing pass must scan records regardless of age", async () => {
+    const { fetchFn, calls } = makeFakePrsFetch();
+    const clock = FixedClock(new Date("2026-07-19T23:00:00.000Z"));
+    const deps = buildReviewStateProductionDeps({
+      ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
+      fetchFn,
+      clock,
+    });
+
+    await deps.listPostedReviewRecords("acme/example-repo", 50, 0);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].updatedSince).toBeUndefined();
+    expect(calls[0].reviewState).toBe("posted");
   });
 });
