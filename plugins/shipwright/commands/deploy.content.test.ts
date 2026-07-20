@@ -206,6 +206,20 @@ describe("deploy.md — pre-merge PR claim lock (CLM-2.2)", () => {
     const claimIdx = content.indexOf("/prs/claim");
     expect(releaseIdx).toBeGreaterThan(claimIdx);
   });
+
+  it("does not PATCH task status to blocked on a merge-timeout/conflict failure", () => {
+    // Merge conflicts are routine and self-recoverable (check-patch.ts fixes any DIRTY
+    // PR regardless of task status) — writing status:"blocked" here would hide the PR
+    // from check-deploy.ts's candidate list even after patch resolves it, stranding the
+    // task until a human notices. This section must leave task status untouched.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("### 4c.", timeoutIdx);
+    expect(nextSectionIdx).toBeGreaterThan(timeoutIdx);
+    const failureSection = content.slice(timeoutIdx, nextSectionIdx);
+    expect(failureSection).not.toContain('"status": "blocked"');
+    expect(failureSection.toLowerCase()).toContain("do not patch the task");
+  });
 });
 
 describe("deploy.md — pre-claim fast path (CBD-1.6)", () => {
