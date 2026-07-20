@@ -365,10 +365,11 @@ export function createRunClaude(
       // A truncated stream that still carried some usage: surface it on the
       // error rather than discarding it.
       if (Object.keys(modelUsage).length > 0) {
+        const diagnostic = stderr.trim() || "stream truncated";
         throw new ClaudeRunError(
-          `claude exited ${exitCode}: ${stderr.trim() || "stream truncated"}`,
+          `claude exited ${exitCode}: ${diagnostic}`,
           undefined,
-          result?.result ?? "",
+          diagnostic,
           result?.session_id,
           modelUsage,
         );
