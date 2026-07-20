@@ -66,7 +66,7 @@ Agent tokens with a repo scope return tasks where `assignee === agentId` OR `rep
 POST /tasks
 ```
 
-Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens force `assignee` to their own ID. Returns `201` with the created task.
+Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo` key must be present; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted. Returns `201` with the created task.
 
 #### Bulk insert
 
@@ -74,7 +74,7 @@ Body (JSON): task fields. `title`, `status`, and `repo` are required. The `repo`
 POST /tasks/bulk
 ```
 
-Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
+Body: JSON array of task objects. Each task must have `title`, `status`, and `repo` fields. The `repo` key must be present on every task; `null` is accepted as a valid value for tasks that are not scoped to a specific repository. Agent tokens leave each task's `assignee` as supplied by the caller, defaulting to `null` (unassigned / pool task) when omitted. Skips conflicts (existing ID) rather than failing. Returns `{ inserted: number, updated: number, skipped: string[] }`, where `skipped` lists the IDs of tasks that collided with an existing task.
 
 #### Distinct values
 

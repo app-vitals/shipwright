@@ -155,7 +155,10 @@ curl -sf -X POST \
 | `status` | Must be `"pending"` on creation |
 | `repo` | Routes `dev-task` to the correct worktree |
 | `branch` | `dev-task` creates the worktree from this; absent → task is skipped |
-| `assignee` | Agent ID of the agent that should own this task |
+
+`assignee` is optional — omit it to leave the task unassigned in the repo pool (claimable
+by any agent with repo access), or set it explicitly to pre-assign the task to a specific
+agent ID.
 
 Convention: `branch` = `feat/{id-lowercase}` (e.g. `feat/tss-x-1-my-task`).
 

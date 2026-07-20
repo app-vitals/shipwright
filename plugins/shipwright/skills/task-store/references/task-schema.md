@@ -27,7 +27,7 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 | `layer` | string | `Shared`, `API`, `Database`, `Agent`, `CLI`, `Web`. |
 | `dependencies` | string[] | Task ids that must be satisfied before this is `--ready`. |
 | `branch` | string | Feature branch; used for same-branch dependency satisfaction. |
-| `assignee` | string | GitHub login of the owner. |
+| `assignee` | string | Agent ID to pre-assign at creation; optional — omitted/`null` leaves the task unassigned in the repo pool, claimable by any agent with repo access. |
 | `hours` | number | Estimate. |
 | `complexity` | number (1–5) | Planning / model-selection hint; out-of-range warns. |
 | `model` | `haiku` \| `sonnet` \| `opus` | Tier hint for model selection (no auto-mapping to a full model id). |
