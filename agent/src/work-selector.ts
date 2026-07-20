@@ -42,15 +42,6 @@ export interface WorkPrCandidate {
   phase?: "review" | "patch" | "deploy";
   title?: string;
   commitSha: string;
-  /**
-   * hitl:true on the PR's linked task-store task (when known) — set by
-   * candidate collectors that look up a linked task (e.g. check-patch.ts).
-   * Consumed by the loop orchestrator (CBD-2.2) to exclude an
-   * already-escalated PR from dispatch until a human clears the flag.
-   * Undefined when no linked task was found or the collector doesn't look
-   * one up.
-   */
-  hitl?: boolean;
 }
 
 export type WorkItem =

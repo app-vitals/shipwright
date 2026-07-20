@@ -1565,7 +1565,12 @@ describe("createLoopOrchestrator", () => {
     });
   }
 
-  // ─── Redispatch-cooldown / hitl suppression tests (CBD-2.2) ───────────────
+  // ─── Redispatch-cooldown tests (CBD-2.2) ────────────────────────────────────
+  //
+  // hitl:true exclusion is NOT tested here — that gate lives at the candidate
+  // collector level (check-patch.ts, check-review.ts skip a hitl'd PR before
+  // it's ever returned as a WorkPrCandidate), not in the orchestrator. See
+  // check-patch.unit.test.ts / check-review.unit.test.ts for that coverage.
 
   /** A Clock whose now() can be advanced between calls, for cooldown tests. */
   function makeMutableClock(initialIso: string): {
@@ -1580,46 +1585,6 @@ describe("createLoopOrchestrator", () => {
       },
     };
   }
-
-  test("a patch PR whose linked task is hitl:true is never dispatched", async () => {
-    const { reporter, creates } = makeRecordingReporter();
-    const { runner, messages } = makeRunner();
-    const patchCandidates = [
-      pr("acme/x#5", "2026-01-01T00:00:00Z", "patch", { hitl: true }),
-    ];
-    const deps = makeDeps({ patchCandidates, runner, reporter });
-    const loop = createLoopOrchestrator(deps);
-
-    await loop([job("shipwright-patch", true)]);
-
-    expect(messages).toEqual([]);
-    expect(creates).toEqual([]);
-  });
-
-  test("a hitl:true PR does not block a different, non-hitl candidate in the same tick", async () => {
-    const consumed = new Set<string>();
-    const patchCandidates = [
-      pr("acme/x#5", "2026-01-01T00:00:00Z", "patch", { hitl: true }),
-    ];
-    const reviewCandidates = [pr("acme/x#9", "2026-01-02T00:00:00Z", "review")];
-    const { runner, messages } = makeDrainingRunner(
-      { review: reviewCandidates },
-      consumed,
-    );
-    const deps = makeDeps({
-      patchCandidates,
-      reviewCandidates,
-      runner,
-      consumed,
-    });
-    const loop = createLoopOrchestrator(deps);
-
-    await loop(ALL_PHASES_ON);
-
-    expectDispatchedCommands(messages, [
-      "/shipwright:review acme/x#9 [preclaim:acme/x#9:acme/x#9-sha]",
-    ]);
-  });
 
   test("a PR redispatched at the same commitSha within the cooldown window is suppressed on the next tick", async () => {
     const { clock } = makeMutableClock("2026-01-01T00:00:00Z");

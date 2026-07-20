@@ -189,11 +189,11 @@ const SPIN_DETECTION_THRESHOLD = 3;
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 
 /**
- * A PR item should be excluded from this tick's candidate pool when either:
- *  - its linked task-store task is hitl:true (a human needs to act — nothing
- *    changes about that by re-dispatching patch/review/deploy again), or
- *  - it was already dispatched at this exact commitSha within the cooldown
- *    window (nothing new to act on since the last dispatch).
+ * A PR item should be excluded from this tick's candidate pool when it was
+ * already dispatched at this exact commitSha within the cooldown window —
+ * nothing new to act on since the last dispatch. (A hitl:true PR is excluded
+ * further upstream, at the candidate-collector level — see check-patch.ts and
+ * check-review.ts — so it never reaches this function in the first place.)
  *
  * `lastDispatch` is keyed by item id and persists across ticks (closure
  * state, like lastDispatchedItemId below) so the suppression holds across
@@ -207,8 +207,6 @@ function isPrDispatchSuppressed(
   >,
   nowMs: number,
 ): boolean {
-  if (pr.hitl === true) return true;
-
   const last = lastDispatch.get(pr.id);
   if (!last || last.commitSha !== pr.commitSha) return false;
 
