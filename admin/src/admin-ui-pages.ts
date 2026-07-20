@@ -1551,6 +1551,7 @@ export function renderTasksPage(
     state?: "ready" | "in_progress" | "blocked" | "closed";
     session?: string;
     repo?: string;
+    source?: string;
     agent?: string;
     hitl?: "true" | "false";
   },
@@ -1606,6 +1607,7 @@ export function renderTasksPage(
     else if (filters.state) params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
     if (filters.repo) params.set("repo", filters.repo);
+    if (filters.source) params.set("source", filters.source);
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (p > 1) params.set("page", String(p));
@@ -1626,7 +1628,7 @@ export function renderTasksPage(
 
   const rows =
     tasks.length === 0
-      ? `<tr><td colspan="9" class="empty-state">No tasks found.</td></tr>`
+      ? `<tr><td colspan="10" class="empty-state">No tasks found.</td></tr>`
       : tasks
           .map((t) => {
             const agentId = t.claimedBy ?? t.assignee;
@@ -1670,6 +1672,7 @@ export function renderTasksPage(
         : '<span style="color:#9ca3af">—</span>'
     }</td>
     <td class="col-repo mono" style="font-size:11px">${t.repo ? escapeHtml(t.repo) : '<span style="color:#9ca3af">—</span>'}</td>
+    <td class="col-source mono" style="font-size:11px">${t.source ? escapeHtml(t.source) : '<span style="color:#9ca3af">—</span>'}</td>
     <td class="mono" style="font-size:11px">${prCell}</td>
     <td class="col-created" style="font-size:12px">${createdCell}</td>
     ${
@@ -1693,6 +1696,7 @@ export function renderTasksPage(
     p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
     if (filters.repo) p.set("repo", filters.repo);
+    if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
     const qs = p.toString();
@@ -1810,6 +1814,10 @@ export function renderTasksPage(
           <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo"${suggestions?.repos?.length ? ' list="repos-list"' : ""} />
         </div>
         <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Source</label>
+          <input name="source" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.source ?? "")}" placeholder="source" />
+        </div>
+        <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Agent</label>
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
@@ -1832,6 +1840,7 @@ export function renderTasksPage(
               <th>Assignee</th>
               <th class="col-session">Session</th>
               <th class="col-repo">Repo</th>
+              <th class="col-source">Source</th>
               <th>PR</th>
               <th class="col-created">Created</th>
               <th></th>
