@@ -1,7 +1,17 @@
 ---
 // Shared site footer (repo · license · platform · community links) used by
 // BaseLayout and DocsLayout. Pure markup, zero runtime JS.
+// `variant="marketing"` (default) shows the full link set, including
+// "Compare" and "Docs"; `variant="docs"` omits those two (DocsLayout's
+// footer never had them pre-shared-component and AC#3 requires no other
+// content change there) while still keeping "vs Devin".
 import { BOOKING_URL, LICENSE_URL, REPO_URL } from "../consts";
+
+interface Props {
+  variant?: "marketing" | "docs";
+}
+
+const { variant = "marketing" } = Astro.props;
 
 const claudeCodeUrl = "https://claude.com/claude-code";
 const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
@@ -31,9 +41,9 @@ const year = new Date().getFullYear();
       <a href={LICENSE_URL}>MIT License</a>
       <a href={claudeCodeUrl}>Claude Code</a>
       <a href={discussionsUrl}>GitHub Discussions</a>
-      <a href={compareUrl}>Compare</a>
+      {variant === "marketing" && <a href={compareUrl}>Compare</a>}
       <a href={vsDevinUrl}>vs Devin</a>
-      <a href={docsUrl}>Docs</a>
+      {variant === "marketing" && <a href={docsUrl}>Docs</a>}
       <a href={BOOKING_URL}>Book a call</a>
     </nav>
   </div>

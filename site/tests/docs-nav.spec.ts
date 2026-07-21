@@ -53,3 +53,17 @@ test("docs footer includes a vs Devin link", async ({ page }) => {
     footer.getByRole("link", { name: /vs Devin/i }),
   ).toHaveAttribute("href", "/vs/devin");
 });
+
+test("docs footer does not include Compare or Docs links", async ({
+  page,
+}) => {
+  // SiteFooter is shared with BaseLayout, which does show "Compare" and
+  // "Docs" — DocsLayout must opt out of those two via variant="docs" so it
+  // gains only "vs Devin" and no other content change (AC#3).
+  await page.goto("/docs/getting-started");
+  const footer = page.getByRole("navigation", { name: "Footer" });
+  await expect(footer.getByRole("link", { name: /^Compare$/i })).toHaveCount(
+    0,
+  );
+  await expect(footer.getByRole("link", { name: /^Docs$/i })).toHaveCount(0);
+});
