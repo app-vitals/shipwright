@@ -35,11 +35,11 @@ the process note this implies for Phase 5.
 |---|---|---|---|
 | Unit | 112 | ~85+ rows tagged unit across all categories | 0 net-new; `admin/src/clock.ts` and `mcp-server/src/clock.ts` both optional/low, consistent with sibling `Clock` files having no dedicated test |
 | Integration | 55 | ~50+ rows tagged integration (service-boundary + external) | 0 net-new — `mcp-server/src/http-transport.ts` (new this cycle) landed with smoke-layer coverage that also exercises its integration-shaped reaper logic via injected `Clock` |
-| Smoke | 42 | ~18 rows tagged smoke (HTTP routes + route-equivalents) | 0 net-new — `mcp-server/src/{auth,http-transport,index}.ts` (all new this cycle) landed with matching smoke tests in the same PRs |
+| Smoke | 42 | ~18 rows tagged smoke (HTTP routes + route-equivalents) | 1 net-new gap — `mcp-server/src/{auth,http-transport,index}.ts` (all new this cycle) landed with matching smoke tests in the same PRs, but `mcp-server/src/main.ts`'s fail-closed auth guard did not; tracked as T-071 (Milestone 2) |
 | E2E | 15 (12 `site/*.spec.ts` + 3 `*/e2e/*.e2e.ts`) | 1 genuinely browser-driven journey (marketing site) + 3 e2e/smoke-composed journeys proven at integration layer | 0 — no new browser-driven journeys this cycle |
 | Content (5th layer) | 25 | ~4 grouped rows (commands/agents/skills/references) | 0 — fully covered; skill/command/agent file count unchanged since 2026-07-19 |
 
-**Total: 249 test files**, up from 243 at the last pass (+6, all for `mcp-server/`'s TSM-2.6 HTTP-transport expansion + `metrics/src/lib/coalescing-cache.ts`). Every open test-file item from the 2026-07-19 report is now closed except two trivial/optional items (`admin/src/clock.ts`, `mcp-server/src/main.ts`) that Phase 3 explicitly assessed as non-gaps, not real coverage risk.
+**Total: 249 test files**, up from 243 at the last pass (+6, all for `mcp-server/`'s TSM-2.6 HTTP-transport expansion + `metrics/src/lib/coalescing-cache.ts`). Every open test-file item from the 2026-07-19 report is now closed except `admin/src/clock.ts` (trivial/optional, explicitly assessed as a non-gap) and `mcp-server/src/main.ts`, which Phase 3 reconciled as a **real, untested, security-relevant gap** — its module-level fail-closed guard on `SHIPWRIGHT_MCP_SERVER_TOKEN` runs before `createApp` is invoked and is not exercised by any existing test (see `test-migration.md`'s Net-new section and `test-system.md`'s Smoke row). Tracked as T-071 in Milestone 2 / Section 5 below.
 
 ### Local-runnable status
 
@@ -76,7 +76,7 @@ warranted this cycle either.
 ## 2. Where we want to be
 
 - **Framework matrix** — already fully realized: `bun test` (unit/integration/content), `bun test` + Hono `app.request()` (smoke), Playwright (E2E, 3 surfaces). No framework changes needed.
-- **Coverage targets** — single 80/80 line/function CI floor (`scripts/check-coverage.ts`), already enforced; 100% of `critical`- and `high`-tier inventory items covered at the prescribed layer (currently true — the two remaining net-new items are optional/low).
+- **Coverage targets** — single 80/80 line/function CI floor (`scripts/check-coverage.ts`), already enforced; 100% of `critical`- and `high`-tier inventory items covered at the prescribed layer once T-071 lands (`admin/src/clock.ts` is the sole remaining gap, and it's optional/low, not critical/high).
 - **Canary suite** — not applicable under the current `direct` deploy model; deferred until a staged-deploy model exists.
 - **Speed budgets per layer** — Unit <50ms p95 / Integration <2s / Smoke <5s / E2E <30s / full PR pipeline <15min, per `speed-budgets/SKILL.md` defaults, unmodified. Already measured and within budget, already cross-referenced in `test-system.md` — no further doc work needed.
 - **Zero `rebuild` / `delete (redundant)` buckets** — already true today.
@@ -88,7 +88,7 @@ The gap is, once again, unusually small — the suite continues to track its own
 - **No missing layers.** All five layers in active use with the correct framework per layer.
 - **Wrong-layer tests:** 0.
 - **External-only deps with no local substitute:** none.
-- **Net-new coverage gaps (from Phase 3):** 0 real gaps. 2 trivial/optional unit items (`admin/src/clock.ts`, `mcp-server/src/clock.ts`'s sibling `main.ts`) explicitly assessed as non-gaps — matches established repo convention of leaving trivial `Clock` implementations and thin fail-closed entrypoint guards untested directly.
+- **Net-new coverage gaps (from Phase 3):** 1 real gap, 1 trivial/optional non-gap. `admin/src/clock.ts` is a non-gap, matching established repo convention of leaving trivial `Clock` implementations untested directly. `mcp-server/src/main.ts` is a **real gap**: its fail-closed guard (`if (!token) throw ...`, `main.ts:27-32`) is security-critical (TSM-2.6 — the sole place `SHIPWRIGHT_MCP_SERVER_TOKEN` is read) and runs at module load, before `createApp` is invoked — `index.smoke.test.ts` only imports `createApp` directly and never executes `main.ts`, so the guard has zero test coverage. See T-071 in Milestone 2 / Section 5.
 - **Infra gap: none.** All infrastructure items (runner config, CI shape, Postgres containers, `Clock` helpers, recorded-fixture doubles, coverage gate) confirmed unchanged and correct.
 - **Carried-forward gap (not new this cycle): T-051 branch-protection verification.** `test-t-051-shipwright` remains `pending` in task-store — the live GitHub branch-protection required-checks list for `main` has still never been verified against `ci.yml`'s actual job names via the live API (this sandbox has no `repos/*/branches/*/protection` API access to do it directly — confirmed via a live `gh api` call this cycle, which 403'd). See Milestone 1 and Open risks.
 
@@ -133,7 +133,13 @@ under its original ID:**
 ### Milestone 2 — Critical-path coverage
 **DOD:** 100% of `critical` tier inventory items have passing tests at the prescribed layer.
 
-**Already satisfied — zero tasks.** Phase 3 found every critical-tier inventory item covered; the two remaining net-new items this cycle are both optional-low, not tasked. This is the second consecutive cycle where the critical tier has zero net-new gaps.
+**One task.** Phase 3 found every other critical-tier inventory item covered, but `mcp-server/src/main.ts` — tagged `critical` per Phase 1's inventory criticality — is a real, security-relevant gap with zero test coverage today (Phase 3's reconciled verdict; see Section 3 above): its fail-closed `SHIPWRIGHT_MCP_SERVER_TOKEN` guard runs at module load and is never exercised by `index.smoke.test.ts` or any other test in the repo. This is the first cycle since 2026-07-19 with a net-new critical-tier gap.
+
+1. **T-071 — `mcp-server/src/main.ts` fail-closed auth guard smoke-adjacent test.** One test asserting the process refuses to start (the module throws) when `SHIPWRIGHT_MCP_SERVER_TOKEN` is unset, e.g. via a dynamic `import()` of `main.ts` in a subprocess or with the env var deleted before import. Mirrors the shape of the prior cycle's T-069/T-070 net-new coverage tasks.
+
+| Task | Files to touch | Layer | Bucket origin | Expected outcome | Verification command |
+|---|---|---|---|---|---|
+| T-071 | `mcp-server/src/main.smoke.test.ts` (new) | smoke | net-new | `mcp-server/src/main.ts`'s fail-closed guard confirmed to throw/refuse to start when `SHIPWRIGHT_MCP_SERVER_TOKEN` is unset | `bun test mcp-server/src/main.smoke.test.ts` |
 
 ### Milestone 3 — Canary suite live
 **DOD:** canary not applicable -- deploy_model=direct
@@ -143,7 +149,7 @@ Root `CLAUDE.md` declares `direct` — no staging/production GitHub Environments
 ### Milestone 4 — High-tier coverage
 **DOD:** 100% of `high` tier inventory items covered.
 
-**Already satisfied — zero tasks.** No net-new high-tier (or medium-tier) gaps this cycle — the only two remaining net-new items (`admin/src/clock.ts`, `mcp-server/src/main.ts`) are both optional-low and explicitly not tasked, per Phase 3's non-gap assessment.
+**Already satisfied — zero tasks.** No net-new high-tier (or medium-tier) gaps this cycle. `admin/src/clock.ts` remains optional-low and explicitly not tasked, per Phase 3's non-gap assessment; `mcp-server/src/main.ts` is `critical` tier (not high), so its task is tracked under Milestone 2 above, not here.
 
 ### Milestone 5 — Cleanup
 **DOD:** Zero tests in `rebuild` or `delete (redundant)` buckets. CI green.
@@ -152,23 +158,26 @@ Root `CLAUDE.md` declares `direct` — no staging/production GitHub Environments
 
 ## 5. Task list
 
-Flat, ordered, agent-executable. Numbering carries forward the existing `test-t-051-shipwright`
+Flat, ordered, agent-executable. T-051 carries forward the existing `test-t-051-shipwright`
 ID rather than minting a new one — confirmed via a fresh task-store query this cycle
-(`starting_offset` for any genuinely new task would be **71**: max existing
-`test-t-NNN-shipwright` ID found was `070`, queried across all 628 tasks in the repo
-regardless of status, per the SKILL's Process step 4 — but this cycle has zero new
-net-new/rebuild/infra items requiring a fresh ID).
+(max existing `test-t-NNN-shipwright` ID found was `070`, queried across all 628 tasks in
+the repo regardless of status, per the SKILL's Process step 4). T-071 is a genuinely new
+task this cycle (the reconciled `mcp-server/src/main.ts` gap — see Milestone 2 and Section
+3 above); it reuses the `071` number that the 2026-07-19 plan wrote up but never actually
+queued to task-store (see Open risks below) — no collision, since `test-t-071-shipwright`
+does not exist.
 
 | ID | Milestone | Files to touch | Layer | Bucket origin | Expected outcome | Verification command | Depends on |
 |---|---|---|---|---|---|---|---|
 | T-051 | 1 | (verification only, carried forward unchanged) | infra | reuse | Live branch-protection required-checks list for `main` confirmed to match `ci.yml`'s job names | `gh api repos/{owner}/{repo}/branches/main/protection`, diff against `ci.yml` job names | — |
+| T-071 | 2 | `mcp-server/src/main.smoke.test.ts` (new) | smoke | net-new | `mcp-server/src/main.ts`'s fail-closed `SHIPWRIGHT_MCP_SERVER_TOKEN` guard confirmed to throw when the token is unset | `bun test mcp-server/src/main.smoke.test.ts` | — |
 
-No task in this cycle exceeds the ~1000-line cap, touches more than one functional concern, or represents an N-service repeated operation — no task splitting was required. No new task is emitted this cycle beyond the T-051 carry-forward; Phase 5 (`test-fix`) should confirm `test-t-051-shipwright`'s existing record needs no changes rather than filing a duplicate.
+No task in this cycle exceeds the ~1000-line cap, touches more than one functional concern, or represents an N-service repeated operation — no task splitting was required. Phase 5 (`test-fix`) should confirm `test-t-051-shipwright`'s existing record needs no changes rather than filing a duplicate, and should create a fresh `test-t-071-shipwright` record for the new task (not assume one already exists, per the Open risks note below about the prior cycle's unqueued T-071).
 
 ## 6. Open risks
 
 - **T-051 needs GitHub API scope this pipeline's sandbox doesn't have.** Confirmed this cycle via a live `gh api repos/app-vitals/shipwright/branches/main/protection` call, which 403'd ("Resource not accessible by personal access token") — consistent with `project_github_api_503_resource_endpoints` memory (GH_TOKEN gets restricted on some `/repos/*` resource endpoints in this environment). This task cannot be completed by a docs-pipeline session; it needs either a token with `repo`/branch-protection read scope or a human to run the check manually. Flagging explicitly so a third consecutive cycle doesn't silently re-carry it without escalating — if T-051 is still `pending` at the *next* `/test-roadmap` run, escalate to a human via HITL rather than carrying forward a fourth time.
-- **Task-store hygiene: a documented task (previously "T-071") was never actually queued.** The 2026-07-19 plan wrote up a successor task under a new ID that Phase 5 of that cycle apparently never created in task-store (no `test-t-071-shipwright` record exists). The original `test-t-051-shipwright` record was the one that should have been referenced/updated instead of superseded. No plugin-code fix needed — Phase 5 (`test-fix`) should treat a carried-forward gap's *original* task-store ID as authoritative when one already exists, rather than always minting a fresh ID from the roadmap doc's own task list.
+- **Task-store hygiene: a *different* task previously written up under "T-071" was never actually queued.** The 2026-07-19 plan wrote up a branch-protection successor task under ID T-071 that Phase 5 of that cycle apparently never created in task-store (no `test-t-071-shipwright` record existed as of this cycle's query). The original `test-t-051-shipwright` record was the one that should have been referenced/updated instead of superseded — see Milestone 1 above, where this cycle correctly carries the branch-protection gap forward under T-051, not a new number. This cycle reuses the now-unclaimed `071` ID for an unrelated, genuinely new task (the `mcp-server/src/main.ts` smoke-adjacent auth-guard test — see Milestone 2 and Section 5) rather than leaving the number permanently retired. No plugin-code fix needed for the original oversight — Phase 5 (`test-fix`) should treat a carried-forward gap's *original* task-store ID as authoritative when one already exists, rather than always minting a fresh ID from the roadmap doc's own task list, and should verify no `test-t-071-shipwright` record already exists before creating this cycle's T-071.
 - **Speed baseline is a point-in-time measurement (2026-07-15), now two cycles stale.** It predates 2026-07-19's 19-file delta and this cycle's 6-file delta (243 → 249 files). Neither delta is large enough to plausibly threaten the <15min full-PR budget (per `test-system.md`'s own override-condition analysis), but the baseline itself doesn't reflect current file count. Not urgent enough to re-measure this cycle; worth a fresh capture the next time suite growth is non-trivial or a flake/slowness pattern is reported.
 - **Recorded-fixture coverage breadth** (Phase 2's gaps-summary item 2: ~9 remaining `Http*Client` modules that could extend the `Recorded*Client` pattern) is a design-level backlog item, not a migration-bucket verdict on any existing file — no task emitted this cycle since Phase 3 found no test currently missing coverage because of it. Revisit if a future inventory pass tags one of those clients as critical/high with no test.
 - **`agent/src/piper-voice.ts` reclassification watch item** (Phase 1/2: unit today, integration once Piper synthesis lands per PPR-1.2) — no action needed until that lands, still not landed as of this cycle; flagged so a future Phase 3 doesn't silently miss the transition.
