@@ -1229,6 +1229,17 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(404);
   });
 
+  it("POST /prs/:id/skip/reset returns 404 when pr not found", async () => {
+    const app = makeApp({
+      prService: fakePrService({ store: new Map() }),
+    });
+    const res = await app.request("/prs/missing/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
   // ─── POST /prs/claim-next ─────────────────────────────────────────────────
 
   it("POST /prs/claim-next returns 200 + {pr, phase} when work found", async () => {

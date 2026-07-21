@@ -1097,6 +1097,20 @@ describe("task-store API (smoke)", () => {
     expect(res.status).toBe(403);
   });
 
+  it("POST /tasks/:id/skip/reset returns 403 when agent token tries to reset skip on a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-2" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1/skip/reset", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("POST /tasks/:id/skip/reset works for pool task claimed by agent (claimedBy check)", async () => {
     const claimedPoolTask = makeTask({
       id: "pool-1",
