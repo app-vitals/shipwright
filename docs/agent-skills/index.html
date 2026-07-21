@@ -1,0 +1,250 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v6.4.8"><title>Agent Skills — Shipwright Harness</title><meta name="description" content="Full catalog of every Shipwright plugin skill — the autonomous behaviors that back slash commands or trigger on the agent's own judgment."><link rel="canonical" href="https://shipwrightharness.com/docs/agent-skills/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/agent-skills/"><meta property="og:title" content="Agent Skills — Shipwright Harness"><meta property="og:description" content="Full catalog of every Shipwright plugin skill — the autonomous behaviors that back slash commands or trigger on the agent's own judgment."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/consts.BaF6Q8XI.css"><style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:0;transform:translate(-100%);width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:transform .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{transform:translate(0)}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen" data-astro-cid-mw7aashj> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="hidden md:flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> <a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary" data-astro-cid-mw7aashj>Book a call</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Mobile-only nav links (hidden on desktop) --> <nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj><a href="/docs" class="docs-sidebar-link" data-astro-cid-mw7aashj>Docs</a></li> <li data-astro-cid-mw7aashj><a href="/compare" class="docs-sidebar-link" data-astro-cid-mw7aashj>Compare</a></li> <li data-astro-cid-mw7aashj><a href="https://github.com/app-vitals/shipwright" class="docs-sidebar-link" data-astro-cid-mw7aashj>GitHub ↗</a></li> <li data-astro-cid-mw7aashj><a href="https://vitals-os.com/cal/book/discovery" class="docs-sidebar-link" data-astro-cid-mw7aashj>Book a call</a></li> </ul> </nav> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/agent-skills" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Agent Skills </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/commands-reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Commands Reference </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/day-to-day-operations" class="docs-sidebar-link" data-astro-cid-mw7aashj> Day-to-Day Operations </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/admin-console" class="docs-sidebar-link" data-astro-cid-mw7aashj> Admin Console </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/the-shipwright-loop" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Shipwright Loop </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="agent-skills">Agent Skills</h1>
+<p>Every skill shipped by the Shipwright plugin, grouped by category. Skills are how the agent
+knows <em>how</em> to do something — some back a same-named slash command directly (see
+<a href="/docs/commands-reference">Commands Reference</a> for those entries), others are auto-triggered by
+the agent’s own judgment based on context, with no dedicated command to invoke them explicitly.</p>
+<p>Each entry’s description below is read directly from that skill’s <code>SKILL.md</code> frontmatter.</p>
+<h2 id="core--delivery-loop">Core / Delivery Loop</h2>
+<p>The one skill every other command in the spec → plan → execute → review → deploy loop depends
+on for task-queue reads and writes.</p>
+<h3 id="task-store">task-store</h3>
+<p>Query and update the Shipwright task store — pick the next ready task, mark status transitions,
+and append new tasks. Use whenever you need to read from or write to the task queue. Calls the
+task store HTTP API directly via curl.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment whenever a task-store read or write is
+needed — <code>/shipwright:dev-task</code>, <code>/shipwright:review</code>, <code>/shipwright:patch</code>, <code>/shipwright:deploy</code>,
+and <code>/shipwright:plan-session</code> all invoke it internally, but there is no standalone
+<code>/shipwright:task-store</code> command.</p>
+<h2 id="test-readiness-pipeline">Test Readiness Pipeline</h2>
+<p>A five-phase pipeline (plus a post-execution skill and three cross-cutting contracts) that
+audits and improves test coverage end to end.</p>
+<h3 id="test-readiness">test-readiness</h3>
+<p>Orchestrates the full test-readiness pipeline (phases 1–5), once per qualifying repo under
+<code>repos/</code>, each in its own worktree + branch. Runs test-inventory → test-design → test-migration →
+test-roadmap → test-fix in sequence per repo, starting from the first stale artifact. Invoked by
+the <code>shipwright-test-readiness</code> cron on a daily schedule; exits early for a repo when all of its
+phase artifacts are fresh.</p>
+<p><em>Invocation:</em> Auto-triggered by the <code>shipwright-test-readiness</code> cron on a daily schedule — no
+matching <code>/shipwright:test-readiness</code> command.</p>
+<h3 id="test-inventory">test-inventory</h3>
+<p>Phase 1 of the test-readiness pipeline. Crawls a target repo, classifies every meaningful unit of
+code (business logic, service boundary, HTTP route, error path, external integration, user
+journey), prescribes the appropriate test layer (unit / integration / smoke / E2E) using the
+rubrics, ranks each by criticality (critical / high / medium), and tags canary eligibility.
+Outputs a deduplicated inventory — each functional unit appears exactly once at its canonical
+layer per the no-duplicate-coverage rule. Writes <code>docs/test-readiness/test-inventory.md</code>. Invoke
+when the <code>/test-inventory</code> command runs.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-inventory</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="test-design">test-design</h3>
+<p>Phase 2 of the test-readiness pipeline. Given the Phase 1 inventory, designs the ideal test
+system greenfield — framework per layer, local execution architecture, canary execution
+contract, test-data strategy, CI pipeline shape, coverage targets, and speed budgets. Does not
+look at existing tests (that’s Phase 3). Writes <code>docs/test-readiness/test-system.md</code>. Invoke when
+the <code>/test-design</code> command runs.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-design</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="test-migration">test-migration</h3>
+<p>Phase 3 of the test-readiness pipeline. Reconciles existing tests against the Phase 1 inventory
+and Phase 2 blueprint, bucketing each existing test and each inventory item into reuse / promote
+/ rebuild / trim (redundant assertions) / net-new. Same bucketing applies to test infrastructure.
+Enforces the canonical-layer rule — a test whose assertions are already owned by a lower-layer
+test gets redundant assertions trimmed, not the test deleted. Writes
+<code>docs/test-readiness/test-migration.md</code>. Invoke when the <code>/test-migration</code> command runs.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-migration</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="test-roadmap">test-roadmap</h3>
+<p>Phase 4 of the test-readiness pipeline. Synthesizes the three prior artifacts (inventory, system
+design, migration) into a single executable roadmap <code>test-readiness-plan.md</code> with five sequenced
+milestones and an agent-executable task list. Includes mandatory sections on where we are now,
+where we want to be, the gap, the speed delta, and open risks. Output is suitable for handoff to
+an engineer or to <code>shipwright /dev-task</code>. Invoke when the <code>/test-roadmap</code> command runs.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-roadmap</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="test-fix">test-fix</h3>
+<p>Read <code>docs/test-readiness/test-readiness-plan.md</code> and queue its flat <code>T-NNN</code> task list as
+task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL
+classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish
+skill’s dashboard with a task-store queue.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-fix</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="test-debt">test-debt</h3>
+<p>Post-execution skill for the test-readiness pipeline. Computes a corrective-commit ratio per
+milestone from git log to surface over-specified or under-specified tasks. A high
+corrective-commit ratio flags milestones where the plan underestimated scope, tasks were too
+large, or acceptance criteria were ambiguous. Invoke after any milestone completes to catch
+planning debt before the next run.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:test-debt</code> command — see
+<a href="/docs/commands-reference#test-readiness-pipeline">Commands Reference</a>.</p>
+<h3 id="canary-execution">canary-execution</h3>
+<p>Cross-cutting contract for the test-readiness pipeline. Defines how canary-eligible test code
+runs in two modes — <code>local</code> (boot dependencies inline, hit localhost) and <code>canary</code> (skip the
+boot, hit a deployed <code>TEST_TARGET_URL</code>) — via a dedicated entry point separate from the local
+smoke runner. Specifies eligibility rules (read-only or self-cleaning, smoke/E2E only,
+critical/high tier only, zero DB-dependent tests) and the deploy-gate budget (under 60s wall
+time). Referenced by the inventory, system-design, migration, and roadmap skills.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment — a cross-cutting contract referenced by
+the other test-readiness skills, with no standalone command.</p>
+<h3 id="repo-config">repo-config</h3>
+<p>Cross-cutting contract for the test-readiness pipeline. Specifies the GitHub repository
+configuration that makes “tests pass” structurally meaningful instead of advisory — branch
+protection requiring CI to pass, required secrets, environments, deploy hooks, and PR templates.
+Referenced by <code>test-design</code> (Phase 2 emits the repo-config plan) and <code>test-roadmap</code> (Phase 4
+auto-pairs workflow tasks with branch-protection tasks). Without these, the verification commands
+in each task body are honor-system; with them, the workflow is the gate.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment — a cross-cutting contract referenced by
+<code>test-design</code> and <code>test-roadmap</code>, with no standalone command.</p>
+<h3 id="speed-budgets">speed-budgets</h3>
+<p>Cross-cutting contract for the test-readiness pipeline. Specifies per-layer test speed budgets
+(unit / integration / smoke / E2E) as 95p targets, per-test hard caps, and per-layer suite-wall
+targets. Used by system-design as a Phase 2 output and by migration as a Phase 3 bucketing
+criterion — a test that violates its layer’s hard cap is almost certainly mis-layered and goes to
+the <code>rebuild</code> bucket.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment — a cross-cutting contract referenced by
+<code>test-design</code> and <code>test-migration</code>, with no standalone command.</p>
+<h2 id="maintenance-patrols">Maintenance Patrols</h2>
+<p>Scheduled or on-demand scans that find and fix code entropy, production errors, code
+duplication, and Dependabot PRs. Each pair follows the same shape: a <code>-scan</code> skill that reports
+only, and a <code>-fix</code> skill that reads the scan’s report and queues task-store tasks.</p>
+<h3 id="entropy-scan">entropy-scan</h3>
+<p>Scan codebase for principle deviations. Report only — no code changes.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:entropy-scan</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="entropy-fix">entropy-fix</h3>
+<p>Read <code>entropy-report.md</code> and queue PR-worthy violations as task-store tasks, one task per rule,
+with per-finding HITL classification. Requires entropy-scan to have run first.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:entropy-fix</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="error-scan">error-scan</h3>
+<p>Scan Sentry for new/regressed unresolved issues, dynamically map them to repos. Report only — no
+code changes.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:error-scan</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="error-fix">error-fix</h3>
+<p>Read <code>error-report.md</code>, fetch each New/Regressed issue’s Sentry detail and stack trace, classify
+hitl per issue, and queue task-store tasks (plus companion observability-fix tasks where
+instrumentation gaps hinder root-causing). Requires error-scan to have run first.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:error-fix</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="error-resolve">error-resolve</h3>
+<p>Read the error-patrol ledger, check each linked task’s current status via the task store, and
+resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never
+resolves on merged or pr_open.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:error-resolve</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="consolidation-scan">consolidation-scan</h3>
+<p>Discover emerging duplicate/similar code patterns via judgment-driven comparison, track them
+across runs in a ledger, and report only patterns that have stabilized. Report only — no code
+changes.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:consolidation-scan</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="consolidation-fix">consolidation-fix</h3>
+<p>Read <code>consolidation-report.md</code> and queue <code>ready_to_propose</code> duplication patterns as task-store
+tasks, one task per pattern, each carrying a strangler-fig (build -&gt; coexist -&gt; eliminate)
+execution plan and a per-finding HITL classification. Requires consolidation-scan to have run
+first.</p>
+<p><em>Invocation:</em> Backs the <code>/shipwright:consolidation-fix</code> command — see
+<a href="/docs/commands-reference#maintenance-patrols">Commands Reference</a>.</p>
+<h3 id="security-scan">security-scan</h3>
+<p>Scan a repo for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues,
+authn/authz anti-patterns, and posture gaps across three tiers. Report only — no code changes.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:security-scan</code> command.</p>
+<h3 id="security-fix">security-fix</h3>
+<p>Read <code>security-report.md</code> and queue PR-worthy findings as task-store tasks, one task per rule,
+routing any finding that requires credential rotation/revocation through <code>/shipwright:hitl</code>
+instead of auto-remediating it. Requires security-scan to have run first.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:security-fix</code> command.</p>
+<h3 id="triage-dependabot-pr">triage-dependabot-pr</h3>
+<p>Analyze a single Dependabot PR — fetch metadata and diff, classify risk (merge/review/hold),
+stage a patrol-style comment to <code>state/dependabot-reviews/</code>, and update
+<code>state/dependabot-reviews.json</code>. Use when asked to triage one specific Dependabot PR. Does not
+post to GitHub. Arguments — <code>&lt;pr-number&gt;</code> (required), <code>--repo owner/repo</code> (optional; detected
+from cwd if omitted).</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:triage-dependabot-pr</code> command.</p>
+<h3 id="triage-dependabot-prs">triage-dependabot-prs</h3>
+<p>Scan all repos in <code>repos/</code> for open Dependabot PRs, triage new ones, and stage patrol-style
+comments for review. Use when asked to triage, scan, or review open Dependabot PRs across
+multiple repos. Does not post to GitHub — staged comments are reviewed conversationally before
+posting.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:triage-dependabot-prs</code> command.</p>
+<h2 id="other">Other</h2>
+<p>General-purpose and diagnostic skills that don’t belong to the delivery loop, the test-readiness
+pipeline, or the maintenance patrols.</p>
+<h3 id="agent-admin">agent-admin</h3>
+<p>Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions,
+API tokens, and plugins. Use to configure the running agent, manage its schedules, inspect
+another agent’s config, or provision a new agent. Its own <code>SKILL.md</code> explicitly scopes it out of
+the delivery loop: “For delivery pipeline work… use the task-store, dev-task, review, or deploy
+skills. This skill is for agent lifecycle management only.”</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:agent-admin</code> command.</p>
+<h3 id="investigate-cron">investigate-cron</h3>
+<p>Diagnose why a cron run behaved unexpectedly — looks up the exact run via the admin cron-runs
+API (by name+time or by PR/task id), finds the matching Claude Code session transcript, reads
+what the model did and why, and explains it in plain language. No log files needed; the
+transcript is the source of truth.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:investigate-cron</code> command.</p>
+<h3 id="learning-capture">learning-capture</h3>
+<p>Capture a durable learning by editing context directly. Triggers when the user corrects Claude in
+a generalizable way (“use X instead of Y”, “always X”, “never Y”, “I prefer X”, “from now on X”),
+states a reusable preference, or asks to “remember this” / “save this”. Also triggers on the
+<code>/learn</code> command. Does NOT trigger on one-off, problem-specific corrections — see the
+generalization gate before acting.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context (and by the
+<code>/shipwright:learn</code> command, which is a distinct top-level command rather than a same-named
+wrapper) — no matching <code>/shipwright:learning-capture</code> command.</p>
+<h3 id="pull-requests">pull-requests</h3>
+<p>Query PR records from the task store — filter by repo, PR number, state, reviewState, or staged
+flag, and display results as a readable table.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — no matching
+<code>/shipwright:pull-requests</code> command.</p>
+<h3 id="review-staged">review-staged</h3>
+<p>Walk through staged PR reviews from the task store conversationally — APPROVEs first, then
+COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept
+owner direction (post, skip, draft, discuss). Use when asked to “drain the staged reviews”, “walk
+through staged reviews”, or “what’s staged”.</p>
+<p><em>Invocation:</em> Auto-triggered by the agent’s own judgment based on context — a companion to
+<code>/shipwright:review</code> but not a same-named wrapper of it; no matching
+<code>/shipwright:review-staged</code> command.</p>
+<h2 id="next-steps">Next steps</h2>
+<p>See <a href="/docs/commands-reference">Commands Reference</a> for the full catalog of slash commands these
+skills back, or back to <a href="/docs/running-locally">Running Locally</a> for how to spin up the dev stack
+these skills run against.</p>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/running-locally" data-nav="prev" data-astro-cid-mw7aashj>
+← Previous
+</a> <a href="/docs/commands-reference" data-nav="next" data-astro-cid-mw7aashj>
+Next →
+</a> </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#core--delivery-loop" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Core / Delivery Loop </a> </li><li data-astro-cid-mw7aashj> <a href="#task-store" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> task-store </a> </li><li data-astro-cid-mw7aashj> <a href="#test-readiness-pipeline" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Test Readiness Pipeline </a> </li><li data-astro-cid-mw7aashj> <a href="#test-readiness" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-readiness </a> </li><li data-astro-cid-mw7aashj> <a href="#test-inventory" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-inventory </a> </li><li data-astro-cid-mw7aashj> <a href="#test-design" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-design </a> </li><li data-astro-cid-mw7aashj> <a href="#test-migration" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-migration </a> </li><li data-astro-cid-mw7aashj> <a href="#test-roadmap" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-roadmap </a> </li><li data-astro-cid-mw7aashj> <a href="#test-fix" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-fix </a> </li><li data-astro-cid-mw7aashj> <a href="#test-debt" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> test-debt </a> </li><li data-astro-cid-mw7aashj> <a href="#canary-execution" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> canary-execution </a> </li><li data-astro-cid-mw7aashj> <a href="#repo-config" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> repo-config </a> </li><li data-astro-cid-mw7aashj> <a href="#speed-budgets" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> speed-budgets </a> </li><li data-astro-cid-mw7aashj> <a href="#maintenance-patrols" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Maintenance Patrols </a> </li><li data-astro-cid-mw7aashj> <a href="#entropy-scan" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> entropy-scan </a> </li><li data-astro-cid-mw7aashj> <a href="#entropy-fix" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> entropy-fix </a> </li><li data-astro-cid-mw7aashj> <a href="#error-scan" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> error-scan </a> </li><li data-astro-cid-mw7aashj> <a href="#error-fix" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> error-fix </a> </li><li data-astro-cid-mw7aashj> <a href="#error-resolve" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> error-resolve </a> </li><li data-astro-cid-mw7aashj> <a href="#consolidation-scan" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> consolidation-scan </a> </li><li data-astro-cid-mw7aashj> <a href="#consolidation-fix" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> consolidation-fix </a> </li><li data-astro-cid-mw7aashj> <a href="#security-scan" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> security-scan </a> </li><li data-astro-cid-mw7aashj> <a href="#security-fix" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> security-fix </a> </li><li data-astro-cid-mw7aashj> <a href="#triage-dependabot-pr" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> triage-dependabot-pr </a> </li><li data-astro-cid-mw7aashj> <a href="#triage-dependabot-prs" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> triage-dependabot-prs </a> </li><li data-astro-cid-mw7aashj> <a href="#other" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Other </a> </li><li data-astro-cid-mw7aashj> <a href="#agent-admin" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> agent-admin </a> </li><li data-astro-cid-mw7aashj> <a href="#investigate-cron" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> investigate-cron </a> </li><li data-astro-cid-mw7aashj> <a href="#learning-capture" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> learning-capture </a> </li><li data-astro-cid-mw7aashj> <a href="#pull-requests" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> pull-requests </a> </li><li data-astro-cid-mw7aashj> <a href="#review-staged" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> review-staged </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> <a href="https://vitals-os.com/cal/book/discovery" data-astro-cid-mw7aashj>Book a call</a> </nav> </div> </footer> </body></html>
