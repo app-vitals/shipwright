@@ -10,7 +10,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import type { WebClient } from "@slack/web-api";
-import type { ClaudeRunResult, ModelUsage, TokenUsage } from "./claude.ts";
+import {
+  ClaudeRunError,
+  type ClaudeRunResult,
+  type ModelUsage,
+  type TokenUsage,
+} from "./claude.ts";
 import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
@@ -299,6 +304,18 @@ export async function handleCronRequest(
   let sessionId: string | undefined;
   try {
     const runResult = await runner(message);
+    if (runResult.streamIncomplete) {
+      // Clean process exit, but the stream never emitted a terminal `result`
+      // event — treat this the same as a genuine failure rather than letting
+      // an empty response masquerade as a completed run (see CSU-1.1 review).
+      throw new ClaudeRunError(
+        "claude stream ended without a terminal result event",
+        undefined,
+        "stream incomplete — no terminal result event",
+        runResult.sessionId,
+        runResult.modelUsage,
+      );
+    }
     usage = runResult.usage;
     modelUsage = runResult.modelUsage;
     result = runResult.result;

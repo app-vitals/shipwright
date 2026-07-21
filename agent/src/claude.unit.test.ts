@@ -17,8 +17,18 @@ const WORKSPACE = join(TEST_AGENT_HOME, "workspace");
 
 // ─── Import module under test ─────────────────────────────────────────────────
 
-const { createRunClaude, setLiveClaudeConfig, dominantModel } =
-  await import("./claude.ts");
+const { createRunClaude, setLiveClaudeConfig, dominantModel } = await import(
+  "./claude.ts"
+);
+
+// ─── Stream-json fixtures (hand-authored per the public CLI schema) ───────────
+
+const cleanMultiTurn = await import(
+  "./fixtures/stream-json/clean-multi-turn.ts"
+);
+const truncatedNoResult = await import(
+  "./fixtures/stream-json/truncated-no-result.ts"
+);
 
 // ─── Shared test session store ────────────────────────────────────────────────
 
@@ -54,6 +64,32 @@ function bodyStream(content: string): ReadableStream<Uint8Array> {
   });
 }
 
+/**
+ * Emits each NDJSON line as its OWN stream chunk (with a trailing newline), so
+ * the parser under test is exercised across real chunk boundaries rather than
+ * one giant buffered string.
+ */
+function ndjsonStream(lines: string[]): ReadableStream<Uint8Array> {
+  const enc = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const line of lines) {
+        controller.enqueue(enc.encode(`${line}\n`));
+      }
+      controller.close();
+    },
+  });
+}
+
+function ndjsonProc(lines: string[], stderr = "", exitCode = 0): FakeProc {
+  return {
+    stdout: ndjsonStream(lines),
+    stderr: bodyStream(stderr),
+    exited: Promise.resolve(exitCode),
+    kill: () => {},
+  };
+}
+
 interface FakeProc {
   stdout: ReadableStream<Uint8Array>;
   stderr: ReadableStream<Uint8Array>;
@@ -85,12 +121,23 @@ function hangingProc(): FakeProc & { triggerKill: () => void } {
   };
 }
 
+/**
+ * A single terminal stream-json `result` line (the CLI emits exactly one on a
+ * clean finish). Its shape is byte-identical to the old `--output-format json`
+ * single blob, plus the `type`/`subtype` discriminator.
+ */
 function jsonOutput(
   result: string,
   sessionId = "sess-abc",
   isError = false,
 ): string {
-  return JSON.stringify({ result, session_id: sessionId, is_error: isError });
+  return JSON.stringify({
+    type: "result",
+    subtype: isError ? "error" : "success",
+    result,
+    session_id: sessionId,
+    is_error: isError,
+  });
 }
 
 // ─── runClaude tests ──────────────────────────────────────────────────────────
@@ -134,12 +181,13 @@ describe("runClaude", () => {
     expect(cmd).toContain("-p");
   });
 
-  test("passes --output-format json", async () => {
+  test("passes --output-format stream-json --verbose", async () => {
     await runClaude("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
     const idx = cmd.indexOf("--output-format");
     expect(idx).toBeGreaterThan(-1);
-    expect(cmd[idx + 1]).toBe("json");
+    expect(cmd[idx + 1]).toBe("stream-json");
+    expect(cmd).toContain("--verbose");
   });
 
   test("passes --model from config", async () => {
@@ -231,6 +279,8 @@ describe("runClaude", () => {
 
   test("returns usage from JSON output when present", async () => {
     const usageJson = JSON.stringify({
+      type: "result",
+      subtype: "success",
       result: "Hello with usage",
       session_id: "sess-usage",
       is_error: false,
@@ -392,6 +442,8 @@ describe("runClaude", () => {
 
   test("non-zero exit with JSON stdout throws ClaudeRunError with api_error_status", async () => {
     const json = JSON.stringify({
+      type: "result",
+      subtype: "error",
       result: "You've hit your org's monthly usage limit",
       session_id: "sess-x",
       is_error: true,
@@ -422,9 +474,7 @@ describe("resume retry", () => {
       callCount++;
       if (callCount === 1) {
         // First call (resume) fails
-        return fakeProc("", "socket closed", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
       }
       // Second call (retry, same resumed session) succeeds
       return fakeProc(jsonOutput("recovered", "stale-sess-id")) as ReturnType<
@@ -519,9 +569,7 @@ describe("resume retry", () => {
     expect(store.get("chan:ts")).toBe("stale-sess");
     // Retry-exhausted case is reported to Sentry with the ORIGINAL error.
     expect(capturedExceptions).toHaveLength(1);
-    expect((capturedExceptions[0] as Error).message).toContain(
-      "total failure",
-    );
+    expect((capturedExceptions[0] as Error).message).toContain("total failure");
   });
 
   test("does not report to Sentry when the retry succeeds", async () => {
@@ -529,9 +577,7 @@ describe("resume retry", () => {
     const mockSpawn = mock(() => {
       callCount++;
       if (callCount === 1) {
-        return fakeProc("", "socket closed", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
       }
       return fakeProc(jsonOutput("recovered", "stale-sess-id")) as ReturnType<
         typeof Bun.spawn
@@ -784,6 +830,8 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
 
   test("returns totalCostUsd from JSON output when total_cost_usd is present", async () => {
     const json = JSON.stringify({
+      type: "result",
+      subtype: "success",
       result: "Hello",
       session_id: "sess-cost",
       is_error: false,
@@ -808,6 +856,8 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
       },
     };
     const json = JSON.stringify({
+      type: "result",
+      subtype: "success",
       result: "Hello",
       session_id: "sess-usage",
       is_error: false,
@@ -823,6 +873,169 @@ describe("runClaude — totalCostUsd and modelUsage", () => {
     const output = await runClaude("hello");
     expect(output.totalCostUsd).toBeUndefined();
     expect(output.modelUsage).toBeUndefined();
+  });
+});
+
+// ─── stream-json parsing / onProgress ────────────────────────────────────────
+
+describe("runClaude — stream-json parsing", () => {
+  beforeEach(() => {
+    mockGetSession.mockReset();
+    mockSetSession.mockReset();
+    mockClearSession.mockReset();
+    capturedMessages = [];
+    capturedExceptions = [];
+  });
+
+  test("clean multi-turn, multi-model session returns the result event's authoritative totals byte-identically", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(cleanMultiTurn.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+
+    expect(output.result).toBe(cleanMultiTurn.expected.result);
+    expect(output.sessionId).toBe(cleanMultiTurn.expected.sessionId);
+    expect(output.totalCostUsd).toBe(cleanMultiTurn.expected.totalCostUsd);
+    // Byte-identical to the terminal result event's modelUsage (NOT the
+    // running accumulator, which lacks costUSD).
+    expect(output.modelUsage).toEqual(cleanMultiTurn.expected.modelUsage);
+    expect(output.streamIncomplete).toBeUndefined();
+  });
+
+  test("onProgress fires once per distinct message id with the running accumulated total (deduped)", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(cleanMultiTurn.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const progress: Array<Record<string, unknown>> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (mu) => {
+        progress.push(structuredClone(mu));
+      },
+    );
+
+    await runClaude("go");
+
+    // msg_1 (deduped from 2 lines), msg_2, msg_3 → exactly 3 progress events.
+    expect(progress).toHaveLength(cleanMultiTurn.expectedProgressCount);
+    // The final accumulated snapshot matches the fixture's own expected sums.
+    expect(progress[progress.length - 1]).toEqual(
+      cleanMultiTurn.expectedAccumulated,
+    );
+  });
+
+  test("skips malformed / non-JSON lines without losing already-accumulated usage", async () => {
+    const linesWithGarbage = [
+      cleanMultiTurn.lines[0],
+      "this is not json at all",
+      ...cleanMultiTurn.lines.slice(1, 2),
+      "{ broken json",
+      ...cleanMultiTurn.lines.slice(2),
+    ];
+    const mockSpawn = mock(
+      () => ndjsonProc(linesWithGarbage) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+    expect(output.result).toBe(cleanMultiTurn.expected.result);
+    expect(output.modelUsage).toEqual(cleanMultiTurn.expected.modelUsage);
+  });
+
+  test("truncated stream with no result event surfaces the accumulated partial usage (distinct return shape)", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(truncatedNoResult.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+    expect(output.streamIncomplete).toBe(true);
+    expect(output.modelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+    expect(output.result).toBe("");
+  });
+
+  test("timeout mid-stream throws ClaudeTimeoutError carrying the accumulated partial usage", async () => {
+    // A proc whose stdout emits two assistant turns then never closes / never
+    // emits a result — forcing the timeout path.
+    let resolveExited!: (code: number) => void;
+    const exited = new Promise<number>((r) => {
+      resolveExited = r;
+    });
+    const enc = new TextEncoder();
+    // Mirror real proc.kill() semantics: killing the process closes stdout so
+    // the reader drains to `done` instead of hanging forever.
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    const stdout = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+        controller.enqueue(enc.encode(`${truncatedNoResult.lines[0]}\n`));
+        controller.enqueue(enc.encode(`${truncatedNoResult.lines[1]}\n`));
+        controller.enqueue(enc.encode(`${truncatedNoResult.lines[2]}\n`));
+        // stream intentionally left open — no close(), no result line
+      },
+    });
+    const proc = {
+      stdout,
+      stderr: bodyStream(""),
+      exited,
+      kill: () => {
+        streamController.close();
+        resolveExited(143);
+      },
+    };
+    const mockSpawn = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const runClaudeWithTimeout = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      10, // 10ms timeout
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    try {
+      await runClaudeWithTimeout("go");
+      throw new Error("expected timeout");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClaudeTimeoutError);
+      const e = err as InstanceType<typeof ClaudeTimeoutError>;
+      expect(e.modelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+    }
   });
 });
 

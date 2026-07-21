@@ -475,7 +475,21 @@ export function createSlackApp(
     }
 
     try {
-      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey);
+      if (runResult.streamIncomplete) {
+        // Clean process exit, but the stream never emitted a terminal
+        // `result` event — treat this the same as a genuine failure rather
+        // than silently posting nothing and logging it as a normal
+        // markers-only response (see CSU-1.1 review).
+        throw new ClaudeRunError(
+          "claude stream ended without a terminal result event",
+          undefined,
+          "stream incomplete — no terminal result event",
+          runResult.sessionId,
+          runResult.modelUsage,
+        );
+      }
+      const { result, usage, totalCostUsd, modelUsage } = runResult;
       await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -616,7 +630,21 @@ export function createSlackApp(
     }
 
     try {
-      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey);
+      if (runResult.streamIncomplete) {
+        // Clean process exit, but the stream never emitted a terminal
+        // `result` event — treat this the same as a genuine failure rather
+        // than silently posting nothing and logging it as a normal
+        // markers-only response (see CSU-1.1 review).
+        throw new ClaudeRunError(
+          "claude stream ended without a terminal result event",
+          undefined,
+          "stream incomplete — no terminal result event",
+          runResult.sessionId,
+          runResult.modelUsage,
+        );
+      }
+      const { result, usage, totalCostUsd, modelUsage } = runResult;
       await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
@@ -693,7 +721,21 @@ export function createSlackApp(
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
     try {
-      const { result, usage, totalCostUsd, modelUsage } = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey);
+      if (runResult.streamIncomplete) {
+        // Clean process exit, but the stream never emitted a terminal
+        // `result` event — treat this the same as a genuine failure rather
+        // than silently posting nothing and logging it as a normal
+        // markers-only response (see CSU-1.1 review).
+        throw new ClaudeRunError(
+          "claude stream ended without a terminal result event",
+          undefined,
+          "stream incomplete — no terminal result event",
+          runResult.sessionId,
+          runResult.modelUsage,
+        );
+      }
+      const { result, usage, totalCostUsd, modelUsage } = runResult;
       await chatTokenReporter.recordSession(usage, totalCostUsd, modelUsage);
       const { cleaned, markers } = parseMarkers(result);
 
