@@ -58,7 +58,7 @@ test("the-shipwright-loop page describes the FIFO work-selector", async ({
   expect(body?.toLowerCase()).toContain("fifo");
   expect(body?.toLowerCase()).toContain("age");
   // No phase-priority bias is a load-bearing claim from work-selector.ts
-  expect(body?.toLowerCase()).toMatch(/no phase (bias|priority|-priority bias)/);
+  expect(body?.toLowerCase()).toMatch(/no phase-?priority bias|no phase bias/);
 });
 
 test("the-shipwright-loop page describes pre-claim before dispatch", async ({
