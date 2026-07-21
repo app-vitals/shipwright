@@ -161,6 +161,33 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
 
 All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
 
+### Resolve the linked task's model tier
+
+Runs once here, regardless of which Step 14 path produced `PR_RECORD_ID` (Pre-Claim Fast
+Path or self-claim) — both paths reconverge at this point before Step 5 runs. Best-effort
+enrichment only: any failure leaves `TASK_MODEL` unset and prints a one-line warning, never
+a hard stop.
+
+```bash
+TASK_MODEL=""
+if [ -n "$PR_RECORD_ID" ]; then
+  PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID") || echo "⚠ failed to fetch PR record for model lookup — continuing"
+  TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
+  if [ -n "$TASK_ID" ]; then
+    TASK_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID") || echo "⚠ failed to fetch task $TASK_ID for model lookup — continuing"
+    TASK_MODEL=$(echo "$TASK_RECORD" | jq -r '.model // empty')
+  fi
+else
+  echo "⚠ no PR_RECORD_ID available — skipping task model lookup"
+fi
+```
+
+A non-200 at either fetch (e.g. a 403 when the linked task is assigned to a different agent
+or unassigned — task-store agent tokens are scoped) leaves `TASK_MODEL` unset; Step 7 falls
+back to `'sonnet'`.
+
 ---
 
 ## Step 5: Gather Context
@@ -257,7 +284,9 @@ Note which categories are present (even if "none") — this drives review focus 
 Delegate the per-file review to the bundled `shipwright:code-reviewer` subagent. This
 keeps review context isolated from the main thread (policy, queue, posting).
 
-Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"` and pass
+Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"`, passing
+`model: TASK_MODEL ?? 'sonnet'` (the linked task's model tier resolved at the end of Step 4,
+falling back to `'sonnet'` when no task is linked or the lookup failed), and pass
 a single prompt block containing:
 
 - **PR metadata** — `number`, `title`, `author`, `headRefName`, `baseRefName`, `headRefOid`

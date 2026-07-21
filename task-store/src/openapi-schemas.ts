@@ -140,6 +140,16 @@ export const TaskSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    skipCount: z.number().int().default(0).openapi({
+      example: 0,
+      description:
+        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+    }),
+    lastSkippedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
     claimedBy: z
       .string()
       .nullable()
@@ -331,6 +341,16 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "no linked task" }),
+    skipCount: z.number().int().default(0).openapi({
+      example: 0,
+      description:
+        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+    }),
+    lastSkippedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
     createdAt: z
       .string()
       .datetime()

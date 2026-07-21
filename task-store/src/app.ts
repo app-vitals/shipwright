@@ -57,6 +57,12 @@ const noopPrService: PullRequestServiceLike = {
   async release(_id) {
     return {} as never;
   },
+  async recordSkip(_id) {
+    return {} as never;
+  },
+  async resetSkip(_id) {
+    return {} as never;
+  },
   async claimNext(_agentId, _maxConcurrent, _repos?) {
     return null;
   },

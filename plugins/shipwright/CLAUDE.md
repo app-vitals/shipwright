@@ -157,7 +157,7 @@ System crons are the crons defined in `SYSTEM_CRONS` — they cover both the cor
 
 **New system crons always ship disabled.** Any cron added to `SYSTEM_CRONS` must have `enabled: false`. Enable it per-agent when ready. This avoids new crons firing unexpectedly on agents that haven't opted in. The exception is crons explicitly replacing a prior cron — but even then, add disabled, verify, then enable and disable the old one.
 
-**review and patch run as independent phases.** `shipwright-review` and `shipwright-patch` are independent system crons, each shipping `enabled: true` by default (see `admin/src/system-crons.ts`), and each runs its own phase directly.
+**dev-task, review, patch, and deploy are phases dispatched by `shipwright-loop`, not independent self-discovering crons.** `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy` are registered in `SYSTEM_CRONS` with `parentCron: "shipwright-loop"` (see `admin/src/system-crons.ts`). `shipwright-loop`'s `loop-orchestrator.ts` is the sole dispatcher — see the Candidate Selection Contract above: it calls each phase's candidate provider every tick, merges the results, picks exactly one winning item via `selectNextWorkItem`, and runs the one matching command with the target embedded. `dev-task`, `review`, and `patch` ship `enabled: true` by default; `deploy` ships `enabled: false` (explicit opt-in). None of the four scans for its own candidates.
 
 ---
 

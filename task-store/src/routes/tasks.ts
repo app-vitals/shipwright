@@ -27,6 +27,8 @@
  *   POST   /tasks/:id/complete  status=done
  *   POST   /tasks/:id/fail      status=blocked
  *   POST   /tasks/:id/release   unclaim → pending
+ *   POST   /tasks/:id/skip      increment skipCount, auto-block at threshold
+ *   POST   /tasks/:id/skip/reset  reset skipCount back to 0
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -439,6 +441,62 @@ const releaseRoute = createRoute({
   },
 });
 
+const skipRoute = createRoute({
+  method: "post",
+  path: "/:id/skip",
+  tags: ["tasks"],
+  summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const skipResetRoute = createRoute({
+  method: "post",
+  path: "/:id/skip/reset",
+  tags: ["tasks"],
+  summary: "Reset skip tracking — skipCount back to 0",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createTasksRoutes(
@@ -717,6 +775,26 @@ export function createTasksRoutes(
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.release(c.req.param("id"));
+    return c.json(task, 200);
+  });
+
+  // ─── Skip ──────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    const task = await taskService.recordSkip(c.req.param("id"));
+    return c.json(task, 200);
+  });
+
+  // ─── Skip reset ────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipResetRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    const task = await taskService.resetSkip(c.req.param("id"));
     return c.json(task, 200);
   });
 

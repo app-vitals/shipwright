@@ -158,6 +158,32 @@ function fakePrService(
       return updated;
     },
 
+    async recordSkip(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      const updated = {
+        ...existing,
+        skipCount: (existing.skipCount ?? 0) + 1,
+        lastSkippedAt: new Date().toISOString(),
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
+    async resetSkip(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      const updated = {
+        ...existing,
+        skipCount: 0,
+        lastSkippedAt: null,
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
     async claimNext(
       _agentId: string,
       _maxConcurrent: number,
@@ -301,6 +327,22 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     store.set("pr-1", makePr({ id: "pr-1" }));
     const app = createPrsRoutes(fakePrService({ store }));
     const res = await app.request("/pr-1/release", { method: "POST" });
+    expect(res.status).not.toBe(404);
+  });
+
+  it("POST /:id/skip route is registered", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/skip", { method: "POST" });
+    expect(res.status).not.toBe(404);
+  });
+
+  it("POST /:id/skip/reset route is registered", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/skip/reset", { method: "POST" });
     expect(res.status).not.toBe(404);
   });
 });

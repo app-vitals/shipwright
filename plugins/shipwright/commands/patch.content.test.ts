@@ -561,11 +561,15 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("reply dated *before* the");
   });
 
-  it("escalation case resolves the linked task via the PR record and PATCHes hitl: true", () => {
+  it("escalation case reuses the shared PR_TASK_ID from Step 2.1 and PATCHes hitl: true (no fresh taskId fetch)", () => {
     const section = getStep5a7Section();
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
     expect(section).toContain("PR_TASK_ID");
-    expect(section).toContain("taskId");
+    // No independent GET .../prs/$PR_RECORD_ID fetch for taskId purposes anymore — that
+    // resolution now lives once in Step 2.1 (MTR-2.1) and is only referenced here.
+    expect(section).not.toMatch(
+      /GET[^\n]*\n[^\n]*"\$SHIPWRIGHT_TASK_STORE_URL\/prs\/\$PR_RECORD_ID"[^\n]*\n[^\n]*taskId/,
+    );
+    expect(section).toMatch(/Step 2\.1|reuse/i);
     expect(section).toContain("-X PATCH");
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
     expect(section).toContain('"hitl": true');
@@ -697,5 +701,83 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
     expect(otherwiseIdx).toBeGreaterThan(-1);
     const otherwiseSection = section.slice(otherwiseIdx);
     expect(otherwiseSection).toContain("Step 6c");
+  });
+});
+
+describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
+  function getStep2_1Section() {
+    const step2_1Idx = content.indexOf("## Step 2.1:");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    expect(step2_1Idx).toBeGreaterThan(-1);
+    expect(step2_5Idx).toBeGreaterThan(-1);
+    return content.slice(step2_1Idx, step2_5Idx);
+  }
+
+  it("Step 2.1 exists between Step 2 (resolve target PR) and Step 2.5 (DIRTY handling)", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_1Idx = content.indexOf("## Step 2.1:");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    expect(step2Idx).toBeGreaterThan(-1);
+    expect(step2_1Idx).toBeGreaterThan(step2Idx);
+    expect(step2_5Idx).toBeGreaterThan(step2_1Idx);
+  });
+
+  it("Step 2.1 resolves PR_TASK_ID via GET /prs?repo=...&prNumber=... using the .prs[0].taskId jq path", () => {
+    const section = getStep2_1Section();
+    expect(section).toContain("PR_TASK_ID");
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).toContain(".prs[0].taskId // empty");
+  });
+
+  it("Step 2.1 documents the full escalation ladder (haiku->sonnet, sonnet->opus, opus->opus) and the no-task/failed-fetch sonnet fallback with no hard stop", () => {
+    const section = getStep2_1Section();
+    expect(section).toContain("PATCH_MODEL");
+    expect(section.toLowerCase()).toContain("haiku");
+    expect(section.toLowerCase()).toContain("sonnet");
+    expect(section.toLowerCase()).toContain("opus");
+    // Ladder direction: haiku -> sonnet, sonnet -> opus, opus stays opus.
+    expect(section).toMatch(/haiku[^\n]{0,40}(->|→)[^\n]{0,10}sonnet/i);
+    expect(section).toMatch(/sonnet[^\n]{0,40}(->|→)[^\n]{0,10}opus/i);
+    expect(section).toMatch(/opus[^\n]{0,60}(->|→)[^\n]{0,10}opus|opus.{0,40}stays opus/i);
+    // No-task / failed-fetch fallback: plain 'sonnet', no escalation, not a hard stop.
+    expect(section).toMatch(/PATCH_MODEL\s*=\s*"?sonnet"?/);
+    expect(section.toLowerCase()).toContain("no escalation");
+    expect(section.toLowerCase()).toContain("not a hard stop");
+    expect(section).toContain("⚠");
+  });
+
+  it("Step 2.1 notes the value is reused at Step 4b, Step 5b, Step 6c, and Step 5a.7 with no second fetch", () => {
+    const section = getStep2_1Section();
+    expect(section).toContain("Step 4b");
+    expect(section).toContain("Step 5b");
+    expect(section).toContain("Step 6c");
+    expect(section).toContain("Step 5a.7");
+  });
+
+  it("Step 4b dispatch (conflict resolution) passes model: PATCH_MODEL to the Agent() call", () => {
+    const step4bIdx = content.indexOf("### Step 4b: Dispatch Conflict Resolution Subagent");
+    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
+    expect(step4bIdx).toBeGreaterThan(-1);
+    expect(step4cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step4bIdx, step4cIdx);
+    expect(section).toContain("model: PATCH_MODEL");
+  });
+
+  it("Step 5b dispatch (finding fixes) passes model: PATCH_MODEL to the Agent() call", () => {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5bIdx, step5cIdx);
+    expect(section).toContain("model: PATCH_MODEL");
+  });
+
+  it("Step 6c dispatch (CI fixes) passes model: PATCH_MODEL to the Agent() call", () => {
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    expect(step6cIdx).toBeGreaterThan(-1);
+    expect(step6dIdx).toBeGreaterThan(-1);
+    const section = content.slice(step6cIdx, step6dIdx);
+    expect(section).toContain("model: PATCH_MODEL");
   });
 });

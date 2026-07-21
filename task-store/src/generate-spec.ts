@@ -63,6 +63,12 @@ const stubTaskService: TaskServiceLike = {
   async release() {
     return {} as never;
   },
+  async recordSkip() {
+    return {} as never;
+  },
+  async resetSkip() {
+    return {} as never;
+  },
 };
 
 const stubTokenService: TokenServiceLike = {
@@ -106,6 +112,12 @@ const stubPrService: PullRequestServiceLike = {
     return {} as never;
   },
   async release() {
+    return {} as never;
+  },
+  async recordSkip() {
+    return {} as never;
+  },
+  async resetSkip() {
     return {} as never;
   },
   async claimNext() {

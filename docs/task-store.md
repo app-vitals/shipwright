@@ -149,6 +149,22 @@ POST /tasks/:id/release
 
 Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, resets `status=pending`. Use when the agent stops work without completing or failing.
 
+#### Record skip
+
+```
+POST /tasks/:id/skip
+```
+
+Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `hitl=true` and `blockedReason="Repeated no-op dispatch"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
+
+#### Reset skip tracking
+
+```
+POST /tasks/:id/skip/reset
+```
+
+Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by skip threshold. Returns `200` with the updated task.
+
 ### Task status lifecycle
 
 ```
@@ -266,6 +282,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
 | `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
+| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `hitl=true` and `blockedReason="Repeated no-op dispatch"` |
+| `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt` |
 
 #### PR state enums
 
@@ -280,6 +298,10 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
 
 `blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
+
+`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Repeated no-op dispatch"` to prevent infinite spin loops.
+
+`lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
 
 #### PR timestamp fields
 

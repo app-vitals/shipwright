@@ -19,6 +19,8 @@
  *   POST   /prs/:id/complete  reviewState=posted
  *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha)
  *   POST   /prs/:id/release   unclaim → reviewState=pending
+ *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
+ *   POST   /prs/:id/skip/reset  reset skipCount back to 0
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -264,6 +266,46 @@ const releaseRoute = createRoute({
     200: {
       content: { "application/json": { schema: PullRequestSchema } },
       description: "Released PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const skipRoute = createRoute({
+  method: "post",
+  path: "/:id/skip",
+  tags: ["PRs"],
+  summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const skipResetRoute = createRoute({
+  method: "post",
+  path: "/:id/skip/reset",
+  tags: ["PRs"],
+  summary: "Reset skip tracking — skipCount back to 0",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated PR",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -525,6 +567,20 @@ export function createPrsRoutes(
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(releaseRoute, async (c): Promise<any> => {
     const pr = await prService.release(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Skip ──────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipRoute, async (c): Promise<any> => {
+    const pr = await prService.recordSkip(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Skip reset ────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipResetRoute, async (c): Promise<any> => {
+    const pr = await prService.resetSkip(c.req.param("id"));
     return c.json(pr, 200);
   });
 

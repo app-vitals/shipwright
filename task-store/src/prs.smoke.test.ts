@@ -295,6 +295,32 @@ function fakePrService(
       return updated;
     },
 
+    async recordSkip(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      const updated = {
+        ...existing,
+        skipCount: (existing.skipCount ?? 0) + 1,
+        lastSkippedAt: new Date().toISOString(),
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
+    async resetSkip(id: string): Promise<PullRequest> {
+      const existing = store.get(id);
+      if (!existing) throw new NotFoundError("pr not found");
+      const updated = {
+        ...existing,
+        skipCount: 0,
+        lastSkippedAt: null,
+        updatedAt: new Date(),
+      } as PullRequest;
+      store.set(id, updated);
+      return updated;
+    },
+
     async claimNext(
       _agentId: string,
       _maxConcurrent: number,
@@ -346,6 +372,12 @@ function fakeTaskService(): TaskServiceLike {
       return {} as never;
     },
     async release(_id) {
+      return {} as never;
+    },
+    async recordSkip(_id) {
+      return {} as never;
+    },
+    async resetSkip(_id) {
       return {} as never;
     },
     async bulk() {
@@ -1149,6 +1181,63 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequest;
     expect(body.reviewCycles).toBe(2);
+  });
+
+  // ─── POST /prs/:id/skip, POST /prs/:id/skip/reset ────────────────────────
+
+  it("POST /prs/:id/skip increments skipCount and sets lastSkippedAt", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/skip", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.skipCount).toBe(1);
+    expect(body.lastSkippedAt).not.toBeNull();
+  });
+
+  it("POST /prs/:id/skip/reset resets skipCount to 0", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", skipCount: 2, lastSkippedAt: new Date().toISOString() }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.skipCount).toBe(0);
+    expect(body.lastSkippedAt).toBeNull();
+  });
+
+  it("POST /prs/:id/skip returns 404 when pr not found", async () => {
+    const app = makeApp({
+      prService: fakePrService({ store: new Map() }),
+    });
+    const res = await app.request("/prs/missing/skip", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /prs/:id/skip/reset returns 404 when pr not found", async () => {
+    const app = makeApp({
+      prService: fakePrService({ store: new Map() }),
+    });
+    const res = await app.request("/prs/missing/skip/reset", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
   });
 
   // ─── POST /prs/claim-next ─────────────────────────────────────────────────
