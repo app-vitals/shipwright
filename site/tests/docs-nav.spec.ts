@@ -32,6 +32,9 @@ test("docs desktop header nav includes vs Devin and Architecture links", async (
 test("docs mobile sidebar nav includes vs Devin and Architecture links", async ({
   page,
 }) => {
+  // The sidebar's mobile nav is "md:hidden" — only in the a11y tree below
+  // the md breakpoint, so it needs a mobile viewport to be queryable.
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/docs/getting-started");
   const nav = page.getByRole("navigation", { name: "Mobile top navigation" });
   await expect(nav.getByRole("link", { name: /vs Devin/i })).toHaveAttribute(
