@@ -2397,7 +2397,7 @@ describe("formatRunErrorForSlack", () => {
   });
 
   test("ClaudeTimeoutError includes timeout duration and retry prompt", () => {
-    const err = new ClaudeTimeoutError(30 * 60 * 1000);
+    const err = new ClaudeTimeoutError(30 * 60 * 1000, "ceiling");
     const out = formatRunErrorForSlack(err);
     expect(out).toContain("30 minutes");
     expect(out).toContain("retry");

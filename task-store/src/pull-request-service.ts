@@ -13,6 +13,7 @@
  * only createdAt/updatedAt are DateTime columns.
  */
 
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
@@ -566,9 +567,10 @@ export class PullRequestService implements PullRequestServiceLike {
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null> {
     const now = this.clock.now();
     const nowIso = now.toISOString();
-    // Cutoff for "fresh" heartbeat — same as reaper default (35 min)
+    // Cutoff for "fresh" heartbeat — mirrors the reaper's own default
+    // (DEFAULT_CLAIM_TTL_MS in @shipwright/lib/claim-ttl).
     const cutoffMs = Number(
-      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? 2_100_000,
+      process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
     );
     const cutoff = new Date(now.getTime() - cutoffMs).toISOString();
 

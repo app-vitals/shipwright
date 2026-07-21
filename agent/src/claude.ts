@@ -141,13 +141,21 @@ export class ClaudeRunError extends Error {
   }
 }
 
+/** Which timer fired: idle-reset (no stdout activity) or the hard ceiling. */
+export type ClaudeTimeoutReason = "idle" | "ceiling";
+
 export class ClaudeTimeoutError extends Error {
   constructor(
     readonly timeoutMs: number,
-    /** Per-model usage accumulated before the process was killed, if any. */
-    readonly modelUsage?: ModelUsage,
+    /** Which limit fired — idle-reset timer or the hard ceiling. */
+    readonly reason: ClaudeTimeoutReason = "ceiling",
+    /**
+     * Per-model usage accumulated before the process was killed, if any.
+     * Always partial by definition — a clean finish never reaches this path.
+     */
+    readonly partialModelUsage?: ModelUsage,
   ) {
-    super(`Claude session timed out after ${timeoutMs / 1000}s`);
+    super(`Claude session timed out after ${timeoutMs / 1000}s (${reason})`);
     this.name = "ClaudeTimeoutError";
   }
 }
@@ -176,6 +184,12 @@ export function createRunClaude(
   fallbackModel: string | undefined = undefined,
   effortLevel: string | undefined = undefined,
   timeoutMs: number = 30 * 60 * 1000,
+  /**
+   * Idle-reset timeout: cleared and restarted on every stdout line. Fires
+   * when the process goes silent for this long, even if `timeoutMs` (the
+   * hard ceiling) hasn't elapsed yet. Default 25min.
+   */
+  idleTimeoutMs: number = 25 * 60 * 1000,
   onProgress: ProgressCallback | undefined = undefined,
 ): (message: string, sessionKey?: string) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
@@ -257,7 +271,10 @@ export function createRunClaude(
    * capturing the terminal `result` event if one arrives. Malformed / non-JSON
    * lines are skipped rather than aborting the whole parse.
    */
-  async function _consumeStream(stream: ReadableStream<Uint8Array>): Promise<{
+  async function _consumeStream(
+    stream: ReadableStream<Uint8Array>,
+    onLine?: () => void,
+  ): Promise<{
     result?: ClaudeResultEvent;
     modelUsage: ModelUsage;
     raw: string;
@@ -273,6 +290,7 @@ export function createRunClaude(
     const handleLine = (raw: string) => {
       const line = raw.trim();
       if (!line) return;
+      onLine?.();
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);
@@ -353,19 +371,40 @@ export function createRunClaude(
     });
 
     let timedOut = false;
-    const timer = setTimeout(() => {
+    let timeoutReason: ClaudeTimeoutReason = "ceiling";
+
+    // Hard ceiling: set once, never reset. Backstops a continuously-active
+    // but never-converging session (idle timer alone would never fire).
+    const ceilingTimer = setTimeout(() => {
       timedOut = true;
+      timeoutReason = "ceiling";
       proc.kill();
     }, timeoutMs);
 
+    // Idle-reset timer: cleared/restarted on every stdout line. Fires when
+    // the process goes silent, even with ceiling headroom remaining.
+    let idleTimer: ReturnType<typeof setTimeout>;
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        timedOut = true;
+        timeoutReason = "idle";
+        proc.kill();
+      }, idleTimeoutMs);
+    };
+    resetIdleTimer();
+
     const [{ result, modelUsage, raw }, stderr, exitCode] = await Promise.all([
-      _consumeStream(proc.stdout),
+      _consumeStream(proc.stdout, resetIdleTimer),
       new Response(proc.stderr).text(),
       proc.exited,
-    ]).finally(() => clearTimeout(timer));
+    ]).finally(() => {
+      clearTimeout(ceilingTimer);
+      clearTimeout(idleTimer);
+    });
 
     if (timedOut) {
-      throw new ClaudeTimeoutError(timeoutMs, modelUsage);
+      throw new ClaudeTimeoutError(timeoutMs, timeoutReason, modelUsage);
     }
 
     if (exitCode !== 0) {

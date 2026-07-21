@@ -121,6 +121,7 @@ const runner = createRunClaude(
   undefined,
   undefined,
   config.claude.timeoutMs,
+  config.claude.idleTimeoutMs,
 );
 
 const cronRunReporter =
@@ -462,6 +463,7 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
     undefined,
     undefined,
     config.claude.timeoutMs,
+    config.claude.idleTimeoutMs,
   );
   const chatClient = new HttpChatServiceClient({
     baseUrl: config.chat.serviceUrl,

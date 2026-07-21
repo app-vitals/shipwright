@@ -106,6 +106,59 @@ function fakeProc(stdout: string, stderr = "", exitCode = 0): FakeProc {
   };
 }
 
+/**
+ * A fake proc whose stdout emits one NDJSON line every `intervalMs`, for
+ * `count` lines — used to exercise idle-reset-vs-ceiling timer races with
+ * short REAL timeouts (consistent with this file's existing convention of
+ * small millisecond literals rather than fake-timer injection).
+ *
+ * When `autoCloseAfterDrip` is true, the stream closes itself (and `exited`
+ * resolves with 0) right after the last line — simulating a process that
+ * finishes cleanly before any timer fires. When false, the stream is left
+ * open after the last line (no close(), no result line) and only `kill()`
+ * (called by the idle/ceiling timer under test) closes it — simulating a
+ * process a timer has to forcibly stop.
+ */
+function drippingProc(
+  line: string,
+  intervalMs: number,
+  count: number,
+  autoCloseAfterDrip = false,
+): FakeProc {
+  const enc = new TextEncoder();
+  let resolveExited!: (code: number) => void;
+  const exited = new Promise<number>((r) => {
+    resolveExited = r;
+  });
+  let streamController!: ReadableStreamDefaultController<Uint8Array>;
+  let closed = false;
+  const close = (code: number) => {
+    if (closed) return;
+    closed = true;
+    streamController.close();
+    resolveExited(code);
+  };
+  const stdout = new ReadableStream<Uint8Array>({
+    start(controller) {
+      streamController = controller;
+      (async () => {
+        for (let i = 0; i < count; i++) {
+          if (closed) return;
+          controller.enqueue(enc.encode(`${line}\n`));
+          await new Promise((r) => setTimeout(r, intervalMs));
+        }
+        if (autoCloseAfterDrip) close(0);
+      })();
+    },
+  });
+  return {
+    stdout,
+    stderr: bodyStream(""),
+    exited,
+    kill: () => close(143),
+  };
+}
+
 function hangingProc(): FakeProc & { triggerKill: () => void } {
   let resolveExited!: (code: number) => void;
   const exited = new Promise<number>((r) => {
@@ -399,12 +452,15 @@ describe("runClaude", () => {
       undefined,
       undefined,
       undefined,
-      10, // 10ms timeout for test speed
+      1000, // 1s ceiling headroom — well clear of the idle timeout below
+      10, // 10ms idle timeout — hangingProc never emits a line, so idle fires first
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
-    await expect(runClaudeWithTimeout("hello")).rejects.toBeInstanceOf(
-      ClaudeTimeoutError,
+    const err = await runClaudeWithTimeout("hello").catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
+      "idle",
     );
   });
 
@@ -429,7 +485,8 @@ describe("runClaude", () => {
       undefined,
       undefined,
       undefined,
-      10, // 10ms timeout
+      10, // 10ms ceiling timeout
+      10, // 10ms idle timeout
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
@@ -438,6 +495,104 @@ describe("runClaude", () => {
     ).rejects.toBeInstanceOf(ClaudeTimeoutError);
     // Guard prevents retry — spawn must be called exactly once
     expect(mockSpawnTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  test("idle-reset-on-activity: frequent stdout lines keep resetting the idle timer, so no timeout occurs even past the idle window", async () => {
+    // 6 lines at 15ms apart = 90ms total elapsed, well past the 20ms idle
+    // timeout if it were never reset — but each line resets it, so the
+    // idle timer never actually lapses. Ceiling (500ms) has ample headroom.
+    // The stream auto-closes right after the last line, so the run finishes
+    // cleanly (streamIncomplete: true — no result event) instead of hanging.
+    const proc = drippingProc(
+      JSON.stringify({ type: "system", subtype: "init" }),
+      15,
+      6,
+      true, // autoCloseAfterDrip
+    );
+    const mockSpawnActivity = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const runClaudeWithIdleReset = createRunClaude(
+      mockSpawnActivity as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      500, // 500ms ceiling — plenty of headroom
+      20, // 20ms idle timeout — shorter than total elapsed time, but reset each 15ms line
+    );
+
+    const output = await runClaudeWithIdleReset("hello");
+    // Stream never got a `result` event but finished cleanly (no timeout) —
+    // proves the idle timer never fired despite total elapsed time exceeding
+    // its window, because each line kept resetting it.
+    expect(output.streamIncomplete).toBe(true);
+  });
+
+  test("idle-fires-despite-ceiling-headroom: stdout goes silent past the idle timeout well before the ceiling would fire", async () => {
+    const proc = hangingProc(); // never emits a line — silent from the start
+    const mockSpawnIdle = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const runClaudeIdleOnly = createRunClaude(
+      mockSpawnIdle as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // 5s ceiling — nowhere near firing in this test
+      15, // 15ms idle timeout — fires quickly since stdout is silent
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    const err = await runClaudeIdleOnly("hello").catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
+      "idle",
+    );
+  });
+
+  test("ceiling-fires-despite-continuous-activity: stdout lines keep resetting idle indefinitely, but total elapsed exceeds the ceiling", async () => {
+    // Lines arrive every 5ms — always resetting the idle timer well before
+    // its 30ms window lapses — but the process runs long enough (well past
+    // 25ms) that the 25ms ceiling fires first regardless of activity.
+    const proc = drippingProc(
+      JSON.stringify({ type: "system", subtype: "init" }),
+      5,
+      50, // enough lines to keep the drip going past the ceiling
+    );
+
+    const mockSpawnCeiling = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const runClaudeCeiling = createRunClaude(
+      mockSpawnCeiling as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      25, // 25ms ceiling — fires despite continuous sub-idle-window activity
+      30, // 30ms idle timeout — never lapses since lines arrive every 5ms
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    const err = await runClaudeCeiling("hello").catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
+      "ceiling",
+    );
   });
 
   test("non-zero exit with JSON stdout throws ClaudeRunError with api_error_status", async () => {
@@ -925,6 +1080,7 @@ describe("runClaude — stream-json parsing", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       (mu) => {
         progress.push(structuredClone(mu));
       },
@@ -1024,7 +1180,8 @@ describe("runClaude — stream-json parsing", () => {
       undefined,
       undefined,
       undefined,
-      10, // 10ms timeout
+      1000, // 1s ceiling headroom — idle timer below should fire first
+      10, // 10ms idle timeout — stream goes silent after the 3 initial lines
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
@@ -1034,7 +1191,8 @@ describe("runClaude — stream-json parsing", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ClaudeTimeoutError);
       const e = err as InstanceType<typeof ClaudeTimeoutError>;
-      expect(e.modelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+      expect(e.reason).toBe("idle");
+      expect(e.partialModelUsage).toEqual(truncatedNoResult.expectedAccumulated);
     }
   });
 });

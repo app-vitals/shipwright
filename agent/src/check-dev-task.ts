@@ -13,7 +13,7 @@
  * the globally-oldest ready item.
  *
  * Reclaiming stale in_progress tasks is exclusively StaleClaimReaper's
- * responsibility (task-store's own 35-minute claim-TTL reaper, wired via
+ * responsibility (task-store's own 65-minute claim-TTL reaper, wired via
  * setInterval in task-store/src/main.ts). This module does not perform any
  * stale-task guard of its own.
  *
