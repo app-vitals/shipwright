@@ -32,6 +32,10 @@ jobs:
       contents: write # push site/dist to gh-pages
 
     steps:
+      # persist-credentials left at its default (true) intentionally:
+      # JamesIves/github-pages-deploy-action below is not passed an explicit
+      # token input, so it relies on the git credential persisted by this
+      # checkout to authenticate its push to gh-pages.
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

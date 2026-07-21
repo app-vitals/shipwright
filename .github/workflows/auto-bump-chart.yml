@@ -83,6 +83,9 @@ jobs:
   debounce:
     name: debounce burst of release tags
     runs-on: ubuntu-latest
+    # This job only sleeps — it never touches the repo, so it needs none of
+    # the workflow-level contents:write / pull-requests:write permissions.
+    permissions: {}
     concurrency:
       group: chart-bump-debounce
       cancel-in-progress: true
