@@ -933,6 +933,42 @@ describe("createLoopOrchestrator", () => {
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
   });
 
+  test("a streamIncomplete:true result during dispatch reports a failed run, rethrows (CSU-1.1 regression)", async () => {
+    const consumed = new Set<string>();
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const runner = async (): Promise<ClaudeRunResult> => ({
+      result: "",
+      streamIncomplete: true,
+    });
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      "stream ended without a terminal result event",
+    );
+
+    // A clean-exit-but-truncated stream must NOT be recorded as a completed
+    // dispatch — it should surface as a failed run, same as a thrown error.
+    expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
+    expect(completes).toEqual([
+      {
+        cronId: "shipwright-loop",
+        runId: "run-1",
+        outcome: "failed",
+        phaseId: "shipwright-dev-task",
+        itemType: "task",
+        itemId: "SWC-1.1",
+      },
+    ]);
+    expect(skips).toEqual([]);
+  });
+
   test("releases the busy flag even when an iteration throws", async () => {
     let firstCall = true;
     const deps = makeDeps({
