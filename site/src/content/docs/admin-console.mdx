@@ -3,8 +3,7 @@ title: Admin Console
 description: A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, Chat, and Tokens.
 section: Operations
 order: 3
-prev: "/docs/day-to-day-operations"
-next: "/docs/cron-jobs"
+prev: "/docs/slack-integration"
 ---
 
 # Admin Console
@@ -26,7 +25,8 @@ checks the signed-in Google account's email against the `adminAllowedEmails` all
 falls back to agent membership (an `AgentMember` row) if the email isn't an allowlisted admin. Users
 who are neither get a `403 Forbidden`. Session state lives in an `admin_session` httpOnly JWT cookie
 valid for 8 hours; `POST /admin/logout` clears it. A `GET /admin/dev-login` route exists for local
-development only — it's hard-blocked outside non-production environments regardless of configuration.
+development only — it's hard-blocked in production regardless of configuration, and even outside
+production it only works if `ADMIN_DEV_AUTH=true` is set (off by default).
 
 Every admin page shares one toolbar (top nav) with links to **Agents**, **Provision**, **Tasks**,
 **PRs**, **Chat**, **Task Store Tokens**, and **Metrics**, plus the signed-in user's email and a
