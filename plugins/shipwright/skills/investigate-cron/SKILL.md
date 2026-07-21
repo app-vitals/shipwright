@@ -97,7 +97,7 @@ filtered to just that phase:
 ```bash
 # Only needed in name+time mode.
 PHASE_ID=$(echo "$CRONS_JSON" | jq -r --arg loop "$LOOP_CRON_ID" --arg name "$CRON_NAME" \
-  '.crons[] | select(.parentCronId == $loop and .name == $name) | .id' | head -1)
+  '.crons[] | select(.parentCronId == $loop and (.name | sub("^shipwright-"; "")) == $name) | .id' | head -1)
 echo "phaseId: $PHASE_ID"
 ```
 
@@ -142,7 +142,7 @@ the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in Step 2):
 ```bash
 BEST_RUN=$(jq -r --arg phase "$PHASE_ID" --argjson target "$TARGET_EPOCH" '
   map(select(.phaseId == $phase))
-  | map(. + {distance: (((.startedAt | fromdateiso8601) - $target) | if . < 0 then -. else . end)})
+  | map(. + {distance: ((((.startedAt | sub("\\.[0-9]+Z$"; "Z")) | fromdateiso8601) - $target) | if . < 0 then -. else . end)})
   | sort_by(.distance)
   | first
 ' "$ALL_RUNS_FILE")
