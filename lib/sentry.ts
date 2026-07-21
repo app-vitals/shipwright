@@ -14,13 +14,13 @@ type SentryLog = NonNullable<BunOptions["beforeSendLog"]> extends (
   ? L
   : never;
 
-export interface InitSentryOptions {
+interface InitSentryOptions {
   service: string;
   agentId?: string;
 }
 
 /** Narrowed to the one method initSentry calls, so tests can inject a fake without mock.module(). */
-export interface SentryClient {
+interface SentryClient {
   init: (options: Record<string, unknown>) => void;
 }
 
