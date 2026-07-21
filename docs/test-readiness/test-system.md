@@ -30,13 +30,13 @@
   a repo-specific fifth "content" layer for markdown/prompt assertions. This design
   reuses those names rather than introducing the rubric's generic labels.
 - **Delta since the 2026-07-19 design (this pass, 132 commits landed against Phase 1's
-  refreshed inventory):** 7 new non-test source files, concentrated in `mcp-server/`
+  refreshed inventory):** 5 new non-test source files, concentrated in `mcp-server/`
   (`auth.ts`, `clock.ts`, `http-transport.ts`, `main.ts` — TSM-2.6/#1940/#1944/#1945,
   expanding mcp-server from stdio-only to a remotely-reachable Streamable-HTTP service
   with inbound bearer auth) and `metrics/src/lib/coalescing-cache.ts` (single-flight
-  request coalescing for `TaskStoreProvider`, #2067). 2 new fixture-data files
+  request coalescing for `TaskStoreProvider`, #2067). Separately, 2 new fixture-data files
   (`agent/src/fixtures/stream-json/*.ts`, excluded from the design — no test-layer
-  implication). 1 file deleted (`lib/chat-types.ts`, already generated/excluded, #2038).
+  implication, not counted among the 5 source files above). 1 file deleted (`lib/chat-types.ts`, already generated/excluded, #2038).
   **None require a new framework, local-substitute pattern, or layer convention** — every
   addition slots into the matrix and substitution table below unchanged. Highlighted
   per-item: `mcp-server/src/http-transport.ts` (new integration-layer item — stateful

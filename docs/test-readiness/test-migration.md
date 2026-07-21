@@ -24,8 +24,9 @@ approach would miss:
 2. Re-checked every open item from the 2026-07-19 report (1 net-new test —
    `admin/src/clock.ts`, low-priority/optional; 0 net-new infra) against the current tree
    by direct file-existence checks — not assumed from memory.
-3. Cross-referenced Phase 1's "new since the 2026-07-19 inventory" file list (7 new
-   non-test source files, concentrated in `mcp-server/` + `metrics/src/lib/coalescing-cache.ts`)
+3. Cross-referenced Phase 1's "new since the 2026-07-19 inventory" file list (5 new
+   non-test source files, concentrated in `mcp-server/` + `metrics/src/lib/coalescing-cache.ts`;
+   plus 2 test-fixture data files called out separately and excluded from the ledger)
    against the test-file glob to find newly-introduced coverage gaps.
 4. Re-ran the isolation-contract grep sweep (`mock.module(`, `global.fetch =`,
    `global.console =`, `DATABASE_URL` inside `*.unit.test.ts`) across the full current
@@ -70,13 +71,14 @@ covering the TSM-2.6 HTTP-transport expansion, plus `metrics/src/lib/coalescing-
 as a real gap).
 
 **Headline finding: every open item from the 2026-07-19 report is now closed except the
-one already-flagged low-priority item, and all 7 new non-test source files from this
+one already-flagged low-priority item, and all 5 new non-test source files from this
 pass's Phase 1 delta already have matching test coverage at the correct layer** except
 `mcp-server/src/clock.ts` and `mcp-server/src/main.ts`, both of which are non-gaps for the
 same reasons their sibling files (`admin/src/clock.ts`, `admin/src/server.ts`'s original
 landing) already carried forward as non-gaps — see Net-new section below. The single
-carried-forward Net-new item (`admin/src/clock.ts`) is unchanged — still no dedicated test
-file, still assessed as a non-gap per the repo's established `Clock`-file convention. See
+carried-forward Net-new item (`admin/src/clock.ts`) is unrelated to this cycle's Phase 1
+delta (it dates to the 2026-07-19 cycle) and is unchanged — still no dedicated test file,
+still assessed as a non-gap per the repo's established `Clock`-file convention. See
 Resolved-since-last-pass and Net-new sections below.
 
 ## Resolved since the 2026-07-19 pass
@@ -148,7 +150,7 @@ not re-read in full where unchanged.
 
 ### Promote / deepen
 
-None. No promote-shaped gap was found in this pass's review of the 7-file Phase 1 delta
+None. No promote-shaped gap was found in this pass's review of the 5-file Phase 1 delta
 or the substantial in-place logic growth inside `agent/src/check-*.ts`,
 `agent/src/pr-state-reconciler.ts`, `agent/src/loop-orchestrator.ts`, and
 `task-store/src/task-service.ts`/`pull-request-service.ts` (all of which gained new
@@ -165,18 +167,21 @@ None. See Trim analysis above.
 
 ### Net-new
 
-Sorted by inventory criticality. All 7 new non-test source files from this pass's Phase 1
-delta were checked against the test-file glob; 5 already have matching coverage
+Sorted by inventory criticality. All 5 new non-test source files from this pass's Phase 1
+delta were checked against the test-file glob; 4 already have matching coverage
 (`mcp-server/src/{auth,http-transport,index}.smoke.test.ts`, `mcp-server/src/main.ts`'s
 sole real logic covered indirectly via `index.smoke.test.ts` on the factory it calls,
-`metrics/src/lib/coalescing-cache.unit.test.ts`). Two items are listed below for
-completeness per Step 2's exhaustive discovery — neither is assessed as an actual
-coverage risk.
+`metrics/src/lib/coalescing-cache.unit.test.ts`). One item (`mcp-server/src/main.ts`) is
+listed below for completeness per Step 2's exhaustive discovery — not assessed as an
+actual coverage risk. A second item (`admin/src/clock.ts`) is also listed below, but it is
+**not** part of this cycle's Phase 1 delta — it's an unrelated item carried forward
+unchanged from the 2026-07-19 pass, included here only because it remains an open Net-new
+entry.
 
 | Inventory item | Prescribed layer | Criticality | Estimated effort |
 |---|---|---|---|
-| `admin/src/clock.ts` (`Clock`/`SystemClock`/`FixedClock` implementation for admin) | unit | low | trivial, optional — carried forward unchanged from the 2026-07-19 pass. The sibling `Clock` files (`agent/src/clock.ts`, `metrics/src/lib/clock.ts`, `plugins/shipwright/scripts/clock.ts`, and now `mcp-server/src/clock.ts` — new this pass, same shape) all lack a dedicated test file too; near-zero logic (two one-line methods), proven correct via consumers per the repo's established convention. |
-| `mcp-server/src/main.ts` (process entrypoint — fail-closed guard on missing `SHIPWRIGHT_MCP_SERVER_TOKEN`, then `Bun.serve`) | smoke (entrypoint) | critical (per Phase 1) | trivial, optional — matches the established pattern of `task-store/src/main.ts` and `chat/src/main.ts` (both untested directly; only `admin/src/main.ts` has direct coverage, and that file is 4-16x larger with materially more inline logic than its siblings). `main.ts`'s only real logic (the fail-closed guard) is a 4-line module-level check that throws before `createApp`/`Bun.serve` are reached; `createApp` itself is already exercised by `mcp-server/src/index.smoke.test.ts`. Not flagged as a risk — the guard is trivial enough that a human review of the diff (rather than a dedicated unit test) is adequate, consistent with sibling `main.ts` files across the repo. |
+| `admin/src/clock.ts` (`Clock`/`SystemClock`/`FixedClock` implementation for admin) — carried forward, not part of this cycle's Phase 1 delta | unit | low | trivial, optional — carried forward unchanged from the 2026-07-19 pass. The sibling `Clock` files (`agent/src/clock.ts`, `metrics/src/lib/clock.ts`, `plugins/shipwright/scripts/clock.ts`, and now `mcp-server/src/clock.ts` — new this pass, same shape) all lack a dedicated test file too; near-zero logic (two one-line methods), proven correct via consumers per the repo's established convention. |
+| `mcp-server/src/main.ts` (process entrypoint — fail-closed guard on missing `SHIPWRIGHT_MCP_SERVER_TOKEN`, then `Bun.serve`) — part of this cycle's 5-file Phase 1 delta | smoke (entrypoint) | critical (per Phase 1) | trivial, optional — matches the established pattern of `task-store/src/main.ts` and `chat/src/main.ts` (both untested directly; only `admin/src/main.ts` has direct coverage, and that file is 4-16x larger with materially more inline logic than its siblings). `main.ts`'s only real logic (the fail-closed guard) is a 4-line module-level check that throws before `createApp`/`Bun.serve` are reached; `createApp` itself is already exercised by `mcp-server/src/index.smoke.test.ts`. Not flagged as a risk — the guard is trivial enough that a human review of the diff (rather than a dedicated unit test) is adequate, consistent with sibling `main.ts` files across the repo. |
 
 ## Infrastructure — bucketed
 
