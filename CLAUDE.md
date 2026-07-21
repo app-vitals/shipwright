@@ -168,7 +168,7 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/architecture.md** — the four-artifact A→B→C→D design (plugin / metrics / agent / task-store), supporting surfaces, and workspace layout
 - **docs/testing.md** — the five-layer test model (unit / integration / smoke / e2e / content), run commands, speed budgets, and the isolation contract
 - **docs/metrics.md** — metrics service (B): JSON endpoints, server-rendered dashboard, dual auth (Bearer / session), and environment
-- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the ten-model Prisma store, and encryption/env notes
+- **docs/agent.md** — Shipwright agent (C): runtime + admin CRUD APIs, the eleven-model Prisma store, and encryption/env notes
 - **docs/agent-api.md** — the admin CRUD API (D): agents, envs, crons, cron runs, tools, tokens, plugins, and chat-token-usage endpoints, plus auth paths
 - **docs/task-store.md** — task store service (D): the sole HTTP-service backend — tasks, PR tracking, tokens — and troubleshooting
 - **docs/mcp-tools.md** — generated MCP server tool reference (name, description, HTTP method/path, parameters, body) derived from task-store/openapi.json + the tool allowlist; regenerate with `bun run generate:mcp-docs`
