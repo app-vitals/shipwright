@@ -1,0 +1,289 @@
+---
+title: Admin Console
+description: A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, Chat, and Tokens.
+section: Operations
+order: 3
+prev: "/docs/day-to-day-operations"
+next: "/docs/cron-jobs"
+---
+
+# Admin Console
+
+The admin console (`admin/src/admin-ui.ts` and `admin/src/admin-ui-pages.ts`) is a server-rendered
+web UI for operating a Shipwright deployment day to day: managing agents, watching cron and work-queue
+activity, provisioning new Slack apps, browsing the task and PR queues, chatting with an agent, and
+issuing task-store API tokens. Every route below is registered under `/admin/*` in `createAdminUIApp`.
+
+This page is a prose reference, not a tutorial — no screenshots are included (this pipeline can't
+capture live UI images), so each section describes what actually renders on the page: the columns,
+tabs, fields, and buttons.
+
+## Signing in
+
+Admin access requires Google OAuth login (`GET /admin/login` → `GET /admin/auth/google` →
+`GET /admin/auth/callback`). There is no password and no separate admin user table — the callback
+checks the signed-in Google account's email against the `adminAllowedEmails` allowlist first, and
+falls back to agent membership (an `AgentMember` row) if the email isn't an allowlisted admin. Users
+who are neither get a `403 Forbidden`. Session state lives in an `admin_session` httpOnly JWT cookie
+valid for 8 hours; `POST /admin/logout` clears it. A `GET /admin/dev-login` route exists for local
+development only — it's hard-blocked outside non-production environments regardless of configuration.
+
+Every admin page shares one toolbar (top nav) with links to **Agents**, **Provision**, **Tasks**,
+**PRs**, **Chat**, **Task Store Tokens**, and **Metrics**, plus the signed-in user's email and a
+sign-out button.
+
+Some visitors are non-admin members (an email present in `AgentMember` for a specific agent, but not
+in the admin allowlist) — they can see the Agents list and their agent's own detail page, but member
+management, the tasks/PRs/chat/tokens surfaces, and the Danger Zone all require full admin.
+
+## Agents
+
+### Agents list — `GET /admin/agents`
+
+The landing page after login. Renders a table of every agent visible to the current user — the full
+set for admins, or only agents the user is a member of otherwise:
+
+| Column | Contents |
+|---|---|
+| Name | Links to the agent's detail page |
+| Slack ID | The agent's Slack user ID, or `—` if unset |
+| Created | Creation date |
+| (actions) | **Manage**, **Cron Logs**, **Work Queue** buttons |
+
+Admins see two buttons above the table: **+ Provision agent** (→ `/admin/provision`) and
+**+ New local agent** (→ `/admin/agents/new`). After a successful agent deletion the list also shows
+a dismissible "Agent deleted." banner and, if any cleanup steps require manual follow-up (e.g.
+revoking a hand-pasted `GH_TOKEN`), a warning panel listing each manual step.
+
+### New local agent — `GET /admin/agents/new`, `POST /admin/agents`
+
+Admin-only. A short form for creating a self-hosted agent (one that runs on your own infrastructure
+rather than via managed Slack provisioning): an **Agent name** field (required) and an optional
+**Repos** textarea (one `org/repo` per line). Submitting creates the `Agent` row with
+`selfHosted: true`, attaches any repos (validated as `org/repo` format — the whole request rolls back
+if any repo is malformed), and redirects to the new agent's detail page.
+
+### Agent detail — `GET /admin/agents/:id`
+
+The main management surface for a single agent. The header shows the agent name, its Slack ID (if
+any), and — for Slack-provisioned agents — a **Sync Manifest** control that re-pushes the current
+Slack app manifest given a fresh `xoxe.xoxp-` configuration token (`POST
+/admin/agents/:id/sync-manifest`), optionally re-triggering the Slack OAuth reinstall flow. Below the
+header, in order:
+
+**Env Vars** (Slack-provisioned agents only — self-hosted agents skip this card). A table of
+`KEY` / masked value (`••••••••`, with a 🔒 icon on keys marked secret) / delete-button rows, plus an
+add form (`POST /admin/agents/:id/envs`) with `key`, `value`, and a "Mark as secret" checkbox.
+Deleting a row posts to `/admin/agents/:id/envs/delete`.
+
+**Repos** — a table of `org/repo` strings scoped to the agent, each removable
+(`POST /admin/agents/:id/repos/delete`), plus an add form (`POST /admin/agents/:id/repos/add`,
+validated as `org/repo` format).
+
+**Cron Jobs** — split into two sub-tables:
+
+- *System* crons (seeded by `reconcileSystemCrons`, e.g. the `shipwright-loop` driver) — read-only
+  except for **Logs** and **Enable/Disable**; they have no Delete button and no inline Edit, since
+  their contents are owned by the reconciler.
+- *Custom* crons — the same Logs/Toggle actions plus **Delete**, and an **Edit** `<details>` disclosure
+  with inline fields for schedule, prompt, channel, and pre-check script. A form above the table adds a
+  new custom cron: **Schedule** (cron expression), **Prompt**, **Channel ID**, and an **Enabled**
+  checkbox (`POST /admin/agents/:id/crons`).
+
+Each cron row shows its schedule, prompt (prefixed with its name if set), pre-check path, delivery
+target (channel or user), an enabled/disabled badge, its last-run outcome badge and today's run count,
+and its creation date. A cron that is itself a parent (e.g. `shipwright-loop`'s dev-task/review/patch/
+deploy phases) renders a nested "Phases of `<parent>`" sub-table beneath its row, one line per child
+phase cron with the same Logs/Toggle[/Delete] actions.
+
+**Tools** — a table of tool-pattern rows (e.g. `Bash(git:*)`) with an enabled/disabled badge, creation
+date, and per-row **Enable/Disable** (`POST /admin/agents/:id/tools/:toolId/toggle`) and **Delete**
+(`POST /admin/agents/:id/tools/:toolId/delete`) actions, plus an add form
+(`POST /admin/agents/:id/tools`) for a new pattern.
+
+**Task Store Tokens** — a table of tokens minted for this agent (label, created date, Active/Revoked
+status) with a **Revoke** action per active token (`POST /admin/agents/:id/tokens/:tokenId/revoke`)
+and a create form (`POST /admin/agents/:id/tokens`, label optional). A freshly created token's raw
+value is shown once, inline, in a green banner — it is never displayed again. Self-hosted agents also
+get a **Local CLI Access** card here linking to `/admin/tokens?agentId=<id>` for token management.
+
+**Plugins** — a read-only table (package name, version or "latest", enabled/disabled badge, created
+date) — plugin installs happen outside the admin UI.
+
+**Members** (admin-only) — a table of member emails with **Remove** actions
+(`POST /admin/agents/:id/members/delete`) and an add form (`POST /admin/agents/:id/members`).
+Membership is what grants a non-admin user visibility into this one agent.
+
+**Danger Zone** (admin-only) — a single **Delete agent** button (`POST /admin/agents/:id/delete`,
+confirmed via a JS `confirm()` dialog) that runs the full teardown: Kubernetes workload, task-store and
+chat-service tokens/threads, and (if configured) the Slack app, before deleting the `Agent` row itself
+— only once every automatable step has succeeded.
+
+### Cron Logs — `GET /admin/agents/:id/cron-logs`
+
+Reached via the agent list's **Cron Logs** button, the agent detail page's per-cron **Logs** links, or
+directly. Shows every run across every cron the agent owns, filterable by **Cron** (dropdown) and
+**Outcome** (`posted` / `dm` / `silent` / `skipped` / `error`), paginated 20 per page. Table columns:
+Outcome (badge), Cron (name/schedule, links back into this same page filtered to that cron), Started
+(localized timestamp), Duration, Tokens (input/output token counts summed across models), Model
+(per-model badges with per-model USD cost), Phase (the child phase cron this run dispatched, e.g.
+"dev-task", or `—`), and Item (a Task/PR badge linking to the dispatched work item, or `—` for a tick
+with no dispatch).
+
+### Work Queue — `GET /admin/agents/:id/work-queue`
+
+Reached via the agent list's **Work Queue** button. Shows the agent's self-reported ranked work queue
+— the ordered list of tasks/PRs it intends to work next across the dev-task/review/patch/deploy
+phases — as last pushed by the agent itself. If no snapshot has ever been reported, the page shows a
+plain empty-state message instead of erroring. When a snapshot exists, it shows "Last computed:
+`<relative time>`" and a table with columns #, Type (Task/PR badge), Phase (dev-task/review/patch/
+deploy badge), Item (linked id + title), and Age (relative time, title-hover shows the ISO timestamp).
+
+## Provisioning
+
+### Provision start — `GET /admin/provision`, `POST /admin/provision/start`
+
+Admin-only. A three-step wizard (**1. Create Slack App → 2. Authorize → 3. Complete**) for
+provisioning a brand-new Slack-connected agent, or attaching Slack to an existing one. The form has
+three fieldsets:
+
+- **Agent** — a radio choice between "Use existing agent" (dropdown of current agents) and "Create new
+  agent" (name + optional newline-separated repos).
+- **GitHub Authentication** — a radio choice between "Personal Access Token" (a single PAT field) and
+  "GitHub App" (App ID, Installation ID, and a PEM private key textarea).
+- **AI Credentials (optional)** — an Anthropic API Key field and a Claude Code OAuth Token field.
+
+Below the fieldsets, a required **Slack App Configuration Token** field (`xoxe.xoxp-...`) is used once
+to create the Slack app manifest via the Slack API and is never stored. Submitting creates the agent
+(if "new" mode) — rolling it back if provisioning fails — then calls Slack to create the app, storing
+the returned Slack credentials into the agent's env vars, and either shows an **Authorize Slack App →**
+link (OAuth redirect) or, if OAuth client credentials weren't returned, moves straight to completion.
+
+### Provision complete — `GET /admin/provision/complete`
+
+The Slack OAuth callback. Exchanges the OAuth code for a `SLACK_BOT_TOKEN`, stores it in the agent's
+env vars, and either redirects straight to the agent detail page (if this was a reinstall — the agent
+already has a `SLACK_APP_TOKEN`) or renders a **4. Add Socket Token** page prompting for the Socket
+Mode app-level token.
+
+### Socket token — `POST /admin/provision/xapp-token`
+
+The final step: pastes in the `xapp-` Socket Mode token, stores it as `SLACK_APP_TOKEN`, and seeds the
+agent's system crons via `reconcileSystemCrons`. On success, renders a completion page with a
+**View Agent →** link and a **Back to Agents** link. `SHIPWRIGHT_AGENT_API_KEY` and
+`SHIPWRIGHT_TASK_STORE_TOKEN` are **not** minted here — managed agents get both injected directly into
+their Kubernetes Secret at provision time instead.
+
+## Tasks
+
+### Tasks list — `GET /admin/tasks`
+
+Admin-only (the equivalent unauthenticated view for a single public repo lives at `GET /public/tasks`,
+described below). A filterable, paginated (50/page) table of every task-store task. Above the table, a
+**state toggle** — four tabs: **Ready**, **In Progress**, **Blocked**, **Closed** — switches between
+the task-store's `ready`/`in_progress`/`blocked`/`closed` groupings. A filter form (separate from the
+state tabs) lets you narrow by **Status** (exact task-store status, e.g. `pending`, `pr_open`,
+`deployed`), **HITL** (yes/no/any), **Session**, **Repo**, **Source**, and **Agent** (matched by name;
+matching is client-side and shows a warning banner when active). Table columns: ID (links to detail),
+Title (with inline "Waiting: HITL" / "Blocked: `<dep>`" badges when the task has unresolved blockers),
+Status (badge), Assignee (agent link), Session (links to the session detail page), Repo, Source, PR
+(links to the GitHub PR), and Created. Rows are clickable (not just the ID link) and route to the task
+detail page. A task in `in_progress` status gets an inline **Release** button
+(`POST /admin/tasks/:id/release`) that unclaims it.
+
+### Task detail — `GET /admin/tasks/:id`
+
+Reached from the Tasks list or a task-store ID link elsewhere in the UI. Shows the task title, status
+badge, and (if `in_progress`) a **Release** button in the header, followed by:
+
+- A **Blockers** card (if any) — HITL-gate or dependency blockers, dependency ones linking to the
+  blocking task.
+- A **Description** card — the task's markdown description, rendered to HTML (headings, lists, bold,
+  inline code, and fenced code blocks are supported).
+- An **Acceptance Criteria** card — a bulleted list, each item markdown-rendered.
+- A metadata table: Status, Priority, Type, Layer, Source, Assignee, Agent Hint, Claimed By (all agent
+  links), Session (links to session detail), Repo, Branch, PR (links out to GitHub), Issue, Model,
+  Complexity, Hours, HITL (yes/no), Note, Blocked Reason, Merge Commit, and Dependencies (a list of
+  linked task IDs).
+- A **Timeline** card — Added, Started, Claimed, Last Heartbeat, Blocked, Completed, Created, Updated
+  timestamps (only the ones present on the task).
+- A **Pull Request Review** card (if a linked PR record exists) — GitHub PR link, State, Review State,
+  Review Cycles, Patch Cycles, Reviewed/Patched timestamps.
+
+### Session detail — `GET /admin/sessions/:id`
+
+Reached via a task's **Session** link (from either the Tasks list or Task Detail). Shows stat cards for
+Total Tasks, Est. Hours, and Layers, a one-line summary of how many tasks fall into each of
+ready/in_progress/blocked/closed, a task table grouped by that same state (mirroring the Tasks list's
+state taxonomy), and — when the session's tasks reference each other via `dependencies` — a dependency
+graph card rendering each participating task as a card with arrows showing "needs" edges.
+
+### Public task board — `GET /public/tasks`
+
+An unauthenticated, read-only variant of the Tasks list, scoped to a single repo
+(`SHIPWRIGHT_ADMIN_PUBLIC_REPO`). No admin toolbar, no filter form beyond `source`, no state tabs, no
+pagination controls, no row actions (no Release button, no clickable rows) — just the table. Renders a
+degraded empty-state notice if the public repo isn't configured or the task-store fetch fails.
+
+## PRs
+
+### PRs list — `GET /admin/prs`
+
+Admin-only. A filterable, paginated (50/page) table of task-store PR records, with an **Open** /
+**Merged** state-tab toggle at the top. A filter form allows narrowing by **Repo**, **State** (open/
+merged), **Review State** (pending/in_progress/posted/approved), and **Task ID**. Table columns: PR#
+(links to detail), Repo, Task (links to the task detail page), State (badge), Review State (badge),
+Review Cycles, Patch Cycles, Claimed By (agent link), and Created. Rows are clickable and route to the
+PR detail page.
+
+### PR detail — `GET /admin/prs/:id`
+
+Shows the repo and PR number in the header with a state badge, then a metadata table (ID, Repo, PR
+Number linking out to GitHub, Task link, State, Review State, Review Cycles, Patch Cycles, Commit SHA,
+Staged yes/no, Claimed By, Agent ID) and a Timeline card (Created, Claimed, Reviewed, Patched, Merged,
+Last Heartbeat, Updated).
+
+## Chat
+
+### Chat — `GET /admin/chat`
+
+Admin-only. An **Agent** dropdown selects which agent's chat threads to browse
+(`?agentId=`); nothing else renders until an agent is selected. Once selected, shows a **Search
+threads…** box (filters by title, server-side) and a threads pane: a **New Thread** form (optional
+title) plus a list of existing thread links. If the chat service isn't configured
+(`SHIPWRIGHT_CHAT_SERVICE_URL`/`SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` unset), the page shows an error
+banner instead.
+
+### Chat thread — `GET /admin/chat/:agentId/threads/:threadId`
+
+A two-pane layout: a **Threads** sidebar (same list as the chat page, current thread highlighted, plus
+a compact New Thread form) and the main message view. The header shows the thread title (**Rename**
+and **Delete Thread** forms below it) and, if the thread has recorded token usage, a summary line
+(input/output token counts and USD cost). Messages render as chat bubbles color-coded by role (user,
+assistant, system), with assistant messages rendered as markdown and annotated with upload/plan-link
+marker badges, attachment badges, error badges (rate-limited/timeout/upstream/generic), and a per-
+message token/cost line. A compose box at the bottom (textarea + **Attach file** + **Send**) posts to
+the thread via `fetch()` against `POST /admin/chat/:agentId/threads/:threadId/messages/upload`, then
+polls `GET .../messages.json` every 3 seconds (up to 90 seconds) for the assistant's reply, showing a
+"thinking…" indicator while it waits.
+
+## Tokens
+
+### Task Store Tokens — `GET /admin/tokens`
+
+Admin-only. A table of task-store API tokens (ID, Label, Agent — linked, or "(admin)" for an
+admin-scoped token, Created, Active/Revoked status) with a **Revoke** action
+(`POST /admin/tokens/:id/revoke`, confirmed via a JS dialog) per active token, and a **Create token**
+form below (Label required, Agent optional — blank mints an admin-scoped token). A freshly created
+token's raw value is shown once in a green banner with a **Copy** button and, if the task-store base
+URL is configured, a ready-to-paste `export SHIPWRIGHT_TASK_STORE_URL=…` /
+`export SHIPWRIGHT_TASK_STORE_TOKEN=…` block. If the token store isn't configured, the page shows a
+degraded-mode warning banner instead of the create form.
+
+## See also
+
+- [Configuration Reference](/docs/reference) — env vars referenced throughout this page
+  (`SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, `SHIPWRIGHT_CHAT_SERVICE_URL`, `SHIPWRIGHT_ADMIN_PUBLIC_REPO`,
+  and more)
+- [Task Store API](/docs/task-store-api) — the HTTP API the Tasks pages read from
+- [PRs API](/docs/prs-api) — the HTTP API the PRs pages read from
