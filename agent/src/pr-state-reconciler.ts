@@ -163,6 +163,17 @@ export interface PrStateReconcilerDeps {
    * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
+  /**
+   * Pause for `ms` milliseconds (PSR-1.2) — called once per record/task
+   * iteration across every gh-call-issuing loop in this file, so a large
+   * batch spreads its calls out over time instead of firing them all in a
+   * tight sequential burst (confirmed live: 70+ calls in 21s exhausted the
+   * shared GH_TOKEN's GraphQL rate limit for ~9 minutes, blocking sibling
+   * agents' dispatch work). Production implementations use a real
+   * `setTimeout`; tests inject a no-op so existing correctness-focused tests
+   * stay fast and unaffected.
+   */
+  delay: (ms: number) => Promise<void>;
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -218,11 +229,24 @@ export interface PrReviewStateReconcilerDeps {
   ) => Promise<PrReviewData>;
   /** PATCH a task-store PR record's fields. */
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  /** Pause for `ms` milliseconds (PSR-1.2) — see `PrStateReconcilerDeps.delay`'s doc comment for the full rationale. */
+  delay: (ms: number) => Promise<void>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_LIMIT = 50;
+
+/**
+ * Default pause between gh-call-issuing loop iterations (PSR-1.2), in ms.
+ * Overridable via SHIPWRIGHT_RECONCILER_DELAY_MS for ops tuning without a
+ * code change. Chosen to spread a large batch's calls out over real time
+ * (e.g. 70 records × 300ms ≈ 21s instead of a sub-second burst) without
+ * meaningfully slowing a normal-sized reconcile pass.
+ */
+const DEFAULT_RECONCILER_DELAY_MS = Number(
+  process.env.SHIPWRIGHT_RECONCILER_DELAY_MS ?? 300,
+);
 
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
@@ -420,6 +444,7 @@ export async function reconcilePrOpenTasks(
         err instanceof Error ? err.message : String(err),
       );
     }
+    await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
   }
 }
 
@@ -498,6 +523,7 @@ export async function reconcileOrphanedTasks(
         err instanceof Error ? err.message : String(err),
       );
     }
+    await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
   }
 }
 
@@ -539,6 +565,7 @@ export async function reconcilePrState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 
@@ -781,6 +808,7 @@ export async function reconcileReviewState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 
@@ -809,6 +837,7 @@ export async function reconcileReviewState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 }
@@ -1042,6 +1071,7 @@ export function buildProductionDeps(opts: {
       fetchFn: opts.fetchFn,
     }),
     now: () => new Date().toISOString(),
+    delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
 
@@ -1147,5 +1177,6 @@ export function buildReviewStateProductionDeps(opts: {
       const response = await ghGraphql<ReviewGraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
+    delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
