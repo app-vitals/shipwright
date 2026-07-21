@@ -292,6 +292,67 @@ describe("HttpCronRunReporter", () => {
     expect(breakdown[1].inputTokens).toBe(100);
   });
 
+  // ─── recordProgress ────────────────────────────────────────────────────────
+
+  test("recordProgress PATCHes to correct URL with only modelBreakdown in body", async () => {
+    const reporter = makeReporter();
+    const modelBreakdown = [
+      {
+        model: "claude-sonnet-4-5",
+        inputTokens: 200,
+        outputTokens: 100,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.002,
+      },
+    ];
+
+    await reporter.recordProgress("cron-123", "run-abc", modelBreakdown);
+
+    expect(state.captured).toHaveLength(1);
+    expect(state.captured[0].method).toBe("PATCH");
+    expect(state.captured[0].url).toContain(
+      `/agents/${AGENT_ID}/crons/cron-123/runs/run-abc`,
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["modelBreakdown"]);
+    expect(body.completedAt).toBeUndefined();
+    expect(body.outcome).toBeUndefined();
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown).toHaveLength(1);
+    expect(breakdown[0].model).toBe("claude-sonnet-4-5");
+    expect(breakdown[0].inputTokens).toBe(200);
+  });
+
+  test("recordProgress does nothing when runId is null", async () => {
+    const reporter = makeReporter();
+    await reporter.recordProgress("cron-123", null, []);
+
+    expect(state.captured).toHaveLength(0);
+  });
+
+  test("recordProgress swallows network errors (does not throw)", async () => {
+    const reporter = new HttpCronRunReporter({
+      apiUrl: "http://localhost:19999", // nothing listening
+      agentId: AGENT_ID,
+      apiKey: API_KEY,
+    });
+
+    await expect(
+      reporter.recordProgress("cron-net-err", "run-1", []),
+    ).resolves.toBeUndefined();
+  });
+
+  test("recordProgress swallows HTTP error responses (does not throw)", async () => {
+    state.patchStatusToReturn = 500;
+    const reporter = makeReporter();
+
+    await expect(
+      reporter.recordProgress("cron-http-err", "run-1", []),
+    ).resolves.toBeUndefined();
+  });
+
   // ─── skipRun ───────────────────────────────────────────────────────────────
 
   test("skipRun PATCHes to correct URL with skipped:true and skipReason", async () => {
@@ -381,6 +442,13 @@ describe("NoopCronRunReporter", () => {
     const reporter = new NoopCronRunReporter();
     await expect(
       reporter.skipRun("any", null, new Date(), "preCheck:not-found"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("recordProgress resolves immediately and does not throw", async () => {
+    const reporter = new NoopCronRunReporter();
+    await expect(
+      reporter.recordProgress("any", null, []),
     ).resolves.toBeUndefined();
   });
 });

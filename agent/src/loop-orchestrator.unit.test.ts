@@ -94,6 +94,7 @@ function makeRecordingReporter(): {
     ) {
       skips.push({ cronId, runId, skipReason, phaseId, itemType, itemId });
     },
+    async recordProgress() {},
   };
 
   return { reporter, creates, completes, skips };
