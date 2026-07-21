@@ -188,3 +188,74 @@ describe("SKILL.md — graceful no-match handling", () => {
     expect(hasFallback).toBe(true);
   });
 });
+
+describe("SKILL.md — --item mode", () => {
+  it("Usage section documents --item mode", () => {
+    expect(content).toContain("--item");
+  });
+
+  it("documents both accepted --item value forms (org/repo#N and bare taskId)", () => {
+    expect(content).toContain("org/repo#");
+  });
+
+  it("has a Step 0 that routes on --item vs name+time", () => {
+    const hasRouting =
+      content.includes("ITEM_ARG") ||
+      content.includes("item mode") ||
+      content.includes("item-mode");
+    expect(hasRouting).toBe(true);
+  });
+});
+
+describe("SKILL.md — admin API run lookup", () => {
+  it("references GET /agents/{id}/crons for resolving loopCronId/phaseId", () => {
+    const hasCronsEndpoint =
+      content.includes("/agents/$SHIPWRIGHT_AGENT_ID/crons") ||
+      content.includes("/agents/{id}/crons");
+    expect(hasCronsEndpoint).toBe(true);
+  });
+
+  it("references GET /agents/{id}/crons/{loopCronId}/runs", () => {
+    const hasRunsEndpoint =
+      content.includes("/crons/$LOOP_CRON_ID/runs") ||
+      content.includes("/crons/{loopCronId}/runs") ||
+      content.includes("/crons/${LOOP_CRON_ID}/runs");
+    expect(hasRunsEndpoint).toBe(true);
+  });
+
+  it("mentions loopCronId and phaseId concepts", () => {
+    expect(content).toContain("loopCronId");
+    expect(content).toContain("phaseId");
+  });
+
+  it("mentions itemId filtering for item mode", () => {
+    expect(content).toContain("itemId");
+  });
+
+  it("documents that runs endpoint filtering is done client-side, not via query params", () => {
+    const hasClientSideNote =
+      content.includes("client-side") || content.includes("client side");
+    expect(hasClientSideNote).toBe(true);
+  });
+
+  it("uses SHIPWRIGHT_AGENT_API_KEY bearer auth for admin API calls", () => {
+    expect(content).toContain(
+      "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY",
+    );
+  });
+});
+
+describe("SKILL.md — fallback: pre-admin-API history retained", () => {
+  it("labels the old ±90min/mtime approach as a documented fallback", () => {
+    const hasFallbackLabel =
+      content.includes("Fallback") || content.includes("fallback");
+    // Must still retain the old mtime window content alongside the fallback label
+    const hasOldWindowContent =
+      content.includes("90") && content.includes("mtime");
+    expect(hasFallbackLabel && hasOldWindowContent).toBe(true);
+  });
+
+  it("still mentions the [Cron job: string-matching approach as part of the fallback", () => {
+    expect(content).toContain("[Cron job:");
+  });
+});
