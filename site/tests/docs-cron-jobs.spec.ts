@@ -43,18 +43,12 @@ test("cron-jobs page has an 'investigating a cron' section", async ({
   await expect(heading).toBeVisible();
 });
 
-test("prev/next navigation links are present on cron-jobs page", async ({
+test("prev navigation link is present on cron-jobs page", async ({
   page,
 }) => {
   await page.goto("/docs/cron-jobs");
-  // prev → admin-console
+  // prev → slack-integration
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
-  expect(await prevLink.getAttribute("href")).toBe("/docs/admin-console");
-  // next → the-shipwright-loop
-  const nextLink = page.locator("a[data-nav='next']");
-  await expect(nextLink).toBeVisible();
-  expect(await nextLink.getAttribute("href")).toBe(
-    "/docs/the-shipwright-loop",
-  );
+  expect(await prevLink.getAttribute("href")).toBe("/docs/slack-integration");
 });
