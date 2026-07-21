@@ -487,6 +487,46 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  // ─── staged-review exclusion, independent of reviewState (CHU-2.5) ──────────
+
+  test("excludes a PR whose record has staged:true and matching commitSha, even when reviewState reads pending (the #1769 regression case)", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111",
+        reviewState: "pending",
+        staged: true,
+      })),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns a candidate when record has staged:true but a different commitSha (author pushed since staging)", async () => {
+    const pr = makePr({ headRefOid: "newsha999" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "oldsha111",
+        reviewState: "pending",
+        staged: true,
+      })),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("newsha999");
+  });
+
+  test("returns a candidate when record has staged:false and reviewState:pending (unaffected by the staged guard)", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111",
+        reviewState: "pending",
+        staged: false,
+      })),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
   // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
 
   test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {
