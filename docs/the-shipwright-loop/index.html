@@ -1,0 +1,117 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v6.4.8"><title>The Shipwright Loop — Shipwright Harness</title><meta name="description" content="How the shipwright-loop cron mechanically dispatches work — reading phase toggles, qualifying candidates, a single FIFO work-selector across tasks and PRs, pre-claiming, and draining until dry."><link rel="canonical" href="https://shipwrightharness.com/docs/the-shipwright-loop/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/the-shipwright-loop/"><meta property="og:title" content="The Shipwright Loop — Shipwright Harness"><meta property="og:description" content="How the shipwright-loop cron mechanically dispatches work — reading phase toggles, qualifying candidates, a single FIFO work-selector across tasks and PRs, pre-claiming, and draining until dry."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/consts.9QaJRfcJ.css"><style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:0;transform:translate(-100%);width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:transform .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{transform:translate(0)}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen" data-astro-cid-mw7aashj> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="hidden md:flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> <a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary" data-astro-cid-mw7aashj>Book a call</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Mobile-only nav links (hidden on desktop) --> <nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj><a href="/docs" class="docs-sidebar-link" data-astro-cid-mw7aashj>Docs</a></li> <li data-astro-cid-mw7aashj><a href="/compare" class="docs-sidebar-link" data-astro-cid-mw7aashj>Compare</a></li> <li data-astro-cid-mw7aashj><a href="https://github.com/app-vitals/shipwright" class="docs-sidebar-link" data-astro-cid-mw7aashj>GitHub ↗</a></li> <li data-astro-cid-mw7aashj><a href="https://vitals-os.com/cal/book/discovery" class="docs-sidebar-link" data-astro-cid-mw7aashj>Book a call</a></li> </ul> </nav> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/commands-reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Commands Reference </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/day-to-day-operations" class="docs-sidebar-link" data-astro-cid-mw7aashj> Day-to-Day Operations </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/the-shipwright-loop" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> The Shipwright Loop </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="the-shipwright-loop">The Shipwright Loop</h1>
+<p><code>shipwright-loop</code> is the one cron that drives the entire autonomous delivery loop. Instead of
+scheduling <code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, and <code>shipwright-deploy</code>
+as four independent crons that race each other on their own timers, the loop wraps all four behind
+a single tick: it reads which phases are enabled, collects candidate work from each, picks the
+single oldest ready item across the whole set, claims it, dispatches the matching one-shot command,
+and repeats until nothing is left to do.</p>
+<p>This page documents the mechanics of that dispatch loop. For guidance on <strong>which phases to enable
+and how much autonomy to grant</strong>, see <a href="/docs/configuring-autonomy">Configuring Autonomy</a> — that
+page covers the “how much” question; this one covers the “how it runs” question once the crons are
+on.</p>
+<h2 id="how-dispatch-works">How dispatch works</h2>
+<p>Each tick of <code>shipwright-loop</code> runs the following sequence:</p>
+<ol>
+<li><strong>Read the four phase toggles.</strong> The loop reads four independent booleans — one per
+pipeline phase — off child cron rows named <code>shipwright-dev-task</code>, <code>shipwright-review</code>,
+<code>shipwright-patch</code>, and <code>shipwright-deploy</code>, all parented under the <code>shipwright-loop</code> cron.
+Each toggle is resolved and enabled/disabled entirely independently of the others. The loop
+deliberately never reads <code>shipwright-review-patch</code>’s flag or invokes <code>/shipwright:review-patch</code>
+— the loop’s own per-tick selection across all four phases supersedes that command’s internal
+review-vs-patch decision.</li>
+<li><strong>Qualify candidates per enabled phase.</strong> For each enabled phase, the loop calls that phase’s
+own qualification function to get structured candidates: dev-task candidates are tasks ready to
+build, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase
+contributes nothing — its qualification function is never called, so a phase with no candidates
+never even shows up as an empty run.</li>
+<li><strong>Merge into one candidate list.</strong> The PR candidates from every enabled phase (review, patch,
+deploy) are merged into a single flat array. Task candidates stay their own list. Both lists
+feed the same selection step below.</li>
+<li><strong>Run a single FIFO work-selector.</strong> The loop calls the work-selector exactly once per
+iteration, passing it the merged task list and the merged PR list together. See
+<a href="#the-fifo-work-selector">The FIFO work-selector</a> below for how it picks a winner.</li>
+<li><strong>Pre-claim the winning item.</strong> Before anything is dispatched, the selected item is claimed
+directly against the task store — task items via a task claim, PR items via a PR claim. A <code>409</code>
+conflict (another agent replica already claimed it since it was collected) skips dispatch
+entirely: no one-shot command runs and nothing is recorded as a run. The loop simply re-collects
+candidates and continues to the next iteration, which naturally excludes the now-claimed item.</li>
+<li><strong>Dispatch the matching one-shot command.</strong> Once pre-claimed, the loop dispatches the one-shot
+command for that item: a task item always dispatches <code>/shipwright:dev-task</code>; a PR item
+dispatches <code>/shipwright:review</code>, <code>/shipwright:patch</code>, or <code>/shipwright:deploy</code> depending on which
+phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the
+claimed record’s id and commit SHA to the dispatched command string, so the downstream command
+can recognize the loop already holds the claim instead of re-claiming (and conflicting with
+itself).</li>
+<li><strong>Repeat immediately — drain until dry.</strong> The loop doesn’t wait for the next cron tick to look
+for more work. It loops back to step 1 right away, re-reading toggles and re-collecting
+candidates fresh each time (so a phase toggled off mid-drain, or work freshly consumed by the
+previous iteration, is reflected immediately). It keeps selecting and dispatching one item at a
+time until the work-selector returns nothing — an idle, drained queue — at which point the tick
+ends.</li>
+</ol>
+<p>An idle tick that finds nothing to select reports no run at all: a phase with zero candidates
+never generates a row, and the loop only touches its run-reporting once a real item has been
+selected and pre-claimed. Only genuinely dispatched commands show up in run history.</p>
+<h2 id="the-fifo-work-selector">The FIFO work-selector</h2>
+<p>The actual “which item goes next” decision is a single, deliberately simple rule: <strong>strict
+age-based FIFO across both tasks and PRs, with no phase-priority bias.</strong></p>
+<p>Concretely, the selector is handed the merged task list and merged PR list from step 3 above, and
+picks whichever single candidate — task or PR, regardless of phase — has the oldest age. Tasks are
+aged by their creation time; PRs are aged by whenever they first became ready for their current
+phase (review, patch, or deploy). There’s no rule that says “always drain dev-task before review”
+or “PRs always win over tasks” — the oldest ready item wins, full stop, whichever bucket it came
+from.</p>
+<p>This matters in practice: if a task has sat in the queue longer than any open PR needs review,
+the loop dispatches <code>/shipwright:dev-task</code> for that task first, even with review/patch/deploy all
+enabled. The reverse is equally true — a PR that’s been waiting for review longer than the oldest
+pending task gets picked before that task does. Nothing about the selection is weighted by phase;
+age alone decides.</p>
+<h2 id="cross-tick-state">Cross-tick state</h2>
+<p>A few pieces of state persist across ticks (not just within a single drain) to keep dispatch
+sane:</p>
+<ul>
+<li><strong>Concurrency guard.</strong> If a prior tick is still draining when the next tick fires, the new tick
+is a no-op — only one drain runs at a time per agent.</li>
+<li><strong>Redispatch cooldown.</strong> A PR that was just dispatched at a given commit SHA is suppressed from
+the candidate pool for a cooldown window, so an unchanged PR doesn’t get re-dispatched on every
+tick before anything about it has changed.</li>
+<li><strong>Spin detection.</strong> If the same item is dispatched several times in a row, the loop logs a
+warning so a stuck candidate or infinite loop is observable rather than silent.</li>
+</ul>
+<h2 id="enabling-phases">Enabling phases</h2>
+<p>Whether a phase’s toggle is on at all is an autonomy decision, not a dispatch-mechanics one. See
+<a href="/docs/configuring-autonomy">Configuring Autonomy</a> for the ramp-up path — starting with
+<code>shipwright-dev-task</code> alone and adding review, patch, and deploy as you gain confidence — and for
+how <code>state/agent-policy.md</code> controls what the review and deploy phases are allowed to do once
+they’re enabled.</p>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/cron-jobs" data-nav="prev" data-astro-cid-mw7aashj>
+← Previous
+</a>  </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#how-dispatch-works" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> How dispatch works </a> </li><li data-astro-cid-mw7aashj> <a href="#the-fifo-work-selector" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> The FIFO work-selector </a> </li><li data-astro-cid-mw7aashj> <a href="#cross-tick-state" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Cross-tick state </a> </li><li data-astro-cid-mw7aashj> <a href="#enabling-phases" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Enabling phases </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> <a href="https://vitals-os.com/cal/book/discovery" data-astro-cid-mw7aashj>Book a call</a> </nav> </div> </footer> </body></html>
