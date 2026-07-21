@@ -1,0 +1,131 @@
+---
+title: Day-to-Day Operations
+description: The operator quick-start — what you need, a first-day checklist, and the ongoing loop of checking cron health, triaging the PR queue, and responding to HITL escalations.
+section: Operations
+order: 2
+prev: "/docs/slack-integration"
+---
+
+# Day-to-Day Operations
+
+This is the operator quick-start for running a live Shipwright agent day to day. It covers what
+you need before you start, a first-day checklist, and the ongoing loop you'll repeat once the
+agent is running: checking cron health, triaging the open-PR queue, and noticing and responding
+to human-in-the-loop (HITL) escalations.
+
+## What you need
+
+- **A live, provisioned agent.** Either a managed agent provisioned via `/admin/provision` (see
+  [Slack Integration](/docs/slack-integration) for the Slack setup portion) or a self-hosted agent
+  running through `task stack` / a manual deployment (see
+  [Deploying to Cloud](/docs/deploying-to-cloud)).
+- **Admin console access.** The admin UI is at `/admin`, authenticated via Google OAuth. You need
+  an account allowed by the admin service's configured access list to sign in.
+- **Slack access, if the agent is Slack-connected.** Optional — only needed if the agent posts
+  cron results and takes DMs/mentions through Slack, as covered in
+  [Slack Integration](/docs/slack-integration). An agent can also run without Slack, driven
+  through the admin console's Chat tab instead.
+
+## Day one checklist
+
+Once you have console access, work through this list before leaving the agent unattended:
+
+1. **Find your agent.** Go to `/admin/agents` and open your agent's detail page
+   (`/admin/agents/:id`) to confirm it exists and see its configuration.
+2. **Check which crons are enabled.** The agent detail page lists its cron jobs. Pipeline phase
+   crons (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, `shipwright-deploy`) and
+   the `shipwright-loop` orchestrator are the ones that drive autonomous work — confirm the set you
+   expect is turned on. A standalone phase cron with `shipwright-loop` disabled is inert, so if
+   nothing seems to be happening, that's the first thing to check.
+3. **Read the first cron logs.** Open `/admin/agents/:id/cron-logs` to see the run history for
+   every cron the agent owns — each run shows an outcome (`completed`, `failed`, or `skipped`),
+   start time, duration, and (when the run dispatched work) the task or PR it acted on. Filter by
+   `?cronId=` or `?outcome=` to narrow the view.
+4. **Check the work queue.** `/admin/agents/:id/work-queue` shows the agent's latest self-reported
+   ranked queue — the tasks and PRs it sees as pending work, oldest first, across the dev-task,
+   review, patch, and deploy phases. An empty queue with no snapshot yet usually means the agent
+   hasn't ticked since this feature shipped, or `shipwright-loop` isn't enabled.
+5. **Look at open PRs.** `/admin/prs` lists PRs the agent has opened or is tracking, filterable by
+   `?state=`, `?reviewState=`, `?repo=`, and `?taskId=`. Skim it so you know what's in flight.
+6. **Look at tasks with an HITL gate.** `/admin/tasks?hitl=true` filters the task list to tasks
+   flagged `hitl: true`. If any are unfamiliar, open the task detail page
+   (`/admin/tasks/:id`) — it shows the raw `HITL: yes/no` field and, when the task is blocked, a
+   "Blocked Reason" field.
+7. **If Slack is connected, confirm you're in the loop.** Make sure you (or the right humans) are
+   in the channel or DM path the agent posts to, since that's how you'll hear about escalations —
+   see the "Noticing and responding to a HITL escalation" section below.
+
+## The ongoing loop
+
+Once the agent is up and running, day-to-day operation is mostly a light, recurring check across
+three things: cron health, the open-PR queue, and HITL escalations.
+
+### Reading cron health
+
+`/admin/agents/:id/cron-logs` is the single place to check whether the agent's crons are actually
+running and doing useful work. Each row is one cron run, with:
+
+- **Outcome** — `completed` (the run finished normally), `failed` (the run errored — hover the
+  badge for the error message), or `skipped` (the run didn't execute — hover the badge for the
+  skip reason).
+- **Owning cron, start time, duration, and — when the run dispatched against a task or PR — which
+  one.**
+
+Use the `?cronId=` and `?outcome=` query filters to narrow down to, for example, only `failed`
+runs, or only runs from `shipwright-loop`. A steady stream of `failed` outcomes on the same cron
+is the clearest signal something needs attention. The agent detail page also surfaces each cron's
+last run time and outcome inline, so you can spot a stalled cron (no recent runs) without opening
+the full log.
+
+### Triaging the open-PR queue
+
+`/admin/prs` is the queue view. Filter by `?state=` to see what's open vs. merged/closed, by
+`?reviewState=` to see what's pending review vs. already reviewed, and by `?repo=` or `?taskId=`
+to scope to a specific repository or task. Opening a PR row (`/admin/prs/:id`) shows its detail —
+useful for checking whether a PR has been sitting in the same review state longer than expected,
+or whether it's linked back to the task that produced it.
+
+The work-queue view (`/admin/agents/:id/work-queue`) complements this: it's the agent's own
+ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
+handy for confirming the agent agrees with what you see in the PR list.
+
+### Noticing and responding to a HITL escalation
+
+Some tasks and PRs require a human before the agent can proceed — the `hitl: true` field marks
+these. This is a real gap worth understanding precisely, because there's no automated push
+notification built into the platform beyond the agent's own message:
+
+- **`hitl: true` with no notification sent yet** is an agent-actionable block — a properly
+  functioning agent is expected to post a message (typically to Slack) flagging the situation,
+  then record that it notified you.
+- **`hitl: true` with a notification already sent** means the agent has already flagged it and is
+  passively waiting on a human action.
+
+Several pipeline steps set `hitl: true` automatically on failure — for example, a post-merge CI
+failure, a deploy-stage or canary failure, a pipeline timeout, or an unresolved second round of
+review disagreement during patching.
+
+In practice, today, the two ways to notice an escalation are:
+
+1. **Watch for the agent's own Slack message.** If the agent is Slack-connected, this is usually
+   the first signal — it should post to its configured channel or DM you directly when it hits a
+   HITL gate.
+2. **Periodically check the admin console.** `/admin/tasks?hitl=true` filters to every task with
+   the HITL flag set. The task list shows a "Waiting: HITL" badge, though that badge alone doesn't
+   distinguish "notification already sent" from "notification still pending" — open the task
+   detail page (`/admin/tasks/:id`) for that distinction: it shows either "HITL gate (notification
+   sent — awaiting clearance)" or "HITL gate (notification pending)" under Blockers. `/admin/prs`
+   surfaces the same signal for PR-level blocks.
+
+Once you've picked up the escalation, `/shipwright:hitl {task-id}` is the command to run locally in
+Claude Code to work through it: it loads the task's context (including any `## Human steps`
+section), assists hands-on with infra execution (Terraform, Helm, kubectl, gcloud, and similar
+tooling are all fair game), and marks the task done in the task store once you confirm you're
+finished.
+
+## Next steps
+
+- Deep-dive the platform's underlying model — see [The Agent](/docs/the-agent) for cron internals
+  and the Prisma data model.
+- Revisit [Slack Integration](/docs/slack-integration) if you're still setting up how the agent
+  communicates with your team.
