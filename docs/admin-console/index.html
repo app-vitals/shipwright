@@ -1,0 +1,276 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v6.4.8"><title>Admin Console — Shipwright Harness</title><meta name="description" content="A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, Chat, and Tokens."><link rel="canonical" href="https://shipwrightharness.com/docs/admin-console/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/admin-console/"><meta property="og:title" content="Admin Console — Shipwright Harness"><meta property="og:description" content="A tab-by-tab walkthrough of the Shipwright admin UI — Agents, Provisioning, Tasks, PRs, Chat, and Tokens."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/consts.BaF6Q8XI.css"><style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:0;transform:translate(-100%);width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:transform .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{transform:translate(0)}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen" data-astro-cid-mw7aashj> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="hidden md:flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> <a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary" data-astro-cid-mw7aashj>Book a call</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Mobile-only nav links (hidden on desktop) --> <nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj><a href="/docs" class="docs-sidebar-link" data-astro-cid-mw7aashj>Docs</a></li> <li data-astro-cid-mw7aashj><a href="/compare" class="docs-sidebar-link" data-astro-cid-mw7aashj>Compare</a></li> <li data-astro-cid-mw7aashj><a href="https://github.com/app-vitals/shipwright" class="docs-sidebar-link" data-astro-cid-mw7aashj>GitHub ↗</a></li> <li data-astro-cid-mw7aashj><a href="https://vitals-os.com/cal/book/discovery" class="docs-sidebar-link" data-astro-cid-mw7aashj>Book a call</a></li> </ul> </nav> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/commands-reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Commands Reference </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/day-to-day-operations" class="docs-sidebar-link" data-astro-cid-mw7aashj> Day-to-Day Operations </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/admin-console" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Admin Console </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/the-shipwright-loop" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Shipwright Loop </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="admin-console">Admin Console</h1>
+<p>The admin console (<code>admin/src/admin-ui.ts</code> and <code>admin/src/admin-ui-pages.ts</code>) is a server-rendered
+web UI for operating a Shipwright deployment day to day: managing agents, watching cron and work-queue
+activity, provisioning new Slack apps, browsing the task and PR queues, chatting with an agent, and
+issuing task-store API tokens. Every route below is registered under <code>/admin/*</code> in <code>createAdminUIApp</code>.</p>
+<p>This page is a prose reference, not a tutorial — no screenshots are included (this pipeline can’t
+capture live UI images), so each section describes what actually renders on the page: the columns,
+tabs, fields, and buttons.</p>
+<h2 id="signing-in">Signing in</h2>
+<p>Admin access requires Google OAuth login (<code>GET /admin/login</code> → <code>GET /admin/auth/google</code> →
+<code>GET /admin/auth/callback</code>). There is no password and no separate admin user table — the callback
+checks the signed-in Google account’s email against the <code>adminAllowedEmails</code> allowlist first, and
+falls back to agent membership (an <code>AgentMember</code> row) if the email isn’t an allowlisted admin. Users
+who are neither get a <code>403 Forbidden</code>. Session state lives in an <code>admin_session</code> httpOnly JWT cookie
+valid for 8 hours; <code>POST /admin/logout</code> clears it. A <code>GET /admin/dev-login</code> route exists for local
+development only — it’s hard-blocked in production regardless of configuration, and even outside
+production it only works if <code>ADMIN_DEV_AUTH=true</code> is set (off by default).</p>
+<p>Every admin page shares one toolbar (top nav) with links to <strong>Agents</strong>, <strong>Provision</strong>, <strong>Tasks</strong>,
+<strong>PRs</strong>, <strong>Chat</strong>, <strong>Task Store Tokens</strong>, and <strong>Metrics</strong>, plus the signed-in user’s email and a
+sign-out button.</p>
+<p>Some visitors are non-admin members (an email present in <code>AgentMember</code> for a specific agent, but not
+in the admin allowlist) — they can see the Agents list and their agent’s own detail page, but member
+management, the tasks/PRs/chat/tokens surfaces, and the Danger Zone all require full admin.</p>
+<h2 id="agents">Agents</h2>
+<h3 id="agents-list--get-adminagents">Agents list — <code>GET /admin/agents</code></h3>
+<p>The landing page after login. Renders a table of every agent visible to the current user — the full
+set for admins, or only agents the user is a member of otherwise:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<table><thead><tr><th>Column</th><th>Contents</th></tr></thead><tbody><tr><td>Name</td><td>Links to the agent’s detail page</td></tr><tr><td>Slack ID</td><td>The agent’s Slack user ID, or <code>—</code> if unset</td></tr><tr><td>Created</td><td>Creation date</td></tr><tr><td>(actions)</td><td><strong>Manage</strong>, <strong>Cron Logs</strong>, <strong>Work Queue</strong> buttons</td></tr></tbody></table>
+<p>Admins see two buttons above the table: <strong>+ Provision agent</strong> (→ <code>/admin/provision</code>) and
+<strong>+ New local agent</strong> (→ <code>/admin/agents/new</code>). After a successful agent deletion the list also shows
+a dismissible “Agent deleted.” banner and, if any cleanup steps require manual follow-up (e.g.
+revoking a hand-pasted <code>GH_TOKEN</code>), a warning panel listing each manual step.</p>
+<h3 id="new-local-agent--get-adminagentsnew-post-adminagents">New local agent — <code>GET /admin/agents/new</code>, <code>POST /admin/agents</code></h3>
+<p>Admin-only. A short form for creating a self-hosted agent (one that runs on your own infrastructure
+rather than via managed Slack provisioning): an <strong>Agent name</strong> field (required) and an optional
+<strong>Repos</strong> textarea (one <code>org/repo</code> per line). Submitting creates the <code>Agent</code> row with
+<code>selfHosted: true</code>, attaches any repos (validated as <code>org/repo</code> format — the whole request rolls back
+if any repo is malformed), and redirects to the new agent’s detail page.</p>
+<h3 id="agent-detail--get-adminagentsid">Agent detail — <code>GET /admin/agents/:id</code></h3>
+<p>The main management surface for a single agent. The header shows the agent name, its Slack ID (if
+any), and — for Slack-provisioned agents — a <strong>Sync Manifest</strong> control that re-pushes the current
+Slack app manifest given a fresh <code>xoxe.xoxp-</code> configuration token (<code>POST /admin/agents/:id/sync-manifest</code>), optionally re-triggering the Slack OAuth reinstall flow. Below the
+header, in order:</p>
+<p><strong>Env Vars</strong> (Slack-provisioned agents only — self-hosted agents skip this card). A table of
+<code>KEY</code> / masked value (<code>••••••••</code>, with a 🔒 icon on keys marked secret) / delete-button rows, plus an
+add form (<code>POST /admin/agents/:id/envs</code>) with <code>key</code>, <code>value</code>, and a “Mark as secret” checkbox.
+Deleting a row posts to <code>/admin/agents/:id/envs/delete</code>.</p>
+<p><strong>Repos</strong> — a table of <code>org/repo</code> strings scoped to the agent, each removable
+(<code>POST /admin/agents/:id/repos/delete</code>), plus an add form (<code>POST /admin/agents/:id/repos/add</code>,
+validated as <code>org/repo</code> format).</p>
+<p><strong>Cron Jobs</strong> — split into two sub-tables:</p>
+<ul>
+<li><em>System</em> crons (seeded by <code>reconcileSystemCrons</code>, e.g. the <code>shipwright-loop</code> driver) — read-only
+except for <strong>Logs</strong> and <strong>Enable/Disable</strong>; they have no Delete button and no inline Edit, since
+their contents are owned by the reconciler.</li>
+<li><em>Custom</em> crons — the same Logs/Toggle actions plus <strong>Delete</strong>, and an <strong>Edit</strong> <code>&lt;details&gt;</code> disclosure
+with inline fields for schedule, prompt, channel, and pre-check script. A form above the table adds a
+new custom cron: <strong>Schedule</strong> (cron expression), <strong>Prompt</strong>, <strong>Channel ID</strong>, and an <strong>Enabled</strong>
+checkbox (<code>POST /admin/agents/:id/crons</code>).</li>
+</ul>
+<p>Each cron row shows its schedule, prompt (prefixed with its name if set), pre-check path, delivery
+target (channel or user), an enabled/disabled badge, its last-run outcome badge and today’s run count,
+and its creation date. A cron that is itself a parent (e.g. <code>shipwright-loop</code>’s dev-task/review/patch/
+deploy phases) renders a nested “Phases of <code>&lt;parent&gt;</code>” sub-table beneath its row, one line per child
+phase cron with the same Logs/Toggle[/Delete] actions.</p>
+<p><strong>Tools</strong> — a table of tool-pattern rows (e.g. <code>Bash(git:*)</code>) with an enabled/disabled badge, creation
+date, and per-row <strong>Enable/Disable</strong> (<code>POST /admin/agents/:id/tools/:toolId/toggle</code>) and <strong>Delete</strong>
+(<code>POST /admin/agents/:id/tools/:toolId/delete</code>) actions, plus an add form
+(<code>POST /admin/agents/:id/tools</code>) for a new pattern.</p>
+<p><strong>Task Store Tokens</strong> — a table of tokens minted for this agent (label, created date, Active/Revoked
+status) with a <strong>Revoke</strong> action per active token (<code>POST /admin/agents/:id/tokens/:tokenId/revoke</code>)
+and a create form (<code>POST /admin/agents/:id/tokens</code>, label optional). A freshly created token’s raw
+value is shown once, inline, in a green banner — it is never displayed again. Self-hosted agents also
+get a <strong>Local CLI Access</strong> card here linking to <code>/admin/tokens?agentId=&lt;id&gt;</code> for token management.</p>
+<p><strong>Plugins</strong> — a read-only table (package name, version or “latest”, enabled/disabled badge, created
+date) — plugin installs happen outside the admin UI.</p>
+<p><strong>Members</strong> (admin-only) — a table of member emails with <strong>Remove</strong> actions
+(<code>POST /admin/agents/:id/members/delete</code>) and an add form (<code>POST /admin/agents/:id/members</code>).
+Membership is what grants a non-admin user visibility into this one agent.</p>
+<p><strong>Danger Zone</strong> (admin-only) — a single <strong>Delete agent</strong> button (<code>POST /admin/agents/:id/delete</code>,
+confirmed via a JS <code>confirm()</code> dialog) that runs the full teardown: Kubernetes workload, task-store and
+chat-service tokens/threads, and (if configured) the Slack app, before deleting the <code>Agent</code> row itself
+— only once every automatable step has succeeded.</p>
+<h3 id="cron-logs--get-adminagentsidcron-logs">Cron Logs — <code>GET /admin/agents/:id/cron-logs</code></h3>
+<p>Reached via the agent list’s <strong>Cron Logs</strong> button, the agent detail page’s per-cron <strong>Logs</strong> links, or
+directly. Shows every run across every cron the agent owns, filterable by <strong>Cron</strong> (dropdown) and
+<strong>Outcome</strong> (<code>posted</code> / <code>dm</code> / <code>silent</code> / <code>skipped</code> / <code>error</code>), paginated 20 per page. Table columns:
+Outcome (badge), Cron (name/schedule, links back into this same page filtered to that cron), Started
+(localized timestamp), Duration, Tokens (input/output token counts summed across models), Model
+(per-model badges with per-model USD cost), Phase (the child phase cron this run dispatched, e.g.
+“dev-task”, or <code>—</code>), and Item (a Task/PR badge linking to the dispatched work item, or <code>—</code> for a tick
+with no dispatch).</p>
+<h3 id="work-queue--get-adminagentsidwork-queue">Work Queue — <code>GET /admin/agents/:id/work-queue</code></h3>
+<p>Reached via the agent list’s <strong>Work Queue</strong> button. Shows the agent’s self-reported ranked work queue
+— the ordered list of tasks/PRs it intends to work next across the dev-task/review/patch/deploy
+phases — as last pushed by the agent itself. If no snapshot has ever been reported, the page shows a
+plain empty-state message instead of erroring. When a snapshot exists, it shows “Last computed:
+<code>&lt;relative time&gt;</code>” and a table with columns #, Type (Task/PR badge), Phase (dev-task/review/patch/
+deploy badge), Item (linked id + title), and Age (relative time, title-hover shows the ISO timestamp).</p>
+<h2 id="provisioning">Provisioning</h2>
+<h3 id="provision-start--get-adminprovision-post-adminprovisionstart">Provision start — <code>GET /admin/provision</code>, <code>POST /admin/provision/start</code></h3>
+<p>Admin-only. A three-step wizard (<strong>1. Create Slack App → 2. Authorize → 3. Complete</strong>) for
+provisioning a brand-new Slack-connected agent, or attaching Slack to an existing one. The form has
+three fieldsets:</p>
+<ul>
+<li><strong>Agent</strong> — a radio choice between “Use existing agent” (dropdown of current agents) and “Create new
+agent” (name + optional newline-separated repos).</li>
+<li><strong>GitHub Authentication</strong> — a radio choice between “Personal Access Token” (a single PAT field) and
+“GitHub App” (App ID, Installation ID, and a PEM private key textarea).</li>
+<li><strong>AI Credentials (optional)</strong> — an Anthropic API Key field and a Claude Code OAuth Token field.</li>
+</ul>
+<p>Below the fieldsets, a required <strong>Slack App Configuration Token</strong> field (<code>xoxe.xoxp-...</code>) is used once
+to create the Slack app manifest via the Slack API and is never stored. Submitting creates the agent
+(if “new” mode) — rolling it back if provisioning fails — then calls Slack to create the app, storing
+the returned Slack credentials into the agent’s env vars, and either shows an <strong>Authorize Slack App →</strong>
+link (OAuth redirect) or, if OAuth client credentials weren’t returned, moves straight to completion.</p>
+<h3 id="provision-complete--get-adminprovisioncomplete">Provision complete — <code>GET /admin/provision/complete</code></h3>
+<p>The Slack OAuth callback. Exchanges the OAuth code for a <code>SLACK_BOT_TOKEN</code>, stores it in the agent’s
+env vars, and either redirects straight to the agent detail page (if this was a reinstall — the agent
+already has a <code>SLACK_APP_TOKEN</code>) or renders a <strong>4. Add Socket Token</strong> page prompting for the Socket
+Mode app-level token.</p>
+<h3 id="socket-token--post-adminprovisionxapp-token">Socket token — <code>POST /admin/provision/xapp-token</code></h3>
+<p>The final step: pastes in the <code>xapp-</code> Socket Mode token, stores it as <code>SLACK_APP_TOKEN</code>, and seeds the
+agent’s system crons via <code>reconcileSystemCrons</code>. On success, renders a completion page with a
+<strong>View Agent →</strong> link and a <strong>Back to Agents</strong> link. <code>SHIPWRIGHT_AGENT_API_KEY</code> and
+<code>SHIPWRIGHT_TASK_STORE_TOKEN</code> are <strong>not</strong> minted here — managed agents get both injected directly into
+their Kubernetes Secret at provision time instead.</p>
+<h2 id="tasks">Tasks</h2>
+<h3 id="tasks-list--get-admintasks">Tasks list — <code>GET /admin/tasks</code></h3>
+<p>Admin-only (the equivalent unauthenticated view for a single public repo lives at <code>GET /public/tasks</code>,
+described below). A filterable, paginated (50/page) table of every task-store task. Above the table, a
+<strong>state toggle</strong> — four tabs: <strong>Ready</strong>, <strong>In Progress</strong>, <strong>Blocked</strong>, <strong>Closed</strong> — switches between
+the task-store’s <code>ready</code>/<code>in_progress</code>/<code>blocked</code>/<code>closed</code> groupings. A filter form (separate from the
+state tabs) lets you narrow by <strong>Status</strong> (exact task-store status, e.g. <code>pending</code>, <code>pr_open</code>,
+<code>deployed</code>), <strong>HITL</strong> (yes/no/any), <strong>Session</strong>, <strong>Repo</strong>, <strong>Source</strong>, and <strong>Agent</strong> (matched by name;
+matching is client-side and shows a warning banner when active). Table columns: ID (links to detail),
+Title (with inline “Waiting: HITL” / “Blocked: <code>&lt;dep&gt;</code>” badges when the task has unresolved blockers),
+Status (badge), Assignee (agent link), Session (links to the session detail page), Repo, Source, PR
+(links to the GitHub PR), and Created. Rows are clickable (not just the ID link) and route to the task
+detail page. A task in <code>in_progress</code> status gets an inline <strong>Release</strong> button
+(<code>POST /admin/tasks/:id/release</code>) that unclaims it.</p>
+<h3 id="task-detail--get-admintasksid">Task detail — <code>GET /admin/tasks/:id</code></h3>
+<p>Reached from the Tasks list or a task-store ID link elsewhere in the UI. Shows the task title, status
+badge, and (if <code>in_progress</code>) a <strong>Release</strong> button in the header, followed by:</p>
+<ul>
+<li>A <strong>Blockers</strong> card (if any) — HITL-gate or dependency blockers, dependency ones linking to the
+blocking task.</li>
+<li>A <strong>Description</strong> card — the task’s markdown description, rendered to HTML (headings, lists, bold,
+inline code, and fenced code blocks are supported).</li>
+<li>An <strong>Acceptance Criteria</strong> card — a bulleted list, each item markdown-rendered.</li>
+<li>A metadata table: Status, Priority, Type, Layer, Source, Assignee, Agent Hint, Claimed By (all agent
+links), Session (links to session detail), Repo, Branch, PR (links out to GitHub), Issue, Model,
+Complexity, Hours, HITL (yes/no), Note, Blocked Reason, Merge Commit, and Dependencies (a list of
+linked task IDs).</li>
+<li>A <strong>Timeline</strong> card — Added, Started, Claimed, Last Heartbeat, Blocked, Completed, Created, Updated
+timestamps (only the ones present on the task).</li>
+<li>A <strong>Pull Request Review</strong> card (if a linked PR record exists) — GitHub PR link, State, Review State,
+Review Cycles, Patch Cycles, Reviewed/Patched timestamps.</li>
+</ul>
+<h3 id="session-detail--get-adminsessionsid">Session detail — <code>GET /admin/sessions/:id</code></h3>
+<p>Reached via a task’s <strong>Session</strong> link (from either the Tasks list or Task Detail). Shows stat cards for
+Total Tasks, Est. Hours, and Layers, a one-line summary of how many tasks fall into each of
+ready/in_progress/blocked/closed, a task table grouped by that same state (mirroring the Tasks list’s
+state taxonomy), and — when the session’s tasks reference each other via <code>dependencies</code> — a dependency
+graph card rendering each participating task as a card with arrows showing “needs” edges.</p>
+<h3 id="public-task-board--get-publictasks">Public task board — <code>GET /public/tasks</code></h3>
+<p>An unauthenticated, read-only variant of the Tasks list, scoped to a single repo
+(<code>SHIPWRIGHT_ADMIN_PUBLIC_REPO</code>). No admin toolbar, no filter form beyond <code>source</code>, no state tabs, no
+pagination controls, no row actions (no Release button, no clickable rows) — just the table. Renders a
+degraded empty-state notice if the public repo isn’t configured or the task-store fetch fails.</p>
+<h2 id="prs">PRs</h2>
+<h3 id="prs-list--get-adminprs">PRs list — <code>GET /admin/prs</code></h3>
+<p>Admin-only. A filterable, paginated (50/page) table of task-store PR records, with an <strong>Open</strong> /
+<strong>Merged</strong> state-tab toggle at the top. A filter form allows narrowing by <strong>Repo</strong>, <strong>State</strong> (open/
+merged), <strong>Review State</strong> (pending/in_progress/posted/approved), and <strong>Task ID</strong>. Table columns: PR#
+(links to detail), Repo, Task (links to the task detail page), State (badge), Review State (badge),
+Review Cycles, Patch Cycles, Claimed By (agent link), and Created. Rows are clickable and route to the
+PR detail page.</p>
+<h3 id="pr-detail--get-adminprsid">PR detail — <code>GET /admin/prs/:id</code></h3>
+<p>Shows the repo and PR number in the header with a state badge, then a metadata table (ID, Repo, PR
+Number linking out to GitHub, Task link, State, Review State, Review Cycles, Patch Cycles, Commit SHA,
+Staged yes/no, Claimed By, Agent ID) and a Timeline card (Created, Claimed, Reviewed, Patched, Merged,
+Last Heartbeat, Updated).</p>
+<h2 id="chat">Chat</h2>
+<h3 id="chat--get-adminchat">Chat — <code>GET /admin/chat</code></h3>
+<p>Admin-only. An <strong>Agent</strong> dropdown selects which agent’s chat threads to browse
+(<code>?agentId=</code>); nothing else renders until an agent is selected. Once selected, shows a <strong>Search
+threads…</strong> box (filters by title, server-side) and a threads pane: a <strong>New Thread</strong> form (optional
+title) plus a list of existing thread links. If the chat service isn’t configured
+(<code>SHIPWRIGHT_CHAT_SERVICE_URL</code>/<code>SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN</code> unset), the page shows an error
+banner instead.</p>
+<h3 id="chat-thread--get-adminchatagentidthreadsthreadid">Chat thread — <code>GET /admin/chat/:agentId/threads/:threadId</code></h3>
+<p>A two-pane layout: a <strong>Threads</strong> sidebar (same list as the chat page, current thread highlighted, plus
+a compact New Thread form) and the main message view. The header shows the thread title (<strong>Rename</strong>
+and <strong>Delete Thread</strong> forms below it) and, if the thread has recorded token usage, a summary line
+(input/output token counts and USD cost). Messages render as chat bubbles color-coded by role (user,
+assistant, system), with assistant messages rendered as markdown and annotated with upload/plan-link
+marker badges, attachment badges, error badges (rate-limited/timeout/upstream/generic), and a per-
+message token/cost line. A compose box at the bottom (textarea + <strong>Attach file</strong> + <strong>Send</strong>) posts to
+the thread via <code>fetch()</code> against <code>POST /admin/chat/:agentId/threads/:threadId/messages/upload</code>, then
+polls <code>GET .../messages.json</code> every 3 seconds (up to 90 seconds) for the assistant’s reply, showing a
+“thinking…” indicator while it waits.</p>
+<h2 id="tokens">Tokens</h2>
+<h3 id="task-store-tokens--get-admintokens">Task Store Tokens — <code>GET /admin/tokens</code></h3>
+<p>Admin-only. A table of task-store API tokens (ID, Label, Agent — linked, or “(admin)” for an
+admin-scoped token, Created, Active/Revoked status) with a <strong>Revoke</strong> action
+(<code>POST /admin/tokens/:id/revoke</code>, confirmed via a JS dialog) per active token, and a <strong>Create token</strong>
+form below (Label required, Agent optional — blank mints an admin-scoped token). A freshly created
+token’s raw value is shown once in a green banner with a <strong>Copy</strong> button and, if the task-store base
+URL is configured, a ready-to-paste <code>export SHIPWRIGHT_TASK_STORE_URL=…</code> /
+<code>export SHIPWRIGHT_TASK_STORE_TOKEN=…</code> block. If the token store isn’t configured, the page shows a
+degraded-mode warning banner instead of the create form.</p>
+<h2 id="see-also">See also</h2>
+<ul>
+<li><a href="/docs/reference">Configuration Reference</a> — env vars referenced throughout this page
+(<code>SHIPWRIGHT_ADMIN_ALLOWED_EMAILS</code>, <code>SHIPWRIGHT_CHAT_SERVICE_URL</code>, <code>SHIPWRIGHT_ADMIN_PUBLIC_REPO</code>,
+and more)</li>
+<li><a href="/docs/task-store-api">Task Store API</a> — the HTTP API the Tasks pages read from</li>
+<li><a href="/docs/prs-api">PRs API</a> — the HTTP API the PRs pages read from</li>
+</ul>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/slack-integration" data-nav="prev" data-astro-cid-mw7aashj>
+← Previous
+</a>  </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#signing-in" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Signing in </a> </li><li data-astro-cid-mw7aashj> <a href="#agents" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Agents </a> </li><li data-astro-cid-mw7aashj> <a href="#agents-list--get-adminagents" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Agents list — GET /admin/agents </a> </li><li data-astro-cid-mw7aashj> <a href="#new-local-agent--get-adminagentsnew-post-adminagents" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> New local agent — GET /admin/agents/new, POST /admin/agents </a> </li><li data-astro-cid-mw7aashj> <a href="#agent-detail--get-adminagentsid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Agent detail — GET /admin/agents/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#cron-logs--get-adminagentsidcron-logs" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Cron Logs — GET /admin/agents/:id/cron-logs </a> </li><li data-astro-cid-mw7aashj> <a href="#work-queue--get-adminagentsidwork-queue" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Work Queue — GET /admin/agents/:id/work-queue </a> </li><li data-astro-cid-mw7aashj> <a href="#provisioning" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Provisioning </a> </li><li data-astro-cid-mw7aashj> <a href="#provision-start--get-adminprovision-post-adminprovisionstart" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Provision start — GET /admin/provision, POST /admin/provision/start </a> </li><li data-astro-cid-mw7aashj> <a href="#provision-complete--get-adminprovisioncomplete" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Provision complete — GET /admin/provision/complete </a> </li><li data-astro-cid-mw7aashj> <a href="#socket-token--post-adminprovisionxapp-token" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Socket token — POST /admin/provision/xapp-token </a> </li><li data-astro-cid-mw7aashj> <a href="#tasks" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#tasks-list--get-admintasks" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Tasks list — GET /admin/tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#task-detail--get-admintasksid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Task detail — GET /admin/tasks/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#session-detail--get-adminsessionsid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Session detail — GET /admin/sessions/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#public-task-board--get-publictasks" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Public task board — GET /public/tasks </a> </li><li data-astro-cid-mw7aashj> <a href="#prs" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> PRs </a> </li><li data-astro-cid-mw7aashj> <a href="#prs-list--get-adminprs" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> PRs list — GET /admin/prs </a> </li><li data-astro-cid-mw7aashj> <a href="#pr-detail--get-adminprsid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> PR detail — GET /admin/prs/:id </a> </li><li data-astro-cid-mw7aashj> <a href="#chat" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Chat </a> </li><li data-astro-cid-mw7aashj> <a href="#chat--get-adminchat" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Chat — GET /admin/chat </a> </li><li data-astro-cid-mw7aashj> <a href="#chat-thread--get-adminchatagentidthreadsthreadid" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Chat thread — GET /admin/chat/:agentId/threads/:threadId </a> </li><li data-astro-cid-mw7aashj> <a href="#tokens" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Tokens </a> </li><li data-astro-cid-mw7aashj> <a href="#task-store-tokens--get-admintokens" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Task Store Tokens — GET /admin/tokens </a> </li><li data-astro-cid-mw7aashj> <a href="#see-also" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> See also </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> <a href="https://vitals-os.com/cal/book/discovery" data-astro-cid-mw7aashj>Book a call</a> </nav> </div> </footer> </body></html>
