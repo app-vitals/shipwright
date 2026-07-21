@@ -1,0 +1,105 @@
+---
+title: The Shipwright Loop
+description: How the shipwright-loop cron mechanically dispatches work — reading phase toggles, qualifying candidates, a single FIFO work-selector across tasks and PRs, pre-claiming, and draining until dry.
+section: Operations
+order: 5
+prev: "/docs/cron-jobs"
+---
+
+# The Shipwright Loop
+
+`shipwright-loop` is the one cron that drives the entire autonomous delivery loop. Instead of
+scheduling `shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, and `shipwright-deploy`
+as four independent crons that race each other on their own timers, the loop wraps all four behind
+a single tick: it reads which phases are enabled, collects candidate work from each, picks the
+single oldest ready item across the whole set, claims it, dispatches the matching one-shot command,
+and repeats until nothing is left to do.
+
+This page documents the mechanics of that dispatch loop. For guidance on **which phases to enable
+and how much autonomy to grant**, see [Configuring Autonomy](/docs/configuring-autonomy) — that
+page covers the "how much" question; this one covers the "how it runs" question once the crons are
+on.
+
+## How dispatch works
+
+Each tick of `shipwright-loop` runs the following sequence:
+
+1. **Read the four phase toggles.** The loop reads four independent booleans — one per
+   pipeline phase — off child cron rows named `shipwright-dev-task`, `shipwright-review`,
+   `shipwright-patch`, and `shipwright-deploy`, all parented under the `shipwright-loop` cron.
+   Each toggle is resolved and enabled/disabled entirely independently of the others. The loop
+   deliberately never reads `shipwright-review-patch`'s flag or invokes `/shipwright:review-patch`
+   — the loop's own per-tick selection across all four phases supersedes that command's internal
+   review-vs-patch decision.
+2. **Qualify candidates per enabled phase.** For each enabled phase, the loop calls that phase's
+   own qualification function to get structured candidates: dev-task candidates are tasks ready to
+   build, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase
+   contributes nothing — its qualification function is never called, so a phase with no candidates
+   never even shows up as an empty run.
+3. **Merge into one candidate list.** The PR candidates from every enabled phase (review, patch,
+   deploy) are merged into a single flat array. Task candidates stay their own list. Both lists
+   feed the same selection step below.
+4. **Run a single FIFO work-selector.** The loop calls the work-selector exactly once per
+   iteration, passing it the merged task list and the merged PR list together. See
+   [The FIFO work-selector](#the-fifo-work-selector) below for how it picks a winner.
+5. **Pre-claim the winning item.** Before anything is dispatched, the selected item is claimed
+   directly against the task store — task items via a task claim, PR items via a PR claim. A `409`
+   conflict (another agent replica already claimed it since it was collected) skips dispatch
+   entirely: no one-shot command runs and nothing is recorded as a run. The loop simply re-collects
+   candidates and continues to the next iteration, which naturally excludes the now-claimed item.
+6. **Dispatch the matching one-shot command.** Once pre-claimed, the loop dispatches the one-shot
+   command for that item: a task item always dispatches `/shipwright:dev-task`; a PR item
+   dispatches `/shipwright:review`, `/shipwright:patch`, or `/shipwright:deploy` depending on which
+   phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the
+   claimed record's id and commit SHA to the dispatched command string, so the downstream command
+   can recognize the loop already holds the claim instead of re-claiming (and conflicting with
+   itself).
+7. **Repeat immediately — drain until dry.** The loop doesn't wait for the next cron tick to look
+   for more work. It loops back to step 1 right away, re-reading toggles and re-collecting
+   candidates fresh each time (so a phase toggled off mid-drain, or work freshly consumed by the
+   previous iteration, is reflected immediately). It keeps selecting and dispatching one item at a
+   time until the work-selector returns nothing — an idle, drained queue — at which point the tick
+   ends.
+
+An idle tick that finds nothing to select reports no run at all: a phase with zero candidates
+never generates a row, and the loop only touches its run-reporting once a real item has been
+selected and pre-claimed. Only genuinely dispatched commands show up in run history.
+
+## The FIFO work-selector
+
+The actual "which item goes next" decision is a single, deliberately simple rule: **strict
+age-based FIFO across both tasks and PRs, with no phase-priority bias.**
+
+Concretely, the selector is handed the merged task list and merged PR list from step 3 above, and
+picks whichever single candidate — task or PR, regardless of phase — has the oldest age. Tasks are
+aged by their creation time; PRs are aged by whenever they first became ready for their current
+phase (review, patch, or deploy). There's no rule that says "always drain dev-task before review"
+or "PRs always win over tasks" — the oldest ready item wins, full stop, whichever bucket it came
+from.
+
+This matters in practice: if a task has sat in the queue longer than any open PR needs review,
+the loop dispatches `/shipwright:dev-task` for that task first, even with review/patch/deploy all
+enabled. The reverse is equally true — a PR that's been waiting for review longer than the oldest
+pending task gets picked before that task does. Nothing about the selection is weighted by phase;
+age alone decides.
+
+## Cross-tick state
+
+A few pieces of state persist across ticks (not just within a single drain) to keep dispatch
+sane:
+
+- **Concurrency guard.** If a prior tick is still draining when the next tick fires, the new tick
+  is a no-op — only one drain runs at a time per agent.
+- **Redispatch cooldown.** A PR that was just dispatched at a given commit SHA is suppressed from
+  the candidate pool for a cooldown window, so an unchanged PR doesn't get re-dispatched on every
+  tick before anything about it has changed.
+- **Spin detection.** If the same item is dispatched several times in a row, the loop logs a
+  warning so a stuck candidate or infinite loop is observable rather than silent.
+
+## Enabling phases
+
+Whether a phase's toggle is on at all is an autonomy decision, not a dispatch-mechanics one. See
+[Configuring Autonomy](/docs/configuring-autonomy) for the ramp-up path — starting with
+`shipwright-dev-task` alone and adding review, patch, and deploy as you gain confidence — and for
+how `state/agent-policy.md` controls what the review and deploy phases are allowed to do once
+they're enabled.
