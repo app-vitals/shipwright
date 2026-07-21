@@ -5,9 +5,12 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+# Least privilege at the workflow level; the build-and-push job widens to
+# packages:write. Neither job needs contents:write — the "Tag release" step
+# creates a git tag via the GitHub API using secrets.DISPATCH_TOKEN, not the
+# built-in GITHUB_TOKEN, so no contents permission is needed on it at all.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   filter:
@@ -21,10 +24,13 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve base SHA
         id: base
-        run: echo "sha=$(git rev-parse ${{ github.event.workflow_run.head_sha }}~1)" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "sha=$(git rev-parse "$HEAD_SHA"~1)" >> "$GITHUB_OUTPUT"
 
       - name: Filter paths
         id: filter
@@ -45,11 +51,14 @@ jobs:
     needs: filter
     if: needs.filter.outputs.changed == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      packages: write # docker/login-action push to GHCR
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Compute next tag
         id: tag
@@ -69,16 +78,20 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
         run: |
           docker build \
             -f chat/Dockerfile \
             --label org.opencontainers.image.source=https://github.com/app-vitals/shipwright \
-            -t ghcr.io/app-vitals/shipwright-chat:${{ steps.tag.outputs.new_tag }} \
+            -t ghcr.io/app-vitals/shipwright-chat:"$NEW_TAG" \
             .
 
       - name: Push Docker image
+        env:
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
         run: |
-          docker push ghcr.io/app-vitals/shipwright-chat:${{ steps.tag.outputs.new_tag }}
+          docker push ghcr.io/app-vitals/shipwright-chat:"$NEW_TAG"
 
       - name: Tag release
         # Only create the git tag once the image has actually pushed. A tag with
@@ -86,7 +99,9 @@ jobs:
         # the tag without verifying the image exists.
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          NEW_TAG: ${{ steps.tag.outputs.new_tag }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           gh api "repos/${{ github.repository }}/git/refs" \
-            -f ref="refs/tags/${{ steps.tag.outputs.new_tag }}" \
-            -f sha="${{ github.event.workflow_run.head_sha }}"
+            -f ref="refs/tags/$NEW_TAG" \
+            -f sha="$HEAD_SHA"
