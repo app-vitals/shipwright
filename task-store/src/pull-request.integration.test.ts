@@ -1212,6 +1212,194 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
   });
 });
 
+// ─── list({ blocked: true }) — joins linked-task hitl/status (HBV-2.1) ───────
+
+describeOrSkip(
+  "PullRequestService.list({ blocked: true }) (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequest.deleteMany();
+      await prisma.task.deleteMany();
+    });
+
+    afterEach(async () => {
+      await prisma.pullRequest.deleteMany();
+      await prisma.task.deleteMany();
+      await prisma.$disconnect();
+    });
+
+    it("returns a PR with its own hitl:true, independent of reviewState/status", async () => {
+      const ownHitl = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2001,
+          hitl: true,
+          reviewState: "approved",
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs.map((p) => p.id)).toEqual([ownHitl.id]);
+      expect(result.total).toBe(1);
+    });
+
+    it("returns a PR with no own hitl but a linked task with hitl:true", async () => {
+      const linkedTask = await prisma.task.create({
+        data: {
+          title: "blocked-via-task-hitl",
+          status: "in_progress",
+          hitl: true,
+        },
+      });
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2002,
+          taskId: linkedTask.id,
+          hitl: false,
+          reviewState: "pending",
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs.map((p) => p.id)).toEqual([pr.id]);
+      expect(result.total).toBe(1);
+    });
+
+    it("returns a PR whose linked task has status:'blocked'", async () => {
+      const linkedTask = await prisma.task.create({
+        data: {
+          title: "blocked-via-task-status",
+          status: "blocked",
+        },
+      });
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2003,
+          taskId: linkedTask.id,
+          hitl: false,
+          reviewState: "posted",
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs.map((p) => p.id)).toEqual([pr.id]);
+      expect(result.total).toBe(1);
+    });
+
+    it("excludes a PR with neither its own hitl nor a blocked/hitl linked task", async () => {
+      const linkedTask = await prisma.task.create({
+        data: {
+          title: "not-blocked",
+          status: "pr_open",
+          hitl: false,
+        },
+      });
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2004,
+          taskId: linkedTask.id,
+          hitl: false,
+          reviewState: "approved",
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+
+    it("evaluates a PR with no taskId on pr.hitl alone (no crash/false-positive)", async () => {
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2005,
+          taskId: null,
+          hitl: false,
+        },
+      });
+      const ownHitlNoTask = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2006,
+          taskId: null,
+          hitl: true,
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs.map((p) => p.id)).toEqual([ownHitlNoTask.id]);
+    });
+
+    it("combines with state=open, only returning blocked PRs that are also open", async () => {
+      const blockedTask = await prisma.task.create({
+        data: { title: "blocked-task", status: "blocked" },
+      });
+      const blockedOpen = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2007,
+          taskId: blockedTask.id,
+          state: "open",
+        },
+      });
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2008,
+          taskId: blockedTask.id,
+          state: "closed",
+        },
+      });
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2009,
+          state: "open",
+          hitl: false,
+        },
+      });
+
+      const result = await service.list({ blocked: true, state: "open" });
+
+      expect(result.prs.map((p) => p.id)).toEqual([blockedOpen.id]);
+      expect(result.total).toBe(1);
+    });
+
+    it("list() without blocked param is unaffected by hitl/blocked task data (fully additive)", async () => {
+      const blockedTask = await prisma.task.create({
+        data: { title: "blocked-task-2", status: "blocked" },
+      });
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2010,
+          taskId: blockedTask.id,
+        },
+      });
+      await prisma.pullRequest.create({
+        data: { repo: "app-vitals/shipwright", prNumber: 2011 },
+      });
+
+      const result = await service.list({});
+
+      expect(result.total).toBe(2);
+    });
+  },
+);
+
 // ─── heartbeat() / release() / patch() (liveness + lifecycle) ────────────────
 
 describeOrSkip(

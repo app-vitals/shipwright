@@ -565,6 +565,11 @@ export const PrListQuerySchema = z
       description:
         "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
     }),
+    blocked: z.enum(["true", "false"]).optional().openapi({
+      example: "true",
+      description:
+        "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
+    }),
     sort: z.enum(["asc", "desc"]).optional().openapi({
       example: "asc",
       description:
