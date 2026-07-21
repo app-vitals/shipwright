@@ -10,6 +10,7 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
+  classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
   type CronJobItem,
@@ -4696,6 +4697,80 @@ describe("renderChatThreadPage", () => {
   });
 });
 
+// ─── classifyTaskState (HBV-1.2) ─────────────────────────────────────────────
+// Mirrors task-store/src/task-service.ts's list()/listReady()/listBlocked()
+// grouping: blockedBy is computed server-side for every status (not just
+// pending), so classifyTaskState must check it before the in_progress/
+// pr_open/approved branch — otherwise an in_progress task carrying an
+// unresolved dependency or hitl block gets misbucketed as "in_progress".
+
+describe("classifyTaskState", () => {
+  const BASE: TaskItem = {
+    id: "TASK-1",
+    title: "Some task",
+    status: "pending",
+  };
+
+  test.each(["in_progress", "pr_open", "approved"] as const)(
+    "status %s with non-empty blockedBy classifies as blocked",
+    (status) => {
+      const task: TaskItem = {
+        ...BASE,
+        status,
+        blockedBy: [{ type: "hitl" }],
+      };
+      expect(classifyTaskState(task)).toBe("blocked");
+    },
+  );
+
+  test.each(["in_progress", "pr_open", "approved"] as const)(
+    "status %s with empty blockedBy still classifies as in_progress",
+    (status) => {
+      const task: TaskItem = { ...BASE, status, blockedBy: [] };
+      expect(classifyTaskState(task)).toBe("in_progress");
+    },
+  );
+
+  test.each(["in_progress", "pr_open", "approved"] as const)(
+    "status %s with no blockedBy field still classifies as in_progress",
+    (status) => {
+      const task: TaskItem = { ...BASE, status };
+      expect(classifyTaskState(task)).toBe("in_progress");
+    },
+  );
+
+  test.each(["merged", "done", "deploying", "deployed", "cancelled"] as const)(
+    "closed status %s takes precedence over a stale non-empty blockedBy",
+    (status) => {
+      const task: TaskItem = {
+        ...BASE,
+        status,
+        blockedBy: [{ type: "dependency", id: "TASK-0", status: "pending" }],
+      };
+      expect(classifyTaskState(task)).toBe("closed");
+    },
+  );
+
+  test("explicit status blocked classifies as blocked", () => {
+    const task: TaskItem = { ...BASE, status: "blocked" };
+    expect(classifyTaskState(task)).toBe("blocked");
+  });
+
+  test("pending status with unresolved blockedBy classifies as blocked", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "pending",
+      blockedBy: [{ type: "dependency", id: "TASK-0", status: "pending" }],
+    };
+    expect(classifyTaskState(task)).toBe("blocked");
+  });
+
+  test("pending status with no blockedBy classifies as ready", () => {
+    const task: TaskItem = { ...BASE, status: "pending", blockedBy: [] };
+    expect(classifyTaskState(task)).toBe("ready");
+  });
+});
+
 // ─── renderSessionDetailPage (ASV-1.1) ───────────────────────────────────────
 
 describe("renderSessionDetailPage", () => {
@@ -4862,6 +4937,23 @@ describe("renderSessionDetailPage", () => {
     };
     const html = renderSessionDetailPage(SESSION_ID, [blocked], USER_NAME);
     expect(html).toContain("Blocked (1)");
+  });
+
+  test("an in_progress task with hitl-derived blockedBy groups under Blocked, not In Progress", () => {
+    const blockedInProgress: TaskItem = {
+      id: "TASK-6",
+      title: "Waiting on a human",
+      status: "in_progress",
+      session: SESSION_ID,
+      blockedBy: [{ type: "hitl" }],
+    };
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [blockedInProgress],
+      USER_NAME,
+    );
+    expect(html).toContain("Blocked (1)");
+    expect(html).not.toContain("In Progress (1)");
   });
 
   test("dependency list rendering: distinct dependency ids collected across tasks", () => {

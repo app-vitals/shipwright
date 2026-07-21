@@ -2177,18 +2177,23 @@ const SESSION_CLOSED_STATUSES = new Set([
 
 /** Mirrors the ready/in_progress/blocked/closed taxonomy used by the Tasks
  * page's state tabs — see task-store's TaskService.listReady/listBlocked:
- * closed = terminal status; in_progress = {in_progress, pr_open, approved};
- * blocked = explicit status "blocked", or "pending" with unresolved
- * dependencies; ready = "pending" with none. `blockedBy` is computed
- * server-side by the task-store's computeBlockedBy and passed through as-is
- * on each TaskItem — this only classifies, it doesn't resolve dependencies
- * itself. Shared by the session task table and the dependency graph card
- * below so both use the same grouping.
+ * closed = terminal status; blocked = a non-empty `blockedBy` (unresolved
+ * dependency or hitl wait) on any non-closed task, or explicit status
+ * "blocked"; in_progress = {in_progress, pr_open, approved} with no
+ * outstanding blockers; ready = "pending" with none. `blockedBy` is computed
+ * server-side by the task-store's computeBlockedBy for every status (not
+ * just "pending") and passed through as-is on each TaskItem — this only
+ * classifies, it doesn't resolve dependencies itself. The blockedBy check
+ * must run before the in_progress/pr_open/approved check so a task that's
+ * technically in progress but still waiting on a dependency or a human
+ * (hitl) buckets as blocked, not in_progress. Shared by the session task
+ * table and the dependency graph card below so both use the same grouping.
  */
 type TaskState = "ready" | "in_progress" | "blocked" | "closed";
 
-function classifyTaskState(t: TaskItem): TaskState {
+export function classifyTaskState(t: TaskItem): TaskState {
   if (SESSION_CLOSED_STATUSES.has(t.status)) return "closed";
+  if ((t.blockedBy?.length ?? 0) > 0) return "blocked";
   if (
     t.status === "in_progress" ||
     t.status === "pr_open" ||
@@ -2197,7 +2202,7 @@ function classifyTaskState(t: TaskItem): TaskState {
     return "in_progress";
   }
   if (t.status === "blocked") return "blocked";
-  return (t.blockedBy?.length ?? 0) > 0 ? "blocked" : "ready";
+  return "ready";
 }
 
 const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
