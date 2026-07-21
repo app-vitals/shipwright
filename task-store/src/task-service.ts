@@ -225,9 +225,17 @@ export class TaskService implements TaskServiceLike {
   }
 
   /**
-   * Blocked tasks: status === "blocked" OR (status === "pending" AND blockedBy.length > 0).
+   * Blocked tasks: status === "blocked" OR (status is open/non-terminal AND
+   * blockedBy.length > 0).
    *
-   * Captures explicitly blocked tasks, HITL-gated tasks, and dep-blocked pending tasks.
+   * Captures explicitly blocked tasks, HITL-gated tasks, and dep-blocked tasks
+   * at any non-terminal status (pending, in_progress, pr_open, approved) — not
+   * just "pending". A task can be claimed and moved to in_progress/pr_open
+   * while still hitl-gated (dispatch's resolveReadyTasks already excludes
+   * hitl:true tasks regardless of status), so listBlocked must surface that
+   * signal at any open status too, not silently drop it. Terminal statuses
+   * (CLOSED_STATUSES) are always excluded even if blockedBy is non-empty.
+   *
    * Loads the full task graph so computeBlockedBy can resolve all dependency IDs.
    *
    * Agent tokens are scoped to their own tasks: pass agentId to filter by assignee.
@@ -239,6 +247,7 @@ export class TaskService implements TaskServiceLike {
     const allTasks = await this.prisma.task.findMany();
     const useRepoScope =
       agentId !== undefined && repos !== undefined && repos.length > 0;
+    const closedStatuses = new Set<string>(CLOSED_STATUSES);
     return allTasks
       .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
       .filter((t: TaskWithBlockedBy) => {
@@ -249,8 +258,8 @@ export class TaskService implements TaskServiceLike {
           if (!ownedByAssignee && !inRepoScope) return false;
         }
         if (t.status === "blocked") return true;
-        if (t.status === "pending") return t.blockedBy.length > 0;
-        return false;
+        if (closedStatuses.has(t.status)) return false;
+        return t.blockedBy.length > 0;
       });
   }
 

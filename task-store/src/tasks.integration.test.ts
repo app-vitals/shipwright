@@ -393,6 +393,84 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(titles).not.toContain("Other blocked out of scope");
   });
 
+  // ─── TaskService.listBlocked() surfaces hitl-gated tasks at any open status ─
+
+  it("listBlocked() returns an in_progress task with hitl:true (GET /tasks?state=blocked parity)", async () => {
+    const taskService = new TaskService(prisma);
+
+    const hitlGated = await prisma.task.create({
+      data: {
+        title: "In-progress hitl-gated task",
+        status: "in_progress",
+        hitl: true,
+        hitlNotifiedAt: null,
+      },
+    });
+    const notGated = await prisma.task.create({
+      data: {
+        title: "In-progress task with no hitl gate",
+        status: "in_progress",
+        hitl: false,
+      },
+    });
+
+    const result = await taskService.listBlocked();
+    const ids = result.map((t) => t.id);
+
+    expect(ids).toContain(hitlGated.id);
+    expect(ids).not.toContain(notGated.id);
+  });
+
+  it("listBlocked() returns a pr_open task with hitl:true", async () => {
+    const taskService = new TaskService(prisma);
+
+    const hitlGated = await prisma.task.create({
+      data: {
+        title: "PR-open hitl-gated task",
+        status: "pr_open",
+        hitl: true,
+        hitlNotifiedAt: null,
+      },
+    });
+
+    const result = await taskService.listBlocked();
+    const found = result.find((t) => t.id === hitlGated.id);
+
+    expect(found).toBeDefined();
+    expect(found?.blockedBy).toContainEqual({ type: "hitl" });
+  });
+
+  it("listBlocked() does not return an in_progress task with no hitl gate and no unresolved dependency", async () => {
+    const taskService = new TaskService(prisma);
+
+    const notBlocked = await prisma.task.create({
+      data: {
+        title: "In-progress, not blocked",
+        status: "in_progress",
+        hitl: false,
+      },
+    });
+
+    const result = await taskService.listBlocked();
+    expect(result.map((t) => t.id)).not.toContain(notBlocked.id);
+  });
+
+  it("listBlocked() does not return a merged task even with hitl:true", async () => {
+    const taskService = new TaskService(prisma);
+
+    const merged = await prisma.task.create({
+      data: {
+        title: "Merged hitl task",
+        status: "merged",
+        hitl: true,
+        hitlNotifiedAt: null,
+      },
+    });
+
+    const result = await taskService.listBlocked();
+    expect(result.map((t) => t.id)).not.toContain(merged.id);
+  });
+
   // ─── TaskService.distinct() repo scope ────────────────────────────────────
 
   it("distinct() without scopeRepos only returns sessions/repos from own tasks", async () => {
