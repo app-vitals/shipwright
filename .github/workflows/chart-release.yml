@@ -61,7 +61,13 @@ jobs:
     steps:
       - name: Checkout main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # persist-credentials left at its default (true) intentionally: the
+      # "Commit and push to gh-pages" step below pushes from this checkout's
+      # working directory and relies on the token persisted into its local
+      # git config to authenticate that push.
       - name: Checkout gh-pages
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -106,13 +112,15 @@ jobs:
 
       - name: Commit and push to gh-pages
         working-directory: gh-pages
+        env:
+          CHART_VERSION: ${{ steps.chart-version.outputs.version }}
         run: |
           git add -- '*.tgz' index.yaml
           if git diff --cached --quiet; then
-            echo "No chart changes to publish (version ${{ steps.chart-version.outputs.version }} already on gh-pages)."
+            echo "No chart changes to publish (version ${CHART_VERSION} already on gh-pages)."
             exit 0
           fi
-          git commit -m "chart: publish shipwright ${{ steps.chart-version.outputs.version }}"
+          git commit -m "chart: publish shipwright ${CHART_VERSION}"
           git push origin gh-pages
 
   # Dry-run validation — runs ONLY on pull_request. Proves the chart packages and
@@ -125,6 +133,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Install Helm
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
