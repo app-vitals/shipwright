@@ -278,15 +278,18 @@ test("key headings visible in slack-integration page", async ({ page }) => {
   await expect(markersHeading).toBeVisible();
 });
 
-test("prev/next navigation on slack-integration page (terminal page)", async ({ page }) => {
+test("prev/next navigation on slack-integration page", async ({ page }) => {
   await page.goto("/docs/slack-integration");
   // prev → deploying-to-cloud
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
   expect(await prevLink.getAttribute("href")).toBe("/docs/deploying-to-cloud");
-  // no next link — slack-integration is the terminal page; no broken/empty href allowed
+  // next → day-to-day-operations (UDG-1.1) — slack-integration is no longer terminal
   const nextLink = page.locator("a[data-nav='next']");
-  await expect(nextLink).toHaveCount(0);
+  await expect(nextLink).toBeVisible();
+  expect(await nextLink.getAttribute("href")).toBe(
+    "/docs/day-to-day-operations",
+  );
 });
 
 test("mobile sidebar slides in when toggle is tapped", async ({ page }) => {
