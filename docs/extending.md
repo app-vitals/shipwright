@@ -44,7 +44,7 @@ Crons are how Shipwright runs autonomous, scheduled behavior — the `shipwright
 POST /agents/:id/crons
 ```
 
-A cron created through this endpoint defaults to a normal (non-system) cron unless you explicitly mark it as a system cron — system crons are reserved for Shipwright's own built-in maintenance jobs and are managed separately (see [agent-api.md](./agent-api.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons cannot.
+A cron created through this endpoint is always a normal (non-system) cron — system crons are reserved for Shipwright's own built-in maintenance jobs, created internally via reconciliation, and cannot be created through this public route (see [agent-api.md](./agent-api.md#cron-jobs)). Non-system crons you create can be updated or deleted freely through the same CRUD routes; system crons cannot.
 
 The cron's `prompt` field is a **plain string** — it is not scoped to any particular plugin. That means a custom cron's prompt can invoke any command from any plugin installed on the agent, including your own companion plugin's commands:
 
