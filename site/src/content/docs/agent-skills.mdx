@@ -1,0 +1,319 @@
+---
+title: Agent Skills
+description: Full catalog of every Shipwright plugin skill — the autonomous behaviors that back slash commands or trigger on the agent's own judgment.
+section: Plugin
+order: 2
+prev: "/docs/running-locally"
+next: "/docs/commands-reference"
+---
+
+# Agent Skills
+
+Every skill shipped by the Shipwright plugin, grouped by category. Skills are how the agent
+knows *how* to do something — some back a same-named slash command directly (see
+[Commands Reference](/docs/commands-reference) for those entries), others are auto-triggered by
+the agent's own judgment based on context, with no dedicated command to invoke them explicitly.
+
+Each entry's description below is read directly from that skill's `SKILL.md` frontmatter.
+
+## Core / Delivery Loop
+
+The one skill every other command in the spec → plan → execute → review → deploy loop depends
+on for task-queue reads and writes.
+
+### task-store
+
+Query and update the Shipwright task store — pick the next ready task, mark status transitions,
+and append new tasks. Use whenever you need to read from or write to the task queue. Calls the
+task store HTTP API directly via curl.
+
+*Invocation:* Auto-triggered by the agent's own judgment whenever a task-store read or write is
+needed — `/shipwright:dev-task`, `/shipwright:review`, `/shipwright:patch`, `/shipwright:deploy`,
+and `/shipwright:plan-session` all invoke it internally, but there is no standalone
+`/shipwright:task-store` command.
+
+## Test Readiness Pipeline
+
+A five-phase pipeline (plus a post-execution skill and three cross-cutting contracts) that
+audits and improves test coverage end to end.
+
+### test-readiness
+
+Orchestrates the full test-readiness pipeline (phases 1–5), once per qualifying repo under
+`repos/`, each in its own worktree + branch. Runs test-inventory → test-design → test-migration →
+test-roadmap → test-fix in sequence per repo, starting from the first stale artifact. Invoked by
+the `shipwright-test-readiness` cron on a daily schedule; exits early for a repo when all of its
+phase artifacts are fresh.
+
+*Invocation:* Auto-triggered by the `shipwright-test-readiness` cron on a daily schedule — no
+matching `/shipwright:test-readiness` command.
+
+### test-inventory
+
+Phase 1 of the test-readiness pipeline. Crawls a target repo, classifies every meaningful unit of
+code (business logic, service boundary, HTTP route, error path, external integration, user
+journey), prescribes the appropriate test layer (unit / integration / smoke / E2E) using the
+rubrics, ranks each by criticality (critical / high / medium), and tags canary eligibility.
+Outputs a deduplicated inventory — each functional unit appears exactly once at its canonical
+layer per the no-duplicate-coverage rule. Writes `docs/test-readiness/test-inventory.md`. Invoke
+when the `/test-inventory` command runs.
+
+*Invocation:* Backs the `/shipwright:test-inventory` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### test-design
+
+Phase 2 of the test-readiness pipeline. Given the Phase 1 inventory, designs the ideal test
+system greenfield — framework per layer, local execution architecture, canary execution
+contract, test-data strategy, CI pipeline shape, coverage targets, and speed budgets. Does not
+look at existing tests (that's Phase 3). Writes `docs/test-readiness/test-system.md`. Invoke when
+the `/test-design` command runs.
+
+*Invocation:* Backs the `/shipwright:test-design` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### test-migration
+
+Phase 3 of the test-readiness pipeline. Reconciles existing tests against the Phase 1 inventory
+and Phase 2 blueprint, bucketing each existing test and each inventory item into reuse / promote
+/ rebuild / trim (redundant assertions) / net-new. Same bucketing applies to test infrastructure.
+Enforces the canonical-layer rule — a test whose assertions are already owned by a lower-layer
+test gets redundant assertions trimmed, not the test deleted. Writes
+`docs/test-readiness/test-migration.md`. Invoke when the `/test-migration` command runs.
+
+*Invocation:* Backs the `/shipwright:test-migration` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### test-roadmap
+
+Phase 4 of the test-readiness pipeline. Synthesizes the three prior artifacts (inventory, system
+design, migration) into a single executable roadmap `test-readiness-plan.md` with five sequenced
+milestones and an agent-executable task list. Includes mandatory sections on where we are now,
+where we want to be, the gap, the speed delta, and open risks. Output is suitable for handoff to
+an engineer or to `shipwright /dev-task`. Invoke when the `/test-roadmap` command runs.
+
+*Invocation:* Backs the `/shipwright:test-roadmap` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### test-fix
+
+Read `docs/test-readiness/test-readiness-plan.md` and queue its flat `T-NNN` task list as
+task-store tasks, one task per row, with dependency edges (predecessor/fan-out) and per-task HITL
+classification. Requires test-roadmap to have run first. Replaces the former GitHub-issue publish
+skill's dashboard with a task-store queue.
+
+*Invocation:* Backs the `/shipwright:test-fix` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### test-debt
+
+Post-execution skill for the test-readiness pipeline. Computes a corrective-commit ratio per
+milestone from git log to surface over-specified or under-specified tasks. A high
+corrective-commit ratio flags milestones where the plan underestimated scope, tasks were too
+large, or acceptance criteria were ambiguous. Invoke after any milestone completes to catch
+planning debt before the next run.
+
+*Invocation:* Backs the `/shipwright:test-debt` command — see
+[Commands Reference](/docs/commands-reference#test-readiness-pipeline).
+
+### canary-execution
+
+Cross-cutting contract for the test-readiness pipeline. Defines how canary-eligible test code
+runs in two modes — `local` (boot dependencies inline, hit localhost) and `canary` (skip the
+boot, hit a deployed `TEST_TARGET_URL`) — via a dedicated entry point separate from the local
+smoke runner. Specifies eligibility rules (read-only or self-cleaning, smoke/E2E only,
+critical/high tier only, zero DB-dependent tests) and the deploy-gate budget (under 60s wall
+time). Referenced by the inventory, system-design, migration, and roadmap skills.
+
+*Invocation:* Auto-triggered by the agent's own judgment — a cross-cutting contract referenced by
+the other test-readiness skills, with no standalone command.
+
+### repo-config
+
+Cross-cutting contract for the test-readiness pipeline. Specifies the GitHub repository
+configuration that makes "tests pass" structurally meaningful instead of advisory — branch
+protection requiring CI to pass, required secrets, environments, deploy hooks, and PR templates.
+Referenced by `test-design` (Phase 2 emits the repo-config plan) and `test-roadmap` (Phase 4
+auto-pairs workflow tasks with branch-protection tasks). Without these, the verification commands
+in each task body are honor-system; with them, the workflow is the gate.
+
+*Invocation:* Auto-triggered by the agent's own judgment — a cross-cutting contract referenced by
+`test-design` and `test-roadmap`, with no standalone command.
+
+### speed-budgets
+
+Cross-cutting contract for the test-readiness pipeline. Specifies per-layer test speed budgets
+(unit / integration / smoke / E2E) as 95p targets, per-test hard caps, and per-layer suite-wall
+targets. Used by system-design as a Phase 2 output and by migration as a Phase 3 bucketing
+criterion — a test that violates its layer's hard cap is almost certainly mis-layered and goes to
+the `rebuild` bucket.
+
+*Invocation:* Auto-triggered by the agent's own judgment — a cross-cutting contract referenced by
+`test-design` and `test-migration`, with no standalone command.
+
+## Maintenance Patrols
+
+Scheduled or on-demand scans that find and fix code entropy, production errors, code
+duplication, and Dependabot PRs. Each pair follows the same shape: a `-scan` skill that reports
+only, and a `-fix` skill that reads the scan's report and queues task-store tasks.
+
+### entropy-scan
+
+Scan codebase for principle deviations. Report only — no code changes.
+
+*Invocation:* Backs the `/shipwright:entropy-scan` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### entropy-fix
+
+Read `entropy-report.md` and queue PR-worthy violations as task-store tasks, one task per rule,
+with per-finding HITL classification. Requires entropy-scan to have run first.
+
+*Invocation:* Backs the `/shipwright:entropy-fix` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### error-scan
+
+Scan Sentry for new/regressed unresolved issues, dynamically map them to repos. Report only — no
+code changes.
+
+*Invocation:* Backs the `/shipwright:error-scan` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### error-fix
+
+Read `error-report.md`, fetch each New/Regressed issue's Sentry detail and stack trace, classify
+hitl per issue, and queue task-store tasks (plus companion observability-fix tasks where
+instrumentation gaps hinder root-causing). Requires error-scan to have run first.
+
+*Invocation:* Backs the `/shipwright:error-fix` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### error-resolve
+
+Read the error-patrol ledger, check each linked task's current status via the task store, and
+resolve the corresponding Sentry issue once its gating task has reached deployed/done. Never
+resolves on merged or pr_open.
+
+*Invocation:* Backs the `/shipwright:error-resolve` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### consolidation-scan
+
+Discover emerging duplicate/similar code patterns via judgment-driven comparison, track them
+across runs in a ledger, and report only patterns that have stabilized. Report only — no code
+changes.
+
+*Invocation:* Backs the `/shipwright:consolidation-scan` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### consolidation-fix
+
+Read `consolidation-report.md` and queue `ready_to_propose` duplication patterns as task-store
+tasks, one task per pattern, each carrying a strangler-fig (build -> coexist -> eliminate)
+execution plan and a per-finding HITL classification. Requires consolidation-scan to have run
+first.
+
+*Invocation:* Backs the `/shipwright:consolidation-fix` command — see
+[Commands Reference](/docs/commands-reference#maintenance-patrols).
+
+### security-scan
+
+Scan a repo for secrets, dependency CVEs, container CVEs/SBOM, GitHub Actions issues,
+authn/authz anti-patterns, and posture gaps across three tiers. Report only — no code changes.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:security-scan` command.
+
+### security-fix
+
+Read `security-report.md` and queue PR-worthy findings as task-store tasks, one task per rule,
+routing any finding that requires credential rotation/revocation through `/shipwright:hitl`
+instead of auto-remediating it. Requires security-scan to have run first.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:security-fix` command.
+
+### triage-dependabot-pr
+
+Analyze a single Dependabot PR — fetch metadata and diff, classify risk (merge/review/hold),
+stage a patrol-style comment to `state/dependabot-reviews/`, and update
+`state/dependabot-reviews.json`. Use when asked to triage one specific Dependabot PR. Does not
+post to GitHub. Arguments — `<pr-number>` (required), `--repo owner/repo` (optional; detected
+from cwd if omitted).
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:triage-dependabot-pr` command.
+
+### triage-dependabot-prs
+
+Scan all repos in `repos/` for open Dependabot PRs, triage new ones, and stage patrol-style
+comments for review. Use when asked to triage, scan, or review open Dependabot PRs across
+multiple repos. Does not post to GitHub — staged comments are reviewed conversationally before
+posting.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:triage-dependabot-prs` command.
+
+## Other
+
+General-purpose and diagnostic skills that don't belong to the delivery loop, the test-readiness
+pipeline, or the maintenance patrols.
+
+### agent-admin
+
+Query and manage Shipwright agents via the admin API — cron jobs, env vars, tool permissions,
+API tokens, and plugins. Use to configure the running agent, manage its schedules, inspect
+another agent's config, or provision a new agent. Its own `SKILL.md` explicitly scopes it out of
+the delivery loop: "For delivery pipeline work... use the task-store, dev-task, review, or deploy
+skills. This skill is for agent lifecycle management only."
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:agent-admin` command.
+
+### investigate-cron
+
+Diagnose why a cron run behaved unexpectedly — looks up the exact run via the admin cron-runs
+API (by name+time or by PR/task id), finds the matching Claude Code session transcript, reads
+what the model did and why, and explains it in plain language. No log files needed; the
+transcript is the source of truth.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:investigate-cron` command.
+
+### learning-capture
+
+Capture a durable learning by editing context directly. Triggers when the user corrects Claude in
+a generalizable way ("use X instead of Y", "always X", "never Y", "I prefer X", "from now on X"),
+states a reusable preference, or asks to "remember this" / "save this". Also triggers on the
+`/learn` command. Does NOT trigger on one-off, problem-specific corrections — see the
+generalization gate before acting.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context (and by the
+`/shipwright:learn` command, which is a distinct top-level command rather than a same-named
+wrapper) — no matching `/shipwright:learning-capture` command.
+
+### pull-requests
+
+Query PR records from the task store — filter by repo, PR number, state, reviewState, or staged
+flag, and display results as a readable table.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:pull-requests` command.
+
+### review-staged
+
+Walk through staged PR reviews from the task store conversationally — APPROVEs first, then
+COMMENTs, smallest diff to largest within each. For each PR, present a concise summary and accept
+owner direction (post, skip, draft, discuss). Use when asked to "drain the staged reviews", "walk
+through staged reviews", or "what's staged".
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — a companion to
+`/shipwright:review` but not a same-named wrapper of it; no matching
+`/shipwright:review-staged` command.
+
+## Next steps
+
+See [Commands Reference](/docs/commands-reference) for the full catalog of slash commands these
+skills back, or back to [Running Locally](/docs/running-locally) for how to spin up the dev stack
+these skills run against.
