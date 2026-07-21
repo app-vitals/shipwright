@@ -63,6 +63,7 @@ export interface PrRecord {
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
   hitl?: boolean | null;
+  staged?: boolean;
 }
 
 export interface CheckReviewDeps {
@@ -185,6 +186,17 @@ export async function getReviewCandidates(
       record.commitSha === pr.headRefOid &&
       record.reviewState !== "pending"
     ) {
+      continue;
+    }
+
+    // commitSha matches and a review is already staged → skip regardless of
+    // reviewState. reviewState can read "pending" for a staged record due to
+    // a drift window (a race between staging and the reviewState write
+    // landing, reconciler lag, etc. — CHU-2.5, #1769) so this check must not
+    // depend on reviewState being trustworthy. A staged record at a
+    // DIFFERENT commitSha (author pushed since staging) stays eligible,
+    // matching review.md's stale-staged-review re-review path.
+    if (record.staged === true && record.commitSha === pr.headRefOid) {
       continue;
     }
 

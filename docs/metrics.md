@@ -151,6 +151,8 @@ The `/public/*` endpoints require **no authentication**. Access is controlled by
 
 Unit + integration + smoke layers (`bun test --filter metrics`). Integration tests for the task-store backend inject `RecordedTaskStoreClient` + `RecordedAdminMetricsClient` doubles (from `metrics/src/providers/task-store-recorded.ts`) over canned cassettes and a fixed clock — pre-recorded sample results, no network calls; smoke tests drive the Hono app via `app.request()`. The suite stays fully offline with no external service URLs configured.
 
+The dashboard client (`metrics/src/dashboard/app.js`) is a plain browser `<script>` (not an ES module) that largely handles DOM manipulation and chart rendering — untestable in-process without browser globals. Its pure, injectable-fetch logic (`fetchSequential`) is extracted and unit-tested via a test-only export (`metrics/src/dashboard/app.unit.test.js`), while the bulk of `app.js` remains excluded from coverage as its code paths require a real browser. E2E Playwright tests cover the full dashboard UI (`metrics/e2e/dashboard.e2e.ts`).
+
 E2E layer (`task e2e` → `cd metrics && bunx playwright test`): Playwright Chromium headless tests against a real running Bun server (`metrics/e2e/test-server.ts`). Session cookies are signed with a pinned test secret (`e2e-test-session-secret-32b`). Test file: `metrics/e2e/dashboard.e2e.ts`. Config: `metrics/playwright.config.ts`.
 
 See [testing.md](./testing.md).
