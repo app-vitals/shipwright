@@ -184,10 +184,10 @@ test("prev/next navigation links on running-locally page", async ({ page }) => {
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
   expect(await prevLink.getAttribute("href")).toBe("/docs/the-plugin");
-  // next → the-agent
+  // next → agent-skills
   const nextLink = page.locator("a[data-nav='next']");
   await expect(nextLink).toBeVisible();
-  expect(await nextLink.getAttribute("href")).toBe("/docs/the-agent");
+  expect(await nextLink.getAttribute("href")).toBe("/docs/agent-skills");
 });
 
 test("GET /docs/the-agent returns 200", async ({ page }) => {
