@@ -3,8 +3,6 @@ title: Cron Jobs
 description: How crons run end to end — schedule model, silent-by-default posting, preCheck scripts, reconcile, loop-driven vs standalone crons — and how to investigate a specific cron run.
 section: Operations
 order: 4
-prev: "/docs/admin-console"
-next: "/docs/the-shipwright-loop"
 ---
 
 # Cron Jobs
@@ -91,11 +89,15 @@ not self-discovering standalone crons:
 - None of the four commands scans for its own work. Each one responds `[silent]` and exits
   immediately if it's ever invoked with no target.
 
-The practical consequence: if a human disables `shipwright-loop` but leaves, say,
-`shipwright-dev-task` enabled, that cron doesn't fall back to self-discovery — it becomes
-**silently inert**. It still fires on its schedule, still dispatches, but with no target to act on
-it goes `[silent]` and does nothing every single tick. Re-enabling `shipwright-loop` is what
-restores real dispatch.
+The practical consequence: a reconciled pipeline cron never gets its own independent `node-cron`
+schedule at all. `classifyCronJobsForScheduling` excludes any job with a non-null `parentCronId`
+from scheduling unconditionally — before it even looks at that job's own `enabled` flag or whether
+`shipwright-loop` itself is enabled. So enabling, say, `shipwright-dev-task` in isolation doesn't
+make it fire on its own schedule and fall through to a no-op; it simply never fires on its own at
+all. The only way a pipeline cron dispatches is indirectly: `shipwright-loop`'s own tick reads the
+child row's `enabled` toggle (via `resolveLoopPhaseToggles`), and if true, dispatches that phase
+directly as part of the loop's own run. Re-enabling `shipwright-loop` is what restores real
+dispatch — not the phase cron's own schedule kicking back in.
 
 By contrast, the maintenance crons — `shipwright-test-readiness`, `shipwright-docs-freshness`,
 `learn-dream`, `dependabot-triage`, and the entropy/error/security/consolidation patrol crons —
@@ -181,10 +183,12 @@ without needing raw logs or a transcript:
    because `node-cron` never scheduled it in the first place.
 
 If a pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
-`shipwright-deploy`) looks enabled and is firing on schedule but never dispatches against anything,
-check whether `shipwright-loop` itself is enabled — a pipeline cron with its parent loop disabled is
-silently inert (see "Loop-driven vs standalone crons" above): it fires, dispatches with no target,
-and gets `[silent]` every time.
+`shipwright-deploy`) shows as enabled in the admin console but never has any runs in Cron Logs,
+check whether `shipwright-loop` itself is enabled (see "Loop-driven vs standalone crons" above): a
+reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent
+schedule, so its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches
+that phase directly — there's no standalone tick to show up as `silent` or `skipped` in the
+meantime.
 
 ## Next steps
 
