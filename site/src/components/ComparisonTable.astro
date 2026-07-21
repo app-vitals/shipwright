@@ -1,0 +1,70 @@
+---
+// Shared table skeleton for the site's comparison pages (compare.astro,
+// self-hosted.astro, vs/devin.astro). The three source tables have distinct
+// column counts and per-cell markup (plain text, citation links, bold+span
+// combos), so this component DRYs the shared structural pieces —
+// table/thead/tbody scaffolding, header-cell styling, and the row
+// border/highlight pattern — while leaving each cell's exact style string
+// and markup page-owned (passed straight through) so the rendered output is
+// byte-identical to the hand-copied markup it replaces. Cell content is
+// pre-rendered HTML by the page (trusted static copy, never user input) and
+// injected with set:html so callers can compose arbitrary per-column markup
+// (spans, citation links, nested elements) without Astro's lack of
+// render-prop support getting in the way.
+interface Column {
+  label: string;
+  // Full inline style string for the <th>, exactly as the source page wrote
+  // it (kept page-owned since compare.astro's first-column left-padding and
+  // vs/devin.astro's brand-colored "Shipwright" header both need custom
+  // values that don't reduce to one shared formula).
+  style: string;
+}
+
+interface Cell {
+  // Full inline style string for the <td>, exactly as the source page wrote
+  // it (padding, color, white-space, etc. all vary per column/table).
+  style: string;
+  // Pre-rendered HTML for the cell body.
+  html: string;
+}
+
+interface Row {
+  cells: Cell[];
+  // Highlight this row as the "self" (Shipwright) row: brand-soft background
+  // on the row. compare.astro and self-hosted.astro use this; vs/devin.astro
+  // never sets it (its table has no highlighted row).
+  highlight?: boolean;
+}
+
+interface Props {
+  columns: Column[];
+  rows: Row[];
+}
+
+const { columns, rows } = Astro.props;
+---
+
+<div class="mt-6 overflow-x-auto">
+  <table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
+        {columns.map((col) => (
+          <th style={col.style}>
+            {col.label}
+          </th>
+        ))}
+      </tr>
+    </thead>
+    <tbody>
+      {rows.map((row) => (
+        <tr
+          style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.highlight ? " background: var(--sw-color-brand-soft);" : ""}`}
+        >
+          {row.cells.map((cell) => (
+            <td style={cell.style} set:html={cell.html} />
+          ))}
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</div>
