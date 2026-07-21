@@ -459,9 +459,11 @@ describe("runClaude", () => {
     const { ClaudeTimeoutError } = await import("./claude.ts");
     const err = await runClaudeWithTimeout("hello").catch((e) => e);
     expect(err).toBeInstanceOf(ClaudeTimeoutError);
-    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
-      "idle",
-    );
+    const timeoutErr = err as InstanceType<typeof ClaudeTimeoutError>;
+    expect(timeoutErr.reason).toBe("idle");
+    // Must report the idle window (10ms) that actually fired, not the 1000ms
+    // ceiling headroom that never lapsed.
+    expect(timeoutErr.timeoutMs).toBe(10);
   });
 
   test("throws ClaudeTimeoutError on stale-session timeout and does not retry (spawn called once)", async () => {
@@ -555,9 +557,11 @@ describe("runClaude", () => {
     const { ClaudeTimeoutError } = await import("./claude.ts");
     const err = await runClaudeIdleOnly("hello").catch((e) => e);
     expect(err).toBeInstanceOf(ClaudeTimeoutError);
-    expect((err as InstanceType<typeof ClaudeTimeoutError>).reason).toBe(
-      "idle",
-    );
+    const timeoutErr = err as InstanceType<typeof ClaudeTimeoutError>;
+    expect(timeoutErr.reason).toBe("idle");
+    // Must report the idle window (15ms) that actually fired, not the 5000ms
+    // ceiling that never came close.
+    expect(timeoutErr.timeoutMs).toBe(15);
   });
 
   test("ceiling-fires-despite-continuous-activity: stdout lines keep resetting idle indefinitely, but total elapsed exceeds the ceiling", async () => {

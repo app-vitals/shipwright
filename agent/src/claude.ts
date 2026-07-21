@@ -372,12 +372,14 @@ export function createRunClaude(
 
     let timedOut = false;
     let timeoutReason: ClaudeTimeoutReason = "ceiling";
+    let firedTimeoutMs = timeoutMs;
 
     // Hard ceiling: set once, never reset. Backstops a continuously-active
     // but never-converging session (idle timer alone would never fire).
     const ceilingTimer = setTimeout(() => {
       timedOut = true;
       timeoutReason = "ceiling";
+      firedTimeoutMs = timeoutMs;
       proc.kill();
     }, timeoutMs);
 
@@ -389,6 +391,7 @@ export function createRunClaude(
       idleTimer = setTimeout(() => {
         timedOut = true;
         timeoutReason = "idle";
+        firedTimeoutMs = idleTimeoutMs;
         proc.kill();
       }, idleTimeoutMs);
     };
@@ -404,7 +407,7 @@ export function createRunClaude(
     });
 
     if (timedOut) {
-      throw new ClaudeTimeoutError(timeoutMs, timeoutReason, modelUsage);
+      throw new ClaudeTimeoutError(firedTimeoutMs, timeoutReason, modelUsage);
     }
 
     if (exitCode !== 0) {
