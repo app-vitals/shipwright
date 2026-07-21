@@ -1,0 +1,87 @@
+---
+title: Commands Reference
+description: Full catalog of every Shipwright plugin slash command, grouped by category — the complete reference behind The Plugin's highlighted command table.
+section: Plugin
+order: 3
+prev: "/docs/agent-skills"
+next: "/docs/the-agent"
+---
+
+# Commands Reference
+
+Every slash command shipped by the Shipwright plugin, grouped by category. [The
+Plugin](/docs/the-plugin) highlights the nine commands you'll reach for most often — this
+page catalogs all of them, including the full test-readiness pipeline and the maintenance
+patrol commands that run on a schedule.
+
+Each command is invoked as `/shipwright:{name}` inside a Claude Code session with the plugin
+installed. Where a command is a thin wrapper around a same-named skill, it's cross-linked to
+that skill's entry in [Agent Skills](/docs/agent-skills).
+
+## Core / Delivery Loop
+
+The commands that drive the spec → plan → execute → review → deploy loop.
+
+| Command | What it does |
+|---------|--------------|
+| `/shipwright:prd` | Interactive PRD session — asks qualifying questions, researches context, and produces a `PRODUCT-SPEC.md` ready for `/plan-session`. (`/shipwright:brainstorm` is a deprecated alias that forwards to this command.) |
+| `/shipwright:plan-session` | Engineer planning pass — reads the product spec, explores the codebase, flags complexity, and produces a task queue in the task store. (`/shipwright:plan-sesh` is an alias.) |
+| `/shipwright:dev-task` | Execute a specific task from the task store by id — build the feature, simplify, verify requirements, and ship a PR. |
+| `/shipwright:review` | Review a specific open PR — deep single-pass review with inline comments, policy-controlled posting. |
+| `/shipwright:patch` | Address unresolved review findings, merge conflicts, and failing CI on a specific own open PR — queries GitHub directly, fixes in a worktree, pushes. |
+| `/shipwright:deploy` | Merge and deploy a PR through the Deploy → Canary → Promote pipeline. |
+| `/shipwright:metrics` | Analyze pipeline metrics — fix cascade trends, quality rates, and actionable recommendations across planning sessions. |
+| `/shipwright:research` | Load relevant project docs and web research for a given task, via an isolated sub-agent. |
+| `/shipwright:research-docs` | Analyze the codebase and generate or update project documentation — like `/init` but for the `docs/` directory. Supports an unattended `--auto` mode for cron use. |
+
+## Test Readiness Pipeline
+
+A five-phase pipeline that audits and improves test coverage end to end. Run in sequence —
+each phase reads the previous phase's output.
+
+| Command | What it does |
+|---------|--------------|
+| `/shipwright:test-inventory` | Phase 1 — inventory the codebase and prescribe the test layer (unit/integration/smoke/E2E) for every meaningful unit of code, ranked by criticality. Wraps the [`test-inventory` skill](/docs/agent-skills#test-inventory). |
+| `/shipwright:test-design` | Phase 2 — design the ideal test system greenfield (frameworks, local substitutes, canary contract, speed budgets, CI shape) given the Phase 1 inventory. Wraps the [`test-design` skill](/docs/agent-skills#test-design). |
+| `/shipwright:test-migration` | Phase 3 — reconcile existing tests against the Phase 1 inventory and Phase 2 blueprint, bucketing each into reuse / promote / rebuild / net-new. Wraps the [`test-migration` skill](/docs/agent-skills#test-migration). |
+| `/shipwright:test-roadmap` | Phase 4 — synthesize the three prior artifacts into a single executable roadmap (`test-readiness-plan.md`) with sequenced milestones and an agent-executable task list. Wraps the [`test-roadmap` skill](/docs/agent-skills#test-roadmap). |
+| `/shipwright:test-fix` | Phase 5 — read `test-readiness-plan.md` and queue its flat `T-NNN` task list as task-store tasks (dependency edges included), one per row. Requires `/test-roadmap` to have been run first. |
+| `/shipwright:test-debt` | Post-execution analysis — compute the corrective-commit ratio per milestone from git log and flag under-specified milestones as planning debt for the next roadmap run. Wraps the [`test-debt` skill](/docs/agent-skills#test-debt). |
+
+## Maintenance Patrols
+
+Scheduled or on-demand scans that find and fix code entropy, production errors, and code
+duplication. Each pair follows the same shape: a `-scan` command that reports only, and a
+`-fix` command that reads the scan's report and queues task-store tasks.
+
+| Command | What it does |
+|---------|--------------|
+| `/shipwright:entropy-scan` | Scan the codebase against your golden principles and generate `entropy-report.md`. Report only — no code changes. Wraps the [`entropy-scan` skill](/docs/agent-skills#entropy-scan). |
+| `/shipwright:entropy-fix` | Read `entropy-report.md` and queue `pr_worthy` violations as task-store tasks, one task per golden principle, with per-finding HITL classification. Requires `/entropy-scan` first. Wraps the [`entropy-fix` skill](/docs/agent-skills#entropy-fix). |
+| `/shipwright:error-scan` | Query the Sentry Issues API for unresolved issues, diff against the error-patrol ledger to find what's new or regressed, and generate `error-report.md`. Report only — no code changes. Wraps the [`error-scan` skill](/docs/agent-skills#error-scan). |
+| `/shipwright:error-fix` | Read `error-report.md`, fetch each New/Regressed issue's Sentry detail and stack trace, classify HITL per issue, and queue task-store tasks (plus companion observability-fix tasks where instrumentation gaps hinder root-causing). Requires `/error-scan` first. Wraps the [`error-fix` skill](/docs/agent-skills#error-fix). |
+| `/shipwright:error-resolve` | Read the error-patrol ledger, check each linked task's current status via the task store, and resolve the corresponding Sentry issue once its gating task has reached `deployed`/`done`. Wraps the [`error-resolve` skill](/docs/agent-skills#error-resolve). |
+| `/shipwright:consolidation-scan` | Discover emerging duplicate/similar code patterns via judgment-driven comparison and track them across runs. Report only — no code changes. Wraps the [`consolidation-scan` skill](/docs/agent-skills#consolidation-scan). |
+| `/shipwright:consolidation-fix` | Read `consolidation-report.md` and queue `ready_to_propose` duplication patterns as task-store tasks, one task per pattern, with a strangler-fig execution plan and per-finding HITL classification. Requires `/consolidation-scan` first. Wraps the [`consolidation-fix` skill](/docs/agent-skills#consolidation-fix). |
+
+## Planning & Research
+
+Interactive and batch commands for discovery, spec authoring, doc maintenance, and
+cross-session learning capture.
+
+| Command | What it does |
+|---------|--------------|
+| `/shipwright:refresh-plan` | Refresh stale planning doc tasks against the current codebase — verify file paths, update dependencies, and regenerate context. |
+| `/shipwright:learn` | Capture a durable learning and write it to its permanent home — `CLAUDE.md`, the relevant skill, or the right place per plugin routing rules. No staging file, no separate promote step. |
+| `/shipwright:learn-dream` | Extract cross-session learnings from past session transcripts in batch — the "dreaming" pattern for autonomous agents with no human to react to a correction in real time. |
+
+## Other
+
+| Command | What it does |
+|---------|--------------|
+| `/shipwright:hitl` | Execute a human-in-the-loop task — loads task context from the task store, assists with hands-on infra execution (terraform, helm, kubectl, gcloud — no tool restrictions), and marks the task done on exit. |
+
+## Next steps
+
+Continue to [Agent Skills](/docs/agent-skills) for the autonomous behaviors these commands
+wrap, or back to [The Plugin](/docs/the-plugin) for the plugin's architecture and anatomy.
