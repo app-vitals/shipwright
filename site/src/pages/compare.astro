@@ -10,6 +10,7 @@ import BaseLayout from "../layouts/BaseLayout.astro";
 import ChooseWhenGrid from "../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
+import { escapeHtml } from "../lib/html-escape";
 
 // Market structure: 3-pole framing of the AI coding agent space.
 // Shipwright occupies the middle pole — team AI workflow, not copilot UX
@@ -152,18 +153,6 @@ const tableColumns = [
   { key: "testsFirst", label: "Tests-First Enforcement" },
 ] as const;
 
-// Matches Astro's own text-node escaping for {expression} interpolation so
-// set:html-rendered cells produce the same entity-encoded output as the
-// original JSX-interpolated markup (e.g. "codebase Q&A" -> Q&amp;A).
-function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 // ComparisonTable props for the landscape table. Header/cell style strings
 // are reproduced exactly from the original hand-copied <table> markup.
 const landscapeColumns = tableColumns.map((col, i) => ({
@@ -176,45 +165,45 @@ const landscapeRows = landscape.map((row) => ({
   cells: [
     {
       style: "padding:0.7rem 1rem 0.7rem 0; vertical-align:top;",
-      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${esc(row.tool)} </span>`,
+      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
     },
     {
       style:
         "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;",
-      html: esc(row.license),
+      html: escapeHtml(row.license),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.models),
+      html: escapeHtml(row.models),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.taskQueue),
+      html: escapeHtml(row.taskQueue),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.teamVisibility),
+      html: escapeHtml(row.teamVisibility),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.policyControls),
+      html: escapeHtml(row.policyControls),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.humanReviewGate),
+      html: escapeHtml(row.humanReviewGate),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.cronScheduling),
+      html: escapeHtml(row.cronScheduling),
     },
     {
       style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.slackWorkflow),
+      html: escapeHtml(row.slackWorkflow),
     },
     {
       style:
         "padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: esc(row.testsFirst),
+      html: escapeHtml(row.testsFirst),
     },
   ],
 }));

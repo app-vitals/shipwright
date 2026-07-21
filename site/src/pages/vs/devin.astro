@@ -10,6 +10,7 @@ import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
 import ComparisonTable from "../../components/ComparisonTable.astro";
 import TryItCta from "../../components/TryItCta.astro";
 import { LICENSE_URL } from "../../consts";
+import { escapeHtml } from "../../lib/html-escape";
 
 const verifiedDate = "July 14, 2026";
 
@@ -70,33 +71,21 @@ const dimensionColumns = [
   },
 ];
 
-// Matches Astro's own text-node escaping for {expression} interpolation so
-// set:html-rendered cells produce the same entity-encoded output as the
-// original JSX-interpolated markup (e.g. agent's -> agent&#39;s).
-function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 const dimensionRows = comparisonRows.map((row) => ({
   cells: [
     {
       style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
-      html: ` ${esc(row.dimension)} `,
+      html: ` ${escapeHtml(row.dimension)} `,
     },
     {
       style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: ` ${esc(row.shipwright)} `,
+      html: ` ${escapeHtml(row.shipwright)} `,
     },
     {
       style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
       html: row.citation
-        ? ` ${esc(row.devin)}  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
-        : ` ${esc(row.devin)} `,
+        ? ` ${escapeHtml(row.devin)}  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
+        : ` ${escapeHtml(row.devin)} `,
     },
   ],
 }));

@@ -10,6 +10,7 @@
 import BaseLayout from "../layouts/BaseLayout.astro";
 import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
+import { escapeHtml } from "../lib/html-escape";
 
 const verifiedDate = "July 14, 2026";
 
@@ -88,34 +89,22 @@ const architectureColumns = [
   },
 ];
 
-// Matches Astro's own text-node escaping for {expression} interpolation so
-// set:html-rendered cells produce the same entity-encoded output as the
-// original JSX-interpolated markup (e.g. Cursor's -> Cursor&#39;s).
-function esc(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
 const architectureTableRows = architectureRows.map((row) => ({
   highlight: row.self,
   cells: [
     {
       style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top;",
-      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${esc(row.tool)} </span>`,
+      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
     },
     {
       style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: ` ${esc(row.license)} `,
+      html: ` ${escapeHtml(row.license)} `,
     },
     {
       style: "padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
       html: row.citation
-        ? ` <strong>${esc(row.architecture)}</strong> <span> ${esc(row.detail)}</span>  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
-        : ` <strong>${esc(row.architecture)}</strong> <span> ${esc(row.detail)}</span>  `,
+        ? ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
+        : ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  `,
     },
   ],
 }));
