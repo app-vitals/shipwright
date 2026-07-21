@@ -24,6 +24,15 @@ export type { BlockedByEntry };
 export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /**
+ * Skip-count auto-block threshold: once a task's skipCount reaches this
+ * value, recordSkip() also sets hitl:true + blockedReason so the loop
+ * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
+ * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
+ * agent/ and task-store/ are separate deployables.
+ */
+const SKIP_BLOCK_THRESHOLD = 3;
+
+/**
  * Parses an `updatedSince` filter value into a Date, matching the
  * BadRequestError(400) pattern used for `repo`/`prNumber` validation
  * elsewhere in the request stack rather than letting an unparseable value
@@ -106,6 +115,8 @@ export interface TaskServiceLike {
   complete(id: string): Promise<Task>;
   fail(id: string, reason?: string): Promise<Task>;
   release(id: string): Promise<Task>;
+  recordSkip(id: string): Promise<Task>;
+  resetSkip(id: string): Promise<Task>;
 }
 
 export class TaskService implements TaskServiceLike {
@@ -437,6 +448,48 @@ export class TaskService implements TaskServiceLike {
           claimedAt: null,
           heartbeatAt: null,
         },
+      });
+    } catch (err: unknown) {
+      throw this.translateNotFound(err, "task not found");
+    }
+  }
+
+  /**
+   * Record a skip: atomically increments skipCount and sets lastSkippedAt.
+   * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
+   * hitl:true + a descriptive blockedReason in the same update — mirrors
+   * fail()'s status=blocked+reason pattern above. Every call increments
+   * regardless of current count (not a guard), and re-checks the threshold
+   * each time in case a prior resetSkip() brought the count back down.
+   */
+  async recordSkip(id: string): Promise<Task> {
+    const now = this.clock.now().toISOString();
+    try {
+      const updated = await this.prisma.task.update({
+        where: { id },
+        data: { skipCount: { increment: 1 }, lastSkippedAt: now },
+      });
+      if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+        return await this.prisma.task.update({
+          where: { id },
+          data: {
+            hitl: true,
+            blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+          },
+        });
+      }
+      return updated;
+    } catch (err: unknown) {
+      throw this.translateNotFound(err, "task not found");
+    }
+  }
+
+  /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
+  async resetSkip(id: string): Promise<Task> {
+    try {
+      return await this.prisma.task.update({
+        where: { id },
+        data: { skipCount: 0, lastSkippedAt: null },
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
