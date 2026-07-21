@@ -31,6 +31,14 @@ const EXCLUDE_PREFIXES = [
   "scripts/seed-task-store-token.ts",
   "scripts/seed-chat-tokens.ts",
   "scripts/seed-dev-agent.ts",
+
+  // Browser-loaded dashboard client — a plain (non-module) <script>, mostly
+  // DOM manipulation and chart rendering with no in-process request seam to
+  // unit test. Its pure, injectable-fetch logic (fetchSequential) is
+  // unit-tested via a guarded test-only export (see app.unit.test.js); that
+  // export requires importing the whole file, which would otherwise drag
+  // ~1000 lines of untestable DOM code into the aggregate gate.
+  "metrics/src/dashboard/app.js",
 ];
 
 // Paths containing this substring are excluded regardless of prefix
