@@ -91,14 +91,19 @@ jobs:
     steps:
       # Check out main (not the tag's commit) so we always sync from the
       # latest state on main, same reasoning as auto-bump-chart.yml.
+      #
+      # persist-credentials left at its default (true) intentionally: the
+      # "Commit and push sync branch" step below pushes from this checkout's
+      # working directory and relies on the token persisted into its local
+      # git config to authenticate that push.
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           token: ${{ secrets.DISPATCH_TOKEN }}
           ref: main
           fetch-depth: 0
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.x"
 
@@ -156,10 +161,14 @@ jobs:
       - name: Commit and push sync branch
         id: commit-push
         if: steps.idempotency.outputs.skip != 'true' && steps.diff.outputs.changed == 'true'
+        env:
+          BRANCH_NAME: ${{ steps.version.outputs.branch }}
+          VERSION_NAME: ${{ steps.version.outputs.version }}
+          TAG_NAME: ${{ github.ref_name }}
         run: |
-          BRANCH="${{ steps.version.outputs.branch }}"
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ github.ref_name }}"
+          BRANCH="$BRANCH_NAME"
+          VERSION="$VERSION_NAME"
+          TAG="$TAG_NAME"
 
           git checkout -b "$BRANCH"
           git add package.json plugins/shipwright/package.json \
@@ -180,10 +189,13 @@ jobs:
         id: pr
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          VERSION_NAME: ${{ steps.version.outputs.version }}
+          TAG_NAME: ${{ github.ref_name }}
+          BRANCH_NAME: ${{ steps.version.outputs.branch }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TAG="${{ github.ref_name }}"
-          BRANCH="${{ steps.version.outputs.branch }}"
+          VERSION="$VERSION_NAME"
+          TAG="$TAG_NAME"
+          BRANCH="$BRANCH_NAME"
 
           PR_URL=$(gh pr create \
             --base main \

@@ -83,6 +83,9 @@ jobs:
   debounce:
     name: debounce burst of release tags
     runs-on: ubuntu-latest
+    # This job only sleeps — it never touches the repo, so it needs none of
+    # the workflow-level contents:write / pull-requests:write permissions.
+    permissions: {}
     concurrency:
       group: chart-bump-debounce
       cancel-in-progress: true
@@ -111,7 +114,7 @@ jobs:
       # Check out main (not the tag's commit) so we always bump from the
       # latest chart version on main rather than whatever state the tag points at.
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: main
