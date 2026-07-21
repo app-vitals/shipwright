@@ -30,6 +30,7 @@ import {
   type TokenAggregate,
 } from "../lib/admin-metrics-client.ts";
 import { type Clock, SystemClock } from "../lib/clock.ts";
+import { CoalescingCache } from "../lib/coalescing-cache.ts";
 import type {
   PrRecord,
   TaskRecord,
@@ -170,17 +171,27 @@ function addAggregates(a: TokenAggregate, b: TokenAggregate): TokenAggregate {
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export class TaskStoreProvider implements MetricsProvider {
+  private readonly cache: CoalescingCache;
+
   /**
    * @param repo - optional `org/repo` scope. When set (public mode), every
    *   task/PR read is filtered to this repo. When omitted, all repos are
    *   included (the authenticated default).
+   * @param cacheTtlMs - TTL (ms) for the coalescing cache backing tasks()/
+   *   prs() reads. Defaults to 5000ms — comfortably covers one dashboard
+   *   page-load's burst of concurrent query() calls (the dashboard
+   *   auto-refreshes every 60s, so this never spans two refresh cycles) while
+   *   configurable for tests.
    */
   constructor(
     private readonly taskStore: TaskStoreClient,
     private readonly admin: AdminMetricsClient,
     private readonly clock: Clock = SystemClock(),
     private readonly repo?: string,
-  ) {}
+    cacheTtlMs = 5000,
+  ) {
+    this.cache = new CoalescingCache(this.clock, cacheTtlMs);
+  }
 
   async query(q: MetricQuery): Promise<MetricTable> {
     const win = resolveQueryRange(q.range, this.clock);
@@ -225,15 +236,30 @@ export class TaskStoreProvider implements MetricsProvider {
   }
 
   // ─ Task reads ─
+  //
+  // Routed through a single-flight + short-TTL CoalescingCache: nearly every
+  // MetricQuery kind calls tasks(win) and/or prs(win) independently, so one
+  // dashboard load fans out many concurrent identical reads against the same
+  // window. Each key embeds `win` and `repo` (so different windows/provider
+  // scopes never collide — a fresh CoalescingCache instance per
+  // TaskStoreProvider also guards against any cross-instance bleed) plus a
+  // "tasks"/"prs" discriminant, since a bare `JSON.stringify({ win, repo })`
+  // would otherwise produce the identical key for both reads and let a
+  // pending listPrs() call be satisfied with a cached listTasks() result (or
+  // vice versa).
 
   private tasks(win: { from: string; to: string }): Promise<TaskRecord[]> {
-    return Promise.resolve(
+    const key = JSON.stringify({ kind: "tasks", win, repo: this.repo });
+    return this.cache.get(key, () =>
       this.taskStore.listTasks({ ...win, repo: this.repo }),
     );
   }
 
   private prs(win: { from: string; to: string }): Promise<PrRecord[]> {
-    return Promise.resolve(this.taskStore.listPrs({ ...win, repo: this.repo }));
+    const key = JSON.stringify({ kind: "prs", win, repo: this.repo });
+    return this.cache.get(key, () =>
+      this.taskStore.listPrs({ ...win, repo: this.repo }),
+    );
   }
 
   // ─ Summary ─
