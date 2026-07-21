@@ -84,6 +84,53 @@ gh pr view {number} --repo {org}/{repo} \
 
 ---
 
+## Step 2.1: Resolve Patch Model Tier (MTR-2.1)
+
+Every dispatch this command makes — conflict resolution (Step 4b), finding fixes (Step
+5b), CI fixes (Step 6c) — is inherently a response to a failure signal (a conflict, a
+review finding, a red CI run). There's no "first attempt" the way `dev-task` has one, so
+`PATCH_MODEL` starts one tier above the linked task's planned tier rather than waiting to
+hit `dev-task`'s own BLOCKED-escalation ladder. Resolve it once here, right after Step 2
+resolves the target PR — this is independent of claim state (reading the linked task's
+model doesn't require holding a claim), and the computed value is reused as-is at Step 4b,
+Step 5b, Step 6c, and Step 5a.7. None of those four sites re-fetches it.
+
+```bash
+PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -r '.prs[0].taskId // empty')
+```
+
+- **`PR_TASK_ID` non-empty** (the PR has a linked task): fetch that task's planned model
+  and escalate one tier:
+  ```bash
+  TASK_MODEL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.model // "sonnet"')
+  ```
+  Compute `PATCH_MODEL` by escalating `TASK_MODEL` one tier up the same ladder
+  `dev-task.md`'s Step 5c BLOCKED handling already climbs — a patch dispatch is always
+  reacting to a problem the way a BLOCKED implementation subagent is, so it starts where
+  that ladder's first escalation would land, instead of waiting to hit it:
+  `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already at the top tier — stays put).
+
+  | `TASK_MODEL` (or `model ?? 'sonnet'` if the field is unset) | `PATCH_MODEL` |
+  |---|---|
+  | `haiku` | `sonnet` |
+  | `sonnet` | `opus` |
+  | `opus` | `opus` (already at the top tier — stays put) |
+
+- **`PR_TASK_ID` is unresolved (empty), or either `curl -sf` call above fails (non-200)**:
+  `PATCH_MODEL = "sonnet"` — plain `sonnet`, with **no escalation**. Print a one-line
+  warning and continue; this is **not a hard stop**:
+  ```bash
+  PATCH_MODEL="sonnet"
+  echo "⚠ no linked task found (or lookup failed) for PR #{pr} — PATCH_MODEL defaulting to sonnet, no escalation"
+  ```
+  There's no known baseline tier to escalate from on a PR Shipwright didn't create (or
+  whose task record isn't reachable), so defaulting straight to `opus` would be a surprise
+  cost spike with no signal backing it — `sonnet` is the safe, unescalated default.
+
+---
+
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
 For each PR discovered in Step 2, use the `mergeStateStatus` field (already fetched in Step 2) to identify DIRTY PRs.
@@ -385,7 +432,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the conflict-resolution subagent runs at the escalated
+tier, with this prompt:
 
 ```
 You are resolving merge conflicts on a pull request. Merge the base branch, resolve all
@@ -627,11 +676,10 @@ still raised a finding this round.
 5 for this PR entirely — do not dispatch the fix subagent, do not post another rebuttal, and
 do not reset `reviewState`.
 
-1. Resolve the linked task from the PR record claimed in Step 5a.6:
-   ```bash
-   PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" | jq -r '.taskId // empty')
-   ```
+1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. (Step 2.1
+   fetched `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right
+   after Step 2 resolved this same PR, independent of any claim, so it's already available
+   by the time this check runs.)
 2. If `PR_TASK_ID` is non-empty, PATCH it to `hitl: true` so the task is flagged for a human
    decision:
    ```bash
@@ -717,7 +765,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the fix subagent runs at the escalated tier, with this
+prompt:
 
 ```
 You are addressing review findings on a pull request. Apply fixes, validate, commit, push,
@@ -1172,7 +1222,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the CI-fix subagent runs at the escalated tier, with this
+prompt:
 
 ```
 You are fixing failing CI on a pull request. Diagnose the failures, apply fixes, validate locally, commit, and push.
