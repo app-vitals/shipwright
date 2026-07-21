@@ -9,6 +9,13 @@ on:
         required: false
         default: false
 
+# Least privilege at the workflow level; the guard job's only GITHUB_TOKEN use
+# is the read-only collaborators/permission API call below. The release job
+# uses a scoped GitHub App token (see create-github-app-token below) for
+# everything else, not GITHUB_TOKEN, so no elevated permissions are needed here.
+permissions:
+  contents: read
+
 jobs:
   guard:
     name: Admin check
@@ -17,10 +24,11 @@ jobs:
       - name: Assert actor is admin
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
         run: |
-          PERMISSION=$(gh api repos/${{ github.repository }}/collaborators/${{ github.actor }}/permission --jq '.permission')
+          PERMISSION=$(gh api repos/$GITHUB_REPOSITORY/collaborators/$ACTOR/permission --jq '.permission')
           if [ "$PERMISSION" != "admin" ]; then
-            echo "Error: ${{ github.actor }} is not a repo admin (got: $PERMISSION)" >&2
+            echo "Error: $ACTOR is not a repo admin (got: $PERMISSION)" >&2
             exit 1
           fi
 
@@ -34,6 +42,17 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Scoped to exactly what semantic-release needs: @semantic-release/git
+          # pushes release commits to main (contents), @semantic-release/github
+          # creates GitHub releases (contents) and comments on referenced
+          # issues/PRs (issues, pull-requests). Without this, the minted token
+          # would inherit the App's full blanket installation permissions.
+          # NOTE: v1.12.0 exposes per-resource `permission-<name>` inputs, not a
+          # single YAML `permissions:` block — see action.yml's generated
+          # permission-* inputs.
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
