@@ -7,10 +7,7 @@
 // Claude-native. Zero runtime JS; all static HTML inlined at build time.
 // Brand tokens only.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { BOOKING_URL } from "../consts";
-
-const repoUrl = "https://github.com/app-vitals/shipwright";
-const installCmd = "/plugin install shipwright@app-vitals/shipwright";
+import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
 
 // Market structure: 3-pole framing of the AI coding agent space.
 // Shipwright occupies the middle pole — team AI workflow, not copilot UX
@@ -489,9 +486,9 @@ helm install shipwright shipwright/shipwright</code></pre>
       Install the plugin into Claude Code and run a task end to end. Free, MIT,
       runs on your own infra.
     </p>
-    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
+    <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
     <div class="mt-6 flex flex-wrap items-center gap-4">
-      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
+      <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
       <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
     </div>
   </section>

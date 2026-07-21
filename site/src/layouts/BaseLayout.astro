@@ -4,7 +4,7 @@
 // fonts load via plain <link rel="stylesheet"> and the glow orb is pure CSS.
 import "../styles/brand.css";
 import Analytics from "../components/Analytics.astro";
-import { BOOKING_URL } from "../consts";
+import { BOOKING_URL, LICENSE_URL, REPO_URL } from "../consts";
 
 interface Props {
   title?: string;
@@ -66,8 +66,6 @@ const structuredData = {
 };
 
 // Footer links (SWW-2.3): repo, license, platform, community.
-const repoUrl = "https://github.com/app-vitals/shipwright";
-const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
 const claudeCodeUrl = "https://claude.com/claude-code";
 const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
 const compareUrl = "/compare";
@@ -185,7 +183,7 @@ const year = new Date().getFullYear();
         <a href={compareUrl} class="sw-label">Compare</a>
         <a href={vsDevinUrl} class="sw-label">vs Devin</a>
         <a href={architectureUrl} class="sw-label">Architecture</a>
-        <a href={repoUrl} class="sw-label">GitHub ↗</a>
+        <a href={REPO_URL} class="sw-label">GitHub ↗</a>
         <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
       </nav>
 
@@ -220,7 +218,7 @@ const year = new Date().getFullYear();
           <a href={architectureUrl} class="sw-label">Architecture</a>
         </li>
         <li>
-          <a href={repoUrl} class="sw-label">GitHub ↗</a>
+          <a href={REPO_URL} class="sw-label">GitHub ↗</a>
         </li>
         <li>
           <a href={BOOKING_URL} class="sw-label">Book a call</a>
@@ -306,8 +304,8 @@ const year = new Date().getFullYear();
           Shipwright Harness · MIT-licensed · © {year}
         </p>
         <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
-          <a href={repoUrl}>GitHub</a>
-          <a href={licenseUrl}>MIT License</a>
+          <a href={REPO_URL}>GitHub</a>
+          <a href={LICENSE_URL}>MIT License</a>
           <a href={claudeCodeUrl}>Claude Code</a>
           <a href={discussionsUrl}>GitHub Discussions</a>
           <a href={compareUrl}>Compare</a>

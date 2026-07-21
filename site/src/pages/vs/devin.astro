@@ -6,11 +6,8 @@
 // future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under.
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { BOOKING_URL } from "../../consts";
+import { BOOKING_URL, INSTALL_CMD, LICENSE_URL, REPO_URL } from "../../consts";
 
-const repoUrl = "https://github.com/app-vitals/shipwright";
-const installCmd = "/plugin install shipwright@app-vitals/shipwright";
-const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
 const verifiedDate = "July 14, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
@@ -134,7 +131,7 @@ const comparisonRows = [
     <!-- License quote: the actual MIT license line from this repo. -->
     <div class="sw-callout mt-8 max-w-3xl">
       <p class="sw-mono text-sm" style="color: var(--sw-color-text-muted);">
-        From <a href={licenseUrl}>Shipwright's LICENSE</a>:
+        From <a href={LICENSE_URL}>Shipwright's LICENSE</a>:
       </p>
       <p class="mt-2">
         "Permission is hereby granted, free of charge, to any person
@@ -218,9 +215,9 @@ const comparisonRows = [
       Install the plugin into Claude Code and run a task end to end. Free,
       MIT, runs on your own infra.
     </p>
-    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
+    <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
     <div class="mt-6 flex flex-wrap items-center gap-4">
-      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
+      <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
       <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
     </div>
     <p class="mt-8 max-w-2xl">
