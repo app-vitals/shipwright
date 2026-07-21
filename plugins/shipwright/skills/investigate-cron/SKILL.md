@@ -281,7 +281,13 @@ the agent workspace root.
 **With an admin-API run resolved (preferred path):** you have an exact
 `startedAt` for the run (Step 1c). Use a tight window (e.g. ±5 minutes) around
 that timestamp against the `.jsonl` file mtimes to find the matching transcript
-— this is a precision narrowing step now, not the primary matching mechanism:
+— this is a precision narrowing step now, not the primary matching mechanism.
+`startedAt` is ISO 8601 (e.g. `2026-07-21T01:11:46.391Z`) — convert it to epoch
+seconds first (in item mode, repeat this per entry in `ITEM_RUNS`):
+
+```bash
+RUN_STARTED_EPOCH=$(date -d "$RUN_STARTED_AT" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${RUN_STARTED_AT%%.*}" +%s)
+```
 
 ```bash
 python3 -c "
