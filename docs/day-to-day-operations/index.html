@@ -1,0 +1,142 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-mw7aashj> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v6.4.8"><title>Day-to-Day Operations — Shipwright Harness</title><meta name="description" content="The operator quick-start — what you need, a first-day checklist, and the ongoing loop of checking cron health, triaging the PR queue, and responding to HITL escalations."><link rel="canonical" href="https://shipwrightharness.com/docs/day-to-day-operations/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/day-to-day-operations/"><meta property="og:title" content="Day-to-Day Operations — Shipwright Harness"><meta property="og:description" content="The operator quick-start — what you need, a first-day checklist, and the ongoing loop of checking cron health, triaging the PR queue, and responding to HITL escalations."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/consts.9QaJRfcJ.css"><style>#docs-sidebar-toggle[data-astro-cid-mw7aashj],.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:none}@media(max-width:767px){.docs-sidebar[data-astro-cid-mw7aashj]{position:fixed;top:0;left:0;transform:translate(-100%);width:280px;height:100vh;z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);transition:transform .25s ease;overflow-y:auto;padding:1.5rem}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-layout[data-astro-cid-mw7aashj] .docs-sidebar[data-astro-cid-mw7aashj]{transform:translate(0)}#docs-sidebar-toggle[data-astro-cid-mw7aashj]:checked~.docs-sidebar-overlay[data-astro-cid-mw7aashj]{display:block;position:fixed;inset:0;z-index:40;background:color-mix(in srgb,var(--sw-color-bg-base) 65%,transparent)}.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:flex}}@media(min-width:768px){.docs-mobile-menu-btn[data-astro-cid-mw7aashj],.docs-mobile-close-btn[data-astro-cid-mw7aashj]{display:none}.docs-sidebar[data-astro-cid-mw7aashj]{position:sticky;top:1.5rem;height:-moz-fit-content;height:fit-content;max-height:calc(100vh - 3rem);overflow-y:auto}}.docs-layout[data-astro-cid-mw7aashj]{display:grid;grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px)}@media(min-width:768px){.docs-layout[data-astro-cid-mw7aashj]{grid-template-columns:260px 1fr 220px;gap:2rem;align-items:start}}.docs-sidebar-link[data-astro-cid-mw7aashj]{display:block;padding:.3rem .75rem;border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;transition:background .15s,color .15s}.docs-sidebar-link[data-astro-cid-mw7aashj]:hover,.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-mw7aashj][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-mw7aashj]{display:block;padding:.2rem 0;font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);text-decoration:none;line-height:1.4}.docs-toc-link[data-astro-cid-mw7aashj]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-mw7aashj].depth-3{padding-left:.75rem;font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted)}.docs-prevnext[data-astro-cid-mw7aashj]{display:flex;gap:1rem;justify-content:space-between;padding-top:2rem;margin-top:2rem;border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]{display:inline-flex;align-items:center;gap:.4rem;padding:.6rem 1rem;border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);text-decoration:none;transition:border-color .15s,color .15s}.docs-prevnext[data-astro-cid-mw7aashj] a[data-astro-cid-mw7aashj]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head> <body class="min-h-screen" data-astro-cid-mw7aashj> <!-- Glow orb (decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-mw7aashj></div> <!-- Site header --> <header class="sw-container relative z-10 flex items-center justify-between py-6" data-astro-cid-mw7aashj> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg" data-astro-cid-mw7aashj> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);" data-astro-cid-mw7aashj>
+Shipwright <span style="color: var(--sw-color-brand-default);" data-astro-cid-mw7aashj>Harness</span> </span> </a> <nav class="hidden md:flex items-center gap-6" aria-label="Primary" data-astro-cid-mw7aashj> <a href="/docs" class="sw-label" data-astro-cid-mw7aashj>Docs</a> <a href="/compare" class="sw-label" data-astro-cid-mw7aashj>Compare</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label" data-astro-cid-mw7aashj>GitHub ↗</a> <a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary" data-astro-cid-mw7aashj>Book a call</a> </nav> </header> <!-- Main docs layout --> <div class="sw-container relative z-10 pb-20" data-astro-cid-mw7aashj> <!-- Mobile: hamburger button --> <div class="docs-mobile-menu-btn py-4" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-mw7aashj>
+☰ Menu
+</label> </div> <!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) --> <input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-mw7aashj> <!-- Overlay (click to close) --> <label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-mw7aashj></label> <div class="docs-layout" data-astro-cid-mw7aashj> <!-- Sidebar --> <aside class="docs-sidebar" data-astro-cid-mw7aashj> <!-- Mobile-only nav links (hidden on desktop) --> <nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj><a href="/docs" class="docs-sidebar-link" data-astro-cid-mw7aashj>Docs</a></li> <li data-astro-cid-mw7aashj><a href="/compare" class="docs-sidebar-link" data-astro-cid-mw7aashj>Compare</a></li> <li data-astro-cid-mw7aashj><a href="https://github.com/app-vitals/shipwright" class="docs-sidebar-link" data-astro-cid-mw7aashj>GitHub ↗</a></li> <li data-astro-cid-mw7aashj><a href="https://vitals-os.com/cal/book/discovery" class="docs-sidebar-link" data-astro-cid-mw7aashj>Book a call</a></li> </ul> </nav> <!-- Pagefind search widget --> <div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj></div> <!-- Mobile close button --> <div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-mw7aashj> <label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-mw7aashj>
+✕ Close
+</label> </div> <nav aria-label="Docs navigation" data-astro-cid-mw7aashj> <div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Getting Started </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-mw7aashj> Introduction </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-mw7aashj> Getting Started </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Plugin </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Plugin </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-mw7aashj> Running Locally </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Agent </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-mw7aashj> The Agent </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuring Autonomy </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Operations </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-mw7aashj> Deploying to Cloud </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-mw7aashj> Slack Integration </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/day-to-day-operations" class="docs-sidebar-link" aria-current="page" data-astro-cid-mw7aashj> Day-to-Day Operations </a> </li> </ul> </div><div style="margin-bottom: 1.5rem;" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-mw7aashj> Reference </p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-mw7aashj> Configuration Reference </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> Task Store API </a> </li><li data-astro-cid-mw7aashj> <a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-mw7aashj> PRs API </a> </li> </ul> </div> </nav> </aside> <!-- Main content --> <main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-mw7aashj>  <h1 id="day-to-day-operations">Day-to-Day Operations</h1>
+<p>This is the operator quick-start for running a live Shipwright agent day to day. It covers what
+you need before you start, a first-day checklist, and the ongoing loop you’ll repeat once the
+agent is running: checking cron health, triaging the open-PR queue, and noticing and responding
+to human-in-the-loop (HITL) escalations.</p>
+<h2 id="what-you-need">What you need</h2>
+<ul>
+<li><strong>A live, provisioned agent.</strong> Either a managed agent provisioned via <code>/admin/provision</code> (see
+<a href="/docs/slack-integration">Slack Integration</a> for the Slack setup portion) or a self-hosted agent
+running through <code>task stack</code> / a manual deployment (see
+<a href="/docs/deploying-to-cloud">Deploying to Cloud</a>).</li>
+<li><strong>Admin console access.</strong> The admin UI is at <code>/admin</code>, authenticated via Google OAuth. You need
+an account allowed by the admin service’s configured access list to sign in.</li>
+<li><strong>Slack access, if the agent is Slack-connected.</strong> Optional — only needed if the agent posts
+cron results and takes DMs/mentions through Slack, as covered in
+<a href="/docs/slack-integration">Slack Integration</a>. An agent can also run without Slack, driven
+through the admin console’s Chat tab instead.</li>
+</ul>
+<h2 id="day-one-checklist">Day one checklist</h2>
+<p>Once you have console access, work through this list before leaving the agent unattended:</p>
+<ol>
+<li><strong>Find your agent.</strong> Go to <code>/admin/agents</code> and open your agent’s detail page
+(<code>/admin/agents/:id</code>) to confirm it exists and see its configuration.</li>
+<li><strong>Check which crons are enabled.</strong> The agent detail page lists its cron jobs. Pipeline phase
+crons (<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, <code>shipwright-deploy</code>) and
+the <code>shipwright-loop</code> orchestrator are the ones that drive autonomous work — confirm the set you
+expect is turned on. A standalone phase cron with <code>shipwright-loop</code> disabled is inert, so if
+nothing seems to be happening, that’s the first thing to check.</li>
+<li><strong>Read the first cron logs.</strong> Open <code>/admin/agents/:id/cron-logs</code> to see the run history for
+every cron the agent owns — each run shows an outcome (<code>completed</code>, <code>failed</code>, or <code>skipped</code>),
+start time, duration, and (when the run dispatched work) the task or PR it acted on. Filter by
+<code>?cronId=</code> or <code>?outcome=</code> to narrow the view.</li>
+<li><strong>Check the work queue.</strong> <code>/admin/agents/:id/work-queue</code> shows the agent’s latest self-reported
+ranked queue — the tasks and PRs it sees as pending work, oldest first, across the dev-task,
+review, patch, and deploy phases. An empty queue with no snapshot yet usually means the agent
+hasn’t ticked since this feature shipped, or <code>shipwright-loop</code> isn’t enabled.</li>
+<li><strong>Look at open PRs.</strong> <code>/admin/prs</code> lists PRs the agent has opened or is tracking, filterable by
+<code>?state=</code>, <code>?reviewState=</code>, <code>?repo=</code>, and <code>?taskId=</code>. Skim it so you know what’s in flight.</li>
+<li><strong>Look at tasks with an HITL gate.</strong> <code>/admin/tasks?hitl=true</code> filters the task list to tasks
+flagged <code>hitl: true</code>. If any are unfamiliar, open the task detail page
+(<code>/admin/tasks/:id</code>) — it shows the raw <code>HITL: yes/no</code> field and, when the task is blocked, a
+“Blocked Reason” field.</li>
+<li><strong>If Slack is connected, confirm you’re in the loop.</strong> Make sure you (or the right humans) are
+in the channel or DM path the agent posts to, since that’s how you’ll hear about escalations —
+see the “Noticing and responding to a HITL escalation” section below.</li>
+</ol>
+<h2 id="the-ongoing-loop">The ongoing loop</h2>
+<p>Once the agent is up and running, day-to-day operation is mostly a light, recurring check across
+three things: cron health, the open-PR queue, and HITL escalations.</p>
+<h3 id="reading-cron-health">Reading cron health</h3>
+<p><code>/admin/agents/:id/cron-logs</code> is the single place to check whether the agent’s crons are actually
+running and doing useful work. Each row is one cron run, with:</p>
+<ul>
+<li><strong>Outcome</strong> — <code>completed</code> (the run finished normally), <code>failed</code> (the run errored — hover the
+badge for the error message), or <code>skipped</code> (the run didn’t execute — hover the badge for the
+skip reason).</li>
+<li><strong>Owning cron, start time, duration, and — when the run dispatched against a task or PR — which
+one.</strong></li>
+</ul>
+<p>Use the <code>?cronId=</code> and <code>?outcome=</code> query filters to narrow down to, for example, only <code>failed</code>
+runs, or only runs from <code>shipwright-loop</code>. A steady stream of <code>failed</code> outcomes on the same cron
+is the clearest signal something needs attention. The agent detail page also surfaces each cron’s
+last run time and outcome inline, so you can spot a stalled cron (no recent runs) without opening
+the full log.</p>
+<h3 id="triaging-the-open-pr-queue">Triaging the open-PR queue</h3>
+<p><code>/admin/prs</code> is the queue view. Filter by <code>?state=</code> to see what’s open vs. merged/closed, by
+<code>?reviewState=</code> to see what’s pending review vs. already reviewed, and by <code>?repo=</code> or <code>?taskId=</code>
+to scope to a specific repository or task. Opening a PR row (<code>/admin/prs/:id</code>) shows its detail —
+useful for checking whether a PR has been sitting in the same review state longer than expected,
+or whether it’s linked back to the task that produced it.</p>
+<p>The work-queue view (<code>/admin/agents/:id/work-queue</code>) complements this: it’s the agent’s own
+ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
+handy for confirming the agent agrees with what you see in the PR list.</p>
+<h3 id="noticing-and-responding-to-a-hitl-escalation">Noticing and responding to a HITL escalation</h3>
+<p>Some tasks and PRs require a human before the agent can proceed — the <code>hitl: true</code> field marks
+these. This is a real gap worth understanding precisely, because there’s no automated push
+notification built into the platform beyond the agent’s own message:</p>
+<ul>
+<li><strong><code>hitl: true</code> with no notification sent yet</strong> is an agent-actionable block — a properly
+functioning agent is expected to post a message (typically to Slack) flagging the situation,
+then record that it notified you.</li>
+<li><strong><code>hitl: true</code> with a notification already sent</strong> means the agent has already flagged it and is
+passively waiting on a human action.</li>
+</ul>
+<p>Several pipeline steps set <code>hitl: true</code> automatically on failure — for example, a post-merge CI
+failure, a deploy-stage or canary failure, a pipeline timeout, or an unresolved second round of
+review disagreement during patching.</p>
+<p>In practice, today, the two ways to notice an escalation are:</p>
+<ol>
+<li><strong>Watch for the agent’s own Slack message.</strong> If the agent is Slack-connected, this is usually
+the first signal — it should post to its configured channel or DM you directly when it hits a
+HITL gate.</li>
+<li><strong>Periodically check the admin console.</strong> <code>/admin/tasks?hitl=true</code> filters to every task with
+the HITL flag set. The task list shows a “Waiting: HITL” badge, though that badge alone doesn’t
+distinguish “notification already sent” from “notification still pending” — open the task
+detail page (<code>/admin/tasks/:id</code>) for that distinction: it shows either “HITL gate (notification
+sent — awaiting clearance)” or “HITL gate (notification pending)” under Blockers. <code>/admin/prs</code>
+surfaces the same signal for PR-level blocks.</li>
+</ol>
+<p>Once you’ve picked up the escalation, <code>/shipwright:hitl {task-id}</code> is the command to run locally in
+Claude Code to work through it: it loads the task’s context (including any <code>## Human steps</code>
+section), assists hands-on with infra execution (Terraform, Helm, kubectl, gcloud, and similar
+tooling are all fair game), and marks the task done in the task store once you confirm you’re
+finished.</p>
+<h2 id="next-steps">Next steps</h2>
+<ul>
+<li>Deep-dive the platform’s underlying model — see <a href="/docs/the-agent">The Agent</a> for cron internals
+and the Prisma data model.</li>
+<li>Revisit <a href="/docs/slack-integration">Slack Integration</a> if you’re still setting up how the agent
+communicates with your team.</li>
+</ul>  <!-- Prev/next navigation --> <div class="docs-prevnext" data-astro-cid-mw7aashj> <a href="/docs/slack-integration" data-nav="prev" data-astro-cid-mw7aashj>
+← Previous
+</a>  </div> </main> <!-- TOC (on-page, static) --> <aside style="min-width: 0;" data-astro-cid-mw7aashj> <nav aria-label="On this page" data-astro-cid-mw7aashj> <p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-mw7aashj>
+On this page
+</p> <ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-mw7aashj> <li data-astro-cid-mw7aashj> <a href="#what-you-need" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> What you need </a> </li><li data-astro-cid-mw7aashj> <a href="#day-one-checklist" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Day one checklist </a> </li><li data-astro-cid-mw7aashj> <a href="#the-ongoing-loop" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> The ongoing loop </a> </li><li data-astro-cid-mw7aashj> <a href="#reading-cron-health" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Reading cron health </a> </li><li data-astro-cid-mw7aashj> <a href="#triaging-the-open-pr-queue" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Triaging the open-PR queue </a> </li><li data-astro-cid-mw7aashj> <a href="#noticing-and-responding-to-a-hitl-escalation" class="docs-toc-link depth-3" data-astro-cid-mw7aashj> Noticing and responding to a HITL escalation </a> </li><li data-astro-cid-mw7aashj> <a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-mw7aashj> Next steps </a> </li> </ul> </nav> </aside> </div> </div> <!-- Footer --> <footer class="sw-container relative z-10 py-12" data-astro-cid-mw7aashj> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);" data-astro-cid-mw7aashj> <p class="sw-label flex items-center gap-2" data-astro-cid-mw7aashj> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded" data-astro-cid-mw7aashj>
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer" data-astro-cid-mw7aashj> <a href="https://github.com/app-vitals/shipwright" data-astro-cid-mw7aashj>GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE" data-astro-cid-mw7aashj>MIT License</a> <a href="https://claude.com/claude-code" data-astro-cid-mw7aashj>Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions" data-astro-cid-mw7aashj>GitHub Discussions</a> <a href="https://vitals-os.com/cal/book/discovery" data-astro-cid-mw7aashj>Book a call</a> </nav> </div> </footer> </body></html>
