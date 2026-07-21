@@ -165,6 +165,12 @@ function fakeTaskService(
     async release(id: string) {
       return makeTask({ id, status: "pending" });
     },
+    async recordSkip(id: string) {
+      return makeTask({ id, skipCount: 1 });
+    },
+    async resetSkip(id: string) {
+      return makeTask({ id, skipCount: 0 });
+    },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },

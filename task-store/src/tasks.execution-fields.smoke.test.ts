@@ -178,6 +178,23 @@ function fakeTaskService(storedTasks: Map<string, Task> = new Map()): TaskServic
       storedTasks.set(id, updated);
       return updated;
     },
+    async recordSkip(id: string) {
+      const existing = storedTasks.get(id);
+      if (!existing) throw new Error("Task not found");
+      const updated = {
+        ...existing,
+        skipCount: (existing.skipCount ?? 0) + 1,
+      };
+      storedTasks.set(id, updated);
+      return updated;
+    },
+    async resetSkip(id: string) {
+      const existing = storedTasks.get(id);
+      if (!existing) throw new Error("Task not found");
+      const updated = { ...existing, skipCount: 0 };
+      storedTasks.set(id, updated);
+      return updated;
+    },
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },

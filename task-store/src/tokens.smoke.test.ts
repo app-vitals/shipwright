@@ -181,6 +181,12 @@ function fakeTaskService(): TaskServiceLike {
     async release() {
       return null as never;
     },
+    async recordSkip() {
+      return null as never;
+    },
+    async resetSkip() {
+      return null as never;
+    },
   };
 }
 
