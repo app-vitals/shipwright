@@ -6,7 +6,10 @@
 // future edit — see brand/MESSAGING.md D10 for the surface-scoped
 // competitor-naming policy this page operates under.
 import BaseLayout from "../../layouts/BaseLayout.astro";
-import { BOOKING_URL, INSTALL_CMD, LICENSE_URL, REPO_URL } from "../../consts";
+import ChooseWhenGrid from "../../components/ChooseWhenGrid.astro";
+import ComparisonTable from "../../components/ComparisonTable.astro";
+import TryItCta from "../../components/TryItCta.astro";
+import { LICENSE_URL } from "../../consts";
 
 const verifiedDate = "July 14, 2026";
 
@@ -46,6 +49,57 @@ const comparisonRows = [
     citation: src.pricing,
   },
 ];
+
+// ComparisonTable props for the dimension table. Header/cell style strings
+// are reproduced exactly from the original hand-copied <table> markup. This
+// table has no "self" highlight row — values are pre-split into
+// shipwright/devin columns instead, so every row uses the same neutral
+// border style.
+const dimensionColumns = [
+  {
+    label: "Dimension",
+    style: "text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+  {
+    label: "Shipwright",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-brand-default); white-space:nowrap;",
+  },
+  {
+    label: "Devin",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+];
+
+// Matches Astro's own text-node escaping for {expression} interpolation so
+// set:html-rendered cells produce the same entity-encoded output as the
+// original JSX-interpolated markup (e.g. agent's -> agent&#39;s).
+function esc(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const dimensionRows = comparisonRows.map((row) => ({
+  cells: [
+    {
+      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
+      html: ` ${esc(row.dimension)} `,
+    },
+    {
+      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: ` ${esc(row.shipwright)} `,
+    },
+    {
+      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: row.citation
+        ? ` ${esc(row.devin)}  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
+        : ` ${esc(row.devin)} `,
+    },
+  ],
+}));
 ---
 
 <BaseLayout
@@ -85,48 +139,7 @@ const comparisonRows = [
       Each piece of that sentence is a real, cited difference — not a single
       empty-category claim.
     </p>
-    <div class="mt-6 overflow-x-auto">
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
-            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
-              Dimension
-            </th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-brand-default); white-space:nowrap;">
-              Shipwright
-            </th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
-              Devin
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            comparisonRows.map((row) => (
-              <tr style="border-bottom: 1px solid var(--sw-color-border-subtle);">
-                <td style="padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;">
-                  {row.dimension}
-                </td>
-                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
-                  {row.shipwright}
-                </td>
-                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
-                  {row.devin}
-                  {row.citation && (
-                    <>
-                      {" "}
-                      <a href={row.citation} class="text-sm">
-                        [source]
-                      </a>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <ComparisonTable columns={dimensionColumns} rows={dimensionRows} />
 
     <!-- License quote: the actual MIT license line from this repo. -->
     <div class="sw-callout mt-8 max-w-3xl">
@@ -170,31 +183,33 @@ const comparisonRows = [
   <!-- Choose Devin when / Choose Shipwright when. -->
   <section class="relative z-10 pb-16" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;">
     <h2>Choose Devin when</h2>
-    <div class="mt-8 grid gap-6 sm:grid-cols-2">
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose Devin when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>You want a fully managed, vendor-hosted service with no infrastructure to run yourself.</li>
-          <li>The task is well-scoped and isolated enough that fire-and-forget autonomy fits.</li>
-          <li>
-            You need off-the-shelf enterprise attestations — Cognition states
-            SOC 2 Type II certification since September 2024 and lists
-            ISO/IEC 27001:2022 on{" "}
-            <a href={src.trust}>trust.cognition.ai</a>.
-          </li>
-          <li>You are not committed to Claude Code and want a proprietary-model agent instead.</li>
-        </ul>
-      </div>
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>You want the full pipeline — including the deploy stage — not just an opened PR.</li>
-          <li>The code and the agent that writes it both need to stay entirely inside your own cloud, control plane included.</li>
-          <li>MIT licensing matters to you: audit every line, fork it, no vendor lock-in.</li>
-          <li>You've already committed to Claude Code and want a pipeline built for it, not averaged across providers.</li>
-        </ul>
-      </div>
-    </div>
+    <ChooseWhenGrid
+      cards={[
+        {
+          label: "Choose Devin when",
+          labelColor: "var(--sw-color-support-patriot-bright)",
+          items: [
+            { text: "You want a fully managed, vendor-hosted service with no infrastructure to run yourself." },
+            { text: "The task is well-scoped and isolated enough that fire-and-forget autonomy fits." },
+            {
+              text: ` You need off-the-shelf enterprise attestations — Cognition states SOC 2 Type II certification since September 2024 and lists ISO/IEC 27001:2022 on <a href="${src.trust}">trust.cognition.ai</a>. `,
+              html: true,
+            },
+            { text: "You are not committed to Claude Code and want a proprietary-model agent instead." },
+          ],
+        },
+        {
+          label: "Choose Shipwright when",
+          labelColor: "var(--sw-color-brand-default)",
+          items: [
+            { text: "You want the full pipeline — including the deploy stage — not just an opened PR." },
+            { text: "The code and the agent that writes it both need to stay entirely inside your own cloud, control plane included." },
+            { text: "MIT licensing matters to you: audit every line, fork it, no vendor lock-in." },
+            { text: "You've already committed to Claude Code and want a pipeline built for it, not averaged across providers." },
+          ],
+        },
+      ]}
+    />
   </section>
 
   <!-- Economics — price-free framing (D5). -->
@@ -209,21 +224,11 @@ const comparisonRows = [
   </section>
 
   <!-- CTA -->
-  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
-    <h2>Try it</h2>
-    <p class="mt-3 max-w-2xl">
-      Install the plugin into Claude Code and run a task end to end. Free,
-      MIT, runs on your own infra.
-    </p>
-    <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
-    <div class="mt-6 flex flex-wrap items-center gap-4">
-      <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
-      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
-    </div>
+  <TryItCta>
     <p class="mt-8 max-w-2xl">
       <a href="/compare">See how Shipwright compares to the rest of the field →</a>
       <span class="mx-2" style="color: var(--sw-color-text-muted);">·</span>
       <a href="/self-hosted">What "self-hosted" actually means →</a>
     </p>
-  </section>
+  </TryItCta>
 </BaseLayout>

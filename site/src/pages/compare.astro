@@ -7,7 +7,9 @@
 // Claude-native. Zero runtime JS; all static HTML inlined at build time.
 // Brand tokens only.
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
+import ChooseWhenGrid from "../components/ChooseWhenGrid.astro";
+import ComparisonTable from "../components/ComparisonTable.astro";
+import TryItCta from "../components/TryItCta.astro";
 
 // Market structure: 3-pole framing of the AI coding agent space.
 // Shipwright occupies the middle pole — team AI workflow, not copilot UX
@@ -148,7 +150,74 @@ const tableColumns = [
   { key: "cronScheduling", label: "Cron / Scheduling" },
   { key: "slackWorkflow", label: "Slack-Native Workflow" },
   { key: "testsFirst", label: "Tests-First Enforcement" },
-];
+] as const;
+
+// Matches Astro's own text-node escaping for {expression} interpolation so
+// set:html-rendered cells produce the same entity-encoded output as the
+// original JSX-interpolated markup (e.g. "codebase Q&A" -> Q&amp;A).
+function esc(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// ComparisonTable props for the landscape table. Header/cell style strings
+// are reproduced exactly from the original hand-copied <table> markup.
+const landscapeColumns = tableColumns.map((col, i) => ({
+  label: col.label,
+  style: `text-align:left; padding:0.6rem 1rem 0.6rem ${i === 0 ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`,
+}));
+
+const landscapeRows = landscape.map((row) => ({
+  highlight: row.self,
+  cells: [
+    {
+      style: "padding:0.7rem 1rem 0.7rem 0; vertical-align:top;",
+      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${esc(row.tool)} </span>`,
+    },
+    {
+      style:
+        "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;",
+      html: esc(row.license),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.models),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.taskQueue),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.teamVisibility),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.policyControls),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.humanReviewGate),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.cronScheduling),
+    },
+    {
+      style: "padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.slackWorkflow),
+    },
+    {
+      style:
+        "padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: esc(row.testsFirst),
+    },
+  ],
+}));
 ---
 
 <BaseLayout
@@ -217,45 +286,7 @@ const tableColumns = [
       Agents pull from a background task queue and land review-ready PRs, and the
       commercial tier is moving fast.
     </p>
-    <div class="mt-6 overflow-x-auto">
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
-            {tableColumns.map((col, i) => (
-              <th
-                style={`text-align:left; padding:0.6rem 1rem 0.6rem ${i === 0 ? "0" : ""}; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;`}
-              >
-                {col.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {landscape.map((row) => (
-            <tr
-              style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}
-            >
-              <td style="padding:0.7rem 1rem 0.7rem 0; vertical-align:top;">
-                <span
-                  style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}
-                >
-                  {row.tool}
-                </span>
-              </td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body); white-space:nowrap;">{row.license}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.models}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.taskQueue}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.teamVisibility}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.policyControls}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.humanReviewGate}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.cronScheduling}</td>
-              <td style="padding:0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.slackWorkflow}</td>
-              <td style="padding:0.7rem 0 0.7rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">{row.testsFirst}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <ComparisonTable columns={landscapeColumns} rows={landscapeRows} />
     <p class="mt-6 max-w-2xl sw-editorial">
       The pattern in this table: individual copilots (Cursor, GitHub Copilot Agent
       in simple mode) are optimized for single-developer productivity — no team
@@ -346,24 +377,28 @@ helm install shipwright shipwright/shipwright</code></pre>
       PRs). If you want maximum model flexibility and a mature ecosystem today,
       it is an excellent choice. Here is where the two genuinely differ:
     </p>
-    <div class="mt-8 grid gap-6 sm:grid-cols-2">
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>You have already chosen Claude Code and want a pipeline tuned for it, not averaged across providers.</li>
-          <li>You want tests written first and landed with every change, gated by CI, by default.</li>
-          <li>You want a plan a human approves before the agent builds — structured autonomy with a checkpoint.</li>
-        </ul>
-      </div>
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose OpenHands (or the field) when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>You need BYOK / model-agnostic across many providers, including local models.</li>
-          <li>You want the largest community and the most mature ecosystem available right now.</li>
-          <li>You are not committed to a single runtime and want to keep that optionality.</li>
-        </ul>
-      </div>
-    </div>
+    <ChooseWhenGrid
+      cards={[
+        {
+          label: "Choose Shipwright when",
+          labelColor: "var(--sw-color-brand-default)",
+          items: [
+            { text: "You have already chosen Claude Code and want a pipeline tuned for it, not averaged across providers." },
+            { text: "You want tests written first and landed with every change, gated by CI, by default." },
+            { text: "You want a plan a human approves before the agent builds — structured autonomy with a checkpoint." },
+          ],
+        },
+        {
+          label: "Choose OpenHands (or the field) when",
+          labelColor: "var(--sw-color-support-patriot-bright)",
+          items: [
+            { text: "You need BYOK / model-agnostic across many providers, including local models." },
+            { text: "You want the largest community and the most mature ecosystem available right now." },
+            { text: "You are not committed to a single runtime and want to keep that optionality." },
+          ],
+        },
+      ]}
+    />
   </section>
 
   <!-- Focused head-to-head: Augment Code -->
@@ -377,26 +412,30 @@ helm install shipwright shipwright/shipwright</code></pre>
       codebase-aware Q&A. It is well-funded and enterprise-focused, with real
       autonomous-agent chops. Here is where the two differ:
     </p>
-    <div class="mt-8 grid gap-6 sm:grid-cols-2">
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-brand-default);">Choose Shipwright when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>You want MIT / self-hosted on your own infra, not a managed SaaS with enterprise contracts.</li>
-          <li>You want a human to approve the plan before code is written — not review after the fact on a PR the agent already opened.</li>
-          <li>Tests-first and CI-green are enforced by the pipeline, not left to the agent's judgment.</li>
-          <li>You have committed to Claude Code and want a pipeline tuned for it, not a router averaging across providers.</li>
-        </ul>
-      </div>
-      <div class="sw-card">
-        <p class="sw-label" style="color:var(--sw-color-support-patriot-bright);">Choose Augment Code when</p>
-        <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
-          <li>Your codebase is very large and you want a purpose-built context engine across hundreds of thousands of files.</li>
-          <li>You want a managed service with enterprise security certifications and no self-hosting overhead.</li>
-          <li>Your team already lives in the IDE and Slack, and wants agent access woven into both.</li>
-          <li>Model flexibility across providers matters more than depth on a single runtime.</li>
-        </ul>
-      </div>
-    </div>
+    <ChooseWhenGrid
+      cards={[
+        {
+          label: "Choose Shipwright when",
+          labelColor: "var(--sw-color-brand-default)",
+          items: [
+            { text: "You want MIT / self-hosted on your own infra, not a managed SaaS with enterprise contracts." },
+            { text: "You want a human to approve the plan before code is written — not review after the fact on a PR the agent already opened." },
+            { text: "Tests-first and CI-green are enforced by the pipeline, not left to the agent's judgment." },
+            { text: "You have committed to Claude Code and want a pipeline tuned for it, not a router averaging across providers." },
+          ],
+        },
+        {
+          label: "Choose Augment Code when",
+          labelColor: "var(--sw-color-support-patriot-bright)",
+          items: [
+            { text: "Your codebase is very large and you want a purpose-built context engine across hundreds of thousands of files." },
+            { text: "You want a managed service with enterprise security certifications and no self-hosting overhead." },
+            { text: "Your team already lives in the IDE and Slack, and wants agent access woven into both." },
+            { text: "Model flexibility across providers matters more than depth on a single runtime." },
+          ],
+        },
+      ]}
+    />
   </section>
 
   <!-- Customizability section -->
@@ -480,16 +519,5 @@ helm install shipwright shipwright/shipwright</code></pre>
   </section>
 
   <!-- CTA / COSS bridge -->
-  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
-    <h2>Try it</h2>
-    <p class="mt-3 max-w-2xl">
-      Install the plugin into Claude Code and run a task end to end. Free, MIT,
-      runs on your own infra.
-    </p>
-    <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
-    <div class="mt-6 flex flex-wrap items-center gap-4">
-      <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
-      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
-    </div>
-  </section>
+  <TryItCta />
 </BaseLayout>
