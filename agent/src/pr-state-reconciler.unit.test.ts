@@ -36,13 +36,11 @@ interface ListPrsCall {
   state: string;
   limit: number;
   offset: number;
-  updatedSince: string;
 }
 
 interface ListTasksCall {
   limit: number;
   offset: number;
-  updatedSince: string;
 }
 
 interface PatchCall {
@@ -96,25 +94,23 @@ function makeDeps({
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
-  orphanCandidateUpdatedSinceCalls: string[];
+  orphanCandidateCallCount: number[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
-  const orphanCandidateUpdatedSinceCalls: string[] = [];
+  // Array used as a mutable call counter — arrays are reference types, so
+  // pushing to it from inside listOrphanCandidateTasks below is visible to
+  // the caller via .length, without needing a getter on the return object.
+  const orphanCandidateCallCount: number[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
     getScopedRepos,
     pageLimit,
-    listOpenPrRecords: async (
-      repo: string,
-      limit: number,
-      offset: number,
-      updatedSince: string,
-    ) => {
-      listCalls.push({ repo, state: "open", limit, offset, updatedSince });
+    listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
+      listCalls.push({ repo, state: "open", limit, offset });
       const all = openRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
@@ -128,12 +124,8 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async (
-      limit: number,
-      offset: number,
-      updatedSince: string,
-    ) => {
-      listPrOpenTasksCalls.push({ limit, offset, updatedSince });
+    listPrOpenTasks: async (limit: number, offset: number) => {
+      listPrOpenTasksCalls.push({ limit, offset });
       return prOpenTasks.slice(offset, offset + limit);
     },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
@@ -150,8 +142,8 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
-    listOrphanCandidateTasks: async (updatedSince: string) => {
-      orphanCandidateUpdatedSinceCalls.push(updatedSince);
+    listOrphanCandidateTasks: async () => {
+      orphanCandidateCallCount.push(1);
       return orphanCandidateTasks;
     },
     ghListOpenPrsForBranch: async (repo: string, branch: string) => {
@@ -168,7 +160,7 @@ function makeDeps({
     patchCalls,
     taskPatchCalls,
     listPrOpenTasksCalls,
-    orphanCandidateUpdatedSinceCalls,
+    orphanCandidateCallCount,
   };
 }
 
@@ -199,7 +191,7 @@ describe("reconcilePrState", () => {
     expect(patchCalls).toHaveLength(0);
   });
 
-  test("listOpenPrRecords is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+  test("listOpenPrRecords is called with no updatedSince recency filter — this pass must keep scanning stale (untouched) records regardless of age (PSR-1.1 walk-back)", async () => {
     const record = makeRecord({ id: "pr-1", prNumber: 1 });
     const { deps, listCalls } = makeDeps({
       openRecords: { "acme/example-repo": [record] },
@@ -212,7 +204,12 @@ describe("reconcilePrState", () => {
     await reconcilePrState(deps);
 
     expect(listCalls).toHaveLength(1);
-    expect(listCalls[0].updatedSince).toBe("2026-07-19T22:15:00.000Z");
+    expect(listCalls[0]).toEqual({
+      repo: "acme/example-repo",
+      state: "open",
+      limit: 50,
+      offset: 0,
+    });
   });
 
   test("merged on GitHub gets reconciled — state + mergedAt synced, claim fields cleared", async () => {
@@ -465,7 +462,6 @@ interface ListReviewCall {
   repo: string;
   limit: number;
   offset: number;
-  updatedSince?: string;
 }
 
 interface ReviewPatchCall {
@@ -519,9 +515,8 @@ function makeReviewStateDeps({
       repo: string,
       limit: number,
       offset: number,
-      updatedSince: string,
     ) => {
-      listCalls.push({ repo, limit, offset, updatedSince });
+      listCalls.push({ repo, limit, offset });
       const all = pendingRecords[repo] ?? [];
       return all.slice(offset, offset + limit);
     },
@@ -595,7 +590,7 @@ function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
 }
 
 describe("reconcileReviewState", () => {
-  test("listPendingReviewRecords is called with updatedSince computed as now-1h via the injected clock, but listPostedReviewRecords is not (PSR-1.1)", async () => {
+  test("neither listPendingReviewRecords nor listPostedReviewRecords is called with an updatedSince recency filter — both passes must keep scanning stale (untouched) records regardless of age (PSR-1.1 walk-back)", async () => {
     const clock = FixedClock(new Date("2026-07-19T23:15:00.000Z"));
     const { deps, listCalls, listPostedCalls } = makeReviewStateDeps({
       pendingRecords: {},
@@ -606,10 +601,18 @@ describe("reconcileReviewState", () => {
     await reconcileReviewState(deps);
 
     expect(listCalls).toHaveLength(1);
-    expect(listCalls[0].updatedSince).toBe("2026-07-19T22:15:00.000Z");
+    expect(listCalls[0]).toEqual({
+      repo: "acme/example-repo",
+      limit: 50,
+      offset: 0,
+    });
 
     expect(listPostedCalls).toHaveLength(1);
-    expect(listPostedCalls[0].updatedSince).toBeUndefined();
+    expect(listPostedCalls[0]).toEqual({
+      repo: "acme/example-repo",
+      limit: 50,
+      offset: 0,
+    });
   });
 
   test("clean APPROVE at head commit gets reconciled to reviewState:approved", async () => {
@@ -1548,11 +1551,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listPrOpenTasks(
-      50,
-      0,
-      "2026-07-19T22:00:00.000Z",
-    );
+    const result = await deps.listPrOpenTasks(50, 0);
 
     expect(result).toEqual(tasks);
     expect(calls).toHaveLength(1);
@@ -1582,9 +1581,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks(
-      "2026-07-19T22:00:00.000Z",
-    );
+    const result = await deps.listOrphanCandidateTasks();
 
     // All 117 orphan candidates returned — not truncated at 50.
     expect(result).toHaveLength(117);
@@ -1626,16 +1623,14 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       getScopedRepos: () => [],
     });
 
-    const result = await deps.listOrphanCandidateTasks(
-      "2026-07-19T22:00:00.000Z",
-    );
+    const result = await deps.listOrphanCandidateTasks();
 
     expect(result.map((t) => t.id)).toEqual(["keep-1"]);
   });
 });
 
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
-  test("listPrOpenTasks is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
+  test("listPrOpenTasks is called with no updatedSince recency filter — this pass must keep scanning stale (untouched) tasks regardless of age (PSR-1.1 walk-back)", async () => {
     const { deps, listPrOpenTasksCalls } = makeDeps({
       prOpenTasks: [],
       now: () => "2026-07-19T23:15:00.000Z",
@@ -1644,9 +1639,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     await reconcilePrState(deps);
 
     expect(listPrOpenTasksCalls).toHaveLength(1);
-    expect(listPrOpenTasksCalls[0].updatedSince).toBe(
-      "2026-07-19T22:15:00.000Z",
-    );
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 50, offset: 0 });
   });
 
   test("pr_open task with merged PR (direct path) is reconciled to merged, using GitHub's mergedAt", async () => {
@@ -1875,20 +1868,10 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
     await reconcilePrState(deps);
 
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1)
-    // updatedSince (PSR-1.1) is FAKE_NOW minus one hour, identical on both pages —
-    // a single reconcile pass uses one consistent cutoff across all its pages.
+    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1).
     expect(listPrOpenTasksCalls).toHaveLength(2);
-    expect(listPrOpenTasksCalls[0]).toEqual({
-      limit: 2,
-      offset: 0,
-      updatedSince: "2026-07-14T23:00:00.000Z",
-    });
-    expect(listPrOpenTasksCalls[1]).toEqual({
-      limit: 2,
-      offset: 2,
-      updatedSince: "2026-07-14T23:00:00.000Z",
-    });
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
+    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
   });
 
   // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
@@ -1936,17 +1919,15 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 });
 
 describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
-  test("listOrphanCandidateTasks is called with updatedSince computed as now-1h via the injected now() (PSR-1.1)", async () => {
-    const { deps, orphanCandidateUpdatedSinceCalls } = makeDeps({
+  test("listOrphanCandidateTasks is called with no updatedSince recency filter — this pass must keep scanning stale (untouched) tasks regardless of age (PSR-1.1 walk-back)", async () => {
+    const { deps, orphanCandidateCallCount } = makeDeps({
       orphanCandidateTasks: [],
       now: () => "2026-07-19T23:15:00.000Z",
     });
 
     await reconcilePrState(deps);
 
-    expect(orphanCandidateUpdatedSinceCalls).toEqual([
-      "2026-07-19T22:15:00.000Z",
-    ]);
+    expect(orphanCandidateCallCount).toHaveLength(1);
   });
 
   test("orphaned pending task with a real open PR on its branch self-heals to pr_open", async () => {
