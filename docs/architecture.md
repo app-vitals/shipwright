@@ -37,6 +37,8 @@ prompt. A human can still invoke any of the four directly with an explicit targe
 
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
 
+A repo or team can extend this loop with its own commands, skills, or scheduled automation — via a companion marketplace plugin and/or a custom cron — without forking `plugins/shipwright/`. See **[extending.md](./extending.md)**.
+
 ## B — Metrics dashboard
 
 A Hono service that turns pipeline events into analytics. Two sets of read-only JSON endpoints: authenticated `/metrics/*` (summary, trends, features, queue, tokens) and unauthenticated `/public/*` (summary, trends, features, queue), plus session-gated `/dashboard` and public `/public/dashboard`. All served by a backend-agnostic `MetricsProvider` interface. The active backend is selected from env at startup: **fixtures** (offline) or **taskstore** (live task-store + admin APIs). See **[metrics.md](./metrics.md)**.
@@ -113,6 +115,7 @@ shipwright/
 
 ## See also
 
+- **[extending.md](./extending.md)** — extending Shipwright with a companion plugin and custom crons, without forking the plugin.
 - **[testing.md](./testing.md)** — the five-layer test architecture and isolation contract.
 - **[metrics.md](./metrics.md)** — metrics service API and dashboard.
 - **[agent.md](./agent.md)** — Shipwright agent runtime + admin APIs and data model.
