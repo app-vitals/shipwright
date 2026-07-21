@@ -52,3 +52,15 @@ test("prev navigation link is present on cron-jobs page", async ({
   await expect(prevLink).toBeVisible();
   expect(await prevLink.getAttribute("href")).toBe("/docs/slack-integration");
 });
+
+test("next navigation link is present on cron-jobs page", async ({
+  page,
+}) => {
+  await page.goto("/docs/cron-jobs");
+  // next → the-shipwright-loop
+  const nextLink = page.locator("a[data-nav='next']");
+  await expect(nextLink).toBeVisible();
+  expect(await nextLink.getAttribute("href")).toBe(
+    "/docs/the-shipwright-loop",
+  );
+});
