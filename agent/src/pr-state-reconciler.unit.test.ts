@@ -94,11 +94,13 @@ function makeDeps({
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
+  delayCalls: number[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
+  const delayCalls: number[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -144,6 +146,9 @@ function makeDeps({
       if (result instanceof Error) throw result;
       return result ?? [];
     },
+    delay: async (ms: number) => {
+      delayCalls.push(ms);
+    },
   };
 
   return {
@@ -152,6 +157,7 @@ function makeDeps({
     patchCalls,
     taskPatchCalls,
     listPrOpenTasksCalls,
+    delayCalls,
   };
 }
 
@@ -469,11 +475,13 @@ function makeReviewStateDeps({
   listPostedCalls: ListReviewCall[];
   patchCalls: ReviewPatchCall[];
   fetchCalls: string[];
+  delayCalls: number[];
 } {
   const listCalls: ListReviewCall[] = [];
   const listPostedCalls: ListReviewCall[] = [];
   const patchCalls: ReviewPatchCall[] = [];
   const fetchCalls: string[] = [];
+  const delayCalls: number[] = [];
 
   const deps: PrReviewStateReconcilerDeps = {
     repos,
@@ -511,9 +519,12 @@ function makeReviewStateDeps({
         throw new Error(`no fake review result configured for ${key}`);
       return result;
     },
+    delay: async (ms: number) => {
+      delayCalls.push(ms);
+    },
   };
 
-  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls };
+  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls, delayCalls };
 }
 
 function makeReviewStateRecord(
@@ -1305,6 +1316,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
         if (key === "acme/repo-b#1") return noReviewAtHead;
         throw new Error(`no fake review result configured for ${key}`);
       },
+      delay: async () => {},
     };
     const patchCalls: ReviewPatchCall[] = [];
     deps.patchPrRecord = async (id: string, fields: Record<string, unknown>) => {
@@ -2044,5 +2056,63 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
     expect(ghCalls).toEqual(["acme/repo-a#feat/in-scope"]);
     expect(taskPatchCalls).toHaveLength(1);
     expect(taskPatchCalls[0].id).toBe("task-orphan-in-scope");
+  });
+});
+
+// ─── gh-call throttling (PSR-1.2) ──────────────────────────────────────────────
+
+describe("reconcile delay throttling (PSR-1.2)", () => {
+  test("reconcilePrState invokes deps.delay once per record, scaling with batch size", async () => {
+    const records = Array.from({ length: 25 }, (_, i) =>
+      makeRecord({ id: `pr-throttle-${i}`, prNumber: i + 1 }),
+    );
+    const ghResults: Record<string, GhPrView> = {};
+    for (const record of records) {
+      ghResults[`acme/example-repo#${record.prNumber}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, delayCalls } = makeDeps({
+      openRecords: { "acme/example-repo": records },
+      ghResults,
+    });
+
+    await reconcilePrState(deps);
+
+    // one delay call per record iteration, none skipped or doubled
+    expect(delayCalls).toHaveLength(25);
+    expect(delayCalls.every((ms) => ms > 0)).toBe(true);
+  });
+
+  test("reconcileReviewState invokes deps.delay once per record across both the pending and posted passes", async () => {
+    const pending = Array.from({ length: 20 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-pending-${i}`, prNumber: i + 1 }),
+    );
+    const posted = Array.from({ length: 5 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-${i}`, prNumber: 100 + i }),
+    );
+    const reviewResults: Record<string, PrReviewData> = {};
+    for (const record of [...pending, ...posted]) {
+      reviewResults[`acme/example-repo#${record.prNumber}`] = makeReviewData({
+        headRefOid: "head-sha",
+        reviews: {
+          nodes: [
+            makeReviewNode({ state: "COMMENTED", commit: { oid: "head-sha" } }),
+          ],
+        },
+        reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+      });
+    }
+    const { deps, delayCalls } = makeReviewStateDeps({
+      pendingRecords: { "acme/example-repo": pending },
+      postedRecords: { "acme/example-repo": posted },
+      reviewResults,
+    });
+
+    await reconcileReviewState(deps);
+
+    // 20 from the pending-scan pass + 5 from the posted-scan pass
+    expect(delayCalls).toHaveLength(25);
   });
 });
