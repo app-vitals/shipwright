@@ -1003,8 +1003,9 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WOR
 
 ## Step 6: Fix Failing CI in Worktree
 
-For each PR in List D, set up a worktree, collect CI failure output, and dispatch a fix
-subagent. Fully complete one PR (fix → push → cleanup) before moving to the next.
+For each PR in List D, set up a worktree, collect CI failure output, check for an
+already-recorded HITL escalation, and dispatch a fix subagent if none exists. Fully
+complete one PR (fix → push → cleanup) before moving to the next.
 
 ### Step 6a: Set Up Worktree
 
@@ -1080,9 +1081,9 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
 
 - **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
   `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
-  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
-  directly to Step 6c (`PR_RECORD_ID` is reused by the post-fix update in Step 6d.5, same
-  as the self-claim path).
+  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`.
+  Proceed directly to Step 6b.6 (`PR_RECORD_ID` is reused by the post-fix update in Step
+  6d.5, same as the self-claim path).
 - **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
   orchestrator's claim and now) **or no marker present**: fall back to self-claiming
   exactly as today — run the claim below unchanged.
@@ -1106,7 +1107,59 @@ Skip the rest of Step 6 for this PR. Move to the next PR in List D. If no candid
 remain, continue to Step 7.
 
 **Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
-post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6c.
+post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6b.6.
+
+### Step 6b.6: Escalation Check (CFE-1.1)
+
+Step 5a.7 (RPF-1.3) escalates a second-round review disagreement to HITL instead of
+dispatching a third automated fix — but it only guards List A (review findings). Once that
+escalation comment exists on the PR, CPF-2.3's reply-after-review exclusion drops the PR
+from List A on the next cycle (the comment postdates the review). If CI is still failing,
+Step 3c puts the same PR into List D, and without this check Step 6 would dispatch a
+CI-fix subagent that directly contradicts the HITL decision Step 5a.7 already recorded —
+re-attempting exactly what that step decided not to retry a third time. Nothing else resets
+`readyForPatchAt` or `reviewState` after that escalation releases its claim, so this can
+re-trigger every patch cycle. Before dispatching the CI-fix subagent, check whether this PR
+already has an unresolved HITL escalation.
+
+1. Fetch the PR record fresh via `GET` — do not trust a possibly-stale claim response, same
+   "re-fetch fresh" principle Step 6b.5's Pre-Claim Fast Path already applies to
+   `headRefOid`:
+   ```bash
+   PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID")
+   PR_HITL=$(echo "$PR_RECORD" | jq -r '.hitl // false')
+   PR_TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
+   ```
+2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `hitl` field:
+   ```bash
+   TASK_HITL=false
+   if [ -n "$PR_TASK_ID" ]; then
+     TASK_HITL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.hitl // false')
+   fi
+   ```
+
+**If `PR_HITL` is `true` OR `TASK_HITL` is `true`** (an unresolved HITL escalation already
+exists — most likely from Step 5a.7 on this same PR, this cycle or a prior one): skip —
+do not dispatch the fix subagent, since doing so would silently contradict the escalation
+decision already recorded on the PR.
+
+1. Release the pre-work claim from Step 6b.5 — no fix is in flight, this cycle intentionally
+   stops short of dispatching one:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+   ```
+2. Print:
+   ```
+   ⏸ PR #{pr} already has an unresolved HITL escalation — skipping CI-fix dispatch.
+   ```
+3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
+
+**Otherwise** (neither the PR record nor its linked task has `hitl: true`): no escalation
+is on record for this PR — proceed normally to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 

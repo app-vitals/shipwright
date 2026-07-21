@@ -633,3 +633,69 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("reviewState");
   });
 });
+
+describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation already exists (CFE-1.1)", () => {
+  function getStep6b6Section() {
+    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b6Idx).toBeGreaterThan(-1);
+    expect(step6cIdx).toBeGreaterThan(-1);
+    return content.slice(step6b6Idx, step6cIdx);
+  }
+
+  it("Step 6b.6 exists between Step 6b.5 (claim) and Step 6c (dispatch)", () => {
+    const step6b5Idx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b5Idx).toBeGreaterThan(-1);
+    expect(step6b6Idx).toBeGreaterThan(step6b5Idx);
+    expect(step6cIdx).toBeGreaterThan(step6b6Idx);
+  });
+
+  it("the claim step (6b.5) hands off to 6b.6 in both branches, not straight to 6c", () => {
+    const step6b5Idx = content.indexOf("### Step 6b.5: Claim PR Record (pre-work lock)");
+    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const section = content.slice(step6b5Idx, step6b6Idx);
+    expect(section).not.toContain("Proceed directly to Step 6c");
+    expect(section).not.toContain("Proceed to Step 6c");
+    expect(section).toContain("Proceed directly to Step 6b.6");
+    expect(section).toContain("Proceed to Step 6b.6");
+  });
+
+  it("references Step 5a.7 as the mirrored precedent for this check", () => {
+    const section = getStep6b6Section();
+    expect(section).toContain("5a.7");
+  });
+
+  it("fetches the PR record fresh and checks its hitl field", () => {
+    const section = getStep6b6Section();
+    expect(section).toContain("GET");
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(section).toContain("hitl");
+  });
+
+  it("also checks the linked task's hitl field when taskId is present", () => {
+    const section = getStep6b6Section();
+    expect(section).toContain("taskId");
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$');
+  });
+
+  it("true branch releases the claim, does not dispatch the fix subagent, and moves to the next PR in List D", () => {
+    const section = getStep6b6Section();
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    const hasSkipLanguage =
+      /do not\s+dispatch.{0,40}fix subagent/is.test(section) ||
+      /skip.{0,40}fix subagent/is.test(section) ||
+      /fix subagent.{0,40}skip/is.test(section);
+    expect(hasSkipLanguage).toBe(true);
+    expect(section).toContain("next PR in List D");
+  });
+
+  it("otherwise branch proceeds normally to Step 6c", () => {
+    const section = getStep6b6Section();
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("Step 6c");
+  });
+});
