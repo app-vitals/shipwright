@@ -3337,6 +3337,91 @@ describe("renderPrsPage", () => {
   });
 });
 
+// ─── renderPrsPage — Blocked tab & HITL badge (HBV-2.2) ──────────────────────
+
+describe("renderPrsPage — Blocked tab & HITL badge", () => {
+  function render(
+    prs: PrListItem[] = [],
+    filters: Parameters<typeof renderPrsPage>[1] = {},
+    degraded = false,
+  ): string {
+    return renderPrsPage(
+      prs,
+      filters,
+      degraded,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: prs.length, limit: 50, page: 1 },
+    );
+  }
+
+  test("Blocked tab renders with the label 'Blocked'", () => {
+    const html = render();
+    expect(html).toContain(">Blocked<");
+  });
+
+  test("Blocked tab href composes state=open with blocked=true", () => {
+    const html = render();
+    const blockedTabMatch = html.match(/href="[^"]*blocked=true[^"]*"/);
+    expect(blockedTabMatch).toBeTruthy();
+    expect(blockedTabMatch?.[0]).toContain("state=open");
+  });
+
+  test("Blocked tab is active when filters.blocked is 'true', regardless of state", () => {
+    const html = render([], { state: "open", blocked: "true" });
+    const blockedTabMatch = html.match(
+      /<a href="[^"]*blocked=true[^"]*"[^>]*>Blocked<\/a>/,
+    );
+    expect(blockedTabMatch).toBeTruthy();
+    expect(blockedTabMatch?.[0]).toContain("background:#6366f1");
+  });
+
+  test("Open tab is not shown as active when blocked=true", () => {
+    const html = render([], { state: "open", blocked: "true" });
+    const openTabMatch = html.match(/<a href="[^"]*state=open"[^>]*>Open<\/a>/);
+    expect(openTabMatch).toBeTruthy();
+    expect(openTabMatch?.[0]).not.toContain("background:#6366f1");
+  });
+
+  test("PR with hitl:true renders the 'Waiting: HITL' badge in the list", () => {
+    const html = render([{ ...PR_LIST_ITEM_1, hitl: true }]);
+    expect(html).toContain("Waiting: HITL");
+    expect(html).toContain("badge-hitl");
+  });
+
+  test("PR with hitl:false does not render the badge", () => {
+    const html = render([{ ...PR_LIST_ITEM_1, hitl: false }]);
+    expect(html).not.toContain("Waiting: HITL");
+  });
+
+  test("PR with hitl absent does not render the badge", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).not.toContain("Waiting: HITL");
+  });
+
+  test("badge title attribute reflects blockedReason when present", () => {
+    const html = render([
+      { ...PR_LIST_ITEM_1, hitl: true, blockedReason: "Needs human sign-off" },
+    ]);
+    expect(html).toContain('title="Needs human sign-off"');
+  });
+
+  test("makePageUrl carries blocked=true through pagination links", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1, PR_LIST_ITEM_2],
+      { state: "open", blocked: "true" },
+      false,
+      USER_NAME,
+      {},
+      { total: 200, limit: 50, page: 1 },
+    );
+    expect(html).toContain("blocked=true");
+    const nextMatch = html.match(/href="([^"]*)"[^>]*>Next/);
+    expect(nextMatch).toBeTruthy();
+    expect(nextMatch?.[1]).toContain("blocked=true");
+  });
+});
+
 // ─── renderPrsPage — datalist autocomplete (AFP-1.2) ─────────────────────────
 
 describe("renderPrsPage — datalist autocomplete", () => {
@@ -3571,6 +3656,36 @@ describe("renderPrDetailPage", () => {
   test("uses renderAdminToolbar with /admin/prs active path", () => {
     const html = render();
     expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
+  });
+
+  test("renders HITL field as 'yes' when pr.hitl is true", () => {
+    const html = render({ ...PR_DETAIL, hitl: true });
+    expect(html).toContain("HITL");
+    expect(html).toMatch(/HITL<\/td>\s*<td[^>]*>yes<\/td>/);
+  });
+
+  test("renders HITL field as 'no' when pr.hitl is false", () => {
+    const html = render({ ...PR_DETAIL, hitl: false });
+    expect(html).toMatch(/HITL<\/td>\s*<td[^>]*>no<\/td>/);
+  });
+
+  test("omits HITL field when pr.hitl is null/undefined", () => {
+    const html = render({ ...PR_DETAIL, hitl: null });
+    expect(html).not.toMatch(/>\s*HITL\s*<\/td>/);
+  });
+
+  test("renders Blocked Reason field when present", () => {
+    const html = render({
+      ...PR_DETAIL,
+      blockedReason: "Awaiting human review",
+    });
+    expect(html).toContain("Blocked Reason");
+    expect(html).toContain("Awaiting human review");
+  });
+
+  test("omits Blocked Reason field when null/undefined", () => {
+    const html = render({ ...PR_DETAIL, blockedReason: null });
+    expect(html).not.toContain("Blocked Reason");
   });
 });
 
