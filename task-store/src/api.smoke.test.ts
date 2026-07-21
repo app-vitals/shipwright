@@ -1057,4 +1057,66 @@ describe("task-store API (smoke)", () => {
     });
     expect(capturedFilters[0]?.assignee).toBeUndefined();
   });
+
+  // ─── POST /tasks/:id/skip, POST /tasks/:id/skip/reset ─────────────────────
+
+  it("POST /tasks/:id/skip works for pool task claimed by agent (claimedBy check)", async () => {
+    const claimedPoolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      claimedBy: "agent-1",
+      repo: "acme-inc/backend-api",
+      status: "in_progress",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
+      taskService: fakeTaskService({ getResult: claimedPoolTask }),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
+    });
+
+    const res = await app.request("/tasks/pool-1/skip", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+  });
+
+  it("POST /tasks/:id/skip returns 403 when agent token tries to skip a task owned by a different agent", async () => {
+    const app = makeApp({
+      tokenService: fakeAgentTokenService(),
+      taskService: fakeTaskService({
+        getResult: makeTask({ id: "task-1", assignee: "agent-2" }),
+      }),
+    });
+    const res = await app.request("/tasks/task-1/skip", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /tasks/:id/skip/reset works for pool task claimed by agent (claimedBy check)", async () => {
+    const claimedPoolTask = makeTask({
+      id: "pool-1",
+      assignee: null,
+      claimedBy: "agent-1",
+      repo: "acme-inc/backend-api",
+      status: "in_progress",
+    });
+
+    const app = makeApp({
+      tokenService: fakeRepoAgentTokenService(["acme-inc/backend-api"]),
+      taskService: fakeTaskService({ getResult: claimedPoolTask }),
+      scopeResolver: makeScopeResolver(["acme-inc/backend-api"]),
+    });
+
+    const res = await app.request("/tasks/pool-1/skip/reset", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+  });
 });
