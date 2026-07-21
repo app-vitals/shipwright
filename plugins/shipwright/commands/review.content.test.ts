@@ -93,3 +93,52 @@ describe("review.md — pre-claim fast path skips re-claiming (CBD-1.4)", () => 
     expect(section).toContain("strip the marker");
   });
 });
+
+describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.1)", () => {
+  it("Step 4 (after the claim subsection, before Step 5) resolves TASK_MODEL from the linked task", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    expect(claimSectionIdx).toBeGreaterThan(-1);
+    expect(step5Idx).toBeGreaterThan(-1);
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    expect(section).toContain("/prs/$PR_RECORD_ID");
+    expect(section).toContain(".taskId");
+    expect(section).toContain("/tasks/");
+    expect(section).toContain("TASK_MODEL");
+  });
+
+  it("the TASK_MODEL lookup runs once, regardless of which Step 14 path produced PR_RECORD_ID", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    // Only one lookup block should exist in this window (Step 14's two paths both
+    // reconverge here before Step 5, so a single occurrence covers both).
+    const occurrences = section.split("TASK_MODEL").length - 1;
+    expect(occurrences).toBeGreaterThan(0);
+    expect(section).toContain("PR_RECORD_ID");
+  });
+
+  it("the TASK_MODEL lookup fails gracefully -- warns and continues, never a hard stop", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+    const lookupIdx = section.indexOf("TASK_MODEL");
+    expect(lookupIdx).toBeGreaterThan(-1);
+    const lookupSection = section.slice(Math.max(0, lookupIdx - 800), lookupIdx + 800);
+
+    expect(lookupSection).toContain("continuing");
+    expect(lookupSection).not.toContain("set -e");
+  });
+
+  it("Step 7's code-reviewer dispatch passes model: TASK_MODEL ?? 'sonnet'", () => {
+    const step7Idx = content.indexOf("## Step 7: Deep Review");
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step8Idx).toBeGreaterThan(-1);
+    const section = content.slice(step7Idx, step8Idx);
+
+    expect(section).toContain("model: TASK_MODEL ?? 'sonnet'");
+  });
+});
