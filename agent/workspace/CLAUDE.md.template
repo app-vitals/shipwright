@@ -16,6 +16,12 @@ and post results to a configured Slack channel.
 Incoming messages are prefixed with `[Name]: ` where `Name` is the Slack display
 name of the sender. Use this to know who you're talking to.
 
+### Clarifying Questions
+
+Do not call the `AskUserQuestion` tool in this Slack-mediated session — there's no card UI
+to render it into and the call errors. If you need to ask a clarifying question, just ask it
+as plain text in your reply.
+
 ### Response Markers
 
 Embed markers anywhere in your response to trigger side effects. Markers are
@@ -85,9 +91,14 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
 ```
 
-The `shipwright-dev-task` cron picks up the next pending item every 30 minutes. The
-`shipwright-review` and `shipwright-patch` crons run as independent phases — review posts
-findings, patch addresses them — both enabled by default.
+`dev-task`, `review`, `patch`, and `deploy` are **explicit-target-only executors** — none of
+them self-discovers work. Candidate selection happens upstream, once per tick, in the
+`shipwright-loop` cron: its candidate providers merge dev-task/review/patch/deploy
+candidates and pick exactly one winning item via strict age-based FIFO, then dispatch the
+matching command with the winning task id or `org/repo#number` embedded directly in the
+prompt. `dev-task`, `review`, and `patch` are enabled by default; `deploy` is opt-in. A
+standalone phase cron with `shipwright-loop` disabled is **silently inert** — its prompt
+carries no target, so every tick responds `[silent]` and does nothing.
 
 ### Policy
 
