@@ -209,10 +209,10 @@ test("key headings visible in the-agent page", async ({ page }) => {
 
 test("prev/next navigation links on the-agent page", async ({ page }) => {
   await page.goto("/docs/the-agent");
-  // prev → running-locally
+  // prev → commands-reference
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
-  expect(await prevLink.getAttribute("href")).toBe("/docs/running-locally");
+  expect(await prevLink.getAttribute("href")).toBe("/docs/commands-reference");
   // next → configuring-autonomy
   const nextLink = page.locator("a[data-nav='next']");
   await expect(nextLink).toBeVisible();
