@@ -38,9 +38,9 @@ Once you have console access, work through this list before leaving the agent un
    expect is turned on. A standalone phase cron with `shipwright-loop` disabled is inert, so if
    nothing seems to be happening, that's the first thing to check.
 3. **Read the first cron logs.** Open `/admin/agents/:id/cron-logs` to see the run history for
-   every cron the agent owns — each run shows an outcome (`posted`, `dm`, `silent`, `skipped`, or
-   `error`), start time, duration, and (when the run dispatched work) the task or PR it acted on.
-   Filter by `?cronId=` or `?outcome=` to narrow the view.
+   every cron the agent owns — each run shows an outcome (`completed`, `failed`, or `skipped`),
+   start time, duration, and (when the run dispatched work) the task or PR it acted on. Filter by
+   `?cronId=` or `?outcome=` to narrow the view.
 4. **Check the work queue.** `/admin/agents/:id/work-queue` shows the agent's latest self-reported
    ranked queue — the tasks and PRs it sees as pending work, oldest first, across the dev-task,
    review, patch, and deploy phases. An empty queue with no snapshot yet usually means the agent
@@ -65,17 +65,17 @@ three things: cron health, the open-PR queue, and HITL escalations.
 `/admin/agents/:id/cron-logs` is the single place to check whether the agent's crons are actually
 running and doing useful work. Each row is one cron run, with:
 
-- **Outcome** — `posted` (result sent to a channel), `dm` (result sent as a direct message),
-  `silent` (nothing worth reporting), `skipped` (the run didn't execute — hover the badge for the
-  skip reason), or `error` (the run failed — hover the badge for the error message).
+- **Outcome** — `completed` (the run finished normally), `failed` (the run errored — hover the
+  badge for the error message), or `skipped` (the run didn't execute — hover the badge for the
+  skip reason).
 - **Owning cron, start time, duration, and — when the run dispatched against a task or PR — which
   one.**
 
-Use the `?cronId=` and `?outcome=` query filters to narrow down to, for example, only `error`
-outcomes, or only runs from `shipwright-loop`. A steady stream of `error` outcomes on the same
-cron is the clearest signal something needs attention. The agent detail page also surfaces each
-cron's last run time and outcome inline, so you can spot a stalled cron (no recent runs) without
-opening the full log.
+Use the `?cronId=` and `?outcome=` query filters to narrow down to, for example, only `failed`
+runs, or only runs from `shipwright-loop`. A steady stream of `failed` outcomes on the same cron
+is the clearest signal something needs attention. The agent detail page also surfaces each cron's
+last run time and outcome inline, so you can spot a stalled cron (no recent runs) without opening
+the full log.
 
 ### Triaging the open-PR queue
 
