@@ -18,6 +18,7 @@ const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
 const compareUrl = "/compare";
 const docsUrl = "/docs";
 const vsDevinUrl = "/vs/devin";
+const storyUrl = "/story";
 const year = new Date().getFullYear();
 ---
 
@@ -37,6 +38,7 @@ const year = new Date().getFullYear();
       Shipwright Harness · MIT-licensed · © {year}
     </p>
     <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
+      <a href={storyUrl}>Story</a>
       <a href={REPO_URL}>GitHub</a>
       <a href={LICENSE_URL}>MIT License</a>
       <a href={claudeCodeUrl}>Claude Code</a>

@@ -1,0 +1,128 @@
+---
+// Origin-story timeline page (STY-1.1). Approved copy verbatim from
+// planning/site-timeline/PLAN.md — presentation-only, no backend/data-model/
+// API surface. Timeline content lives in this frontmatter array and is
+// mapped into a vertical rail + dot list, styled with a page-scoped <style>
+// block that reuses existing brand.css tokens only. Zero runtime JS.
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+const timelineEntries = [
+  {
+    date: "November 2025",
+    body: "Dan starts running Claude Code in the cloud. Dave starts building the first autonomous workflow plugin.",
+  },
+  {
+    date: "January 2026",
+    body: "The first real autonomous-loop plugin lands in the App Vitals marketplace, inspired by the open-source Ralph pattern. Auto-approve hooks, task types, plugin discovery — the pieces of a self-driving loop start coming together.",
+  },
+  {
+    date: "March 2026",
+    body: "We start building Vitals OS — and from day one, we run the build through our own emerging Shipwright workflow. First real product built by the thing we were building.",
+  },
+  {
+    date: "April 2026",
+    body: 'The automation backbone goes in: a dev-task runner, agent cron infrastructure, scheduled review/patch/deploy cycles. This is where "autonomous" stops being aspirational.',
+  },
+  {
+    date: "May 2026",
+    body: "Metrics wired in end to end. We can finally see what the agents are doing, not just trust that they're doing it.",
+  },
+  {
+    date: "June 2026",
+    body: "Shipwright graduates out of the marketplace into its own repo. We scrub every internal reference and open it up.",
+  },
+  {
+    date: "Late June 2026",
+    body: "Public launch.",
+  },
+  {
+    date: "Today",
+    body: "Two of us, shipping 50+ PRs a day, running production infrastructure for clients almost entirely through the loop we built for ourselves.",
+  },
+];
+---
+
+<BaseLayout
+  title="Our story — Shipwright Harness"
+  description="How Shipwright Harness went from a couple of engineers running Claude Code in the cloud to a public, MIT-licensed autonomous delivery agent — dogfooded the entire way."
+  pagefindIgnore={true}
+>
+  <!-- Page header -->
+  <section class="relative z-10 pt-16 pb-12">
+    <p class="sw-label">Our story</p>
+    <h1 class="sw-h1 mt-4 max-w-3xl">
+      From <span class="sw-gradient-text">side project</span> to the loop we run
+      production on.
+    </h1>
+    <p class="mt-5 max-w-2xl text-lg">
+      Shipwright wasn't planned as a product. It grew out of two engineers
+      trying to get more out of Claude Code, dogfooded on our own delivery
+      work the entire way. Here's the timeline, honestly.
+    </p>
+  </section>
+
+  <!-- Timeline -->
+  <section
+    class="sw-timeline relative z-10 pb-20"
+    style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;"
+  >
+    <ol class="sw-timeline-list">
+      {
+        timelineEntries.map((entry) => (
+          <li class="sw-timeline-item">
+            <span class="sw-timeline-dot" aria-hidden="true" />
+            <p class="sw-mono sw-label sw-timeline-date">{entry.date}</p>
+            <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);">
+              {entry.body}
+            </p>
+          </li>
+        ))
+      }
+    </ol>
+  </section>
+</BaseLayout>
+
+<style>
+  .sw-timeline-list {
+    position: relative;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .sw-timeline-item {
+    position: relative;
+    padding-left: 2rem;
+    padding-bottom: 2.5rem;
+  }
+
+  .sw-timeline-item:last-child {
+    padding-bottom: 0;
+  }
+
+  /* Connecting rail — a single vertical line running behind every dot,
+     except after the last entry. */
+  .sw-timeline-item:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    top: 0.4rem;
+    left: 0.3rem;
+    width: 1px;
+    height: 100%;
+    background: var(--sw-color-border-muted);
+  }
+
+  .sw-timeline-dot {
+    position: absolute;
+    top: 0.3rem;
+    left: 0;
+    width: 0.65rem;
+    height: 0.65rem;
+    border-radius: 50%;
+    background: var(--sw-color-brand-default);
+  }
+
+  .sw-timeline-date {
+    color: var(--sw-color-text-heading);
+  }
+</style>
