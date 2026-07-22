@@ -69,3 +69,24 @@ test("architecture page ships no runtime JS beyond the analytics tag", async ({
   await page.goto("/architecture");
   await expectNoRuntimeJsBeyondAnalytics(page);
 });
+
+test("architecture page links to the new operator docs pages", async ({
+  page,
+}) => {
+  await page.goto("/architecture");
+  // Core Loop section -> the-shipwright-loop
+  await expect(
+    page.locator('a[href="/docs/the-shipwright-loop"]'),
+  ).toHaveCount(1);
+  // Maintenance Crons chips -> cron-jobs and agent-skills
+  await expect(page.locator('a[href="/docs/cron-jobs"]')).toHaveCount(1);
+  // agent-skills is linked from both the Maintenance Crons chips and the
+  // Memory Component Reference row.
+  await expect(page.locator('a[href="/docs/agent-skills"]')).toHaveCount(2);
+  // dev-task/review/patch/deploy Component Reference rows -> commands-reference
+  await expect(
+    page.locator('a[href="/docs/commands-reference"]'),
+  ).toHaveCount(4);
+  // Task Store row reuses the existing task-store-api link target
+  await expect(page.locator('a[href="/docs/task-store-api"]')).toHaveCount(1);
+});
