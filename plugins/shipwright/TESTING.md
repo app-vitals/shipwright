@@ -1282,6 +1282,24 @@ repo's active canary track. This is the fix for the 2026-07-14 incident where a 
 declaring `deploy_model: direct` had 8 Milestone-3 canary-plumbing tasks generated and
 had to have them manually cancelled.
 
+### TR-27 — Recorded-fixture automation opt-out gates Milestone 1 task generation
+**Steps:** No automated test covers this — the `recorded_fixture_automation`
+read-with-fallback and the Process step 5 Milestone 1 exception are prompt-only
+generation logic. Verify via two dry runs: (a) run `/test-roadmap` against a repo whose
+CLAUDE.md declares `## Recorded-fixture automation: not planned`. (b) run `/test-roadmap`
+against a repo with no such declaration (undeclared) whose test-migration output flags
+the recorded-fixture-maintenance-loop as a gap.
+**Expected:** (a) `test-readiness-plan.md`'s Milestone 1 section contains the single note
+line `recorded-fixture automation not applicable -- recorded_fixture_automation=not planned`
+in place of any recorded-fixture-refresh workflow/environment/per-service task — section 5's
+task list contains zero such tasks, regardless of how many services test-migration flagged.
+(b) Behavior is unchanged from before this gate was added: `recorded_fixture_automation`
+defaults to `planned` when undeclared, and Milestone 1 emits recorded-fixture-refresh tasks
+per `repo-config/SKILL.md`'s deferred pattern as before — no regression to a repo that hasn't
+opted out. This is the fix for an incident where a target repo's roadmap sat a single task
+`pending`/HITL for multiple cycles, asking for the entire ~15-service loop (~8 net-new
+production credentials) in one shot, with no prior live-recording precedent to automate.
+
 ---
 
 ## Versioning Checklist (for every PR to this repo)
