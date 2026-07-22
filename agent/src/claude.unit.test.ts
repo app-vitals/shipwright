@@ -956,20 +956,20 @@ describe("extraAllowedTools", () => {
 
     const allowedIdx = cmd.indexOf("--allowedTools");
     const extraIdx = cmd.indexOf("mcp__extra__tool");
-    const agentIdx = cmd.indexOf("Agent"); // built-in tool near the end
+    const skillIdx = cmd.indexOf("Skill"); // built-in floor tool, last in FLOOR_TOOLS order
 
     expect(extraIdx).toBeGreaterThan(allowedIdx);
-    expect(extraIdx).toBeGreaterThan(agentIdx);
+    expect(extraIdx).toBeGreaterThan(skillIdx);
   });
 
-  test("dedup: allowedTools includes a built-in tool (Bash), final args contains it exactly once", async () => {
+  test("dedup: allowedTools includes a built-in tool (Bash, from DB), final args contains it exactly once", async () => {
     const runClaude = createRunClaude(
       mockSpawn as typeof Bun.spawn,
       testSessions,
       MODEL,
       WORKSPACE,
       fakeSentryClient,
-      ["Bash", "mcp__extra__tool"], // Bash is already in the hardcoded 11
+      ["Bash", "mcp__extra__tool"], // Bash is no longer hardcoded; now DB/extraAllowedTools-only
     );
 
     await runClaude("test");
@@ -983,7 +983,7 @@ describe("extraAllowedTools", () => {
     expect(toolsInCmd).toContain("mcp__extra__tool");
   });
 
-  test("dedup: empty allowedTools still contains exactly 11 hardcoded tools with no duplicates", async () => {
+  test("dedup: empty allowedTools still contains exactly the 7 FLOOR_TOOLS with no duplicates", async () => {
     const runClaudeEmpty = createRunClaude(
       mockSpawn as typeof Bun.spawn,
       testSessions,
@@ -998,21 +998,17 @@ describe("extraAllowedTools", () => {
 
     const toolsInCmd = extractAllowedTools(cmd);
 
-    // Verify exactly 11 hardcoded tools
-    const hardcodedTools = [
+    // Verify exactly the 7 FLOOR_TOOLS
+    const floorTools = [
       "Read",
       "Write",
       "Edit",
       "Glob",
       "Grep",
-      "Bash",
-      "WebSearch",
-      "WebFetch",
-      "Skill",
-      "Agent",
       "TodoWrite",
+      "Skill",
     ];
-    expect(toolsInCmd).toEqual(hardcodedTools);
+    expect(toolsInCmd).toEqual(floorTools);
 
     // Verify no duplicates: unique count equals total count
     const uniqueTools = new Set(toolsInCmd);
@@ -1026,7 +1022,7 @@ describe("extraAllowedTools", () => {
       MODEL,
       WORKSPACE,
       fakeSentryClient,
-      ["Bash", "Write", "mcp__tool1", "Read", "mcp__tool2"], // Bash, Write, and Read are built-in
+      ["Bash", "Write", "mcp__tool1", "Read", "mcp__tool2"], // Write and Read are floor; Bash comes from DB
     );
 
     await runClaude("test");
@@ -1044,6 +1040,73 @@ describe("extraAllowedTools", () => {
     expect(toolsInCmd).toContain("Read");
     expect(toolsInCmd).toContain("mcp__tool1");
     expect(toolsInCmd).toContain("mcp__tool2");
+  });
+
+  test("empty liveClaudeConfig.allowedTools: Bash/WebSearch/WebFetch/Agent are NOT in final args, only the 7 floor tools are present", async () => {
+    const runClaudeEmpty = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      [], // simulates liveClaudeConfig.allowedTools === [] (no AgentTool rows / config bundle 404)
+    );
+
+    await runClaudeEmpty("test");
+    const [cmd] = mockSpawn.mock.calls[0] as [string[]];
+
+    const toolsInCmd = extractAllowedTools(cmd);
+
+    expect(toolsInCmd).not.toContain("Bash");
+    expect(toolsInCmd).not.toContain("WebSearch");
+    expect(toolsInCmd).not.toContain("WebFetch");
+    expect(toolsInCmd).not.toContain("Agent");
+
+    expect(toolsInCmd).toEqual([
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Skill",
+    ]);
+  });
+
+  test("liveClaudeConfig.allowedTools includes Bash and Agent (from DB): final args include them exactly once each alongside the 7 floor tools", async () => {
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      ["Bash", "Agent"], // simulates liveClaudeConfig.allowedTools seeded from AgentTool DB rows
+    );
+
+    await runClaude("test");
+    const [cmd] = mockSpawn.mock.calls[0] as [string[]];
+
+    const toolsInCmd = extractAllowedTools(cmd);
+
+    const bashCount = toolsInCmd.filter((tool) => tool === "Bash").length;
+    const agentCount = toolsInCmd.filter((tool) => tool === "Agent").length;
+    expect(bashCount).toBe(1);
+    expect(agentCount).toBe(1);
+
+    for (const floorTool of [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Skill",
+    ]) {
+      expect(toolsInCmd).toContain(floorTool);
+    }
+
+    const uniqueTools = new Set(toolsInCmd);
+    expect(uniqueTools.size).toBe(toolsInCmd.length);
   });
 });
 
