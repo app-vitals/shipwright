@@ -42,7 +42,7 @@ See [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) for end-to-end de
 The Shipwright agent runs as a Slack app — DMs, `@mentions`, and cron notifications, all in Socket Mode. Two ways to get there:
 
 - **Self-host it.** Deploy the admin service with the Helm chart (see [`docs/deploy-kubernetes.md`](./docs/deploy-kubernetes.md) above), then connect Slack from the admin UI's `/admin/provision` wizard. Full step-by-step: [Slack Integration](https://shipwrightharness.com/docs/slack-integration).
-- **Want us to run it for you?** [Book a discovery call](https://cal.com/team/app-vitals/discovery-call) — no commitment, just a conversation about your pipeline.
+- **Want us to run it for you?** [Book a discovery call](https://vitals-os.com/cal/book/discovery) — no commitment, just a conversation about your pipeline.
 
 ## Quickstart
 
