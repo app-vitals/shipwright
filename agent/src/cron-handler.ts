@@ -13,12 +13,14 @@ import type { WebClient } from "@slack/web-api";
 import {
   ClaudeRunError,
   type ClaudeRunResult,
+  ClaudeTimeoutError,
   type ModelUsage,
+  type ProgressCallback,
   type TokenUsage,
 } from "./claude.ts";
-import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
+import type { ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import type { CronRunReporter } from "./cron-run-reporter.ts";
 import { markdownToSlack } from "./format.ts";
 import { parseMarkers } from "./markers.ts";
@@ -57,7 +59,30 @@ export function buildTokenPayload(
   };
 }
 
-type ClaudeRunner = (message: string) => Promise<ClaudeRunResult>;
+/**
+ * The claude runner — sends a one-shot cron-dispatched message. The optional
+ * second `onProgress` param (CSU-1.1) is fired as each new assistant turn
+ * completes, with a fresh accumulated per-model usage snapshot — wired to
+ * cronRunReporter.recordProgress (debounced) inside handleCronRequest so
+ * token totals survive an agent-process kill mid-run, not just a clean
+ * completion. Mirrors loop-orchestrator.ts's runner signature (CSU-3.1).
+ */
+type ClaudeRunner = (
+  message: string,
+  onProgress?: ProgressCallback,
+) => Promise<ClaudeRunResult>;
+
+/**
+ * Debounce window for onProgress → cronRunReporter.recordProgress pushes
+ * within a single dispatch. A chatty run can fire onProgress on every
+ * assistant turn; without this, each turn would PATCH the admin API,
+ * hammering it on long multi-turn runs. A push that fires less than this
+ * many ms after the last one that actually went through is skipped — the
+ * next progress snapshot (or the final completeRun) carries the up-to-date
+ * totals instead. Mirrors loop-orchestrator.ts's PROGRESS_PUSH_DEBOUNCE_MS
+ * (CSU-3.1).
+ */
+const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
 
 /**
  * Format a cron-dispatched message with a `[Cron job: <jobId>]` tag and the
@@ -302,8 +327,40 @@ export async function handleCronRequest(
   let modelUsage: ModelUsage | undefined;
   let result: string;
   let sessionId: string | undefined;
+
+  // Progress push (CSU-3.2): fired as each new assistant turn completes so
+  // token totals survive an agent-process OOM/deploy-kill mid-run, not just
+  // a clean completion. Debounced against PROGRESS_PUSH_DEBOUNCE_MS (via the
+  // injected clock, not Date.now(), to stay deterministic under FixedClock)
+  // to avoid hammering the admin API on a chatty multi-turn run.
+  // recordProgress is fire-and-forget per its own doc comment — a rejection
+  // must not crash the run, so it's caught and swallowed. Mirrors
+  // loop-orchestrator.ts's onProgress wiring (CSU-3.1).
+  let lastProgressPushAt: number | undefined;
+  const onProgress: ProgressCallback = (progressModelUsage) => {
+    const { modelBreakdown } = buildTokenPayload(undefined, progressModelUsage);
+    if (!modelBreakdown || modelBreakdown.length === 0) return;
+
+    const nowMs = clock.now().getTime();
+    if (
+      lastProgressPushAt !== undefined &&
+      nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
+    ) {
+      return;
+    }
+    lastProgressPushAt = nowMs;
+
+    cronRunReporter
+      ?.recordProgress(jobId, runId, modelBreakdown)
+      .catch((err) => {
+        console.warn(
+          `[agent:cron] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,
+        );
+      });
+  };
+
   try {
-    const runResult = await runner(message);
+    const runResult = await runner(message, onProgress);
     if (runResult.streamIncomplete) {
       // Clean process exit, but the stream never emitted a terminal `result`
       // event — treat this the same as a genuine failure rather than letting
@@ -321,8 +378,23 @@ export async function handleCronRequest(
     result = runResult.result;
     sessionId = runResult.sessionId;
   } catch (err) {
+    // Partial-usage-on-failure (CSU-3.2): a ClaudeTimeoutError carries
+    // whatever per-model usage was accumulated before the process was
+    // killed — attach it as modelBreakdown so a timed-out run's tokens
+    // aren't dropped entirely (the direct fix for "unknown model" on
+    // timed-out cron runs). Scoped narrowly to ClaudeTimeoutError's
+    // `partialModelUsage` field, not ClaudeRunError's differently-named
+    // `modelUsage` field — any other error (including ClaudeRunError) falls
+    // back to { error } only, unchanged. Mirrors loop-orchestrator.ts's
+    // catch-path handling (CSU-3.1).
+    const tokenPayload =
+      err instanceof ClaudeTimeoutError
+        ? buildTokenPayload(undefined, err.partialModelUsage)
+        : undefined;
+
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "failed", {
       error: err instanceof Error ? err.message : String(err),
+      ...tokenPayload,
     });
     markCronRunFailureReported(err);
     throw err;
