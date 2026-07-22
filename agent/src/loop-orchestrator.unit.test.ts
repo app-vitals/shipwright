@@ -1211,11 +1211,17 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
-  test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
+  test("a runner throw during dispatch reports a failed run, is caught, and does not abort the tick", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
     const runner = async (message: string) => {
+      // Marks the item consumed the same way a successful pre-claim would in
+      // production (the task store record is already claimed, so it drops
+      // out of the next candidate collection) — isolates this test from the
+      // throw-isolation fix under test, rather than looping forever on a
+      // pool stub that keeps re-offering the same never-consumed item.
+      consumed.add("SWC-1.1");
       throw new Error(`claude run failed for ${message}`);
     };
     const deps = makeDeps({
@@ -1226,12 +1232,12 @@ describe("createLoopOrchestrator", () => {
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "claude run failed for [Cron job: shipwright-loop] Current time:",
-    );
+    // The tick resolves cleanly — a runner throw during dispatch is caught
+    // per-item and does not propagate out of the drain loop.
+    await loop([job("shipwright-dev-task", true)]);
 
     // The run was created and then completed with outcome "failed" — never
-    // silently dropped — and the error propagated instead of being swallowed.
+    // silently dropped, even though the error itself was swallowed.
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
     expect(completes).toEqual([
       {
@@ -1251,14 +1257,14 @@ describe("createLoopOrchestrator", () => {
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
   });
 
-  test("a streamIncomplete:true result during dispatch reports a failed run, rethrows (CSU-1.1 regression)", async () => {
+  test("a streamIncomplete:true result during dispatch reports a failed run, is caught, and does not abort the tick (CSU-1.1 regression)", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
-    const runner = async (): Promise<ClaudeRunResult> => ({
-      result: "",
-      streamIncomplete: true,
-    });
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-1.1");
+      return { result: "", streamIncomplete: true };
+    };
     const deps = makeDeps({
       devTaskCandidates,
       runner,
@@ -1267,9 +1273,8 @@ describe("createLoopOrchestrator", () => {
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "stream ended without a terminal result event",
-    );
+    // Resolves cleanly — see the throw-isolation test above.
+    await loop([job("shipwright-dev-task", true)]);
 
     // A clean-exit-but-truncated stream must NOT be recorded as a completed
     // dispatch — it should surface as a failed run, same as a thrown error.
@@ -1285,6 +1290,47 @@ describe("createLoopOrchestrator", () => {
       },
     ]);
     expect(skips).toEqual([]);
+  });
+
+  test("a runner throw during dispatch on one item does not block a younger candidate of a different phase in the same tick", async () => {
+    // Regression for the throw-isolation bug: previously, a thrown dispatch
+    // propagated out of the drain loop and aborted the entire tick, so an
+    // unrelated (younger) review candidate never got a chance to dispatch in
+    // the same tick even though nothing about it failed.
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-BOOM", "2026-01-01T00:00:00Z")];
+    const reviewCandidates = [pr("acme/x#9", "2026-01-02T00:00:00Z", "review")];
+    const { runner: baseRunner, messages } = makeDrainingRunner(
+      { review: reviewCandidates },
+      consumed,
+    );
+    const runner = async (
+      message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      if (message.includes("/shipwright:dev-task")) {
+        consumed.add("SWC-BOOM");
+        throw new Error("claude run failed for SWC-BOOM");
+      }
+      return baseRunner(message, onProgress);
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([
+      job("shipwright-dev-task", true),
+      job("shipwright-review", true),
+    ]);
+
+    // The whole tick did NOT abort — the review candidate still dispatched
+    // in the same tick despite the dev-task dispatch throwing.
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toContain("/shipwright:review acme/x#9");
   });
 
   test("releases the busy flag even when an iteration throws", async () => {
@@ -2408,23 +2454,26 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("a runner throw carrying err.partialModelUsage (ClaudeTimeoutError) attaches modelBreakdown to the failed completeRun call", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P5", "2026-01-01T00:00:00Z")];
     const { reporter, completes } = makeRecordingReporter();
     const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-P5");
       throw new ClaudeTimeoutError(600_000, "ceiling", usage(42));
     };
-    const deps = makeDeps({ devTaskCandidates, runner, reporter });
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      ClaudeTimeoutError,
-    );
+    // Resolves cleanly — the throw is caught per-item in the drain loop
+    // (throw isolation), not propagated.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(completes).toHaveLength(1);
     expect(completes[0]?.outcome).toBe("failed");
   });
 
   test("a runner throw without partialModelUsage (plain Error) falls back to { error } only — unchanged from current behavior", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P6", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
     const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
@@ -2457,18 +2506,19 @@ describe("createLoopOrchestrator", () => {
       },
     };
     const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-P6");
       throw new Error("plain failure, no partial usage");
     };
     const deps = makeDeps({
       devTaskCandidates,
       runner,
       reporter: trackedReporter,
+      consumed,
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "plain failure, no partial usage",
-    );
+    // Resolves cleanly — see the throw-isolation test above.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(opts).toHaveLength(1);
     expect(opts[0]?.error).toBe("plain failure, no partial usage");
@@ -2476,6 +2526,7 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("a runner throw with a ClaudeRunError (modelUsage, not partialModelUsage) falls back to { error } only", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P7", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
     const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
@@ -2508,6 +2559,7 @@ describe("createLoopOrchestrator", () => {
       },
     };
     const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-P7");
       throw new ClaudeRunError(
         "claude run failed",
         500,
@@ -2520,12 +2572,12 @@ describe("createLoopOrchestrator", () => {
       devTaskCandidates,
       runner,
       reporter: trackedReporter,
+      consumed,
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "claude run failed",
-    );
+    // Resolves cleanly — see the throw-isolation test above.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(opts).toHaveLength(1);
     expect(opts[0]?.error).toBe("claude run failed");

@@ -33,7 +33,10 @@
  *      /shipwright:patch | /shipwright:deploy) via the injected claude
  *      runner, and report the run.
  *   5. Repeat immediately (not waiting for the next cron tick) while work
- *      remains. Stop when nothing is selected, or if an iteration throws.
+ *      remains. Stop when nothing is selected. A dispatch that throws (e.g.
+ *      the runner times out or errors) is caught, reported, and skipped —
+ *      it does not abort the tick; the drain continues with the next
+ *      candidate.
  *
  * The busy flag is always released in a finally block, even on a thrown error.
  *
@@ -783,22 +786,42 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(
-          phase,
-          phaseId,
-          item.type,
-          itemId,
-          recordId,
-          preClaimMarker,
-        );
+        try {
+          await dispatch(
+            phase,
+            phaseId,
+            item.type,
+            itemId,
+            recordId,
+            preClaimMarker,
+          );
+        } catch (err) {
+          // Throw isolation for the runner itself: dispatch() already
+          // reported the failure (cronRunReporter.completeRun +
+          // markCronRunFailureReported) before rethrowing — the rethrow
+          // exists so callers can react, but letting it propagate out of
+          // the drain loop here would abort the ENTIRE tick, blocking every
+          // other candidate that hasn't failed (the "one flaky/timeout
+          // dispatch stalls unrelated review/patch/deploy work" bug). Skip
+          // this item for the rest of the tick and keep draining — the item
+          // stays claimed in the task store (pre-claim above already
+          // succeeded), so it naturally drops out of the next iteration's
+          // candidates rather than being re-selected and re-thrown forever.
+          console.warn(
+            `Dispatch failed for ${item.type} ${itemId}, skipping for this tick: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+          continue;
+        }
         // Not re-marking candidatesSeenThisTick here — a successful dispatch
         // is only reachable after this iteration already found tasks/prs
         // nonzero above, so it's already true by this point.
 
         // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
         // tick can suppress a redundant re-dispatch at the same commit within
-        // the cooldown window. Recorded only after dispatch() resolves
-        // without throwing — a thrown dispatch aborts the whole tick anyway.
+        // the cooldown window. Only reached once dispatch() has resolved
+        // without throwing (a thrown dispatch `continue`s above before
+        // reaching here).
         if (item.type === "pr") {
           lastPrDispatch.set(itemId, {
             commitSha: item.pr.commitSha,

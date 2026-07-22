@@ -499,7 +499,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     expect(callOrder).toEqual(["recordProgress", "completeRun"]);
   });
 
-  test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown", async () => {
+  test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown, without aborting the tick", async () => {
     const devTaskCandidates = [task("SWC-2.2", "2026-01-01T00:00:00Z")];
     const { reporter, completeCalls } = makeRecordingReporter();
 
@@ -508,8 +508,17 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       throw new ClaudeTimeoutError(600_000, "ceiling", partialUsage);
     };
 
+    // Only offer the candidate once — mirrors production, where a
+    // successful pre-claim (claimTask below always resolves true) removes
+    // the task-store record from subsequent candidate queries even though
+    // the dispatch itself went on to fail.
+    let collected = false;
     const loop = createLoopOrchestrator({
-      getDevTaskCandidates: async () => devTaskCandidates,
+      getDevTaskCandidates: async () => {
+        if (collected) return [];
+        collected = true;
+        return devTaskCandidates;
+      },
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
       getDeployCandidates: async () => [],
@@ -524,9 +533,9 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
     });
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      ClaudeTimeoutError,
-    );
+    // Resolves cleanly — the throw is caught per-item in the drain loop
+    // (throw isolation) rather than propagated out of the tick.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(completeCalls).toHaveLength(1);
     expect(completeCalls[0]?.outcome).toBe("failed");
