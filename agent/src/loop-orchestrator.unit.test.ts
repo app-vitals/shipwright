@@ -477,6 +477,31 @@ async function withCapturedWarnings(
   return warnMessages;
 }
 
+// ─── console.log / console.info capture (LTO-1.1) ──────────────────────────
+
+// Captures console.log AND console.info calls for the duration of `fn`,
+// restoring both originals afterward even if `fn` throws. Used to assert on
+// the distinguishable no-op-reason logs runLoopTick emits for the busy /
+// backoff-active / genuinely-empty / backoff-newly-engaging paths, without
+// caring which of the two methods a given call site happens to use.
+async function withCapturedLogs(fn: () => Promise<void>): Promise<string[]> {
+  const logMessages: string[] = [];
+  const originalLog = console.log.bind(console);
+  const originalInfo = console.info.bind(console);
+  const capture = (...args: unknown[]) => {
+    logMessages.push(args.map(String).join(" "));
+  };
+  console.log = capture;
+  console.info = capture;
+  try {
+    await fn();
+  } finally {
+    console.log = originalLog;
+    console.info = originalInfo;
+  }
+  return logMessages;
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createLoopOrchestratorGetter", () => {
@@ -613,6 +638,39 @@ describe("createLoopOrchestrator", () => {
     await first;
     // First tick found nothing → still no dispatch.
     expect(messages).toEqual([]);
+  });
+
+  test("LTO-1.1: the busy-flag no-op logs a distinguishable message before returning", async () => {
+    // First tick's qualification hangs until we release it, so the second
+    // tick fires while the first is still draining and hits the busy guard.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+
+    const deps = makeDeps({
+      getDevTaskCandidates: async () => {
+        await gate;
+        return [];
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    const logMessages = await withCapturedLogs(async () => {
+      // Second call while first is still draining — must no-op immediately
+      // and log a distinguishable "busy" message before returning.
+      await loop(ALL_PHASES_ON);
+    });
+
+    release();
+    await first;
+
+    expect(logMessages.length).toBeGreaterThan(0);
+    const busyLogs = logMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
   });
 
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
@@ -1499,6 +1557,112 @@ describe("createLoopOrchestrator", () => {
         calls.length = 0;
         await loop(ALL_PHASES_ON);
         expect(calls).toHaveLength(0);
+      },
+    );
+  });
+
+  test("LTO-1.1: each genuinely-empty tick logs a distinguishable message including the consecutiveEmptyTicks count", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        const logMessages = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+
+        const emptyLogs = logMessages.filter((msg) =>
+          msg.toLowerCase().includes("empty"),
+        );
+        expect(emptyLogs.length).toBeGreaterThan(0);
+        // Must surface the resulting consecutiveEmptyTicks count (1 after
+        // the first genuinely-empty tick).
+        expect(emptyLogs.some((msg) => msg.includes("1"))).toBe(true);
+      },
+    );
+  });
+
+  test("LTO-1.1: the backoff-active skip logs a distinguishable message including remaining time or the backoffUntil timestamp", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // 3 consecutive empty ticks arm backoff.
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+
+        // A 4th tick within the backoff window must log a distinguishable
+        // "backoff active" message before returning, distinct from the
+        // busy-flag and genuinely-empty messages.
+        const logMessages = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+
+        expect(logMessages.length).toBeGreaterThan(0);
+        const backoffLogs = logMessages.filter((msg) =>
+          msg.toLowerCase().includes("backoff"),
+        );
+        expect(backoffLogs.length).toBeGreaterThan(0);
+        // Must not be confusable with the busy-flag message.
+        expect(
+          backoffLogs.some((msg) => msg.toLowerCase().includes("busy")),
+        ).toBe(false);
+      },
+    );
+  });
+
+  test("LTO-1.1: backoff newly engaging logs a distinguishable message noting until when, only on the crossing tick", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // First two empty ticks: below threshold, backoff must not engage.
+        const earlyLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+          await loop(ALL_PHASES_ON);
+        });
+        const earlyEngageLogs = earlyLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(earlyEngageLogs).toHaveLength(0);
+
+        // Third empty tick crosses the threshold — backoff newly engages.
+        const crossingLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+        const engageLogs = crossingLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(engageLogs.length).toBeGreaterThan(0);
+
+        // A subsequent tick inside the backoff window (the backoff-active
+        // skip) must NOT repeat the "newly engaging" message — only the
+        // crossing tick logs it.
+        const subsequentLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+        const repeatedEngageLogs = subsequentLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(repeatedEngageLogs).toHaveLength(0);
       },
     );
   });
