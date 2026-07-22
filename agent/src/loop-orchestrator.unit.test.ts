@@ -1434,6 +1434,238 @@ describe("createLoopOrchestrator", () => {
     expect(spinWarnings).toHaveLength(0);
   });
 
+  // ─── Empty-queue backoff tests (SKT-2.2) ────────────────────────────────────
+
+  /** A Clock whose now() can be advanced between calls, for backoff tests. */
+  function makeMutableClockForBackoff(initialIso: string): {
+    clock: import("./clock.ts").Clock;
+    advanceMs: (ms: number) => void;
+  } {
+    let current = new Date(initialIso);
+    return {
+      clock: { now: () => current },
+      advanceMs: (ms: number) => {
+        current = new Date(current.getTime() + ms);
+      },
+    };
+  }
+
+  /**
+   * Sets the given env vars for the duration of `fn`, restoring each to its
+   * prior value (or deleting it, if previously unset) afterward — even if
+   * `fn` throws.
+   */
+  async function withEnvOverrides(
+    overrides: Record<string, string>,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const originals = Object.fromEntries(
+      Object.keys(overrides).map((name) => [name, process.env[name]]),
+    );
+    Object.assign(process.env, overrides);
+    try {
+      await fn();
+    } finally {
+      for (const [name, original] of Object.entries(originals)) {
+        if (original === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = original;
+        }
+      }
+    }
+  }
+
+  test("after SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS consecutive empty ticks, a subsequent tick within the backoff window performs zero candidate-collection calls", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const calls: string[] = [];
+        const deps = { ...makeDeps({ calls }), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // 3 consecutive empty ticks — each collects candidates (empty pools).
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+        expect(calls.length).toBeGreaterThan(0);
+
+        // Backoff should now be active — a 4th tick within the window must
+        // perform zero candidate-collection calls.
+        calls.length = 0;
+        await loop(ALL_PHASES_ON);
+        expect(calls).toHaveLength(0);
+      },
+    );
+  });
+
+  test("a tick that dispatches at least one item resets the empty-tick counter — a further empty tick alone does not trigger backoff", async () => {
+    await withEnvOverrides(
+      { SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3" },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const consumed = new Set<string>();
+        const devTaskCandidates = [task("T-RESET", "2026-01-01T00:00:00Z")];
+        const calls: string[] = [];
+        const runner = async (
+          _message: string,
+          _onProgress?: ProgressCallback,
+        ): Promise<ClaudeRunResult> => {
+          consumed.add("T-RESET");
+          return { result: "done" };
+        };
+        const deps = {
+          ...makeDeps({ calls, devTaskCandidates, consumed, runner }),
+          clock,
+        };
+        const loop = createLoopOrchestrator(deps);
+
+        // Two empty ticks (fewer than the threshold of 3).
+        await loop([job("shipwright-review", true)]);
+        await loop([job("shipwright-review", true)]);
+
+        // A tick with real work — dispatches T-RESET, resets the counter.
+        await loop([job("shipwright-dev-task", true)]);
+
+        // A further empty tick must still perform normal candidate collection
+        // (i.e. backoff must NOT have triggered) — the counter was reset, not
+        // just short of the threshold by coincidence.
+        calls.length = 0;
+        await loop([job("shipwright-review", true)]);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  test("advancing the clock past backoffDurationMs resumes normal candidate collection", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "2",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "60000", // 1 minute
+      },
+      async () => {
+        const { clock, advanceMs } = makeMutableClockForBackoff(
+          "2026-01-01T00:00:00Z",
+        );
+        const calls: string[] = [];
+        const deps = { ...makeDeps({ calls }), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // 2 consecutive empty ticks trigger backoff (threshold = 2).
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+
+        // A tick within the window performs zero candidate-collection calls.
+        calls.length = 0;
+        await loop(ALL_PHASES_ON);
+        expect(calls).toHaveLength(0);
+
+        // Advance the clock past the backoff duration.
+        advanceMs(60_001);
+
+        // A tick after the window has elapsed resumes normal collection.
+        calls.length = 0;
+        await loop(ALL_PHASES_ON);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  test("a tick where candidates exist but every claim loses to a sibling replica (409) does not count as an empty tick", async () => {
+    // Models a busy, contended queue: real candidates are collected every
+    // tick, but claimTask always 409s (returns false) — nothing ever
+    // dispatches. Without tracking candidate presence separately from
+    // dispatch success, 3 such ticks at threshold=3 would misfire the
+    // empty-queue backoff even though the queue was never actually empty.
+    await withEnvOverrides(
+      { SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3" },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const calls: string[] = [];
+
+        // getDevTaskCandidates() alternates: odd calls (the drain loop's
+        // first iteration each tick) return one contended candidate; even
+        // calls (the drain loop's second iteration, after the 409) return
+        // an empty list — modeling "claimed by a sibling replica and gone
+        // from the next ready-query", same finite-loop convention as the
+        // existing 409 test above. Each tick makes exactly 2 calls, so the
+        // parity stays aligned across tick boundaries.
+        let devTaskCalls = 0;
+        const getDevTaskCandidates = async () => {
+          calls.push("devTask");
+          devTaskCalls += 1;
+          return devTaskCalls % 2 === 1
+            ? [task("SWC-CONTENDED", "2026-01-01T00:00:00Z")]
+            : [];
+        };
+
+        const deps = {
+          ...makeDeps({
+            calls,
+            getDevTaskCandidates,
+            claimTask: async () => false,
+          }),
+          clock,
+        };
+        const loop = createLoopOrchestrator(deps);
+
+        // 3 consecutive contended ticks — each sees a real candidate (409s
+        // on claim, nothing dispatched).
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+
+        // A 4th tick must still perform normal candidate collection —
+        // backoff must NOT have armed, since none of the 3 prior ticks
+        // actually collected zero candidates.
+        calls.length = 0;
+        await loop([job("shipwright-dev-task", true)]);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  test("a tick where candidates exist but every claim throws (e.g. task-store 5xx) does not count as an empty tick", async () => {
+    // Same scenario as the 409 case above, but via the throw path (CBD-2.1)
+    // instead of a false return — the drain loop's per-tick
+    // failedPreClaimTaskIds filter is what keeps this finite instead of the
+    // candidate-list alternation used for the 409 variant.
+    await withEnvOverrides(
+      { SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3" },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const calls: string[] = [];
+        const devTaskCandidates = [
+          task("SWC-BOOM", "2026-01-01T00:00:00Z"),
+        ];
+
+        const deps = {
+          ...makeDeps({
+            calls,
+            devTaskCandidates,
+            claimTask: async () => {
+              throw new Error("task-store 500");
+            },
+          }),
+          clock,
+        };
+        const loop = createLoopOrchestrator(deps);
+
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+
+        calls.length = 0;
+        await loop([job("shipwright-dev-task", true)]);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
   // ─── Unreconciled-agent warn tests (LPC-2.1 follow-up) ──────────────────────
 
   test("unreconciled-agent warn fires when shipwright-loop is present but no child phase rows exist", async () => {
