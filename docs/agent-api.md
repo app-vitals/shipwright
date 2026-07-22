@@ -28,7 +28,7 @@ Routes marked **admin-only** require `isAdmin=true`. Per-agent bearer tokens can
 POST /agents
 ```
 
-Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload.
+Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. On successful agent creation, seeds the default tool allowlist (`["Bash", "WebSearch", "WebFetch", "Agent"]`) before provisioning — if provisioning fails, these seeded tools are cascade-deleted along with the rolled-back agent row.
 
 Body:
 
