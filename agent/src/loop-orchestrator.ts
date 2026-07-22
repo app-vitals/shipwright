@@ -147,6 +147,30 @@ export interface LoopOrchestratorDeps {
     pr: WorkPrCandidate,
   ) => Promise<{ id: string; commitSha: string } | null>;
   /**
+   * SKT-2.1 — records a skip against the task-store's skip-tracking streak
+   * for the given item, called on the `[silent]`-marker dispatch branch
+   * (found nothing to do once it actually ran). Fire-and-forget: the
+   * implementation must never throw/reject (errors are caught and warned at
+   * the client layer), so call sites `await` it directly with no wrapping
+   * try/catch — a task-store error here must never abort or delay the
+   * dispatch loop.
+   *
+   * `recordId` is NOT always the same value as the dispatch's `itemId`: for
+   * a "task" item they're identical (the task's plain id), but for a "pr"
+   * item `recordId` must be the PullRequest DB record's CUID (captured from
+   * claimPr's result at the pre-claim call site) — `itemId` for PR items
+   * stays the human-readable "org/repo#123" candidate id used purely for
+   * cron-run-reporter tagging, and is the WRONG value to pass here.
+   */
+  recordSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  /**
+   * SKT-2.1 — clears a prior skip streak for the given item, called on the
+   * real `completed` dispatch branch (any actual progress). Same
+   * fire-and-forget contract and recordId-vs-itemId distinction as
+   * recordSkip above.
+   */
+  resetSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  /**
    * The claude runner — sends a one-shot slash-command message. The optional
    * second `onProgress` param (CSU-1.1) is fired as each new assistant turn
    * completes, with a fresh accumulated per-model usage snapshot — wired to
@@ -275,6 +299,8 @@ export function createLoopOrchestrator(
     getDeployCandidates,
     claimTask,
     claimPr,
+    recordSkip,
+    resetSkip,
     runner,
     cronRunReporter,
     workQueueReporter,
@@ -297,6 +323,28 @@ export function createLoopOrchestrator(
     string,
     { commitSha: string; dispatchedAt: number }
   >();
+
+  /**
+   * SKT-2.1 guard around recordSkip/resetSkip: both are documented
+   * never-throwing (the production client swallows fetch errors and non-ok
+   * responses internally, matching HttpCronRunReporter.patchRun's pattern),
+   * but a task-store error at this call site must not abort or delay the
+   * dispatch loop regardless — so a rejection is caught and warned rather
+   * than left to propagate out of dispatch() and abort the tick.
+   */
+  async function callSkipTracker(
+    label: "recordSkip" | "resetSkip",
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      console.warn(
+        `${label} rejected — swallowing: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   /**
    * Dispatch one selected phase's one-shot command (with the winning item's
@@ -322,12 +370,20 @@ export function createLoopOrchestrator(
    * after the item id (e.g. "/shipwright:review acme/x#1 [preclaim:<id>:<sha>]")
    * so the downstream PR skill can recognize the loop already claimed this PR
    * and trust that claim instead of re-claiming. Only ever set for PR items.
+   *
+   * `recordId` (SKT-2.1) is the task-store record id passed to
+   * recordSkip/resetSkip — deliberately NOT the same value as `itemId` for PR
+   * items. `itemId` stays "org/repo#123" (cron-run-reporter tagging only);
+   * `recordId` is the task's plain id for a task item, or the PullRequest DB
+   * record's CUID (from claimPr's result) for a PR item. See the recordSkip
+   * doc comment on LoopOrchestratorDeps for the full rationale.
    */
   async function dispatch(
     phase: LoopPhase,
     phaseId: string | null,
     itemType: "task" | "pr",
     itemId: string,
+    recordId: string,
     preClaimMarker?: string,
   ): Promise<void> {
     const command = preClaimMarker
@@ -426,17 +482,23 @@ export function createLoopOrchestrator(
 
     if (isSilent) {
       // The command was dispatched (it was selected), but found nothing to do
-      // once it ran — one row, marked skipped.
+      // once it ran — one row, marked skipped. runner(message) already ran
+      // and may have spent real tokens before reporting nothing-to-do, so
+      // (unlike the other skip paths, e.g. a 409 pre-claim conflict) forward
+      // that spend via buildTokenPayload rather than dropping it (see the
+      // file's skipRun opts doc comment).
       await cronRunReporter.skipRun(
         loopCronId,
         runId,
         clock.now(),
         "command:no-work",
-        undefined,
+        buildTokenPayload(runResult.usage, runResult.modelUsage),
         phaseId ?? undefined,
         itemType,
         itemId,
       );
+      // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
+      await callSkipTracker("recordSkip", () => recordSkip(itemType, recordId));
       return;
     }
 
@@ -450,6 +512,8 @@ export function createLoopOrchestrator(
       itemType,
       itemId,
     );
+    // SKT-2.1: real progress clears any prior skip streak.
+    await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
   }
 
   return async function runLoopTick(jobs: CronJobLike[]): Promise<void> {
@@ -569,7 +633,16 @@ export function createLoopOrchestrator(
         // naturally excluding the now-claimed item. On a successful PR
         // pre-claim, capture the marker (claimed record id + commitSha) to
         // append to the dispatched command string below.
+        //
+        // `recordId` (SKT-2.1) is the id passed to recordSkip/resetSkip — for
+        // a task item it's the same as `itemId` (the task's plain id), but
+        // for a PR item it MUST be the PullRequest DB record's CUID
+        // (claimResult.id) rather than `itemId` (which stays the
+        // human-readable "org/repo#123" display id used for cron-run-reporter
+        // tagging only). See the recordSkip doc comment on
+        // LoopOrchestratorDeps for the full rationale.
         let preClaimMarker: string | undefined;
+        let recordId: string;
         if (item.type === "task") {
           let claimed: boolean;
           try {
@@ -588,6 +661,7 @@ export function createLoopOrchestrator(
             continue;
           }
           if (!claimed) continue;
+          recordId = itemId;
         } else {
           let claimResult: { id: string; commitSha: string } | null;
           try {
@@ -611,6 +685,9 @@ export function createLoopOrchestrator(
             claimResult.id,
             claimResult.commitSha,
           );
+          // NOT itemId — claimResult.id is the PullRequest DB record's CUID,
+          // the value the /prs/:id/skip[/reset] routes expect.
+          recordId = claimResult.id;
         }
 
         // Spin detection: track consecutive dispatches of the same itemId.
@@ -633,7 +710,14 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(phase, phaseId, item.type, itemId, preClaimMarker);
+        await dispatch(
+          phase,
+          phaseId,
+          item.type,
+          itemId,
+          recordId,
+          preClaimMarker,
+        );
 
         // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
         // tick can suppress a redundant re-dispatch at the same commit within
@@ -767,6 +851,8 @@ export async function createProductionLoopOrchestrator(
         phase: pr.phase ?? "review",
       });
     },
+    recordSkip: (itemType, id) => taskStoreClient.recordSkip(itemType, id),
+    resetSkip: (itemType, id) => taskStoreClient.resetSkip(itemType, id),
     runner: opts.runner,
     cronRunReporter: opts.cronRunReporter,
     workQueueReporter: opts.workQueueReporter,

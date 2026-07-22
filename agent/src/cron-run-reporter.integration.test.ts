@@ -195,12 +195,18 @@ describe("HttpCronRunReporter", () => {
     const reporter = makeReporter();
     const completedAt = new Date("2026-01-01T08:00:05.000Z");
 
-    await reporter.completeRun("cron-123", "run-abc", completedAt, "completed", {
-      inputTokens: 100,
-      outputTokens: 50,
-      cacheReadTokens: 20,
-      cacheCreationTokens: 10,
-    });
+    await reporter.completeRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "completed",
+      {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 10,
+      },
+    );
 
     const body = state.captured[0].body as Record<string, unknown>;
     expect(body.inputTokens).toBe(100);
@@ -224,12 +230,7 @@ describe("HttpCronRunReporter", () => {
 
   test("completeRun does nothing when runId is null", async () => {
     const reporter = makeReporter();
-    await reporter.completeRun(
-      "cron-123",
-      null,
-      new Date(),
-      "completed",
-    );
+    await reporter.completeRun("cron-123", null, new Date(), "completed");
 
     expect(state.captured).toHaveLength(0);
   });
@@ -259,28 +260,34 @@ describe("HttpCronRunReporter", () => {
     const reporter = makeReporter();
     const completedAt = new Date("2026-01-01T08:00:05.000Z");
 
-    await reporter.completeRun("cron-123", "run-abc", completedAt, "completed", {
-      inputTokens: 300,
-      outputTokens: 150,
-      modelBreakdown: [
-        {
-          model: "claude-sonnet-4-5",
-          inputTokens: 200,
-          outputTokens: 100,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          costUsd: 0.002,
-        },
-        {
-          model: "claude-haiku-4-5",
-          inputTokens: 100,
-          outputTokens: 50,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          costUsd: 0.001,
-        },
-      ],
-    });
+    await reporter.completeRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "completed",
+      {
+        inputTokens: 300,
+        outputTokens: 150,
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 200,
+            outputTokens: 100,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.002,
+          },
+          {
+            model: "claude-haiku-4-5",
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.001,
+          },
+        ],
+      },
+    );
 
     const body = state.captured[0].body as Record<string, unknown>;
     expect(Array.isArray(body.modelBreakdown)).toBe(true);
@@ -420,6 +427,92 @@ describe("HttpCronRunReporter", () => {
       reporter.skipRun("cron-http-err", "run-1", new Date(), "preCheck:crash"),
     ).resolves.toBeUndefined();
   });
+
+  test("skipRun sends token data when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.skipRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "command:no-work",
+      {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 10,
+      },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.skipped).toBe(true);
+    expect(body.skipReason).toBe("command:no-work");
+    expect(body.inputTokens).toBe(100);
+    expect(body.outputTokens).toBe(50);
+    expect(body.cacheReadTokens).toBe(20);
+    expect(body.cacheCreationTokens).toBe(10);
+  });
+
+  test("skipRun sends modelBreakdown when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.skipRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "command:no-work",
+      {
+        inputTokens: 300,
+        outputTokens: 150,
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 200,
+            outputTokens: 100,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.002,
+          },
+          {
+            model: "claude-haiku-4-5",
+            inputTokens: 100,
+            outputTokens: 50,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
+            costUsd: 0.001,
+          },
+        ],
+      },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(Array.isArray(body.modelBreakdown)).toBe(true);
+    const breakdown = body.modelBreakdown as Array<Record<string, unknown>>;
+    expect(breakdown).toHaveLength(2);
+    expect(breakdown[0].model).toBe("claude-sonnet-4-5");
+    expect(breakdown[0].inputTokens).toBe(200);
+    expect(breakdown[1].model).toBe("claude-haiku-4-5");
+    expect(breakdown[1].inputTokens).toBe(100);
+  });
+
+  test("skipRun sends both error and token data together when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.skipRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "command:no-work",
+      { error: "partial run before skip", inputTokens: 42 },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.error).toBe("partial run before skip");
+    expect(body.inputTokens).toBe(42);
+  });
 });
 
 // ─── NoopCronRunReporter ──────────────────────────────────────────────────────
@@ -442,6 +535,28 @@ describe("NoopCronRunReporter", () => {
     const reporter = new NoopCronRunReporter();
     await expect(
       reporter.skipRun("any", null, new Date(), "preCheck:not-found"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("skipRun accepts token fields in opts and does not throw", async () => {
+    const reporter = new NoopCronRunReporter();
+    await expect(
+      reporter.skipRun("any", null, new Date(), "command:no-work", {
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 1,
+        cacheCreationTokens: 1,
+        modelBreakdown: [
+          {
+            model: "claude-sonnet-4-5",
+            inputTokens: 10,
+            outputTokens: 5,
+            cacheReadTokens: 1,
+            cacheCreationTokens: 1,
+            costUsd: 0.001,
+          },
+        ],
+      }),
     ).resolves.toBeUndefined();
   });
 

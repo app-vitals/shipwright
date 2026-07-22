@@ -439,13 +439,28 @@ advisory — CI can run and still not gate `main`.
   `app==true` condition is fine to leave as-is; a required check that's skipped due to
   the path filter still reports a passing/neutral state to the merge gate, which is the
   intended fail-open behavior documented in `ci.yml`'s own comments).
-- **Require branches up to date before merging** — yes.
-- **Require conversation resolution before merging** — yes.
-- **Required approving reviews:** ≥1 — small team; ≥2 would deadlock a repo whenever
-  the sole other reviewer is the PR author. Keep at 1.
-- **Enforce on admins:** yes, recommended — document a break-glass procedure (direct
-  push only for a CI outage or emergency rollback, immediately followed by a
-  retroactive PR) rather than leaving admins permanently exempt.
+- **Require branches up to date before merging:** **no.**
+- **Require conversation resolution before merging:** **no.**
+- **Required approving reviews:** **0.**
+- **Enforce on admins:** **no.**
+
+`shipwright-deploy` is enabled for this repo, so most PRs are agent-authored and
+agent-reviewed, and `deploy.md` Step 4b merges every PR with `gh pr merge --admin` by
+design, not as an emergency exception. `--admin` bypasses branch protection wholesale, so
+all four settings above are moot for the actual merge path: GitHub blocks self-APPROVE via
+the API so a required-review count can never be satisfied by the pipeline itself,
+`enforce_admins: true` would either block every automated merge or require the merging
+account to be a permanent `bypass_actor` (enforcement in name only), "up to date" burns
+real CI minutes — every merge into main invalidates the "up to date" status of every other
+open PR, forcing a rebase and CI re-run on each one just to become mergeable again — and
+conversation resolution isn't reliably enforced by the pipeline either: `check-patch.ts`'s
+`hasUnaddressedFindings()` only revisits unresolved threads when a qualifying review exists
+at the current HEAD, so a later commit that lands without a fresh review (e.g. a CI-only
+fix) can leave stale threads permanently unresolved. Not worth recommending for a
+theoretical "safety net" that also gets bypassed by `--admin`. These are the standard
+values for every shipwright repo, one flat default rather than a per-repo choice, since
+shipwright repos are moving toward `shipwright-deploy` across the board; see
+`repo-config/SKILL.md`'s Branch protection section for the full reasoning.
 - **Canary status check:** not applicable / not included — see Canary execution
   contract section; there is no canary job to include or exclude.
 

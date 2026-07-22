@@ -24,12 +24,17 @@ A complete repo-config plan covers four concerns:
 
 For each protected branch (default: `main`):
 
-- **Required PR** — no direct pushes
-- **Required status checks** — every layer-relevant CI job from `test.yml` (lint, per-service unit, per-service integration, smoke, E2E)
-- **Require branches to be up to date before merging** — yes
-- **Require conversation resolution before merging** — yes
-- **Required approving reviews** — ≥1 (≥2 for repos with multiple maintainers)
-- **Enforce on admins** — yes (recommended; document break-glass procedure if not)
+This is the standard recommendation for every shipwright repo — one flat default, not a
+choice between options. Shipwright repos are moving toward `shipwright-deploy` (agent
+self-merges via `--admin`) across the board, so recommend the settings below regardless of
+where a given repo currently is in that rollout.
+
+- **Required PR** — no direct pushes.
+- **Required status checks** — every layer-relevant CI job from `test.yml` (lint, per-service unit, per-service integration, smoke, E2E). This is the real gate: CI must be green on the branch that lands. It's still a useful signal even though `deploy.md` merges with `--admin` — it gates any merge attempt that doesn't go through `deploy.md` (e.g. a human merging via the GitHub UI).
+- **Require conversation resolution before merging** — **no.** Not worth recommending: `check-patch.ts`'s `hasUnaddressedFindings()` only checks for unresolved threads when a qualifying review exists at the *current* HEAD commit — if a later commit lands without a fresh qualifying review at that commit (e.g. a CI-only fix), stale unresolved threads from an earlier review are never revisited, and nothing in the pipeline resolves them. `deploy.md`'s `--admin` merge bypasses this setting regardless, so the theoretical "free safety net for manual merges" benefit doesn't hold up against the risk of a PR getting stuck with orphaned unresolved threads no automated process will ever clean up. Not worth the effort to fix the gap for a benefit this narrow.
+- **Require branches to be up to date before merging** — **no.** `deploy.md` Step 4b merges every PR with `gh pr merge --admin`, which bypasses this anyway. It also has a concrete, independent cost: GitHub's strict status checks go stale whenever the base branch moves, and with multiple agents merging PRs in parallel, every merge into main invalidates the "up to date" status of every other open PR — forcing a rebase and a full CI re-run on each sibling PR just to become mergeable again. Real Action-minutes burned for no benefit, on top of being redundant with the required-status-check gate above.
+- **Required approving reviews** — **0.** GitHub rejects self-APPROVE via the API, so `review.md` Step 10 force-downgrades an agent's review of its own PR to `COMMENT` with a `Verdict: APPROVE` marker — a required-review count can never be satisfied by the pipeline itself.
+- **Enforce on admins** — **no.** `deploy.md`'s `--admin` merge is the deploy model itself, not an emergency exception — `enforce_admins: true` would either block every automated merge or require the merging account to be a permanent `bypass_actor`, which is enforcement in name only.
 - **Canary status check is NOT included** — canary runs post-merge; gates promotion staging → prod, not merge to main
 
 ### 2. Required secrets and environments
@@ -171,7 +176,7 @@ These tasks depend on the same-layer "record fixtures for `<service>`" task, not
 
 - **"Tests pass" without branch protection.** Without enforcement, the audit is a social contract. Engineers WILL bypass it under deadline pressure. Branch protection is the only mechanism that scales beyond one careful reviewer.
 - **Required canary checks at merge time.** Canary needs a deployed env; gating merge on canary creates a deadlock. Canary gates *promotion*, not merge.
-- **Admin exemption without a break-glass policy.** Exempting admins is fine if there's a documented "in case of fire" procedure; otherwise it's an unmonitored backdoor.
+- **Recommending required-review ≥1 / enforce-admins:true / require-up-to-date / require-conversation-resolution for a shipwright-deploy repo.** `--admin` merges (see `deploy.md` Step 4b) are the deploy model itself, not an emergency exemption, and it bypasses all four of these settings wholesale. Requiring ≥1 approval doesn't add a review — self-APPROVE is blocked by GitHub's API — "up to date" burns real CI minutes on every sibling PR each time main advances, and conversation resolution can leave a PR permanently stuck (see `check-patch.ts`'s `hasUnaddressedFindings()` gap above) for a benefit (a "safety net" for manual merges that also get bypassed) not worth the maintenance cost. Stricter-looking, not actually stricter.
 - **Secrets baked into workflows.** Use GitHub Secrets + Environments. Workflow YAML references `${{ secrets.X }}`, never literal values.
 - **No PR template.** Closing checklists in issue bodies help, but PRs without a template forget the verification-output convention within weeks.
 - **Committing recorded-fixture diffs directly to main.** The refresh job must always open a PR, never push directly — the diff must be reviewed.

@@ -57,6 +57,14 @@ interface SkipCall {
   cronId: string;
   runId: string | null;
   skipReason: string;
+  opts?: {
+    error?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    modelBreakdown?: import("./cron-run-reporter.ts").ModelBreakdownEntry[];
+  };
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -103,12 +111,20 @@ function makeRecordingReporter(): {
       runId,
       _completedAt,
       skipReason,
-      _opts,
+      opts,
       phaseId,
       itemType,
       itemId,
     ) {
-      skips.push({ cronId, runId, skipReason, phaseId, itemType, itemId });
+      skips.push({
+        cronId,
+        runId,
+        skipReason,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      });
     },
     async recordProgress(cronId, runId, modelBreakdown) {
       progressCalls.push({ cronId, runId, modelBreakdown });
@@ -116,6 +132,49 @@ function makeRecordingReporter(): {
   };
 
   return { reporter, creates, completes, skips, progressCalls };
+}
+
+// ─── Stub skip tracker (SKT-2.1) ────────────────────────────────────────────
+
+interface SkipTrackerCall {
+  itemType: "task" | "pr";
+  recordId: string;
+}
+
+/**
+ * A recording stub for the recordSkip/resetSkip deps — analogous to
+ * makeRecordingReporter above. Both fns never throw by default (matching the
+ * fire-and-forget contract); pass a custom `recordSkip`/`resetSkip` fn to
+ * script a rejection for the "errors don't propagate" test.
+ */
+function makeRecordingSkipTracker(overrides?: {
+  recordSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+}): {
+  recordSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  resetSkip: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  recordCalls: SkipTrackerCall[];
+  resetCalls: SkipTrackerCall[];
+} {
+  const recordCalls: SkipTrackerCall[] = [];
+  const resetCalls: SkipTrackerCall[] = [];
+
+  const recordSkip = async (
+    itemType: "task" | "pr",
+    recordId: string,
+  ): Promise<void> => {
+    recordCalls.push({ itemType, recordId });
+    if (overrides?.recordSkip) await overrides.recordSkip(itemType, recordId);
+  };
+  const resetSkip = async (
+    itemType: "task" | "pr",
+    recordId: string,
+  ): Promise<void> => {
+    resetCalls.push({ itemType, recordId });
+    if (overrides?.resetSkip) await overrides.resetSkip(itemType, recordId);
+  };
+
+  return { recordSkip, resetSkip, recordCalls, resetCalls };
 }
 
 // ─── Stub work queue reporter ───────────────────────────────────────────────
@@ -310,6 +369,10 @@ interface MakeDepsOptions {
   claimPr?: (
     pr: WorkPrCandidate,
   ) => Promise<{ id: string; commitSha: string } | null>;
+  // Skip-tracking hooks (SKT-2.1). Default to recording stubs that never
+  // throw, following the claimTask/claimPr default-stub pattern above.
+  recordSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
 }
 
 /**
@@ -376,6 +439,8 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
         id: pr.id,
         commitSha: pr.commitSha,
       })),
+    recordSkip: options.recordSkip ?? (async () => {}),
+    resetSkip: options.resetSkip ?? (async () => {}),
   };
 }
 
@@ -925,6 +990,225 @@ describe("createLoopOrchestrator", () => {
     expect(
       skips.map((s) => ({ itemType: s.itemType, itemId: s.itemId })),
     ).toEqual([{ itemType: "task", itemId: "SWC-1.1" }]);
+  });
+
+  // ─── Skip/reset tracking tests (SKT-2.1) ────────────────────────────────────
+
+  test("a [silent]-marker dispatch for a task item calls recordSkip('task', <task-id>) after skipRun", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls, resetCalls } =
+      makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // skipRun was called (proves ordering context) before recordSkip fires.
+    expect(skips).toHaveLength(1);
+    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(resetCalls).toEqual([]);
+  });
+
+  test("a [silent]-marker dispatch for a PR item calls recordSkip('pr', <record-id>) — NOT the display id", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls, resetCalls } =
+      makeRecordingSkipTracker();
+    const reviewCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "review")];
+    const { runner } = makeDrainingRunner(
+      { review: reviewCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }],
+    );
+    const deps = makeDeps({
+      reviewCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+      // The claimed record's id (a CUID) differs from the candidate's
+      // human-readable display id ("acme/x#9") — recordSkip must receive the
+      // CUID, never the display id.
+      claimPr: async (candidate: WorkPrCandidate) => ({
+        id: "pr-record-cuid-xyz",
+        commitSha: candidate.commitSha,
+      }),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(recordCalls).toEqual([
+      { itemType: "pr", recordId: "pr-record-cuid-xyz" },
+    ]);
+    expect(resetCalls).toEqual([]);
+  });
+
+  test("a normal completed task dispatch calls resetSkip('task', <task-id>), not recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, completes } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls, resetCalls } =
+      makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(resetCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("a normal completed PR dispatch calls resetSkip('pr', <record-id>), not recordSkip — record id, not display id", async () => {
+    const consumed = new Set<string>();
+    const { reporter, completes } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls, resetCalls } =
+      makeRecordingSkipTracker();
+    const patchCandidates = [pr("acme/x#5", "2026-01-01T00:00:00Z", "patch")];
+    const { runner } = makeDrainingRunner({ patch: patchCandidates }, consumed);
+    const deps = makeDeps({
+      patchCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+      claimPr: async (candidate: WorkPrCandidate) => ({
+        id: "pr-record-cuid-abc",
+        commitSha: candidate.commitSha,
+      }),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-patch", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(resetCalls).toEqual([
+      { itemType: "pr", recordId: "pr-record-cuid-abc" },
+    ]);
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("recordSkip/resetSkip errors don't propagate or abort the tick — the drain still proceeds", async () => {
+    const consumed = new Set<string>();
+    const { reporter } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker({
+      recordSkip: async () => {
+        throw new Error("task-store 500");
+      },
+    });
+    // Two dev-task candidates: the older one dispatches [silent] (triggers
+    // the rejecting recordSkip), the younger one must still drain normally
+    // afterward — proving a recordSkip rejection doesn't abort the tick.
+    const devTaskCandidates = [
+      task("SWC-OLD", "2026-01-01T00:00:00Z"),
+      task("SWC-NEW", "2026-01-02T00:00:00Z"),
+    ];
+    const { runner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }, { result: "done" }],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(
+      loop([job("shipwright-dev-task", true)]),
+    ).resolves.toBeUndefined();
+
+    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-OLD" }]);
+    expectDispatchedCommands(messages, [
+      "/shipwright:dev-task SWC-OLD",
+      "/shipwright:dev-task SWC-NEW",
+    ]);
+  });
+
+  test("skipRun on the [silent] path is called with buildTokenPayload(usage, modelUsage) instead of undefined", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result: "Nothing to do here.\n[silent]",
+          usage: {
+            input_tokens: 100,
+            output_tokens: 50,
+            cache_read_input_tokens: 20,
+            cache_creation_input_tokens: 10,
+          },
+          modelUsage: {
+            "claude-sonnet-4-5": {
+              inputTokens: 100,
+              outputTokens: 50,
+              cacheReadInputTokens: 20,
+              cacheCreationInputTokens: 10,
+              costUSD: 0.01,
+              webSearchRequests: 0,
+              contextWindow: 200000,
+            },
+          },
+        },
+      ],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].opts).toBeDefined();
+    expect(skips[0].opts?.inputTokens).toBe(100);
+    expect(skips[0].opts?.outputTokens).toBe(50);
+    expect(skips[0].opts?.cacheReadTokens).toBe(20);
+    expect(skips[0].opts?.cacheCreationTokens).toBe(10);
+    expect(skips[0].opts?.modelBreakdown).toEqual([
+      {
+        model: "claude-sonnet-4-5",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 20,
+        cacheCreationTokens: 10,
+        costUsd: 0.01,
+      },
+    ]);
   });
 
   test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
