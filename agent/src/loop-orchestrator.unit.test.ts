@@ -1211,6 +1211,49 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
+  // ─── skip-reason marker (DBV-1.1) ────────────────────────────────────────
+
+  test("when the dispatch result carries both [silent] and [skip-reason:X], skipRun is called with X as the reason", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Bundle gate blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
+  });
+
+  test("when only [silent] is present (no skip-reason marker), skipRun is called with 'command:no-work' as before", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("command:no-work");
+  });
+
   test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();

@@ -96,7 +96,14 @@ INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
   {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
   Waiting for bundle-mates to reach pr_open before deploying.
 ```
-Stop here `[silent]` — there is no other candidate to fall back to.
+Stop here. There is no other candidate to fall back to. Emit `[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]`
+followed immediately by `[silent]` **at the very end of the response, with nothing after
+it** — `[silent]` only takes effect when it is the trailing content, so `[skip-reason:...]`
+must come first. The skip-reason marker (interpolating `{HEAD_BRANCH}` from the value
+fetched above) records exactly which branch's bundle gate blocked this dispatch in the
+`AgentCronRun.skipReason` field, visible in the admin cron-logs UI, instead of the generic
+`command:no-work` reason the loop orchestrator falls back to for silent dispatches that
+don't tag a specific reason (see `agent/src/loop-orchestrator.ts` and `agent/src/markers.ts`).
 
 **Otherwise** (`INCOMPLETE == 0` — no tasks tracked, or all tasks are `pr_open` or beyond):
 proceed to Step 3.

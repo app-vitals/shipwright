@@ -274,3 +274,75 @@ describe("[react:emoji] marker", () => {
     expect(cleaned).toBe("Done");
   });
 });
+
+// ─── [skip-reason:text] ────────────────────────────────────────────────────
+
+describe("[skip-reason:text] marker", () => {
+  test("parses [skip-reason:text] and returns a skip-reason marker with the text", () => {
+    const { markers } = parseMarkers(
+      "Nothing to do.\n[silent]\n[skip-reason:deploy:bundle-incomplete:feat/x]",
+    );
+    const marker = markers.find((m) => m.type === "skip-reason");
+    expect(marker).toBeDefined();
+    if (marker?.type === "skip-reason") {
+      expect(marker.reason).toBe("deploy:bundle-incomplete:feat/x");
+    }
+  });
+
+  test("strips [skip-reason:text] from cleaned text", () => {
+    const { cleaned } = parseMarkers(
+      "Done [skip-reason:deploy:bundle-incomplete:feat/x]",
+    );
+    expect(cleaned).toBe("Done");
+    expect(cleaned).not.toContain("[skip-reason:");
+  });
+
+  test("malformed [skip-reason:] with empty text is left in cleaned text and yields no marker", () => {
+    const { cleaned, markers } = parseMarkers("[skip-reason:]");
+    expect(markers.some((m) => m.type === "skip-reason")).toBe(false);
+    expect(cleaned).toContain("[skip-reason:]");
+  });
+
+  test("malformed [skip-reason:] with whitespace-only text is left in cleaned text and yields no marker", () => {
+    const { cleaned, markers } = parseMarkers("[skip-reason:   ]");
+    expect(markers.some((m) => m.type === "skip-reason")).toBe(false);
+    expect(cleaned).toContain("[skip-reason:   ]");
+  });
+
+  test("parses independently of [silent] being present — no [silent] marker at all", () => {
+    const { markers } = parseMarkers(
+      "Some text [skip-reason:deploy:bundle-incomplete:feat/x]",
+    );
+    expect(markers.some((m) => m.type === "silent")).toBe(false);
+    const marker = markers.find((m) => m.type === "skip-reason");
+    expect(marker).toBeDefined();
+    if (marker?.type === "skip-reason") {
+      expect(marker.reason).toBe("deploy:bundle-incomplete:feat/x");
+    }
+  });
+
+  test("coexists with [silent] at the end of the response", () => {
+    const { markers, cleaned } = parseMarkers(
+      "Bundle gate blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+    );
+    expect(markers.some((m) => m.type === "silent")).toBe(true);
+    const marker = markers.find((m) => m.type === "skip-reason");
+    expect(marker).toBeDefined();
+    if (marker?.type === "skip-reason") {
+      expect(marker.reason).toBe("deploy:bundle-incomplete:feat/x");
+    }
+    expect(cleaned).toBe("Bundle gate blocked.");
+  });
+
+  test("with multiple markers present, consumers reading markers.find(...) get the first (first-match-wins)", () => {
+    const { markers } = parseMarkers(
+      "[skip-reason:first-reason][skip-reason:second-reason]",
+    );
+    const skipReasonMarkers = markers.filter((m) => m.type === "skip-reason");
+    expect(skipReasonMarkers).toHaveLength(2);
+    const firstMatch = markers.find((m) => m.type === "skip-reason");
+    if (firstMatch?.type === "skip-reason") {
+      expect(firstMatch.reason).toBe("first-reason");
+    }
+  });
+});
