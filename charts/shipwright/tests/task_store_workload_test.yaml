@@ -178,6 +178,46 @@ tests:
           path: spec.ports[0].targetPort
           value: 3000
 
+  # ── taskStore.extraEnv ────────────────────────────────────────────────────
+
+  - it: includes SHIPWRIGHT_CLAUDE_TIMEOUT_MS in the task-store container env by default
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
+            value: "3600000"
+
+  - it: appends taskStore.extraEnv entries to the container env
+    template: templates/task-store-deployment.yaml
+    set:
+      taskStore.enabled: true
+      taskStore.extraEnv:
+        - name: CUSTOM_VAR
+          value: "test-value"
+        - name: FROM_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: my-secret
+              key: MY_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CUSTOM_VAR
+            value: "test-value"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-secret
+                key: MY_KEY
+
   - it: renders no task-store workloads when taskStore.enabled=false
     set:
       taskStore.enabled: false

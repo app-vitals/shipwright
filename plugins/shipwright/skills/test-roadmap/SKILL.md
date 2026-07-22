@@ -190,6 +190,12 @@ Anything the audit couldn't determine without a human call. Common entries:
    for a `## Deploy model` section with value `staged`, `direct`, or `none`; if the
    section is absent, treat it as **undeclared** and default to NOT staged. Store this
    value — Step 5 gates Milestone 3 canary-task generation on it.
+
+   Using the same read mechanism, also determine `recorded_fixture_automation`: check the
+   target repo's root `CLAUDE.md` for a `## Recorded-fixture automation` section with value
+   `planned` or `not planned`; if the section is absent, treat it as **undeclared** and
+   default to `planned` (preserves existing behavior for repos that haven't opted out).
+   Store this value — Step 5 gates recorded-fixture-refresh task generation on it.
 2. Extract metrics: layer counts, speed numbers, bucket counts.
 3. Compute the gap (section 3 math).
 4. **Determine the starting T-NNN offset (task-store query — run before any ID is
@@ -223,7 +229,14 @@ Anything the audit couldn't determine without a human call. Common entries:
 5. Generate the task list by walking the migration buckets in this order, assigning
    sequential `T-NNN` IDs starting from `starting_offset` (step 4) rather than always
    restarting at `T-001`:
-   - Milestone 1: all `infra` items + **paired repo-config tasks** (see pairing rule below)
+   - Milestone 1: all `infra` items + **paired repo-config tasks** (see pairing rule below).
+     **Exception:** when `recorded_fixture_automation == 'not planned'` (Process step 1),
+     omit every recorded-fixture-refresh-loop item — the `.github/workflows/recorded-fixture-refresh.yml`
+     workflow task, its paired GitHub-Environment/secrets task, and any per-service
+     "record fixtures for `<service>`" / "wire recorded-fixture-refresh cron for `<service>`"
+     tasks from `repo-config/SKILL.md`'s deferred pattern — regardless of what test-migration's
+     bucket table flags as a gap. Replace them with a single note in the roadmap's Milestone 1
+     section: `recorded-fixture automation not applicable -- recorded_fixture_automation=not planned`.
    - Milestone 2: all `critical` tier items (net-new + rebuild + promote)
    - Milestone 3: **only when `deploy_model == 'staged'`** (Process step 1) — all
      canary-eligible items needing canary plumbing. When `deploy_model != 'staged'`
@@ -265,3 +278,13 @@ Anything the audit couldn't determine without a human call. Common entries:
   canary-plumbing tasks for a pipeline that doesn't exist, requiring 8 tasks to be
   manually cancelled. When not staged, emit the `canary not applicable -- deploy_model={value}`
   note in section 4 and skip the milestone — zero tasks, not a smaller pile of tasks.
+- **Don't bundle "build a never-proven capability" and "automate it on a schedule" into one
+  task.** This is not hypothetical either: one target repo's cycle-3 roadmap asked for the
+  whole recorded-fixture-refresh loop (~15 services, ~8 net-new production credentials) in a
+  single task, which sat `pending`/HITL for multiple cycles with no path forward — the repo had
+  never actually exercised a live `RECORD=1`-style capture against a real third-party API;
+  fixtures were all hand-authored. Wiring real credentials into CI to automate a process
+  that has never once been proven manually is exactly the failure mode `repo-config/SKILL.md`'s
+  "deferred — not implemented" note is meant to block. Check `recorded_fixture_automation`
+  (Process step 1) before emitting any recorded-fixture-refresh task; when it's `not planned`,
+  emit zero tasks per the Milestone 1 exception above rather than one monolithic task.

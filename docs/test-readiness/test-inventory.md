@@ -101,7 +101,7 @@
 | `admin/src/agent-manifest.ts` (pure Deployment/Secret wire-object builders) | 1. Pure business logic | unit | critical | n/a |
 | `admin/src/agent-deletion.ts`, `agent-deletion-checklist.ts` | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-tokens.ts`, `token-crypto.ts`, `chat-markers.ts` | 1. Pure business logic (hash/encrypt given key) | unit | critical | n/a |
-| `admin/src/agent-envs.ts`, `agent-cron-jobs.ts`, `agent-cron-runs.ts`, `agent-cron-run-stats.ts`, `agent-tools.ts`, `agent-plugins.ts`, `agents.ts` (Prisma-backed services) | 2. Service-boundary code | integration | high | n/a |
+| `admin/src/agent-envs.ts`, `agent-cron-jobs.ts`, `agent-cron-runs.ts`, `agent-cron-run-stats.ts`, `agent-tools.ts`, `agent-plugins.ts`, `agent-members.ts`, `agents.ts` (Prisma-backed services) | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-chat-tokens.ts` (`AgentChatTokenService` — daily rollup, atomic upsert) | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-work-queue.ts` (`AgentWorkQueueService` — latest work-queue snapshot per agent) | 2. Service-boundary code | integration | medium | n/a |
 | `admin/src/clock.ts` | 1. Pure business logic | unit | medium | n/a |
@@ -164,7 +164,7 @@
 | `site/src/content.config.ts` (Astro content collection schema) | 1. Pure business logic (schema def) | unit | low | n/a |
 | `site/src/data/config-vars.ts` (static config-var data) | 1. Pure business logic (data) | unit | low | n/a |
 | `site/src/consts.ts` | 1. Pure business logic (data) | unit | low | n/a |
-| `site/src/pages/*.astro` (marketing pages: index, architecture, compare, self-hosted, vs/devin, docs/*) | 6. User journey (rendered page + nav flow) | e2e (Playwright `*.spec.ts`) | high | n/a |
+| `site/src/pages/*.astro` (marketing pages: index, architecture, compare, self-hosted, vs/devin, story, docs/*) | 6. User journey (rendered page + nav flow) | e2e (Playwright `*.spec.ts`) | high | n/a |
 | `site/src/layouts/*.astro`, `components/*.astro` | 3. HTTP route (rendered fragment, no standalone contract) | e2e (covered via page-level spec, not independently) | medium | n/a |
 | **User journey: dev-task → review → patch → deploy pipeline** (task claim → PR open → review → patch → merge → deploy, spanning agent + task-store + admin + GitHub) | 6. User journey | e2e / smoke-composed (no browser; cross-service integration + GitHub fixtures) | critical | n/a |
 | **User journey: agent provisioning** (admin creates Agent → K8s Deployment/Secret → task-store/chat token minting → agent boots and reports health) | 6. User journey | e2e / smoke-composed | critical | n/a |

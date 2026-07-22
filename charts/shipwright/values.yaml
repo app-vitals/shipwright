@@ -114,7 +114,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.27.0
+    tag: admin-v1.29.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -182,7 +182,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.8.1
+    tag: metrics-v1.9.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -298,7 +298,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.56.1
+    tag: agent-v1.59.0
     pullPolicy: ""
   service:
     port: 3000
@@ -321,7 +321,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.56.1
+      tag: agent-v1.59.0
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -533,7 +533,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.15.1
+    tag: task-store-v1.16.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -570,10 +570,18 @@ taskStore:
   # -- Extra env vars to inject into the task-store container. Use for service
   # wiring (e.g. SHIPWRIGHT_TASK_STORE_AGENTS_URL + AGENTS_API_KEY for the
   # scope resolver) without baking those into the chart template.
-  extraEnv: []
-  # Example: opt-in claim TTL buffer check (see docs/deploy-kubernetes.md):
-  # - name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
-  #   value: "3600000"  # set to the MAX SHIPWRIGHT_CLAUDE_TIMEOUT_MS across all provisioned agents
+  # SHIPWRIGHT_CLAUDE_TIMEOUT_MS is set to the 1hr default by default (matching
+  # the agent's default ceiling from CSU-1.2). In a multi-agent fleet where agents
+  # are provisioned with different timeouts, raise this to the MAX SHIPWRIGHT_CLAUDE_TIMEOUT_MS
+  # across all provisioned agents (see docs/deploy-kubernetes.md for the claim TTL buffer check).
+  # CAVEAT: Helm replaces arrays wholesale, it does not merge them. If your
+  # deployment already overrides taskStore.extraEnv (e.g. for the
+  # SHIPWRIGHT_TASK_STORE_AGENTS_URL / AGENTS_API_KEY scope-resolver wiring
+  # named above), upgrading to this default will silently drop this
+  # SHIPWRIGHT_CLAUDE_TIMEOUT_MS entry — re-add it to your own override list.
+  extraEnv:
+    - name: SHIPWRIGHT_CLAUDE_TIMEOUT_MS
+      value: "3600000"
   # -- Optional Sentry error reporting for the task-store service. Leave
   # dsn.existingSecret empty to disable (no Sentry init, no middleware mounted).
   sentry:
@@ -598,7 +606,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.6.1
+    tag: chat-v1.7.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.

@@ -10,11 +10,41 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.7.110] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.110 triggered by release tag(s): `agent-v1.59.0`
+
+## [1.7.109] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.109 triggered by release tag(s): `admin-v1.29.0`
+
+## [1.7.108] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.108 triggered by release tag(s): `agent-v1.58.0`
+
+## [1.7.107] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.107 triggered by release tag(s): `agent-v1.57.0`
+
+## [1.7.106] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.106 triggered by release tag(s): `admin-v1.28.0`, `agent-v1.56.1`, `chat-v1.7.0`, `metrics-v1.9.0`, `task-store-v1.16.0`
+
 ## [1.7.105] - 2026-07-22
 
 ### Changed
 
-- auto-bump to chart v1.7.105 triggered by release tag(s): `agent-v1.56.1`
+- manual chart version bump to v1.7.105 required by `ct lint --check-version-increment`: `taskStore.extraEnv` now defaults to populating `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` (previously shipped as `[]` with a commented-out example)
 
 ## [1.7.104] - 2026-07-22
 
