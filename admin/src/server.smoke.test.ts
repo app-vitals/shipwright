@@ -178,12 +178,17 @@ function buildComposedApp() {
       exists: notImplemented,
       add: notImplemented,
       remove: notImplemented,
+      listByAgentId: notImplemented,
     },
     agentService: {
       listAll: notImplemented,
       listByIds: notImplemented,
       searchByName: notImplemented,
       listOptions: notImplemented,
+      create: notImplemented,
+      delete: notImplemented,
+      getDetail: notImplemented,
+      updateFields: notImplemented,
     },
     provisioner: {
       provision: notImplemented,

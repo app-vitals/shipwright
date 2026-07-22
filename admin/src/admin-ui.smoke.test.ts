@@ -251,6 +251,7 @@ function makeMockDeps(
         createdAt: new Date(),
       }),
       remove: async () => {},
+      listByAgentId: async () => [],
     },
     agentService: {
       listAll: async () => [
@@ -284,6 +285,33 @@ function makeMockDeps(
         },
       ],
       listOptions: async () => [{ id: AGENT_ID, name: "Test Agent" }],
+      create: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      delete: async () => {},
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+      }),
+      updateFields: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+      }),
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: GOOGLE_CLIENT_ID,
@@ -947,32 +975,9 @@ describe("admin UI — authenticated pages", () => {
   it("GET /admin/agents/:id/cron-logs returns 404 when agent not found", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
-        prisma: {
-          agent: {
-            findMany: async () => [],
-            findUnique: async () => null,
-            create: async () => {
-              throw new Error("not implemented");
-            },
-            update: async () => {
-              throw new Error("not implemented");
-            },
-            delete: async () => {
-              throw new Error("not implemented");
-            },
-          },
-          agentEnv: { findMany: async () => [] },
-          agentPlugin: { findMany: async () => [] },
-          agentMember: {
-            findMany: async () => [],
-            findUnique: async () => null,
-            create: async () => ({
-              id: "m1",
-              agentId: AGENT_ID,
-              email: "member@example.com",
-            }),
-            deleteMany: async () => ({ count: 0 }),
-          },
+        agentService: {
+          ...makeMockDeps().agentService,
+          getDetail: async () => null,
         },
       }),
     );
@@ -1080,58 +1085,17 @@ describe("admin UI — authenticated pages", () => {
     it("managed agent (selfHosted=false) shows Slack info in header", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: AGENT_ID,
-                name: "Managed Agent",
-                slackId: "U0AALR8M69X",
-                selfHosted: false,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: AGENT_ID,
-                name: "Test Agent",
-                slackId: "U123456",
-                selfHosted: false,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: AGENT_ID,
-                name: "Test Agent",
-                slackId: "U123456",
-                selfHosted: false,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: AGENT_ID,
-                name: "Test Agent",
-                slackId: "U123456",
-                selfHosted: false,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: AGENT_ID,
+              name: "Managed Agent",
+              slackId: "U0AALR8M69X",
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
         }),
       );
@@ -1215,58 +1179,17 @@ describe("admin UI — authenticated pages", () => {
     it("self-hosted agent (selfHosted=true) does NOT show Slack info in header", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: SELFHOSTED_AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: SELFHOSTED_AGENT_ID,
+              name: "Self-Hosted Agent",
+              slackId: null,
+              selfHosted: true,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
         }),
       );
@@ -1281,58 +1204,17 @@ describe("admin UI — authenticated pages", () => {
     it("self-hosted agent (selfHosted=true) does NOT show Env Vars card", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: SELFHOSTED_AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: SELFHOSTED_AGENT_ID,
+              name: "Self-Hosted Agent",
+              slackId: null,
+              selfHosted: true,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
           agentEnvService: {
             getByAgentId: async () => ({
@@ -1358,58 +1240,17 @@ describe("admin UI — authenticated pages", () => {
     it("self-hosted agent (selfHosted=true) shows System crons with self-hosted notice", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: SELFHOSTED_AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: SELFHOSTED_AGENT_ID,
+              name: "Self-Hosted Agent",
+              slackId: null,
+              selfHosted: true,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
           agentCronJobService: {
             list: async () => [
@@ -1453,58 +1294,17 @@ describe("admin UI — authenticated pages", () => {
     it("self-hosted agent (selfHosted=true) shows Tools card", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: SELFHOSTED_AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: SELFHOSTED_AGENT_ID,
+              name: "Self-Hosted Agent",
+              slackId: null,
+              selfHosted: true,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
           agentToolService: {
             list: async () => [
@@ -1534,58 +1334,17 @@ describe("admin UI — authenticated pages", () => {
     it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
-          prisma: {
-            agent: {
-              findUnique: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              findMany: async () => [],
-              create: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              update: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-              delete: async () => ({
-                id: SELFHOSTED_AGENT_ID,
-                name: "Self-Hosted Agent",
-                slackId: null,
-                selfHosted: true,
-                createdAt: new Date("2024-01-01"),
-                updatedAt: new Date("2024-01-01"),
-                repos: [],
-              }),
-            },
-            agentEnv: { findMany: async () => [] },
-            agentPlugin: { findMany: async () => [] },
-            agentMember: {
-              findMany: async () => [],
-              findUnique: async () => null,
-              create: async () => ({
-                id: "m1",
-                agentId: SELFHOSTED_AGENT_ID,
-                email: "member@example.com",
-              }),
-              deleteMany: async () => ({ count: 0 }),
-            },
+          agentService: {
+            ...makeMockDeps().agentService,
+            getDetail: async () => ({
+              id: SELFHOSTED_AGENT_ID,
+              name: "Self-Hosted Agent",
+              slackId: null,
+              selfHosted: true,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+              repos: [],
+            }),
           },
         }),
       );
@@ -2491,78 +2250,45 @@ describe("admin UI — provision start form", () => {
 
   it("POST /admin/provision/start agentMode=new happy path: creates agent, provisions it (non-self-hosted), and reaches oauthUrl success state", async () => {
     const NEW_AGENT_ID = "agent-new-999";
-    let createArgs: {
-      name: string;
-      selfHosted?: boolean;
-      repos?: string[];
-    } | null = null;
+    let createArgs: { name: string; selfHosted?: boolean } | null = null;
+    let updateFieldsArgs: { id: string; repos?: string[] } | null = null;
     let provisionArgs: { id: string; opts: { slug: string } } | null = null;
 
     const deps = makeMockDeps({
-      prisma: {
-        agent: {
-          findMany: async () => [
-            {
-              id: AGENT_ID,
-              name: "Test Agent",
-              slackId: "U123456",
-              createdAt: new Date("2024-01-01"),
-            },
-          ],
-          findUnique: async () => ({
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => {
+          createArgs = input;
+          return {
             id: NEW_AGENT_ID,
-            name: "brand-new-agent",
+            name: input.name,
             slackId: null,
-            selfHosted: false,
+            selfHosted: input.selfHosted ?? false,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
-            repos: ["my-org/repo-one"],
-          }),
-          create: async (args: {
-            data: { name: string; selfHosted?: boolean; repos?: string[] };
-          }) => {
-            createArgs = args.data;
-            return {
-              id: NEW_AGENT_ID,
-              name: args.data.name,
-              slackId: null,
-              selfHosted: args.data.selfHosted ?? false,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: args.data.repos ?? [],
-            };
-          },
-          update: async () => ({
-            id: NEW_AGENT_ID,
-            name: "brand-new-agent",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          delete: async () => ({
-            id: NEW_AGENT_ID,
-            name: "brand-new-agent",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
+          };
         },
-        agentEnv: { findMany: async () => [] },
-        agentPlugin: { findMany: async () => [] },
-        agentMember: {
-          findMany: async () => [],
-          findUnique: async () => null,
-          create: async () => ({
-            id: "m1",
-            agentId: NEW_AGENT_ID,
-            email: "member@example.com",
-          }),
-          deleteMany: async () => ({ count: 0 }),
+        updateFields: async (id: string, input: { repos?: string[] }) => {
+          updateFieldsArgs = { id, repos: input.repos };
+          return {
+            id,
+            name: "brand-new-agent",
+            slackId: null,
+            selfHosted: false,
+            repos: input.repos ?? [],
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
         },
+        getDetail: async () => ({
+          id: NEW_AGENT_ID,
+          name: "brand-new-agent",
+          slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: ["my-org/repo-one"],
+        }),
       },
       slackClient: {
         createAppManifest: async () => ({
@@ -2615,7 +2341,12 @@ describe("admin UI — provision start form", () => {
     const created = createArgs!;
     expect(created.name).toBe("brand-new-agent");
     expect(created.selfHosted).toBe(false);
-    expect(created.repos).toEqual(["my-org/repo-one"]);
+
+    expect(updateFieldsArgs).not.toBeNull();
+    // biome-ignore lint/style/noNonNullAssertion: guarded above
+    const updated = updateFieldsArgs!;
+    expect(updated.id).toBe(NEW_AGENT_ID);
+    expect(updated.repos).toEqual(["my-org/repo-one"]);
 
     expect(provisionArgs).not.toBeNull();
     // biome-ignore lint/style/noNonNullAssertion: guarded above
@@ -2629,64 +2360,37 @@ describe("admin UI — provision start form", () => {
     let deleteCalledWith: string | null | undefined;
 
     const deps = makeMockDeps({
-      prisma: {
-        agent: {
-          findMany: async () => [],
-          findUnique: async () => ({
-            id: NEW_AGENT_ID,
-            name: "doomed-agent",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          create: async () => ({
-            id: NEW_AGENT_ID,
-            name: "doomed-agent",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          update: async (args: {
-            where: { id: string };
-            data: { repos: string[] };
-          }) => ({
-            id: args.where.id,
-            name: "doomed-agent",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: args.data.repos,
-          }),
-          delete: async (args: { where: { id: string } }) => {
-            deleteCalledWith = args.where.id;
-            return {
-              id: args.where.id,
-              name: "doomed-agent",
-              slackId: null,
-              selfHosted: false,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-            };
-          },
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async () => ({
+          id: NEW_AGENT_ID,
+          name: "doomed-agent",
+          slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        updateFields: async (id: string, input: { repos?: string[] }) => ({
+          id,
+          name: "doomed-agent",
+          slackId: null,
+          selfHosted: false,
+          repos: input.repos ?? [],
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        delete: async (id: string) => {
+          deleteCalledWith = id;
         },
-        agentEnv: { findMany: async () => [] },
-        agentPlugin: { findMany: async () => [] },
-        agentMember: {
-          findMany: async () => [],
-          findUnique: async () => null,
-          create: async () => ({
-            id: "m1",
-            agentId: NEW_AGENT_ID,
-            email: "member@example.com",
-          }),
-          deleteMany: async () => ({ count: 0 }),
-        },
+        getDetail: async () => ({
+          id: NEW_AGENT_ID,
+          name: "doomed-agent",
+          slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+        }),
       },
       provisioner: {
         provision: async () => {
@@ -2731,64 +2435,37 @@ describe("admin UI — provision start form", () => {
     let deprovisionCalledWith: string | null | undefined;
 
     const deps = makeMockDeps({
-      prisma: {
-        agent: {
-          findMany: async () => [],
-          findUnique: async () => ({
-            id: NEW_AGENT_ID,
-            name: "doomed-agent-2",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          create: async () => ({
-            id: NEW_AGENT_ID,
-            name: "doomed-agent-2",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          update: async (args: {
-            where: { id: string };
-            data: { repos: string[] };
-          }) => ({
-            id: args.where.id,
-            name: "doomed-agent-2",
-            slackId: null,
-            selfHosted: false,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: args.data.repos,
-          }),
-          delete: async (args: { where: { id: string } }) => {
-            deleteCalledWith = args.where.id;
-            return {
-              id: args.where.id,
-              name: "doomed-agent-2",
-              slackId: null,
-              selfHosted: false,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-            };
-          },
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async () => ({
+          id: NEW_AGENT_ID,
+          name: "doomed-agent-2",
+          slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        updateFields: async (id: string, input: { repos?: string[] }) => ({
+          id,
+          name: "doomed-agent-2",
+          slackId: null,
+          selfHosted: false,
+          repos: input.repos ?? [],
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        delete: async (id: string) => {
+          deleteCalledWith = id;
         },
-        agentEnv: { findMany: async () => [] },
-        agentPlugin: { findMany: async () => [] },
-        agentMember: {
-          findMany: async () => [],
-          findUnique: async () => null,
-          create: async () => ({
-            id: "m1",
-            agentId: NEW_AGENT_ID,
-            email: "member@example.com",
-          }),
-          deleteMany: async () => ({ count: 0 }),
-        },
+        getDetail: async () => ({
+          id: NEW_AGENT_ID,
+          name: "doomed-agent-2",
+          slackId: null,
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+        }),
       },
       provisioner: {
         provision: async () => ({
@@ -2919,6 +2596,7 @@ describe("admin UI — member access control", () => {
           createdAt: new Date(),
         }),
         remove: async () => {},
+        listByAgentId: async () => [],
       },
     });
     const app = createAdminUIApp(deps);
@@ -3041,6 +2719,7 @@ describe("admin UI — member access control", () => {
           createdAt: new Date(),
         }),
         remove: async () => {},
+        listByAgentId: async () => [],
       },
       agentService: {
         listAll: async () => [
@@ -3085,6 +2764,14 @@ describe("admin UI — member access control", () => {
           { id: AGENT_ID, name: "My Agent" },
           { id: OTHER_AGENT_ID, name: "Other Agent" },
         ],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
       },
     });
     const app = createAdminUIApp(deps);
@@ -3197,6 +2884,7 @@ describe("admin UI — member access control", () => {
           createdAt: new Date(),
         }),
         remove: async () => {},
+        listByAgentId: async () => [],
       },
     });
     const app = createAdminUIApp(deps);
@@ -3652,6 +3340,7 @@ describe("admin UI — member management routes", () => {
           return { id: "m-new", agentId, email, createdAt: new Date() };
         },
         remove: async () => {},
+        listByAgentId: async () => [],
       },
     });
     const app = createAdminUIApp(deps);
@@ -3741,6 +3430,7 @@ describe("admin UI — member management routes", () => {
         remove: async (_agentId: string, memberId: string) => {
           deletedId = memberId;
         },
+        listByAgentId: async () => [],
       },
     });
     const app = createAdminUIApp(deps);
@@ -5138,12 +4828,9 @@ describe("admin UI — repos mutation routes", () => {
 
   it("POST /admin/agents/:id/repos/add returns 404 when agent not found", async () => {
     const deps = makeMockDeps();
-    deps.prisma = {
-      ...deps.prisma,
-      agent: {
-        ...deps.prisma.agent,
-        findUnique: async () => null,
-      },
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => null,
     };
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({ repo: "org/repo" });
@@ -5176,33 +4863,31 @@ describe("admin UI — repos mutation routes", () => {
   it("POST /admin/agents/:id/repos/add deduplicates — does not add the same repo twice", async () => {
     let capturedRepos: string[] | undefined;
     const deps = makeMockDeps();
-    deps.prisma = {
-      ...deps.prisma,
-      agent: {
-        ...deps.prisma.agent,
-        findUnique: async () => ({
-          id: AGENT_ID,
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: ["my-org/my-repo"],
+      }),
+      updateFields: async (
+        id: string,
+        input: { repos?: string[] },
+      ) => {
+        capturedRepos = input.repos;
+        return {
+          id,
           name: "Test Agent",
           slackId: "U123456",
           selfHosted: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
-          repos: ["my-org/my-repo"],
-        }),
-        update: async (_args: {
-          where: unknown;
-          data: { repos: string[] };
-        }) => {
-          capturedRepos = _args.data.repos;
-          return {
-            id: AGENT_ID,
-            name: "Test Agent",
-            slackId: "U123456",
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: capturedRepos,
-          };
-        },
+          repos: capturedRepos ?? [],
+        };
       },
     };
     const app = createAdminUIApp(deps);

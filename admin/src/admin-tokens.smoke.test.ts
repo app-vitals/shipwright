@@ -260,12 +260,21 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         createdAt: new Date(),
       }),
       remove: async () => {},
+      listByAgentId: async () => [],
     },
     agentService: {
       listAll: async () => [],
       listByIds: async () => [],
       searchByName: async () => [],
       listOptions: async () => [{ id: AGENT_ID, name: "Test Agent" }],
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      delete: async () => {},
+      getDetail: async () => null,
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
     },
     provisioner: {
       provision: async () => ({
