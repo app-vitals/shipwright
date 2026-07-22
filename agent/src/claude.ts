@@ -24,6 +24,30 @@ export function setLiveClaudeConfig(patch: Partial<LiveClaudeConfig>): void {
   Object.assign(liveClaudeConfig, patch);
 }
 
+/**
+ * The unconditional tool floor granted to every Claude session, regardless of
+ * what's seeded in the AgentTool DB table. These are read-only or
+ * context-only tools with no meaningful security delta from Read (which is
+ * already assumed safe) — they are permanently non-revocable.
+ *
+ * Bash, WebSearch, WebFetch, and Agent are deliberately NOT included here:
+ * they now flow entirely through `liveClaudeConfig.allowedTools` /
+ * `extraAllowedTools`, sourced from the AgentTool DB table (seeded at agent
+ * creation and backfilled for existing agents — see
+ * lib/agent-default-tools.ts). This is the capability-narrowing step: an
+ * agent with no AgentTool rows (or a 404'd config bundle) no longer gets
+ * Bash/WebSearch/WebFetch/Agent for free.
+ */
+export const FLOOR_TOOLS = [
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "TodoWrite",
+  "Skill",
+];
+
 export interface TokenUsage {
   input_tokens: number;
   output_tokens: number;
@@ -206,22 +230,8 @@ export function createRunClaude(
     const resolvedExtraAllowedTools =
       extraAllowedTools ?? liveClaudeConfig.allowedTools;
 
-    const hardcodedTools = [
-      "Read",
-      "Write",
-      "Edit",
-      "Glob",
-      "Grep",
-      "Bash",
-      "WebSearch",
-      "WebFetch",
-      "Skill",
-      "Agent",
-      "TodoWrite",
-    ];
-
     // Deduplicate tools: Set preserves insertion order, so first-occurrence wins
-    const deduplicatedTools = [...new Set([...hardcodedTools, ...resolvedExtraAllowedTools])];
+    const deduplicatedTools = [...new Set([...FLOOR_TOOLS, ...resolvedExtraAllowedTools])];
 
     const args = [
       "-p",
