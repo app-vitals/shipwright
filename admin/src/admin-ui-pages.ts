@@ -123,6 +123,8 @@ export interface PrListItem {
   hitl?: boolean | null;
   hitlNotifiedAt?: string | null;
   blockedReason?: string | null;
+  skipCount?: number | null;
+  lastSkippedAt?: string | null;
 }
 
 export interface AgentListItem {
@@ -314,6 +316,8 @@ export interface TaskItem {
   createdAt?: string | null;
   updatedAt?: string | null;
   blockedBy?: BlockedByEntry[] | null;
+  skipCount?: number | null;
+  lastSkippedAt?: string | null;
 }
 
 // Token shape returned by the task-store /tokens endpoint (admin token only).
@@ -2085,6 +2089,7 @@ export function renderTaskDetailPage(
     task.hitl !== null && task.hitl !== undefined
       ? field("HITL", task.hitl ? "yes" : "no")
       : "",
+    task.skipCount ? field("Skip Count", String(task.skipCount)) : "",
     field("Note", task.note),
     field("Blocked Reason", task.blockedReason),
     field("Merge Commit", task.mergeCommit, true),
@@ -2098,6 +2103,7 @@ export function renderTaskDetailPage(
     dateField("Claimed", task.claimedAt),
     dateField("Last Heartbeat", task.heartbeatAt),
     dateField("Blocked", task.blockedAt),
+    task.skipCount ? dateField("Last Skipped", task.lastSkippedAt) : "",
     dateField("Completed", task.completedAt),
     dateField("Created", task.createdAt),
     dateField("Updated", task.updatedAt),
@@ -2939,6 +2945,7 @@ export function renderPrDetailPage(
     pr.hitl !== null && pr.hitl !== undefined
       ? field("HITL", pr.hitl ? "yes" : "no")
       : "",
+    pr.skipCount ? field("Skip Count", String(pr.skipCount)) : "",
     field("Blocked Reason", pr.blockedReason),
   ]
     .filter(Boolean)
@@ -2951,6 +2958,7 @@ export function renderPrDetailPage(
     dateField("Patched", pr.patchedAt),
     dateField("Merged", pr.mergedAt),
     dateField("Last Heartbeat", pr.heartbeatAt),
+    pr.skipCount ? dateField("Last Skipped", pr.lastSkippedAt) : "",
     dateField("Updated", pr.updatedAt),
   ]
     .filter(Boolean)
