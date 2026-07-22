@@ -48,7 +48,7 @@ Mounted at `/agents/*` (unified with the runtime API surface). Auth: **admin key
 
 | Resource | Endpoints |
 |---|---|
-| Agents | `POST /agents` (admin-only: creates agent, seeds default tools `["Bash", "WebSearch", "WebFetch", "Agent"]`, returns `{id, name, slackId, selfHosted, repos, createdAt, updatedAt}` with `201`), `GET /agents/:id` (admin-only: fetches agent record), `GET /agents` (admin-only: lists agents), `PATCH /agents/:id` (admin-only: updates agent fields like `selfHosted` and `repos`; repos validation: each entry must be `org/repo` format), `POST /agents/:id/provision` (admin-only: provisions a managed agent or returns `{skipped: true, reason: "self-hosted"}` for self-hosted agents) |
+| Agents | `POST /agents` (admin-only: creates agent, seeds default AgentTool rows via `lib/agent-default-tools.ts` (e.g., Bash, WebSearch, WebFetch, Agent) at creation time, returns `{id, name, slackId, selfHosted, repos, createdAt, updatedAt}` with `201`), `GET /agents/:id` (admin-only: fetches agent record), `GET /agents` (admin-only: lists agents), `PATCH /agents/:id` (admin-only: updates agent fields like `selfHosted` and `repos`; repos validation: each entry must be `org/repo` format), `POST /agents/:id/provision` (admin-only: provisions a managed agent or returns `{skipped: true, reason: "self-hosted"}` for self-hosted agents) |
 | Envs | `POST` / `GET` / `PATCH` `/agents/:id/envs`, `DELETE /agents/:id/envs/:key` |
 | Crons | `POST` `/agents/:id/crons`, `PATCH` / `DELETE` `/agents/:id/crons/:cronId`, `POST /agents/:id/crons/reconcile`, `POST` / `GET` / `PATCH` `/agents/:id/crons/:cronId/runs/{runId}` |
 | Cron Run Stats | `GET /agents/all/cron-runs/stats` (admin-only: returns aggregated token stats across all agents; query params: `from` / `to` (optional ISO datetime); returns `{totals, byAgent, byCron, byModel, byCronModel, daily, byPhase}`) |
@@ -121,6 +121,47 @@ There is no HTTP chat endpoint on the agent. Chat flows through the chat service
 | `AgentWorkQueueSnapshot` | Latest ranked work-queue snapshot | `agentId` (unique — one row per agent), `computedAt`, `items` (JSON `RankedWorkItem[]`). Upserted by `POST /agents/:id/work-queue`; overwrites any prior snapshot — there is no history, only the latest state. |
 
 All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob`).
+
+## Tool management and narrowing
+
+The agent runtime implements a two-tier tool authorization system to narrowly grant Claude access to tools: **floor tools** (unconditional, always present) and **allowed tools** (DB-driven, configurable per agent).
+
+### Floor tools
+
+When the agent spawns a Claude session, it always includes a fixed set of 7 **floor tools** (`FLOOR_TOOLS` constant in `agent/src/claude.ts`):
+
+- `Read` — read-only file access (safe, no side effects)
+- `Write` — create new files (safe, limited blast radius)
+- `Edit` — modify existing file content (safe, scoped)
+- `Glob` — pattern-based file discovery (safe, read-only)
+- `Grep` — content search (safe, read-only)
+- `Skill` — invoke built-in skills (safe by design; does not grant additional system access)
+- `TodoWrite` — legacy task-tracking tool (safe, limited scope)
+
+These tools are **non-revocable** — they are not derivable from the `AgentTool` database table and are always granted, regardless of agent configuration. They have no meaningful security delta from `Read` (which is the assumed safe baseline) and enable essential read-only operations without privileging escalation.
+
+**Crucially**, `Bash`, `WebSearch`, `WebFetch`, and `Agent` are **not** in the floor set. These are high-privilege tools (arbitrary system execution, external HTTP, sub-agent spawning) and must be explicitly seeded into the agent's `AgentTool` table to be available. An agent with no `AgentTool` rows (or a 404'd config bundle from the admin API) receives only the 7 floor tools and cannot execute shell commands, fetch external URLs, or dispatch sub-agents.
+
+### Configurable allowed tools (`AgentTool` table)
+
+Tools beyond the floor set are configured via the `AgentTool` database table (one row per tool pattern per agent). When `POST /agents` creates a new agent, it seeds default `AgentTool` rows for high-privilege tools (e.g., Bash, WebSearch, WebFetch, Agent) via the `lib/agent-default-tools.ts` module. Operators and integrations can then toggle individual tools on/off via the admin UI or the `/agents/:id/tools` CRUD API.
+
+The agent's config sync loop (every 60 seconds) fetches the agent's full tool list from `/agents/:id/config`, decrypts it, and merges with the floor tools. Deduplication preserves insertion order (floor-tools-first, then extra-allowed-tools), so floor tools always take precedence in the final list.
+
+**Tool changes flow:**
+1. Operator/integration updates AgentTool rows via the admin API (`POST`/`PATCH`/`DELETE /agents/:id/tools/:toolId`)
+2. Agent's 60-second config sync fetches updated `allowedTools` from `/agents/:id/config`
+3. Next Claude session (up to 1 minute later) sees the new tool list — no pod restart required
+
+### Example: narrowing an agent to read-only mode
+
+To disable shell access and external requests for a risky agent:
+
+1. Call `DELETE /agents/:id/tools/Bash` (via admin API)
+2. Call `DELETE /agents/:id/tools/WebSearch` (via admin API)
+3. Call `DELETE /agents/:id/tools/WebFetch` (via admin API)
+
+On the agent's next config sync, Claude will no longer have access to shell execution or external HTTP — only the 7 floor tools remain. The agent can still read files, search locally, and invoke safe skills.
 
 ## Default system crons
 
