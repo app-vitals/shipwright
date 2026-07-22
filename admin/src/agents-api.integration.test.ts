@@ -395,14 +395,13 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(res.status).toBe(500);
 
-    // After rollback, NO AgentTool rows should remain for any agent created during this test.
-    // Because the agent itself was deleted on rollback, we can't query by agentId.
-    // Instead, we verify that NO orphaned AgentTool rows exist from this creation attempt
-    // by checking the total count remains at 0 for all agents created in this test scope.
-    // Since the agent row was deleted, its tools should be cascade-deleted too.
-    const allTools = await prisma.agentTool.findMany({
-      where: { agent: { name: "Doomed Agent With Tools" } },
-    });
-    expect(allTools).toHaveLength(0);
+    // After rollback, NO AgentTool rows should remain at all. A relation filter like
+    // `where: { agent: { name: ... } }` would join through the now-deleted Agent row and
+    // return [] regardless of whether the AgentTool rows were actually cascade-deleted or
+    // merely orphaned and unreachable via that join. Query unscoped instead — this is valid
+    // because `beforeEach` truncates `agentTool` per test, so this doomed agent's seeded rows
+    // are the only rows that could ever exist here.
+    const allToolsCount = await prisma.agentTool.count();
+    expect(allToolsCount).toBe(0);
   });
 });
