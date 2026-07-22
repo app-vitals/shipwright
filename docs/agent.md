@@ -117,7 +117,7 @@ There is no HTTP chat endpoint on the agent. Chat flows through the chat service
 | `AgentTool` | Allowed tool patterns | `pattern` (e.g. `Read`, `Bash`), `enabled`, `createdAt`; unique per `[agentId, pattern]`. |
 | `AgentToken` | Scoped API tokens | `token` (SHA-256 hash), `label`, `revokedAt`. |
 | `AgentPlugin` | Installed Claude Code plugins | `name` (package), `version` (null = latest), `enabled`, `createdAt`, `updatedAt`; unique per `[agentId, name]`. |
-| `AgentMember` | Authorized human members | `email`; unique per `[agentId, email]`. |
+| `AgentMember` | Authorized human members | `id`, `agentId`, `email`, `createdAt`; unique per `[agentId, email]`. Managed by `AgentMemberService` (list by agent/email, check existence, add, remove). |
 | `AgentWorkQueueSnapshot` | Latest ranked work-queue snapshot | `agentId` (unique — one row per agent), `computedAt`, `items` (JSON `RankedWorkItem[]`). Upserted by `POST /agents/:id/work-queue`; overwrites any prior snapshot — there is no history, only the latest state. |
 
 All child models cascade-delete with their `Agent` (including `AgentCronRun` via `AgentCronJob`).

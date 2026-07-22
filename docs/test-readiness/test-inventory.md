@@ -101,7 +101,7 @@
 | `admin/src/agent-manifest.ts` (pure Deployment/Secret wire-object builders) | 1. Pure business logic | unit | critical | n/a |
 | `admin/src/agent-deletion.ts`, `agent-deletion-checklist.ts` | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-tokens.ts`, `token-crypto.ts`, `chat-markers.ts` | 1. Pure business logic (hash/encrypt given key) | unit | critical | n/a |
-| `admin/src/agent-envs.ts`, `agent-cron-jobs.ts`, `agent-cron-runs.ts`, `agent-cron-run-stats.ts`, `agent-tools.ts`, `agent-plugins.ts`, `agents.ts` (Prisma-backed services) | 2. Service-boundary code | integration | high | n/a |
+| `admin/src/agent-envs.ts`, `agent-cron-jobs.ts`, `agent-cron-runs.ts`, `agent-cron-run-stats.ts`, `agent-tools.ts`, `agent-plugins.ts`, `agent-members.ts`, `agents.ts` (Prisma-backed services) | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-chat-tokens.ts` (`AgentChatTokenService` — daily rollup, atomic upsert) | 2. Service-boundary code | integration | high | n/a |
 | `admin/src/agent-work-queue.ts` (`AgentWorkQueueService` — latest work-queue snapshot per agent) | 2. Service-boundary code | integration | medium | n/a |
 | `admin/src/clock.ts` | 1. Pure business logic | unit | medium | n/a |
