@@ -46,6 +46,25 @@
  * !== "pending" -> skip`) stops trapping the PR out of every phase's
  * candidate set. Runs as a second per-repo pass inside the same
  * `reconcileReviewState()` function — no new setInterval tick.
+ *
+ * PSR-1.1 introduced an `updatedSince` recency window on
+ * `reconcilePrOpenTasks`, `reconcileOrphanedTasks`, `reconcilePrState`'s own
+ * open-record scan, and `reconcileReviewState`'s pending-record scan, to stop
+ * a full-table gh-backed scan every tick from exhausting the shared GitHub
+ * GraphQL rate limit on a long tail of untouched fixture/smoke-test records.
+ * An initial 1-hour window was too tight (see this PR's own review history):
+ * every one of those four passes exists specifically to heal a record that
+ * is stuck precisely BECAUSE nothing will ever touch its `updatedAt` again
+ * after the crash/hang that stranded it — the exact reasoning
+ * `listPostedReviewRecords` (CHU-2.4) is permanently exempted for below — so
+ * a record that aged out of a too-tight window before the next tick caught
+ * it would never be healed again. Rather than dropping the filter entirely
+ * (which fully reverts the rate-limit mitigation), the window was widened to
+ * `RECONCILER_UPDATED_SINCE_WINDOW_MS` (default 6h — several multiples of
+ * the reconciler's own 30-60 minute tick interval), so a single missed or
+ * delayed tick (restart, deploy) still self-corrects on the next tick or two
+ * without ever fully losing the ability to heal a stuck record. `computeUpdatedSinceCutoff`
+ * centralizes the cutoff computation used by all four passes.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
@@ -94,20 +113,37 @@ export interface PrStateReconcilerDeps {
   repos: string[];
   /** Page size for listing state:"open" records; defaults to the task-store's own default (50). */
   pageLimit?: number;
-  /** List one page of state:"open" PR records for a repo. */
+  /**
+   * List one page of state:"open" PR records for a repo, updated at or after
+   * `updatedSince` (an ISO timestamp; PSR-1.1). Passed through verbatim to
+   * the task-store's own `updatedSince` query param (`gte` semantics
+   * server-side), so a record updated exactly at the cutoff is still
+   * included. The window is deliberately wide (see the module doc comment's
+   * `RECONCILER_UPDATED_SINCE_WINDOW_MS` explanation) — this pass exists to
+   * heal records stuck because nothing will ever touch their `updatedAt`
+   * again after the crash that stranded them, so the cutoff only needs to
+   * survive a missed tick or two, not exclude every record that isn't
+   * brand-new.
+   */
   listOpenPrRecords: (
     repo: string,
     limit: number,
     offset: number,
+    updatedSince: string,
   ) => Promise<PrStateRecord[]>;
   /** PATCH a task-store PR record's fields. */
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
   /** Fetch live GitHub state for a single PR. Throws on lookup failure. */
   ghViewPr: (repo: string, prNumber: number) => Promise<GhPrView>;
-  /** List one page of task-store Tasks with status "pr_open" (DSR-1.1). */
+  /**
+   * List one page of task-store Tasks with status "pr_open" (DSR-1.1),
+   * updated at or after `updatedSince` (PSR-1.1 — see `listOpenPrRecords`
+   * above for the same `gte` semantics and wide-window rationale).
+   */
   listPrOpenTasks: (
     limit: number,
     offset: number,
+    updatedSince: string,
   ) => Promise<PrOpenTaskRecord[]>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
   updateTaskStatus: (
@@ -129,9 +165,13 @@ export interface PrStateReconcilerDeps {
    * internally and return the fully-merged, filtered result — because a
    * single (limit, offset) pair can't address two independently-paginated
    * upstream queries being unioned together. See `buildProductionDeps`'s
-   * implementation below for the two independent pagination loops.
+   * implementation below for the two independent pagination loops. Filtered
+   * by `updatedSince` (PSR-1.1 — see `listOpenPrRecords`'s doc comment for
+   * the wide-window rationale).
    */
-  listOrphanCandidateTasks: () => Promise<PrOpenTaskRecord[]>;
+  listOrphanCandidateTasks: (
+    updatedSince: string,
+  ) => Promise<PrOpenTaskRecord[]>;
   /**
    * Branch lookup for a real, currently-OPEN PR (`gh pr list --head <branch>
    * --state open`) — the TCR-1.2 counterpart to `ghListMergedPrsForBranch`
@@ -221,11 +261,21 @@ export interface PrReviewStateReconcilerDeps {
   clock: Clock;
   /** Claim freshness window in ms; defaults to DEFAULT_CLAIM_TTL_MS (mirrors SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS's own default). */
   claimTtlMs?: number;
-  /** List one page of state:"open" && reviewState:"pending" PR records for a repo. */
+  /**
+   * List one page of state:"open" && reviewState:"pending" PR records for a
+   * repo, updated at or after `updatedSince` (PSR-1.1). Deliberately NOT
+   * mirrored onto `listPostedReviewRecords` below — CHU-2.4's healing pass
+   * specifically targets records that have gone stale (untouched for a
+   * while), so filtering it at all would defeat its purpose. This pass's own
+   * window is deliberately wide (see the module doc comment); it just needs
+   * to survive a missed tick or two, not exclude every record that isn't
+   * brand-new.
+   */
   listPendingReviewRecords: (
     repo: string,
     limit: number,
     offset: number,
+    updatedSince: string,
   ) => Promise<PrReviewStateRecord[]>;
   /**
    * List one page of state:"open" && reviewState:"posted" PR records for a
@@ -266,6 +316,30 @@ const DEFAULT_RECONCILER_DELAY_MS = Number(
   process.env.SHIPWRIGHT_RECONCILER_DELAY_MS ?? 300,
 );
 
+/**
+ * Recency window (PSR-1.1): a reconcile pass only re-fetches records/tasks
+ * updated within this window, computed fresh once per reconcile-pass entry
+ * point from the injected time source (never `Date.now()`/`new Date()`
+ * directly) — a single unconditional full-table gh-backed scan every tick
+ * was exhausting the shared GitHub GraphQL rate limit on a long tail of
+ * untouched fixture/smoke-test records. Deliberately wide — several
+ * multiples of the reconciler's own 30-60 minute tick interval — so a
+ * record stuck since a crash/hang (the exact case these passes exist to
+ * heal) survives a missed or delayed tick rather than aging out of the
+ * window permanently. Overridable via
+ * SHIPWRIGHT_RECONCILER_UPDATED_SINCE_WINDOW_MS for ops tuning without a
+ * code change.
+ */
+const RECONCILER_UPDATED_SINCE_WINDOW_MS = Number(
+  process.env.SHIPWRIGHT_RECONCILER_UPDATED_SINCE_WINDOW_MS ??
+    6 * 60 * 60 * 1000,
+);
+
+/** Cutoff ISO timestamp `RECONCILER_UPDATED_SINCE_WINDOW_MS` before `nowMs` (epoch ms), for the `updatedSince` recency window above. */
+function computeUpdatedSinceCutoff(nowMs: number): string {
+  return new Date(nowMs - RECONCILER_UPDATED_SINCE_WINDOW_MS).toISOString();
+}
+
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
   state: GhPrView["state"],
@@ -276,20 +350,26 @@ function mapGhStateToPrState(
 }
 
 /**
- * List every state:"open" PR record for a repo, paging through the
- * task-store's default 50-record page until a page returns fewer than
- * `limit` records.
+ * List every state:"open" PR record for a repo, updated at or after
+ * `updatedSince` (PSR-1.1), paging through the task-store's default
+ * 50-record page until a page returns fewer than `limit` records.
  */
 async function listAllOpenRecords(
   deps: PrStateReconcilerDeps,
   repo: string,
+  updatedSince: string,
 ): Promise<PrStateRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const records: PrStateRecord[] = [];
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listOpenPrRecords(repo, limit, offset);
+    const page = await deps.listOpenPrRecords(
+      repo,
+      limit,
+      offset,
+      updatedSince,
+    );
     records.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -299,20 +379,22 @@ async function listAllOpenRecords(
 }
 
 /**
- * List every task-store Task with status "pr_open" (DSR-1.1), paging through
- * the task-store's default 50-record page until a page returns fewer than
- * `limit` records — same loop shape as `listAllOpenRecords` above (TCR-1.2
- * follow-up: this dep was previously unpaginated).
+ * List every task-store Task with status "pr_open" (DSR-1.1), updated at or
+ * after `updatedSince` (PSR-1.1), paging through the task-store's default
+ * 50-record page until a page returns fewer than `limit` records — same
+ * loop shape as `listAllOpenRecords` above (TCR-1.2 follow-up: this dep was
+ * previously unpaginated).
  */
 async function listAllPrOpenTasks(
   deps: PrStateReconcilerDeps,
+  updatedSince: string,
 ): Promise<PrOpenTaskRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const tasks: PrOpenTaskRecord[] = [];
   let offset = 0;
 
   for (;;) {
-    const page = await deps.listPrOpenTasks(limit, offset);
+    const page = await deps.listPrOpenTasks(limit, offset, updatedSince);
     tasks.push(...page);
     if (page.length < limit) break;
     offset += limit;
@@ -414,10 +496,7 @@ async function reconcilePrOpenTask(
     // this branch), skip the auto-heal entirely (both the status PATCH below
     // and the taskId backfill) rather than guessing. Single-task branches
     // (the original DSR-1.1 crash-recovery case) are unaffected.
-    const branchTasks = await deps.listAllTasksForBranch(
-      taskRepo,
-      task.branch,
-    );
+    const branchTasks = await deps.listAllTasksForBranch(taskRepo, task.branch);
     if (branchTasks.length > 1) {
       console.error(
         `[pr-state-reconciler] skipping branch-fallback merge heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
@@ -454,9 +533,15 @@ async function reconcilePrOpenTask(
 export async function reconcilePrOpenTasks(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
+  // Computed once per reconcile pass (PSR-1.1) — never freshly inside the
+  // page loop, so a single pass uses one consistent cutoff across all pages.
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
+
   let tasks: PrOpenTaskRecord[];
   try {
-    tasks = await listAllPrOpenTasks(deps);
+    tasks = await listAllPrOpenTasks(deps, updatedSince);
   } catch (err) {
     console.error(
       "[pr-state-reconciler] failed to list pr_open tasks:",
@@ -546,9 +631,14 @@ async function reconcileOrphanedTask(
 export async function reconcileOrphanedTasks(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
+  // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
+
   let tasks: PrOpenTaskRecord[];
   try {
-    tasks = await deps.listOrphanCandidateTasks();
+    tasks = await deps.listOrphanCandidateTasks(updatedSince);
   } catch (err) {
     console.error(
       "[pr-state-reconciler] failed to list orphan-candidate tasks:",
@@ -589,13 +679,18 @@ export async function reconcileOrphanedTasks(
 export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
+  // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
+  const updatedSince = computeUpdatedSinceCutoff(
+    new Date(deps.now()).getTime(),
+  );
+
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
 
   for (const repo of scopedRepos) {
     let records: PrStateRecord[];
     try {
-      records = await listAllOpenRecords(deps, repo);
+      records = await listAllOpenRecords(deps, repo, updatedSince);
     } catch (err) {
       console.error(
         `[pr-state-reconciler] failed to list open PRs for ${repo}:`,
@@ -624,7 +719,9 @@ export async function reconcilePrState(
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
 
 /** Filter a PR's reviews down to only those submitted at the current head commit. */
-function reviewsAtHeadCommit(data: PrReviewData): PrReviewData["reviews"]["nodes"] {
+function reviewsAtHeadCommit(
+  data: PrReviewData,
+): PrReviewData["reviews"]["nodes"] {
   const { headRefOid, reviews } = data;
   return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
 }
@@ -828,16 +925,21 @@ async function reconcilePostedReviewStateRecord(
 export async function reconcileReviewState(
   deps: PrReviewStateReconcilerDeps,
 ): Promise<void> {
+  // Computed once per reconcile pass (PSR-1.1) — never freshly inside the
+  // page loop, so a single pass uses one consistent cutoff across all pages.
+  // Deliberately only threaded into the pending-scan below —
+  // listPostedReviewRecords (CHU-2.4's healing pass) must keep scanning
+  // regardless of record age; see its dep-interface doc comment above.
+  const updatedSince = computeUpdatedSinceCutoff(deps.clock.now().getTime());
+
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
 
   for (const repo of scopedRepos) {
     let records: PrReviewStateRecord[];
     try {
-      records = await listAllReviewRecords(
-        deps,
-        repo,
-        deps.listPendingReviewRecords,
+      records = await listAllReviewRecords(deps, repo, (r, limit, offset) =>
+        deps.listPendingReviewRecords(r, limit, offset, updatedSince),
       );
     } catch (err) {
       console.error(
@@ -939,16 +1041,21 @@ interface TaskListResponseJson {
 }
 
 /**
- * Shared GET /tasks?status=<status>&limit=<limit>&offset=<offset> helper for
- * both `listPrOpenTasks` and `listOrphanCandidateTasks` (TCR-1.2) — the
- * task-store's GET /tasks only accepts one status value at a time (no
- * comma-separated multi-status support), so `listOrphanCandidateTasks` below
- * issues two of these paginated calls (one per status) and merges the
- * results client-side. `limit`/`offset` are passed straight through, same as
- * `listOpenPrRecords`'s own GET /prs helper, so the module-level
- * `listAllPrOpenTasks`/`listAllOrphanCandidateTasks` pagination loops above
- * can page each status to completion instead of only ever seeing the
- * task-store's default first page.
+ * Shared GET
+ * /tasks?status=<status>&limit=<limit>&offset=<offset>&updatedSince=<updatedSince>
+ * helper for `listPrOpenTasks` and `listOrphanCandidateTasks` (TCR-1.2,
+ * extended by PSR-1.1) — the task-store's GET /tasks only accepts one status
+ * value at a time (no comma-separated multi-status support), so
+ * `listOrphanCandidateTasks` below issues two of these paginated calls (one
+ * per status) and merges the results client-side. `limit`/`offset` are
+ * passed straight through, same as `listOpenPrRecords`'s own GET /prs
+ * helper, so the module-level `listAllPrOpenTasks`/
+ * `listAllOrphanCandidateTasks` pagination loops above can page each status
+ * to completion instead of only ever seeing the task-store's default first
+ * page. `updatedSince` is unconditionally included — both statuses backed by
+ * this shared helper are recency-filtered per PSR-1.1's (widened) window;
+ * see the module doc comment and `PrStateReconcilerDeps.listOpenPrRecords`'s
+ * doc comment.
  */
 function makeListTasksByStatus(opts: {
   baseUrl: string;
@@ -958,13 +1065,20 @@ function makeListTasksByStatus(opts: {
   status: string,
   limit: number,
   offset: number,
+  updatedSince: string,
 ) => Promise<PrOpenTaskRecord[]> {
   const { baseUrl, headers, doFetch } = opts;
-  return async (status: string, limit: number, offset: number) => {
+  return async (
+    status: string,
+    limit: number,
+    offset: number,
+    updatedSince: string,
+  ) => {
     const params = new URLSearchParams({
       status,
       limit: String(limit),
       offset: String(offset),
+      updatedSince,
     });
     const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
     if (!res.ok) {
@@ -998,7 +1112,12 @@ function makeListTasksByBranch(opts: {
   offset: number,
 ) => Promise<PrOpenTaskRecord[]> {
   const { baseUrl, headers, doFetch } = opts;
-  return async (repo: string, branch: string, limit: number, offset: number) => {
+  return async (
+    repo: string,
+    branch: string,
+    limit: number,
+    offset: number,
+  ) => {
     const params = new URLSearchParams({
       repo,
       branch,
@@ -1054,13 +1173,14 @@ export function buildProductionDeps(opts: {
    */
   const listAllTasksByStatus = async (
     status: string,
+    updatedSince: string,
   ): Promise<PrOpenTaskRecord[]> => {
     const limit = DEFAULT_PAGE_LIMIT;
     const tasks: PrOpenTaskRecord[] = [];
     let offset = 0;
 
     for (;;) {
-      const page = await listTasksByStatus(status, limit, offset);
+      const page = await listTasksByStatus(status, limit, offset, updatedSince);
       tasks.push(...page);
       if (page.length < limit) break;
       offset += limit;
@@ -1097,12 +1217,18 @@ export function buildProductionDeps(opts: {
   return {
     repos,
     getScopedRepos: opts.getScopedRepos,
-    listOpenPrRecords: async (repo: string, limit: number, offset: number) => {
+    listOpenPrRecords: async (
+      repo: string,
+      limit: number,
+      offset: number,
+      updatedSince: string,
+    ) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
         limit: String(limit),
         offset: String(offset),
+        updatedSince,
       });
       const res = await doFetch(`${baseUrl}/prs?${params}`, { headers });
       if (!res.ok) {
@@ -1123,8 +1249,8 @@ export function buildProductionDeps(opts: {
         "state,mergedAt",
       ]);
     },
-    listPrOpenTasks: (limit: number, offset: number) =>
-      listTasksByStatus("pr_open", limit, offset),
+    listPrOpenTasks: (limit: number, offset: number, updatedSince: string) =>
+      listTasksByStatus("pr_open", limit, offset, updatedSince),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",
@@ -1157,10 +1283,10 @@ export function buildProductionDeps(opts: {
     // dropping candidates once pending+in_progress volume exceeded 50:
     // verified live, `GET /tasks?status=pending` had `total: 62`) and
     // filters the merged result client-side.
-    listOrphanCandidateTasks: async () => {
+    listOrphanCandidateTasks: async (updatedSince: string) => {
       const [pending, inProgress] = await Promise.all([
-        listAllTasksByStatus("pending"),
-        listAllTasksByStatus("in_progress"),
+        listAllTasksByStatus("pending", updatedSince),
+        listAllTasksByStatus("in_progress", updatedSince),
       ]);
       return [...pending, ...inProgress].filter(
         (task) => !!task.branch && !task.pr,
@@ -1219,9 +1345,14 @@ export function buildReviewStateProductionDeps(opts: {
   const doFetch = opts.fetchFn ?? fetch;
 
   /**
-   * Shared GET /prs?repo=<repo>&state=open&reviewState=<reviewState> helper
-   * for both the pending scan and the posted scan (CHU-2.4) — identical
-   * request shape, only the `reviewState` query value differs.
+   * Shared GET
+   * /prs?repo=<repo>&state=open&reviewState=<reviewState>[&updatedSince=<updatedSince>]
+   * helper for both the pending scan and the posted scan (CHU-2.4) —
+   * identical request shape, only the `reviewState` query value differs (and,
+   * as of PSR-1.1, whether `updatedSince` is included at all: the pending
+   * scan passes it through from its caller, the posted scan never does — see
+   * `PrReviewStateReconcilerDeps.listPendingReviewRecords`'s doc comment for
+   * why CHU-2.4's healing pass must not be recency-filtered).
    */
   const listReviewRecordsByState = (
     reviewState: "pending" | "posted",
@@ -1229,14 +1360,21 @@ export function buildReviewStateProductionDeps(opts: {
     repo: string,
     limit: number,
     offset: number,
+    updatedSince?: string,
   ) => Promise<PrReviewStateRecord[]>) => {
-    return async (repo: string, limit: number, offset: number) => {
+    return async (
+      repo: string,
+      limit: number,
+      offset: number,
+      updatedSince?: string,
+    ) => {
       const params = new URLSearchParams({
         repo,
         state: "open",
         reviewState,
         limit: String(limit),
         offset: String(offset),
+        ...(updatedSince !== undefined ? { updatedSince } : {}),
       });
       const res = await doFetch(`${baseUrl}/prs?${params}`, { headers });
       if (!res.ok) {

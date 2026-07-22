@@ -210,6 +210,8 @@ Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `l
 
 `sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
+`updatedSince` is an ISO timestamp; only PRs with `updatedAt >= this value` are returned. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior.
+
 Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
 
 #### Claim PR (atomic)
