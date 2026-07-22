@@ -18,6 +18,16 @@ export interface ModelBreakdownEntry {
   costUsd: number;
 }
 
+/** Optional error/token fields shared by completeRun() and skipRun()'s opts. */
+export interface RunReportOpts {
+  error?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  modelBreakdown?: ModelBreakdownEntry[];
+}
+
 export interface CronRunReporter {
   /**
    * Called at run start — returns the runId to use for completion (null for
@@ -49,25 +59,26 @@ export interface CronRunReporter {
     runId: string | null,
     completedAt: Date,
     outcome: "completed" | "failed",
-    opts?: {
-      error?: string;
-      inputTokens?: number;
-      outputTokens?: number;
-      cacheReadTokens?: number;
-      cacheCreationTokens?: number;
-      modelBreakdown?: ModelBreakdownEntry[];
-    },
+    opts?: RunReportOpts,
     phaseId?: string,
     itemType?: string,
     itemId?: string,
   ): Promise<void>;
-  /** Called when precheck causes a skip. No token data. */
+  /**
+   * Called when a dispatch is recorded as skipped. Most skip paths (409
+   * conflict, pre-claim throw, redispatch cooldown) never run a command, so
+   * opts is usually just `{ error? }`. The `[silent]`-marker path is the
+   * exception: runner(message) already ran and may have spent real tokens
+   * before reporting nothing-to-do, so opts also accepts the same token
+   * fields as completeRun() — passed via buildTokenPayload(runResult.usage,
+   * runResult.modelUsage) at that call site — so that spend isn't dropped.
+   */
   skipRun(
     cronId: string,
     runId: string | null,
     completedAt: Date,
     skipReason: string,
-    opts?: { error?: string },
+    opts?: RunReportOpts,
     phaseId?: string,
     itemType?: string,
     itemId?: string,
@@ -88,6 +99,22 @@ export interface HttpCronRunReporterOptions {
   apiUrl: string;
   agentId: string;
   apiKey: string;
+}
+
+/** Applies RunReportOpts' fields onto a PATCH body, skipping unset ones. */
+function applyRunReportOpts(
+  body: Record<string, unknown>,
+  opts?: RunReportOpts,
+): void {
+  if (opts?.error !== undefined) body.error = opts.error;
+  if (opts?.inputTokens !== undefined) body.inputTokens = opts.inputTokens;
+  if (opts?.outputTokens !== undefined) body.outputTokens = opts.outputTokens;
+  if (opts?.cacheReadTokens !== undefined)
+    body.cacheReadTokens = opts.cacheReadTokens;
+  if (opts?.cacheCreationTokens !== undefined)
+    body.cacheCreationTokens = opts.cacheCreationTokens;
+  if (opts?.modelBreakdown !== undefined)
+    body.modelBreakdown = opts.modelBreakdown;
 }
 
 export class HttpCronRunReporter implements CronRunReporter {
@@ -166,14 +193,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     runId: string | null,
     completedAt: Date,
     outcome: "completed" | "failed",
-    opts?: {
-      error?: string;
-      inputTokens?: number;
-      outputTokens?: number;
-      cacheReadTokens?: number;
-      cacheCreationTokens?: number;
-      modelBreakdown?: ModelBreakdownEntry[];
-    },
+    opts?: RunReportOpts,
     phaseId?: string,
     itemType?: string,
     itemId?: string,
@@ -187,15 +207,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       completedAt: completedAt.toISOString(),
       outcome,
     };
-    if (opts?.error !== undefined) body.error = opts.error;
-    if (opts?.inputTokens !== undefined) body.inputTokens = opts.inputTokens;
-    if (opts?.outputTokens !== undefined) body.outputTokens = opts.outputTokens;
-    if (opts?.cacheReadTokens !== undefined)
-      body.cacheReadTokens = opts.cacheReadTokens;
-    if (opts?.cacheCreationTokens !== undefined)
-      body.cacheCreationTokens = opts.cacheCreationTokens;
-    if (opts?.modelBreakdown !== undefined)
-      body.modelBreakdown = opts.modelBreakdown;
+    applyRunReportOpts(body, opts);
     if (phaseId !== undefined) body.phaseId = phaseId;
     if (itemType !== undefined) body.itemType = itemType;
     if (itemId !== undefined) body.itemId = itemId;
@@ -208,7 +220,7 @@ export class HttpCronRunReporter implements CronRunReporter {
     runId: string | null,
     completedAt: Date,
     skipReason: string,
-    opts?: { error?: string },
+    opts?: RunReportOpts,
     phaseId?: string,
     itemType?: string,
     itemId?: string,
@@ -223,7 +235,7 @@ export class HttpCronRunReporter implements CronRunReporter {
       skipped: true,
       skipReason,
     };
-    if (opts?.error !== undefined) body.error = opts.error;
+    applyRunReportOpts(body, opts);
     if (phaseId !== undefined) body.phaseId = phaseId;
     if (itemType !== undefined) body.itemType = itemType;
     if (itemId !== undefined) body.itemId = itemId;
@@ -261,14 +273,7 @@ export class NoopCronRunReporter implements CronRunReporter {
     _runId: string | null,
     _completedAt: Date,
     _outcome: "completed" | "failed",
-    _opts?: {
-      error?: string;
-      inputTokens?: number;
-      outputTokens?: number;
-      cacheReadTokens?: number;
-      cacheCreationTokens?: number;
-      modelBreakdown?: ModelBreakdownEntry[];
-    },
+    _opts?: RunReportOpts,
     _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
@@ -281,7 +286,7 @@ export class NoopCronRunReporter implements CronRunReporter {
     _runId: string | null,
     _completedAt: Date,
     _skipReason: string,
-    _opts?: { error?: string },
+    _opts?: RunReportOpts,
     _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
