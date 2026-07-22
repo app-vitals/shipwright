@@ -319,6 +319,25 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
   };
   const doFetch: FetchFn = opts?.fetchFn ?? fetch;
 
+  // Fire-and-forget POST, unlike claim/claimPr/update: a task-store error
+  // here must not abort or delay the caller (SKT-2.1's recordSkip/resetSkip),
+  // so both a network failure and a non-ok response are swallowed and logged
+  // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
+  async function postFireAndForget(url: string): Promise<void> {
+    try {
+      const res = await doFetch(url, { method: "POST", headers, body: "{}" });
+      if (!res.ok) {
+        console.warn(
+          `[task-store] POST ${url} returned ${res.status} — swallowing`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[task-store] POST ${url} failed: ${String(err)} — swallowing`,
+      );
+    }
+  }
+
   return {
     async query(params: URLSearchParams): Promise<Task[]> {
       const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
@@ -390,45 +409,14 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
         itemType === "task"
           ? `${baseUrl}/tasks/${id}/skip`
           : `${baseUrl}/prs/${id}/skip`;
-      // Fire-and-forget, unlike claim/claimPr/update: a task-store error here
-      // must not abort or delay the dispatch loop (SKT-2.1), so both a
-      // network failure and a non-ok response are swallowed and logged
-      // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
-      try {
-        const res = await doFetch(url, {
-          method: "POST",
-          headers,
-          body: "{}",
-        });
-        if (!res.ok) {
-          console.warn(
-            `[task-store] POST ${url} returned ${res.status} — swallowing`,
-          );
-        }
-      } catch (err) {
-        console.warn(`[task-store] POST ${url} failed: ${String(err)} — swallowing`);
-      }
+      await postFireAndForget(url);
     },
     async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
       const url =
         itemType === "task"
           ? `${baseUrl}/tasks/${id}/skip/reset`
           : `${baseUrl}/prs/${id}/skip/reset`;
-      // Same fire-and-forget contract as recordSkip above.
-      try {
-        const res = await doFetch(url, {
-          method: "POST",
-          headers,
-          body: "{}",
-        });
-        if (!res.ok) {
-          console.warn(
-            `[task-store] POST ${url} returned ${res.status} — swallowing`,
-          );
-        }
-      } catch (err) {
-        console.warn(`[task-store] POST ${url} failed: ${String(err)} — swallowing`);
-      }
+      await postFireAndForget(url);
     },
   };
 }

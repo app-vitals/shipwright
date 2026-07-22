@@ -299,15 +299,12 @@ export function createLoopOrchestrator(
   >();
 
   /**
-   * SKT-2.1 defense-in-depth guard around recordSkip/resetSkip. Both are
-   * documented as never-throwing (the production client swallows fetch
-   * errors and non-ok responses internally, matching
-   * HttpCronRunReporter.patchRun's pattern) — this wrapper exists solely so a
-   * deps-injection mistake or a future regression in that contract can never
-   * take down the whole dispatch loop; it is not a substitute for the
-   * contract itself, and is not used anywhere else in this file (every other
-   * fire-and-forget call — cronRunReporter.*, workQueueReporter.reportSnapshot
-   * — relies on its own contract directly, no wrapper).
+   * SKT-2.1 guard around recordSkip/resetSkip: both are documented
+   * never-throwing (the production client swallows fetch errors and non-ok
+   * responses internally, matching HttpCronRunReporter.patchRun's pattern),
+   * but a task-store error at this call site must not abort or delay the
+   * dispatch loop regardless — so a rejection is caught and warned rather
+   * than left to propagate out of dispatch() and abort the tick.
    */
   async function callSkipTracker(
     label: "recordSkip" | "resetSkip",
@@ -317,7 +314,7 @@ export function createLoopOrchestrator(
       await fn();
     } catch (err) {
       console.warn(
-        `${label} rejected despite its never-throw contract — swallowing: ` +
+        `${label} rejected — swallowing: ` +
           `${err instanceof Error ? err.message : String(err)}`,
       );
     }
@@ -426,11 +423,7 @@ export function createLoopOrchestrator(
         itemType,
         itemId,
       );
-      // SKT-2.1: fire-and-forget — recordSkip's documented contract
-      // guarantees it never rejects (the production client swallows +
-      // console.warns internally, same as cronRunReporter.*). callSkipTracker
-      // is a defense-in-depth guard for that contract, not a substitute for
-      // it — see its doc comment.
+      // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
       await callSkipTracker("recordSkip", () => recordSkip(itemType, recordId));
       return;
     }
@@ -445,8 +438,7 @@ export function createLoopOrchestrator(
       itemType,
       itemId,
     );
-    // SKT-2.1: real progress clears any prior skip streak. Same
-    // fire-and-forget contract as recordSkip above.
+    // SKT-2.1: real progress clears any prior skip streak.
     await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
   }
 
