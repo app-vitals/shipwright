@@ -709,6 +709,17 @@ describe("extraAllowedTools", () => {
   // biome-ignore lint/suspicious/noExplicitAny: mock return type
   let mockSpawn: any;
 
+  // Extracts the tool names listed after --allowedTools, up to the next flag
+  function extractAllowedTools(cmd: string[]): string[] {
+    const allowedIdx = cmd.indexOf("--allowedTools");
+    const tools: string[] = [];
+    for (let i = allowedIdx + 1; i < cmd.length; i++) {
+      if (cmd[i].startsWith("-")) break;
+      tools.push(cmd[i]);
+    }
+    return tools;
+  }
+
   beforeEach(() => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
@@ -764,15 +775,8 @@ describe("extraAllowedTools", () => {
     await runClaude("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
 
-    const allowedIdx = cmd.indexOf("--allowedTools");
-    expect(allowedIdx).toBeGreaterThan(-1);
-
-    // Find all args after --allowedTools until the next flag or end
-    const toolsInCmd: string[] = [];
-    for (let i = allowedIdx + 1; i < cmd.length; i++) {
-      if (cmd[i].startsWith("-")) break;
-      toolsInCmd.push(cmd[i]);
-    }
+    expect(cmd.indexOf("--allowedTools")).toBeGreaterThan(-1);
+    const toolsInCmd = extractAllowedTools(cmd);
 
     expect(toolsInCmd).toContain("mcp__my_server__my_tool");
     expect(toolsInCmd).toContain("mcp__other__tool");
@@ -812,15 +816,7 @@ describe("extraAllowedTools", () => {
     await runClaude("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
 
-    const allowedIdx = cmd.indexOf("--allowedTools");
-    expect(allowedIdx).toBeGreaterThan(-1);
-
-    // Find all tools in --allowedTools section
-    const toolsInCmd: string[] = [];
-    for (let i = allowedIdx + 1; i < cmd.length; i++) {
-      if (cmd[i].startsWith("-")) break;
-      toolsInCmd.push(cmd[i]);
-    }
+    const toolsInCmd = extractAllowedTools(cmd);
 
     // Count occurrences of Bash
     const bashCount = toolsInCmd.filter((tool) => tool === "Bash").length;
@@ -841,15 +837,7 @@ describe("extraAllowedTools", () => {
     await runClaudeEmpty("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
 
-    const allowedIdx = cmd.indexOf("--allowedTools");
-    expect(allowedIdx).toBeGreaterThan(-1);
-
-    // Find all tools in --allowedTools section
-    const toolsInCmd: string[] = [];
-    for (let i = allowedIdx + 1; i < cmd.length; i++) {
-      if (cmd[i].startsWith("-")) break;
-      toolsInCmd.push(cmd[i]);
-    }
+    const toolsInCmd = extractAllowedTools(cmd);
 
     // Verify exactly 11 hardcoded tools
     const hardcodedTools = [
@@ -885,15 +873,7 @@ describe("extraAllowedTools", () => {
     await runClaude("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
 
-    const allowedIdx = cmd.indexOf("--allowedTools");
-    expect(allowedIdx).toBeGreaterThan(-1);
-
-    // Find all tools in --allowedTools section
-    const toolsInCmd: string[] = [];
-    for (let i = allowedIdx + 1; i < cmd.length; i++) {
-      if (cmd[i].startsWith("-")) break;
-      toolsInCmd.push(cmd[i]);
-    }
+    const toolsInCmd = extractAllowedTools(cmd);
 
     // Verify no duplicates
     const uniqueTools = new Set(toolsInCmd);
