@@ -20,6 +20,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { DEFAULT_ADMIN_AGENT_TOOLS } from "@shipwright/lib/agent-default-tools";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/index.js";
@@ -955,24 +956,31 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       selfHosted: body.selfHosted ?? false,
     });
 
-    // Provision the backing workload AFTER the row exists (the provisioner
-    // mints a per-agent token tied to the agent id). If provisioning throws,
-    // roll the agent row back so we never leave a half-created agent with no
-    // workload — then surface the failure as a 5xx via onError. The Noop
-    // provisioner never throws, preserving today's create behavior exactly.
-    // Self-hosted agents manage their own workload — skip provisioning.
-    if (!agent.selfHosted) {
-      try {
-        await provisioner.provision(agent.id, { slug: agent.name });
-      } catch (err) {
-        await agentService.delete(agent.id).catch((cleanupErr) => {
-          console.error(
-            "[agents-api] failed to roll back agent after provision error:",
-            cleanupErr,
-          );
-        });
-        throw err;
+    // Seed default AgentTool rows, then provision the backing workload — both
+    // wrapped in the same try/catch so a failure at either step rolls the
+    // agent row back (never leaving a half-created agent with 0-3 seeded
+    // AgentTool rows and no cleanup). Self-hosted agents manage their own
+    // workload — skip provisioning, but still seed tools and still roll back
+    // on a seeding failure.
+    try {
+      for (const pattern of DEFAULT_ADMIN_AGENT_TOOLS) {
+        await agentToolService.add(agent.id, pattern);
       }
+
+      // Provision AFTER the row (and its tools) exist — the provisioner
+      // mints a per-agent token tied to the agent id. The Noop provisioner
+      // never throws, preserving today's create behavior exactly.
+      if (!agent.selfHosted) {
+        await provisioner.provision(agent.id, { slug: agent.name });
+      }
+    } catch (err) {
+      await agentService.delete(agent.id).catch((cleanupErr) => {
+        console.error(
+          "[agents-api] failed to roll back agent after create error:",
+          cleanupErr,
+        );
+      });
+      throw err;
     }
 
     return c.json(serializeAgent(agent), 201);

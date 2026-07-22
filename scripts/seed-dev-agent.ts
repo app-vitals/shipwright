@@ -19,6 +19,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { DEFAULT_AGENT_TOOLS } from "../lib/agent-default-tools.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -27,18 +28,10 @@ const DEV_AGENT_NAME = "Dev Agent";
 const DEV_AGENT_ENV_FILE = "state/dev-agent.env";
 const DEV_PLUGIN_NAME = "shipwright";
 
-export const DEFAULT_TOOLS = [
-  "Read",
-  "Write",
-  "Edit",
-  "Glob",
-  "Grep",
-  "Bash",
-  "WebSearch",
-  "WebFetch",
-  "Skill",
-  "Agent",
-];
+// Single source of truth lives in lib/agent-default-tools.ts (shared with the
+// admin POST /agents route) — re-exported here under the name this script's
+// tests already reference.
+export const DEFAULT_TOOLS = DEFAULT_AGENT_TOOLS;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

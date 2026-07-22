@@ -20,6 +20,7 @@ import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
@@ -65,6 +66,38 @@ async function createAgent(
   return agent.id;
 }
 
+function makeDeps(
+  prisma: PrismaClient,
+  provisioner: AgentProvisioner = new NoopAgentProvisioner(),
+): AdminDeps {
+  const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+  process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
+  const crypto = makeTokenCrypto();
+  process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+
+  return {
+    agentService: new AgentService(prisma),
+    agentEnvService: new AgentEnvService(prisma, crypto),
+    agentCronJobService: new AgentCronJobService(prisma),
+    agentCronRunService: new AgentCronRunService(prisma),
+    agentCronRunStatsService: new AgentCronRunStatsService(prisma),
+    agentToolService: new AgentToolService(prisma),
+    agentTokenService: new AgentTokenService(prisma),
+    agentPluginService: new AgentPluginService(prisma),
+    agentChatTokenService: new AgentChatTokenService(prisma),
+    agentWorkQueueService: new AgentWorkQueueService(prisma),
+    prisma,
+    provisioner,
+    taskStore: new NoopTaskStoreProvisioningClient(),
+    chatService: new NoopChatServiceProvisioningClient(),
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => crypto.decrypt(value),
+    sessionSecret: SESSION_SECRET,
+  };
+}
+
 describeOrSkip("admin CRUD API (integration)", () => {
   let prisma: PrismaClient;
   let agentId: string;
@@ -86,35 +119,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     agentId = await createAgent(prisma);
     cookie = await makeSessionCookie();
 
-    // Set up crypto for the env service
-    const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
-    process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
-    const crypto = makeTokenCrypto();
-    process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
-
-    const deps: AdminDeps = {
-      agentService: new AgentService(prisma),
-      agentEnvService: new AgentEnvService(prisma, crypto),
-      agentCronJobService: new AgentCronJobService(prisma),
-      agentCronRunService: new AgentCronRunService(prisma),
-      agentCronRunStatsService: new AgentCronRunStatsService(prisma),
-      agentToolService: new AgentToolService(prisma),
-      agentTokenService: new AgentTokenService(prisma),
-      agentPluginService: new AgentPluginService(prisma),
-      agentChatTokenService: new AgentChatTokenService(prisma),
-      agentWorkQueueService: new AgentWorkQueueService(prisma),
-      prisma,
-      provisioner: new NoopAgentProvisioner(),
-      taskStore: new NoopTaskStoreProvisioningClient(),
-      chatService: new NoopChatServiceProvisioningClient(),
-      slack: {
-        deleteApp: async () => {},
-      },
-      decrypt: (value: string) => crypto.decrypt(value),
-      sessionSecret: SESSION_SECRET,
-    };
-
-    app = createAdminApp(deps);
+    app = createAdminApp(makeDeps(prisma));
   });
 
   afterEach(async () => {
@@ -330,5 +335,73 @@ describeOrSkip("admin CRUD API (integration)", () => {
       where: { agentId },
     });
     expect(rows).toHaveLength(0);
+  });
+
+  // ─── Seeded default AgentTool rows ─────────────────────────────────────────
+
+  it("POST /agents creates exactly 4 default AgentTool rows: Bash, WebSearch, WebFetch, Agent", async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent With Tools" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const newAgentId: string = body.id;
+
+    // Query the AgentTool rows for this agent
+    const tools = await prisma.agentTool.findMany({
+      where: { agentId: newAgentId },
+      orderBy: { pattern: "asc" },
+    });
+
+    // Should have exactly 4 rows
+    expect(tools).toHaveLength(4);
+
+    // Extract patterns and verify all are enabled
+    const patterns = tools.map((t) => t.pattern).sort();
+    expect(patterns).toEqual(["Agent", "Bash", "WebFetch", "WebSearch"]);
+
+    // All should be enabled: true
+    for (const tool of tools) {
+      expect(tool.enabled).toBe(true);
+    }
+  });
+
+  it("POST /agents with provisioner failure rolls back seeded AgentTool rows via cascade delete", async () => {
+    const throwingProvisioner: AgentProvisioner = {
+      provision: async () => {
+        throw new Error("provisioner failure");
+      },
+      deprovision: async () => {},
+      reconcile: async () => ({ recreated: [], orphans: [], failed: [], updated: [] }),
+    };
+
+    const appWithFailingProvisioner = createAdminApp(
+      makeDeps(prisma, throwingProvisioner),
+    );
+
+    // POST should fail because provisioner throws
+    const res = await appWithFailingProvisioner.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Doomed Agent With Tools" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(500);
+
+    // After rollback, NO AgentTool rows should remain at all. A relation filter like
+    // `where: { agent: { name: ... } }` would join through the now-deleted Agent row and
+    // return [] regardless of whether the AgentTool rows were actually cascade-deleted or
+    // merely orphaned and unreachable via that join. Query unscoped instead — this is valid
+    // because `beforeEach` truncates `agentTool` per test, so this doomed agent's seeded rows
+    // are the only rows that could ever exist here.
+    const allToolsCount = await prisma.agentTool.count();
+    expect(allToolsCount).toBe(0);
   });
 });
