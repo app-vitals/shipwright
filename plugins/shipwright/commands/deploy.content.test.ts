@@ -346,6 +346,84 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   });
 });
 
+describe("deploy.md — validate workflow names before Step 5b watch (DWV-1.1)", () => {
+  it("Step 5b performs a one-time validation of resolved stage names against live repo workflows via gh api actions/workflows", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("actions/workflows");
+    expect(step5bSection).toContain("gh api repos/{org}/{repo}/actions/workflows");
+  });
+
+  it("positions the workflow-name validation after the Stage-names resolution/table and before the progress-print line", () => {
+    const step5bSection = extractStep5bSection(content);
+    const stageNamesIdx = step5bSection.indexOf(
+      "**Stage names: check the Deploy model section again.**",
+    );
+    const tableIdx = step5bSection.indexOf('| `"Promote to Prod"` | Promote |');
+    const validationIdx = step5bSection.indexOf("actions/workflows");
+    const printProgressIdx = step5bSection.indexOf(
+      "Print progress on each poll (each loop iteration):",
+    );
+    expect(stageNamesIdx).toBeGreaterThan(-1);
+    expect(tableIdx).toBeGreaterThan(-1);
+    expect(validationIdx).toBeGreaterThan(-1);
+    expect(printProgressIdx).toBeGreaterThan(-1);
+    expect(validationIdx).toBeGreaterThan(stageNamesIdx);
+    expect(validationIdx).toBeGreaterThan(tableIdx);
+    expect(validationIdx).toBeLessThan(printProgressIdx);
+  });
+
+  it("on a mismatch, warns naming the missing stage(s) and lists the actual available workflow names", () => {
+    const step5bSection = extractStep5bSection(content);
+    const lower = step5bSection.toLowerCase();
+    expect(lower).toContain("mismatch");
+    const mentionsMissing = lower.includes("missing");
+    const mentionsNotFound = lower.includes("not found");
+    expect(mentionsMissing || mentionsNotFound).toBe(true);
+    const mentionsAvailableWorkflows =
+      lower.includes("live workflows") || lower.includes("available workflow");
+    expect(mentionsAvailableWorkflows).toBe(true);
+  });
+
+  it("on a mismatch, falls back to watching all workflow runs by SHA only (unnamed) for the remainder of the 30-minute budget", () => {
+    const step5bSection = extractStep5bSection(content);
+    const fallbackMatch = step5bSection.match(
+      /One or more resolved names are absent[\s\S]*?(?=\n\n\*\*|\n### |$)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("$SQUASH_SHA");
+    expect(fallbackSection.toLowerCase()).toContain("sha only");
+    expect(fallbackSection).toContain("30-minute budget");
+    expect(fallbackSection).not.toContain("10 minutes");
+  });
+
+  it("states a name mismatch alone never sets blocked by itself", () => {
+    const step5bSection = extractStep5bSection(content);
+    const fallbackMatch = step5bSection.match(
+      /One or more resolved names are absent[\s\S]*?(?=\n\n\*\*|\n### |$)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    const lower = fallbackSection.toLowerCase();
+    expect(lower).toContain("never");
+    expect(lower).toContain("blocked");
+    const explicitlyScoped =
+      lower.includes("alone never sets") || lower.includes("mismatch alone");
+    expect(explicitlyScoped).toBe(true);
+  });
+
+  it("on a full match, behavior is unchanged — the named three-stage table and print format remain intact", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain('`"Deploy"`');
+    expect(step5bSection).toContain('`"Canary"`');
+    expect(step5bSection).toContain('`"Promote to Prod"`');
+    expect(step5bSection).toContain(
+      "[{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}",
+    );
+    expect(step5bSection.toLowerCase()).toContain("no behavior change");
+  });
+});
+
 describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
   it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
     const step5aSection = extractStep5aSection(content);

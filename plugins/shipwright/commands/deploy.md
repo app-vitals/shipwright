@@ -513,6 +513,33 @@ Track three stages by workflow name (`.name`):
 | `"Canary"`       | Canary  |
 | `"Promote to Prod"` | Promote |
 
+**Validate stage names against live workflows.** Before starting the poll above, confirm
+the resolved stage names (custom from `CLAUDE.md`, or the literal defaults) actually
+correspond to real workflows in the target repo — a one-time, cheap check that works even
+before this SHA's own runs exist:
+
+```bash
+gh api repos/{org}/{repo}/actions/workflows --jq '[.workflows[].name]'
+```
+
+- **All resolved stage names are present** in the returned list: proceed exactly as
+  above — no behavior change, use the named three-stage table and print format.
+- **One or more resolved names are absent**: do not commit to the blind 30-minute
+  named-stage watch — a name that will never appear would exhaust the full budget on a
+  false "deploy is broken" signal. Print a mismatch warning naming the missing stage(s)
+  and the actual available workflow names:
+  ```
+  ⚠ Stage name mismatch — {missing names} not found among live workflows: {actual workflow names}
+    Falling back to SHA-only watch (unnamed) for the remainder of the 30-minute budget.
+  ```
+  Then fall back to watching all workflow runs matching `$SQUASH_SHA` by SHA only
+  (unnamed, no `.name` filter) for the remainder of the 30-minute budget — same query
+  shape as Step 5c's `head_sha`-only filter, and the same success/failure/timeout
+  terminal-condition handling, but continuing within this step's own 30-minute budget
+  and elapsed time rather than Step 5c's separate 10-minute window. A name mismatch
+  alone never sets `blocked` by itself — only an actual run outcome (success/failure)
+  or a genuine timeout in this SHA-only fallback does.
+
 Print progress on each poll (each loop iteration):
 ```
 [{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}
