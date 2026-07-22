@@ -252,6 +252,39 @@ function makeMockDeps(
       }),
       remove: async () => {},
     },
+    agentService: {
+      listAll: async () => [
+        {
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      listByIds: async () => [
+        {
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      searchByName: async () => [
+        {
+          id: AGENT_ID,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        },
+      ],
+      listOptions: async () => [{ id: AGENT_ID, name: "Test Agent" }],
+    },
     sessionSecret: SESSION_SECRET,
     googleClientId: GOOGLE_CLIENT_ID,
     googleClientSecret: GOOGLE_CLIENT_SECRET,
@@ -3009,6 +3042,50 @@ describe("admin UI — member access control", () => {
         }),
         remove: async () => {},
       },
+      agentService: {
+        listAll: async () => [
+          {
+            id: AGENT_ID,
+            name: "My Agent",
+            slackId: "U1",
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+          {
+            id: OTHER_AGENT_ID,
+            name: "Other Agent",
+            slackId: "U2",
+            selfHosted: false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+        ],
+        listByIds: async (ids: string[]) =>
+          [
+            {
+              id: AGENT_ID,
+              name: "My Agent",
+              slackId: "U1",
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+            {
+              id: OTHER_AGENT_ID,
+              name: "Other Agent",
+              slackId: "U2",
+              selfHosted: false,
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+          ].filter((a) => ids.includes(a.id)),
+        searchByName: async () => [],
+        listOptions: async () => [
+          { id: AGENT_ID, name: "My Agent" },
+          { id: OTHER_AGENT_ID, name: "Other Agent" },
+        ],
+      },
     });
     const app = createAdminUIApp(deps);
     const res = await app.request("/admin/agents", {
@@ -4349,6 +4426,30 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("Unassigned task");
   });
 
+  it("GET /admin/tasks with fetchDistinctTaskValues configured includes agent names in the autocomplete datalist via AgentService", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchDistinctTaskValues: async () => ({
+          sessions: [],
+          repos: [],
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<datalist id="agents-list">');
+    expect(html).toContain('<option value="Test Agent">');
+  });
+
   it("POST /admin/tasks/:id/release calls releaseTask and redirects to task detail when fetchTaskStoreTask is wired", async () => {
     const released: string[] = [];
     const app = createAdminUIApp(
@@ -5276,6 +5377,40 @@ describe("admin UI — PRs page", () => {
     const html = await res.text();
     expect(html).toContain("app-vitals/shipwright");
     expect(html).toContain("42");
+  });
+
+  it("GET /admin/prs resolves claimedBy agent id to its name via AgentService", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [{ ...MOCK_PR, claimedBy: AGENT_ID }],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Test Agent");
+  });
+
+  it("GET /admin/prs/:id resolves claimedBy agent id to its name via AgentService", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? { ...MOCK_PR, claimedBy: AGENT_ID } : null,
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Test Agent");
   });
 
   it("GET /admin/prs unauthenticated redirects to /admin/login", async () => {

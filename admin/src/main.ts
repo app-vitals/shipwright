@@ -607,6 +607,7 @@ async function startServer(): Promise<void> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
+    agentService,
     provisioner,
     taskStore: deletionTaskStore,
     chatService: deletionChatService,
