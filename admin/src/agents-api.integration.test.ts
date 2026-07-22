@@ -20,6 +20,7 @@ import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
+import type { AgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
@@ -65,6 +66,38 @@ async function createAgent(
   return agent.id;
 }
 
+function makeDeps(
+  prisma: PrismaClient,
+  provisioner: AgentProvisioner = new NoopAgentProvisioner(),
+): AdminDeps {
+  const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+  process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
+  const crypto = makeTokenCrypto();
+  process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
+
+  return {
+    agentService: new AgentService(prisma),
+    agentEnvService: new AgentEnvService(prisma, crypto),
+    agentCronJobService: new AgentCronJobService(prisma),
+    agentCronRunService: new AgentCronRunService(prisma),
+    agentCronRunStatsService: new AgentCronRunStatsService(prisma),
+    agentToolService: new AgentToolService(prisma),
+    agentTokenService: new AgentTokenService(prisma),
+    agentPluginService: new AgentPluginService(prisma),
+    agentChatTokenService: new AgentChatTokenService(prisma),
+    agentWorkQueueService: new AgentWorkQueueService(prisma),
+    prisma,
+    provisioner,
+    taskStore: new NoopTaskStoreProvisioningClient(),
+    chatService: new NoopChatServiceProvisioningClient(),
+    slack: {
+      deleteApp: async () => {},
+    },
+    decrypt: (value: string) => crypto.decrypt(value),
+    sessionSecret: SESSION_SECRET,
+  };
+}
+
 describeOrSkip("admin CRUD API (integration)", () => {
   let prisma: PrismaClient;
   let agentId: string;
@@ -86,35 +119,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     agentId = await createAgent(prisma);
     cookie = await makeSessionCookie();
 
-    // Set up crypto for the env service
-    const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
-    process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
-    const crypto = makeTokenCrypto();
-    process.env.SHIPWRIGHT_ENCRYPTION_KEY = savedKey;
-
-    const deps: AdminDeps = {
-      agentService: new AgentService(prisma),
-      agentEnvService: new AgentEnvService(prisma, crypto),
-      agentCronJobService: new AgentCronJobService(prisma),
-      agentCronRunService: new AgentCronRunService(prisma),
-      agentCronRunStatsService: new AgentCronRunStatsService(prisma),
-      agentToolService: new AgentToolService(prisma),
-      agentTokenService: new AgentTokenService(prisma),
-      agentPluginService: new AgentPluginService(prisma),
-      agentChatTokenService: new AgentChatTokenService(prisma),
-      agentWorkQueueService: new AgentWorkQueueService(prisma),
-      prisma,
-      provisioner: new NoopAgentProvisioner(),
-      taskStore: new NoopTaskStoreProvisioningClient(),
-      chatService: new NoopChatServiceProvisioningClient(),
-      slack: {
-        deleteApp: async () => {},
-      },
-      decrypt: (value: string) => crypto.decrypt(value),
-      sessionSecret: SESSION_SECRET,
-    };
-
-    app = createAdminApp(deps);
+    app = createAdminApp(makeDeps(prisma));
   });
 
   afterEach(async () => {
@@ -367,8 +372,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
   });
 
   it("POST /agents with provisioner failure rolls back seeded AgentTool rows via cascade delete", async () => {
-    // Create a new app with a throwing provisioner
-    const throwingProvisioner = {
+    const throwingProvisioner: AgentProvisioner = {
       provision: async () => {
         throw new Error("provisioner failure");
       },
@@ -376,30 +380,8 @@ describeOrSkip("admin CRUD API (integration)", () => {
       reconcile: async () => ({ recreated: [], orphans: [], failed: [], updated: [] }),
     };
 
-    const depsWithFailingProvisioner: AdminDeps = {
-      agentService: new AgentService(prisma),
-      agentEnvService: new AgentEnvService(prisma, makeTokenCrypto()),
-      agentCronJobService: new AgentCronJobService(prisma),
-      agentCronRunService: new AgentCronRunService(prisma),
-      agentCronRunStatsService: new AgentCronRunStatsService(prisma),
-      agentToolService: new AgentToolService(prisma),
-      agentTokenService: new AgentTokenService(prisma),
-      agentPluginService: new AgentPluginService(prisma),
-      agentChatTokenService: new AgentChatTokenService(prisma),
-      agentWorkQueueService: new AgentWorkQueueService(prisma),
-      prisma,
-      provisioner: throwingProvisioner,
-      taskStore: new NoopTaskStoreProvisioningClient(),
-      chatService: new NoopChatServiceProvisioningClient(),
-      slack: {
-        deleteApp: async () => {},
-      },
-      decrypt: (value: string) => makeTokenCrypto().decrypt(value),
-      sessionSecret: SESSION_SECRET,
-    };
-
     const appWithFailingProvisioner = createAdminApp(
-      depsWithFailingProvisioner,
+      makeDeps(prisma, throwingProvisioner),
     );
 
     // POST should fail because provisioner throws
