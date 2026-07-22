@@ -9,9 +9,15 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import type { ClaudeRunResult } from "./claude.ts";
+import {
+  ClaudeRunError,
+  ClaudeTimeoutError,
+  type ClaudeRunResult,
+  type ModelUsage,
+  type ProgressCallback,
+} from "./claude.ts";
 import { FixedClock } from "./clock.ts";
-import type { CronRunReporter } from "./cron-run-reporter.ts";
+import type { CronRunReporter, ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
   type LoopOrchestratorDeps,
@@ -52,16 +58,23 @@ interface SkipCall {
   itemType?: string;
   itemId?: string;
 }
+interface ProgressCall {
+  cronId: string;
+  runId: string | null;
+  modelBreakdown: ModelBreakdownEntry[];
+}
 
 function makeRecordingReporter(): {
   reporter: CronRunReporter;
   creates: CreateCall[];
   completes: CompleteCall[];
   skips: SkipCall[];
+  progressCalls: ProgressCall[];
 } {
   const creates: CreateCall[] = [];
   const completes: CompleteCall[] = [];
   const skips: SkipCall[] = [];
+  const progressCalls: ProgressCall[] = [];
   let counter = 0;
 
   const reporter: CronRunReporter = {
@@ -94,10 +107,12 @@ function makeRecordingReporter(): {
     ) {
       skips.push({ cronId, runId, skipReason, phaseId, itemType, itemId });
     },
-    async recordProgress() {},
+    async recordProgress(cronId, runId, modelBreakdown) {
+      progressCalls.push({ cronId, runId, modelBreakdown });
+    },
   };
 
-  return { reporter, creates, completes, skips };
+  return { reporter, creates, completes, skips, progressCalls };
 }
 
 // ─── Stub work queue reporter ───────────────────────────────────────────────
@@ -127,12 +142,15 @@ function makeRecordingWorkQueueReporter(): {
 
 /** Records each dispatched message and returns a scripted result per call. */
 function makeRunner(results: (string | ClaudeRunResult)[] = []): {
-  runner: (message: string) => Promise<ClaudeRunResult>;
+  runner: (message: string, onProgress?: ProgressCallback) => Promise<ClaudeRunResult>;
   messages: string[];
 } {
   const messages: string[] = [];
   let idx = 0;
-  const runner = async (message: string): Promise<ClaudeRunResult> => {
+  const runner = async (
+    message: string,
+    _onProgress?: ProgressCallback,
+  ): Promise<ClaudeRunResult> => {
     messages.push(message);
     const scripted = results[idx];
     idx += 1;
@@ -160,7 +178,7 @@ function makeDrainingRunner(
   consumed: Set<string>,
   results: (string | ClaudeRunResult)[] = [],
 ): {
-  runner: (message: string) => Promise<ClaudeRunResult>;
+  runner: (message: string, onProgress?: ProgressCallback) => Promise<ClaudeRunResult>;
   messages: string[];
 } {
   const messages: string[] = [];
@@ -183,7 +201,10 @@ function makeDrainingRunner(
     })),
   };
   let idx = 0;
-  const runner = async (message: string): Promise<ClaudeRunResult> => {
+  const runner = async (
+    message: string,
+    _onProgress?: ProgressCallback,
+  ): Promise<ClaudeRunResult> => {
     messages.push(message);
     // The message is formatCronMessage(loopCronId, "<command> <itemId>") —
     // i.e. "[Cron job: ...] Current time: ...\n\n<command> <itemId>". Match
@@ -254,7 +275,10 @@ interface MakeDepsOptions {
   reviewCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   patchCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
   deployCandidates?: WorkPrCandidate[] | (() => Promise<WorkPrCandidate[]>);
-  runner?: (message: string) => Promise<ClaudeRunResult>;
+  runner?: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   reporter?: CronRunReporter;
   workQueueReporter?: WorkQueueReporter;
   loopCronId?: string;
@@ -1716,6 +1740,306 @@ describe("createLoopOrchestrator", () => {
     expect(messages[0]).toEndWith(
       "/shipwright:review app-vitals/shipwright#1 [preclaim:clxRECORD:deadbeef1234]",
     );
+  });
+
+  // ─── Progress push + partial-usage-on-failure tests (CSU-3.1) ─────────────
+
+  function usage(inputTokens = 100): ModelUsage {
+    return {
+      "claude-opus-4": {
+        inputTokens,
+        outputTokens: 50,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.1,
+      },
+    };
+  }
+
+  /** A mutable clock whose now() can be advanced between calls. */
+  function makeMutableClockForProgress(initialIso: string): {
+    clock: import("./clock.ts").Clock;
+    advanceMs: (ms: number) => void;
+  } {
+    let current = new Date(initialIso);
+    return {
+      clock: { now: () => current },
+      advanceMs: (ms: number) => {
+        current = new Date(current.getTime() + ms);
+      },
+    };
+  }
+
+  test("onProgress is wired to recordProgress — a single progress emission during dispatch triggers exactly one recordProgress call", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-P1", "2026-01-01T00:00:00Z")];
+    const { reporter, progressCalls } = makeRecordingReporter();
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(usage());
+      consumed.add("SWC-P1");
+      return { result: "done" };
+    };
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(progressCalls).toHaveLength(1);
+    expect(progressCalls[0]?.modelBreakdown).toEqual([
+      {
+        model: "claude-opus-4",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.1,
+      },
+    ]);
+    expect(progressCalls[0]?.runId).toBe("run-1");
+  });
+
+  test("debounce: two progress emissions less than 5s apart (per clock) result in only one recordProgress call", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-P2", "2026-01-01T00:00:00Z")];
+    const { reporter, progressCalls } = makeRecordingReporter();
+    const { clock, advanceMs } = makeMutableClockForProgress(
+      "2026-01-01T00:00:00Z",
+    );
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(usage(100));
+      advanceMs(2000); // < 5s later
+      onProgress?.(usage(200));
+      consumed.add("SWC-P2");
+      return { result: "done" };
+    };
+    const deps = {
+      ...makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(progressCalls).toHaveLength(1);
+    expect(progressCalls[0]?.modelBreakdown?.[0]?.inputTokens).toBe(100);
+  });
+
+  test("debounce: a third progress emission past the 5s window triggers a second recordProgress call", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-P3", "2026-01-01T00:00:00Z")];
+    const { reporter, progressCalls } = makeRecordingReporter();
+    const { clock, advanceMs } = makeMutableClockForProgress(
+      "2026-01-01T00:00:00Z",
+    );
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(usage(100)); // fires — first ever call
+      advanceMs(2000); // +2s — still within 5s window
+      onProgress?.(usage(200)); // skipped
+      advanceMs(4000); // +6s total from first — past the 5s window
+      onProgress?.(usage(300)); // fires
+      consumed.add("SWC-P3");
+      return { result: "done" };
+    };
+    const deps = {
+      ...makeDeps({ devTaskCandidates, runner, reporter, consumed }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(progressCalls).toHaveLength(2);
+    expect(progressCalls[0]?.modelBreakdown?.[0]?.inputTokens).toBe(100);
+    expect(progressCalls[1]?.modelBreakdown?.[0]?.inputTokens).toBe(300);
+  });
+
+  test("an empty/undefined modelUsage from onProgress does not produce an empty recordProgress call", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-P4", "2026-01-01T00:00:00Z")];
+    const { reporter, progressCalls } = makeRecordingReporter();
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.({});
+      consumed.add("SWC-P4");
+      return { result: "done" };
+    };
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(progressCalls).toHaveLength(0);
+  });
+
+  test("a runner throw carrying err.partialModelUsage (ClaudeTimeoutError) attaches modelBreakdown to the failed completeRun call", async () => {
+    const devTaskCandidates = [task("SWC-P5", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeTimeoutError(600_000, "ceiling", usage(42));
+    };
+    const deps = makeDeps({ devTaskCandidates, runner, reporter });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      ClaudeTimeoutError,
+    );
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+  });
+
+  test("a runner throw without partialModelUsage (plain Error) falls back to { error } only — unchanged from current behavior", async () => {
+    const devTaskCandidates = [task("SWC-P6", "2026-01-01T00:00:00Z")];
+    const { reporter } = makeRecordingReporter();
+    const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async completeRun(
+        cronId,
+        runId,
+        completedAt,
+        outcome,
+        completeOpts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
+        opts.push({
+          error: completeOpts?.error,
+          modelBreakdown: completeOpts?.modelBreakdown,
+        });
+        await reporter.completeRun(
+          cronId,
+          runId,
+          completedAt,
+          outcome,
+          completeOpts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new Error("plain failure, no partial usage");
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter: trackedReporter,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      "plain failure, no partial usage",
+    );
+
+    expect(opts).toHaveLength(1);
+    expect(opts[0]?.error).toBe("plain failure, no partial usage");
+    expect(opts[0]?.modelBreakdown).toBeUndefined();
+  });
+
+  test("a runner throw with a ClaudeRunError (modelUsage, not partialModelUsage) falls back to { error } only", async () => {
+    const devTaskCandidates = [task("SWC-P7", "2026-01-01T00:00:00Z")];
+    const { reporter } = makeRecordingReporter();
+    const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async completeRun(
+        cronId,
+        runId,
+        completedAt,
+        outcome,
+        completeOpts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
+        opts.push({
+          error: completeOpts?.error,
+          modelBreakdown: completeOpts?.modelBreakdown,
+        });
+        await reporter.completeRun(
+          cronId,
+          runId,
+          completedAt,
+          outcome,
+          completeOpts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeRunError(
+        "claude run failed",
+        500,
+        "boom",
+        "session-1",
+        usage(42),
+      );
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter: trackedReporter,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      "claude run failed",
+    );
+
+    expect(opts).toHaveLength(1);
+    expect(opts[0]?.error).toBe("claude run failed");
+    expect(opts[0]?.modelBreakdown).toBeUndefined();
+  });
+
+  test("a recordProgress rejection does not crash dispatch — the dispatch still completes normally", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-P8", "2026-01-01T00:00:00Z")];
+    const failingReporter: CronRunReporter = {
+      async createRun() {
+        return "run-1";
+      },
+      async completeRun() {},
+      async skipRun() {},
+      async recordProgress() {
+        throw new Error("admin API unreachable");
+      },
+    };
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(usage());
+      consumed.add("SWC-P8");
+      return { result: "done" };
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter: failingReporter,
+      consumed,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    // Must resolve without throwing despite recordProgress rejecting.
+    await expect(
+      loop([job("shipwright-dev-task", true)]),
+    ).resolves.toBeUndefined();
   });
 });
 

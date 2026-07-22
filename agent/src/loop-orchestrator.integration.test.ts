@@ -23,9 +23,14 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createTaskStoreClient } from "./check-helpers.ts";
-import type { ClaudeRunResult } from "./claude.ts";
+import {
+  ClaudeTimeoutError,
+  type ClaudeRunResult,
+  type ModelUsage,
+  type ProgressCallback,
+} from "./claude.ts";
 import { FixedClock } from "./clock.ts";
-import type { CronRunReporter } from "./cron-run-reporter.ts";
+import type { CronRunReporter, ModelBreakdownEntry } from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import { createLoopOrchestrator } from "./loop-orchestrator.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
@@ -344,5 +349,174 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]).toContain("/shipwright:dev-task SWC-1");
     expect(completedItemIds).toEqual(["SWC-1"]);
+  });
+});
+
+// ─── Progress push + partial-usage-on-failure (CSU-3.1) ────────────────────
+
+describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)", () => {
+  function makeUsage(overrides: Partial<ModelBreakdownEntry> = {}): ModelUsage {
+    return {
+      "claude-opus-4": {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+        costUSD: 0.42,
+        ...overrides,
+      },
+    };
+  }
+
+  function makeRecordingReporter(): {
+    reporter: CronRunReporter;
+    completeCalls: Array<{
+      outcome: "completed" | "failed";
+      opts?: {
+        error?: string;
+        modelBreakdown?: ModelBreakdownEntry[];
+      };
+    }>;
+    progressCalls: Array<{ runId: string | null; modelBreakdown: ModelBreakdownEntry[] }>;
+  } {
+    const completeCalls: Array<{
+      outcome: "completed" | "failed";
+      opts?: { error?: string; modelBreakdown?: ModelBreakdownEntry[] };
+    }> = [];
+    const progressCalls: Array<{
+      runId: string | null;
+      modelBreakdown: ModelBreakdownEntry[];
+    }> = [];
+    const reporter: CronRunReporter = {
+      async createRun() {
+        return "run-1";
+      },
+      async completeRun(_cronId, _runId, _completedAt, outcome, opts) {
+        completeCalls.push({ outcome, opts });
+      },
+      async skipRun() {},
+      async recordProgress(_cronId, runId, modelBreakdown) {
+        progressCalls.push({ runId, modelBreakdown });
+      },
+    };
+    return { reporter, completeCalls, progressCalls };
+  }
+
+  const noopWorkQueueReporter: WorkQueueReporter = {
+    async reportSnapshot() {},
+  };
+
+  test("a runner that emits progress via onProgress before resolving triggers recordProgress mid-dispatch, before completeRun", async () => {
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { reporter, completeCalls, progressCalls } = makeRecordingReporter();
+    const callOrder: string[] = [];
+
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async recordProgress(cronId, runId, modelBreakdown) {
+        callOrder.push("recordProgress");
+        await reporter.recordProgress(cronId, runId, modelBreakdown);
+      },
+      async completeRun(cronId, runId, completedAt, outcome, opts, phaseId, itemType, itemId) {
+        callOrder.push("completeRun");
+        await reporter.completeRun(
+          cronId,
+          runId,
+          completedAt,
+          outcome,
+          opts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+
+    const runner = async (
+      _message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      onProgress?.(makeUsage());
+      return { result: "done", modelUsage: makeUsage() };
+    };
+
+    let devTaskCalls = 0;
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => {
+        devTaskCalls += 1;
+        return devTaskCalls === 1 ? devTaskCandidates : [];
+      },
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      runner,
+      cronRunReporter: trackedReporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(progressCalls).toHaveLength(1);
+    expect(progressCalls[0]?.modelBreakdown).toEqual([
+      {
+        model: "claude-opus-4",
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.42,
+      },
+    ]);
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+
+    // recordProgress fired before completeRun for this dispatch.
+    expect(callOrder).toEqual(["recordProgress", "completeRun"]);
+  });
+
+  test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown", async () => {
+    const devTaskCandidates = [task("SWC-2.2", "2026-01-01T00:00:00Z")];
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const partialUsage = makeUsage({ inputTokens: 10, outputTokens: 5 });
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeTimeoutError(600_000, "ceiling", partialUsage);
+    };
+
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () => devTaskCandidates,
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      runner,
+      cronRunReporter: reporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
+      ClaudeTimeoutError,
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("failed");
+    expect(completeCalls[0]?.opts?.error).toContain("timed out");
+    expect(completeCalls[0]?.opts?.modelBreakdown).toEqual([
+      {
+        model: "claude-opus-4",
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        costUsd: 0.42,
+      },
+    ]);
   });
 });

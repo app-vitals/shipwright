@@ -82,7 +82,12 @@ import {
   buildProductionDeps as buildReviewDeps,
   getReviewCandidates,
 } from "./check-review.ts";
-import { ClaudeRunError, type ClaudeRunResult } from "./claude.ts";
+import {
+  ClaudeRunError,
+  ClaudeTimeoutError,
+  type ClaudeRunResult,
+  type ProgressCallback,
+} from "./claude.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { markCronRunFailureReported } from "./cron-failure-reporter.ts";
 import { buildTokenPayload, formatCronMessage } from "./cron-handler.ts";
@@ -141,8 +146,18 @@ export interface LoopOrchestratorDeps {
   claimPr: (
     pr: WorkPrCandidate,
   ) => Promise<{ id: string; commitSha: string } | null>;
-  /** The claude runner — sends a one-shot slash-command message. */
-  runner: (message: string) => Promise<ClaudeRunResult>;
+  /**
+   * The claude runner — sends a one-shot slash-command message. The optional
+   * second `onProgress` param (CSU-1.1) is fired as each new assistant turn
+   * completes, with a fresh accumulated per-model usage snapshot — wired to
+   * cronRunReporter.recordProgress (debounced) inside dispatch() so token
+   * totals survive an agent-process kill mid-run, not just a clean
+   * completion.
+   */
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   /** Reports each dispatch's run to the admin API (fire-and-forget). */
   cronRunReporter: CronRunReporter;
   /**
@@ -187,6 +202,17 @@ const SPIN_DETECTION_THRESHOLD = 3;
  * are suppressed.
  */
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
+
+/**
+ * Debounce window for onProgress → cronRunReporter.recordProgress pushes
+ * within a single dispatch. A chatty run can fire onProgress on every
+ * assistant turn; without this, each turn would PATCH the admin API,
+ * hammering it on long multi-turn runs. A push that fires less than this
+ * many ms after the last one that actually went through is skipped — the
+ * next progress snapshot (or the final completeRun) carries the up-to-date
+ * totals instead.
+ */
+const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
 
 /**
  * A PR item should be excluded from this tick's candidate pool when it was
@@ -316,9 +342,41 @@ export function createLoopOrchestrator(
       itemId,
     );
 
+    // Progress push (CSU-3.1): fired as each new assistant turn completes so
+    // token totals survive an agent-process OOM/deploy-kill mid-run, not just
+    // a clean completion. Debounced against PROGRESS_PUSH_DEBOUNCE_MS (via the
+    // injected clock, not Date.now(), to stay deterministic under
+    // FixedClock) to avoid hammering the admin API on a chatty multi-turn
+    // run. recordProgress is fire-and-forget per its own doc comment — a
+    // rejection must not crash dispatch(), so it's awaited with the
+    // rejection caught and swallowed (a transient admin-API blip here isn't
+    // worth losing the dispatch over).
+    let lastProgressPushAt: number | undefined;
+    const onProgress: ProgressCallback = (modelUsage) => {
+      const { modelBreakdown } = buildTokenPayload(undefined, modelUsage);
+      if (!modelBreakdown || modelBreakdown.length === 0) return;
+
+      const nowMs = clock.now().getTime();
+      if (
+        lastProgressPushAt !== undefined &&
+        nowMs - lastProgressPushAt < PROGRESS_PUSH_DEBOUNCE_MS
+      ) {
+        return;
+      }
+      lastProgressPushAt = nowMs;
+
+      cronRunReporter
+        .recordProgress(loopCronId, runId, modelBreakdown)
+        .catch((err) => {
+          console.warn(
+            `[loop-orchestrator] recordProgress failed for run ${runId}: ${String(err)} — swallowing`,
+          );
+        });
+    };
+
     let runResult: ClaudeRunResult;
     try {
-      runResult = await runner(message);
+      runResult = await runner(message, onProgress);
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -333,12 +391,28 @@ export function createLoopOrchestrator(
         );
       }
     } catch (err) {
+      // Partial-usage-on-failure (CSU-3.1): a ClaudeTimeoutError carries
+      // whatever per-model usage was accumulated before the process was
+      // killed — attach it as modelBreakdown so a timed-out run's tokens
+      // aren't dropped entirely (the direct fix for "unknown model" on
+      // timed-out shipwright-loop runs). Scoped narrowly to
+      // ClaudeTimeoutError's `partialModelUsage` field, not ClaudeRunError's
+      // differently-named `modelUsage` field — any other error (including
+      // ClaudeRunError) falls back to { error } only, unchanged.
+      const tokenPayload =
+        err instanceof ClaudeTimeoutError
+          ? buildTokenPayload(undefined, err.partialModelUsage)
+          : undefined;
+
       await cronRunReporter.completeRun(
         loopCronId,
         runId,
         clock.now(),
         "failed",
-        { error: err instanceof Error ? err.message : String(err) },
+        {
+          error: err instanceof Error ? err.message : String(err),
+          ...tokenPayload,
+        },
         phaseId ?? undefined,
         itemType,
         itemId,
@@ -581,7 +655,10 @@ export function createLoopOrchestrator(
 // ─── Getter factory ────────────────────────────────────────────────────────────
 
 export interface LoopOrchestratorGetterDeps {
-  runner: (message: string) => Promise<ClaudeRunResult>;
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
   createOrchestrator?: typeof createProductionLoopOrchestrator;
@@ -638,7 +715,10 @@ export function createLoopOrchestratorGetter(
 // ─── Production wiring ────────────────────────────────────────────────────────
 
 export interface LoopOrchestratorProductionOptions {
-  runner: (message: string) => Promise<ClaudeRunResult>;
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
   loopCronId?: string;
