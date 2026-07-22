@@ -20,7 +20,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { DEFAULT_AGENT_TOOLS } from "@shipwright/lib/agent-default-tools";
+import { DEFAULT_ADMIN_AGENT_TOOLS } from "@shipwright/lib/agent-default-tools";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/index.js";
@@ -963,7 +963,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     // workload — skip provisioning, but still seed tools and still roll back
     // on a seeding failure.
     try {
-      for (const pattern of DEFAULT_AGENT_TOOLS) {
+      for (const pattern of DEFAULT_ADMIN_AGENT_TOOLS) {
         await agentToolService.add(agent.id, pattern);
       }
 
