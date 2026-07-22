@@ -1211,7 +1211,7 @@ describe("createLoopOrchestrator", () => {
     ]);
   });
 
-  test("a runner throw during dispatch reports a failed run, rethrows, and still releases the busy flag", async () => {
+  test("a runner throw during dispatch reports a failed run, is isolated per-item, and still releases the busy flag", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
@@ -1223,15 +1223,23 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
+      // Claim succeeding removes the item from candidacy (matches real
+      // claimTask semantics) — without this, the drain loop would keep
+      // re-selecting the same always-failing item forever.
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "claude run failed for [Cron job: shipwright-loop] Current time:",
-    );
+    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
+    // tick resolves normally (the drain loop continues/completes) instead of
+    // the throw propagating out of the whole tick.
+    await loop([job("shipwright-dev-task", true)]);
 
     // The run was created and then completed with outcome "failed" — never
-    // silently dropped — and the error propagated instead of being swallowed.
+    // silently dropped.
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
     expect(completes).toEqual([
       {
@@ -1251,7 +1259,7 @@ describe("createLoopOrchestrator", () => {
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
   });
 
-  test("a streamIncomplete:true result during dispatch reports a failed run, rethrows (CSU-1.1 regression)", async () => {
+  test("a streamIncomplete:true result during dispatch reports a failed run and is isolated per-item (CSU-1.1 regression)", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();
     const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
@@ -1264,12 +1272,20 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
+      // Claim succeeding removes the item from candidacy (matches real
+      // claimTask semantics) — without this, the drain loop would keep
+      // re-selecting the same always-failing item forever.
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "stream ended without a terminal result event",
-    );
+    // CBD-2.3: dispatch()'s throw (streamIncomplete surfaces as a thrown
+    // error inside dispatch()) is now caught and isolated per-item — the
+    // tick resolves normally instead of the throw propagating out of it.
+    await loop([job("shipwright-dev-task", true)]);
 
     // A clean-exit-but-truncated stream must NOT be recorded as a completed
     // dispatch — it should surface as a failed run, same as a thrown error.
@@ -1287,28 +1303,42 @@ describe("createLoopOrchestrator", () => {
     expect(skips).toEqual([]);
   });
 
-  test("releases the busy flag even when an iteration throws", async () => {
+  test("releases the busy flag even when a dispatch throws", async () => {
+    // CBD-2.3: a thrown dispatch is caught and isolated per-item — the tick
+    // that hits it resolves normally rather than rejecting. This test's
+    // purpose is narrowed to confirm the busy flag still comes back false
+    // afterward (it always did, via the finally block), now via the
+    // isolate-and-continue path rather than a propagated rejection.
+    //
+    // `consumed` models "no longer qualifies" — claimTask adds the id on a
+    // successful claim, since in production a claimed task stops appearing
+    // in the next getDevTaskCandidates() ready-query even though the
+    // subsequent dispatch() call went on to throw.
+    const consumed = new Set<string>();
     let firstCall = true;
     const deps = makeDeps({
-      getDevTaskCandidates: async () => {
+      devTaskCandidates: [task("SWC-1.1", "2026-01-01T00:00:00Z")],
+      consumed,
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
+      runner: async () => {
         if (firstCall) {
           firstCall = false;
           throw new Error("boom");
         }
-        return [];
+        return { result: "done" };
       },
     });
     const loop = createLoopOrchestrator(deps);
 
-    // First tick throws mid-drain.
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "boom",
-    );
-
-    // A subsequent tick must NOT be blocked by a stuck busy flag: it runs
-    // and reaches the (now non-throwing) qualification path.
+    // First tick hits the throwing dispatch mid-drain but resolves normally.
     await loop([job("shipwright-dev-task", true)]);
     expect(firstCall).toBe(false);
+
+    // A subsequent tick must NOT be blocked by a stuck busy flag.
+    await loop([job("shipwright-dev-task", true)]);
   });
 
   test("empty jobs array dispatches nothing and reports nothing", async () => {
@@ -2048,6 +2078,86 @@ describe("createLoopOrchestrator", () => {
     expect(getCandidatesCalls).toBe(2);
   });
 
+  test("a thrown dispatch (e.g. runner timeout) is caught per-item, skips only the offending item, and the drain still dispatches a younger candidate of a different type/phase in the same tick (CBD-2.3)", async () => {
+    // SWC-BOOM (older dev-task) claims successfully but its runner() call
+    // always throws — unlike a pre-claim throw (CBD-2.1, isolated at the
+    // claimTask/claimPr call sites), this proves the drain loop's dispatch()
+    // call site itself isolates a thrown error per-item, not just the
+    // pre-claim call sites. acme/x#7 (younger PR review candidate — a
+    // different item type AND phase) must still dispatch in the same tick.
+    const consumed = new Set<string>();
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-BOOM", "2026-01-01T00:00:00Z")];
+    const reviewCandidates = [pr("acme/x#7", "2026-01-02T00:00:00Z", "review")];
+    const { runner: drainingRunner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates, review: reviewCandidates },
+      consumed,
+    );
+    // SWC-BOOM's claim succeeds (consumed on claim, matching real claim
+    // semantics — see the drain-loop-continues-past-a-409 test above), but
+    // dispatching it always throws from the runner. acme/x#7 dispatches
+    // normally via the draining runner.
+    const runner = async (
+      message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      if (message.includes("/shipwright:dev-task SWC-BOOM")) {
+        throw new Error("claude run timed out for SWC-BOOM");
+      }
+      return drainingRunner(message, onProgress);
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+      reporter,
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const warnings = await withCapturedWarnings(async () => {
+      await loop(ALL_PHASES_ON);
+    });
+
+    // The whole tick did NOT abort — the PR candidate still dispatched
+    // (with its pre-claim marker, per the default claimPr stub).
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#7 [preclaim:acme/x#7:acme/x#7-sha]",
+    ]);
+
+    // The failed dev-task dispatch still reported a failed run (dispatch()'s
+    // own reporting is unchanged by the fix) — it just didn't abort the tick.
+    expect(creates.map((c) => c.itemId)).toEqual(["SWC-BOOM", "acme/x#7"]);
+    expect(completes).toEqual([
+      {
+        cronId: "shipwright-loop",
+        runId: "run-1",
+        outcome: "failed",
+        phaseId: "shipwright-dev-task",
+        itemType: "task",
+        itemId: "SWC-BOOM",
+      },
+      {
+        cronId: "shipwright-loop",
+        runId: "run-2",
+        outcome: "completed",
+        phaseId: "shipwright-review",
+        itemType: "pr",
+        itemId: "acme/x#7",
+      },
+    ]);
+    expect(skips).toEqual([]);
+
+    // The failure is logged, observable, and identifies the offending item.
+    expect(
+      warnings.some((w) => w.includes("SWC-BOOM")),
+    ).toBe(true);
+  });
+
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
 
   for (const phase of ["review", "patch", "deploy"] as const) {
@@ -2408,23 +2518,34 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("a runner throw carrying err.partialModelUsage (ClaudeTimeoutError) attaches modelBreakdown to the failed completeRun call", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P5", "2026-01-01T00:00:00Z")];
     const { reporter, completes } = makeRecordingReporter();
     const runner = async (): Promise<ClaudeRunResult> => {
       throw new ClaudeTimeoutError(600_000, "ceiling", usage(42));
     };
-    const deps = makeDeps({ devTaskCandidates, runner, reporter });
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
+    });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      ClaudeTimeoutError,
-    );
+    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
+    // tick resolves normally instead of the throw propagating out of it.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(completes).toHaveLength(1);
     expect(completes[0]?.outcome).toBe("failed");
   });
 
-  test("a runner throw without partialModelUsage (plain Error) falls back to { error } only — unchanged from current behavior", async () => {
+  test("a runner throw without partialModelUsage (plain Error) falls back to { error } only", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P6", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
     const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
@@ -2463,12 +2584,17 @@ describe("createLoopOrchestrator", () => {
       devTaskCandidates,
       runner,
       reporter: trackedReporter,
+      consumed,
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "plain failure, no partial usage",
-    );
+    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
+    // tick resolves normally instead of the throw propagating out of it.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(opts).toHaveLength(1);
     expect(opts[0]?.error).toBe("plain failure, no partial usage");
@@ -2476,6 +2602,7 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("a runner throw with a ClaudeRunError (modelUsage, not partialModelUsage) falls back to { error } only", async () => {
+    const consumed = new Set<string>();
     const devTaskCandidates = [task("SWC-P7", "2026-01-01T00:00:00Z")];
     const { reporter } = makeRecordingReporter();
     const opts: Array<{ error?: string; modelBreakdown?: unknown }> = [];
@@ -2520,12 +2647,17 @@ describe("createLoopOrchestrator", () => {
       devTaskCandidates,
       runner,
       reporter: trackedReporter,
+      consumed,
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
     });
     const loop = createLoopOrchestrator(deps);
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "claude run failed",
-    );
+    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
+    // tick resolves normally instead of the throw propagating out of it.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(opts).toHaveLength(1);
     expect(opts[0]?.error).toBe("claude run failed");
