@@ -440,21 +440,27 @@ advisory — CI can run and still not gate `main`.
   the path filter still reports a passing/neutral state to the merge gate, which is the
   intended fail-open behavior documented in `ci.yml`'s own comments).
 - **Require branches up to date before merging:** **no.**
-- **Require conversation resolution before merging:** **no.**
+- **Require conversation resolution before merging:** **yes.**
 - **Required approving reviews:** **0.**
 - **Enforce on admins:** **no.**
 
 `shipwright-deploy` is enabled for this repo (Stage 3, fully autonomous — see
 `configuring-autonomy` docs), so most PRs are agent-authored and agent-reviewed, and
 `deploy.md` Step 4b merges every PR with `gh pr merge --admin` by design, not as an
-emergency exception. `--admin` bypasses branch protection wholesale, so all four of the
-settings above are moot for the actual merge path: up-to-date and conversation-resolution
-would only add friction (forced rebases, stuck reviews) with no real enforcement behind
-them, GitHub blocks self-APPROVE via the API so a required-review count can never be
-satisfied by the pipeline itself, and `enforce_admins: true` would either block every
-automated merge or require the merging account to be a permanent `bypass_actor` — enforcement
-in name only. This matches the live settings on `main` today. See `repo-config/SKILL.md`'s
-Branch protection section for the general (Stage 1/2 vs. Stage 3) guidance this follows.
+emergency exception. `--admin` bypasses branch protection wholesale, so up-to-date,
+required-reviews, and enforce-admins are all moot for the actual merge path: GitHub blocks
+self-APPROVE via the API so a required-review count can never be satisfied by the pipeline
+itself, `enforce_admins: true` would either block every automated merge or require the
+merging account to be a permanent `bypass_actor` (enforcement in name only), and "up to
+date" specifically burns real CI minutes — every merge into main invalidates the "up to
+date" status of every other open PR, forcing a rebase and CI re-run on each one just to
+become mergeable again, with agent PRs landing in parallel that adds up fast. Conversation
+resolution is different: it's a zero-cost metadata check (no CI job to re-run), and it
+doesn't block the `--admin` merge path either, so there's no reason tied to Stage 3 to turn
+it off — enable it as a free safety net for any manual merge path. The required-review/
+enforce-admins/up-to-date values above match the live settings on `main` today; see
+`repo-config/SKILL.md`'s Branch protection section for the general (Stage 1/2 vs. Stage 3)
+guidance this follows.
 - **Canary status check:** not applicable / not included — see Canary execution
   contract section; there is no canary job to include or exclude.
 
