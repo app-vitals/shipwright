@@ -601,17 +601,15 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
     expect(skipReasonIdx).toBeGreaterThan(-1);
   });
 
-  it("orders [skip-reason:...] before [silent] — [silent] only takes effect at the very end of the response", () => {
-    // markers.ts's SILENT_REGEX requires [silent] to be the trailing content
-    // of the response (`\s*$`), so [skip-reason:...] must be emitted first;
-    // reversing the order would silently break the [silent] detection.
+  it("does not require a specific ordering between [skip-reason:...] and [silent] — markers.ts parses both regardless of position", () => {
+    // parseMarkers() strips [skip-reason:...] before checking [silent]'s
+    // end-anchor, so the two markers can appear in either order in the raw
+    // text without breaking [silent] detection (see markers.unit.test.ts's
+    // order-independence cases).
     const step2bSection = extractStep2bSection(content);
-    const skipReasonIdx = step2bSection.indexOf(
-      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+    expect(step2bSection).not.toContain(
+      "must come first",
     );
-    const silentIdx = step2bSection.indexOf("[silent]");
-    expect(skipReasonIdx).toBeGreaterThan(-1);
-    expect(silentIdx).toBeGreaterThan(-1);
-    expect(skipReasonIdx).toBeLessThan(silentIdx);
+    expect(step2bSection).toContain("does not matter");
   });
 });
