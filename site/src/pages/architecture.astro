@@ -45,36 +45,42 @@ const components = [
     typeClass: "coord",
     name: "task-store",
     desc: "The coordination layer between task sources and executing agents. Owns task state, prevents duplicate work, tracks which agent owns what. Receives from planning and maintenance crons; feeds the core loop.",
+    link: "/docs/task-store-api",
   },
   {
     type: "Core Loop",
     typeClass: "core",
     name: "dev-task",
     desc: "Picks up the next ready task from the task store. Explores the codebase, implements, opens a PR. Runs on a per-agent cron. The workhorse.",
+    link: "/docs/commands-reference",
   },
   {
     type: "Core Loop",
     typeClass: "core",
     name: "review",
     desc: "Reviews open PRs from any agent. Stages findings or posts inline comments. Enforces policy: blocking vs. advisory thresholds, auto-approve criteria. Agent-to-agent review — human override always available.",
+    link: "/docs/commands-reference",
   },
   {
     type: "Core Loop",
     typeClass: "core",
     name: "patch",
     desc: "Addresses unresolved review findings on open PRs. Fixes blocking issues, pushes to the branch, and triggers re-review. The PR loops through review and patch until all findings are resolved.",
+    link: "/docs/commands-reference",
   },
   {
     type: "Core Loop",
     typeClass: "core",
     name: "deploy",
     desc: "Merges PRs that are approved and CI-green. Human override always available.",
+    link: "/docs/commands-reference",
   },
   {
     type: "Feedback Layer",
     typeClass: "memory",
     name: "memory",
     desc: "Captures corrections and cross-session patterns from the core loop. Routes improvements to CLAUDE.md and skills so the agent gets smarter with every cycle. Powered by learning loop (inline capture) and dreaming (async transcript mining).",
+    link: "/docs/agent-skills",
   },
 ];
 ---
@@ -109,7 +115,7 @@ const components = [
       <div class="input-box input-maint">
         <div class="input-tag tag-maint">Maintenance Crons</div>
         <div class="input-title">Background hygiene</div>
-        <p class="input-sub">Per-repo, scheduled. Each cron feeds tasks to the task store.</p>
+        <p class="input-sub">Per-repo, scheduled. Each cron feeds tasks to the task store. <a href="/docs/cron-jobs">Cron mechanics →</a> · <a href="/docs/agent-skills">Skills catalog →</a></p>
         <div class="maint-chips">
           <div class="chip">
             <div class="chip-name">Entropy Patrol</div>
@@ -161,7 +167,7 @@ const components = [
 
     <!-- Core Loop -->
     <div class="core-loop-box">
-      <div class="core-tag">Core Loop — per-agent, cron-driven</div>
+      <div class="core-tag">Core Loop — per-agent, cron-driven <a href="/docs/the-shipwright-loop">Learn more →</a></div>
       <div class="pipeline">
 
         <div class="pipe-step">
@@ -224,7 +230,7 @@ const components = [
             <div class={`comp-tag comp-tag-${c.typeClass}`}>{c.type}</div>
             <div class="comp-name">{c.name}</div>
           </div>
-          <p class="comp-desc">{c.desc}</p>
+          <p class="comp-desc">{c.desc} {c.link && <a href={c.link}>Learn more →</a>}</p>
         </div>
       ))}
     </div>
