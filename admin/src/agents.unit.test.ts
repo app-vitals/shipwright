@@ -429,7 +429,7 @@ describe("AgentService.searchByName", () => {
   it("returns agents whose name contains the query, case-insensitive", async () => {
     const prisma = makeFakePrisma([
       seedRow({ id: "a1", name: "Shipwright Bot" }),
-      seedRow({ id: "a2", name: "vitals-os agent" }),
+      seedRow({ id: "a2", name: "Other Product Agent" }),
       seedRow({ id: "a3", name: "Other" }),
     ]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never);
