@@ -8,10 +8,10 @@
 // competitor-naming policy this page operates under. OpenCode is
 // deliberately not named (unverified — never-print list).
 import BaseLayout from "../layouts/BaseLayout.astro";
-import { BOOKING_URL } from "../consts";
+import ComparisonTable from "../components/ComparisonTable.astro";
+import TryItCta from "../components/TryItCta.astro";
+import { escapeHtml } from "../lib/html-escape";
 
-const repoUrl = "https://github.com/app-vitals/shipwright";
-const installCmd = "/plugin install shipwright@app-vitals/shipwright";
 const verifiedDate = "July 14, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
@@ -70,6 +70,44 @@ const architectureRows = [
     self: false,
   },
 ];
+
+// ComparisonTable props for the architecture table. Header/cell style
+// strings are reproduced exactly from the original hand-copied <table>
+// markup.
+const architectureColumns = [
+  {
+    label: "Tool",
+    style: "text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+  {
+    label: "License",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+  {
+    label: "Architecture",
+    style: "text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;",
+  },
+];
+
+const architectureTableRows = architectureRows.map((row) => ({
+  highlight: row.self,
+  cells: [
+    {
+      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top;",
+      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
+    },
+    {
+      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: ` ${escapeHtml(row.license)} `,
+    },
+    {
+      style: "padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+      html: row.citation
+        ? ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
+        : ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  `,
+    },
+  ],
+}));
 ---
 
 <BaseLayout
@@ -107,53 +145,7 @@ const architectureRows = [
       stays in the vendor's cloud) or gates full self-hosting behind an
       Enterprise sales conversation.
     </p>
-    <div class="mt-6 overflow-x-auto">
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr style="border-bottom: 1px solid var(--sw-color-border-muted);">
-            <th style="text-align:left; padding:0.6rem 1rem 0.6rem 0; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
-              Tool
-            </th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
-              License
-            </th>
-            <th style="text-align:left; padding:0.6rem 1rem; font-family:var(--sw-font-mono); font-size:0.8125rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--sw-color-text-muted); white-space:nowrap;">
-              Architecture
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {
-            architectureRows.map((row) => (
-              <tr style={`border-bottom: 1px solid var(--sw-color-border-subtle);${row.self ? " background: var(--sw-color-brand-soft);" : ""}`}>
-                <td style="padding:0.9rem 1rem 0.9rem 0; vertical-align:top;">
-                  <span
-                    style={`font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};`}
-                  >
-                    {row.tool}
-                  </span>
-                </td>
-                <td style="padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
-                  {row.license}
-                </td>
-                <td style="padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);">
-                  <strong>{row.architecture}</strong>
-                  <span> {row.detail}</span>
-                  {row.citation && (
-                    <>
-                      {" "}
-                      <a href={row.citation} class="text-sm">
-                        [source]
-                      </a>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))
-          }
-        </tbody>
-      </table>
-    </div>
+    <ComparisonTable columns={architectureColumns} rows={architectureTableRows} />
     <p class="mt-6 max-w-2xl sw-editorial">
       "Self-hosted" is table-stakes marketing language across the field now —
       the architecture underneath it is what actually differs. Full head to
@@ -172,19 +164,9 @@ const architectureRows = [
   </section>
 
   <!-- CTA -->
-  <section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
-    <h2>Try it</h2>
-    <p class="mt-3 max-w-2xl">
-      Install the plugin into Claude Code and run a task end to end. Free,
-      MIT, runs on your own infra.
-    </p>
-    <pre class="sw-code mt-4 w-fit"><code>{installCmd}</code></pre>
-    <div class="mt-6 flex flex-wrap items-center gap-4">
-      <a href={repoUrl} class="sw-btn">View on GitHub ↗</a>
-      <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
-    </div>
+  <TryItCta>
     <p class="mt-8 max-w-2xl">
       <a href="/compare">See how Shipwright compares to the rest of the field →</a>
     </p>
-  </section>
+  </TryItCta>
 </BaseLayout>

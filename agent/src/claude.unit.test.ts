@@ -868,6 +868,17 @@ describe("extraAllowedTools", () => {
   // biome-ignore lint/suspicious/noExplicitAny: mock return type
   let mockSpawn: any;
 
+  // Extracts the tool names listed after --allowedTools, up to the next flag
+  function extractAllowedTools(cmd: string[]): string[] {
+    const allowedIdx = cmd.indexOf("--allowedTools");
+    const tools: string[] = [];
+    for (let i = allowedIdx + 1; i < cmd.length; i++) {
+      if (cmd[i].startsWith("-")) break;
+      tools.push(cmd[i]);
+    }
+    return tools;
+  }
+
   beforeEach(() => {
     mockGetSession.mockClear();
     mockSetSession.mockClear();
@@ -923,15 +934,8 @@ describe("extraAllowedTools", () => {
     await runClaude("test");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
 
-    const allowedIdx = cmd.indexOf("--allowedTools");
-    expect(allowedIdx).toBeGreaterThan(-1);
-
-    // Find all args after --allowedTools until the next flag or end
-    const toolsInCmd: string[] = [];
-    for (let i = allowedIdx + 1; i < cmd.length; i++) {
-      if (cmd[i].startsWith("-")) break;
-      toolsInCmd.push(cmd[i]);
-    }
+    expect(cmd.indexOf("--allowedTools")).toBeGreaterThan(-1);
+    const toolsInCmd = extractAllowedTools(cmd);
 
     expect(toolsInCmd).toContain("mcp__my_server__my_tool");
     expect(toolsInCmd).toContain("mcp__other__tool");
@@ -956,6 +960,90 @@ describe("extraAllowedTools", () => {
 
     expect(extraIdx).toBeGreaterThan(allowedIdx);
     expect(extraIdx).toBeGreaterThan(agentIdx);
+  });
+
+  test("dedup: allowedTools includes a built-in tool (Bash), final args contains it exactly once", async () => {
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      ["Bash", "mcp__extra__tool"], // Bash is already in the hardcoded 11
+    );
+
+    await runClaude("test");
+    const [cmd] = mockSpawn.mock.calls[0] as [string[]];
+
+    const toolsInCmd = extractAllowedTools(cmd);
+
+    // Count occurrences of Bash
+    const bashCount = toolsInCmd.filter((tool) => tool === "Bash").length;
+    expect(bashCount).toBe(1);
+    expect(toolsInCmd).toContain("mcp__extra__tool");
+  });
+
+  test("dedup: empty allowedTools still contains exactly 11 hardcoded tools with no duplicates", async () => {
+    const runClaudeEmpty = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      [], // empty extraAllowedTools
+    );
+
+    await runClaudeEmpty("test");
+    const [cmd] = mockSpawn.mock.calls[0] as [string[]];
+
+    const toolsInCmd = extractAllowedTools(cmd);
+
+    // Verify exactly 11 hardcoded tools
+    const hardcodedTools = [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "WebSearch",
+      "WebFetch",
+      "Skill",
+      "Agent",
+      "TodoWrite",
+    ];
+    expect(toolsInCmd).toEqual(hardcodedTools);
+
+    // Verify no duplicates: unique count equals total count
+    const uniqueTools = new Set(toolsInCmd);
+    expect(uniqueTools.size).toBe(toolsInCmd.length);
+  });
+
+  test("dedup: multiple overlapping tools, only unique entries in final args", async () => {
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      ["Bash", "Write", "mcp__tool1", "Read", "mcp__tool2"], // Bash, Write, and Read are built-in
+    );
+
+    await runClaude("test");
+    const [cmd] = mockSpawn.mock.calls[0] as [string[]];
+
+    const toolsInCmd = extractAllowedTools(cmd);
+
+    // Verify no duplicates
+    const uniqueTools = new Set(toolsInCmd);
+    expect(uniqueTools.size).toBe(toolsInCmd.length);
+
+    // Verify all expected tools are present
+    expect(toolsInCmd).toContain("Bash");
+    expect(toolsInCmd).toContain("Write");
+    expect(toolsInCmd).toContain("Read");
+    expect(toolsInCmd).toContain("mcp__tool1");
+    expect(toolsInCmd).toContain("mcp__tool2");
   });
 });
 

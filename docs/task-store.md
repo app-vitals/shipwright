@@ -99,7 +99,12 @@ Returns `404` if the task doesn't exist or is outside the agent's scope.
 PATCH /tasks/:id
 ```
 
-Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). Returns the updated task.
+Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). **Agent tokens cannot set the following fields via PATCH** — these are managed exclusively by their lifecycle endpoints:
+
+- `claimedBy`, `claimedAt`, `heartbeatAt` — use `/claim` or `/release`
+- `status: 'pending'` — use `/release` to unclaim, or `/claim` to reclaim
+
+Admin tokens (`agentId === null`) may set any field. Returns the updated task.
 
 #### Delete task
 

@@ -220,14 +220,7 @@ export function createRunClaude(
     const resolvedExtraAllowedTools =
       extraAllowedTools ?? liveClaudeConfig.allowedTools;
 
-    const args = [
-      "-p",
-      "--output-format",
-      "stream-json",
-      "--verbose",
-      "--permission-mode",
-      "acceptEdits",
-      "--allowedTools",
+    const hardcodedTools = [
       "Read",
       "Write",
       "Edit",
@@ -239,7 +232,20 @@ export function createRunClaude(
       "Skill",
       "Agent",
       "TodoWrite",
-      ...resolvedExtraAllowedTools,
+    ];
+
+    // Deduplicate tools: Set preserves insertion order, so first-occurrence wins
+    const deduplicatedTools = [...new Set([...hardcodedTools, ...resolvedExtraAllowedTools])];
+
+    const args = [
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--permission-mode",
+      "acceptEdits",
+      "--allowedTools",
+      ...deduplicatedTools,
       "--model",
       resolvedModel,
       ...(resolvedFallbackModel

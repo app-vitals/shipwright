@@ -1,0 +1,50 @@
+---
+// Shared site footer (repo · license · platform · community links) used by
+// BaseLayout and DocsLayout. Pure markup, zero runtime JS.
+// `variant="marketing"` (default) shows the full link set, including
+// "Compare" and "Docs"; `variant="docs"` omits those two (DocsLayout's
+// footer never had them pre-shared-component and AC#3 requires no other
+// content change there) while still keeping "vs Devin".
+import { BOOKING_URL, LICENSE_URL, REPO_URL } from "../consts";
+
+interface Props {
+  variant?: "marketing" | "docs";
+}
+
+const { variant = "marketing" } = Astro.props;
+
+const claudeCodeUrl = "https://claude.com/claude-code";
+const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
+const compareUrl = "/compare";
+const docsUrl = "/docs";
+const vsDevinUrl = "/vs/devin";
+const year = new Date().getFullYear();
+---
+
+<footer class="sw-container relative z-10 py-12">
+  <div
+    class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between"
+    style="border-top: 1px solid var(--sw-color-border-subtle);"
+  >
+    <p class="sw-label flex items-center gap-2">
+      <img
+        src="/shipwright-icon.svg"
+        alt=""
+        width="20"
+        height="20"
+        class="rounded"
+      />
+      Shipwright Harness · MIT-licensed · © {year}
+    </p>
+    <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
+      <a href={REPO_URL}>GitHub</a>
+      <a href={LICENSE_URL}>MIT License</a>
+      <a href={claudeCodeUrl}>Claude Code</a>
+      <a href={discussionsUrl}>GitHub Discussions</a>
+      {variant === "marketing" && <a href={compareUrl}>Compare</a>}
+      <a href={vsDevinUrl}>vs Devin</a>
+      {variant === "marketing" && <a href={docsUrl}>Docs</a>}
+      <a href={BOOKING_URL}>Book a call</a>
+    </nav>
+  </div>
+</footer>
