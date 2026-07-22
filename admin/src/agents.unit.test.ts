@@ -68,11 +68,28 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
     async findMany({
       select,
       orderBy,
+      where,
     }: {
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
       orderBy?: { name?: "asc" | "desc" };
+      where?: {
+        id?: { in: string[] };
+        name?: { contains: string; mode?: "insensitive" };
+      };
     } = {}): Promise<FakeAgentRow[]> {
       let all = Array.from(rows.values());
+      if (where?.id) {
+        const ids = new Set(where.id.in);
+        all = all.filter((r) => ids.has(r.id));
+      }
+      if (where?.name) {
+        const { contains, mode } = where.name;
+        all = all.filter((r) =>
+          mode === "insensitive"
+            ? r.name.toLowerCase().includes(contains.toLowerCase())
+            : r.name.includes(contains),
+        );
+      }
       if (orderBy?.name) {
         all = [...all].sort((a, b) =>
           orderBy.name === "desc"
@@ -99,13 +116,20 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
       select,
     }: {
       where: { id: string };
-      data: { selfHosted?: boolean; repos?: string[] };
+      data: {
+        name?: string;
+        slackId?: string | null;
+        selfHosted?: boolean;
+        repos?: string[];
+      };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
     }): Promise<FakeAgentRow> {
       const row = rows.get(where.id);
       if (!row) throw new Error("record not found");
       const updated: FakeAgentRow = {
         ...row,
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.slackId !== undefined && { slackId: data.slackId }),
         ...(data.selfHosted !== undefined && { selfHosted: data.selfHosted }),
         ...(data.repos !== undefined && { repos: data.repos }),
         updatedAt: new Date("2024-01-02"),
@@ -336,5 +360,196 @@ describe("AgentService.getById", () => {
     const service = new AgentService(prisma as never);
 
     expect(await service.getById("missing")).toBeNull();
+  });
+});
+
+// ─── listAll ────────────────────────────────────────────────────────────────
+
+describe("AgentService.listAll", () => {
+  it("returns every agent with all fields, no filtering", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "Zeta" }),
+      seedRow({ id: "a2", name: "Alpha" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.listAll();
+
+    expect(result.map((r) => r.id).sort()).toEqual(["a1", "a2"]);
+    expect(result[0]).toHaveProperty("createdAt");
+    expect(result[0]).toHaveProperty("slackId");
+  });
+
+  it("returns an empty array when there are no agents", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.listAll()).toEqual([]);
+  });
+});
+
+// ─── listByIds ──────────────────────────────────────────────────────────────
+
+describe("AgentService.listByIds", () => {
+  it("returns only the agents matching the given ids", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "One" }),
+      seedRow({ id: "a2", name: "Two" }),
+      seedRow({ id: "a3", name: "Three" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.listByIds(["a1", "a3"]);
+
+    expect(result.map((r) => r.id).sort()).toEqual(["a1", "a3"]);
+  });
+
+  it("returns an empty array when no ids match", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "One" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.listByIds(["missing"])).toEqual([]);
+  });
+
+  it("returns an empty array when given an empty id list", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "One" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.listByIds([])).toEqual([]);
+  });
+});
+
+// ─── searchByName ───────────────────────────────────────────────────────────
+
+describe("AgentService.searchByName", () => {
+  it("returns agents whose name contains the query, case-insensitive", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "Shipwright Bot" }),
+      seedRow({ id: "a2", name: "vitals-os agent" }),
+      seedRow({ id: "a3", name: "Other" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.searchByName("ship");
+
+    expect(result.map((r) => r.id)).toEqual(["a1"]);
+  });
+
+  it("returns an empty array when nothing matches", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "Shipwright Bot" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.searchByName("nomatch")).toEqual([]);
+  });
+});
+
+// ─── listOptions ────────────────────────────────────────────────────────────
+
+describe("AgentService.listOptions", () => {
+  it("returns {id, name} for all agents, ordered by name asc", async () => {
+    const prisma = makeFakePrisma([
+      seedRow({ id: "a1", name: "Zeta" }),
+      seedRow({ id: "a2", name: "Alpha" }),
+    ]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.listOptions();
+
+    expect(result).toEqual([
+      { id: "a2", name: "Alpha" },
+      { id: "a1", name: "Zeta" },
+    ]);
+  });
+
+  it("returns an empty array when there are no agents", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.listOptions()).toEqual([]);
+  });
+});
+
+// ─── updateFields ───────────────────────────────────────────────────────────
+
+describe("AgentService.updateFields", () => {
+  it("updates only the provided fields and returns the full detail record", async () => {
+    const row = seedRow({
+      id: "a1",
+      name: "Old Name",
+      slackId: "U000",
+      selfHosted: false,
+      repos: ["org/old"],
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const updated = await service.updateFields("a1", { name: "New Name" });
+
+    expect(updated.name).toBe("New Name");
+    expect(updated.slackId).toBe("U000");
+    expect(updated.selfHosted).toBe(false);
+    expect(updated.repos).toEqual(["org/old"]);
+  });
+
+  it("updates repos when provided", async () => {
+    const row = seedRow({ id: "a1", repos: [] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const updated = await service.updateFields("a1", {
+      repos: ["org/new-repo"],
+    });
+
+    expect(updated.repos).toEqual(["org/new-repo"]);
+  });
+
+  it("updates selfHosted when provided", async () => {
+    const row = seedRow({ id: "a1", selfHosted: false });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const updated = await service.updateFields("a1", { selfHosted: true });
+
+    expect(updated.selfHosted).toBe(true);
+  });
+
+  it("updates slackId to null when explicitly passed null", async () => {
+    const row = seedRow({ id: "a1", slackId: "U123" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const updated = await service.updateFields("a1", { slackId: null });
+
+    expect(updated.slackId).toBeNull();
+  });
+
+  it("leaves fields untouched when not provided", async () => {
+    const row = seedRow({
+      id: "a1",
+      name: "Untouched",
+      slackId: "U999",
+      selfHosted: true,
+      repos: ["org/keep"],
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const updated = await service.updateFields("a1", {});
+
+    expect(updated).toEqual({
+      id: "a1",
+      name: "Untouched",
+      slackId: "U999",
+      selfHosted: true,
+      repos: ["org/keep"],
+      createdAt: row.createdAt,
+      updatedAt: new Date("2024-01-02"),
+    });
   });
 });

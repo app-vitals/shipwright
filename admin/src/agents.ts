@@ -57,6 +57,18 @@ export interface AgentIdAndRepos {
   repos: string[];
 }
 
+export interface AgentOption {
+  id: string;
+  name: string;
+}
+
+export interface UpdateAgentFieldsInput {
+  name?: string;
+  repos?: string[];
+  selfHosted?: boolean;
+  slackId?: string | null;
+}
+
 // ─── Select shapes ────────────────────────────────────────────────────────────
 
 const SUMMARY_SELECT = { id: true, name: true, selfHosted: true } as const;
@@ -164,6 +176,70 @@ export class AgentService {
     return this.prisma.agent.findUnique({
       where: { id },
       select: { id: true, repos: true },
+    });
+  }
+
+  /**
+   * List every agent, full record, no filtering — used by dashboard-style
+   * pages (e.g. /admin/agents isAdmin branch, /admin/provision, /admin/tasks,
+   * /admin/prs, /admin/chat) that want every field back in whatever default
+   * order Prisma returns.
+   */
+  async listAll(): Promise<AgentRecord[]> {
+    return this.prisma.agent.findMany();
+  }
+
+  /**
+   * List agents matching a given set of ids — used for batch-resolving
+   * agent ids to full records (e.g. the non-admin /admin/agents filter path
+   * and agentNames-resolution on the tasks/PRs pages).
+   */
+  async listByIds(ids: string[]): Promise<AgentRecord[]> {
+    return this.prisma.agent.findMany({ where: { id: { in: ids } } });
+  }
+
+  /**
+   * Search agents by name, case-insensitive substring match — used by the
+   * /admin/tasks agent-name filter.
+   */
+  async searchByName(query: string): Promise<AgentRecord[]> {
+    return this.prisma.agent.findMany({
+      where: { name: { contains: query, mode: "insensitive" } },
+    });
+  }
+
+  /**
+   * List {id, name} for all agents, ordered by name asc. Backs both the
+   * full-record-mapped-to-{id,name} call sites (chat page, provision pages)
+   * and the name-only autocomplete call site (tasks page).
+   */
+  async listOptions(): Promise<AgentOption[]> {
+    return this.prisma.agent.findMany({
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+  }
+
+  /**
+   * Generic partial-field update for an agent's name/repos/selfHosted/slackId.
+   * Only fields present in the input are touched. Returns the full updated
+   * detail record.
+   */
+  async updateFields(
+    id: string,
+    input: UpdateAgentFieldsInput,
+  ): Promise<AgentDetail> {
+    return this.prisma.agent.update({
+      where: { id },
+      data: {
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.repos !== undefined && { repos: input.repos }),
+        ...(input.selfHosted !== undefined && {
+          selfHosted: input.selfHosted,
+        }),
+        ...(input.slackId !== undefined && { slackId: input.slackId }),
+      },
+      select: DETAIL_SELECT,
     });
   }
 }
