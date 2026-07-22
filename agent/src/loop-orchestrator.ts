@@ -218,6 +218,30 @@ const PHASE_COMMANDS: Record<LoopPhase, string> = {
 const SPIN_DETECTION_THRESHOLD = 3;
 
 /**
+ * SKT-2.2 — empty-queue backoff defaults. When the queue has been genuinely
+ * empty for this many consecutive ticks (SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS),
+ * runLoopTick skips all candidate collection (no GitHub calls, no task-store
+ * queries) for this many ms (SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS) before trying
+ * again — see the env-var read helpers below.
+ */
+const DEFAULT_EMPTY_BACKOFF_MS = 300_000;
+const DEFAULT_EMPTY_BACKOFF_ATTEMPTS = 3;
+
+/**
+ * Parses a positive-integer env var, falling back to `fallback` when unset or
+ * not a valid positive integer. Read fresh on every call (never cached) so an
+ * operator's env change takes effect on the very next tick without a restart
+ * — see check-dev-task.ts's buildProductionDeps for the same
+ * read-process.env-inside-a-function pattern.
+ */
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
  * Cooldown window (CBD-2.2) for re-dispatching a PR whose preclaimed
  * commitSha hasn't changed since its last dispatch. Set below the documented
  * ~30min dev-task/loop cadence so a genuinely new cron tick still gets
@@ -315,6 +339,15 @@ export function createLoopOrchestrator(
   // repeat count to warn when the same item is dispatched repeatedly.
   let lastDispatchedItemId: string | null = null;
   let consecutiveDispatchCount = 0;
+
+  // SKT-2.2 empty-queue backoff state: tracks how many consecutive ticks in a
+  // row had zero candidates on their first drain iteration ("empty ticks" —
+  // see runLoopTick's doc comment on the distinction between an empty tick
+  // and a tick that dispatches then later drains dry). Same in-memory-only,
+  // resets-on-restart pattern as the spin-detection variables above — no
+  // persistence needed since a process restart naturally clears any backoff.
+  let consecutiveEmptyTicks = 0;
+  let backoffUntil: Date | null = null;
 
   // Redispatch-cooldown state (CBD-2.2): tracks the commitSha and timestamp
   // of each PR item's most recent dispatch, persisted across ticks — see
@@ -521,6 +554,36 @@ export function createLoopOrchestrator(
     if (busy) return;
     busy = true;
 
+    // SKT-2.2 empty-queue backoff: if a prior tick's run of consecutive empty
+    // ticks reached the configured threshold, skip this tick entirely — no
+    // candidate collection (no GitHub calls, no task-store queries) — until
+    // the backoff window elapses. Checked before anything else so a tick
+    // inside the window is as cheap as possible.
+    if (backoffUntil !== null && clock.now() < backoffUntil) {
+      busy = false;
+      return;
+    }
+
+    // Read fresh every tick (never cached) so an operator's env change takes
+    // effect on the very next tick without an agent restart — same pattern as
+    // resolveLoopPhaseToggles's per-tick reads above.
+    const emptyBackoffMs = readPositiveIntEnv(
+      "SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS",
+      DEFAULT_EMPTY_BACKOFF_MS,
+    );
+    const emptyBackoffAttempts = readPositiveIntEnv(
+      "SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS",
+      DEFAULT_EMPTY_BACKOFF_ATTEMPTS,
+    );
+    // Set once this tick dispatches at least one item (in the drain loop
+    // below) — used after the loop exits to decide whether this was an
+    // "empty tick" for backoff-counting purposes. A tick only counts as empty
+    // when its very first drain iteration finds zero candidates across every
+    // phase; a tick that dispatches at least once and later drains dry does
+    // NOT count as empty, and checking this flag after the loop is equivalent
+    // to checking only the first iteration, since any dispatch sets it true.
+    let dispatchedThisTick = false;
+
     // Per-tick guard (CBD-2.1): task ids whose pre-claim threw (e.g. a 5xx
     // from task-store) during this tick. Unlike a 409 conflict, a throw means
     // the claim never actually succeeded — the task-store record is still
@@ -718,6 +781,7 @@ export function createLoopOrchestrator(
           recordId,
           preClaimMarker,
         );
+        dispatchedThisTick = true;
 
         // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
         // tick can suppress a redundant re-dispatch at the same commit within
@@ -728,6 +792,21 @@ export function createLoopOrchestrator(
             commitSha: item.pr.commitSha,
             dispatchedAt: clock.now().getTime(),
           });
+        }
+      }
+
+      // SKT-2.2: update empty-tick bookkeeping now that the drain loop has
+      // exited. A dispatch anywhere in this tick means it wasn't empty —
+      // reset the counter and clear any active backoff immediately, so real
+      // work interrupts a backoff on the very next tick after it appears.
+      if (dispatchedThisTick) {
+        consecutiveEmptyTicks = 0;
+        backoffUntil = null;
+      } else {
+        consecutiveEmptyTicks += 1;
+        if (consecutiveEmptyTicks >= emptyBackoffAttempts) {
+          backoffUntil = new Date(clock.now().getTime() + emptyBackoffMs);
+          consecutiveEmptyTicks = 0;
         }
       }
     } finally {

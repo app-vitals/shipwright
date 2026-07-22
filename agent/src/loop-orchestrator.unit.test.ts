@@ -1434,6 +1434,149 @@ describe("createLoopOrchestrator", () => {
     expect(spinWarnings).toHaveLength(0);
   });
 
+  // ─── Empty-queue backoff tests (SKT-2.2) ────────────────────────────────────
+
+  /** A Clock whose now() can be advanced between calls, for backoff tests. */
+  function makeMutableClockForBackoff(initialIso: string): {
+    clock: import("./clock.ts").Clock;
+    advanceMs: (ms: number) => void;
+  } {
+    let current = new Date(initialIso);
+    return {
+      clock: { now: () => current },
+      advanceMs: (ms: number) => {
+        current = new Date(current.getTime() + ms);
+      },
+    };
+  }
+
+  test("after SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS consecutive empty ticks, a subsequent tick within the backoff window performs zero candidate-collection calls", async () => {
+    const originalAttempts = process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+    const originalMs = process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS;
+    process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = "3";
+    process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS = "300000";
+    try {
+      const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+      const calls: string[] = [];
+      const deps = { ...makeDeps({ calls }), clock };
+      const loop = createLoopOrchestrator(deps);
+
+      // 3 consecutive empty ticks — each collects candidates (empty pools).
+      await loop(ALL_PHASES_ON);
+      await loop(ALL_PHASES_ON);
+      await loop(ALL_PHASES_ON);
+      expect(calls.length).toBeGreaterThan(0);
+
+      // Backoff should now be active — a 4th tick within the window must
+      // perform zero candidate-collection calls.
+      calls.length = 0;
+      await loop(ALL_PHASES_ON);
+      expect(calls).toHaveLength(0);
+    } finally {
+      if (originalAttempts === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+      } else {
+        process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = originalAttempts;
+      }
+      if (originalMs === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS;
+      } else {
+        process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS = originalMs;
+      }
+    }
+  });
+
+  test("a tick that dispatches at least one item resets the empty-tick counter — a further empty tick alone does not trigger backoff", async () => {
+    const originalAttempts = process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+    process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = "3";
+    try {
+      const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+      const consumed = new Set<string>();
+      const devTaskCandidates = [task("T-RESET", "2026-01-01T00:00:00Z")];
+      const calls: string[] = [];
+      const runner = async (
+        _message: string,
+        _onProgress?: ProgressCallback,
+      ): Promise<ClaudeRunResult> => {
+        consumed.add("T-RESET");
+        return { result: "done" };
+      };
+      const deps = {
+        ...makeDeps({ calls, devTaskCandidates, consumed, runner }),
+        clock,
+      };
+      const loop = createLoopOrchestrator(deps);
+
+      // Two empty ticks (fewer than the threshold of 3).
+      await loop([job("shipwright-review", true)]);
+      await loop([job("shipwright-review", true)]);
+
+      // A tick with real work — dispatches T-RESET, resets the counter.
+      await loop([job("shipwright-dev-task", true)]);
+
+      // A further empty tick must still perform normal candidate collection
+      // (i.e. backoff must NOT have triggered) — the counter was reset, not
+      // just short of the threshold by coincidence.
+      calls.length = 0;
+      await loop([job("shipwright-review", true)]);
+      expect(calls.length).toBeGreaterThan(0);
+    } finally {
+      if (originalAttempts === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+      } else {
+        process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = originalAttempts;
+      }
+    }
+  });
+
+  test("advancing the clock past backoffDurationMs resumes normal candidate collection", async () => {
+    const originalAttempts = process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+    const originalMs = process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS;
+    process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = "2";
+    process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS = "60000"; // 1 minute
+    try {
+      const { clock, advanceMs } = makeMutableClockForBackoff(
+        "2026-01-01T00:00:00Z",
+      );
+      const calls: string[] = [];
+      const deps = { ...makeDeps({ calls }), clock };
+      const loop = createLoopOrchestrator(deps);
+
+      // 2 consecutive empty ticks trigger backoff (threshold = 2).
+      await loop(ALL_PHASES_ON);
+      await loop(ALL_PHASES_ON);
+
+      // A tick within the window performs zero candidate-collection calls.
+      calls.length = 0;
+      await loop(ALL_PHASES_ON);
+      expect(calls).toHaveLength(0);
+
+      // Advance the clock past the backoff duration.
+      advanceMs(60_001);
+
+      // A tick after the window has elapsed resumes normal collection.
+      calls.length = 0;
+      await loop(ALL_PHASES_ON);
+      expect(calls.length).toBeGreaterThan(0);
+    } finally {
+      if (originalAttempts === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS;
+      } else {
+        process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS = originalAttempts;
+      }
+      if (originalMs === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS;
+      } else {
+        process.env.SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS = originalMs;
+      }
+    }
+  });
+
   // ─── Unreconciled-agent warn tests (LPC-2.1 follow-up) ──────────────────────
 
   test("unreconciled-agent warn fires when shipwright-loop is present but no child phase rows exist", async () => {
