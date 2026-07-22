@@ -1575,6 +1575,97 @@ describe("createLoopOrchestrator", () => {
     );
   });
 
+  test("a tick where candidates exist but every claim loses to a sibling replica (409) does not count as an empty tick", async () => {
+    // Models a busy, contended queue: real candidates are collected every
+    // tick, but claimTask always 409s (returns false) — nothing ever
+    // dispatches. Without tracking candidate presence separately from
+    // dispatch success, 3 such ticks at threshold=3 would misfire the
+    // empty-queue backoff even though the queue was never actually empty.
+    await withEnvOverrides(
+      { SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3" },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const calls: string[] = [];
+
+        // getDevTaskCandidates() alternates: odd calls (the drain loop's
+        // first iteration each tick) return one contended candidate; even
+        // calls (the drain loop's second iteration, after the 409) return
+        // an empty list — modeling "claimed by a sibling replica and gone
+        // from the next ready-query", same finite-loop convention as the
+        // existing 409 test above. Each tick makes exactly 2 calls, so the
+        // parity stays aligned across tick boundaries.
+        let devTaskCalls = 0;
+        const getDevTaskCandidates = async () => {
+          calls.push("devTask");
+          devTaskCalls += 1;
+          return devTaskCalls % 2 === 1
+            ? [task("SWC-CONTENDED", "2026-01-01T00:00:00Z")]
+            : [];
+        };
+
+        const deps = {
+          ...makeDeps({
+            calls,
+            getDevTaskCandidates,
+            claimTask: async () => false,
+          }),
+          clock,
+        };
+        const loop = createLoopOrchestrator(deps);
+
+        // 3 consecutive contended ticks — each sees a real candidate (409s
+        // on claim, nothing dispatched).
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+
+        // A 4th tick must still perform normal candidate collection —
+        // backoff must NOT have armed, since none of the 3 prior ticks
+        // actually collected zero candidates.
+        calls.length = 0;
+        await loop([job("shipwright-dev-task", true)]);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
+  test("a tick where candidates exist but every claim throws (e.g. task-store 5xx) does not count as an empty tick", async () => {
+    // Same scenario as the 409 case above, but via the throw path (CBD-2.1)
+    // instead of a false return — the drain loop's per-tick
+    // failedPreClaimTaskIds filter is what keeps this finite instead of the
+    // candidate-list alternation used for the 409 variant.
+    await withEnvOverrides(
+      { SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3" },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const calls: string[] = [];
+        const devTaskCandidates = [
+          task("SWC-BOOM", "2026-01-01T00:00:00Z"),
+        ];
+
+        const deps = {
+          ...makeDeps({
+            calls,
+            devTaskCandidates,
+            claimTask: async () => {
+              throw new Error("task-store 500");
+            },
+          }),
+          clock,
+        };
+        const loop = createLoopOrchestrator(deps);
+
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+        await loop([job("shipwright-dev-task", true)]);
+
+        calls.length = 0;
+        await loop([job("shipwright-dev-task", true)]);
+        expect(calls.length).toBeGreaterThan(0);
+      },
+    );
+  });
+
   // ─── Unreconciled-agent warn tests (LPC-2.1 follow-up) ──────────────────────
 
   test("unreconciled-agent warn fires when shipwright-loop is present but no child phase rows exist", async () => {

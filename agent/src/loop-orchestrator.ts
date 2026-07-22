@@ -575,14 +575,17 @@ export function createLoopOrchestrator(
       "SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS",
       DEFAULT_EMPTY_BACKOFF_ATTEMPTS,
     );
-    // Set once this tick dispatches at least one item (in the drain loop
-    // below) — used after the loop exits to decide whether this was an
-    // "empty tick" for backoff-counting purposes. A tick only counts as empty
-    // when its very first drain iteration finds zero candidates across every
-    // phase; a tick that dispatches at least once and later drains dry does
-    // NOT count as empty, and checking this flag after the loop is equivalent
-    // to checking only the first iteration, since any dispatch sets it true.
-    let dispatchedThisTick = false;
+    // Set whenever this tick's collected candidates (tasks + PRs) are ever
+    // nonzero on any drain iteration — used after the loop exits to decide
+    // whether this was an "empty tick" for backoff-counting purposes.
+    // Deliberately tracks candidate *presence*, not dispatch success: a tick
+    // that collects real candidates but loses every claim race to a sibling
+    // replica (409 conflict or a thrown 5xx pre-claim, both a few lines
+    // below) still saw a non-empty queue and must not count as empty, even
+    // though nothing got dispatched. Matches AC #1's "consecutive ticks that
+    // collect zero candidates" — collection, not dispatch, is what backoff
+    // is measuring.
+    let candidatesSeenThisTick = false;
 
     // Per-tick guard (CBD-2.1): task ids whose pre-claim threw (e.g. a 5xx
     // from task-store) during this tick. Unlike a 409 conflict, a throw means
@@ -662,6 +665,13 @@ export function createLoopOrchestrator(
             !failedPreClaimPrIds.has(p.id) &&
             !isPrDispatchSuppressed(p, lastPrDispatch, nowMs),
         );
+
+        // SKT-2.2: record candidate presence for this tick regardless of
+        // whether anything below ends up dispatched — see the
+        // candidatesSeenThisTick doc comment above the declaration.
+        if (tasks.length > 0 || prs.length > 0) {
+          candidatesSeenThisTick = true;
+        }
 
         // Full-queue observability snapshot — fires every iteration
         // (dispatch or idle), deliberately with no noise guard. See the
@@ -781,7 +791,9 @@ export function createLoopOrchestrator(
           recordId,
           preClaimMarker,
         );
-        dispatchedThisTick = true;
+        // Not re-marking candidatesSeenThisTick here — a successful dispatch
+        // is only reachable after this iteration already found tasks/prs
+        // nonzero above, so it's already true by this point.
 
         // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
         // tick can suppress a redundant re-dispatch at the same commit within
@@ -796,10 +808,13 @@ export function createLoopOrchestrator(
       }
 
       // SKT-2.2: update empty-tick bookkeeping now that the drain loop has
-      // exited. A dispatch anywhere in this tick means it wasn't empty —
-      // reset the counter and clear any active backoff immediately, so real
-      // work interrupts a backoff on the very next tick after it appears.
-      if (dispatchedThisTick) {
+      // exited. Any candidates seen this tick — dispatched or not — mean it
+      // wasn't empty: reset the counter and clear any active backoff
+      // immediately. This covers both real work landing and a contended
+      // queue where every claim lost a race to a sibling replica (candidates
+      // were seen but nothing dispatched) — neither is "zero candidates
+      // collected", so neither should climb the empty-tick counter.
+      if (candidatesSeenThisTick) {
         consecutiveEmptyTicks = 0;
         backoffUntil = null;
       } else {
