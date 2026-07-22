@@ -83,6 +83,24 @@ export function parseMarkers(text: string): ParseMarkersResult {
   const markers: Marker[] = [];
   let cleaned = text;
 
+  // [skip-reason:text] — stripped before the [silent] end-anchor check below
+  // so [silent] is still recognized regardless of whether [skip-reason:...]
+  // appears before or after it in the raw text (DBV-1.1).
+  cleaned = cleaned.replace(SKIP_REASON_REGEX, (_match, reasonRaw: string) => {
+    const reason = reasonRaw.trim();
+    if (!reason) {
+      console.warn(
+        "[markers] malformed [skip-reason:] marker — empty reason, leaving in text:",
+        _match,
+      );
+      return _match;
+    }
+    markers.push({ type: "skip-reason", reason });
+    return "";
+  });
+  SKIP_REASON_REGEX.lastIndex = 0;
+  cleaned = cleaned.trim();
+
   // [silent]
   if (SILENT_REGEX.test(cleaned)) {
     markers.push({ type: "silent" });
@@ -154,22 +172,6 @@ export function parseMarkers(text: string): ParseMarkersResult {
     return "";
   });
   PLAN_REGEX.lastIndex = 0;
-  cleaned = cleaned.trim();
-
-  // [skip-reason:text]
-  cleaned = cleaned.replace(SKIP_REASON_REGEX, (_match, reasonRaw: string) => {
-    const reason = reasonRaw.trim();
-    if (!reason) {
-      console.warn(
-        "[markers] malformed [skip-reason:] marker — empty reason, leaving in text:",
-        _match,
-      );
-      return _match;
-    }
-    markers.push({ type: "skip-reason", reason });
-    return "";
-  });
-  SKIP_REASON_REGEX.lastIndex = 0;
   cleaned = cleaned.trim();
 
   return { cleaned, markers };

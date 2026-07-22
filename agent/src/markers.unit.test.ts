@@ -345,4 +345,30 @@ describe("[skip-reason:text] marker", () => {
       expect(firstMatch.reason).toBe("first-reason");
     }
   });
+
+  test("[silent] is still recognized when [skip-reason:...] appears AFTER it (order-independent)", () => {
+    const { markers, cleaned } = parseMarkers(
+      "Bundle gate blocked.\n[silent]\n[skip-reason:deploy:bundle-incomplete:feat/x]",
+    );
+    expect(markers.some((m) => m.type === "silent")).toBe(true);
+    const marker = markers.find((m) => m.type === "skip-reason");
+    expect(marker).toBeDefined();
+    if (marker?.type === "skip-reason") {
+      expect(marker.reason).toBe("deploy:bundle-incomplete:feat/x");
+    }
+    expect(cleaned).toBe("Bundle gate blocked.");
+  });
+
+  test("[silent] is recognized identically regardless of [skip-reason:...] ordering (before vs after)", () => {
+    const before = parseMarkers(
+      "Blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+    );
+    const after = parseMarkers(
+      "Blocked.\n[silent]\n[skip-reason:deploy:bundle-incomplete:feat/x]",
+    );
+    expect(before.markers.some((m) => m.type === "silent")).toBe(true);
+    expect(after.markers.some((m) => m.type === "silent")).toBe(true);
+    expect(before.cleaned).toBe("Blocked.");
+    expect(after.cleaned).toBe("Blocked.");
+  });
 });
