@@ -170,6 +170,16 @@ function buildMockDeps(): AdminUIDeps {
     agentPluginService: {
       list: async () => [],
     },
+    agentMemberService: {
+      listByEmail: async () => [],
+      exists: async () => false,
+      add: async (agentId: string, email: string) => ({
+        id: "m1",
+        agentId,
+        email,
+      }),
+      remove: async () => {},
+    },
     sessionSecret: ADMIN_E2E_SESSION_SECRET,
     googleClientId: "e2e-google-client-id",
     googleClientSecret: "e2e-google-client-secret",

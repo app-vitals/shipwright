@@ -8,12 +8,6 @@
 
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
-import type {
-  ChatClient,
-  ChatMessage,
-  ChatThread,
-  ThreadStats,
-} from "./http-chat-client.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
 import type {
@@ -21,6 +15,12 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
+import type {
+  ChatClient,
+  ChatMessage,
+  ChatThread,
+  ThreadStats,
+} from "./http-chat-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -317,6 +317,17 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       revoke: async () => MOCK_TOKEN,
     },
     agentPluginService: { list: async () => [] },
+    agentMemberService: {
+      listByEmail: async () => [],
+      exists: async () => false,
+      add: async (agentId: string, email: string) => ({
+        id: "m1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
+      remove: async () => {},
+    },
     provisioner: {
       provision: async () => ({
         resourceName: "r",
