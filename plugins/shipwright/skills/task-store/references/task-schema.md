@@ -45,10 +45,23 @@ contract: the same shape whether the backend is GitHub Issues, Jira, or the loca
 | `blockedAt` / `blockedReason` | ISO string / string | → `blocked` |
 | `cancelledAt` / `deployingAt` / `deployedAt` / `completedAt` | ISO string | corresponding status |
 | `mergeCommit` | string | merge commit SHA |
-| `source` / `issue` | string | backend tracking ref (e.g. `gh:owner/repo#123`) |
+| `source` / `issue` | string | provenance ref; see conventions below. Filterable via `GET /tasks?source=...`. |
 
 > **Legacy duplicates** appear in older records: `prNumber` (≈ `pr`), `prOpenedAt`
 > (≈ `prCreatedAt`). Prefer `pr` / `prCreatedAt`; readers should tolerate both.
+
+> **`source` conventions.** `source` records where a task came from and its value depends
+> on who created it:
+> - **`plan-session`** sets it to the real planning doc path that produced the task, e.g.
+>   `planning/{session}/PLAN.md`.
+> - **Automated `-fix` skills** set it to their own skill name as a literal string —
+>   `entropy-fix`, `error-fix`, `security-fix`, `consolidation-fix`, `test-fix`. This
+>   replaced an older generic `"shipwright"` literal used for the same purpose.
+> - **Legacy/manual values** still appear in older or hand-created records: a generic
+>   backend tracking ref (e.g. `gh:owner/repo#123`), a manually-set string, or a value
+>   imported from a GitHub issue.
+>
+> `source` is queryable — `GET /tasks?source=...` filters the list by exact match.
 
 ## Status lifecycle
 
