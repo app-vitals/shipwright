@@ -255,6 +255,12 @@ function makeMockDeps(
       }),
       remove: async () => {},
     },
+    agentService: {
+      listAll: async () => [],
+      listByIds: async () => [],
+      searchByName: async () => [],
+      listOptions: async () => [],
+    },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",
     googleClientSecret: "test-google-client-secret",

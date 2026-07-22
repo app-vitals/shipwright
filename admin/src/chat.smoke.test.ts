@@ -328,6 +328,12 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       }),
       remove: async () => {},
     },
+    agentService: {
+      listAll: async () => [],
+      listByIds: async () => [],
+      searchByName: async () => [],
+      listOptions: async () => [{ id: AGENT_ID, name: "Test Agent" }],
+    },
     provisioner: {
       provision: async () => ({
         resourceName: "r",

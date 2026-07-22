@@ -63,6 +63,7 @@ import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
+import type { AgentService } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
@@ -227,6 +228,10 @@ export interface AdminUIDeps {
   agentMemberService: Pick<
     AgentMemberService,
     "listByEmail" | "exists" | "add" | "remove"
+  >;
+  agentService: Pick<
+    AgentService,
+    "listAll" | "listByIds" | "searchByName" | "listOptions"
   >;
   provisioner: AgentProvisioner;
   /**
@@ -463,6 +468,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentTokenService,
     agentPluginService,
     agentMemberService,
+    agentService,
     provisioner,
     taskStore,
     chatService,
@@ -693,15 +699,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Agents list ──────────────────────────────────────────────────────────
 
   app.get("/admin/agents", requireAuth, async (c) => {
-    let agents: Awaited<ReturnType<typeof prisma.agent.findMany>>;
+    let agents: Awaited<ReturnType<typeof agentService.listAll>>;
     if (c.var.isAdmin) {
-      agents = await prisma.agent.findMany();
+      agents = await agentService.listAll();
     } else {
       const memberships = await agentMemberService.listByEmail(
         c.var.userEmail.toLowerCase(),
       );
       const agentIds = memberships.map((m) => m.agentId);
-      agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
+      agents = await agentService.listByIds(agentIds);
     }
     const successMsg =
       c.req.query("success") === "deleted" ? "Agent deleted." : undefined;
@@ -1450,20 +1456,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/provision", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    const agents = await prisma.agent.findMany();
-    return html(
-      renderProvisionStartPage(
-        c.var.userEmail,
-        agents.map((a) => ({ id: a.id, name: a.name })),
-      ),
-    );
+    const agentOptions = await agentService.listOptions();
+    return html(renderProvisionStartPage(c.var.userEmail, agentOptions));
   });
 
   app.post("/admin/provision/start", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     // Load agents for form re-render on error
-    const agents = await prisma.agent.findMany().catch(() => []);
-    const agentOptions = agents.map((a) => ({ id: a.id, name: a.name }));
+    const agentOptions = await agentService.listOptions().catch(() => []);
 
     const formError = (msg: string): Response =>
       html(
@@ -1992,9 +1992,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // filter tasks client-side (task store only supports a single assignee ID).
     let agentFilterIds: Set<string> | null = null;
     if (agent) {
-      const matched = await prisma.agent.findMany({
-        where: { name: { contains: agent, mode: "insensitive" } },
-      });
+      const matched = await agentService.searchByName(agent);
       agentFilterIds = new Set(matched.map((a) => a.id));
     }
 
@@ -2053,9 +2051,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     ];
     const agentNames: Record<string, string> = {};
     if (agentIds.length > 0) {
-      const agents = await prisma.agent.findMany({
-        where: { id: { in: agentIds } },
-      });
+      const agents = await agentService.listByIds(agentIds);
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
@@ -2066,9 +2062,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ? {
             sessions: distinctValues.sessions,
             repos: distinctValues.repos,
-            agents: (
-              await prisma.agent.findMany({ select: { name: true } })
-            ).map((a) => a.name),
+            agents: (await agentService.listOptions()).map((a) => a.name),
           }
         : undefined;
 
@@ -2111,9 +2105,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
     const agentNames: Record<string, string> = {};
     if (agentIds.length > 0) {
-      const agents = await prisma.agent.findMany({
-        where: { id: { in: agentIds } },
-      });
+      const agents = await agentService.listByIds(agentIds);
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
@@ -2243,9 +2235,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     ];
     const agentNames: Record<string, string> = {};
     if (agentIds.length > 0) {
-      const agents = await prisma.agent.findMany({
-        where: { id: { in: agentIds } },
-      });
+      const agents = await agentService.listByIds(agentIds);
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
@@ -2286,9 +2276,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
     const agentNames: Record<string, string> = {};
     if (agentIds.length > 0) {
-      const agents = await prisma.agent.findMany({
-        where: { id: { in: agentIds } },
-      });
+      const agents = await agentService.listByIds(agentIds);
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
@@ -2302,10 +2290,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const selectedAgentId = c.req.query("agentId") || undefined;
     const q = c.req.query("q") || undefined;
-    const agents: AgentOption[] = (await prisma.agent.findMany()).map((a) => ({
-      id: a.id,
-      name: a.name,
-    }));
+    const agents: AgentOption[] = await agentService.listOptions();
 
     if (!chatClient) {
       return html(
@@ -2673,7 +2658,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         degraded = true;
       }
     }
-    const agents = await prisma.agent.findMany();
+    const agents = await agentService.listOptions();
     return html(
       renderTokensPage(
         tokens,
@@ -2714,7 +2699,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       // best-effort refresh; show the new token even if list fails
     }
-    const agents = await prisma.agent.findMany();
+    const agents = await agentService.listOptions();
     return html(
       renderTokensPage(
         tokens,
