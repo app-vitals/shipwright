@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"> <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v6.4.8"><title>Our story — Shipwright Harness</title><meta name="description" content="How Shipwright Harness went from a couple of engineers running Claude Code in the cloud to a public, MIT-licensed autonomous delivery agent — dogfooded the entire way."><link rel="canonical" href="https://shipwrightharness.com/story/"><!-- Favicon: scalable SVG mark with a PNG fallback (both in site/public/). --><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><!-- Open Graph --><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/story/"><meta property="og:title" content="Our story — Shipwright Harness"><meta property="og:description" content="How Shipwright Harness went from a couple of engineers running Claude Code in the cloud to a public, MIT-licensed autonomous delivery agent — dogfooded the entire way."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><meta property="og:image:alt" content="Shipwright Harness — the open-source autonomous delivery agent for Claude Code."><!-- Twitter --><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="Our story — Shipwright Harness"><meta name="twitter:description" content="How Shipwright Harness went from a couple of engineers running Claude Code in the cloud to a public, MIT-licensed autonomous delivery agent — dogfooded the entire way."><meta name="twitter:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta name="twitter:image:alt" content="Shipwright Harness — the open-source autonomous delivery agent for Claude Code."><!-- Structured data (JSON-LD) — inert data block, not runtime JS. --><script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"https://shipwrightharness.com/#organization","name":"Shipwright Harness","url":"https://shipwrightharness.com/","logo":"https://shipwrightharness.com/shipwright-icon.png","sameAs":["https://github.com/app-vitals/shipwright"]},{"@type":"WebSite","@id":"https://shipwrightharness.com/#website","url":"https://shipwrightharness.com/","name":"Shipwright Harness","description":"The open-source autonomous delivery agent for Claude Code.","publisher":{"@id":"https://shipwrightharness.com/#organization"}},{"@type":"SoftwareApplication","name":"Shipwright Harness","applicationCategory":"DeveloperApplication","operatingSystem":"Cross-platform","url":"https://shipwrightharness.com/","description":"The open-source autonomous delivery agent for Claude Code — plan, build, review, and ship, on your own infrastructure.","license":"https://opensource.org/licenses/MIT","isAccessibleForFree":true,"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"sameAs":["https://github.com/app-vitals/shipwright"]}]}</script><!-- Google Analytics 4 (the only first-party runtime JS). --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script> <script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><!--
+      Fonts (no runtime JS): Space Grotesk + JetBrains Mono from Google Fonts,
+      General Sans from Fontshare. Plain stylesheet links only.
+    --><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><link rel="stylesheet" href="/_astro/SiteHeader.BaF6Q8XI.css"><style>.sw-timeline-list[data-astro-cid-aflpmyu5]{position:relative;list-style:none;margin:0;padding:0}.sw-timeline-item[data-astro-cid-aflpmyu5]{position:relative;padding-left:2rem;padding-bottom:2.5rem}.sw-timeline-item[data-astro-cid-aflpmyu5]:last-child{padding-bottom:0}.sw-timeline-item[data-astro-cid-aflpmyu5]:not(:last-child):before{content:"";position:absolute;top:.4rem;left:.3rem;width:1px;height:100%;background:var(--sw-color-border-muted)}.sw-timeline-dot[data-astro-cid-aflpmyu5]{position:absolute;top:.3rem;left:0;width:.65rem;height:.65rem;border-radius:50%;background:var(--sw-color-brand-default)}.sw-timeline-date[data-astro-cid-aflpmyu5]{color:var(--sw-color-text-heading)}
+</style></head> <body class="min-h-screen overflow-x-hidden"> <!-- Subtle dark-premium glow orb (pure CSS, decorative) --> <div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);"></div> <!--
+      Site header (brand lockup): square ship mark + "Shipwright Harness"
+      wordmark per BRAND.md §4 (display font; "Harness" carries the green).
+      Zero runtime JS; the whole lockup links home.
+    --> <input type="checkbox" id="nav-mobile-toggle" aria-hidden="true"><header class="sw-container relative z-10 flex items-center justify-between py-6"> <a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home"> <img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg"> <span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);">
+Shipwright <span style="color: var(--sw-color-brand-default);">Harness</span> </span> </a> <nav class="hidden md:flex items-center gap-6" aria-label="Primary"> <a href="/docs" class="sw-label">Docs</a><a href="/compare" class="sw-label">Compare</a><a href="/vs/devin" class="sw-label">vs Devin</a><a href="/architecture" class="sw-label">Architecture</a><a href="/story" class="sw-label">Story</a> <a href="https://github.com/app-vitals/shipwright" class="sw-label">GitHub ↗</a> <a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary">Book a call</a> </nav> <label for="nav-mobile-toggle" class="md:hidden cursor-pointer p-2" style="color: var(--sw-color-text-heading);" aria-label="Open navigation menu"> <span class="text-2xl">☰</span> </label> </header>  <nav id="mobile-nav-panel" class="mobile-nav-panel" aria-label="Mobile navigation"> <ul class="flex flex-col gap-4 p-6"> <li> <a href="/docs" class="sw-label">Docs</a> </li><li> <a href="/compare" class="sw-label">Compare</a> </li><li> <a href="/vs/devin" class="sw-label">vs Devin</a> </li><li> <a href="/architecture" class="sw-label">Architecture</a> </li><li> <a href="/story" class="sw-label">Story</a> </li> <li> <a href="https://github.com/app-vitals/shipwright" class="sw-label">GitHub ↗</a> </li> <li> <a href="https://vitals-os.com/cal/book/discovery" class="sw-label">Book a call</a> </li> </ul> </nav> <label for="nav-mobile-toggle" id="mobile-nav-overlay" aria-hidden="true"></label> <style>
+        #nav-mobile-toggle {
+          display: none;
+        }
+
+        .mobile-nav-panel {
+          display: none;
+        }
+
+        #mobile-nav-overlay {
+          display: none;
+        }
+
+        @media (max-width: 767px) {
+          .mobile-nav-panel {
+            display: block;
+            visibility: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: var(--sw-color-bg-base);
+            z-index: 40;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            border-right: 1px solid var(--sw-color-border-muted);
+          }
+
+          #nav-mobile-toggle:checked ~ .mobile-nav-panel {
+            transform: translateX(0);
+            visibility: visible;
+          }
+
+          #nav-mobile-toggle:checked ~ #mobile-nav-overlay {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            background: color-mix(
+              in srgb,
+              var(--sw-color-bg-base) 65%,
+              transparent
+            );
+            cursor: pointer;
+          }
+        }
+      </style>  <!-- .sw-container already caps width at --sw-layout-max-width (72rem). --> <main class="sw-container relative" data-pagefind-ignore="true">   <section class="relative z-10 pt-16 pb-12" data-astro-cid-aflpmyu5> <p class="sw-label" data-astro-cid-aflpmyu5>Our story</p> <h1 class="sw-h1 mt-4 max-w-3xl" data-astro-cid-aflpmyu5>
+From <span class="sw-gradient-text" data-astro-cid-aflpmyu5>side project</span> to the loop we run
+      production on.
+</h1> <p class="mt-5 max-w-2xl text-lg" data-astro-cid-aflpmyu5>
+Shipwright wasn't planned as a product. It grew out of two engineers
+      trying to get more out of Claude Code, dogfooded on our own delivery
+      work the entire way. Here's the timeline, honestly.
+</p> </section>  <section class="sw-timeline relative z-10 pb-20" style="border-top: 1px solid var(--sw-color-border-subtle); padding-top: 3rem;" data-astro-cid-aflpmyu5> <ol class="sw-timeline-list" data-astro-cid-aflpmyu5> <li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>November 2025</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> Dan starts running Claude Code in the cloud. Dave starts building the first autonomous workflow plugin. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>January 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> The first real autonomous-loop plugin lands in the App Vitals marketplace, inspired by the open-source Ralph pattern. Auto-approve hooks, task types, plugin discovery — the pieces of a self-driving loop start coming together. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>March 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> We start building Vitals OS — and from day one, we run the build through our own emerging Shipwright workflow. First real product built by the thing we were building. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>April 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> The automation backbone goes in: a dev-task runner, agent cron infrastructure, scheduled review/patch/deploy cycles. This is where &quot;autonomous&quot; stops being aspirational. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>May 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> Metrics wired in end to end. We can finally see what the agents are doing, not just trust that they&#39;re doing it. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>June 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> Shipwright graduates out of the marketplace into its own repo. We scrub every internal reference and open it up. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>Late June 2026</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> Public launch. </p> </li><li class="sw-timeline-item" data-astro-cid-aflpmyu5> <span class="sw-timeline-dot" aria-hidden="true" data-astro-cid-aflpmyu5></span> <p class="sw-mono sw-label sw-timeline-date" data-astro-cid-aflpmyu5>Today</p> <p class="mt-2 max-w-2xl" style="color: var(--sw-color-text-body);" data-astro-cid-aflpmyu5> Two of us, shipping 50+ PRs a day, running production infrastructure for clients almost entirely through the loop we built for ourselves. </p> </li> </ol> </section>  </main> <!--
+      Site footer (SWW-2.3): repo · license · platform · community.
+      Pure markup, zero runtime JS.
+    --> <footer class="sw-container relative z-10 py-12"> <div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);"> <p class="sw-label flex items-center gap-2"> <img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded">
+Shipwright Harness · MIT-licensed · © 2026 </p> <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer"> <a href="/story">Story</a> <a href="https://github.com/app-vitals/shipwright">GitHub</a> <a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE">MIT License</a> <a href="https://claude.com/claude-code">Claude Code</a> <a href="https://github.com/app-vitals/shipwright/discussions">GitHub Discussions</a> <a href="/compare">Compare</a> <a href="/vs/devin">vs Devin</a> <a href="/docs">Docs</a> <a href="https://vitals-os.com/cal/book/discovery">Book a call</a> </nav> </div> </footer> </body></html>
