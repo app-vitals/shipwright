@@ -400,6 +400,19 @@ function poolStub<T extends { id: string }>(
   };
 }
 
+// A claimTask stub that succeeds and marks the task consumed, matching real
+// claimTask semantics (a successful claim removes the item from candidacy).
+// Needed anywhere a dispatch throw is exercised — without it, CBD-2.3's
+// caught-and-isolated dispatch throw would keep re-selecting the same
+// always-failing item forever instead of the tick resolving after one
+// dispatch.
+function consumingClaimTask(consumed: Set<string>) {
+  return async (taskId: string) => {
+    consumed.add(taskId);
+    return true;
+  };
+}
+
 function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
   const calls = options.calls;
   const consumed = options.consumed ?? new Set<string>();
@@ -1223,13 +1236,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
-      // Claim succeeding removes the item from candidacy (matches real
-      // claimTask semantics) — without this, the drain loop would keep
-      // re-selecting the same always-failing item forever.
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -1272,13 +1279,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
-      // Claim succeeding removes the item from candidacy (matches real
-      // claimTask semantics) — without this, the drain loop would keep
-      // re-selecting the same always-failing item forever.
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -1319,10 +1320,7 @@ describe("createLoopOrchestrator", () => {
     const deps = makeDeps({
       devTaskCandidates: [task("SWC-1.1", "2026-01-01T00:00:00Z")],
       consumed,
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
       runner: async () => {
         if (firstCall) {
           firstCall = false;
@@ -2112,10 +2110,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       consumed,
       reporter,
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -2529,10 +2524,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -2585,10 +2577,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter: trackedReporter,
       consumed,
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -2648,10 +2637,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter: trackedReporter,
       consumed,
-      claimTask: async (taskId: string) => {
-        consumed.add(taskId);
-        return true;
-      },
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
