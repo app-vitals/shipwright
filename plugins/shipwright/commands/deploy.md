@@ -538,7 +538,9 @@ gh api repos/{org}/{repo}/actions/workflows --jq '[.workflows[].name]'
   terminal-condition handling, but continuing within this step's own 30-minute budget
   and elapsed time rather than Step 5c's separate 10-minute window. A name mismatch
   alone never sets `blocked` by itself — only an actual run outcome (success/failure)
-  or a genuine timeout in this SHA-only fallback does.
+  or a genuine timeout in this SHA-only fallback does. **Set `SHA_ONLY_FALLBACK=true`**
+  for the remainder of this step — the poll loop and the Terminal Conditions section below
+  both branch on this flag.
 
 Print progress on each poll (each loop iteration):
 ```
@@ -580,6 +582,34 @@ If the Deploy stage (or any stage) has `status: "queued"` for 15 or more minutes
 Re-surface this message every 5 minutes while the queue remains stuck.
 
 ### Terminal Conditions
+
+**If `SHA_ONLY_FALLBACK=true`** (set above when resolved stage names didn't match live
+workflows): the named-stage checks below do not apply — there is no `.name` to match
+against them. Instead, evaluate the same generic, name-agnostic scheme Step 5c's own
+"Terminal conditions:" subsection uses (all-success / any-failure / budget-exhausted over
+the full set of runs matched by `$SQUASH_SHA` alone), reusing that subsection's
+conclusion checks and task-store/PR-record update bash blocks verbatim, but scoped to
+*this* step's 30-minute budget and elapsed time rather than Step 5c's separate 10-minute
+window:
+
+- **All runs completed successfully** (at least one run seen, `conclusion == "success"`
+  for every run seen): print the same success format as Step 5c ("Pipeline monitoring
+  passed" in place of "Post-merge CI passed"), run the same `status: "deployed"` task-store
+  update, print the handoff block (Step 9) with `Pipeline: SHA-only fallback ({elapsed}m)`.
+  Stop.
+- **Any run fails** (`conclusion == "failure"` on any run): print the same failure format
+  as Step 5c ("Pipeline monitoring failed" in place of "Post-merge CI failed"), run the
+  same `status: "blocked"` / PR-record `hitl` update. Stop.
+- **Budget exhausted (30 minutes)** with runs still pending: print the same pending-timeout
+  format as Step 5c ("Pipeline monitoring still pending after 30 minutes" in place of
+  "Post-merge CI still pending after 10 minutes"), run the same `status: "deployed"` (task
+  marked done, human checks manually) task-store update, print the handoff block (Step 9)
+  with `Pipeline: SHA-only fallback (pending at timeout)`. Stop.
+
+Skip the named-stage bullets below entirely in this mode — they require `.name` matching
+that fallback mode has no data for.
+
+**Otherwise (named-stage mode, the default)** — continue with the checks below:
 
 **Deploy stage failed** (`conclusion == "failure"` on the Deploy run):
 ```
