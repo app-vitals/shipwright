@@ -47,10 +47,10 @@ test("prev navigation link is present on cron-jobs page", async ({
   page,
 }) => {
   await page.goto("/docs/cron-jobs");
-  // prev → slack-integration
+  // prev → admin-console
   const prevLink = page.locator("a[data-nav='prev']");
   await expect(prevLink).toBeVisible();
-  expect(await prevLink.getAttribute("href")).toBe("/docs/slack-integration");
+  expect(await prevLink.getAttribute("href")).toBe("/docs/admin-console");
 });
 
 test("next navigation link is present on cron-jobs page", async ({
