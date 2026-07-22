@@ -12,7 +12,11 @@ import type {
   ChatTokenStats,
   CronRunTokenStats,
 } from "../lib/admin-metrics-client.ts";
-import type { PrRecord, TaskRecord } from "../lib/task-store-client.ts";
+import type {
+  PrRecord,
+  TaskRecord,
+  TaskStoreClient,
+} from "../lib/task-store-client.ts";
 import { FixedClock } from "../lib/test-helpers.ts";
 import type { MetricQuery } from "../metrics-provider.ts";
 import { TaskStoreProvider } from "./task-store-provider.ts";
@@ -23,6 +27,34 @@ import {
   RecordedAdminMetricsClient,
   RecordedTaskStoreClient,
 } from "./task-store-recorded.ts";
+
+// ─── Call-counting wrapper ──────────────────────────────────────────────────
+//
+// Local to this test file: decorates a TaskStoreClient with per-method call
+// counters so tests can assert on how many times the underlying client was
+// actually invoked (e.g. to prove the coalescing cache dedupes concurrent
+// same-window reads), without adding any global mocking.
+
+class CountingTaskStoreClient implements TaskStoreClient {
+  listTasksCallCount = 0;
+  listPrsCallCount = 0;
+
+  constructor(private readonly inner: TaskStoreClient) {}
+
+  async listTasks(
+    params: Parameters<TaskStoreClient["listTasks"]>[0],
+  ): Promise<TaskRecord[]> {
+    this.listTasksCallCount++;
+    return this.inner.listTasks(params);
+  }
+
+  async listPrs(
+    params: Parameters<TaskStoreClient["listPrs"]>[0],
+  ): Promise<PrRecord[]> {
+    this.listPrsCallCount++;
+    return this.inner.listPrs(params);
+  }
+}
 
 // ─── Cassettes ────────────────────────────────────────────────────────────────
 
@@ -933,5 +965,29 @@ describe("TaskStoreProvider (integration)", () => {
       expect(t.columns.length).toBeGreaterThan(0);
       expect(Array.isArray(t.results)).toBe(true);
     }
+  });
+
+  test("coalescing cache: summary + summaryCycleTime in the same request share one listTasks() call", async () => {
+    const counting = new CountingTaskStoreClient(
+      new RecordedTaskStoreClient(TASKS, PRS),
+    );
+    const admin = new RecordedAdminMetricsClient(CRON_STATS, CHAT_STATS);
+    const provider = new TaskStoreProvider(counting, admin, CLOCK);
+
+    // Both kinds resolve the same default range → same window → their
+    // concurrent tasks(win) calls should coalesce into a single listTasks()
+    // call against the underlying client.
+    const [summaryTable, cycleTimeTable] = await Promise.all([
+      provider.query({ kind: "summary", range: RANGE }),
+      provider.query({ kind: "summaryCycleTime", range: RANGE }),
+    ]);
+
+    expect(counting.listTasksCallCount).toBe(1);
+
+    // Correctness is unaffected by the cache — computed values still match
+    // what a non-coalesced call would produce.
+    expect(summaryTable.results[0][colIndex(summaryTable, "tasks_completed")]).toBe(2);
+    expect(cycleTimeTable.columns).toEqual(["avg_cycle_time_hours"]);
+    expect(cycleTimeTable.results[0][0]).not.toBeNull();
   });
 });

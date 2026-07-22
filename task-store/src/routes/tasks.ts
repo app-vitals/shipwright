@@ -27,6 +27,8 @@
  *   POST   /tasks/:id/complete  status=done
  *   POST   /tasks/:id/fail      status=blocked
  *   POST   /tasks/:id/release   unclaim → pending
+ *   POST   /tasks/:id/skip      increment skipCount, auto-block at threshold
+ *   POST   /tasks/:id/skip/reset  reset skipCount back to 0
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -61,6 +63,37 @@ async function readJson(c: {
     return {};
   } catch {
     return {};
+  }
+}
+
+// Fields that gate task claim ownership. Agent tokens must go through the
+// dedicated /claim and /release routes to change these — never generic PATCH.
+// requireOwnership() grants PATCH access via repo scope alone (not just
+// assignee/claimant match), so without this guard a repo-scoped agent token
+// could overwrite an actively claimed task's status back to "pending",
+// making it immediately re-claimable by a different agent while the
+// original session still holds it (TaskService.claim()'s atomic UPDATE
+// gates solely on status = 'pending', never on claimedBy IS NULL).
+const LIFECYCLE_GUARD_KEYS = ["claimedBy", "claimedAt", "heartbeatAt"] as const;
+
+// admin tokens (agentId === null) are unrestricted, mirroring the existing
+// admin-bypass convention already used by requireOwnership.
+function assertNoLifecycleFieldWrite(
+  body: Record<string, unknown>,
+  agentId: string | null,
+): void {
+  if (agentId === null) return;
+  for (const key of LIFECYCLE_GUARD_KEYS) {
+    if (key in body) {
+      throw new BadRequestError(
+        `agent tokens cannot set '${key}' via PATCH — use /claim or /release`,
+      );
+    }
+  }
+  if (body.status === "pending") {
+    throw new BadRequestError(
+      "agent tokens cannot set status: 'pending' via PATCH — use /release to unclaim (or /claim to reclaim)",
+    );
   }
 }
 
@@ -439,6 +472,62 @@ const releaseRoute = createRoute({
   },
 });
 
+const skipRoute = createRoute({
+  method: "post",
+  path: "/:id/skip",
+  tags: ["tasks"],
+  summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const skipResetRoute = createRoute({
+  method: "post",
+  path: "/:id/skip/reset",
+  tags: ["tasks"],
+  summary: "Reset skip tracking — skipCount back to 0",
+  request: {
+    params: TaskIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated task",
+      content: { "application/json": { schema: TaskSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createTasksRoutes(
@@ -625,6 +714,7 @@ export function createTasksRoutes(
       repos ?? [],
     );
     const body = await readJson(c);
+    assertNoLifecycleFieldWrite(body, agentId);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.
     // Only force-assign when the acting agent is the explicit assignee or claimedBy.
@@ -717,6 +807,26 @@ export function createTasksRoutes(
     const repos = c.get("repos") ?? [];
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.release(c.req.param("id"));
+    return c.json(task, 200);
+  });
+
+  // ─── Skip ──────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    const task = await taskService.recordSkip(c.req.param("id"));
+    return c.json(task, 200);
+  });
+
+  // ─── Skip reset ────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipResetRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+    const task = await taskService.resetSkip(c.req.param("id"));
     return c.json(task, 200);
   });
 

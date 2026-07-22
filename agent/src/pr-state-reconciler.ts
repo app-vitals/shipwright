@@ -179,6 +179,24 @@ export interface PrStateReconcilerDeps {
     repo: string,
     branch: string,
   ) => Promise<Array<{ number: number; createdAt: string }>>;
+  /**
+   * List every task-store Task sharing a given repo+branch (BBR-1.1's
+   * bundle-mate guard) — `GET /tasks?repo=<repo>&branch=<branch>`, paged the
+   * same way this file's other list* deps page (see `listAllOpenRecords`/
+   * `listAllTasksByStatus`). Multiple tasks can share one branch when a
+   * bundle of tasks was dispatched together onto the same branch; both
+   * `reconcileOrphanedTask` and `reconcilePrOpenTask`'s branch-fallback path
+   * call this BEFORE auto-healing a task via a branch-only PR match, and
+   * skip the auto-heal entirely when it returns more than one task — a
+   * branch-only PR lookup can't tell which sibling's work the PR actually
+   * contains, so guessing is worse than leaving the task untouched (a real
+   * bundle only advances a sibling when something explicit says so, e.g.
+   * dev-task's own status PATCH — never by branch-level inference alone).
+   */
+  listAllTasksForBranch: (
+    repo: string,
+    branch: string,
+  ) => Promise<PrOpenTaskRecord[]>;
   /** Look up a task-store PullRequest record by repo+prNumber, for the taskId backfill (DSR-1.1). */
   findPrRecordByRepoAndPrNumber: (
     repo: string,
@@ -198,6 +216,17 @@ export interface PrStateReconcilerDeps {
    * equivalent filtering and still call resolveAllRepos() unscoped.
    */
   getScopedRepos: () => string[];
+  /**
+   * Pause for `ms` milliseconds (PSR-1.2) — called once per record/task
+   * iteration across every gh-call-issuing loop in this file, so a large
+   * batch spreads its calls out over time instead of firing them all in a
+   * tight sequential burst (confirmed live: 70+ calls in 21s exhausted the
+   * shared GH_TOKEN's GraphQL rate limit for ~9 minutes, blocking sibling
+   * agents' dispatch work). Production implementations use a real
+   * `setTimeout`; tests inject a no-op so existing correctness-focused tests
+   * stay fast and unaffected.
+   */
+  delay: (ms: number) => Promise<void>;
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -261,11 +290,24 @@ export interface PrReviewStateReconcilerDeps {
   ) => Promise<PrReviewData>;
   /** PATCH a task-store PR record's fields. */
   patchPrRecord: (id: string, fields: Record<string, unknown>) => Promise<void>;
+  /** Pause for `ms` milliseconds (PSR-1.2) — see `PrStateReconcilerDeps.delay`'s doc comment for the full rationale. */
+  delay: (ms: number) => Promise<void>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_LIMIT = 50;
+
+/**
+ * Default pause between gh-call-issuing loop iterations (PSR-1.2), in ms.
+ * Overridable via SHIPWRIGHT_RECONCILER_DELAY_MS for ops tuning without a
+ * code change. Chosen to spread a large batch's calls out over real time
+ * (e.g. 70 records × 300ms ≈ 21s instead of a sub-second burst) without
+ * meaningfully slowing a normal-sized reconcile pass.
+ */
+const DEFAULT_RECONCILER_DELAY_MS = Number(
+  process.env.SHIPWRIGHT_RECONCILER_DELAY_MS ?? 300,
+);
 
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
@@ -412,6 +454,23 @@ async function reconcilePrOpenTask(
     const merged = await deps.ghListMergedPrsForBranch(taskRepo, task.branch);
     const first = merged[0];
     if (!first) return; // no merged PR found for this branch yet
+
+    // BBR-1.1: a branch-only PR match can't tell which sibling's work a
+    // shared branch's PR actually contains — on a bundle (>1 task sharing
+    // this branch), skip the auto-heal entirely (both the status PATCH below
+    // and the taskId backfill) rather than guessing. Single-task branches
+    // (the original DSR-1.1 crash-recovery case) are unaffected.
+    const branchTasks = await deps.listAllTasksForBranch(
+      taskRepo,
+      task.branch,
+    );
+    if (branchTasks.length > 1) {
+      console.error(
+        `[pr-state-reconciler] skipping branch-fallback merge heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
+      );
+      return;
+    }
+
     prNumber = first.number;
     backfillPr = first.number;
     mergedAt = deps.now();
@@ -466,6 +525,7 @@ export async function reconcilePrOpenTasks(
         err instanceof Error ? err.message : String(err),
       );
     }
+    await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
   }
 }
 
@@ -501,6 +561,19 @@ async function reconcileOrphanedTask(
   const open = await deps.ghListOpenPrsForBranch(taskRepo, task.branch);
   const first = open[0];
   if (!first) return; // no open PR found for this branch yet — no-op
+
+  // BBR-1.1: a branch-only PR match can't tell which sibling's work a shared
+  // branch's PR actually contains — on a bundle (>1 task sharing this
+  // branch), skip the auto-heal rather than guessing which sibling the PR
+  // belongs to. Single-task branches (the original TCR-1.2 crash-recovery
+  // case) are unaffected.
+  const branchTasks = await deps.listAllTasksForBranch(taskRepo, task.branch);
+  if (branchTasks.length > 1) {
+    console.error(
+      `[pr-state-reconciler] skipping orphan pr_open heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
+    );
+    return;
+  }
 
   await deps.updateTaskStatus(task.id, {
     status: "pr_open",
@@ -544,6 +617,7 @@ export async function reconcileOrphanedTasks(
         err instanceof Error ? err.message : String(err),
       );
     }
+    await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
   }
 }
 
@@ -585,6 +659,7 @@ export async function reconcilePrState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 
@@ -829,6 +904,7 @@ export async function reconcileReviewState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 
@@ -857,6 +933,7 @@ export async function reconcileReviewState(
           err instanceof Error ? err.message : String(err),
         );
       }
+      await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
 }
@@ -952,6 +1029,45 @@ function makeListTasksByStatus(opts: {
   };
 }
 
+/**
+ * GET /tasks?repo=<repo>&branch=<branch>&limit=<limit>&offset=<offset> helper
+ * for `listAllTasksForBranch` (BBR-1.1's bundle-mate guard) — same request
+ * shape/response handling as `makeListTasksByStatus` above, but filtered by
+ * repo+branch instead of status. `repo=` scoping mirrors
+ * `listOpenPrRecords`'s own GET /prs helper; `branch=` mirrors
+ * check-deploy.ts's `createBundleCompleteQuery` (GET /tasks?branch=), the
+ * existing "check every task on a branch individually" pattern this guard
+ * follows.
+ */
+function makeListTasksByBranch(opts: {
+  baseUrl: string;
+  headers: Record<string, string>;
+  doFetch: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+}): (
+  repo: string,
+  branch: string,
+  limit: number,
+  offset: number,
+) => Promise<PrOpenTaskRecord[]> {
+  const { baseUrl, headers, doFetch } = opts;
+  return async (repo: string, branch: string, limit: number, offset: number) => {
+    const params = new URLSearchParams({
+      repo,
+      branch,
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
+    if (!res.ok) {
+      throw new Error(`task-store GET /tasks?${params} → ${res.status}`);
+    }
+    const data = (await res.json()) as unknown;
+    // Same legacy-bare-array tolerance as createTaskStoreClient's query().
+    if (Array.isArray(data)) return data as PrOpenTaskRecord[];
+    return (data as TaskListResponseJson).tasks;
+  };
+}
+
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -974,6 +1090,11 @@ export function buildProductionDeps(opts: {
     headers,
     doFetch,
   });
+  const listTasksByBranch = makeListTasksByBranch({
+    baseUrl,
+    headers,
+    doFetch,
+  });
 
   /**
    * Page a single status query to completion (TCR-1.2) — same loop shape as
@@ -992,6 +1113,31 @@ export function buildProductionDeps(opts: {
 
     for (;;) {
       const page = await listTasksByStatus(status, limit, offset);
+      tasks.push(...page);
+      if (page.length < limit) break;
+      offset += limit;
+    }
+
+    return tasks;
+  };
+
+  /**
+   * Page a single repo+branch query to completion (BBR-1.1) — same loop
+   * shape as `listAllTasksByStatus` above/`listAllOpenRecords` elsewhere in
+   * this file, but over `listTasksByBranch`. Used by `listAllTasksForBranch`
+   * below so a bundle branch with more task-store records than one page
+   * still yields its true sibling count instead of silently truncating.
+   */
+  const listAllTasksForBranchImpl = async (
+    repo: string,
+    branch: string,
+  ): Promise<PrOpenTaskRecord[]> => {
+    const limit = DEFAULT_PAGE_LIMIT;
+    const tasks: PrOpenTaskRecord[] = [];
+    let offset = 0;
+
+    for (;;) {
+      const page = await listTasksByBranch(repo, branch, limit, offset);
       tasks.push(...page);
       if (page.length < limit) break;
       offset += limit;
@@ -1055,6 +1201,7 @@ export function buildProductionDeps(opts: {
         "number",
       ]);
     },
+    listAllTasksForBranch: listAllTasksForBranchImpl,
     // TCR-1.2: the task-store's GET /tasks only accepts one status value at
     // a time and has no server-side "has a branch AND no pr" filter, so this
     // pages each status to completion (via listAllTasksByStatus — fixes a
@@ -1094,6 +1241,7 @@ export function buildProductionDeps(opts: {
       fetchFn: opts.fetchFn,
     }),
     now: () => new Date().toISOString(),
+    delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }
 
@@ -1203,5 +1351,6 @@ export function buildReviewStateProductionDeps(opts: {
       const response = await ghGraphql<ReviewGraphqlResponse>(query);
       return response.data.repository.pullRequest;
     },
+    delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }

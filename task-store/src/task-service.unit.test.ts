@@ -31,14 +31,13 @@ function makeMinimalTask(overrides: Partial<MinimalTask> = {}): MinimalTask {
 function listBlockedLogic(
   allTasks: MinimalTask[],
 ): (MinimalTask & { blockedBy: ReturnType<typeof computeBlockedBy> })[] {
+  const closed = new Set<string>(CLOSED_STATUSES);
   return allTasks
     .filter((t) => {
       if (t.status === "blocked") return true;
-      if (t.status === "pending") {
-        const blockedBy = computeBlockedBy(t, allTasks);
-        return blockedBy.length > 0;
-      }
-      return false;
+      if (closed.has(t.status)) return false;
+      const blockedBy = computeBlockedBy(t, allTasks);
+      return blockedBy.length > 0;
     })
     .map((t) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }));
 }
@@ -242,12 +241,77 @@ describe("listBlocked logic (unit)", () => {
     expect(result).toHaveLength(0);
   });
 
-  it("does not return non-pending tasks (in_progress, pr_open, etc.)", () => {
+  it("returns non-pending open-status tasks (in_progress, pr_open, approved) with a hitl gate or unresolved dependency", () => {
+    const tasks = [
+      makeMinimalTask({
+        id: "t1",
+        status: "in_progress",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t2",
+        status: "pr_open",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t3",
+        status: "approved",
+        dependencies: ["dep-1"],
+      }),
+      makeMinimalTask({ id: "dep-1", status: "in_progress" }),
+    ];
+    const result = listBlockedLogic(tasks);
+    const ids = result.map((t) => t.id);
+    expect(ids).toContain("t1");
+    expect(ids).toContain("t2");
+    expect(ids).toContain("t3");
+    expect(ids).not.toContain("dep-1");
+  });
+
+  it("does not return non-pending open-status tasks with no blockedBy (in_progress, pr_open, approved)", () => {
     const tasks = [
       makeMinimalTask({ id: "t1", status: "in_progress" }),
       makeMinimalTask({ id: "t2", status: "pr_open" }),
       makeMinimalTask({ id: "t3", status: "approved" }),
-      makeMinimalTask({ id: "t4", status: "done" }),
+    ];
+    const result = listBlockedLogic(tasks);
+    expect(result).toHaveLength(0);
+  });
+
+  it("does not return closed-status tasks even with a non-empty blockedBy (hitl gate)", () => {
+    const tasks = [
+      makeMinimalTask({
+        id: "t1",
+        status: "merged",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t2",
+        status: "done",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t3",
+        status: "deploying",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t4",
+        status: "deployed",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
+      makeMinimalTask({
+        id: "t5",
+        status: "cancelled",
+        hitl: true,
+        hitlNotifiedAt: null,
+      }),
     ];
     const result = listBlockedLogic(tasks);
     expect(result).toHaveLength(0);

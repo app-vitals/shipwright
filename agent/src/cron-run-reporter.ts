@@ -72,6 +72,16 @@ export interface CronRunReporter {
     itemType?: string,
     itemId?: string,
   ): Promise<void>;
+  /**
+   * Fire-and-forget mid-run token push. PATCHes only modelBreakdown — no
+   * completedAt/outcome, so it never signals run completion. Safe to call
+   * repeatedly; the admin PATCH handler upserts per [cronRunId, model].
+   */
+  recordProgress(
+    cronId: string,
+    runId: string | null,
+    modelBreakdown: ModelBreakdownEntry[],
+  ): Promise<void>;
 }
 
 export interface HttpCronRunReporterOptions {
@@ -220,6 +230,19 @@ export class HttpCronRunReporter implements CronRunReporter {
 
     await this.patchRun(url, body);
   }
+
+  async recordProgress(
+    cronId: string,
+    runId: string | null,
+    modelBreakdown: ModelBreakdownEntry[],
+  ): Promise<void> {
+    if (runId === null) return;
+
+    const { apiUrl, agentId } = this.opts;
+    const url = `${apiUrl}/agents/${agentId}/crons/${cronId}/runs/${runId}`;
+
+    await this.patchRun(url, { modelBreakdown });
+  }
 }
 
 export class NoopCronRunReporter implements CronRunReporter {
@@ -262,6 +285,14 @@ export class NoopCronRunReporter implements CronRunReporter {
     _phaseId?: string,
     _itemType?: string,
     _itemId?: string,
+  ): Promise<void> {
+    // intentional no-op
+  }
+
+  async recordProgress(
+    _cronId: string,
+    _runId: string | null,
+    _modelBreakdown: ModelBreakdownEntry[],
   ): Promise<void> {
     // intentional no-op
   }

@@ -39,6 +39,44 @@ function parseUpdatedSince(value: string): Date {
   return date;
 }
 
+/** Minimal shape of a joined Task row needed to evaluate the blocked signal. */
+interface LinkedTaskBlockedInfo {
+  status: string;
+  hitl: boolean | null;
+}
+
+/**
+ * True when a PR should be surfaced by `list({ blocked: true })`:
+ * `pr.hitl === true` OR (a linked task exists AND (`task.hitl === true` OR
+ * `task.status === "blocked"`)). `task` is `undefined` for PRs with no
+ * taskId (or whose taskId didn't resolve to a Task row) — in that case only
+ * `pr.hitl` is consulted, so a missing join never crashes or false-positives.
+ *
+ * Mirrors the combined signal agent/src/check-helpers.ts already uses for
+ * dispatch gating — `isTaskBlockedForDispatch(linkedTask) ||
+ * isPrRecordBlockedForDispatch(pr)` — reimplemented natively here rather than
+ * imported, since task-store must not depend on the agent package.
+ */
+function isPrBlocked(
+  pr: Pick<PullRequest, "hitl">,
+  task: LinkedTaskBlockedInfo | undefined,
+): boolean {
+  return (
+    pr.hitl === true ||
+    (task !== undefined &&
+      (task.hitl === true || task.status === "blocked"))
+  );
+}
+
+/**
+ * Skip-count auto-block threshold: once a PR's skipCount reaches this value,
+ * recordSkip() also sets hitl:true + blockedReason so the loop orchestrator
+ * stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
+ * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
+ * agent/ and task-store/ are separate deployables.
+ */
+const SKIP_BLOCK_THRESHOLD = 3;
+
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
   repo?: string;
@@ -62,6 +100,19 @@ export interface PullRequestListFilters {
    * duplicate that logic, it just reads the current claimedBy column.
    */
   ready?: boolean;
+  /**
+   * When true, only return PRs considered "blocked" — mirroring the combined
+   * dispatch-gating signal agent/src/check-helpers.ts uses (
+   * isTaskBlockedForDispatch(linkedTask) || isPrRecordBlockedForDispatch(pr)),
+   * reimplemented natively here since task-store must not import from the
+   * agent package. A PR is blocked when pr.hitl===true OR its linked task
+   * (joined by PullRequest.taskId, a plain String — not a Prisma relation)
+   * has hitl===true or status==='blocked'. PRs with no taskId are evaluated
+   * on pr.hitl alone. PR-level hitl is almost never set by any code path on
+   * main today (see PRB-1.1/PRB-2.1 history), so this filter is meaningful
+   * mostly via the task join.
+   */
+  blocked?: boolean;
   /**
    * Order results by createdAt. Defaults to "asc", preserving current
    * behavior for every existing caller. Unrelated to claimNext()'s own
@@ -105,6 +156,8 @@ export interface PullRequestServiceLike {
   complete(id: string): Promise<PullRequest>;
   patch(id: string, commitSha?: string): Promise<PullRequest>;
   release(id: string): Promise<PullRequest>;
+  recordSkip(id: string): Promise<PullRequest>;
+  resetSkip(id: string): Promise<PullRequest>;
   claimNext(
     agentId: string,
     maxConcurrent: number,
@@ -138,11 +191,52 @@ export class PullRequestService implements PullRequestServiceLike {
 
     const limit = filters.limit ?? 50;
     const offset = filters.offset ?? 0;
+    const orderBy = { createdAt: filters.sort ?? ("asc" as const) };
+
+    if (filters.blocked) {
+      // The blocked predicate depends on a joined Task row (taskId is a plain
+      // String column, not a Prisma relation — see schema.prisma), so it
+      // can't be expressed in the Prisma `where` above. Fetch every
+      // where-matching candidate (unpaginated), compute the blocked signal
+      // in JS via a single batched Task lookup, then paginate the filtered
+      // set — total must reflect the post-filter count, not the raw
+      // Prisma count, or pagination would be wrong.
+      const candidates = await this.prisma.pullRequest.findMany({
+        where,
+        orderBy,
+      });
+
+      const taskIds = [
+        ...new Set(
+          candidates
+            .map((pr) => pr.taskId)
+            .filter((id): id is string => id !== null),
+        ),
+      ];
+      const tasks = taskIds.length
+        ? await this.prisma.task.findMany({
+            where: { id: { in: taskIds } },
+            select: { id: true, status: true, hitl: true },
+          })
+        : [];
+      const taskById = new Map(tasks.map((task) => [task.id, task]));
+
+      const blockedPrs = candidates.filter((pr) =>
+        isPrBlocked(pr, pr.taskId ? taskById.get(pr.taskId) : undefined),
+      );
+
+      return {
+        prs: blockedPrs.slice(offset, offset + limit),
+        total: blockedPrs.length,
+        limit,
+        offset,
+      };
+    }
 
     const [prs, total] = await this.prisma.$transaction([
       this.prisma.pullRequest.findMany({
         where,
-        orderBy: { createdAt: filters.sort ?? "asc" },
+        orderBy,
         take: limit,
         skip: offset,
       }),
@@ -606,6 +700,48 @@ export class PullRequestService implements PullRequestServiceLike {
       return await this.prisma.pullRequest.update({
         where: { id },
         data: updateData,
+      });
+    } catch (err: unknown) {
+      throw this.translateNotFound(err, "pr not found");
+    }
+  }
+
+  /**
+   * Record a skip: atomically increments skipCount and sets lastSkippedAt.
+   * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
+   * hitl:true + a descriptive blockedReason in the same request — self
+   * contained, no linked-task lookup needed. Every call increments
+   * regardless of current count (not a guard), and re-checks the threshold
+   * each time in case a prior resetSkip() brought the count back down.
+   */
+  async recordSkip(id: string): Promise<PullRequest> {
+    const now = this.clock.now().toISOString();
+    try {
+      const updated = await this.prisma.pullRequest.update({
+        where: { id },
+        data: { skipCount: { increment: 1 }, lastSkippedAt: now },
+      });
+      if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+        return await this.prisma.pullRequest.update({
+          where: { id },
+          data: {
+            hitl: true,
+            blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+          },
+        });
+      }
+      return updated;
+    } catch (err: unknown) {
+      throw this.translateNotFound(err, "pr not found");
+    }
+  }
+
+  /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
+  async resetSkip(id: string): Promise<PullRequest> {
+    try {
+      return await this.prisma.pullRequest.update({
+        where: { id },
+        data: { skipCount: 0, lastSkippedAt: null },
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

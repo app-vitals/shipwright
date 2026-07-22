@@ -1,0 +1,146 @@
+---
+// Shared site header (brand lockup + primary nav) used by BaseLayout and
+// DocsLayout. `variant="marketing"` (default) adds the CSS-only mobile
+// hamburger + slide-in nav panel; `variant="docs"` omits it because
+// DocsLayout drives its own mobile nav from the docs sidebar toggle instead.
+import { BOOKING_URL, PRIMARY_NAV_LINKS, REPO_URL } from "../consts";
+
+interface Props {
+  variant?: "marketing" | "docs";
+}
+
+const { variant = "marketing" } = Astro.props;
+---
+
+{
+  variant === "marketing" && (
+    <input type="checkbox" id="nav-mobile-toggle" aria-hidden="true" />
+  )
+}
+
+<header
+  class="sw-container relative z-10 flex items-center justify-between py-6"
+>
+  <a
+    href="/"
+    class="flex items-center gap-3"
+    aria-label="Shipwright Harness — home"
+  >
+    <img
+      src="/shipwright-icon.svg"
+      alt=""
+      width="36"
+      height="36"
+      class="rounded-lg"
+    />
+    <span
+      class="text-lg"
+      style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);"
+    >
+      Shipwright <span style="color: var(--sw-color-brand-default);"
+        >Harness</span
+      >
+    </span>
+  </a>
+  <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
+    {PRIMARY_NAV_LINKS.map((link) => (
+      <a href={link.href} class="sw-label">{link.label}</a>
+    ))}
+    <a href={REPO_URL} class="sw-label">GitHub ↗</a>
+    <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
+  </nav>
+
+  {
+    variant === "marketing" && (
+      <label
+        for="nav-mobile-toggle"
+        class="md:hidden cursor-pointer p-2"
+        style="color: var(--sw-color-text-heading);"
+        aria-label="Open navigation menu"
+      >
+        <span class="text-2xl">☰</span>
+      </label>
+    )
+  }
+</header>
+
+{
+  variant === "marketing" && (
+    <>
+      <nav
+        id="mobile-nav-panel"
+        class="mobile-nav-panel"
+        aria-label="Mobile navigation"
+      >
+        <ul class="flex flex-col gap-4 p-6">
+          {PRIMARY_NAV_LINKS.map((link) => (
+            <li>
+              <a href={link.href} class="sw-label">{link.label}</a>
+            </li>
+          ))}
+          <li>
+            <a href={REPO_URL} class="sw-label">GitHub ↗</a>
+          </li>
+          <li>
+            <a href={BOOKING_URL} class="sw-label">Book a call</a>
+          </li>
+        </ul>
+      </nav>
+
+      <label
+        for="nav-mobile-toggle"
+        id="mobile-nav-overlay"
+        aria-hidden="true"
+      />
+
+      <style>
+        #nav-mobile-toggle {
+          display: none;
+        }
+
+        .mobile-nav-panel {
+          display: none;
+        }
+
+        #mobile-nav-overlay {
+          display: none;
+        }
+
+        @media (max-width: 767px) {
+          .mobile-nav-panel {
+            display: block;
+            visibility: hidden;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: var(--sw-color-bg-base);
+            z-index: 40;
+            transform: translateX(-100%);
+            transition: transform 0.25s ease;
+            border-right: 1px solid var(--sw-color-border-muted);
+          }
+
+          #nav-mobile-toggle:checked ~ .mobile-nav-panel {
+            transform: translateX(0);
+            visibility: visible;
+          }
+
+          #nav-mobile-toggle:checked ~ #mobile-nav-overlay {
+            display: block;
+            position: fixed;
+            inset: 0;
+            z-index: 30;
+            background: color-mix(
+              in srgb,
+              var(--sw-color-bg-base) 65%,
+              transparent
+            );
+            cursor: pointer;
+          }
+        }
+      </style>
+    </>
+  )
+}

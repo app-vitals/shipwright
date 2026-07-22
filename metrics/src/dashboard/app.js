@@ -92,35 +92,74 @@
 
   // ─── Fetch ────────────────────────────────────────────────────────────────
 
-  const API_BASE = `${window.__METRICS_BASE__ || ""}/metrics`;
+  function getApiBase() {
+    return `${window.__METRICS_BASE__ || ""}/metrics`;
+  }
+
+  /**
+   * Runs an ordered list of `{ url, parse, onError? }` entries one at a time —
+   * the next entry's `fetchImpl` call isn't issued until the previous entry's
+   * promise (fetch + parse) has settled. Pure and DOM-free: takes an
+   * injectable `fetchImpl` so it's unit-testable without browser globals.
+   *
+   * Per-entry error handling: if `onError` is provided, a rejection from
+   * either `fetchImpl(url)` or `parse(response)` is passed to it and its
+   * return value becomes that entry's result (e.g. fall back to null).
+   * Without `onError`, a rejection propagates immediately and aborts any
+   * remaining entries — matching a plain `await` with no `.catch()`.
+   */
+  async function fetchSequential(entries, fetchImpl) {
+    const results = [];
+    for (const { url, parse, onError } of entries) {
+      try {
+        const response = await fetchImpl(url);
+        results.push(await parse(response));
+      } catch (err) {
+        if (!onError) throw err;
+        results.push(onError(err));
+      }
+    }
+    return results;
+  }
 
   async function fetchAll(range) {
+    const API_BASE = getApiBase();
     const q = buildQuery(range);
     const [summary, trends, featuresRes, queueRes, tokensRes] =
-      await Promise.all([
-        fetch(`${API_BASE}/summary?${q}`).then((r) => r.json()),
-        fetch(`${API_BASE}/trends?${q}&groupBy=${groupByForRange(range)}`).then(
-          (r) => r.json(),
-        ),
-        fetch(`${API_BASE}/features?${q}`)
-          .then((r) => r.json())
-          .catch((err) => {
-            console.error("Features fetch failed:", err);
-            return null;
-          }),
-        fetch(`${API_BASE}/queue?${q}`)
-          .then((r) => r.json())
-          .catch((err) => {
-            console.error("Queue fetch failed:", err);
-            return null;
-          }),
-        fetch(`${API_BASE}/tokens?${q}`)
-          .then((r) => r.json())
-          .catch((err) => {
-            console.error("Tokens fetch failed:", err);
-            return null;
-          }),
-      ]);
+      await fetchSequential(
+        [
+          { url: `${API_BASE}/summary?${q}`, parse: (r) => r.json() },
+          {
+            url: `${API_BASE}/trends?${q}&groupBy=${groupByForRange(range)}`,
+            parse: (r) => r.json(),
+          },
+          {
+            url: `${API_BASE}/features?${q}`,
+            parse: (r) => r.json(),
+            onError: (err) => {
+              console.error("Features fetch failed:", err);
+              return null;
+            },
+          },
+          {
+            url: `${API_BASE}/queue?${q}`,
+            parse: (r) => r.json(),
+            onError: (err) => {
+              console.error("Queue fetch failed:", err);
+              return null;
+            },
+          },
+          {
+            url: `${API_BASE}/tokens?${q}`,
+            parse: (r) => r.json(),
+            onError: (err) => {
+              console.error("Tokens fetch failed:", err);
+              return null;
+            },
+          },
+        ],
+        fetch,
+      );
     // Cost efficiency is only fetched on the public (read-only) dashboard,
     // guarded by element presence so the authenticated page never fetches it.
     const costEffEl = document.getElementById('cost-efficiency-section');
@@ -1030,12 +1069,24 @@
 
   // ─── Boot ─────────────────────────────────────────────────────────────────
 
-  document.addEventListener("DOMContentLoaded", () => {
-    const activeBtn = document.querySelector(".date-btn.active");
-    if (activeBtn) currentRange = rangeFromButton(activeBtn);
-    initDateRangePicker();
-    initMetricClicks();
-    initTokenTrendsToggles();
-    refresh();
-  });
+  // Guarded so this file can be `import`-ed under bun:test (no DOM globals)
+  // purely to reach the pure fetchSequential helper below — see the test-only
+  // export block at the bottom of this IIFE.
+  if (typeof window !== "undefined") {
+    document.addEventListener("DOMContentLoaded", () => {
+      const activeBtn = document.querySelector(".date-btn.active");
+      if (activeBtn) currentRange = rangeFromButton(activeBtn);
+      initDateRangePicker();
+      initMetricClicks();
+      initTokenTrendsToggles();
+      refresh();
+    });
+  } else {
+    // Test-only escape hatch: app.js is loaded as a plain (non-module)
+    // browser <script>, so it can't use `export`. Under bun:test there's no
+    // `window`, so instead of booting the dashboard we expose the pure,
+    // DOM-free fetchSequential helper on globalThis for
+    // app.unit.test.js to import and exercise directly.
+    globalThis.__dashboardAppTestExports = { fetchSequential };
+  }
 })();

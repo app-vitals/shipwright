@@ -5116,6 +5116,46 @@ describe("admin UI — PRs page", () => {
     expect(capturedParams[0].get("sort")).toBe("desc");
   });
 
+  it("GET /admin/prs?blocked=true forwards blocked=true to the task store", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs?blocked=true", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams).not.toBeNull();
+    expect((capturedParams as unknown as URLSearchParams).get("blocked")).toBe(
+      "true",
+    );
+  });
+
+  it("GET /admin/prs without blocked param does not forward a blocked param", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    expect(capturedParams).not.toBeNull();
+    expect(
+      (capturedParams as unknown as URLSearchParams).get("blocked"),
+    ).toBeNull();
+  });
+
   it("GET /admin/prs returns 200 with degraded warning banner when fetchTaskStorePrs is absent", async () => {
     const app = createAdminUIApp(
       makeMockDeps({

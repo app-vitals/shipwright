@@ -10,7 +10,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?sort)
+ *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
  *   POST   /prs/claim-next    atomic find-and-claim oldest eligible PR (200+{pr,phase} or 204)
  *   GET    /prs/:id           fetch one (404 when missing)
@@ -19,6 +19,8 @@
  *   POST   /prs/:id/complete  reviewState=posted
  *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha)
  *   POST   /prs/:id/release   unclaim → reviewState=pending
+ *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
+ *   POST   /prs/:id/skip/reset  reset skipCount back to 0
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -272,6 +274,46 @@ const releaseRoute = createRoute({
   },
 });
 
+const skipRoute = createRoute({
+  method: "post",
+  path: "/:id/skip",
+  tags: ["PRs"],
+  summary: "Record a skip — increments skipCount, auto-blocks at threshold",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const skipResetRoute = createRoute({
+  method: "post",
+  path: "/:id/skip/reset",
+  tags: ["PRs"],
+  summary: "Reset skip tracking — skipCount back to 0",
+  request: {
+    params: PrIdParamSchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PullRequestSchema } },
+      description: "Updated PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createPrsRoutes(
@@ -290,6 +332,7 @@ export function createPrsRoutes(
     const staged =
       stagedRaw === "true" ? true : stagedRaw === "false" ? false : undefined;
     const ready = c.req.query("ready") === "true" ? true : undefined;
+    const blocked = c.req.query("blocked") === "true" ? true : undefined;
     const sort = c.req.query("sort") === "desc" ? "desc" : undefined;
 
     const result = await prService.list({
@@ -303,6 +346,7 @@ export function createPrsRoutes(
       reviewState: c.req.query("reviewState"),
       staged,
       ready,
+      blocked,
       sort,
       limit:
         limitRaw !== undefined
@@ -523,6 +567,20 @@ export function createPrsRoutes(
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(releaseRoute, async (c): Promise<any> => {
     const pr = await prService.release(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Skip ──────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipRoute, async (c): Promise<any> => {
+    const pr = await prService.recordSkip(c.req.param("id"));
+    return c.json(pr, 200);
+  });
+
+  // ─── Skip reset ────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(skipResetRoute, async (c): Promise<any> => {
+    const pr = await prService.resetSkip(c.req.param("id"));
     return c.json(pr, 200);
   });
 

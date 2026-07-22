@@ -1,0 +1,24 @@
+---
+// Shared "Try it" CTA section at the bottom of every comparison page
+// (compare.astro, self-hosted.astro, vs/devin.astro). The base CTA — h2,
+// paragraph, install command, GitHub + discovery-call buttons — is
+// byte-identical across all three. self-hosted.astro and vs/devin.astro
+// each append their own trailing-links paragraph after the CTA buttons;
+// compare.astro renders the bare CTA. That page-specific trailing markup is
+// supplied via the default slot so it stays page-owned.
+import { BOOKING_URL, INSTALL_CMD, REPO_URL } from "../consts";
+---
+
+<section id="cta" class="relative z-10 py-20 pb-24" style="border-top: 1px solid var(--sw-color-border-subtle);">
+  <h2>Try it</h2>
+  <p class="mt-3 max-w-2xl">
+    Install the plugin into Claude Code and run a task end to end. Free, MIT,
+    runs on your own infra.
+  </p>
+  <pre class="sw-code mt-4 w-fit"><code>{INSTALL_CMD}</code></pre>
+  <div class="mt-6 flex flex-wrap items-center gap-4">
+    <a href={REPO_URL} class="sw-btn">View on GitHub ↗</a>
+    <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a discovery call</a>
+  </div>
+  <slot />
+</section>

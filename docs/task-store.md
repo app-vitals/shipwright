@@ -99,7 +99,12 @@ Returns `404` if the task doesn't exist or is outside the agent's scope.
 PATCH /tasks/:id
 ```
 
-Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). Returns the updated task.
+Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). **Agent tokens cannot set the following fields via PATCH** — these are managed exclusively by their lifecycle endpoints:
+
+- `claimedBy`, `claimedAt`, `heartbeatAt` — use `/claim` or `/release`
+- `status: 'pending'` — use `/release` to unclaim, or `/claim` to reclaim
+
+Admin tokens (`agentId === null`) may set any field. Returns the updated task.
 
 #### Delete task
 
@@ -149,6 +154,22 @@ POST /tasks/:id/release
 
 Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, resets `status=pending`. Use when the agent stops work without completing or failing.
 
+#### Record skip
+
+```
+POST /tasks/:id/skip
+```
+
+Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
+
+#### Reset skip tracking
+
+```
+POST /tasks/:id/skip/reset
+```
+
+Resets `skipCount` back to 0 and clears `lastSkippedAt`. Called after a human reviews and unblocks a task that was auto-blocked by skip threshold. Returns `200` with the updated task.
+
 ### Task status lifecycle
 
 ```
@@ -181,21 +202,15 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params:
+Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `repo` | string | Filter by repo (`org/repo` format) |
-| `prNumber` | number | Filter by PR number |
-| `taskId` | string | Filter by associated task ID |
-| `state` | string | Filter by PR state (`open`, `merged`, `closed`) |
-| `reviewState` | string | Filter by review state (`pending`, `in_progress`, `posted`, `approved`) |
-| `staged` | boolean | Filter by staged flag |
-| `limit` | number | Page size |
-| `offset` | number | Page offset |
-| `ready` | `true` | Returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. Composes with other filters (e.g. `?ready=true&repo=org/repo`). Claim staleness is handled by the `StaleClaimReaper` background job. |
-| `sort` | string | `asc` (default, oldest first) or `desc` (newest first) — orders results by `createdAt`. Unrelated to `claim-next`'s own deterministic ordering. |
-| `updatedSince` | string | ISO timestamp. Only return PRs with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
+`ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
+
+`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.hitl===true` OR its linked task (joined by `PullRequest.taskId`) has `hitl===true` or `status==='blocked'`. PRs with no taskId are evaluated on `pr.hitl` alone. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
+
+`sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
+
+`updatedSince` is an ISO timestamp; only PRs with `updatedAt >= this value` are returned. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior.
 
 Returns `{ prs: PullRequest[], total: number, limit: number, offset: number }`.
 
@@ -274,6 +289,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
 | `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
+| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
+| `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt` |
 
 #### PR state enums
 
@@ -288,6 +305,10 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
 
 `blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
+
+`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
+
+`lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
 
 #### PR timestamp fields
 

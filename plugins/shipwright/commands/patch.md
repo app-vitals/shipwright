@@ -84,6 +84,53 @@ gh pr view {number} --repo {org}/{repo} \
 
 ---
 
+## Step 2.1: Resolve Patch Model Tier (MTR-2.1)
+
+Every dispatch this command makes — conflict resolution (Step 4b), finding fixes (Step
+5b), CI fixes (Step 6c) — is inherently a response to a failure signal (a conflict, a
+review finding, a red CI run). There's no "first attempt" the way `dev-task` has one, so
+`PATCH_MODEL` starts one tier above the linked task's planned tier rather than waiting to
+hit `dev-task`'s own BLOCKED-escalation ladder. Resolve it once here, right after Step 2
+resolves the target PR — this is independent of claim state (reading the linked task's
+model doesn't require holding a claim), and the computed value is reused as-is at Step 4b,
+Step 5b, Step 6c, and Step 5a.7. None of those four sites re-fetches it.
+
+```bash
+PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -r '.prs[0].taskId // empty')
+```
+
+- **`PR_TASK_ID` non-empty** (the PR has a linked task): fetch that task's planned model
+  and escalate one tier:
+  ```bash
+  TASK_MODEL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.model // "sonnet"')
+  ```
+  Compute `PATCH_MODEL` by escalating `TASK_MODEL` one tier up the same ladder
+  `dev-task.md`'s Step 5c BLOCKED handling already climbs — a patch dispatch is always
+  reacting to a problem the way a BLOCKED implementation subagent is, so it starts where
+  that ladder's first escalation would land, instead of waiting to hit it:
+  `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already at the top tier — stays put).
+
+  | `TASK_MODEL` (or `model ?? 'sonnet'` if the field is unset) | `PATCH_MODEL` |
+  |---|---|
+  | `haiku` | `sonnet` |
+  | `sonnet` | `opus` |
+  | `opus` | `opus` (already at the top tier — stays put) |
+
+- **`PR_TASK_ID` is unresolved (empty), or either `curl -sf` call above fails (non-200)**:
+  `PATCH_MODEL = "sonnet"` — plain `sonnet`, with **no escalation**. Print a one-line
+  warning and continue; this is **not a hard stop**:
+  ```bash
+  PATCH_MODEL="sonnet"
+  echo "⚠ no linked task found (or lookup failed) for PR #{pr} — PATCH_MODEL defaulting to sonnet, no escalation"
+  ```
+  There's no known baseline tier to escalate from on a PR Shipwright didn't create (or
+  whose task record isn't reachable), so defaulting straight to `opus` would be a surprise
+  cost spike with no signal backing it — `sonnet` is the safe, unescalated default.
+
+---
+
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
 For each PR discovered in Step 2, use the `mergeStateStatus` field (already fetched in Step 2) to identify DIRTY PRs.
@@ -385,7 +432,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the conflict-resolution subagent runs at the escalated
+tier, with this prompt:
 
 ```
 You are resolving merge conflicts on a pull request. Merge the base branch, resolve all
@@ -627,11 +676,10 @@ still raised a finding this round.
 5 for this PR entirely — do not dispatch the fix subagent, do not post another rebuttal, and
 do not reset `reviewState`.
 
-1. Resolve the linked task from the PR record claimed in Step 5a.6:
-   ```bash
-   PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" | jq -r '.taskId // empty')
-   ```
+1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. (Step 2.1
+   fetched `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right
+   after Step 2 resolved this same PR, independent of any claim, so it's already available
+   by the time this check runs.)
 2. If `PR_TASK_ID` is non-empty, PATCH it to `hitl: true` so the task is flagged for a human
    decision:
    ```bash
@@ -717,7 +765,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the fix subagent runs at the escalated tier, with this
+prompt:
 
 ```
 You are addressing review findings on a pull request. Apply fixes, validate, commit, push,
@@ -1003,8 +1053,9 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WOR
 
 ## Step 6: Fix Failing CI in Worktree
 
-For each PR in List D, set up a worktree, collect CI failure output, and dispatch a fix
-subagent. Fully complete one PR (fix → push → cleanup) before moving to the next.
+For each PR in List D, set up a worktree, collect CI failure output, check for an
+already-recorded HITL escalation, and dispatch a fix subagent if none exists. Fully
+complete one PR (fix → push → cleanup) before moving to the next.
 
 ### Step 6a: Set Up Worktree
 
@@ -1080,9 +1131,9 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
 
 - **`headRefOid == PRECLAIM_COMMIT_SHA`** (marker is current): trust it. Set
   `PR_RECORD_ID = PRECLAIM_RECORD_ID` and **skip this site's own `/prs/claim` call below**
-  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`. Proceed
-  directly to Step 6c (`PR_RECORD_ID` is reused by the post-fix update in Step 6d.5, same
-  as the self-claim path).
+  — the orchestrator's `/prs/claim` already holds this PR under `phase: "patch"`.
+  Proceed directly to Step 6b.6 (`PR_RECORD_ID` is reused by the post-fix update in Step
+  6d.5, same as the self-claim path).
 - **`headRefOid != PRECLAIM_COMMIT_SHA`** (stale marker — new commits landed between the
   orchestrator's claim and now) **or no marker present**: fall back to self-claiming
   exactly as today — run the claim below unchanged.
@@ -1106,7 +1157,59 @@ Skip the rest of Step 6 for this PR. Move to the next PR in List D. If no candid
 remain, continue to Step 7.
 
 **Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
-post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6c.
+post-fix update in Step 6d.5 — no second claim call is needed. Proceed to Step 6b.6.
+
+### Step 6b.6: Escalation Check (CFE-1.1)
+
+Step 5a.7 (RPF-1.3) escalates a second-round review disagreement to HITL instead of
+dispatching a third automated fix — but it only guards List A (review findings). Once that
+escalation comment exists on the PR, CPF-2.3's reply-after-review exclusion drops the PR
+from List A on the next cycle (the comment postdates the review). If CI is still failing,
+Step 3c puts the same PR into List D, and without this check Step 6 would dispatch a
+CI-fix subagent that directly contradicts the HITL decision Step 5a.7 already recorded —
+re-attempting exactly what that step decided not to retry a third time. Nothing else resets
+`readyForPatchAt` or `reviewState` after that escalation releases its claim, so this can
+re-trigger every patch cycle. Before dispatching the CI-fix subagent, check whether this PR
+already has an unresolved HITL escalation.
+
+1. Fetch the PR record fresh via `GET` — do not trust a possibly-stale claim response, same
+   "re-fetch fresh" principle Step 6b.5's Pre-Claim Fast Path already applies to
+   `headRefOid`:
+   ```bash
+   PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID")
+   PR_HITL=$(echo "$PR_RECORD" | jq -r '.hitl // false')
+   PR_TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
+   ```
+2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `hitl` field:
+   ```bash
+   TASK_HITL=false
+   if [ -n "$PR_TASK_ID" ]; then
+     TASK_HITL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.hitl // false')
+   fi
+   ```
+
+**If `PR_HITL` is `true` OR `TASK_HITL` is `true`** (an unresolved HITL escalation already
+exists — most likely from Step 5a.7 on this same PR, this cycle or a prior one): skip —
+do not dispatch the fix subagent, since doing so would silently contradict the escalation
+decision already recorded on the PR.
+
+1. Release the pre-work claim from Step 6b.5 — no fix is in flight, this cycle intentionally
+   stops short of dispatching one:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+   ```
+2. Print:
+   ```
+   ⏸ PR #{pr} already has an unresolved HITL escalation — skipping CI-fix dispatch.
+   ```
+3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
+
+**Otherwise** (neither the PR record nor its linked task has `hitl: true`): no escalation
+is on record for this PR — proceed normally to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 
@@ -1119,7 +1222,9 @@ curl -s -o /dev/null -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
 ```
 
-Dispatch a `general-purpose` subagent via the Agent tool with this prompt:
+Dispatch a `general-purpose` subagent via the Agent tool, passing `model: PATCH_MODEL`
+(resolved once in Step 2.1) so the CI-fix subagent runs at the escalated tier, with this
+prompt:
 
 ```
 You are fixing failing CI on a pull request. Diagnose the failures, apply fixes, validate locally, commit, and push.

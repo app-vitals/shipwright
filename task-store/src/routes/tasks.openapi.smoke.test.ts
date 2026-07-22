@@ -131,6 +131,12 @@ function fakeTaskService(
     async release(id: string) {
       return makeTask({ id, status: "pending" });
     },
+    async recordSkip(id: string) {
+      return makeTask({ id, skipCount: 1 });
+    },
+    async resetSkip(id: string) {
+      return makeTask({ id, skipCount: 0 });
+    },
     async bulk(data) {
       opts.onBulk?.(data);
       return { inserted: 0, updated: 0, skipped: [] };
@@ -531,5 +537,88 @@ describe("POST /bulk — agent-token default assignee (UTA-1.1)", () => {
     expect(tasks).toHaveLength(2);
     expect(tasks[0]?.assignee).toBe("some-other-agent");
     expect(tasks[1]?.assignee).toBe("agent-1");
+  });
+});
+
+describe("PATCH /:id — lifecycle field guard (TPL-1.1)", () => {
+  it("agent token + claimedBy in body -> 400", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimedBy: "agent-2" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("/claim");
+    expect(body.error).toContain("/release");
+  });
+
+  it("agent token + claimedAt in body -> 400", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimedAt: new Date().toISOString() }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("agent token + heartbeatAt in body -> 400", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ heartbeatAt: new Date().toISOString() }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("agent token + status: 'pending' in body -> 400", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "pending" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("agent token + status: 'blocked' (control case) -> 200, unaffected", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "blocked" }),
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("admin token + claimedBy in body -> 200 (admin bypass confirmed)", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claimedBy: "agent-2" }),
+    });
+    expect(res.status).toBe(200);
   });
 });

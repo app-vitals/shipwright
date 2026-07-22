@@ -1,0 +1,48 @@
+---
+// Shared two-card "Choose X when / Choose Y when" grid used across the
+// comparison pages (compare.astro x2, vs/devin.astro x1). Card order on the
+// page is left-to-right per the `cards` array — compare.astro always puts
+// the Shipwright card first, vs/devin.astro puts the competitor card first
+// — so this component does not hardcode which side is "Shipwright"; each
+// card carries its own label + labelColor. List items are plain strings
+// rendered as <li>; an item that needs inline markup (e.g. vs/devin.astro's
+// citation link inside one list item) can opt into set:html per-item via
+// `html: true` since that content is the page's own trusted static copy,
+// never user input.
+interface ListItem {
+  text: string;
+  // When true, `text` is raw trusted HTML and rendered via set:html instead
+  // of as plain text (needed for the one list item that embeds a citation
+  // <a> inline).
+  html?: boolean;
+}
+
+interface Card {
+  label: string;
+  labelColor: string;
+  items: ListItem[];
+}
+
+interface Props {
+  cards: [Card, Card];
+}
+
+const { cards } = Astro.props;
+---
+
+<div class="mt-8 grid gap-6 sm:grid-cols-2">
+  {cards.map((card) => (
+    <div class="sw-card">
+      <p class="sw-label" style={`color:${card.labelColor};`}>{card.label}</p>
+      <ul class="mt-3 flex flex-col gap-2" style="color:var(--sw-color-text-body); padding-left:1.1rem; list-style:disc;">
+        {card.items.map((item) =>
+          item.html ? (
+            <li set:html={item.text} />
+          ) : (
+            <li>{item.text}</li>
+          ),
+        )}
+      </ul>
+    </div>
+  ))}
+</div>

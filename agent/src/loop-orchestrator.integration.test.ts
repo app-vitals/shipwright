@@ -153,6 +153,7 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
         if (itemId) completedItemIds.push(itemId);
       },
       async skipRun() {},
+      async recordProgress() {},
     };
     return { reporter, completedItemIds };
   }
@@ -254,6 +255,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
         if (itemId) completedItemIds.push(itemId);
       },
       async skipRun() {},
+      async recordProgress() {},
     };
     return { reporter, completedItemIds };
   }

@@ -120,6 +120,9 @@ export interface PrListItem {
   heartbeatAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
+  hitl?: boolean | null;
+  hitlNotifiedAt?: string | null;
+  blockedReason?: string | null;
 }
 
 export interface AgentListItem {
@@ -2177,18 +2180,23 @@ const SESSION_CLOSED_STATUSES = new Set([
 
 /** Mirrors the ready/in_progress/blocked/closed taxonomy used by the Tasks
  * page's state tabs — see task-store's TaskService.listReady/listBlocked:
- * closed = terminal status; in_progress = {in_progress, pr_open, approved};
- * blocked = explicit status "blocked", or "pending" with unresolved
- * dependencies; ready = "pending" with none. `blockedBy` is computed
- * server-side by the task-store's computeBlockedBy and passed through as-is
- * on each TaskItem — this only classifies, it doesn't resolve dependencies
- * itself. Shared by the session task table and the dependency graph card
- * below so both use the same grouping.
+ * closed = terminal status; blocked = a non-empty `blockedBy` (unresolved
+ * dependency or hitl wait) on any non-closed task, or explicit status
+ * "blocked"; in_progress = {in_progress, pr_open, approved} with no
+ * outstanding blockers; ready = "pending" with none. `blockedBy` is computed
+ * server-side by the task-store's computeBlockedBy for every status (not
+ * just "pending") and passed through as-is on each TaskItem — this only
+ * classifies, it doesn't resolve dependencies itself. The blockedBy check
+ * must run before the in_progress/pr_open/approved check so a task that's
+ * technically in progress but still waiting on a dependency or a human
+ * (hitl) buckets as blocked, not in_progress. Shared by the session task
+ * table and the dependency graph card below so both use the same grouping.
  */
 type TaskState = "ready" | "in_progress" | "blocked" | "closed";
 
-function classifyTaskState(t: TaskItem): TaskState {
+export function classifyTaskState(t: TaskItem): TaskState {
   if (SESSION_CLOSED_STATUSES.has(t.status)) return "closed";
+  if ((t.blockedBy?.length ?? 0) > 0) return "blocked";
   if (
     t.status === "in_progress" ||
     t.status === "pr_open" ||
@@ -2197,7 +2205,7 @@ function classifyTaskState(t: TaskItem): TaskState {
     return "in_progress";
   }
   if (t.status === "blocked") return "blocked";
-  return (t.blockedBy?.length ?? 0) > 0 ? "blocked" : "ready";
+  return "ready";
 }
 
 const TASK_STATE_GROUPS: { key: TaskState; label: string }[] = [
@@ -2602,6 +2610,7 @@ export function renderPrsPage(
     state?: string;
     reviewState?: string;
     taskId?: string;
+    blocked?: string;
   },
   degraded: boolean,
   userName: string,
@@ -2628,6 +2637,14 @@ export function renderPrsPage(
     if (s === "in_progress" || s === "posted") return "badge-blue";
     if (s === "approved") return "badge-green";
     return "badge-gray";
+  };
+
+  const renderHitlBadge = (pr: PrListItem): string => {
+    if (!pr.hitl) return "";
+    const title = pr.blockedReason
+      ? ` title="${escapeHtml(pr.blockedReason)}"`
+      : "";
+    return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px"${title}>Waiting: HITL</span>`;
   };
 
   const rows =
@@ -2662,7 +2679,7 @@ export function renderPrsPage(
     <td style="font-size:12px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none;font-weight:500">#${escapeHtml(String(pr.prNumber))}</a></td>
     <td style="font-size:12px">${escapeHtml(pr.repo)}</td>
     <td style="font-size:12px">${taskCell}</td>
-    <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span></td>
+    <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span>${renderHitlBadge(pr)}</td>
     <td><span class="badge ${reviewStateBadgeClass(pr.reviewState)}">${escapeHtml(pr.reviewState)}</span></td>
     <td class="col-review-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.reviewCycles))}</td>
     <td class="col-patch-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.patchCycles))}</td>
@@ -2674,6 +2691,7 @@ export function renderPrsPage(
 
   // State tab helpers
   const activeState = filters.state;
+  const blockedActive = filters.blocked === "true";
 
   const makeTabParams = (tabState: string): string => {
     const p = new URLSearchParams();
@@ -2684,10 +2702,26 @@ export function renderPrsPage(
     return `?${p.toString()}`;
   };
 
+  const makeBlockedTabParams = (): string => {
+    const p = new URLSearchParams();
+    p.set("state", "open");
+    p.set("blocked", "true");
+    if (filters.repo) p.set("repo", filters.repo);
+    if (filters.taskId) p.set("taskId", filters.taskId);
+    if (filters.reviewState) p.set("reviewState", filters.reviewState);
+    return `?${p.toString()}`;
+  };
+
+  // Blocked tab's own active-state takes precedence over Open/Merged when
+  // filters.blocked === "true", regardless of the current filters.state.
   const tabStyle = (tabState: string) =>
-    activeState === tabState
+    !blockedActive && activeState === tabState
       ? "background:#6366f1;color:#fff;font-weight:600"
       : "background:#fff;color:#374151";
+
+  const blockedTabStyle = blockedActive
+    ? "background:#6366f1;color:#fff;font-weight:600"
+    : "background:#fff;color:#374151";
 
   const stateToggle = `
     <div style="display:flex;gap:0;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;width:fit-content">
@@ -2695,6 +2729,8 @@ export function renderPrsPage(
          style="padding:5px 14px;font-size:12px;text-decoration:none;${tabStyle("open")}">Open</a>
       <a href="/admin/prs${makeTabParams("merged")}"
          style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${tabStyle("merged")}">Merged</a>
+      <a href="/admin/prs${makeBlockedTabParams()}"
+         style="padding:5px 14px;font-size:12px;text-decoration:none;border-left:1px solid #e5e7eb;${blockedTabStyle}">Blocked</a>
     </div>`;
 
   // Pagination
@@ -2709,6 +2745,7 @@ export function renderPrsPage(
     if (filters.reviewState) params.set("reviewState", filters.reviewState);
     if (filters.repo) params.set("repo", filters.repo);
     if (filters.taskId) params.set("taskId", filters.taskId);
+    if (filters.blocked) params.set("blocked", filters.blocked);
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();
     return `/admin/prs${qs ? `?${qs}` : ""}`;
@@ -2737,6 +2774,7 @@ export function renderPrsPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   </style>
 </head>
@@ -2898,6 +2936,10 @@ export function renderPrDetailPage(
     field("Staged", pr.staged ? "yes" : "no"),
     agentField("Claimed By", pr.claimedBy),
     agentField("Agent ID", pr.agentId),
+    pr.hitl !== null && pr.hitl !== undefined
+      ? field("HITL", pr.hitl ? "yes" : "no")
+      : "",
+    field("Blocked Reason", pr.blockedReason),
   ]
     .filter(Boolean)
     .join("\n");
@@ -2924,6 +2966,7 @@ export function renderPrDetailPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
+    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
   </style>

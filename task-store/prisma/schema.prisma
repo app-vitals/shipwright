@@ -77,6 +77,14 @@ model Task {
   hitl               Boolean?
   hitlNotifiedAt     String?
 
+  // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
+  // skipCount increments each time the loop orchestrator dispatches this task
+  // and finds nothing to do (a [silent] outcome). Crossing the threshold (3,
+  // mirroring SPIN_DETECTION_THRESHOLD in agent/src/loop-orchestrator.ts)
+  // auto-sets hitl+blockedReason so the task stops being re-selected forever.
+  skipCount     Int     @default(0)
+  lastSkippedAt String?
+
   // ─── Claim / liveness (multi-agent execution) ───
   claimedBy   String? // agent ID that claimed this task
   agentHint   String? // hint for which agent should pick up this task
@@ -171,6 +179,13 @@ model PullRequest {
   hitl              Boolean       @default(false)
   hitlNotifiedAt    String?
   blockedReason     String?
+
+  // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
+  // Mirrors Task.skipCount/lastSkippedAt — see comment there for the
+  // threshold rationale (3, matching SPIN_DETECTION_THRESHOLD in
+  // agent/src/loop-orchestrator.ts).
+  skipCount     Int     @default(0)
+  lastSkippedAt String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

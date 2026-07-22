@@ -2202,6 +2202,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const reviewState = c.req.query("reviewState") ?? undefined;
     const repo = c.req.query("repo") ?? undefined;
     const taskId = c.req.query("taskId") ?? undefined;
+    const blockedParam = c.req.query("blocked") ?? undefined;
     const pageRaw = c.req.query("page");
     const page = pageRaw ? Math.max(1, Number.parseInt(pageRaw, 10) || 1) : 1;
     const limit = 50;
@@ -2219,6 +2220,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (reviewState) params.set("reviewState", reviewState);
       if (repo) params.set("repo", repo);
       if (taskId) params.set("taskId", taskId);
+      if (blockedParam === "true") params.set("blocked", "true");
       params.set("limit", String(limit));
       params.set("offset", String(offset));
       params.set("sort", "desc");
@@ -2255,7 +2257,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderPrsPage(
         prs,
-        { state: stateParam, reviewState, repo, taskId },
+        { state: stateParam, reviewState, repo, taskId, blocked: blockedParam },
         degraded,
         c.var.userEmail,
         agentNames,

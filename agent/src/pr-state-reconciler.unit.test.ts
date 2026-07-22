@@ -74,6 +74,15 @@ interface MakeDepsOptions {
     string,
     Array<{ number: number; createdAt: string }> | Error
   >;
+  /**
+   * "repo#branch" -> full list of task-store tasks sharing that branch
+   * (BBR-1.1's bundle-mate guard). Defaults to a lazy single-task stand-in
+   * derived per-call from the branch alone (a single-element array) so every
+   * pre-existing test — none of which configures this — keeps auto-healing
+   * exactly as before. Tests exercising the bundle case override this map
+   * with a >1-length array for the branch under test.
+   */
+  tasksForBranch?: Record<string, PrOpenTaskRecord[] | Error>;
 }
 
 function makeDeps({
@@ -88,6 +97,7 @@ function makeDeps({
   getScopedRepos = () => repos,
   orphanCandidateTasks = [],
   openBranchResults = {},
+  tasksForBranch = {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -95,6 +105,8 @@ function makeDeps({
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
   orphanCandidateCallCount: number[];
+  delayCalls: number[];
+  listAllTasksForBranchCalls: string[];
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
@@ -104,6 +116,8 @@ function makeDeps({
   // pushing to it from inside listOrphanCandidateTasks below is visible to
   // the caller via .length, without needing a getter on the return object.
   const orphanCandidateCallCount: number[] = [];
+  const delayCalls: number[] = [];
+  const listAllTasksForBranchCalls: string[] = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -152,6 +166,19 @@ function makeDeps({
       if (result instanceof Error) throw result;
       return result ?? [];
     },
+    listAllTasksForBranch: async (repo: string, branch: string) => {
+      const key = `${repo}#${branch}`;
+      listAllTasksForBranchCalls.push(key);
+      const result = tasksForBranch[key];
+      if (result instanceof Error) throw result;
+      // Default: a single-element stand-in so every pre-existing test (none
+      // of which configures tasksForBranch) keeps auto-healing exactly as
+      // before — see the field's doc comment on MakeDepsOptions above.
+      return result ?? [{ id: "single-task-stand-in", repo, branch }];
+    },
+    delay: async (ms: number) => {
+      delayCalls.push(ms);
+    },
   };
 
   return {
@@ -161,6 +188,8 @@ function makeDeps({
     taskPatchCalls,
     listPrOpenTasksCalls,
     orphanCandidateCallCount,
+    delayCalls,
+    listAllTasksForBranchCalls,
   };
 }
 
@@ -499,11 +528,13 @@ function makeReviewStateDeps({
   listPostedCalls: ListReviewCall[];
   patchCalls: ReviewPatchCall[];
   fetchCalls: string[];
+  delayCalls: number[];
 } {
   const listCalls: ListReviewCall[] = [];
   const listPostedCalls: ListReviewCall[] = [];
   const patchCalls: ReviewPatchCall[] = [];
   const fetchCalls: string[] = [];
+  const delayCalls: number[] = [];
 
   const deps: PrReviewStateReconcilerDeps = {
     repos,
@@ -541,9 +572,12 @@ function makeReviewStateDeps({
         throw new Error(`no fake review result configured for ${key}`);
       return result;
     },
+    delay: async (ms: number) => {
+      delayCalls.push(ms);
+    },
   };
 
-  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls };
+  return { deps, listCalls, listPostedCalls, patchCalls, fetchCalls, delayCalls };
 }
 
 function makeReviewStateRecord(
@@ -1360,6 +1394,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
         if (key === "acme/repo-b#1") return noReviewAtHead;
         throw new Error(`no fake review result configured for ${key}`);
       },
+      delay: async () => {},
     };
     const patchCalls: ReviewPatchCall[] = [];
     deps.patchPrRecord = async (
@@ -1558,6 +1593,97 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
     expect(calls[0]).toEqual({ status: "pr_open", limit: 50, offset: 0 });
   });
 
+  /**
+   * Fake fetchFn for `listAllTasksForBranch` (BBR-1.1) — simulates the
+   * task-store's GET /tasks?repo=<repo>&branch=<branch> pagination contract,
+   * mirroring `makeFakeTaskStoreFetch` above but keyed on repo+branch
+   * instead of status.
+   */
+  function makeFakeBranchTaskStoreFetch(opts: {
+    tasksByRepoBranch: Record<string, PrOpenTaskRecord[]>;
+  }): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<{ repo: string; branch: string; limit: number; offset: number }>;
+  } {
+    const calls: Array<{
+      repo: string;
+      branch: string;
+      limit: number;
+      offset: number;
+    }> = [];
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      const repo = parsed.searchParams.get("repo") ?? "";
+      const branch = parsed.searchParams.get("branch") ?? "";
+      const limit = Number(parsed.searchParams.get("limit"));
+      const offset = Number(parsed.searchParams.get("offset"));
+      calls.push({ repo, branch, limit, offset });
+      const all = opts.tasksByRepoBranch[`${repo}#${branch}`] ?? [];
+      const page = all.slice(offset, offset + limit);
+      return new Response(JSON.stringify({ tasks: page }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    return { fetchFn, calls };
+  }
+
+  test("listAllTasksForBranch issues a single GET scoped by repo+branch when under the page limit", async () => {
+    const tasks = [
+      { id: "t1", repo: "acme/example-repo", branch: "feat/bundle" },
+      { id: "t2", repo: "acme/example-repo", branch: "feat/bundle" },
+    ];
+    const { fetchFn, calls } = makeFakeBranchTaskStoreFetch({
+      tasksByRepoBranch: { "acme/example-repo#feat/bundle": tasks },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listAllTasksForBranch(
+      "acme/example-repo",
+      "feat/bundle",
+    );
+
+    expect(result).toEqual(tasks);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      repo: "acme/example-repo",
+      branch: "feat/bundle",
+      limit: 50,
+      offset: 0,
+    });
+  });
+
+  test("listAllTasksForBranch pages past the default 50-row task-store page", async () => {
+    const tasks = Array.from({ length: 62 }, (_, i) => ({
+      id: `bundle-task-${i}`,
+      repo: "acme/example-repo",
+      branch: "feat/big-bundle",
+    }));
+    const { fetchFn, calls } = makeFakeBranchTaskStoreFetch({
+      tasksByRepoBranch: { "acme/example-repo#feat/big-bundle": tasks },
+    });
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+
+    const result = await deps.listAllTasksForBranch(
+      "acme/example-repo",
+      "feat/big-bundle",
+    );
+
+    expect(result).toHaveLength(62);
+    expect(calls).toEqual([
+      { repo: "acme/example-repo", branch: "feat/big-bundle", limit: 50, offset: 0 },
+      { repo: "acme/example-repo", branch: "feat/big-bundle", limit: 50, offset: 50 },
+    ]);
+  });
+
   test("listOrphanCandidateTasks pages past the default 50-row task-store page for both statuses (regression: previously silently truncated at 50)", async () => {
     // 62 pending + 55 in_progress tasks, all orphan candidates (branch set,
     // no pr linked) — mirrors the live truncation this finding reported
@@ -1726,6 +1852,66 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls[0].fields.status).toBe("merged");
     expect(taskPatchCalls[0].fields.pr).toBe(55);
     expect(taskPatchCalls[0].fields.mergedAt).toBe(FAKE_NOW);
+  });
+
+  // ─── bundle-mate guard (BBR-1.1) ─────────────────────────────────────────
+
+  test("BBR-1.1: a pending sibling on a 2-task bundle branch is skipped in the branch-fallback merged path despite a real merged PR on the branch — no status PATCH, no taskId backfill, skip logged", async () => {
+    const sibling: PrOpenTaskRecord = {
+      id: "task-bundle-sibling-merged",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui",
+    };
+    const { deps, taskPatchCalls, patchCalls, listAllTasksForBranchCalls } =
+      makeDeps({
+        prOpenTasks: [sibling],
+        branchResults: {
+          "acme/example-repo#feat/asa-slack-oauth-ui": [{ number: 501 }],
+        },
+        prRecords: {
+          "acme/example-repo#501": {
+            id: "pr-record-501",
+            repo: "acme/example-repo",
+            prNumber: 501,
+            state: "open",
+            taskId: null,
+          },
+        },
+        tasksForBranch: {
+          "acme/example-repo#feat/asa-slack-oauth-ui": [
+            { id: "task-bundle-real-work-merged", repo: "acme/example-repo" },
+            sibling,
+          ],
+        },
+      });
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(listAllTasksForBranchCalls).toContain(
+      "acme/example-repo#feat/asa-slack-oauth-ui",
+    );
+    // No status:"merged" PATCH on the sibling task.
+    expect(taskPatchCalls).toHaveLength(0);
+    // No taskId backfill onto the PR record either — guarded before both effects.
+    expect(patchCalls).toHaveLength(0);
+    expect(
+      errorSpy.some((args) =>
+        args.some(
+          (a) =>
+            typeof a === "string" && a.includes("task-bundle-sibling-merged"),
+        ),
+      ),
+    ).toBe(true);
   });
 
   test("task with no pr AND no branch is skipped — no PATCH, no throw", async () => {
@@ -2125,5 +2311,116 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
     expect(ghCalls).toEqual(["acme/repo-a#feat/in-scope"]);
     expect(taskPatchCalls).toHaveLength(1);
     expect(taskPatchCalls[0].id).toBe("task-orphan-in-scope");
+  });
+
+  // ─── bundle-mate guard (BBR-1.1) ───────────────────────────────────────────
+
+  test("BBR-1.1: a pending sibling on a 2-task bundle branch is skipped despite a real open PR on the branch — no PATCH, skip logged", async () => {
+    const sibling: PrOpenTaskRecord = {
+      id: "task-bundle-sibling",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui",
+    };
+    const { deps, taskPatchCalls, listAllTasksForBranchCalls } = makeDeps({
+      orphanCandidateTasks: [sibling],
+      openBranchResults: {
+        "acme/example-repo#feat/asa-slack-oauth-ui": [
+          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
+        ],
+      },
+      tasksForBranch: {
+        "acme/example-repo#feat/asa-slack-oauth-ui": [
+          { id: "task-bundle-real-work", repo: "acme/example-repo" },
+          sibling,
+        ],
+      },
+    });
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    // The bundle-mate guard must consult listAllTasksForBranch for this
+    // branch before ever considering a PATCH.
+    expect(listAllTasksForBranchCalls).toContain(
+      "acme/example-repo#feat/asa-slack-oauth-ui",
+    );
+    // Zero PATCHes — the sibling must NOT be marked pr_open despite a real
+    // open PR existing on the shared branch.
+    expect(taskPatchCalls).toHaveLength(0);
+    // The skip must be observable via the file's existing logging convention.
+    expect(
+      errorSpy.some((args) =>
+        args.some(
+          (a) => typeof a === "string" && a.includes("task-bundle-sibling"),
+        ),
+      ),
+    ).toBe(true);
+  });
+});
+
+// ─── gh-call throttling (PSR-1.2) ──────────────────────────────────────────────
+
+describe("reconcile delay throttling (PSR-1.2)", () => {
+  test("reconcilePrState invokes deps.delay once per record, scaling with batch size", async () => {
+    const records = Array.from({ length: 25 }, (_, i) =>
+      makeRecord({ id: `pr-throttle-${i}`, prNumber: i + 1 }),
+    );
+    const ghResults: Record<string, GhPrView> = {};
+    for (const record of records) {
+      ghResults[`acme/example-repo#${record.prNumber}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, delayCalls } = makeDeps({
+      openRecords: { "acme/example-repo": records },
+      ghResults,
+    });
+
+    await reconcilePrState(deps);
+
+    // one delay call per record iteration, none skipped or doubled
+    expect(delayCalls).toHaveLength(25);
+    expect(delayCalls.every((ms) => ms > 0)).toBe(true);
+  });
+
+  test("reconcileReviewState invokes deps.delay once per record across both the pending and posted passes", async () => {
+    const pending = Array.from({ length: 20 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-pending-${i}`, prNumber: i + 1 }),
+    );
+    const posted = Array.from({ length: 5 }, (_, i) =>
+      makeReviewStateRecord({ id: `pr-posted-${i}`, prNumber: 100 + i }),
+    );
+    const reviewResults: Record<string, PrReviewData> = {};
+    for (const record of [...pending, ...posted]) {
+      reviewResults[`acme/example-repo#${record.prNumber}`] = makeReviewData({
+        headRefOid: "head-sha",
+        reviews: {
+          nodes: [
+            makeReviewNode({ state: "COMMENTED", commit: { oid: "head-sha" } }),
+          ],
+        },
+        reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+      });
+    }
+    const { deps, delayCalls } = makeReviewStateDeps({
+      pendingRecords: { "acme/example-repo": pending },
+      postedRecords: { "acme/example-repo": posted },
+      reviewResults,
+    });
+
+    await reconcileReviewState(deps);
+
+    // 20 from the pending-scan pass + 5 from the posted-scan pass
+    expect(delayCalls).toHaveLength(25);
   });
 });

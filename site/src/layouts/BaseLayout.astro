@@ -4,7 +4,9 @@
 // fonts load via plain <link rel="stylesheet"> and the glow orb is pure CSS.
 import "../styles/brand.css";
 import Analytics from "../components/Analytics.astro";
-import { BOOKING_URL } from "../consts";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { REPO_URL } from "../consts";
 
 interface Props {
   title?: string;
@@ -64,19 +66,6 @@ const structuredData = {
     },
   ],
 };
-
-// Footer links (SWW-2.3): repo, license, platform, community.
-const repoUrl = "https://github.com/app-vitals/shipwright";
-const licenseUrl = "https://github.com/app-vitals/shipwright/blob/main/LICENSE";
-const claudeCodeUrl = "https://claude.com/claude-code";
-const discussionsUrl = "https://github.com/app-vitals/shipwright/discussions";
-const compareUrl = "/compare";
-const docsUrl = "/docs";
-const architectureUrl = "/architecture";
-// D10-designated nav/footer link (brand/MESSAGING.md D10) — single "vs Devin"
-// link in each, no additional claim text.
-const vsDevinUrl = "/vs/devin";
-const year = new Date().getFullYear();
 ---
 
 <!doctype html>
@@ -140,9 +129,6 @@ const year = new Date().getFullYear();
     />
   </head>
   <body class="min-h-screen overflow-x-hidden">
-    <!-- Mobile nav toggle (CSS-only, hidden checkbox) -->
-    <input type="checkbox" id="nav-mobile-toggle" aria-hidden="true" />
-
     <!-- Subtle dark-premium glow orb (pure CSS, decorative) -->
     <div
       class="sw-orb sw-orb-brand"
@@ -156,129 +142,7 @@ const year = new Date().getFullYear();
       wordmark per BRAND.md §4 (display font; "Harness" carries the green).
       Zero runtime JS; the whole lockup links home.
     -->
-    <header
-      class="sw-container relative z-10 flex items-center justify-between py-6"
-    >
-      <a
-        href="/"
-        class="flex items-center gap-3"
-        aria-label="Shipwright Harness — home"
-      >
-        <img
-          src="/shipwright-icon.svg"
-          alt=""
-          width="36"
-          height="36"
-          class="rounded-lg"
-        />
-        <span
-          class="text-lg"
-          style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);"
-        >
-          Shipwright <span style="color: var(--sw-color-brand-default);"
-            >Harness</span
-          >
-        </span>
-      </a>
-      <nav class="hidden md:flex items-center gap-6" aria-label="Primary">
-        <a href={docsUrl} class="sw-label">Docs</a>
-        <a href={compareUrl} class="sw-label">Compare</a>
-        <a href={vsDevinUrl} class="sw-label">vs Devin</a>
-        <a href={architectureUrl} class="sw-label">Architecture</a>
-        <a href={repoUrl} class="sw-label">GitHub ↗</a>
-        <a href={BOOKING_URL} class="sw-btn sw-btn-secondary">Book a call</a>
-      </nav>
-
-      <!-- Mobile hamburger button (CSS-only) -->
-      <label
-        for="nav-mobile-toggle"
-        class="md:hidden cursor-pointer p-2"
-        style="color: var(--sw-color-text-heading);"
-        aria-label="Open navigation menu"
-      >
-        <span class="text-2xl">☰</span>
-      </label>
-    </header>
-
-    <!-- Mobile nav panel (slides in on checkbox:checked) -->
-    <nav
-      id="mobile-nav-panel"
-      class="mobile-nav-panel"
-      aria-label="Mobile navigation"
-    >
-      <ul class="flex flex-col gap-4 p-6">
-        <li>
-          <a href={docsUrl} class="sw-label">Docs</a>
-        </li>
-        <li>
-          <a href={compareUrl} class="sw-label">Compare</a>
-        </li>
-        <li>
-          <a href={vsDevinUrl} class="sw-label">vs Devin</a>
-        </li>
-        <li>
-          <a href={architectureUrl} class="sw-label">Architecture</a>
-        </li>
-        <li>
-          <a href={repoUrl} class="sw-label">GitHub ↗</a>
-        </li>
-        <li>
-          <a href={BOOKING_URL} class="sw-label">Book a call</a>
-        </li>
-      </ul>
-    </nav>
-
-    <!-- Mobile nav overlay (click to close) -->
-    <label
-      for="nav-mobile-toggle"
-      id="mobile-nav-overlay"
-      aria-hidden="true"
-    ></label>
-
-    <style>
-      #nav-mobile-toggle {
-        display: none;
-      }
-
-      .mobile-nav-panel {
-        display: none;
-      }
-
-      #mobile-nav-overlay {
-        display: none;
-      }
-
-      @media (max-width: 767px) {
-        .mobile-nav-panel {
-          display: block;
-          visibility: hidden;
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100vh;
-          background: var(--sw-color-bg-base);
-          z-index: 40;
-          transform: translateX(-100%);
-          transition: transform 0.25s ease;
-          border-right: 1px solid var(--sw-color-border-muted);
-        }
-
-        #nav-mobile-toggle:checked ~ .mobile-nav-panel {
-          transform: translateX(0);
-          visibility: visible;
-        }
-
-        #nav-mobile-toggle:checked ~ #mobile-nav-overlay {
-          display: block;
-          position: fixed;
-          inset: 0;
-          z-index: 30;
-          background: color-mix(in srgb, var(--sw-color-bg-base) 65%, transparent);
-          cursor: pointer;
-        }
-      }
-    </style>
+    <SiteHeader variant="marketing" />
 
     <!-- .sw-container already caps width at --sw-layout-max-width (72rem). -->
     <main class="sw-container relative" {...(pagefindIgnore ? { "data-pagefind-ignore": true } : {})}>
@@ -287,35 +151,8 @@ const year = new Date().getFullYear();
 
     <!--
       Site footer (SWW-2.3): repo · license · platform · community.
-      Pure markup, zero runtime JS. Border color comes from a brand token var
-      (no raw hex) so brand-lint stays green.
+      Pure markup, zero runtime JS.
     -->
-    <footer class="sw-container relative z-10 py-12">
-      <div
-        class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between"
-        style="border-top: 1px solid var(--sw-color-border-subtle);"
-      >
-        <p class="sw-label flex items-center gap-2">
-          <img
-            src="/shipwright-icon.svg"
-            alt=""
-            width="20"
-            height="20"
-            class="rounded"
-          />
-          Shipwright Harness · MIT-licensed · © {year}
-        </p>
-        <nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer">
-          <a href={repoUrl}>GitHub</a>
-          <a href={licenseUrl}>MIT License</a>
-          <a href={claudeCodeUrl}>Claude Code</a>
-          <a href={discussionsUrl}>GitHub Discussions</a>
-          <a href={compareUrl}>Compare</a>
-          <a href={vsDevinUrl}>vs Devin</a>
-          <a href={docsUrl}>Docs</a>
-          <a href={BOOKING_URL}>Book a call</a>
-        </nav>
-      </div>
-    </footer>
+    <SiteFooter />
   </body>
 </html>

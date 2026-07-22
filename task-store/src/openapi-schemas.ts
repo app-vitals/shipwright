@@ -140,6 +140,16 @@ export const TaskSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    skipCount: z.number().int().default(0).openapi({
+      example: 0,
+      description:
+        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+    }),
+    lastSkippedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
     claimedBy: z
       .string()
       .nullable()
@@ -331,6 +341,16 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "no linked task" }),
+    skipCount: z.number().int().default(0).openapi({
+      example: 0,
+      description:
+        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+    }),
+    lastSkippedAt: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
     createdAt: z
       .string()
       .datetime()
@@ -544,6 +564,11 @@ export const PrListQuerySchema = z
       example: "true",
       description:
         "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
+    }),
+    blocked: z.enum(["true", "false"]).optional().openapi({
+      example: "true",
+      description:
+        "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
     }),
     sort: z.enum(["asc", "desc"]).optional().openapi({
       example: "asc",
