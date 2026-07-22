@@ -10,9 +10,6 @@ import { describe, expect, test } from "bun:test";
 import {
   type AgentDetail,
   type AgentListItem,
-  classifyTaskState,
-  computeDependencyLayout,
-  computeDependencyNodes,
   type CronJobItem,
   type CronRunItem,
   type DependencyNode,
@@ -26,6 +23,9 @@ import {
   type ToolItem,
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
+  classifyTaskState,
+  computeDependencyLayout,
+  computeDependencyNodes,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatPage,
@@ -2353,7 +2353,9 @@ describe("renderTasksPage — Created column", () => {
   });
 
   test("Created <th> and <td> join the col-session/col-repo mobile-hide set", () => {
-    const html = render([{ ...TASK_ITEM, createdAt: "2026-07-10T09:30:00.000Z" }]);
+    const html = render([
+      { ...TASK_ITEM, createdAt: "2026-07-10T09:30:00.000Z" },
+    ]);
     expect(html).toContain('<th class="col-created">Created</th>');
     const createdTdPattern = /<td[^>]*class="[^"]*col-created[^"]*"[^>]*>/;
     expect(html).toMatch(createdTdPattern);
@@ -3095,6 +3097,54 @@ describe("renderTaskDetailPage — Pull Request Review section", () => {
   });
 });
 
+describe("renderTaskDetailPage — Skip Count / Last Skipped", () => {
+  function render(task: Partial<TaskItem> = {}): string {
+    return renderTaskDetailPage(
+      { ...TASK_DETAIL, ...task },
+      "user@example.com",
+      {},
+      "UTC",
+    );
+  }
+
+  test("renders Skip Count field when skipCount > 0", () => {
+    const html = render({ skipCount: 3 });
+    expect(html).toContain("Skip Count");
+    expect(html).toMatch(/Skip Count<\/td>\s*<td[^>]*>3<\/td>/);
+  });
+
+  test("omits Skip Count field when skipCount is 0", () => {
+    const html = render({ skipCount: 0 });
+    expect(html).not.toContain("Skip Count");
+  });
+
+  test("omits Skip Count field when skipCount is null/undefined", () => {
+    const html = render({ skipCount: null });
+    expect(html).not.toContain("Skip Count");
+  });
+
+  test("renders Last Skipped field when skipCount > 0 and lastSkippedAt is set", () => {
+    const html = render({
+      skipCount: 2,
+      lastSkippedAt: "2026-06-12T10:00:00Z",
+    });
+    expect(html).toContain("Last Skipped");
+  });
+
+  test("omits Last Skipped field when skipCount is 0 even if lastSkippedAt is set", () => {
+    const html = render({
+      skipCount: 0,
+      lastSkippedAt: "2026-06-12T10:00:00Z",
+    });
+    expect(html).not.toContain("Last Skipped");
+  });
+
+  test("omits Last Skipped field when lastSkippedAt is null/undefined", () => {
+    const html = render({ skipCount: 2, lastSkippedAt: null });
+    expect(html).not.toContain("Last Skipped");
+  });
+});
+
 // ─── renderPrsPage ────────────────────────────────────────────────────────────
 
 const PR_LIST_ITEM_1: PrListItem = {
@@ -3686,6 +3736,45 @@ describe("renderPrDetailPage", () => {
   test("omits Blocked Reason field when null/undefined", () => {
     const html = render({ ...PR_DETAIL, blockedReason: null });
     expect(html).not.toContain("Blocked Reason");
+  });
+
+  test("renders Skip Count field when skipCount > 0", () => {
+    const html = render({ ...PR_DETAIL, skipCount: 3 });
+    expect(html).toContain("Skip Count");
+    expect(html).toMatch(/Skip Count<\/td>\s*<td[^>]*>3<\/td>/);
+  });
+
+  test("omits Skip Count field when skipCount is 0", () => {
+    const html = render({ ...PR_DETAIL, skipCount: 0 });
+    expect(html).not.toContain("Skip Count");
+  });
+
+  test("omits Skip Count field when skipCount is null/undefined", () => {
+    const html = render({ ...PR_DETAIL, skipCount: null });
+    expect(html).not.toContain("Skip Count");
+  });
+
+  test("renders Last Skipped field when skipCount > 0 and lastSkippedAt is set", () => {
+    const html = render({
+      ...PR_DETAIL,
+      skipCount: 2,
+      lastSkippedAt: "2026-06-12T10:00:00Z",
+    });
+    expect(html).toContain("Last Skipped");
+  });
+
+  test("omits Last Skipped field when skipCount is 0 even if lastSkippedAt is set", () => {
+    const html = render({
+      ...PR_DETAIL,
+      skipCount: 0,
+      lastSkippedAt: "2026-06-12T10:00:00Z",
+    });
+    expect(html).not.toContain("Last Skipped");
+  });
+
+  test("omits Last Skipped field when lastSkippedAt is null/undefined", () => {
+    const html = render({ ...PR_DETAIL, skipCount: 2, lastSkippedAt: null });
+    expect(html).not.toContain("Last Skipped");
   });
 });
 
@@ -4972,7 +5061,11 @@ describe("renderSessionDetailPage", () => {
       ...READY_TASK,
       source: "entropy-fix",
     };
-    const html = renderSessionDetailPage(SESSION_ID, [taskWithSource], USER_NAME);
+    const html = renderSessionDetailPage(
+      SESSION_ID,
+      [taskWithSource],
+      USER_NAME,
+    );
     expect(html).toContain(
       '<td class="col-source mono" style="font-size:11px">entropy-fix</td>',
     );
@@ -5420,9 +5513,7 @@ describe("renderSessionDetailPage dependency graph", () => {
     // Wrapper carries the (class-based) overflow-x:auto; the inner graph div
     // is exactly sized to its own content and must not duplicate it inline.
     expect(section).toContain('<div class="data-table-wrapper">');
-    const innerDivMatch = section.match(
-      /<div style="position:relative;[^"]*"/,
-    );
+    const innerDivMatch = section.match(/<div style="position:relative;[^"]*"/);
     expect(innerDivMatch).not.toBeNull();
     expect(innerDivMatch?.[0]).not.toContain("overflow-x:auto");
 
