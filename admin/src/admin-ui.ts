@@ -227,11 +227,18 @@ export interface AdminUIDeps {
   agentPluginService: Pick<AgentPluginService, "list">;
   agentMemberService: Pick<
     AgentMemberService,
-    "listByEmail" | "exists" | "add" | "remove"
+    "listByEmail" | "exists" | "add" | "remove" | "listByAgentId"
   >;
   agentService: Pick<
     AgentService,
-    "listAll" | "listByIds" | "searchByName" | "listOptions"
+    | "listAll"
+    | "listByIds"
+    | "searchByName"
+    | "listOptions"
+    | "create"
+    | "delete"
+    | "getDetail"
+    | "updateFields"
   >;
   provisioner: AgentProvisioner;
   /**
@@ -778,9 +785,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!name) {
       return c.redirect("/admin/agents/new?error=missing_fields", 302);
     }
-    const agent = await prisma.agent.create({
-      data: { name, selfHosted: true },
-    });
+    const agent = await agentService.create({ name, selfHosted: true });
     // Attach repos if provided
     if (reposRaw) {
       const repos = reposRaw
@@ -789,14 +794,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         .filter((r) => r.length > 0);
       const invalid = repos.filter((r) => !isOrgRepo(r));
       if (invalid.length > 0) {
-        await prisma.agent.delete({ where: { id: agent.id } });
+        await agentService.delete(agent.id);
         return c.redirect("/admin/agents/new?error=invalid_repo_format", 302);
       }
       if (repos.length > 0) {
-        await prisma.agent.update({
-          where: { id: agent.id },
-          data: { repos },
-        });
+        await agentService.updateFields(agent.id, { repos });
       }
     }
     return c.redirect(`/admin/agents/${agent.id}`, 302);
@@ -804,7 +806,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
@@ -843,7 +845,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         agentTokenService.listForAgent(agentId),
         agentPluginService.list(agentId),
         c.var.isAdmin
-          ? prisma.agentMember.findMany({ where: { agentId } })
+          ? agentMemberService.listByAgentId(agentId)
           : Promise.resolve([]),
       ]);
 
@@ -865,7 +867,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/agents/:id/cron-logs", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
@@ -909,7 +911,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/agents/:id/work-queue", requireAuth, async (c) => {
     const agentId = c.req.param("id");
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
@@ -1000,16 +1002,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         302,
       );
     }
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
     const existing = agent.repos ?? [];
     const deduped = existing.includes(repo) ? existing : [...existing, repo];
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { repos: deduped },
-    });
+    await agentService.updateFields(agentId, { repos: deduped });
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
@@ -1026,15 +1025,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
     if (repo) {
-      const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+      const agent = await agentService.getDetail(agentId);
       if (!agent) {
         return new Response("Agent not found", { status: 404 });
       }
       const updated = (agent.repos ?? []).filter((r) => r !== repo);
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { repos: updated },
-      });
+      await agentService.updateFields(agentId, { repos: updated });
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
@@ -1285,7 +1281,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     }
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) {
       return new Response("Agent not found", { status: 404 });
     }
@@ -1312,7 +1308,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           agentTokenService.listForAgent(agentId),
           agentPluginService.list(agentId),
           c.var.isAdmin
-            ? prisma.agentMember.findMany({ where: { agentId } })
+            ? agentMemberService.listByAgentId(agentId)
             : Promise.resolve([]),
         ]);
       return html(
@@ -1364,7 +1360,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
       return new Response("Forbidden", { status: 403 });
     }
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    const agent = await agentService.getDetail(agentId);
     if (!agent) return new Response("Agent not found", { status: 404 });
 
     let xoxpToken: string | undefined;
@@ -1560,22 +1556,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         );
       }
 
-      const newAgent = await prisma.agent.create({
-        data: { name, selfHosted: false, ...(repos.length > 0 && { repos }) },
-      });
+      let newAgent = await agentService.create({ name, selfHosted: false });
+      if (repos.length > 0) {
+        newAgent = await agentService.updateFields(newAgent.id, { repos });
+      }
       agentId = newAgent.id;
 
       try {
         await provisioner.provision(newAgent.id, { slug: newAgent.name });
       } catch (err) {
-        await prisma.agent
-          .delete({ where: { id: newAgent.id } })
-          .catch((cleanupErr) => {
-            console.error(
-              "[admin-ui] failed to roll back agent after provision error:",
-              cleanupErr,
-            );
-          });
+        await agentService.delete(newAgent.id).catch((cleanupErr) => {
+          console.error(
+            "[admin-ui] failed to roll back agent after provision error:",
+            cleanupErr,
+          );
+        });
         const msg =
           err instanceof Error ? err.message : "Unknown provisioning error.";
         return formError(`Agent created but provisioning failed: ${msg}`);
@@ -1589,9 +1584,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // (new mode).
     // biome-ignore lint/style/noNonNullAssertion: see comment above
     const resolvedAgentId = agentId!;
-    const agent = await prisma.agent.findUnique({
-      where: { id: resolvedAgentId },
-    });
+    const agent = await agentService.getDetail(resolvedAgentId);
     if (!agent) {
       return formError("Agent not found.");
     }
@@ -1627,14 +1620,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
               cleanupErr,
             );
           });
-        await prisma.agent
-          .delete({ where: { id: resolvedAgentId } })
-          .catch((cleanupErr) => {
-            console.error(
-              "[admin-ui] failed to roll back agent after Slack manifest error:",
-              cleanupErr,
-            );
-          });
+        await agentService.delete(resolvedAgentId).catch((cleanupErr) => {
+          console.error(
+            "[admin-ui] failed to roll back agent after Slack manifest error:",
+            cleanupErr,
+          );
+        });
         return formError(`Agent created but Slack setup failed: ${msg}`);
       }
       return formError(msg);
@@ -2743,8 +2734,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // optional Slack app deletion, then the Agent row itself (deleted last,
       // only if every automatable step succeeded). Same orchestration DELETE
       // /agents/:id uses (agents-api.ts) — this was previously a separate
-      // inline provisioner.deprovision() + prisma.agent.delete() path that
-      // had drifted from it.
+      // inline provisioner.deprovision() + direct-prisma-delete path that had
+      // drifted from it. deleteAgentFully() still takes prisma directly (its
+      // own dependency shape, not routed through AgentService).
       const result = await deleteAgentFully(agentId, {
         prisma,
         provisioner,

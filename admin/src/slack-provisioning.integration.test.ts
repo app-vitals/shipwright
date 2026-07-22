@@ -219,12 +219,29 @@ function makeMockDeps(
         createdAt: new Date(),
       }),
       remove: async () => {},
+      listByAgentId: async () => [],
     },
     agentService: {
       listAll: async () => [],
       listByIds: async () => [],
       searchByName: async () => [],
       listOptions: async () => [],
+      create: async () => {
+        throw new Error("not implemented");
+      },
+      delete: async () => {},
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+      }),
+      updateFields: async () => {
+        throw new Error("not implemented");
+      },
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",

@@ -203,12 +203,40 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         createdAt: new Date(),
       }),
       remove: async () => {},
+      listByAgentId: async () => [],
     },
     agentService: {
       listAll: async () => [],
       listByIds: async () => [],
       searchByName: async () => [],
       listOptions: async () => [],
+      create: async () => ({
+        id: NEW_AGENT_ID,
+        name: "New Local Agent",
+        slackId: null,
+        selfHosted: true,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      delete: async () => {},
+      getDetail: async () => ({
+        id: NEW_AGENT_ID,
+        name: "New Local Agent",
+        slackId: null,
+        selfHosted: true,
+        repos: [],
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
+      updateFields: async () => ({
+        id: NEW_AGENT_ID,
+        name: "New Local Agent",
+        slackId: null,
+        selfHosted: true,
+        repos: [],
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      }),
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",
@@ -291,26 +319,20 @@ describe("admin UI — new local agent create flow", () => {
   // ── POST /admin/agents ────────────────────────────────────────────────────
 
   it("POST /admin/agents — admin creates agent with selfHosted:true → 302 redirect to /admin/agents/:id", async () => {
-    let createdArgs: { data: { name: string; selfHosted?: boolean } } | null =
-      null;
+    let createdArgs: { name: string; selfHosted?: boolean } | null = null;
     const deps = makeMockDeps({
-      prisma: {
-        ...makeMockDeps().prisma,
-        agent: {
-          ...makeMockDeps().prisma.agent,
-          create: async (args: {
-            data: { name: string; selfHosted?: boolean };
-          }) => {
-            createdArgs = args;
-            return {
-              id: NEW_AGENT_ID,
-              name: args.data.name,
-              slackId: null,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-            };
-          },
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => {
+          createdArgs = input;
+          return {
+            id: NEW_AGENT_ID,
+            name: input.name,
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
         },
       },
     });
@@ -328,9 +350,9 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
     expect(createdArgs).not.toBeNull();
     // biome-ignore lint/style/noNonNullAssertion: guarded by expect(createdArgs).not.toBeNull() above
-    expect(createdArgs!.data.selfHosted).toBe(true);
+    expect(createdArgs!.selfHosted).toBe(true);
     // biome-ignore lint/style/noNonNullAssertion: guarded by expect(createdArgs).not.toBeNull() above
-    expect(createdArgs!.data.name).toBe("My Local Agent");
+    expect(createdArgs!.name).toBe("My Local Agent");
   });
 
   it("POST /admin/agents — non-admin session returns 403", async () => {
@@ -348,39 +370,32 @@ describe("admin UI — new local agent create flow", () => {
   });
 
   it("POST /admin/agents with repos — repos are attached to created agent via update", async () => {
-    let updateArgs: {
-      where: { id: string };
-      data: { repos: string[] };
-    } | null = null;
+    let updateArgs: { id: string; repos: string[] } | null = null;
     const deps = makeMockDeps({
-      prisma: {
-        ...makeMockDeps().prisma,
-        agent: {
-          ...makeMockDeps().prisma.agent,
-          create: async (args: {
-            data: { name: string; selfHosted?: boolean };
-          }) => ({
-            id: NEW_AGENT_ID,
-            name: args.data.name,
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => ({
+          id: NEW_AGENT_ID,
+          name: input.name,
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        updateFields: async (
+          id: string,
+          input: { repos?: string[] },
+        ) => {
+          updateArgs = { id, repos: input.repos ?? [] };
+          return {
+            id,
+            name: "My Local Agent",
             slackId: null,
+            selfHosted: true,
+            repos: input.repos ?? [],
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          update: async (args: {
-            where: { id: string };
-            data: { repos: string[] };
-          }) => {
-            updateArgs = args;
-            return {
-              id: args.where.id,
-              name: "My Local Agent",
-              slackId: null,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: args.data.repos,
-            };
-          },
+          };
         },
       },
     });
@@ -401,9 +416,9 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
     expect(updateArgs).not.toBeNull();
     // biome-ignore lint/style/noNonNullAssertion: guarded by expect(updateArgs).not.toBeNull() above
-    expect(updateArgs!.data.repos).toContain("my-org/repo-one");
+    expect(updateArgs!.repos).toContain("my-org/repo-one");
     // biome-ignore lint/style/noNonNullAssertion: guarded by expect(updateArgs).not.toBeNull() above
-    expect(updateArgs!.data.repos).toContain("my-org/repo-two");
+    expect(updateArgs!.repos).toContain("my-org/repo-two");
   });
 
   it("POST /admin/agents with missing name — returns non-200 or error response", async () => {
@@ -429,31 +444,18 @@ describe("admin UI — new local agent create flow", () => {
   it("POST /admin/agents with invalid repo format — deletes agent and redirects to error page", async () => {
     let deleteCalled = false;
     const deps = makeMockDeps({
-      prisma: {
-        ...makeMockDeps().prisma,
-        agent: {
-          ...makeMockDeps().prisma.agent,
-          create: async (args: {
-            data: { name: string; selfHosted?: boolean };
-          }) => ({
-            id: NEW_AGENT_ID,
-            name: args.data.name,
-            slackId: null,
-            createdAt: new Date("2024-01-01"),
-            updatedAt: new Date("2024-01-01"),
-            repos: [],
-          }),
-          delete: async () => {
-            deleteCalled = true;
-            return {
-              id: NEW_AGENT_ID,
-              name: "My Local Agent",
-              slackId: null,
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-            };
-          },
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => ({
+          id: NEW_AGENT_ID,
+          name: input.name,
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+        }),
+        delete: async () => {
+          deleteCalled = true;
         },
       },
     });
