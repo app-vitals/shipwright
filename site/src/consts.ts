@@ -50,4 +50,5 @@ export const PRIMARY_NAV_LINKS: NavLink[] = [
   { href: "/compare", label: "Compare" },
   { href: "/vs/devin", label: "vs Devin" },
   { href: "/architecture", label: "Architecture" },
+  { href: "/story", label: "Story" },
 ];
