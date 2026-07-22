@@ -155,11 +155,15 @@ The agent's config sync loop (every 60 seconds) fetches the agent's full tool li
 
 ### Example: narrowing an agent to read-only mode
 
-To disable shell access and external requests for a risky agent:
+To disable shell access and external requests for a risky agent, note that the `:toolId` path
+param on the tools routes is the `AgentTool` row's cuid **primary key**, not the tool's `pattern`
+string — so you first need to look up the row ids:
 
-1. Call `DELETE /agents/:id/tools/Bash` (via admin API)
-2. Call `DELETE /agents/:id/tools/WebSearch` (via admin API)
-3. Call `DELETE /agents/:id/tools/WebFetch` (via admin API)
+1. Call `GET /agents/:id/tools` (via admin API) and find the rows whose `pattern` is `"Bash"`,
+   `"WebSearch"`, and `"WebFetch"`, noting each row's `id`.
+2. Call `DELETE /agents/:id/tools/:toolId` for the `Bash` row's `id`.
+3. Call `DELETE /agents/:id/tools/:toolId` for the `WebSearch` row's `id`.
+4. Call `DELETE /agents/:id/tools/:toolId` for the `WebFetch` row's `id`.
 
 On the agent's next config sync, Claude will no longer have access to shell execution or external HTTP — only the 7 floor tools remain. The agent can still read files, search locally, and invoke safe skills.
 
