@@ -1,0 +1,198 @@
+---
+title: Cron Jobs
+description: How crons run end to end — schedule model, silent-by-default posting, preCheck scripts, reconcile, loop-driven vs standalone crons — and how to investigate a specific cron run.
+section: Operations
+order: 4
+prev: "/docs/admin-console"
+next: "/docs/the-shipwright-loop"
+---
+
+# Cron Jobs
+
+Every agent runs a set of scheduled prompts — crons — that pick up work, review and patch PRs,
+deploy, and run periodic maintenance without a human in the loop. This page covers how crons work
+end to end, and how to investigate a specific run as an operator.
+
+## How crons work
+
+### Schedule model
+
+Each cron is an `AgentCronJob` row with a standard cron expression in its `schedule` field (e.g.
+`* * * * *` for every minute, `0 6 * * *` for daily at 06:00). The agent process doesn't hold a
+static schedule in memory — it polls the admin API every 60 seconds and (re)schedules jobs via
+`node-cron` based on whatever it fetches. That means enabling, disabling, or editing a cron's
+schedule from the admin console takes effect on the agent within about a minute, with no restart
+required. A background sync also cancels the `node-cron` task for any job that's been disabled or
+removed since the last poll.
+
+### Silent-by-default posting
+
+Crons run with `silent: true` by default. A silent cron only posts to Slack when there's a result
+worth surfacing or when the run errors — most ticks that find nothing to do produce no visible
+output at all. On top of that, Claude's own response can carry a `[silent]` marker, which suppresses
+a channel post even for a non-silent cron. The one exception: **DMs always get a reply** — a
+`[silent]` marker is ignored when the delivery target is a user rather than a channel, so a
+cron configured to DM a human never goes quiet on them.
+
+Seeing no Slack message from a cron is therefore normal, not a bug — it usually means the cron ran
+and had nothing to report.
+
+### preCheck scripts
+
+Most crons carry a `preCheck` script. Rather than sending the cron's static prompt straight to
+Claude every tick, the agent first runs the preCheck script and uses **its stdout as the actual
+prompt**. This lets a cron skip spending a Claude turn entirely when there's no real work ready:
+
+- **Exit code 0 with non-empty stdout** — the script's output becomes the prompt, and the tick
+  proceeds to a full Claude run.
+- **Exit code 1, or empty stdout** — the tick is skipped silently. No Claude turn is spent, and
+  nothing is posted.
+- **Exit code 2 or higher** — treated as a crash. The run is recorded as skipped with reason
+  `preCheck:crash`, and if an alerts channel is configured, a short alert is posted there so a
+  broken preCheck script doesn't fail invisibly forever.
+
+A `preCheck` value is resolved either as a file path (relative to the agent's workspace) or as a
+`plugin:script` reference, resolved against the installed plugin cache or `installed_plugins.json`.
+
+### Reconcile
+
+System crons — the ones seeded automatically for every agent — are created and kept in sync by a
+reconcile pass (`POST /agents/:id/crons/reconcile`), which runs at agent startup and can also be
+triggered on demand. Reconcile is a two-pass strategy over the canonical `SYSTEM_CRONS` list:
+
+1. **Pass 1** creates or updates each `SYSTEM_CRONS` entry by name. If a matching row already
+   exists, it's updated in place — schedule, prompt, `silent`, and `preCheck` are refreshed, but
+   the row's `id` is preserved (so its `AgentCronRun` history survives) and, importantly, **the
+   `enabled` toggle is never touched on update**. A human's enable/disable decision survives every
+   reconcile.
+2. **Pass 2** links parent/child crons by resolving each entry's declared `parentCron` name against
+   the id map built in Pass 1. This self-heals in both directions: a child whose parent link was
+   missing gets it set, and a child whose `parentCron` declaration was removed gets `parentCronId`
+   cleared back to `null`.
+
+A final orphan pass deletes any existing system cron whose name is no longer present in
+`SYSTEM_CRONS`, so removed crons clean themselves up on the next reconcile.
+
+Because of this, **system crons can't be edited directly** via the admin API or console — they're
+read-only after creation except for the `enabled` toggle. Anything else (schedule, prompt,
+preCheck) is owned by `SYSTEM_CRONS` and only changes when the code changes and a reconcile runs.
+
+### Loop-driven vs standalone crons
+
+Not every cron discovers its own work. The four pipeline crons — `shipwright-dev-task`,
+`shipwright-review`, `shipwright-patch`, and `shipwright-deploy` — are children of
+`shipwright-loop` (linked via `parentCronId`). They are **loop-driven, item-addressed executors**,
+not self-discovering standalone crons:
+
+- `shipwright-loop`'s in-process candidate providers evaluate every enabled phase each tick and
+  pick exactly one winning candidate.
+- The loop orchestrator then dispatches the matching command with an explicit task id or
+  `org/repo#number` embedded directly in the prompt.
+- None of the four commands scans for its own work. Each one responds `[silent]` and exits
+  immediately if it's ever invoked with no target.
+
+The practical consequence: a reconciled pipeline cron never gets its own independent `node-cron`
+schedule at all. `classifyCronJobsForScheduling` excludes any job with a non-null `parentCronId`
+from scheduling unconditionally — before it even looks at that job's own `enabled` flag or whether
+`shipwright-loop` itself is enabled. So enabling, say, `shipwright-dev-task` in isolation doesn't
+make it fire on its own schedule and fall through to a no-op; it simply never fires on its own at
+all. The only way a pipeline cron dispatches is indirectly: `shipwright-loop`'s own tick reads the
+child row's `enabled` toggle (via `resolveLoopPhaseToggles`), and if true, dispatches that phase
+directly as part of the loop's own run. Re-enabling `shipwright-loop` is what restores real
+dispatch — not the phase cron's own schedule kicking back in.
+
+By contrast, the maintenance crons — `shipwright-test-readiness`, `shipwright-docs-freshness`,
+`learn-dream`, `dependabot-triage`, and the entropy/error/security/consolidation patrol crons —
+are **standalone**. Each is fully self-contained: its own `preCheck` does its own discovery (e.g.
+scanning repos for stale docs, or querying Sentry for unresolved errors), with no dependency on
+`shipwright-loop` at all.
+
+### Default system crons
+
+| Cron | Schedule | Default | What it does |
+|---|---|---|---|
+| `shipwright-dev-task` | every minute | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-review` | every minute | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-patch` | every minute | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-deploy` | every minute | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-loop` | every minute | off | Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
+| `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit for repos with stale or missing artifacts. |
+| `shipwright-docs-freshness` | daily 07:00 | off | Refreshes docs that have drifted from the code. |
+| `learn-dream` | daily 03:00 | off | Mines the last day of merged PRs for durable learnings. |
+| `dependabot-triage` | daily 08:00 | off | Reviews and triages open Dependabot PRs. |
+| `entropy-patrol-maintenance` | weekly Mon 04:00 | off | Scans for code entropy and fixes what's PR-worthy. |
+| `error-patrol-maintenance` | daily 04:00 | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
+| `security-patrol-maintenance` | weekly Mon 06:00 | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
+| `consolidation-patrol-maintenance` | weekly Mon 05:00 | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+
+Only three ship enabled by default: `shipwright-dev-task`, `shipwright-review`, and
+`shipwright-patch`. Everything else — including `shipwright-loop` itself — is opt-in, toggled from
+the agent's Cron Jobs card in the admin console.
+
+## Investigating a cron
+
+Sometimes a cron does something surprising — it posts nothing when you expected a result, or it
+posts something that looks wrong. Here's what to check as an operator, using the admin console and
+Slack.
+
+### Start from the cron run history
+
+Open the agent's detail page in the admin console and find the cron in its **Cron Jobs** card, or
+jump straight to **Cron Logs** from the agent list. The Cron Logs view lists every run across every
+cron the agent owns, filterable by **Cron** and **Outcome** (`posted` / `dm` / `silent` / `skipped`
+/ `error`). Each row shows:
+
+- **Outcome** — what actually happened on that tick
+- **Started** and **Duration** — when it ran and how long it took
+- **Tokens** and **Model** — token counts and per-model cost, if a Claude turn was actually spent
+- **Phase** — for `shipwright-loop` runs, which phase (dev-task/review/patch/deploy) it dispatched
+- **Item** — the specific Task or PR the run was dispatched against, if any
+
+If you're chasing a specific PR or task, filter or scan for its **Item** badge rather than trying
+to line up timestamps by eye — the run history is keyed to the exact item a dispatch targeted.
+
+### Read what the session actually did
+
+The run history tells you *that* a cron fired and what it was dispatched against, but not *why* it
+decided what it decided. For that, look at the Slack thread the run posted into (if any) — the
+posted message is the cron's own summary of its conclusion. If the outcome was `silent` or
+`skipped`, there is no Slack post to read, which is itself informative (see below).
+
+For a deeper narrative — the actual prompt, Claude's reasoning, and the specific commands it ran —
+ask the agent to investigate on your behalf via Slack chat. The agent has a dedicated
+`/shipwright:investigate-cron` tool for exactly this: given a cron name and approximate time, or a
+specific PR/task id, it resolves the matching run and reads the underlying session transcript to
+explain what happened in plain language. You don't need transcript or log access yourself — just
+ask the agent to run it, and it will report back the prompt, the key steps taken, and its
+conclusion.
+
+### Two outcomes that are expected, not bugs
+
+**A `[silent]` reply is normal when there's nothing to report.** Most cron ticks find no
+qualifying work and end silently — that's the system working as designed, not a stuck or broken
+cron. Before assuming something's wrong, check the run's outcome in Cron Logs: a run marked
+`silent` completed successfully and simply had nothing worth posting.
+
+**A cron that never posts at all can have two different, equally normal causes**, both visible
+without needing raw logs or a transcript:
+
+1. **Its `preCheck` returned no work.** Look at the run's outcome in Cron Logs — a `skipped`
+   outcome (rather than `silent` or `posted`) means the preCheck script exited non-zero or produced
+   no output, and the tick was suppressed *before* a Claude turn even started. This is the
+   expected shape for a cron with nothing ready to act on.
+2. **The cron is disabled.** Check the enabled/disabled badge on the cron's row in the agent's Cron
+   Jobs card. A disabled cron doesn't run at all — it won't even show up as a recent `skipped` run,
+   because `node-cron` never scheduled it in the first place.
+
+If a pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
+`shipwright-deploy`) shows as enabled in the admin console but never has any runs in Cron Logs,
+check whether `shipwright-loop` itself is enabled (see "Loop-driven vs standalone crons" above): a
+reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent
+schedule, so its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches
+that phase directly — there's no standalone tick to show up as `silent` or `skipped` in the
+meantime.
+
+## Next steps
+
+For the mechanics of the loop that drives the four pipeline crons — candidate selection, dispatch
+order, and drain-until-dry behavior — see [The Shipwright Loop](/docs/the-shipwright-loop) next.
