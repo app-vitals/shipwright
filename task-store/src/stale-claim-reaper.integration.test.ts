@@ -9,6 +9,7 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { PrismaClient } from "../prisma/client/index.js";
 import { FixedClock } from "./clock.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
@@ -23,7 +24,9 @@ function makePrisma(): PrismaClient {
   });
 }
 
-const DEFAULT_TTL_MS = 2_100_000;
+// Import the real shared constant rather than a hardcoded literal so this
+// test tracks any future bump to DEFAULT_CLAUDE_TIMEOUT_MS automatically.
+const DEFAULT_TTL_MS = DEFAULT_CLAIM_TTL_MS;
 
 describeOrSkip("StaleClaimReaper PR reaping (integration)", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");

@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { FixedClock } from "./clock.ts";
 import { StaleClaimReaper } from "./stale-claim-reaper.ts";
 
@@ -52,7 +53,9 @@ function makePrismaDouble(affectedRowsByCall: number | number[] = 0) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_TTL_MS = 2_100_000;
+// Import the real shared constant rather than a hardcoded literal so this
+// test tracks any future bump to DEFAULT_CLAUDE_TIMEOUT_MS automatically.
+const DEFAULT_TTL_MS = DEFAULT_CLAIM_TTL_MS;
 
 /** Build a Date that is `offsetMs` milliseconds before `now`. */
 function msAgo(now: Date, offsetMs: number): Date {
@@ -141,7 +144,7 @@ describe("StaleClaimReaper", () => {
   });
 
   test("env var SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS overrides default TTL for PR reap", async () => {
-    const customTtlMs = 60_000; // 1 minute instead of 35
+    const customTtlMs = 60_000; // 1 minute instead of the default TTL
     process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = String(customTtlMs);
 
     const prisma = makePrismaDouble(0);
@@ -157,7 +160,7 @@ describe("StaleClaimReaper", () => {
   });
 
   test("env var SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS overrides default TTL for Task reap", async () => {
-    const customTtlMs = 60_000; // 1 minute instead of 35
+    const customTtlMs = 60_000; // 1 minute instead of the default TTL
     process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS = String(customTtlMs);
 
     const prisma = makePrismaDouble(0);
@@ -330,9 +333,9 @@ describe("StaleClaimReaper", () => {
     expect(prSql).toContain('"phase" = NULL');
   });
 
-  // ─── 2_100_000ms unified default TTL boundary ──────────────────────────────
+  // ─── DEFAULT_TTL_MS unified default TTL boundary ──────────────────────────
 
-  test("PR claim just under 2_100_000ms old is NOT reaped", async () => {
+  test("PR claim just under DEFAULT_TTL_MS old is NOT reaped", async () => {
     // 0 tasks, 0 PRs affected — verifies the cutoff constant and date math
     const prisma = makePrismaDouble([0, 0]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
@@ -342,11 +345,11 @@ describe("StaleClaimReaper", () => {
     expect(count).toBe(0);
     expect(prisma._calls).toHaveLength(2);
 
-    // The cutoff used to filter is now - DEFAULT_TTL_MS (2_100_000ms)
+    // The cutoff used to filter is now - DEFAULT_TTL_MS
     const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
     expect(prisma._calls[1].values[0]).toBe(expectedCutoff);
 
-    // A heartbeatAt just under 2_100_000ms old is more recent than the cutoff,
+    // A heartbeatAt just under DEFAULT_TTL_MS old is more recent than the cutoff,
     // so it would not match "heartbeatAt < cutoff" and is correctly excluded.
     const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS - 1_000);
     expect(heartbeatAt.getTime() > new Date(expectedCutoff).getTime()).toBe(
@@ -354,7 +357,7 @@ describe("StaleClaimReaper", () => {
     );
   });
 
-  test("PR claim just over 2_100_000ms old IS reaped, reviewState resets to pending", async () => {
+  test("PR claim just over DEFAULT_TTL_MS old IS reaped, reviewState resets to pending", async () => {
     // 0 tasks, 1 PR affected — simulates a claim just past the TTL window
     const prisma = makePrismaDouble([0, 1]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
@@ -367,7 +370,7 @@ describe("StaleClaimReaper", () => {
     const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
     expect(prisma._calls[1].values[0]).toBe(expectedCutoff);
 
-    // A heartbeatAt just over 2_100_000ms old is older than the cutoff,
+    // A heartbeatAt just over DEFAULT_TTL_MS old is older than the cutoff,
     // so it matches "heartbeatAt < cutoff" and would be reaped.
     const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS + 1_000);
     expect(heartbeatAt.getTime() < new Date(expectedCutoff).getTime()).toBe(
@@ -382,7 +385,7 @@ describe("StaleClaimReaper", () => {
     expect(prSql).toContain("'pending'");
   });
 
-  test("task claim just under 2_100_000ms old is NOT reaped", async () => {
+  test("task claim just under DEFAULT_TTL_MS old is NOT reaped", async () => {
     const prisma = makePrismaDouble([0, 0]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
 
@@ -394,7 +397,7 @@ describe("StaleClaimReaper", () => {
     const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
     expect(prisma._calls[0].values[0]).toBe(expectedCutoff);
 
-    // A heartbeatAt just under 2_100_000ms old is more recent than the cutoff,
+    // A heartbeatAt just under DEFAULT_TTL_MS old is more recent than the cutoff,
     // so it would not match "heartbeatAt < cutoff" and is correctly excluded.
     const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS - 1_000);
     expect(heartbeatAt.getTime() > new Date(expectedCutoff).getTime()).toBe(
@@ -402,7 +405,7 @@ describe("StaleClaimReaper", () => {
     );
   });
 
-  test("task claim just over 2_100_000ms old IS reaped", async () => {
+  test("task claim just over DEFAULT_TTL_MS old IS reaped", async () => {
     const prisma = makePrismaDouble([1, 0]);
     const reaper = new StaleClaimReaper(prisma as never, clock);
 
@@ -414,7 +417,7 @@ describe("StaleClaimReaper", () => {
     const expectedCutoff = msAgo(NOW, DEFAULT_TTL_MS).toISOString();
     expect(prisma._calls[0].values[0]).toBe(expectedCutoff);
 
-    // A heartbeatAt just over 2_100_000ms old is older than the cutoff,
+    // A heartbeatAt just over DEFAULT_TTL_MS old is older than the cutoff,
     // so it matches "heartbeatAt < cutoff" and would be reaped.
     const heartbeatAt = msAgo(NOW, DEFAULT_TTL_MS + 1_000);
     expect(heartbeatAt.getTime() < new Date(expectedCutoff).getTime()).toBe(

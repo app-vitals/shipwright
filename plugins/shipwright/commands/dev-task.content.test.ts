@@ -209,15 +209,15 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(section).toMatch(/exclude.{0,60}own.{0,10}\{id\}|own.{0,10}\{id\}.{0,60}not a\s+sibling/is);
   });
 
-  it("computes sibling freshness using the 35-minute claim TTL, mirroring the stale-claim reaper's two-case formula", () => {
+  it("computes sibling freshness using the 65-minute claim TTL, mirroring the stale-claim reaper's two-case formula", () => {
     const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
     expect(siblingCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 2500);
     expect(section).toContain("DEFAULT_CLAIM_TTL_MS");
     expect(section).toContain("lib/claim-ttl.ts");
-    expect(section).toMatch(/35.{0,10}minute/i);
-    expect(section).toMatch(/heartbeatAt.{0,80}within the last 35 minutes/is);
-    expect(section).toMatch(/heartbeatAt is null.{0,80}claimedAt.{0,80}within the last 35 minutes/is);
+    expect(section).toMatch(/65.{0,10}minute/i);
+    expect(section).toMatch(/heartbeatAt.{0,80}within the last 65 minutes/is);
+    expect(section).toMatch(/heartbeatAt is null.{0,80}claimedAt.{0,80}within the last 65 minutes/is);
   });
 
   it("when a sibling is fresh: releases this task's own claim and stops silently, without proceeding", () => {

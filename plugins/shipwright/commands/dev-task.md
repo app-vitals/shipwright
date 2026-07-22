@@ -118,11 +118,11 @@ AND condition on top of `agentScope`'s OR, narrowing correctly to this task's ow
 Exclude this task's own `{id}` from the results — a task's own in_progress claim is not a
 sibling. For each remaining same-branch task, determine freshness using the same two-case
 formula the task-store's stale-claim reaper uses (`DEFAULT_CLAIM_TTL_MS` in
-`lib/claim-ttl.ts` — 35 minutes: the 30-minute `claude -p` session timeout plus a 5-minute
+`lib/claim-ttl.ts` — 65 minutes: the 1-hour `claude -p` hard-ceiling timeout plus a 5-minute
 buffer):
 
-- heartbeatAt is set and heartbeatAt is within the last 35 minutes → **fresh**
-- heartbeatAt is null and claimedAt is within the last 35 minutes → **fresh**
+- heartbeatAt is set and heartbeatAt is within the last 65 minutes → **fresh**
+- heartbeatAt is null and claimedAt is within the last 65 minutes → **fresh**
 - Otherwise → **stale** (indistinguishable from a crashed/stuck claim the reaper hasn't
   caught yet — not legitimate concurrent work)
 

@@ -219,7 +219,7 @@ export interface PrReviewStateReconcilerDeps {
   pageLimit?: number;
   /** Injected time source — never call Date.now()/new Date() directly. */
   clock: Clock;
-  /** Claim freshness window in ms; defaults to 2_100_000 (mirrors SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS's own default). */
+  /** Claim freshness window in ms; defaults to DEFAULT_CLAIM_TTL_MS (mirrors SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS's own default). */
   claimTtlMs?: number;
   /** List one page of state:"open" && reviewState:"pending" PR records for a repo. */
   listPendingReviewRecords: (

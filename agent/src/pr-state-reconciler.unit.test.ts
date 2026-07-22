@@ -14,6 +14,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
@@ -820,7 +821,7 @@ describe("reconcileReviewState", () => {
       id: "pr-claimed",
       prNumber: 8,
       claimedBy: "some-agent",
-      // 5 minutes ago — well within the default 35-minute TTL.
+      // 5 minutes ago — well within the default 65-minute TTL.
       heartbeatAt: "2026-07-15T11:55:00.000Z",
     });
     const { deps, patchCalls, fetchCalls } = makeReviewStateDeps({
@@ -840,8 +841,8 @@ describe("reconcileReviewState", () => {
       id: "pr-stale-claim",
       prNumber: 9,
       claimedBy: "some-agent",
-      // 40 minutes ago — beyond the default 35-minute TTL.
-      heartbeatAt: "2026-07-15T11:20:00.000Z",
+      // 70 minutes ago — beyond the default 65-minute TTL.
+      heartbeatAt: "2026-07-15T10:50:00.000Z",
     });
     const reviewData = makeReviewData({
       headRefOid: "head-sha",
@@ -1229,7 +1230,7 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
       id: "pr-posted-claimed",
       prNumber: 1818,
       claimedBy: "some-agent",
-      // 5 minutes ago — well within the default 35-minute TTL.
+      // 5 minutes ago — well within the default 65-minute TTL.
       heartbeatAt: "2026-07-15T11:55:00.000Z",
     });
     const { deps, patchCalls, fetchCalls } = makeReviewStateDeps({
@@ -1444,7 +1445,7 @@ describe("buildReviewStateProductionDeps", () => {
       getScopedRepos: () => [],
     });
 
-    expect(deps.claimTtlMs).toBe(2_100_000);
+    expect(deps.claimTtlMs).toBe(DEFAULT_CLAIM_TTL_MS);
   });
 
   test("claimTtlMs reads SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS when set, matching stale-claim-reaper.ts", () => {

@@ -1,6 +1,16 @@
 import { join } from "node:path";
 import { DEFAULT_CLAUDE_TIMEOUT_MS } from "@shipwright/lib/claim-ttl";
 
+/**
+ * Idle-reset timeout default (25min) — cleared/restarted on every stdout line
+ * from a `claude -p` session (see `agent/src/claude.ts`'s `_spawn`). This is
+ * the primary timeout in practice; calibrated from a 900-session log analysis
+ * (p99 inter-line gap 713s, largest legitimate single gap 1303s from an
+ * `Agent()` subagent delegation). `DEFAULT_CLAUDE_TIMEOUT_MS` (1hr, in
+ * `@shipwright/lib/claim-ttl`) is the hard ceiling backstop, not primary.
+ */
+const DEFAULT_CLAUDE_IDLE_TIMEOUT_MS = 1_500_000;
+
 function optional(key: string): string | undefined {
   return process.env[key];
 }
@@ -26,6 +36,10 @@ function buildConfig(agentHome: string) {
       timeoutMs: positiveIntMs(
         "SHIPWRIGHT_CLAUDE_TIMEOUT_MS",
         DEFAULT_CLAUDE_TIMEOUT_MS,
+      ),
+      idleTimeoutMs: positiveIntMs(
+        "SHIPWRIGHT_CLAUDE_IDLE_TIMEOUT_MS",
+        DEFAULT_CLAUDE_IDLE_TIMEOUT_MS,
       ),
       anthropicApiKey: optional("ANTHROPIC_API_KEY"),
       oauthToken: optional("CLAUDE_CODE_OAUTH_TOKEN"),
