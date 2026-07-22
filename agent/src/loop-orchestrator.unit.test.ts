@@ -17,7 +17,10 @@ import {
   type ProgressCallback,
 } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
-import type { CronRunReporter, ModelBreakdownEntry } from "./cron-run-reporter.ts";
+import type {
+  CronRunReporter,
+  ModelBreakdownEntry,
+} from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import {
   type LoopOrchestratorDeps,
@@ -142,7 +145,10 @@ function makeRecordingWorkQueueReporter(): {
 
 /** Records each dispatched message and returns a scripted result per call. */
 function makeRunner(results: (string | ClaudeRunResult)[] = []): {
-  runner: (message: string, onProgress?: ProgressCallback) => Promise<ClaudeRunResult>;
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   messages: string[];
 } {
   const messages: string[] = [];
@@ -178,7 +184,10 @@ function makeDrainingRunner(
   consumed: Set<string>,
   results: (string | ClaudeRunResult)[] = [],
 ): {
-  runner: (message: string, onProgress?: ProgressCallback) => Promise<ClaudeRunResult>;
+  runner: (
+    message: string,
+    onProgress?: ProgressCallback,
+  ) => Promise<ClaudeRunResult>;
   messages: string[];
 } {
   const messages: string[] = [];

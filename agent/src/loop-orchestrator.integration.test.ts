@@ -30,7 +30,10 @@ import {
   type ProgressCallback,
 } from "./claude.ts";
 import { FixedClock } from "./clock.ts";
-import type { CronRunReporter, ModelBreakdownEntry } from "./cron-run-reporter.ts";
+import type {
+  CronRunReporter,
+  ModelBreakdownEntry,
+} from "./cron-run-reporter.ts";
 import type { CronJobLike } from "./loop-cron-classifier.ts";
 import { createLoopOrchestrator } from "./loop-orchestrator.ts";
 import type { WorkQueueReporter } from "./work-queue-reporter.ts";
@@ -377,7 +380,10 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
         modelBreakdown?: ModelBreakdownEntry[];
       };
     }>;
-    progressCalls: Array<{ runId: string | null; modelBreakdown: ModelBreakdownEntry[] }>;
+    progressCalls: Array<{
+      runId: string | null;
+      modelBreakdown: ModelBreakdownEntry[];
+    }>;
   } {
     const completeCalls: Array<{
       outcome: "completed" | "failed";
@@ -417,7 +423,16 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
         callOrder.push("recordProgress");
         await reporter.recordProgress(cronId, runId, modelBreakdown);
       },
-      async completeRun(cronId, runId, completedAt, outcome, opts, phaseId, itemType, itemId) {
+      async completeRun(
+        cronId,
+        runId,
+        completedAt,
+        outcome,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
         callOrder.push("completeRun");
         await reporter.completeRun(
           cronId,
