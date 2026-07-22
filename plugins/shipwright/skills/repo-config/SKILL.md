@@ -64,6 +64,13 @@ Recorded fixture doubles (msw handlers, nock recordings, hand-authored JSON) cap
 
 **Status: deferred — not implemented.** The auto-recording GitHub Actions pattern below is a target design, not built tooling. Do not wire it up until the manual, hand-authored-fixture workflow is running and tuned.
 
+A repo can permanently opt out of this pattern via a `## Recorded-fixture automation`
+declaration in its root `CLAUDE.md` (same mechanism as `## Deploy model` — see
+`test-roadmap/SKILL.md` Process step 1 and step 5). When declared `not planned`,
+`test-roadmap` emits zero recorded-fixture-refresh tasks regardless of what the migration
+phase flags as a gap — do not treat "deferred" in this doc as "eventually mandatory" for
+a repo that has explicitly opted out.
+
 See the [full recorded-fixture maintenance loop pattern](#recorded-fixture-maintenance-loop-deferred) below for implementation details (deferred).
 
 ## The pairing rule (Phase 4 — test-roadmap)
@@ -117,7 +124,7 @@ A `## Closing checklist` section at the bottom.
 
 ## Recorded-fixture maintenance loop (deferred)
 
-> **Deferred — not implemented.** This section documents the target auto-recording design (a scheduled GitHub Actions workflow). None of this tooling — the workflow, the environment, the re-record scripting — has been built yet. Defer implementation until the manual, hand-authored-fixture workflow is running and tuned.
+> **Deferred — not implemented.** This section documents the target auto-recording design (a scheduled GitHub Actions workflow). None of this tooling — the workflow, the environment, the re-record scripting — has been built yet. Defer implementation until the manual, hand-authored-fixture workflow is running and tuned. If a repo has never actually exercised a real live-recording flow (i.e. `RECORD=1`-style capture against a real third-party API with real credentials, not just hand-authored cassette JSON), that precondition is not met — building the automated loop first, with no proven recording step to automate, is the failure mode this note exists to prevent. A repo in that position should declare `## Recorded-fixture automation` → `not planned` in its `CLAUDE.md` rather than accept a bundled "build recording + automate it" task; see the opt-out note above.
 
 Recorded fixture doubles (msw handlers, nock recordings, hand-authored JSON) capture the shape of third-party API responses at a point in time. Without scheduled re-recording, recorded fixtures go stale silently — the test suite passes while the integration is broken in production. A recorded-fixture maintenance loop catches drift weekly before it becomes a production incident.
 
