@@ -101,6 +101,11 @@ No request body is sent — with an agent token, the task-store pins `claimedBy`
 calling agent's own ID server-side and ignores the body. A `409` means another agent
 already claimed the task since it was read as `ready` — skip it and pick the next one.
 
+This isn't just a race-avoidance convention — a generic `PATCH /tasks/:id` actively rejects
+(`400`) an agent token trying to set `claimedBy`, `claimedAt`, `heartbeatAt`, or
+`status: "pending"` directly. `/claim` and `/release` are the only supported ways to move
+those fields.
+
 ### Open a PR
 
 Must set `pr` and `prCreatedAt` together with the status:
