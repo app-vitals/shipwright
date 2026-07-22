@@ -61,13 +61,28 @@ export interface CronRunReporter {
     itemType?: string,
     itemId?: string,
   ): Promise<void>;
-  /** Called when precheck causes a skip. No token data. */
+  /**
+   * Called when a dispatch is recorded as skipped. Most skip paths (409
+   * conflict, pre-claim throw, redispatch cooldown) never run a command, so
+   * opts is usually just `{ error? }`. The `[silent]`-marker path is the
+   * exception: runner(message) already ran and may have spent real tokens
+   * before reporting nothing-to-do, so opts also accepts the same token
+   * fields as completeRun() — passed via buildTokenPayload(runResult.usage,
+   * runResult.modelUsage) at that call site — so that spend isn't dropped.
+   */
   skipRun(
     cronId: string,
     runId: string | null,
     completedAt: Date,
     skipReason: string,
-    opts?: { error?: string },
+    opts?: {
+      error?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      modelBreakdown?: ModelBreakdownEntry[];
+    },
     phaseId?: string,
     itemType?: string,
     itemId?: string,
@@ -208,7 +223,14 @@ export class HttpCronRunReporter implements CronRunReporter {
     runId: string | null,
     completedAt: Date,
     skipReason: string,
-    opts?: { error?: string },
+    opts?: {
+      error?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      modelBreakdown?: ModelBreakdownEntry[];
+    },
     phaseId?: string,
     itemType?: string,
     itemId?: string,
@@ -224,6 +246,14 @@ export class HttpCronRunReporter implements CronRunReporter {
       skipReason,
     };
     if (opts?.error !== undefined) body.error = opts.error;
+    if (opts?.inputTokens !== undefined) body.inputTokens = opts.inputTokens;
+    if (opts?.outputTokens !== undefined) body.outputTokens = opts.outputTokens;
+    if (opts?.cacheReadTokens !== undefined)
+      body.cacheReadTokens = opts.cacheReadTokens;
+    if (opts?.cacheCreationTokens !== undefined)
+      body.cacheCreationTokens = opts.cacheCreationTokens;
+    if (opts?.modelBreakdown !== undefined)
+      body.modelBreakdown = opts.modelBreakdown;
     if (phaseId !== undefined) body.phaseId = phaseId;
     if (itemType !== undefined) body.itemType = itemType;
     if (itemId !== undefined) body.itemId = itemId;
@@ -281,7 +311,14 @@ export class NoopCronRunReporter implements CronRunReporter {
     _runId: string | null,
     _completedAt: Date,
     _skipReason: string,
-    _opts?: { error?: string },
+    _opts?: {
+      error?: string;
+      inputTokens?: number;
+      outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      modelBreakdown?: ModelBreakdownEntry[];
+    },
     _phaseId?: string,
     _itemType?: string,
     _itemId?: string,

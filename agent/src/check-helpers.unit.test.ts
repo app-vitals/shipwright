@@ -888,6 +888,130 @@ describe("createTaskStoreClient query()", () => {
       }),
     ).rejects.toThrow("task-store POST /prs/claim → 500");
   });
+
+  // ─── recordSkip() / resetSkip() (SKT-2.1) ──────────────────────────────────
+  //
+  // Unlike claim/claimPr/update, these two methods must NEVER throw — they're
+  // called fire-and-forget from the loop orchestrator's dispatch path, and a
+  // task-store error here must not abort or delay the dispatch loop.
+
+  test("recordSkip() POSTs to /tasks/:id/skip for itemType 'task'", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.recordSkip("task", "SKT-2.1");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/tasks/SKT-2.1/skip",
+    );
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("recordSkip() POSTs to /prs/:id/skip for itemType 'pr'", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.recordSkip("pr", "clx-record-id");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/prs/clx-record-id/skip",
+    );
+  });
+
+  test("resetSkip() POSTs to /tasks/:id/skip/reset for itemType 'task'", async () => {
+    let capturedUrl: string | undefined;
+    let capturedInit: RequestInit | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      capturedUrl = String(url);
+      capturedInit = init;
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.resetSkip("task", "SKT-2.1");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/tasks/SKT-2.1/skip/reset",
+    );
+    expect(capturedInit?.method).toBe("POST");
+    expect(capturedInit?.body).toBe("{}");
+  });
+
+  test("resetSkip() POSTs to /prs/:id/skip/reset for itemType 'pr'", async () => {
+    let capturedUrl: string | undefined;
+    const fakeFetch = (async (url: RequestInfo | URL) => {
+      capturedUrl = String(url);
+      return { ok: true, status: 200, json: async () => ({}) } as Response;
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await client.resetSkip("pr", "clx-record-id");
+
+    expect(capturedUrl).toBe(
+      "https://task-store.example.com/prs/clx-record-id/skip/reset",
+    );
+  });
+
+  test("recordSkip() swallows a non-ok HTTP response (does not throw)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.recordSkip("task", "SKT-2.1"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("recordSkip() swallows a network error (does not throw)", async () => {
+    const fakeFetch = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.recordSkip("pr", "clx-record-id"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("resetSkip() swallows a non-ok HTTP response (does not throw)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      }) as Response) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.resetSkip("task", "SKT-2.1"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("resetSkip() swallows a network error (does not throw)", async () => {
+    const fakeFetch = (async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+
+    const client = createTaskStoreClient({ fetchFn: fakeFetch });
+    await expect(
+      client.resetSkip("pr", "clx-record-id"),
+    ).resolves.toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

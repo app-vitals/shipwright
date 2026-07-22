@@ -299,6 +299,8 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
     commitSha: string;
     phase: "review" | "patch" | "deploy";
   }): Promise<{ id: string; commitSha: string } | null>;
+  recordSkip(itemType: "task" | "pr", id: string): Promise<void>;
+  resetSkip(itemType: "task" | "pr", id: string): Promise<void>;
 } {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -382,6 +384,51 @@ export function createTaskStoreClient(opts?: { fetchFn?: FetchFn }): {
       // a specific commitSha, so fall back to the request value to keep the
       // return type non-nullable.
       return { id: data.id, commitSha: data.commitSha ?? params.commitSha };
+    },
+    async recordSkip(itemType: "task" | "pr", id: string): Promise<void> {
+      const url =
+        itemType === "task"
+          ? `${baseUrl}/tasks/${id}/skip`
+          : `${baseUrl}/prs/${id}/skip`;
+      // Fire-and-forget, unlike claim/claimPr/update: a task-store error here
+      // must not abort or delay the dispatch loop (SKT-2.1), so both a
+      // network failure and a non-ok response are swallowed and logged
+      // rather than thrown — matching HttpCronRunReporter's patchRun pattern.
+      try {
+        const res = await doFetch(url, {
+          method: "POST",
+          headers,
+          body: "{}",
+        });
+        if (!res.ok) {
+          console.warn(
+            `[task-store] POST ${url} returned ${res.status} — swallowing`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[task-store] POST ${url} failed: ${String(err)} — swallowing`);
+      }
+    },
+    async resetSkip(itemType: "task" | "pr", id: string): Promise<void> {
+      const url =
+        itemType === "task"
+          ? `${baseUrl}/tasks/${id}/skip/reset`
+          : `${baseUrl}/prs/${id}/skip/reset`;
+      // Same fire-and-forget contract as recordSkip above.
+      try {
+        const res = await doFetch(url, {
+          method: "POST",
+          headers,
+          body: "{}",
+        });
+        if (!res.ok) {
+          console.warn(
+            `[task-store] POST ${url} returned ${res.status} — swallowing`,
+          );
+        }
+      } catch (err) {
+        console.warn(`[task-store] POST ${url} failed: ${String(err)} — swallowing`);
+      }
     },
   };
 }

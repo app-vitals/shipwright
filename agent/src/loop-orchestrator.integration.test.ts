@@ -193,6 +193,8 @@ describe("loop-orchestrator + real task-store claim client (CBD-2.1)", () => {
       getDeployCandidates: async () => [],
       claimTask: realClaim,
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
       runner,
       cronRunReporter: reporter,
       workQueueReporter: noopWorkQueueReporter,
@@ -311,6 +313,8 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
           return true;
         },
         claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+        recordSkip: async () => {},
+        resetSkip: async () => {},
         runner,
         cronRunReporter: reporter,
         workQueueReporter: noopWorkQueueReporter,
