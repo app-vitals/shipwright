@@ -244,6 +244,17 @@ function makeMockDeps(
     agentPluginService: {
       list: async () => [],
     },
+    agentMemberService: {
+      listByEmail: async () => [],
+      exists: async () => false,
+      add: async (agentId: string, email: string) => ({
+        id: "m1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
+      remove: async () => {},
+    },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",
     googleClientSecret: "test-google-client-secret",

@@ -57,6 +57,7 @@ import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -223,6 +224,10 @@ export interface AdminUIDeps {
     "listForAgent" | "create" | "revoke"
   >;
   agentPluginService: Pick<AgentPluginService, "list">;
+  agentMemberService: Pick<
+    AgentMemberService,
+    "listByEmail" | "exists" | "add" | "remove"
+  >;
   provisioner: AgentProvisioner;
   /**
    * Cleanup deps for the full delete-agent orchestration (POST
@@ -457,6 +462,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentMemberService,
     provisioner,
     taskStore,
     chatService,
@@ -624,9 +630,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       .includes(userInfo.email.toLowerCase());
 
     if (!isAdmin) {
-      const memberships = await prisma.agentMember.findMany({
-        where: { email: userInfo.email.toLowerCase() },
-      });
+      const memberships = await agentMemberService.listByEmail(
+        userInfo.email.toLowerCase(),
+      );
       if (memberships.length === 0) {
         return new Response("Forbidden", { status: 403 });
       }
@@ -691,9 +697,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (c.var.isAdmin) {
       agents = await prisma.agent.findMany();
     } else {
-      const memberships = await prisma.agentMember.findMany({
-        where: { email: c.var.userEmail.toLowerCase() },
-      });
+      const memberships = await agentMemberService.listByEmail(
+        c.var.userEmail.toLowerCase(),
+      );
       const agentIds = memberships.map((m) => m.agentId);
       agents = await prisma.agent.findMany({ where: { id: { in: agentIds } } });
     }
@@ -728,10 +734,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     isAdmin: boolean,
   ): Promise<boolean> {
     if (isAdmin) return true;
-    const membership = await prisma.agentMember.findUnique({
-      where: { agentId_email: { agentId, email: userEmail.toLowerCase() } },
-    });
-    return membership !== null;
+    return agentMemberService.exists(agentId, userEmail.toLowerCase());
   }
 
   const ERROR_MESSAGES: Record<string, string> = {
@@ -1929,7 +1932,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (email) {
       try {
-        await prisma.agentMember.create({ data: { agentId, email } });
+        await agentMemberService.add(agentId, email);
       } catch {
         // unique constraint violation — already a member, ignore
       }
@@ -1949,9 +1952,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (memberId) {
       try {
-        await prisma.agentMember.deleteMany({
-          where: { id: memberId, agentId },
-        });
+        await agentMemberService.remove(agentId, memberId);
       } catch {
         // already gone, ignore
       }

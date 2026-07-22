@@ -241,6 +241,17 @@ function makeMockDeps(
     agentPluginService: {
       list: async () => [],
     },
+    agentMemberService: {
+      listByEmail: async () => [],
+      exists: async () => false,
+      add: async () => ({
+        id: "m1",
+        agentId: AGENT_ID,
+        email: "member@example.com",
+        createdAt: new Date(),
+      }),
+      remove: async () => {},
+    },
     sessionSecret: SESSION_SECRET,
     googleClientId: GOOGLE_CLIENT_ID,
     googleClientSecret: GOOGLE_CLIENT_SECRET,
@@ -548,7 +559,12 @@ describe("admin UI — authenticated pages", () => {
 
   it("nests shipwright-loop phase crons under the loop row instead of listing them flat", async () => {
     const LOOP_ID = "cron-loop-1";
-    const PHASES = ["shipwright-dev-task", "shipwright-review", "shipwright-patch", "shipwright-deploy"];
+    const PHASES = [
+      "shipwright-dev-task",
+      "shipwright-review",
+      "shipwright-patch",
+      "shipwright-deploy",
+    ];
     const phaseCrons = PHASES.map((name, i) => ({
       ...MOCK_CRON,
       id: `cron-phase-${i}`,
@@ -2859,6 +2875,18 @@ describe("admin UI — member access control", () => {
           deleteMany: async () => ({ count: 0 }),
         },
       },
+      agentMemberService: {
+        listByEmail: async () => [],
+        exists: async (_agentId: string, email: string) =>
+          email === MEMBER_EMAIL,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+      },
     });
     const app = createAdminUIApp(deps);
     const res = await app.request(`/admin/agents/${AGENT_ID}`, {
@@ -2960,6 +2988,27 @@ describe("admin UI — member access control", () => {
           deleteMany: async () => ({ count: 0 }),
         },
       },
+      agentMemberService: {
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [
+                {
+                  id: "m1",
+                  agentId: AGENT_ID,
+                  email: MEMBER_EMAIL,
+                  createdAt: new Date(),
+                },
+              ]
+            : [],
+        exists: async () => false,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+      },
     });
     const app = createAdminUIApp(deps);
     const res = await app.request("/admin/agents", {
@@ -3050,6 +3099,27 @@ describe("admin UI — member access control", () => {
           }),
           deleteMany: async () => ({ count: 0 }),
         },
+      },
+      agentMemberService: {
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [
+                {
+                  id: "m1",
+                  agentId: AGENT_ID,
+                  email: MEMBER_EMAIL,
+                  createdAt: new Date(),
+                },
+              ]
+            : [],
+        exists: async () => false,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
       },
     });
     const app = createAdminUIApp(deps);
@@ -3497,6 +3567,15 @@ describe("admin UI — member management routes", () => {
           deleteMany: async () => ({ count: 0 }),
         },
       },
+      agentMemberService: {
+        listByEmail: async () => [],
+        exists: async () => false,
+        add: async (agentId: string, email: string) => {
+          created = { agentId, email };
+          return { id: "m-new", agentId, email, createdAt: new Date() };
+        },
+        remove: async () => {},
+      },
     });
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({ email: "newmember@example.com" });
@@ -3571,6 +3650,19 @@ describe("admin UI — member management routes", () => {
             deletedId = where.id;
             return { count: 1 };
           },
+        },
+      },
+      agentMemberService: {
+        listByEmail: async () => [],
+        exists: async () => false,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "member@example.com",
+          createdAt: new Date(),
+        }),
+        remove: async (_agentId: string, memberId: string) => {
+          deletedId = memberId;
         },
       },
     });

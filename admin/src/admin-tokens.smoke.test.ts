@@ -250,6 +250,17 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       revoke: async () => null,
     },
     agentPluginService: { list: async () => [] },
+    agentMemberService: {
+      listByEmail: async () => [],
+      exists: async () => false,
+      add: async (agentId: string, email: string) => ({
+        id: "m1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
+      remove: async () => {},
+    },
     provisioner: {
       provision: async () => ({
         resourceName: "r",
