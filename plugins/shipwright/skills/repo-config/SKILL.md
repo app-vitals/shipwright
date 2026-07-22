@@ -28,8 +28,9 @@ For each protected branch (default: `main`):
 - **Required status checks** — every layer-relevant CI job from `test.yml` (lint, per-service unit, per-service integration, smoke, E2E)
 - **Require branches to be up to date before merging** — yes
 - **Require conversation resolution before merging** — yes
-- **Required approving reviews** — ≥1 (≥2 for repos with multiple maintainers)
-- **Enforce on admins** — yes (recommended; document break-glass procedure if not)
+- **Required approving reviews and enforce-on-admins — depend on who actually merges PRs in this repo.** Check whether the target repo has `shipwright-deploy` enabled (the "Stage 3, fully autonomous" ramp-up stage — see the `configuring-autonomy` docs page) before recommending a value:
+  - **A human merges PRs (`shipwright-deploy` off).** Required approving reviews: ≥1 (≥2 for repos with multiple maintainers). Enforce on admins: yes, with a documented break-glass procedure. A human genuinely supplies the approval here, so both settings are a real gate.
+  - **The agent merges its own PRs (`shipwright-deploy` on).** Required approving reviews: **0**. Enforce on admins: **no**. GitHub rejects self-APPROVE via the API, so `review.md` Step 10 force-downgrades an agent's review of its own PR to `COMMENT` with a `Verdict: APPROVE` marker — it can never satisfy a `required_approving_review_count` gate. Setting it to ≥1 anyway doesn't add a review; `deploy.md` Step 4b already merges every PR with `gh pr merge --admin`, so the setting only forces a permanent branch-protection bypass on the merging account — `enforce_admins: true` in name only. For these repos the real gates are required status checks (above) plus canary/staged promotion after merge; don't recommend review-count/admin-enforcement settings the pipeline structurally can't satisfy.
 - **Canary status check is NOT included** — canary runs post-merge; gates promotion staging → prod, not merge to main
 
 ### 2. Required secrets and environments
@@ -171,7 +172,8 @@ These tasks depend on the same-layer "record fixtures for `<service>`" task, not
 
 - **"Tests pass" without branch protection.** Without enforcement, the audit is a social contract. Engineers WILL bypass it under deadline pressure. Branch protection is the only mechanism that scales beyond one careful reviewer.
 - **Required canary checks at merge time.** Canary needs a deployed env; gating merge on canary creates a deadlock. Canary gates *promotion*, not merge.
-- **Admin exemption without a break-glass policy.** Exempting admins is fine if there's a documented "in case of fire" procedure; otherwise it's an unmonitored backdoor.
+- **Admin exemption without a break-glass policy — for repos where a human merges.** Exempting admins is fine if there's a documented "in case of fire" procedure; otherwise it's an unmonitored backdoor.
+- **Recommending required-review / enforce-admins as a blanket default regardless of who merges.** For a `shipwright-deploy`-enabled repo, `--admin` merges are the deploy model itself, not an emergency exemption (see Branch protection above). Requiring ≥1 approval there doesn't add a review — self-APPROVE is blocked by GitHub's API — it just forces every merge through a permanent bypass, which is stricter-looking but not actually stricter. Match the recommendation to the repo's actual merge path.
 - **Secrets baked into workflows.** Use GitHub Secrets + Environments. Workflow YAML references `${{ secrets.X }}`, never literal values.
 - **No PR template.** Closing checklists in issue bodies help, but PRs without a template forget the verification-output convention within weeks.
 - **Committing recorded-fixture diffs directly to main.** The refresh job must always open a PR, never push directly — the diff must be reviewed.

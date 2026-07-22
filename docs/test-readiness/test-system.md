@@ -441,11 +441,15 @@ advisory — CI can run and still not gate `main`.
   intended fail-open behavior documented in `ci.yml`'s own comments).
 - **Require branches up to date before merging** — yes.
 - **Require conversation resolution before merging** — yes.
-- **Required approving reviews:** ≥1 — small team; ≥2 would deadlock a repo whenever
-  the sole other reviewer is the PR author. Keep at 1.
-- **Enforce on admins:** yes, recommended — document a break-glass procedure (direct
-  push only for a CI outage or emergency rollback, immediately followed by a
-  retroactive PR) rather than leaving admins permanently exempt.
+- **Required approving reviews:** **0.** `shipwright-deploy` is enabled for this repo
+  (Stage 3, fully autonomous — see `configuring-autonomy` docs), so most PRs are agent-authored
+  and agent-reviewed; GitHub blocks self-APPROVE via the API, so a required-review count can
+  never be satisfied by the pipeline itself. This matches the live setting on `main` today.
+- **Enforce on admins:** **no.** `deploy.md` Step 4b already merges every PR with
+  `gh pr merge --admin` by design, not as an emergency exception — `enforce_admins: true`
+  would either block every automated merge or require the merging account to be a
+  permanent `bypass_actor`, which is enforcement in name only. See `repo-config/SKILL.md`'s
+  Branch protection section for the general (Stage 1/2 vs. Stage 3) guidance this follows.
 - **Canary status check:** not applicable / not included — see Canary execution
   contract section; there is no canary job to include or exclude.
 
