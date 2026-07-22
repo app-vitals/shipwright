@@ -32,8 +32,8 @@ FROM oven/bun:1-slim AS base
 #   - jq           — bash JSON parsing in the time-tracking Claude Code hooks
 #   - build-essential / libssl-dev / pkg-config — native + Rust toolchain so the
 #     agent can build client code at runtime (e.g. Rust projects + OpenSSL crates).
-#     (voice deps — python/edge-tts/ffmpeg — deliberately omitted; voice is not
-#     deployed on the Shipwright harness yet.)
+#     (Piper TTS for voice-out is bundled in the runtime stage below; ffmpeg /
+#     python-edge-tts stay omitted — Piper emits WAV natively.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -168,6 +168,35 @@ COPY --from=build --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 # Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
     && chmod +x /app/agent/scripts/bin/gh
+
+# ─── Piper offline TTS (voice-out) ────────────────────────────────────────────
+# Bundle the Piper binary + the default voice so the agent can synthesize voice
+# replies with no external TTS key. When voice is enabled (agent.voice.enabled) and
+# no ElevenLabs key is set, synthesizeSpeech() (agent/src/voice.ts) falls back to
+# spawning a bare `piper` on PATH. piper-voice.ts hardcodes the model dir to
+# /app/agent/voices/ and the default voice en_US-hfc_female-medium, so the model
+# MUST live at that exact path. The release tarball is self-contained — its shared
+# libs + espeak-ng-data sit beside the binary with an $ORIGIN rpath — so putting
+# /opt/piper on PATH is all that's needed (no ffmpeg: Piper writes WAV directly, and
+# Slack's files.uploadV2 accepts WAV). curl + tar come from the base stage.
+# Installed as root (the runtime user is uid 1000); the voice dir is chowned back so
+# the non-root user can read it. This runs AFTER the /app/agent COPY above so the
+# voices aren't clobbered by that layer. amd64 only — the harness image is built
+# single-arch; an arm64 build would need the aarch64 asset.
+USER root
+ARG PIPER_VERSION=2023.11.14-2
+RUN curl -fsSL -o /tmp/piper.tar.gz \
+      "https://github.com/rhasspy/piper/releases/download/${PIPER_VERSION}/piper_linux_x86_64.tar.gz" \
+    && tar -xzf /tmp/piper.tar.gz -C /opt \
+    && rm /tmp/piper.tar.gz \
+    && mkdir -p /app/agent/voices \
+    && curl -fsSL -o /app/agent/voices/en_US-hfc_female-medium.onnx \
+      "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx" \
+    && curl -fsSL -o /app/agent/voices/en_US-hfc_female-medium.onnx.json \
+      "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/hfc_female/medium/en_US-hfc_female-medium.onnx.json" \
+    && chown -R 1000:1000 /app/agent/voices
+ENV PATH="/opt/piper:${PATH}"
+USER 1000
 
 VOLUME ["/data/agent-home"]
 
