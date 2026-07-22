@@ -16,6 +16,18 @@ independent of `appVersion`. CI enforces this with
 
 - manual chart version bump to v1.7.103 required by `ct lint --check-version-increment`: `taskStore.extraEnv` now defaults to populating `SHIPWRIGHT_CLAUDE_TIMEOUT_MS` (previously shipped as `[]` with a commented-out example)
 
+## [1.7.102] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.102 triggered by release tag(s): `admin-v1.27.0`
+
+## [1.7.101] - 2026-07-22
+
+### Changed
+
+- auto-bump to chart v1.7.101 triggered by release tag(s): `admin-v1.26.1`, `agent-v1.54.1`, `chat-v1.6.1`, `metrics-v1.8.1`, `task-store-v1.15.1`
+
 ## [1.7.100] - 2026-07-22
 
 ### Changed
