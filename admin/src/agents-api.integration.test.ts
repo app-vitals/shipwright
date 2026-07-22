@@ -331,4 +331,96 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(rows).toHaveLength(0);
   });
+
+  // ─── Seeded default AgentTool rows ─────────────────────────────────────────
+
+  it("POST /agents creates exactly 4 default AgentTool rows: Bash, WebSearch, WebFetch, Agent", async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent With Tools" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const newAgentId: string = body.id;
+
+    // Query the AgentTool rows for this agent
+    const tools = await prisma.agentTool.findMany({
+      where: { agentId: newAgentId },
+      orderBy: { pattern: "asc" },
+    });
+
+    // Should have exactly 4 rows
+    expect(tools).toHaveLength(4);
+
+    // Extract patterns and verify all are enabled
+    const patterns = tools.map((t) => t.pattern).sort();
+    expect(patterns).toEqual(["Agent", "Bash", "WebFetch", "WebSearch"]);
+
+    // All should be enabled: true
+    for (const tool of tools) {
+      expect(tool.enabled).toBe(true);
+    }
+  });
+
+  it("POST /agents with provisioner failure rolls back seeded AgentTool rows via cascade delete", async () => {
+    // Create a new app with a throwing provisioner
+    const throwingProvisioner = {
+      provision: async () => {
+        throw new Error("provisioner failure");
+      },
+      deprovision: async () => {},
+      reconcile: async () => ({ recreated: [], orphans: [], failed: [], updated: [] }),
+    };
+
+    const depsWithFailingProvisioner: AdminDeps = {
+      agentService: new AgentService(prisma),
+      agentEnvService: new AgentEnvService(prisma, makeTokenCrypto()),
+      agentCronJobService: new AgentCronJobService(prisma),
+      agentCronRunService: new AgentCronRunService(prisma),
+      agentCronRunStatsService: new AgentCronRunStatsService(prisma),
+      agentToolService: new AgentToolService(prisma),
+      agentTokenService: new AgentTokenService(prisma),
+      agentPluginService: new AgentPluginService(prisma),
+      agentChatTokenService: new AgentChatTokenService(prisma),
+      agentWorkQueueService: new AgentWorkQueueService(prisma),
+      prisma,
+      provisioner: throwingProvisioner,
+      taskStore: new NoopTaskStoreProvisioningClient(),
+      chatService: new NoopChatServiceProvisioningClient(),
+      slack: {
+        deleteApp: async () => {},
+      },
+      decrypt: (value: string) => makeTokenCrypto().decrypt(value),
+      sessionSecret: SESSION_SECRET,
+    };
+
+    const appWithFailingProvisioner = createAdminApp(
+      depsWithFailingProvisioner,
+    );
+
+    // POST should fail because provisioner throws
+    const res = await appWithFailingProvisioner.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Doomed Agent With Tools" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(500);
+
+    // After rollback, NO AgentTool rows should remain for any agent created during this test.
+    // Because the agent itself was deleted on rollback, we can't query by agentId.
+    // Instead, we verify that NO orphaned AgentTool rows exist from this creation attempt
+    // by checking the total count remains at 0 for all agents created in this test scope.
+    // Since the agent row was deleted, its tools should be cascade-deleted too.
+    const allTools = await prisma.agentTool.findMany({
+      where: { agent: { name: "Doomed Agent With Tools" } },
+    });
+    expect(allTools).toHaveLength(0);
+  });
 });

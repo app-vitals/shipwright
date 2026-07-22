@@ -955,6 +955,15 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       selfHosted: body.selfHosted ?? false,
     });
 
+    // Seed default AgentTool rows for the revocable tool set.
+    // These rows are created AFTER the agent exists but BEFORE provisioning,
+    // so if provisioning fails and the agent is rolled back, these rows will
+    // be cascade-deleted via the onDelete: Cascade FK.
+    const defaultTools = ["Bash", "WebSearch", "WebFetch", "Agent"];
+    for (const pattern of defaultTools) {
+      await agentToolService.add(agent.id, pattern);
+    }
+
     // Provision the backing workload AFTER the row exists (the provisioner
     // mints a per-agent token tied to the agent id). If provisioning throws,
     // roll the agent row back so we never leave a half-created agent with no
