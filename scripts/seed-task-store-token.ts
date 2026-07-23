@@ -63,10 +63,7 @@ interface TaskTokenUpserter {
 
 /**
  * Idempotently upsert a token (admin or agent-scoped) by its hashed raw value.
- * When agentId is null, the token is unrestricted (admin). When agentId is set,
- * the token is scoped to that agent.
- * The empty `update` makes re-runs a no-op — running `task stack` repeatedly
- * never creates duplicates or rotates the token.
+ * The empty `update` makes re-runs a no-op.
  */
 export async function seedTaskStoreAdminToken(opts: {
   prisma: TaskTokenUpserter;
