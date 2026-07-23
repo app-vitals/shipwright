@@ -676,6 +676,48 @@ describe("resume retry", () => {
     expect(secondCmd[secondRIdx + 1]).toBe("stale-sess-id");
   });
 
+  test("per-call onProgress still fires on the second _spawn attempt during a resume-retry", async () => {
+    let callCount = 0;
+    const mockSpawn = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call (resume) fails
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
+      }
+      // Second call (retry, same resumed session) succeeds and streams
+      // stream-json turns, so per-call onProgress has something to fire on.
+      return ndjsonProc(cleanMultiTurn.lines) as ReturnType<typeof Bun.spawn>;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockClearSession.mockClear();
+    capturedMessages = [];
+    capturedExceptions = [];
+    mockGetSession.mockReturnValue("stale-sess-id");
+
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const progress: Array<Record<string, unknown>> = [];
+    const result = await runClaude("hello", "chan:ts", (mu) => {
+      progress.push(structuredClone(mu));
+    });
+
+    expect(result.recoveredFromError).toBe(true);
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    // Progress must have fired during the retried (second) _spawn attempt.
+    expect(progress).toHaveLength(cleanMultiTurn.expectedProgressCount);
+    expect(progress[progress.length - 1]).toEqual(
+      cleanMultiTurn.expectedAccumulated,
+    );
+  });
+
   test("does not retry when there is no existing session (fresh call fails)", async () => {
     const mockSpawn = mock(
       () => fakeProc("", "auth failure", 1) as ReturnType<typeof Bun.spawn>,
@@ -1249,6 +1291,64 @@ describe("runClaude — stream-json parsing", () => {
     expect(progress[progress.length - 1]).toEqual(
       cleanMultiTurn.expectedAccumulated,
     );
+  });
+
+  test("per-call onProgress fires once per distinct message id with the running accumulated total (deduped)", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(cleanMultiTurn.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const progress: Array<Record<string, unknown>> = [];
+    // No construction-time onProgress bound — only the per-call one.
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await runClaude("go", undefined, (mu) => {
+      progress.push(structuredClone(mu));
+    });
+
+    expect(progress).toHaveLength(cleanMultiTurn.expectedProgressCount);
+    expect(progress[progress.length - 1]).toEqual(
+      cleanMultiTurn.expectedAccumulated,
+    );
+  });
+
+  test("both a construction-time onProgress and a per-call onProgress fire together on the same turn with an identical snapshot", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(cleanMultiTurn.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const constructionProgress: Array<Record<string, unknown>> = [];
+    const perCallProgress: Array<Record<string, unknown>> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (mu) => {
+        constructionProgress.push(structuredClone(mu));
+      },
+    );
+
+    await runClaude("go", undefined, (mu) => {
+      perCallProgress.push(structuredClone(mu));
+    });
+
+    expect(constructionProgress).toHaveLength(
+      cleanMultiTurn.expectedProgressCount,
+    );
+    expect(perCallProgress).toHaveLength(cleanMultiTurn.expectedProgressCount);
+    // Identical snapshots on every turn.
+    expect(perCallProgress).toEqual(constructionProgress);
   });
 
   test("skips malformed / non-JSON lines without losing already-accumulated usage", async () => {

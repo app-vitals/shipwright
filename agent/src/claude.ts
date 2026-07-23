@@ -215,7 +215,11 @@ export function createRunClaude(
    */
   idleTimeoutMs: number = 25 * 60 * 1000,
   onProgress: ProgressCallback | undefined = undefined,
-): (message: string, sessionKey?: string) => Promise<ClaudeRunResult> {
+): (
+  message: string,
+  sessionKey?: string,
+  onProgress?: ProgressCallback,
+) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
 
@@ -290,6 +294,7 @@ export function createRunClaude(
   async function _consumeStream(
     stream: ReadableStream<Uint8Array>,
     onLine?: () => void,
+    perCallOnProgress?: ProgressCallback,
   ): Promise<{
     result?: ClaudeResultEvent;
     modelUsage: ModelUsage;
@@ -350,7 +355,11 @@ export function createRunClaude(
       entry.cacheCreationInputTokens +=
         message.usage.cache_creation_input_tokens ?? 0;
 
+      // Fire both the construction-time-bound closure (kept for back-compat)
+      // and the per-call callback (if provided), each with its own snapshot
+      // so neither can mutate what the other observes.
       onProgress?.(_snapshotUsage(accumulated));
+      perCallOnProgress?.(_snapshotUsage(accumulated));
     };
 
     try {
@@ -378,7 +387,10 @@ export function createRunClaude(
     return { result, modelUsage: accumulated, raw };
   }
 
-  async function _spawn(args: string[]): Promise<ClaudeRunResult> {
+  async function _spawn(
+    args: string[],
+    perCallOnProgress?: ProgressCallback,
+  ): Promise<ClaudeRunResult> {
     const proc = spawner(["claude", ...args], {
       cwd: workspace,
       env: process.env,
@@ -414,7 +426,7 @@ export function createRunClaude(
     resetIdleTimer();
 
     const [{ result, modelUsage, raw }, stderr, exitCode] = await Promise.all([
-      _consumeStream(proc.stdout, resetIdleTimer),
+      _consumeStream(proc.stdout, resetIdleTimer, perCallOnProgress),
       new Response(proc.stderr).text(),
       proc.exited,
     ]).finally(() => {
@@ -494,6 +506,7 @@ export function createRunClaude(
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
+    perCallOnProgress: ProgressCallback | undefined,
   ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey
       ? await sessions.get(sessionKey)
@@ -502,7 +515,7 @@ export function createRunClaude(
     const args = _buildArgs(message, existingSessionId);
 
     try {
-      const output = await _spawn(args);
+      const output = await _spawn(args, perCallOnProgress);
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
@@ -516,7 +529,7 @@ export function createRunClaude(
       // session itself is corrupt.
       if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
         try {
-          const output = await _spawn(args);
+          const output = await _spawn(args, perCallOnProgress);
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch {
@@ -531,9 +544,12 @@ export function createRunClaude(
   return async function runClaude(
     message: string,
     sessionKey?: string,
+    onProgress?: ProgressCallback,
   ): Promise<ClaudeRunResult> {
     if (sessionKey)
-      return _enqueue(sessionKey, () => _runClaude(message, sessionKey));
-    return _runClaude(message, undefined);
+      return _enqueue(sessionKey, () =>
+        _runClaude(message, sessionKey, onProgress),
+      );
+    return _runClaude(message, undefined, onProgress);
   };
 }
