@@ -13,6 +13,7 @@ import {
   buildTaskCommand,
   computeProvisionPlan,
   ensureHitlAgent,
+  parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
   type Task,
@@ -186,6 +187,28 @@ describe("parseHitlRepos", () => {
 
   test("returns a single-entry list for a value with no commas", () => {
     expect(parseHitlRepos("org/solo")).toEqual(["org/solo"]);
+  });
+});
+
+describe("parseHitlAuthors", () => {
+  test("returns [] for undefined", () => {
+    expect(parseHitlAuthors(undefined)).toEqual([]);
+  });
+
+  test("returns [] for an empty string", () => {
+    expect(parseHitlAuthors("")).toEqual([]);
+  });
+
+  test("splits a comma-separated list, trims whitespace, and drops empty entries", () => {
+    expect(parseHitlAuthors("danmcaulay, dave ,,other-user,")).toEqual([
+      "danmcaulay",
+      "dave",
+      "other-user",
+    ]);
+  });
+
+  test("returns a single-entry list for a value with no commas", () => {
+    expect(parseHitlAuthors("danmcaulay")).toEqual(["danmcaulay"]);
   });
 });
 

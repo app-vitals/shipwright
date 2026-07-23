@@ -599,4 +599,34 @@ describe("getReviewCandidates", () => {
     );
     expect(result).toEqual([]);
   });
+
+  // ─── author allowlist filtering (HRA-1.1, dev-tool-only via hitl.ts) ──────
+
+  test("isAuthorAllowed filters out a PR whose author does not match", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("isAuthorAllowed passes through a PR whose author matches", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "danmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed is a no-op when omitted (regression guard for autonomous-loop callers)", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps = makeDeps([pr], async () => null);
+    expect(deps.isAuthorAllowed).toBeUndefined();
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
 });
