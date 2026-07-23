@@ -829,6 +829,93 @@ describe("createLoopOrchestrator", () => {
     expect(busyWarnLogs.length).toBe(0);
   });
 
+  test("LPF-7.2: busySince resets per drain iteration — cumulative multi-item drain time does not falsely escalate", async () => {
+    // Regression test for the review finding on this PR: busySince used to
+    // be set once at tick-start and only cleared when the whole drain
+    // finished, so a tick that sequentially dispatches multiple candidates
+    // (each its own bounded runner() call) would accumulate elapsed time
+    // across all of them. A concurrent tick's busy check would then see
+    // cumulative drain time exceeding BUSY_STALL_THRESHOLD_MS and falsely
+    // escalate to console.error, even though nothing was actually stuck —
+    // the drain was legitimately still working through candidates one at a
+    // time. Two 20-minute dispatches (40 minutes cumulative) exceed the
+    // 35-minute threshold if measured from tick-start, but must not
+    // escalate once busySince resets per iteration.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    let markReachedThirdCollection!: () => void;
+    const reachedThirdCollection = new Promise<void>((res) => {
+      markReachedThirdCollection = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const consumed = new Set<string>();
+    const pool = [
+      task("t1", "2026-01-01T00:00:00Z"),
+      task("t2", "2026-01-01T00:00:00Z"),
+    ];
+    let collectionCalls = 0;
+    const getDevTaskCandidates = async () => {
+      collectionCalls += 1;
+      if (collectionCalls <= 2) {
+        return pool.filter((t) => !consumed.has(t.id));
+      }
+      // Third collection call: both candidates are already dispatched —
+      // hang here so the tick is still "busy" (never reaches the drain's
+      // natural exit) when the second, overlapping tick fires below.
+      markReachedThirdCollection();
+      await gate;
+      return [];
+    };
+    const runner = async (): Promise<ClaudeRunResult> => {
+      // Each dispatch takes 20 (simulated) minutes.
+      advanceMs(20 * 60 * 1000);
+      return { result: "done" };
+    };
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates,
+        claimTask: consumingClaimTask(consumed),
+        runner,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Deterministically wait until both dispatches have completed and the
+    // drain has reached (and hung on) its third collection call, instead of
+    // guessing a number of microtask ticks.
+    await reachedThirdCollection;
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    // The reported elapsed time must reflect only the current (third,
+    // hung) iteration — effectively 0ms since its own busySince reset, not
+    // the ~40 cumulative minutes both dispatches took.
+    expect(busyLogs.some((msg) => msg.includes(String(40 * 60 * 1000)))).toBe(
+      false,
+    );
+  });
+
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
     const calls: string[] = [];
     const deps = makeDeps({ calls });
