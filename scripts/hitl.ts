@@ -18,7 +18,7 @@
  *
  * Env overrides:
  *   SHIPWRIGHT_HITL_HOME          — root dir (default: ~/.shipwright)
- *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "shipwright.test")
+ *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
  */
 
@@ -43,7 +43,7 @@ const WORKTREES_DIR = join(WORKSPACE, "worktrees");
 
 const TASK_STORE_PORT = 3002;
 const ADMIN_PORT = 3001;
-const HOST = process.env.SHIPWRIGHT_HITL_HOST ?? "shipwright.test";
+const HOST = process.env.SHIPWRIGHT_HITL_HOST ?? "localhost";
 const TASK_STORE_URL = `http://${HOST}:${TASK_STORE_PORT}`;
 const ADMIN_URL = `http://${HOST}:${ADMIN_PORT}`;
 const DEV_TOKEN = "dev-task-store-admin-token";
@@ -101,6 +101,23 @@ const HITL_TEMPLATE = join(
   "CLAUDE-HITL.md.template",
 );
 
+/**
+ * Pure planning step for provisionWorkspace(): given the set of dirs the
+ * workspace needs and an injectable existence check, report which dirs are
+ * missing and whether CLAUDE.md still needs to be seeded. Kept side-effect
+ * free so it's unit-testable without touching the real filesystem.
+ */
+export function computeProvisionPlan(
+  dirs: string[],
+  claudeMdPath: string,
+  exists: (path: string) => boolean,
+): { missingDirs: string[]; needsClaudeMd: boolean } {
+  return {
+    missingDirs: dirs.filter((dir) => !exists(dir)),
+    needsClaudeMd: !exists(claudeMdPath),
+  };
+}
+
 function provisionWorkspace(): void {
   const dirs = [
     WORKSPACE,
@@ -109,23 +126,21 @@ function provisionWorkspace(): void {
     join(WORKSPACE, "state", "reviews"),
     join(WORKSPACE, ".claude"),
   ];
+  const claudeMd = join(WORKSPACE, "CLAUDE.md");
 
-  let created = false;
-  for (const dir of dirs) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      created = true;
-    }
+  const plan = computeProvisionPlan(dirs, claudeMd, existsSync);
+
+  for (const dir of plan.missingDirs) {
+    mkdirSync(dir, { recursive: true });
   }
 
-  const claudeMd = join(WORKSPACE, "CLAUDE.md");
-  if (!existsSync(claudeMd)) {
+  if (plan.needsClaudeMd) {
     const template = readFileSync(HITL_TEMPLATE, "utf8");
     writeFileSync(claudeMd, template, { flag: "wx" });
     log("seeded CLAUDE.md");
   }
 
-  if (created) {
+  if (plan.missingDirs.length > 0) {
     log(`workspace provisioned: ${WORKSPACE}`);
   }
 }
@@ -275,11 +290,36 @@ function killServices(handles: ServiceHandle[]): void {
 // Task loop
 // ---------------------------------------------------------------------------
 
-interface Task {
+export interface Task {
   id: string;
   title: string;
   status: string;
   hitl?: boolean;
+}
+
+/**
+ * Pure response-shape parsing for fetchReadyTasks(): tolerates a missing or
+ * malformed `tasks` field so callers get [] rather than throwing.
+ */
+export function parseTasksResponse(data: unknown): Task[] {
+  if (
+    data &&
+    typeof data === "object" &&
+    Array.isArray((data as { tasks?: unknown }).tasks)
+  ) {
+    return (data as { tasks: Task[] }).tasks;
+  }
+  return [];
+}
+
+/**
+ * Picks the command to launch for a given ready task: HITL tasks route to
+ * /shipwright:hitl, everything else to the standard autonomous dev-task flow.
+ */
+export function buildTaskCommand(task: Pick<Task, "id" | "hitl">): string {
+  return task.hitl
+    ? `/shipwright:hitl ${task.id}`
+    : `/shipwright:dev-task ${task.id}`;
 }
 
 async function fetchReadyTasks(): Promise<Task[]> {
@@ -287,12 +327,36 @@ async function fetchReadyTasks(): Promise<Task[]> {
     const res = await fetch(`${TASK_STORE_URL}/tasks?ready=true`, {
       headers: { Authorization: `Bearer ${DEV_TOKEN}` },
     });
-    if (!res.ok) return [];
-    const data = (await res.json()) as { tasks: Task[] };
-    return data.tasks ?? [];
-  } catch {
+    if (!res.ok) {
+      log(`fetchReadyTasks: task-store returned ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    return parseTasksResponse(data);
+  } catch (err) {
+    log(
+      `fetchReadyTasks: failed to reach ${TASK_STORE_URL} (${err instanceof Error ? err.message : err}) — check SHIPWRIGHT_HITL_HOST`,
+    );
     return [];
   }
+}
+
+/**
+ * Builds the env passed to the spawned `claude` process: the caller's base
+ * env (typically process.env) overlaid with the task-store connection and
+ * repo/worktree dirs the dispatched command needs. Pure aside from reading
+ * its argument, so it's testable without spawning a real process.
+ */
+export function buildClaudeSpawnEnv(
+  baseEnv: Record<string, string | undefined>,
+): Record<string, string | undefined> {
+  return {
+    ...baseEnv,
+    SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
+    SHIPWRIGHT_TASK_STORE_TOKEN: DEV_AGENT_TOKEN,
+    SHIPWRIGHT_REPO_DIR: REPOS_DIR,
+    SHIPWRIGHT_WORKTREE_DIR: WORKTREES_DIR,
+  };
 }
 
 async function runLoop(): Promise<void> {
@@ -313,9 +377,7 @@ async function runLoop(): Promise<void> {
     }
 
     const task = tasks[0];
-    const command = task.hitl
-      ? `/shipwright:hitl ${task.id}`
-      : `/shipwright:dev-task ${task.id}`;
+    const command = buildTaskCommand(task);
 
     console.log("");
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -326,13 +388,7 @@ async function runLoop(): Promise<void> {
 
     const claude = Bun.spawn(["claude", command], {
       cwd: WORKSPACE,
-      env: {
-        ...process.env,
-        SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
-        SHIPWRIGHT_TASK_STORE_TOKEN: DEV_AGENT_TOKEN,
-        SHIPWRIGHT_REPO_DIR: REPOS_DIR,
-        SHIPWRIGHT_WORKTREE_DIR: WORKTREES_DIR,
-      },
+      env: buildClaudeSpawnEnv(process.env),
       stdout: "inherit",
       stderr: "inherit",
       stdin: "inherit",
