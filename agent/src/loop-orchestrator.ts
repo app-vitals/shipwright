@@ -338,6 +338,12 @@ export function createLoopOrchestrator(
 
   // Persisted across ticks: guards against a second concurrent drain.
   let busy = false;
+  // LPF-7.1: set (via the injected clock) whenever `busy` flips to true and
+  // cleared everywhere `busy` resets to false (the backoff-skip early
+  // return and the tick's `finally` block) — lets the busy-skip warn below
+  // report how long the in-flight tick has been draining, with no stale
+  // leakage into a later tick.
+  let busySince: Date | null = null;
 
   // Spin detection state: tracks the last dispatched itemId and consecutive
   // repeat count to warn when the same item is dispatched repeatedly.
@@ -572,13 +578,21 @@ export function createLoopOrchestrator(
     // shipwright-loop gap can tell "still draining a prior tick" apart from
     // the backoff-active and genuinely-empty no-op paths below — see the
     // file's top doc comment / LTO-1.1 for why this matters.
+    // LPF-7.1: console.warn (not console.log) — a tick still busy on the
+    // next scheduled invocation is a stronger operator signal than a plain
+    // informational skip, and the elapsed time (derived from busySince via
+    // the injected clock) shows how long the prior tick has been draining.
     if (busy) {
-      console.log(
-        "[loop-orchestrator] tick skipped: busy — a prior tick is still draining",
+      const elapsedMs = busySince
+        ? clock.now().getTime() - busySince.getTime()
+        : 0;
+      console.warn(
+        `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms (still running)`,
       );
       return;
     }
     busy = true;
+    busySince = clock.now();
 
     // SKT-2.2 empty-queue backoff: if a prior tick's run of consecutive empty
     // ticks reached the configured threshold, skip this tick entirely — no
@@ -594,6 +608,7 @@ export function createLoopOrchestrator(
         `[loop-orchestrator] tick skipped: empty-queue backoff active — ${remainingMs}ms remaining until ${backoffUntil.toISOString()}`,
       );
       busy = false;
+      busySince = null;
       return;
     }
 
@@ -898,6 +913,7 @@ export function createLoopOrchestrator(
       }
     } finally {
       busy = false;
+      busySince = null;
     }
   };
 }

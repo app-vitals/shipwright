@@ -653,37 +653,52 @@ describe("createLoopOrchestrator", () => {
     expect(messages).toEqual([]);
   });
 
-  test("LTO-1.1: the busy-flag no-op logs a distinguishable message before returning", async () => {
+  test("LPF-7.1: the busy-flag no-op warns a distinguishable message including elapsed busy time before returning", async () => {
     // First tick's qualification hangs until we release it, so the second
     // tick fires while the first is still draining and hits the busy guard.
+    // A mutable clock lets us advance wall-clock time between busy=true
+    // (set at the top of the first tick) and the second tick's busy-skip, so
+    // the elapsed-time content in the warn message is genuinely exercised
+    // rather than trivially 0ms.
     let release!: () => void;
     const gate = new Promise<void>((res) => {
       release = res;
     });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
 
-    const deps = makeDeps({
-      getDevTaskCandidates: async () => {
-        await gate;
-        return [];
-      },
-    });
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates: async () => {
+          await gate;
+          return [];
+        },
+      }),
+      clock,
+    };
     const loop = createLoopOrchestrator(deps);
 
     const first = loop(ALL_PHASES_ON);
-    const logMessages = await withCapturedLogs(async () => {
+    advanceMs(5000);
+    const warnMessages = await withCapturedWarnings(async () => {
       // Second call while first is still draining — must no-op immediately
-      // and log a distinguishable "busy" message before returning.
+      // and warn a distinguishable "busy" message (including elapsed busy
+      // time) before returning.
       await loop(ALL_PHASES_ON);
     });
 
     release();
     await first;
 
-    expect(logMessages.length).toBeGreaterThan(0);
-    const busyLogs = logMessages.filter(
+    expect(warnMessages.length).toBeGreaterThan(0);
+    const busyLogs = warnMessages.filter(
       (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
     );
     expect(busyLogs.length).toBeGreaterThan(0);
+    // Must surface the elapsed time since busySince (5000ms, derived from the
+    // injected clock, not a raw Date.now()/new Date() call).
+    expect(busyLogs.some((msg) => msg.includes("5000"))).toBe(true);
   });
 
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
@@ -1690,6 +1705,15 @@ describe("createLoopOrchestrator", () => {
         expect(
           backoffLogs.some((msg) => msg.toLowerCase().includes("busy")),
         ).toBe(false);
+        // LPF-7.1: must include the active backoffUntil timestamp so an
+        // operator can tell exactly when the window ends, not just that
+        // backoff is active.
+        const expectedBackoffUntil = new Date(
+          clock.now().getTime() + 300000,
+        ).toISOString();
+        expect(
+          backoffLogs.some((msg) => msg.includes(expectedBackoffUntil)),
+        ).toBe(true);
       },
     );
   });
