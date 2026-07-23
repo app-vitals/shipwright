@@ -565,3 +565,51 @@ describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (P
     expect(handoffSection).not.toContain('"hitl"');
   });
 });
+
+describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () => {
+  function extractStep2bSection(md: string): string {
+    const match = md.match(
+      /### 2b\. Bundle Completeness Gate[\s\S]*?(?=\n---)/,
+    );
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Step 2b's bundle-gate-block text includes [silent] and a [skip-reason:deploy:bundle-incomplete: marker", () => {
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).toContain("[silent]");
+    expect(step2bSection).toContain("[skip-reason:deploy:bundle-incomplete:");
+  });
+
+  it("Step 2b's skip-reason marker interpolates {HEAD_BRANCH}, matching the placeholder style used elsewhere in this file", () => {
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).toContain(
+      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+    );
+  });
+
+  it("emits the skip-reason marker alongside [silent] in the same 'Stop here' instruction", () => {
+    const step2bSection = extractStep2bSection(content);
+    const stopHereIdx = step2bSection.indexOf("Stop here");
+    expect(stopHereIdx).toBeGreaterThan(-1);
+    const silentIdx = step2bSection.indexOf("[silent]", stopHereIdx);
+    const skipReasonIdx = step2bSection.indexOf(
+      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+      stopHereIdx,
+    );
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeGreaterThan(-1);
+  });
+
+  it("does not require a specific ordering between [skip-reason:...] and [silent] — markers.ts parses both regardless of position", () => {
+    // parseMarkers() strips [skip-reason:...] before checking [silent]'s
+    // end-anchor, so the two markers can appear in either order in the raw
+    // text without breaking [silent] detection (see markers.unit.test.ts's
+    // order-independence cases).
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).not.toContain(
+      "must come first",
+    );
+    expect(step2bSection).toContain("does not matter");
+  });
+});

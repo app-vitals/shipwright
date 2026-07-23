@@ -10,6 +10,14 @@
  *   [speak:text]                    — synthesize speech and upload audio file
  *   [react:emoji1,emoji2]           — add emoji reactions
  *   [plan:url]                      — post a "View plan" link to the channel/thread
+ *   [skip-reason:text]              — tag a machine-readable reason for a silent
+ *                                      dispatch; parsed independently of [silent]
+ *                                      (does not require it to also be present),
+ *                                      but only meaningful when it is — the
+ *                                      loop orchestrator uses it as the
+ *                                      skipRun() reason on a [silent] dispatch,
+ *                                      falling back to "command:no-work" when
+ *                                      absent (see agent/src/loop-orchestrator.ts)
  *
  * Malformed markers are logged and left in the cleaned text (not crashed on).
  */
@@ -38,12 +46,18 @@ interface PlanMarker {
   url: string;
 }
 
+interface SkipReasonMarker {
+  type: "skip-reason";
+  reason: string;
+}
+
 export type Marker =
   | SilentMarker
   | UploadMarker
   | SpeakMarker
   | ReactMarker
-  | PlanMarker;
+  | PlanMarker
+  | SkipReasonMarker;
 
 interface ParseMarkersResult {
   cleaned: string;
@@ -58,6 +72,7 @@ const UPLOAD_REGEX = /\[upload:([^\]]+)\]/gi;
 const SPEAK_REGEX = /\[speak:([\s\S]*?)\]/gi;
 const REACT_REGEX = /\[react:([^\]]+)\]/gi;
 const PLAN_REGEX = /\[plan:([^\]]+)\]/gi;
+const SKIP_REASON_REGEX = /\[skip-reason:([^\]]+)\]/gi;
 
 /**
  * Parse all response markers from text.
@@ -67,6 +82,24 @@ const PLAN_REGEX = /\[plan:([^\]]+)\]/gi;
 export function parseMarkers(text: string): ParseMarkersResult {
   const markers: Marker[] = [];
   let cleaned = text;
+
+  // [skip-reason:text] — stripped before the [silent] end-anchor check below
+  // so [silent] is still recognized regardless of whether [skip-reason:...]
+  // appears before or after it in the raw text (DBV-1.1).
+  cleaned = cleaned.replace(SKIP_REASON_REGEX, (_match, reasonRaw: string) => {
+    const reason = reasonRaw.trim();
+    if (!reason) {
+      console.warn(
+        "[markers] malformed [skip-reason:] marker — empty reason, leaving in text:",
+        _match,
+      );
+      return _match;
+    }
+    markers.push({ type: "skip-reason", reason });
+    return "";
+  });
+  SKIP_REASON_REGEX.lastIndex = 0;
+  cleaned = cleaned.trim();
 
   // [silent]
   if (SILENT_REGEX.test(cleaned)) {

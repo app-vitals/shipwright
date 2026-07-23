@@ -271,7 +271,7 @@ Body:
 |-------|----------|-------------|
 | `startedAt` | yes | ISO timestamp when the run started |
 | `skipped` | no | `true` if the pre-check returned false |
-| `skipReason` | no | Reason the run was skipped |
+| `skipReason` | no | Reason the run was skipped. On a `[silent]`-marker dispatch, populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to the generic `"command:no-work"` literal when the command didn't tag a specific reason. See `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`. |
 | `outcome` | no | `"success"` or `"error"` |
 | `itemType` | no | Work item type this run was dispatched against (`"task"` or `"pr"`). Set by the unified `shipwright-loop` cron alongside `itemId`; null when the tick had no dispatch (skipped tick, empty queue). Write-once at creation — not accepted on the PATCH endpoint. |
 | `itemId` | no | Work item id this run was dispatched against (e.g. `"WLS-2.2"` for a task, `"acme/x#123"` for a PR). Null when the tick had no dispatch. Write-once at creation — not accepted on the PATCH endpoint. |

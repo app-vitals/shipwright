@@ -518,6 +518,19 @@ export function createLoopOrchestrator(
     const isSilent = markers.some((m) => m.type === "silent");
 
     if (isSilent) {
+      // DBV-1.1: a command can tag its own silent dispatch with a specific,
+      // machine-readable [skip-reason:text] marker (e.g. deploy's Step 2b
+      // bundle-completeness gate) so the AgentCronRun.skipReason field
+      // records exactly why nothing happened, instead of the generic
+      // "command:no-work" literal. Falls back to that literal when the
+      // command didn't tag a reason, leaving every other command's behavior
+      // unchanged.
+      const skipReasonMarker = markers.find((m) => m.type === "skip-reason");
+      const skipReason =
+        skipReasonMarker?.type === "skip-reason"
+          ? skipReasonMarker.reason
+          : "command:no-work";
+
       // The command was dispatched (it was selected), but found nothing to do
       // once it ran — one row, marked skipped. runner(message) already ran
       // and may have spent real tokens before reporting nothing-to-do, so
@@ -528,7 +541,7 @@ export function createLoopOrchestrator(
         loopCronId,
         runId,
         clock.now(),
-        "command:no-work",
+        skipReason,
         buildTokenPayload(runResult.usage, runResult.modelUsage),
         phaseId ?? undefined,
         itemType,
