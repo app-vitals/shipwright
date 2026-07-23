@@ -51,9 +51,23 @@ const DEV_TOKEN = "dev-task-store-admin-token";
 const DEV_AGENT_TOKEN = "dev-task-store-hitl-token";
 const DEV_ADMIN_API_KEY = "dev-hitl-admin-key";
 const HITL_AGENT_NAME = "hitl";
-const HITL_REPOS = process.env.SHIPWRIGHT_HITL_REPOS
-  ? process.env.SHIPWRIGHT_HITL_REPOS.split(",").map((r) => r.trim()).filter(Boolean)
-  : [];
+
+/**
+ * Parses the comma-separated SHIPWRIGHT_HITL_REPOS env value into a list of
+ * org/repo strings, trimming whitespace and dropping empty entries. Pure and
+ * exported so parsing edge cases (undefined, empty string, stray commas /
+ * whitespace) are unit-testable without touching process.env.
+ */
+export function parseHitlRepos(raw: string | undefined): string[] {
+  return raw
+    ? raw
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean)
+    : [];
+}
+
+const HITL_REPOS = parseHitlRepos(process.env.SHIPWRIGHT_HITL_REPOS);
 const POLL_INTERVAL_S = Number(
   process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "15",
 );
@@ -284,57 +298,97 @@ function killServices(handles: ServiceHandle[]): void {
 // task-store scope resolver can look up its repos.
 // ---------------------------------------------------------------------------
 
+/** GET /agents list-summary shape (AgentSummarySchema) — no `repos` field. */
+interface AgentSummary {
+  id: string;
+  name: string;
+  selfHosted: boolean;
+}
+
+/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos`. */
 interface AgentRecord {
   id: string;
   name: string;
   repos: string[];
 }
 
-async function ensureHitlAgent(): Promise<string | null> {
+/** Injectable fetch type so tests can supply a double instead of real network calls. */
+type FetchLike = typeof fetch;
+
+async function patchHitlAgentRepos(
+  agentId: string,
+  repos: string[],
+  fetchImpl: FetchLike,
+  headers: Record<string, string>,
+): Promise<void> {
+  const patchRes = await fetchImpl(`${ADMIN_URL}/agents/${agentId}`, {
+    method: "PATCH",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({ repos }),
+  });
+  if (patchRes.ok) {
+    log(`updated hitl agent repos: ${repos.join(", ")}`);
+  } else {
+    log(`warning: failed to update hitl agent repos (${patchRes.status})`);
+  }
+}
+
+export async function ensureHitlAgent(
+  fetchImpl: FetchLike = fetch,
+  repos: string[] = HITL_REPOS,
+): Promise<string | null> {
   const headers = { Authorization: `Bearer ${DEV_ADMIN_API_KEY}` };
 
-  const listRes = await fetch(`${ADMIN_URL}/agents`, { headers });
+  const listRes = await fetchImpl(`${ADMIN_URL}/agents`, { headers });
   if (!listRes.ok) {
     log(`warning: could not list agents (${listRes.status}) — scope resolver may not work`);
     return null;
   }
-  const agents: AgentRecord[] = await listRes.json();
-  const existing = agents.find((a) => a.name === HITL_AGENT_NAME);
+  const agents: AgentSummary[] = await listRes.json();
+  const existingSummary = agents.find((a) => a.name === HITL_AGENT_NAME);
 
-  if (existing) {
+  if (existingSummary) {
+    // The list response has no `repos` field — fetch the full record so we
+    // can compare against the desired repos.
+    const getRes = await fetchImpl(`${ADMIN_URL}/agents/${existingSummary.id}`, {
+      headers,
+    });
+    if (!getRes.ok) {
+      log(
+        `warning: could not fetch hitl agent detail (${getRes.status}) — scope resolver may not work`,
+      );
+      return existingSummary.id;
+    }
+    const existing: AgentRecord = await getRes.json();
+
     const reposMatch =
-      existing.repos.length === HITL_REPOS.length &&
-      existing.repos.every((r) => HITL_REPOS.includes(r));
-    if (!reposMatch && HITL_REPOS.length > 0) {
-      const patchRes = await fetch(`${ADMIN_URL}/agents/${existing.id}`, {
-        method: "PATCH",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ repos: HITL_REPOS }),
-      });
-      if (patchRes.ok) {
-        log(`updated hitl agent repos: ${HITL_REPOS.join(", ")}`);
-      } else {
-        log(`warning: failed to update hitl agent repos (${patchRes.status})`);
-      }
+      existing.repos.length === repos.length &&
+      existing.repos.every((r) => repos.includes(r));
+    if (!reposMatch && repos.length > 0) {
+      await patchHitlAgentRepos(existing.id, repos, fetchImpl, headers);
     } else {
       log(`hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"})`);
     }
     return existing.id;
   }
 
-  const createRes = await fetch(`${ADMIN_URL}/agents`, {
+  const createRes = await fetchImpl(`${ADMIN_URL}/agents`, {
     method: "POST",
     headers: { ...headers, "Content-Type": "application/json" },
     body: JSON.stringify({
       name: HITL_AGENT_NAME,
       selfHosted: true,
-      repos: HITL_REPOS,
     }),
   });
 
   if (createRes.ok) {
     const created: AgentRecord = await createRes.json();
-    log(`created hitl agent (id: ${created.id}, repos: ${HITL_REPOS.join(", ") || "none"})`);
+    // CreateAgentBodySchema doesn't accept `repos` — persist it via a
+    // follow-up PATCH (mirrors the existing-agent-mismatch branch above).
+    if (repos.length > 0) {
+      await patchHitlAgentRepos(created.id, repos, fetchImpl, headers);
+    }
+    log(`created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"})`);
     return created.id;
   }
 
