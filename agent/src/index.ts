@@ -159,23 +159,7 @@ const workQueueReporter =
 
 const cronDeps: CronHandlerDeps = {
   slack,
-  // `runner` (createRunClaude's return value) takes `sessionKey` as its
-  // second positional param, not the per-call `onProgress` (CSU-3.2) that
-  // CronHandlerDeps' `runner` type now accepts — an incompatible use of the
-  // same arg slot. createRunClaude only supports binding a single onProgress
-  // callback at construction time (shared across every call this one runner
-  // instance ever makes, for cron/Slack/chat too), not a distinct callback
-  // per invocation, so it cannot route a per-dispatch callback to the right
-  // runId here. Adapting by dropping onProgress means this particular
-  // runner never emits mid-run progress pushes for generic cron dispatches
-  // (they still get the CSU-3.2 partial-usage-on-failure fix via
-  // ClaudeTimeoutError.partialModelUsage on the catch path, just not the
-  // live push while running) — wiring true per-call progress would need a
-  // claude.ts change (out of scope here; see loop-orchestrator.ts and
-  // cron-handler.ts's onProgress plumbing, which is what a
-  // construction-time-bound wiring would forward into). Same limitation as
-  // getLoopOrchestrator's adapter below (CSU-3.1), second occurrence.
-  runner: (message) => runner(message),
+  runner: (message, onProgress) => runner(message, undefined, onProgress),
   formatter: markdownToSlack,
   onSession: async (channel: string, ts: string, sessionId: string) => {
     await sessions.set(threadKey(channel, ts), sessionId);
@@ -379,22 +363,7 @@ const loopJobsRef = createJobsRef<CronJobLike>();
 // wiring cost, and its construction errors surface at fire time (logged by the
 // cron callback's try/catch) rather than crashing agent startup.
 const getLoopOrchestrator = createLoopOrchestratorGetter({
-  // `runner` (createRunClaude's return value) takes `sessionKey` as its
-  // second positional param, not the per-call `onProgress` (CSU-3.1) that
-  // createLoopOrchestratorGetter's `runner` type now accepts — an
-  // incompatible use of the same arg slot. createRunClaude only supports
-  // binding a single onProgress callback at construction time (shared across
-  // every call this one runner instance ever makes, for cron/Slack/chat too),
-  // not a distinct callback per invocation, so it cannot route a per-dispatch
-  // callback to the right runId here. Adapting by dropping onProgress means
-  // this particular runner never emits mid-run progress pushes (loop dispatch
-  // still gets the CSU-3.1 partial-usage-on-failure fix via
-  // ClaudeTimeoutError.partialModelUsage on the catch path, just not the
-  // live push while running) — wiring true per-call progress would need a
-  // claude.ts change (out of scope here; see loop-orchestrator.ts's
-  // onProgress plumbing, which is what a construction-time-bound wiring
-  // would forward into).
-  runner: (message) => runner(message),
+  runner: (message, onProgress) => runner(message, undefined, onProgress),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
 });
