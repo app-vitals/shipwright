@@ -490,6 +490,28 @@ async function withCapturedWarnings(
   return warnMessages;
 }
 
+// ─── console.error capture (LPF-7.2) ────────────────────────────────────────
+
+// Captures console.error calls for the duration of `fn`, restoring the
+// original afterward even if `fn` throws. Mirrors withCapturedWarnings above
+// — used to assert on the busy-stall escalation's console.error call without
+// touching the console.warn capture used by the non-escalated busy-skip path.
+async function withCapturedErrors(
+  fn: () => Promise<void>,
+): Promise<string[]> {
+  const errorMessages: string[] = [];
+  const originalError = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    errorMessages.push(args.map(String).join(" "));
+  };
+  try {
+    await fn();
+  } finally {
+    console.error = originalError;
+  }
+  return errorMessages;
+}
+
 // ─── console.log / console.info capture (LTO-1.1) ──────────────────────────
 
 // Captures console.log AND console.info calls for the duration of `fn`,
@@ -699,6 +721,199 @@ describe("createLoopOrchestrator", () => {
     // Must surface the elapsed time since busySince (5000ms, derived from the
     // injected clock, not a raw Date.now()/new Date() call).
     expect(busyLogs.some((msg) => msg.includes("5000"))).toBe(true);
+  });
+
+  test("LPF-7.2: a busy-skip at or below the stall threshold still logs via console.warn, not console.error", async () => {
+    // Same two-tick-overlap-with-gate pattern as the LPF-7.1 test above, but
+    // advances the clock to exactly the BUSY_STALL_THRESHOLD_MS boundary —
+    // still within the safety margin, so the existing (unescalated) warn
+    // behavior must be unchanged and console.error must not fire.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates: async () => {
+          await gate;
+          return [];
+        },
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Exactly at the threshold (35 minutes) — must NOT escalate, since the
+    // escalation is defined as strictly beyond the threshold.
+    advanceMs(35 * 60 * 1000);
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    expect(busyLogs.some((msg) => msg.includes(String(35 * 60 * 1000)))).toBe(
+      true,
+    );
+  });
+
+  test("LPF-7.2: a busy-skip beyond the stall threshold escalates to console.error with a stuck/wedged message", async () => {
+    // Same pattern, but advances the clock well past BUSY_STALL_THRESHOLD_MS
+    // — a prior tick draining this long can no longer self-recover (claude.ts
+    // caps a single runner() call at 30 minutes), so this must escalate to
+    // console.error with wording that clearly signals a stuck/wedged tick,
+    // not an ordinary busy overlap.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates: async () => {
+          await gate;
+          return [];
+        },
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Well beyond the threshold (40 minutes) — must escalate.
+    advanceMs(40 * 60 * 1000);
+
+    let warnMessages: string[] = [];
+    const errorMessages = await withCapturedErrors(async () => {
+      warnMessages = await withCapturedWarnings(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages.length).toBeGreaterThan(0);
+    const stuckLogs = errorMessages.filter(
+      (msg) =>
+        msg.toLowerCase().includes("stuck") ||
+        msg.toLowerCase().includes("wedged"),
+    );
+    expect(stuckLogs.length).toBeGreaterThan(0);
+    expect(stuckLogs.some((msg) => msg.includes(String(40 * 60 * 1000)))).toBe(
+      true,
+    );
+    // This particular busy-skip must not have also warned — it fully
+    // escalates to console.error rather than logging both.
+    const busyWarnLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyWarnLogs.length).toBe(0);
+  });
+
+  test("LPF-7.2: busySince resets per drain iteration — cumulative multi-item drain time does not falsely escalate", async () => {
+    // Regression test for the review finding on this PR: busySince used to
+    // be set once at tick-start and only cleared when the whole drain
+    // finished, so a tick that sequentially dispatches multiple candidates
+    // (each its own bounded runner() call) would accumulate elapsed time
+    // across all of them. A concurrent tick's busy check would then see
+    // cumulative drain time exceeding BUSY_STALL_THRESHOLD_MS and falsely
+    // escalate to console.error, even though nothing was actually stuck —
+    // the drain was legitimately still working through candidates one at a
+    // time. Two 20-minute dispatches (40 minutes cumulative) exceed the
+    // 35-minute threshold if measured from tick-start, but must not
+    // escalate once busySince resets per iteration.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    let markReachedThirdCollection!: () => void;
+    const reachedThirdCollection = new Promise<void>((res) => {
+      markReachedThirdCollection = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const consumed = new Set<string>();
+    const pool = [
+      task("t1", "2026-01-01T00:00:00Z"),
+      task("t2", "2026-01-01T00:00:00Z"),
+    ];
+    let collectionCalls = 0;
+    const getDevTaskCandidates = async () => {
+      collectionCalls += 1;
+      if (collectionCalls <= 2) {
+        return pool.filter((t) => !consumed.has(t.id));
+      }
+      // Third collection call: both candidates are already dispatched —
+      // hang here so the tick is still "busy" (never reaches the drain's
+      // natural exit) when the second, overlapping tick fires below.
+      markReachedThirdCollection();
+      await gate;
+      return [];
+    };
+    const runner = async (): Promise<ClaudeRunResult> => {
+      // Each dispatch takes 20 (simulated) minutes.
+      advanceMs(20 * 60 * 1000);
+      return { result: "done" };
+    };
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates,
+        claimTask: consumingClaimTask(consumed),
+        runner,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Deterministically wait until both dispatches have completed and the
+    // drain has reached (and hung on) its third collection call, instead of
+    // guessing a number of microtask ticks.
+    await reachedThirdCollection;
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    // The reported elapsed time must reflect only the current (third,
+    // hung) iteration — effectively 0ms since its own busySince reset, not
+    // the ~40 cumulative minutes both dispatches took.
+    expect(busyLogs.some((msg) => msg.includes(String(40 * 60 * 1000)))).toBe(
+      false,
+    );
   });
 
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
