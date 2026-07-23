@@ -31,6 +31,7 @@ import { agentReposRef } from "./agent-repos-ref.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
   candidateId,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   isCleanApproveBody,
@@ -154,6 +155,11 @@ export interface CheckPatchDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Bundle completeness gate: returns false if any bundle-mate task on the branch
+   * is still pending/in_progress/blocked. PR is skipped when it returns false.
+   */
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 // ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
@@ -463,6 +469,13 @@ export async function getPatchCandidates(
     // tick, indefinitely, until a human clears the flag).
     if (isTaskBlockedForDispatch(linkedTask)) continue;
 
+    if (deps.isBundleComplete) {
+      const bundleComplete = await deps
+        .isBundleComplete(pr.headRefName)
+        .catch(() => true);
+      if (!bundleComplete) continue;
+    }
+
     candidates.push({
       id: candidateId(pr.repo, pr.number),
       age: linkedTask?.createdAt ?? pr.createdAt ?? "",
@@ -629,5 +642,6 @@ export async function buildProductionDeps(opts: {
     getCurrentUser: getUser,
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
   };
 }
