@@ -33,7 +33,11 @@
  *      /shipwright:patch | /shipwright:deploy) via the injected claude
  *      runner, and report the run.
  *   5. Repeat immediately (not waiting for the next cron tick) while work
- *      remains. Stop when nothing is selected, or if an iteration throws.
+ *      remains. Stop when nothing is selected. A thrown dispatch for one item
+ *      (e.g. the injected runner throwing or timing out) is caught and
+ *      isolated per-item (CBD-2.3) — logged via console.warn and skipped —
+ *      so the drain continues on to the next candidate instead of aborting;
+ *      it no longer stops the tick the way it used to.
  *
  * The busy flag is always released in a finally block, even on a thrown error.
  *
@@ -799,14 +803,35 @@ export function createLoopOrchestrator(
           );
         }
 
-        await dispatch(
-          phase,
-          phaseId,
-          item.type,
-          itemId,
-          recordId,
-          preClaimMarker,
-        );
+        // CBD-2.3: a thrown dispatch (e.g. the injected runner throwing or
+        // timing out) must not abort the whole drain — dispatch() itself
+        // already reports the failed run via cronRunReporter.completeRun and
+        // calls markCronRunFailureReported(err) before re-throwing (see its
+        // catch block above), so this catch only needs to stop the throw
+        // from escaping the drain loop. `continue` skips the rest of this
+        // iteration's loop body (including the lastPrDispatch bookkeeping
+        // below) and lets the next iteration re-collect candidates fresh —
+        // the pre-claim above already removed this item from candidacy
+        // (claimTask/claimPr succeeded), so it won't be re-selected this
+        // tick. Logged so repeated dispatch failures stay observable
+        // (Sentry-eligible) instead of being silently swallowed, matching
+        // the CBD-2.1 pre-claim catch blocks' style/wording above.
+        try {
+          await dispatch(
+            phase,
+            phaseId,
+            item.type,
+            itemId,
+            recordId,
+            preClaimMarker,
+          );
+        } catch (err) {
+          console.warn(
+            `Dispatch failed for ${itemId}, skipping for this tick: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+          continue;
+        }
         // Not re-marking candidatesSeenThisTick here — a successful dispatch
         // is only reachable after this iteration already found tasks/prs
         // nonzero above, so it's already true by this point.
@@ -814,7 +839,11 @@ export function createLoopOrchestrator(
         // Record this PR dispatch's commitSha/timestamp (CBD-2.2) so a later
         // tick can suppress a redundant re-dispatch at the same commit within
         // the cooldown window. Recorded only after dispatch() resolves
-        // without throwing — a thrown dispatch aborts the whole tick anyway.
+        // without throwing — a thrown dispatch is now caught by the
+        // surrounding try/catch above and simply skips the rest of this
+        // iteration (via `continue`), so no lastPrDispatch record is made for
+        // it; the item is just excluded from this tick's remaining
+        // candidates by the pre-claim it already succeeded through.
         if (item.type === "pr") {
           lastPrDispatch.set(itemId, {
             commitSha: item.pr.commitSha,
