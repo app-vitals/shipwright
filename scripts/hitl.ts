@@ -20,6 +20,7 @@
  *   SHIPWRIGHT_HITL_HOME          — root dir (default: ~/.shipwright)
  *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
  *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
+ *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered — dev-tool-only, not wired into the autonomous loop)
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
  */
 
@@ -98,6 +99,23 @@ export function parseHitlRepos(raw: string | undefined): string[] {
 }
 
 const HITL_REPOS = parseHitlRepos(process.env.SHIPWRIGHT_HITL_REPOS);
+
+/**
+ * Parses the comma-separated SHIPWRIGHT_HITL_AUTHORS env value into a list of
+ * GitHub usernames, trimming whitespace and dropping empty entries. Mirrors
+ * parseHitlRepos() exactly — dev-tool-only author allowlist, wired into
+ * getReviewCandidates() via CheckReviewDeps.isAuthorAllowed in runLoop().
+ */
+export function parseHitlAuthors(raw: string | undefined): string[] {
+  return raw
+    ? raw
+        .split(",")
+        .map((r) => r.trim())
+        .filter(Boolean)
+    : [];
+}
+
+const HITL_AUTHORS = parseHitlAuthors(process.env.SHIPWRIGHT_HITL_AUTHORS);
 const POLL_INTERVAL_S = Number(
   process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "15",
 );
@@ -553,6 +571,9 @@ async function runLoop(): Promise<void> {
       ghJson,
       getScopedRepos: () => allRepos,
       hasScopeSynced: () => true,
+      ...(HITL_AUTHORS.length > 0
+        ? { isAuthorAllowed: (login: string) => HITL_AUTHORS.includes(login) }
+        : {}),
     });
     patchDeps = await buildPatchDeps({
       ghJson,

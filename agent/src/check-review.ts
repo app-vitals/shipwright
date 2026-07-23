@@ -98,6 +98,14 @@ export interface CheckReviewDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Optional author allowlist hook — dev-tool-only (wired in via
+   * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var). When set,
+   * getReviewCandidates() skips any PR whose pr.author.login this returns
+   * false for. Omitted entirely by buildProductionDeps() and every
+   * autonomous-loop caller, so their behavior is unchanged.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -127,6 +135,8 @@ export async function getReviewCandidates(
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
+    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
+      continue;
 
     let record: PrRecord | null = null;
     try {
@@ -220,6 +230,13 @@ export async function buildProductionDeps(opts: {
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  /**
+   * Dev-tool-only author allowlist hook (scripts/hitl.ts's
+   * SHIPWRIGHT_HITL_AUTHORS). Autonomous-loop callers never pass this, so
+   * CheckReviewDeps.isAuthorAllowed stays undefined for them — unchanged
+   * behavior.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -230,6 +247,7 @@ export async function buildProductionDeps(opts: {
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
+    ...(opts.isAuthorAllowed ? { isAuthorAllowed: opts.isAuthorAllowed } : {}),
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
