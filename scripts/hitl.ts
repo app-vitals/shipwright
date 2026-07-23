@@ -471,7 +471,15 @@ async function runLoop(): Promise<void> {
     let label: string;
 
     if (next.type === "task") {
-      const claimed = await client.claim(next.task.id);
+      let claimed: boolean;
+      try {
+        claimed = await client.claim(next.task.id);
+      } catch (err) {
+        log(
+          `task ${next.task.id} claim failed: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
       if (!claimed) {
         log(`task ${next.task.id} already claimed (409) — skipping`);
         continue;
@@ -490,12 +498,20 @@ async function runLoop(): Promise<void> {
         continue;
       }
 
-      const claimResult = await client.claimPr({
-        repo: parsed.repo,
-        prNumber: parsed.prNumber,
-        commitSha: next.pr.commitSha,
-        phase: next.pr.phase,
-      });
+      let claimResult: Awaited<ReturnType<typeof client.claimPr>>;
+      try {
+        claimResult = await client.claimPr({
+          repo: parsed.repo,
+          prNumber: parsed.prNumber,
+          commitSha: next.pr.commitSha,
+          phase: next.pr.phase,
+        });
+      } catch (err) {
+        log(
+          `PR ${next.pr.id} claim failed: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
       if (!claimResult) {
         log(`PR ${next.pr.id} already claimed (409) — skipping`);
         continue;
