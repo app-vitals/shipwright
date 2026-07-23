@@ -19,6 +19,7 @@
  * Env overrides:
  *   SHIPWRIGHT_HITL_HOME          — root dir (default: ~/.shipwright)
  *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
+ *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
  */
 
@@ -48,6 +49,11 @@ const TASK_STORE_URL = `http://${HOST}:${TASK_STORE_PORT}`;
 const ADMIN_URL = `http://${HOST}:${ADMIN_PORT}`;
 const DEV_TOKEN = "dev-task-store-admin-token";
 const DEV_AGENT_TOKEN = "dev-task-store-hitl-token";
+const DEV_ADMIN_API_KEY = "dev-hitl-admin-key";
+const HITL_AGENT_NAME = "hitl";
+const HITL_REPOS = process.env.SHIPWRIGHT_HITL_REPOS
+  ? process.env.SHIPWRIGHT_HITL_REPOS.split(",").map((r) => r.trim()).filter(Boolean)
+  : [];
 const POLL_INTERVAL_S = Number(
   process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "15",
 );
@@ -173,7 +179,7 @@ async function runPreflight(): Promise<void> {
   );
   if (tsMigrate.exitCode !== 0) throw new Error("task-store migrate failed");
 
-  log("seeding task-store admin and agent tokens...");
+  log("seeding task-store admin token...");
   const adminSeed = Bun.spawnSync(
     [
       "bun",
@@ -187,22 +193,6 @@ async function runPreflight(): Promise<void> {
     { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" },
   );
   if (adminSeed.exitCode !== 0) throw new Error("admin token seed failed");
-
-  const agentSeed = Bun.spawnSync(
-    [
-      "bun",
-      "run",
-      join(REPO_ROOT, "scripts", "seed-task-store-token.ts"),
-      "--db-url",
-      DEV_TASK_STORE_DATABASE_URL,
-      "--token",
-      DEV_AGENT_TOKEN,
-      "--agent-id",
-      "hitl",
-    ],
-    { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" },
-  );
-  if (agentSeed.exitCode !== 0) throw new Error("agent token seed failed");
 
   log("running admin prisma generate + migrate...");
   const adminGen = Bun.spawnSync(
@@ -245,6 +235,8 @@ function startServices(): ServiceHandle[] {
         PORT: String(TASK_STORE_PORT),
         DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
         TASK_STORE_SEED_ADMIN_TOKEN: DEV_TOKEN,
+        SHIPWRIGHT_TASK_STORE_AGENTS_URL: ADMIN_URL,
+        SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY: DEV_ADMIN_API_KEY,
       },
       stdout: "inherit",
       stderr: "inherit",
@@ -262,6 +254,7 @@ function startServices(): ServiceHandle[] {
         SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
         SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
         ADMIN_DEV_AUTH: "true",
+        SHIPWRIGHT_ADMIN_API_KEYS: `hitl:${DEV_ADMIN_API_KEY}:*`,
         SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
         SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TOKEN,
       },
@@ -284,6 +277,88 @@ function killServices(handles: ServiceHandle[]): void {
       // already dead
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Agent record — ensure the "hitl" agent exists in the admin service so the
+// task-store scope resolver can look up its repos.
+// ---------------------------------------------------------------------------
+
+interface AgentRecord {
+  id: string;
+  name: string;
+  repos: string[];
+}
+
+async function ensureHitlAgent(): Promise<string | null> {
+  const headers = { Authorization: `Bearer ${DEV_ADMIN_API_KEY}` };
+
+  const listRes = await fetch(`${ADMIN_URL}/agents`, { headers });
+  if (!listRes.ok) {
+    log(`warning: could not list agents (${listRes.status}) — scope resolver may not work`);
+    return null;
+  }
+  const agents: AgentRecord[] = await listRes.json();
+  const existing = agents.find((a) => a.name === HITL_AGENT_NAME);
+
+  if (existing) {
+    const reposMatch =
+      existing.repos.length === HITL_REPOS.length &&
+      existing.repos.every((r) => HITL_REPOS.includes(r));
+    if (!reposMatch && HITL_REPOS.length > 0) {
+      const patchRes = await fetch(`${ADMIN_URL}/agents/${existing.id}`, {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ repos: HITL_REPOS }),
+      });
+      if (patchRes.ok) {
+        log(`updated hitl agent repos: ${HITL_REPOS.join(", ")}`);
+      } else {
+        log(`warning: failed to update hitl agent repos (${patchRes.status})`);
+      }
+    } else {
+      log(`hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"})`);
+    }
+    return existing.id;
+  }
+
+  const createRes = await fetch(`${ADMIN_URL}/agents`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: HITL_AGENT_NAME,
+      selfHosted: true,
+      repos: HITL_REPOS,
+    }),
+  });
+
+  if (createRes.ok) {
+    const created: AgentRecord = await createRes.json();
+    log(`created hitl agent (id: ${created.id}, repos: ${HITL_REPOS.join(", ") || "none"})`);
+    return created.id;
+  }
+
+  log(`warning: failed to create hitl agent (${createRes.status}) — scope resolver may not work`);
+  return null;
+}
+
+function seedAgentToken(agentId: string): void {
+  log(`seeding task-store agent token (agentId: ${agentId})...`);
+  const result = Bun.spawnSync(
+    [
+      "bun",
+      "run",
+      join(REPO_ROOT, "scripts", "seed-task-store-token.ts"),
+      "--db-url",
+      DEV_TASK_STORE_DATABASE_URL,
+      "--token",
+      DEV_AGENT_TOKEN,
+      "--agent-id",
+      agentId,
+    ],
+    { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" },
+  );
+  if (result.exitCode !== 0) throw new Error("agent token seed failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +501,13 @@ if (import.meta.main) {
       waitForHealth(`http://localhost:${TASK_STORE_PORT}`, "task-store"),
       waitForHealth(`http://localhost:${ADMIN_PORT}`, "admin"),
     ]);
+
+    const agentId = await ensureHitlAgent();
+    if (agentId) {
+      seedAgentToken(agentId);
+    } else {
+      log("warning: no hitl agent — agent token will not be repo-scoped");
+    }
 
     await runLoop();
   } catch (err) {
