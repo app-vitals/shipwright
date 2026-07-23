@@ -34,9 +34,10 @@ export function hashRawToken(raw: string): string {
 export interface SeedArgs {
   dbUrl?: string;
   token?: string;
+  agentId?: string;
 }
 
-/** Parse `--db-url`/`--token` flags (both `--flag value` and `--flag=value`). */
+/** Parse `--db-url`/`--token`/`--agent-id` flags (both `--flag value` and `--flag=value`). */
 export function parseSeedArgs(argv: string[]): SeedArgs {
   const read = (name: string): string | undefined => {
     for (let i = 0; i < argv.length; i++) {
@@ -46,7 +47,7 @@ export function parseSeedArgs(argv: string[]): SeedArgs {
     }
     return undefined;
   };
-  return { dbUrl: read("db-url"), token: read("token") };
+  return { dbUrl: read("db-url"), token: read("token"), agentId: read("agent-id") };
 }
 
 /** Minimal slice of PrismaClient this seeder needs — keeps the double tiny. */
@@ -54,14 +55,16 @@ interface TaskTokenUpserter {
   taskToken: {
     upsert(args: {
       where: { token: string };
-      create: { token: string; label: string | null; agentId: null };
+      create: { token: string; label: string | null; agentId: string | null };
       update: Record<string, never>;
     }): Promise<unknown>;
   };
 }
 
 /**
- * Idempotently upsert an admin token (agentId null) by its hashed raw value.
+ * Idempotently upsert a token (admin or agent-scoped) by its hashed raw value.
+ * When agentId is null, the token is unrestricted (admin). When agentId is set,
+ * the token is scoped to that agent.
  * The empty `update` makes re-runs a no-op — running `task stack` repeatedly
  * never creates duplicates or rotates the token.
  */
@@ -69,11 +72,12 @@ export async function seedTaskStoreAdminToken(opts: {
   prisma: TaskTokenUpserter;
   rawToken: string;
   label?: string;
+  agentId?: string;
 }): Promise<void> {
   const hashed = hashRawToken(opts.rawToken);
   await opts.prisma.taskToken.upsert({
     where: { token: hashed },
-    create: { token: hashed, label: opts.label ?? null, agentId: null },
+    create: { token: hashed, label: opts.label ?? null, agentId: opts.agentId ?? null },
     update: {},
   });
 }
@@ -85,7 +89,7 @@ if (import.meta.main) {
     "../task-store/prisma/client/index.js"
   );
 
-  const { dbUrl, token } = parseSeedArgs(process.argv.slice(2));
+  const { dbUrl, token, agentId } = parseSeedArgs(process.argv.slice(2));
   const databaseUrl = dbUrl ?? process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE;
 
   if (!databaseUrl) {
@@ -103,14 +107,17 @@ if (import.meta.main) {
 
   const prisma = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
   try {
+    const label = agentId ? `dev-${agentId}` : "dev-admin";
     await seedTaskStoreAdminToken({
       // biome-ignore lint/suspicious/noExplicitAny: generated client satisfies the upsert slice
       prisma: prisma as any,
       rawToken: token,
-      label: "dev-admin",
+      label,
+      agentId,
     });
+    const tokenType = agentId ? `agent-scoped (${agentId})` : "admin";
     console.log(
-      "[seed-task-store-token] admin token ready (idempotent upsert).",
+      `[seed-task-store-token] ${tokenType} token ready (idempotent upsert).`,
     );
   } finally {
     await prisma.$disconnect();

@@ -1,0 +1,50 @@
+# Shipwright HITL Workspace
+
+You are running in a human-in-the-loop Shipwright workspace. A human operator
+is driving — follow their lead and assist interactively.
+
+## Workspace
+
+### Repos
+
+`repos/<repo>` is always on `main`. Use for reading, research, and reference only.
+Never edit files in `repos/` directly.
+
+**Before any work on a repo** — pull first:
+```bash
+git -C repos/<repo> pull
+```
+
+### Worktrees
+
+All active work — features, bug fixes, reviewing a specific branch — happens in
+`worktrees/<repo>-<branch>`. No exceptions.
+
+**New branch:**
+```bash
+git -C repos/<repo> pull
+git -C repos/<repo> worktree add worktrees/<repo>-<branch> origin/main -b <branch>
+```
+
+**Existing branch (e.g. for review):**
+```bash
+git -C repos/<repo> fetch origin
+git -C repos/<repo> worktree add worktrees/<repo>-<branch> origin/<branch>
+```
+
+### Shipwright Commands
+
+- **Planning:** `/shipwright:plan-session`
+- **Execution:** `/shipwright:dev-task {task-id}`
+- **HITL tasks:** `/shipwright:hitl {task-id}`
+- **Review:** `/shipwright:review {org/repo#number}`
+
+Query the task store:
+```bash
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?ready=true" | jq '.tasks'
+```
+
+### Reviews
+
+Review artifacts live in `state/reviews/`.
