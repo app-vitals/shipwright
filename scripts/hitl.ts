@@ -501,7 +501,7 @@ async function runLoop(): Promise<void> {
         continue;
       }
 
-      const preclaimMarker = `[preclaim:${claimResult.commitSha}]`;
+      const preclaimMarker = `[preclaim:${claimResult.id}:${claimResult.commitSha}]`;
       command =
         next.pr.phase === "review"
           ? `/shipwright:review ${next.pr.id} ${preclaimMarker}`
