@@ -190,7 +190,8 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 | `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack` and `task hitl`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 | `CHAT_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the chat service on startup. Used only in local dev to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 | `SHIPWRIGHT_HITL_HOME` | `string` | `~/.shipwright` | Root directory for the human-in-the-loop runner workspace (`task hitl`). The workspace contains `repos/`, `worktrees/`, `state/reviews/`, and `.claude/` subdirectories. |
-| `SHIPWRIGHT_HITL_HOST` | `string` | `shipwright.test` | Hostname for service URLs in the HITL runner. Used to construct URLs for task-store and admin services (e.g. `http://shipwright.test:3002` for task-store). |
+| `SHIPWRIGHT_HITL_HOST` | `string` | `localhost` | Hostname for service URLs in the HITL runner. Used to construct URLs for task-store and admin services (e.g. `http://localhost:3002` for task-store). |
+| `SHIPWRIGHT_HITL_REPOS` | `string` | — | Comma-separated list of `org/repo` strings assigned to the HITL agent record. Controls which task-store tasks the HITL agent token can claim via repo-scoped ownership (e.g. `app-vitals/shipwright`). |
 | `SHIPWRIGHT_HITL_POLL_INTERVAL` | `number` | `15` | Polling interval in seconds for the HITL runner's task fetch loop. When no ready tasks are found, the runner waits this many seconds before retrying. |
 
 ---
