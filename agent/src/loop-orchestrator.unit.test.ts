@@ -400,6 +400,19 @@ function poolStub<T extends { id: string }>(
   };
 }
 
+// A claimTask stub that succeeds and marks the task consumed, matching real
+// claimTask semantics (a successful claim removes the item from candidacy).
+// Needed anywhere a dispatch throw is exercised — without it, CBD-2.3's
+// caught-and-isolated dispatch throw would keep re-selecting the same
+// always-failing item forever instead of the tick resolving after one
+// dispatch.
+function consumingClaimTask(consumed: Set<string>) {
+  return async (taskId: string) => {
+    consumed.add(taskId);
+    return true;
+  };
+}
+
 function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
   const calls = options.calls;
   const consumed = options.consumed ?? new Set<string>();
@@ -475,6 +488,31 @@ async function withCapturedWarnings(
     console.warn = originalWarn;
   }
   return warnMessages;
+}
+
+// ─── console.log / console.info capture (LTO-1.1) ──────────────────────────
+
+// Captures console.log AND console.info calls for the duration of `fn`,
+// restoring both originals afterward even if `fn` throws. Used to assert on
+// the distinguishable no-op-reason logs runLoopTick emits for the busy /
+// backoff-active / genuinely-empty / backoff-newly-engaging paths, without
+// caring which of the two methods a given call site happens to use.
+async function withCapturedLogs(fn: () => Promise<void>): Promise<string[]> {
+  const logMessages: string[] = [];
+  const originalLog = console.log.bind(console);
+  const originalInfo = console.info.bind(console);
+  const capture = (...args: unknown[]) => {
+    logMessages.push(args.map(String).join(" "));
+  };
+  console.log = capture;
+  console.info = capture;
+  try {
+    await fn();
+  } finally {
+    console.log = originalLog;
+    console.info = originalInfo;
+  }
+  return logMessages;
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -613,6 +651,39 @@ describe("createLoopOrchestrator", () => {
     await first;
     // First tick found nothing → still no dispatch.
     expect(messages).toEqual([]);
+  });
+
+  test("LTO-1.1: the busy-flag no-op logs a distinguishable message before returning", async () => {
+    // First tick's qualification hangs until we release it, so the second
+    // tick fires while the first is still draining and hits the busy guard.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+
+    const deps = makeDeps({
+      getDevTaskCandidates: async () => {
+        await gate;
+        return [];
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    const logMessages = await withCapturedLogs(async () => {
+      // Second call while first is still draining — must no-op immediately
+      // and log a distinguishable "busy" message before returning.
+      await loop(ALL_PHASES_ON);
+    });
+
+    release();
+    await first;
+
+    expect(logMessages.length).toBeGreaterThan(0);
+    const busyLogs = logMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
   });
 
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {
@@ -1229,6 +1300,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -1270,6 +1342,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter,
       consumed,
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -1292,69 +1365,39 @@ describe("createLoopOrchestrator", () => {
     expect(skips).toEqual([]);
   });
 
-  test("a runner throw during dispatch on one item does not block a younger candidate of a different phase in the same tick", async () => {
-    // Regression for the throw-isolation bug: previously, a thrown dispatch
-    // propagated out of the drain loop and aborted the entire tick, so an
-    // unrelated (younger) review candidate never got a chance to dispatch in
-    // the same tick even though nothing about it failed.
+  test("releases the busy flag even when a dispatch throws", async () => {
+    // CBD-2.3: a thrown dispatch is caught and isolated per-item — the tick
+    // that hits it resolves normally rather than rejecting. This test's
+    // purpose is narrowed to confirm the busy flag still comes back false
+    // afterward (it always did, via the finally block), now via the
+    // isolate-and-continue path rather than a propagated rejection.
+    //
+    // `consumed` models "no longer qualifies" — claimTask adds the id on a
+    // successful claim, since in production a claimed task stops appearing
+    // in the next getDevTaskCandidates() ready-query even though the
+    // subsequent dispatch() call went on to throw.
     const consumed = new Set<string>();
-    const devTaskCandidates = [task("SWC-BOOM", "2026-01-01T00:00:00Z")];
-    const reviewCandidates = [pr("acme/x#9", "2026-01-02T00:00:00Z", "review")];
-    const { runner: baseRunner, messages } = makeDrainingRunner(
-      { review: reviewCandidates },
-      consumed,
-    );
-    const runner = async (
-      message: string,
-      onProgress?: ProgressCallback,
-    ): Promise<ClaudeRunResult> => {
-      if (message.includes("/shipwright:dev-task")) {
-        consumed.add("SWC-BOOM");
-        throw new Error("claude run failed for SWC-BOOM");
-      }
-      return baseRunner(message, onProgress);
-    };
-    const deps = makeDeps({
-      devTaskCandidates,
-      reviewCandidates,
-      runner,
-      consumed,
-    });
-    const loop = createLoopOrchestrator(deps);
-
-    await loop([
-      job("shipwright-dev-task", true),
-      job("shipwright-review", true),
-    ]);
-
-    // The whole tick did NOT abort — the review candidate still dispatched
-    // in the same tick despite the dev-task dispatch throwing.
-    expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain("/shipwright:review acme/x#9");
-  });
-
-  test("releases the busy flag even when an iteration throws", async () => {
     let firstCall = true;
     const deps = makeDeps({
-      getDevTaskCandidates: async () => {
+      devTaskCandidates: [task("SWC-1.1", "2026-01-01T00:00:00Z")],
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+      runner: async () => {
         if (firstCall) {
           firstCall = false;
           throw new Error("boom");
         }
-        return [];
+        return { result: "done" };
       },
     });
     const loop = createLoopOrchestrator(deps);
 
-    // First tick throws mid-drain.
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      "boom",
-    );
-
-    // A subsequent tick must NOT be blocked by a stuck busy flag: it runs
-    // and reaches the (now non-throwing) qualification path.
+    // First tick hits the throwing dispatch mid-drain but resolves normally.
     await loop([job("shipwright-dev-task", true)]);
     expect(firstCall).toBe(false);
+
+    // A subsequent tick must NOT be blocked by a stuck busy flag.
+    await loop([job("shipwright-dev-task", true)]);
   });
 
   test("empty jobs array dispatches nothing and reports nothing", async () => {
@@ -1545,6 +1588,112 @@ describe("createLoopOrchestrator", () => {
         calls.length = 0;
         await loop(ALL_PHASES_ON);
         expect(calls).toHaveLength(0);
+      },
+    );
+  });
+
+  test("LTO-1.1: each genuinely-empty tick logs a distinguishable message including the consecutiveEmptyTicks count", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        const logMessages = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+
+        const emptyLogs = logMessages.filter((msg) =>
+          msg.toLowerCase().includes("empty"),
+        );
+        expect(emptyLogs.length).toBeGreaterThan(0);
+        // Must surface the resulting consecutiveEmptyTicks count (1 after
+        // the first genuinely-empty tick).
+        expect(emptyLogs.some((msg) => msg.includes("1"))).toBe(true);
+      },
+    );
+  });
+
+  test("LTO-1.1: the backoff-active skip logs a distinguishable message including remaining time or the backoffUntil timestamp", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // 3 consecutive empty ticks arm backoff.
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+        await loop(ALL_PHASES_ON);
+
+        // A 4th tick within the backoff window must log a distinguishable
+        // "backoff active" message before returning, distinct from the
+        // busy-flag and genuinely-empty messages.
+        const logMessages = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+
+        expect(logMessages.length).toBeGreaterThan(0);
+        const backoffLogs = logMessages.filter((msg) =>
+          msg.toLowerCase().includes("backoff"),
+        );
+        expect(backoffLogs.length).toBeGreaterThan(0);
+        // Must not be confusable with the busy-flag message.
+        expect(
+          backoffLogs.some((msg) => msg.toLowerCase().includes("busy")),
+        ).toBe(false);
+      },
+    );
+  });
+
+  test("LTO-1.1: backoff newly engaging logs a distinguishable message noting until when, only on the crossing tick", async () => {
+    await withEnvOverrides(
+      {
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_ATTEMPTS: "3",
+        SHIPWRIGHT_LOOP_EMPTY_BACKOFF_MS: "300000",
+      },
+      async () => {
+        const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
+        const deps = { ...makeDeps({}), clock };
+        const loop = createLoopOrchestrator(deps);
+
+        // First two empty ticks: below threshold, backoff must not engage.
+        const earlyLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+          await loop(ALL_PHASES_ON);
+        });
+        const earlyEngageLogs = earlyLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(earlyEngageLogs).toHaveLength(0);
+
+        // Third empty tick crosses the threshold — backoff newly engages.
+        const crossingLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+        const engageLogs = crossingLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(engageLogs.length).toBeGreaterThan(0);
+
+        // A subsequent tick inside the backoff window (the backoff-active
+        // skip) must NOT repeat the "newly engaging" message — only the
+        // crossing tick logs it.
+        const subsequentLogs = await withCapturedLogs(async () => {
+          await loop(ALL_PHASES_ON);
+        });
+        const repeatedEngageLogs = subsequentLogs.filter((msg) =>
+          msg.toLowerCase().includes("engag"),
+        );
+        expect(repeatedEngageLogs).toHaveLength(0);
       },
     );
   });
@@ -2094,6 +2243,83 @@ describe("createLoopOrchestrator", () => {
     expect(getCandidatesCalls).toBe(2);
   });
 
+  test("a thrown dispatch (e.g. runner timeout) is caught per-item, skips only the offending item, and the drain still dispatches a younger candidate of a different type/phase in the same tick (CBD-2.3)", async () => {
+    // SWC-BOOM (older dev-task) claims successfully but its runner() call
+    // always throws — unlike a pre-claim throw (CBD-2.1, isolated at the
+    // claimTask/claimPr call sites), this proves the drain loop's dispatch()
+    // call site itself isolates a thrown error per-item, not just the
+    // pre-claim call sites. acme/x#7 (younger PR review candidate — a
+    // different item type AND phase) must still dispatch in the same tick.
+    const consumed = new Set<string>();
+    const { reporter, creates, completes, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-BOOM", "2026-01-01T00:00:00Z")];
+    const reviewCandidates = [pr("acme/x#7", "2026-01-02T00:00:00Z", "review")];
+    const { runner: drainingRunner, messages } = makeDrainingRunner(
+      { devTask: devTaskCandidates, review: reviewCandidates },
+      consumed,
+    );
+    // SWC-BOOM's claim succeeds (consumed on claim, matching real claim
+    // semantics — see the drain-loop-continues-past-a-409 test above), but
+    // dispatching it always throws from the runner. acme/x#7 dispatches
+    // normally via the draining runner.
+    const runner = async (
+      message: string,
+      onProgress?: ProgressCallback,
+    ): Promise<ClaudeRunResult> => {
+      if (message.includes("/shipwright:dev-task SWC-BOOM")) {
+        throw new Error("claude run timed out for SWC-BOOM");
+      }
+      return drainingRunner(message, onProgress);
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      reviewCandidates,
+      runner,
+      consumed,
+      reporter,
+      claimTask: consumingClaimTask(consumed),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    const warnings = await withCapturedWarnings(async () => {
+      await loop(ALL_PHASES_ON);
+    });
+
+    // The whole tick did NOT abort — the PR candidate still dispatched
+    // (with its pre-claim marker, per the default claimPr stub).
+    expectDispatchedCommands(messages, [
+      "/shipwright:review acme/x#7 [preclaim:acme/x#7:acme/x#7-sha]",
+    ]);
+
+    // The failed dev-task dispatch still reported a failed run (dispatch()'s
+    // own reporting is unchanged by the fix) — it just didn't abort the tick.
+    expect(creates.map((c) => c.itemId)).toEqual(["SWC-BOOM", "acme/x#7"]);
+    expect(completes).toEqual([
+      {
+        cronId: "shipwright-loop",
+        runId: "run-1",
+        outcome: "failed",
+        phaseId: "shipwright-dev-task",
+        itemType: "task",
+        itemId: "SWC-BOOM",
+      },
+      {
+        cronId: "shipwright-loop",
+        runId: "run-2",
+        outcome: "completed",
+        phaseId: "shipwright-review",
+        itemType: "pr",
+        itemId: "acme/x#7",
+      },
+    ]);
+    expect(skips).toEqual([]);
+
+    // The failure is logged, observable, and identifies the offending item.
+    expect(
+      warnings.some((w) => w.includes("SWC-BOOM")),
+    ).toBe(true);
+  });
+
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
 
   for (const phase of ["review", "patch", "deploy"] as const) {
@@ -2461,7 +2687,13 @@ describe("createLoopOrchestrator", () => {
       consumed.add("SWC-P5");
       throw new ClaudeTimeoutError(600_000, "ceiling", usage(42));
     };
-    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
     const loop = createLoopOrchestrator(deps);
 
     // Resolves cleanly — the throw is caught per-item in the drain loop
@@ -2514,6 +2746,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter: trackedReporter,
       consumed,
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 
@@ -2573,6 +2806,7 @@ describe("createLoopOrchestrator", () => {
       runner,
       reporter: trackedReporter,
       consumed,
+      claimTask: consumingClaimTask(consumed),
     });
     const loop = createLoopOrchestrator(deps);
 

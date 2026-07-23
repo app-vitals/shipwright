@@ -501,6 +501,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
 
   test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown, without aborting the tick", async () => {
     const devTaskCandidates = [task("SWC-2.2", "2026-01-01T00:00:00Z")];
+    const consumed = new Set<string>();
     const { reporter, completeCalls } = makeRecordingReporter();
 
     const partialUsage = makeUsage({ inputTokens: 10, outputTokens: 5 });
@@ -512,17 +513,20 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     // successful pre-claim (claimTask below always resolves true) removes
     // the task-store record from subsequent candidate queries even though
     // the dispatch itself went on to fail.
-    let collected = false;
     const loop = createLoopOrchestrator({
-      getDevTaskCandidates: async () => {
-        if (collected) return [];
-        collected = true;
-        return devTaskCandidates;
-      },
+      getDevTaskCandidates: async () =>
+        devTaskCandidates.filter((t) => !consumed.has(t.id)),
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
       getDeployCandidates: async () => [],
-      claimTask: async () => true,
+      // Claim succeeding removes the item from candidacy (matches real
+      // claimTask semantics) — without this, CBD-2.3's caught-and-isolated
+      // dispatch throw would keep re-selecting the same always-failing item
+      // forever instead of the tick resolving after one dispatch.
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},

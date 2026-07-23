@@ -554,7 +554,16 @@ export function createLoopOrchestrator(
 
   return async function runLoopTick(jobs: CronJobLike[]): Promise<void> {
     // Concurrency guard: a prior tick is still draining — no-op immediately.
-    if (busy) return;
+    // LTO-1.1: logged (before returning) so an operator staring at a silent
+    // shipwright-loop gap can tell "still draining a prior tick" apart from
+    // the backoff-active and genuinely-empty no-op paths below — see the
+    // file's top doc comment / LTO-1.1 for why this matters.
+    if (busy) {
+      console.log(
+        "[loop-orchestrator] tick skipped: busy — a prior tick is still draining",
+      );
+      return;
+    }
     busy = true;
 
     // SKT-2.2 empty-queue backoff: if a prior tick's run of consecutive empty
@@ -562,7 +571,14 @@ export function createLoopOrchestrator(
     // candidate collection (no GitHub calls, no task-store queries) — until
     // the backoff window elapses. Checked before anything else so a tick
     // inside the window is as cheap as possible.
+    // LTO-1.1: logged (before releasing busy and returning) — distinguishable
+    // from the busy-flag skip above so the two silent-no-op causes aren't
+    // conflated from the outside.
     if (backoffUntil !== null && clock.now() < backoffUntil) {
+      const remainingMs = backoffUntil.getTime() - clock.now().getTime();
+      console.log(
+        `[loop-orchestrator] tick skipped: empty-queue backoff active — ${remainingMs}ms remaining until ${backoffUntil.toISOString()}`,
+      );
       busy = false;
       return;
     }
@@ -786,6 +802,19 @@ export function createLoopOrchestrator(
           );
         }
 
+        // CBD-2.3: a thrown dispatch (e.g. the injected runner throwing or
+        // timing out) must not abort the whole drain — dispatch() itself
+        // already reports the failed run via cronRunReporter.completeRun and
+        // calls markCronRunFailureReported(err) before re-throwing (see its
+        // catch block above), so this catch only needs to stop the throw
+        // from escaping the drain loop. `continue` skips the rest of this
+        // iteration's loop body (including the lastPrDispatch bookkeeping
+        // below) and lets the next iteration re-collect candidates fresh —
+        // the pre-claim above already removed this item from candidacy
+        // (claimTask/claimPr succeeded), so it won't be re-selected this
+        // tick. Logged so repeated dispatch failures stay observable
+        // (Sentry-eligible) instead of being silently swallowed, matching
+        // the CBD-2.1 pre-claim catch blocks' style/wording above.
         try {
           await dispatch(
             phase,
@@ -842,8 +871,22 @@ export function createLoopOrchestrator(
         backoffUntil = null;
       } else {
         consecutiveEmptyTicks += 1;
+        // LTO-1.1: a genuinely-empty tick (drained fully, saw zero
+        // candidates on every iteration) — distinguishable from both early
+        // returns above, and includes the resulting count so a string of
+        // these in the logs shows the climb toward emptyBackoffAttempts.
+        console.log(
+          `[loop-orchestrator] tick empty: no candidates collected this tick — consecutiveEmptyTicks now ${consecutiveEmptyTicks}`,
+        );
         if (consecutiveEmptyTicks >= emptyBackoffAttempts) {
           backoffUntil = new Date(clock.now().getTime() + emptyBackoffMs);
+          // LTO-1.1: fires only on the crossing tick (this branch is only
+          // entered once per backoff cycle, immediately before
+          // consecutiveEmptyTicks is reset below) — noting when backoff
+          // will next allow candidate collection again.
+          console.log(
+            `[loop-orchestrator] empty-queue backoff engaging: ${consecutiveEmptyTicks} consecutive empty ticks reached — backing off until ${backoffUntil.toISOString()}`,
+          );
           consecutiveEmptyTicks = 0;
         }
       }
