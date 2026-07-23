@@ -353,26 +353,29 @@ read or tool call is needed. Look for a `## Deploy model` section:
 
 Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls).
 
-**Implementation: inline in-Bash sleep loop.** Do not wait between polls via a
-scheduled wakeup mechanism that resumes the session later (each resumption is a
-brand-new process invocation — costly and unnecessary here). Instead, run the
-30-second-interval checks as a shell-level loop inside a single Bash tool call. The
-full 5-minute/10-poll budget fits comfortably within one Bash call, well under Bash's
-practical ~10-minute ceiling, so — unlike Step 5b's 30-minute watch — no chaining
-across multiple Bash calls is needed here:
+**Implementation: Monitor tool.** A single Monitor call replaces the chained Bash
+sleep loop: the poll script below runs as a backgrounded shell command, and Monitor
+surfaces one event per stdout line. The script stays silent and emits nothing until a
+Deploy workflow run matching `SQUASH_SHA` appears — only then does it `echo` the match
+and `break`, ending the watch. Silence for the full budget is a valid terminal state
+here (it means "no Deploy workflow", not a crash): Monitor's own `timeout_ms` (default
+300000ms = 5 minutes, matching this budget exactly, so no override is needed) kills the
+process if nothing was ever emitted — that's the expected shape of the "no pipeline"
+outcome, not a failure.
 
-```bash
-for i in $(seq 1 10); do
-  REPO="{org}/{repo}"
-  gh api "repos/$REPO/actions/runs?per_page=50" \
-    --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\" and .name == \"Deploy\") | {id, name, status, conclusion}]"
-  # break out of the loop immediately once a Deploy workflow run appears
-  sleep 30
-done
+```
+Monitor({
+  description: "Poll for Deploy workflow run matching SQUASH_SHA",
+  command: "REPO=\"{org}/{repo}\"; while true; do RESULT=$(gh api \"repos/$REPO/actions/runs?per_page=50\" --jq \"[.workflow_runs[] | select(.head_sha == \\\"$SQUASH_SHA\\\" and .name == \\\"Deploy\\\") | {id, name, status, conclusion}]\"); if [ \"$RESULT\" != \"[]\" ]; then echo \"$RESULT\"; break; fi; sleep 30; done",
+  timeout_ms: 300000,
+  persistent: false
+})
 ```
 
-- **Deploy workflow appears**: Break the 5-minute poll early and proceed to the main pipeline watch (Step 5b).
-- **No Deploy workflow after 5 minutes**: The repo has no deploy pipeline. Print:
+- **Deploy workflow appears** (Monitor reports an event — the poll script emitted the
+  matched run): Break the poll early and proceed to the main pipeline watch (Step 5b).
+- **No Deploy workflow after 5 minutes** (Monitor times out with no event emitted): The
+  repo has no deploy pipeline. Print:
   ```
   ⏭  No Deploy workflow triggered — watching post-merge CI runs on {SQUASH_SHA[0..7]}
   ```

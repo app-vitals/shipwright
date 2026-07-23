@@ -346,14 +346,13 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   });
 });
 
-describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
-  it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
+describe("deploy.md — Monitor-tool polling for Step 5a (MTP-1.1)", () => {
+  it("Step 5a's polling implementation names the Monitor tool and drops the old chained-Bash-loop framing", () => {
     const step5aSection = extractStep5aSection(content);
-    expect(step5aSection).toContain("sleep 30");
-    const hasForLoop =
-      /for\s+\w+\s+in\s+\$\(seq/.test(step5aSection) ||
-      step5aSection.includes("for i in");
-    expect(hasForLoop).toBe(true);
+    expect(step5aSection).toContain("Monitor");
+    const lower = step5aSection.toLowerCase();
+    expect(lower).not.toContain("inline in-bash sleep loop");
+    expect(lower).not.toContain("scheduled wakeup mechanism");
   });
 
   it("Step 5a's polling section does NOT instruct a per-poll ScheduleWakeup call or equivalent backgrounding language", () => {
@@ -364,12 +363,11 @@ describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
     expect(lower).not.toContain("run it in the background");
   });
 
-  it("Step 5a explicitly states the implementation is chained in-Bash sleep loops, ruling out a scheduled wakeup mechanism", () => {
+  it("Step 5a explicitly states the implementation is the Monitor tool", () => {
     const step5aSection = extractStep5aSection(content);
     const lower = step5aSection.toLowerCase();
     expect(lower).toContain("implementation");
-    expect(lower).toContain("in-bash sleep loop");
-    expect(lower).toContain("scheduled wakeup mechanism");
+    expect(lower).toContain("monitor tool");
   });
 
   it("preserves the 5-minute budget and 30-second poll interval wording in Step 5a", () => {
