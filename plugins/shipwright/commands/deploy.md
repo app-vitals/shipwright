@@ -366,7 +366,7 @@ outcome, not a failure.
 ```
 Monitor({
   description: "Poll for Deploy workflow run matching SQUASH_SHA",
-  command: "REPO=\"{org}/{repo}\"; while true; do RESULT=$(gh api \"repos/$REPO/actions/runs?per_page=50\" --jq \"[.workflow_runs[] | select(.head_sha == \\\"$SQUASH_SHA\\\" and .name == \\\"Deploy\\\") | {id, name, status, conclusion}]\"); if [ \"$RESULT\" != \"[]\" ]; then echo \"$RESULT\"; break; fi; sleep 30; done",
+  command: "REPO=\"{org}/{repo}\"; while true; do RESULT=$(gh api \"repos/$REPO/actions/runs?per_page=50\" --jq \"[.workflow_runs[] | select(.head_sha == \\\"$SQUASH_SHA\\\" and .name == \\\"Deploy\\\") | {id, name, status, conclusion}]\" 2>/dev/null) || RESULT=\"[]\"; if [ \"$RESULT\" != \"[]\" ]; then echo \"$RESULT\"; break; fi; sleep 30; done",
   timeout_ms: 300000,
   persistent: false
 })
