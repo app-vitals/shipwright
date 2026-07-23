@@ -78,7 +78,7 @@ tasks:
       - bun scripts/dev.ts
 
   hitl:
-    desc: "Human-in-the-loop runner: boots task-store (:3002) + admin (:3001), then loops — pulls the next ready task and launches Claude Code with the right command. Uses shipwright.test as hostname (set SHIPWRIGHT_HITL_HOST to override)."
+    desc: "Human-in-the-loop runner: boots task-store (:3002) + admin (:3001), then loops — pulls the next ready task and launches Claude Code with the right command. Uses localhost as hostname (set SHIPWRIGHT_HITL_HOST to override)."
     cmds:
       - bun scripts/hitl.ts
 

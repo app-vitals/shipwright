@@ -12,9 +12,50 @@ import {
   buildClaudeSpawnEnv,
   buildTaskCommand,
   computeProvisionPlan,
+  ensureHitlAgent,
+  parseHitlRepos,
   parseTasksResponse,
   type Task,
 } from "./hitl.ts";
+
+/**
+ * Injected fetch double for ensureHitlAgent()'s admin-API calls. Each entry
+ * matches on {method, path suffix} and returns a canned Response — no real
+ * network calls, per the repo's isolation contract.
+ */
+type Route = {
+  method: string;
+  match: (url: string) => boolean;
+  respond: () => Response;
+};
+
+function makeFetchDouble(routes: Route[]): typeof fetch {
+  const calls: Array<{ method: string; url: string; body?: string }> = [];
+  const fetchDouble = (async (
+    input: string | URL | Request,
+    init?: RequestInit,
+  ) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    calls.push({ method, url, body: init?.body as string | undefined });
+    const route = routes.find(
+      (r) => r.method === method && r.match(url),
+    );
+    if (!route) {
+      throw new Error(`no route matched ${method} ${url}`);
+    }
+    return route.respond();
+  }) as typeof fetch;
+  (fetchDouble as unknown as { calls: typeof calls }).calls = calls;
+  return fetchDouble;
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 describe("buildTaskCommand", () => {
   test("routes hitl tasks to /shipwright:hitl", () => {
@@ -119,5 +160,216 @@ describe("buildClaudeSpawnEnv", () => {
     const base = { PATH: "/usr/bin" };
     buildClaudeSpawnEnv(base);
     expect(Object.keys(base)).toEqual(["PATH"]);
+  });
+});
+
+describe("parseHitlRepos", () => {
+  test("returns [] for undefined", () => {
+    expect(parseHitlRepos(undefined)).toEqual([]);
+  });
+
+  test("returns [] for an empty string", () => {
+    expect(parseHitlRepos("")).toEqual([]);
+  });
+
+  test("splits a comma-separated list and trims whitespace", () => {
+    expect(parseHitlRepos("org/a, org/b ,org/c")).toEqual([
+      "org/a",
+      "org/b",
+      "org/c",
+    ]);
+  });
+
+  test("drops empty entries from stray commas", () => {
+    expect(parseHitlRepos("org/a,,org/b,")).toEqual(["org/a", "org/b"]);
+  });
+
+  test("returns a single-entry list for a value with no commas", () => {
+    expect(parseHitlRepos("org/solo")).toEqual(["org/solo"]);
+  });
+});
+
+describe("ensureHitlAgent", () => {
+  test("create path: no existing agent — creates, then PATCHes repos when non-empty", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      {
+        method: "POST",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json({ id: "agent-1", name: "hitl", repos: [] }, 201),
+      },
+      {
+        method: "PATCH",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () =>
+          json({ id: "agent-1", name: "hitl", repos: ["org/repo"] }),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBe("agent-1");
+    const calls = (fetchDouble as unknown as { calls: Array<{ method: string; url: string; body?: string }> }).calls;
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "PATCH"]);
+    expect(JSON.parse(calls[2].body ?? "{}")).toEqual({ repos: ["org/repo"] });
+  });
+
+  test("create path: no existing agent, HITL_REPOS empty — creates, skips PATCH", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      {
+        method: "POST",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json({ id: "agent-1", name: "hitl", repos: [] }, 201),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, []);
+
+    expect(id).toBe("agent-1");
+    const calls = (fetchDouble as unknown as { calls: Array<{ method: string }> }).calls;
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST"]);
+  });
+
+  test("existing-agent-match path: repos already match — no PATCH issued", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () =>
+          json([{ id: "agent-1", name: "hitl", selfHosted: true }]),
+      },
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () =>
+          json({ id: "agent-1", name: "hitl", repos: ["org/repo"] }),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBe("agent-1");
+    const calls = (fetchDouble as unknown as { calls: Array<{ method: string }> }).calls;
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+  });
+
+  test("existing-agent-mismatch path: repos differ — fetches detail then PATCHes", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () =>
+          json([{ id: "agent-1", name: "hitl", selfHosted: true }]),
+      },
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () =>
+          json({ id: "agent-1", name: "hitl", repos: ["org/old"] }),
+      },
+      {
+        method: "PATCH",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () =>
+          json({ id: "agent-1", name: "hitl", repos: ["org/new"] }),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/new"]);
+
+    expect(id).toBe("agent-1");
+    const calls = (fetchDouble as unknown as { calls: Array<{ method: string; url: string; body?: string }> }).calls;
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "PATCH"]);
+    expect(JSON.parse(calls[2].body ?? "{}")).toEqual({ repos: ["org/new"] });
+  });
+
+  test("failure path: GET /agents non-ok — returns null, no further calls", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json({ error: "forbidden" }, 403),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBeNull();
+    const calls = (fetchDouble as unknown as { calls: Array<{ method: string }> }).calls;
+    expect(calls).toHaveLength(1);
+  });
+
+  test("failure path: POST /agents non-ok — returns null", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json([]),
+      },
+      {
+        method: "POST",
+        match: (url) => url.endsWith("/agents"),
+        respond: () => json({ error: "boom" }, 500),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBeNull();
+  });
+
+  test("failure path: PATCH non-ok on mismatch — still returns the existing agent id", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () =>
+          json([{ id: "agent-1", name: "hitl", selfHosted: true }]),
+      },
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () =>
+          json({ id: "agent-1", name: "hitl", repos: ["org/old"] }),
+      },
+      {
+        method: "PATCH",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () => json({ error: "boom" }, 500),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/new"]);
+
+    expect(id).toBe("agent-1");
+  });
+
+  test("failure path: GET /agents/:id detail fetch non-ok on existing agent — returns summary id", async () => {
+    const fetchDouble = makeFetchDouble([
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents"),
+        respond: () =>
+          json([{ id: "agent-1", name: "hitl", selfHosted: true }]),
+      },
+      {
+        method: "GET",
+        match: (url) => url.endsWith("/agents/agent-1"),
+        respond: () => json({ error: "boom" }, 500),
+      },
+    ]);
+
+    const id = await ensureHitlAgent(fetchDouble, ["org/repo"]);
+
+    expect(id).toBe("agent-1");
   });
 });
