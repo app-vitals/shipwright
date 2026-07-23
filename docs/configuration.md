@@ -187,8 +187,11 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 |---|---|---|---|
 | `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Blocked when `NODE_ENV=production`. |
 | `METRICS_DASHBOARD_DEV_AUTH` | `bool` | `false` | Bypasses `/dashboard` session auth and `/metrics/*` API auth for local dev. Must not be enabled in production — exits with an error if `NODE_ENV=production`. |
-| `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
+| `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack` and `task hitl`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 | `CHAT_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the chat service on startup. Used only in local dev to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
+| `SHIPWRIGHT_HITL_HOME` | `string` | `~/.shipwright` | Root directory for the human-in-the-loop runner workspace (`task hitl`). The workspace contains `repos/`, `worktrees/`, `state/reviews/`, and `.claude/` subdirectories. |
+| `SHIPWRIGHT_HITL_HOST` | `string` | `shipwright.test` | Hostname for service URLs in the HITL runner. Used to construct URLs for task-store and admin services (e.g. `http://shipwright.test:3002` for task-store). |
+| `SHIPWRIGHT_HITL_POLL_INTERVAL` | `number` | `15` | Polling interval in seconds for the HITL runner's task fetch loop. When no ready tasks are found, the runner waits this many seconds before retrying. |
 
 ---
 
