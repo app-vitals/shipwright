@@ -312,6 +312,7 @@ async function runLoop(): Promise<void> {
       continue;
     }
 
+    // biome-ignore lint/correctness/noUnreachable: dispatch scaffolded but gated until task-selection is wired
     continue;
 
     const task = tasks[0];
