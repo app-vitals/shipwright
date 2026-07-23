@@ -23,9 +23,39 @@
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
+
+import {
+  buildProductionDeps as buildReviewDeps,
+  getReviewCandidates,
+  type CheckReviewDeps,
+} from "../agent/src/check-review.ts";
+import {
+  buildProductionDeps as buildPatchDeps,
+  getPatchCandidates,
+  type CheckPatchDeps,
+} from "../agent/src/check-patch.ts";
+import {
+  selectNextWorkItem,
+  type WorkPrCandidate,
+  type WorkTaskCandidate,
+} from "../agent/src/work-selector.ts";
+import {
+  createTaskStoreClient,
+  getCurrentUser,
+  ghGraphql,
+  ghJson,
+  parseCandidateId,
+  resolveAllRepos,
+} from "../agent/src/check-helpers.ts";
 
 // ---------------------------------------------------------------------------
 // Paths — anchored to this script, not cwd
@@ -424,6 +454,7 @@ export interface Task {
   title: string;
   status: string;
   hitl?: boolean;
+  createdAt?: string;
 }
 
 /**
@@ -496,22 +527,137 @@ async function runLoop(): Promise<void> {
   log(`worktrees: ${WORKTREES_DIR}`);
   log("press Ctrl-C to stop\n");
 
+  const repoEntries = existsSync(REPOS_DIR) ? readdirSync(REPOS_DIR) : [];
+  const hasRepos = repoEntries.length > 0;
+  if (!hasRepos) {
+    log(
+      "⚠ workspace/repos/ is empty — review/patch candidates will be skipped (task-only mode)",
+    );
+  }
+
+  // resolveWorkspacePath() (called inside buildReviewDeps/buildPatchDeps
+  // below) reads WORKSPACE_PATH — set it, plus the task-store env vars the
+  // agent-scoped client needs for claims, before building deps/client.
+  process.env.WORKSPACE_PATH = WORKSPACE;
+  process.env.SHIPWRIGHT_TASK_STORE_URL = TASK_STORE_URL;
+  process.env.SHIPWRIGHT_TASK_STORE_TOKEN = DEV_AGENT_TOKEN;
+
+  let reviewDeps: CheckReviewDeps | undefined;
+  let patchDeps: CheckPatchDeps | undefined;
+
+  if (hasRepos) {
+    const allRepos = resolveAllRepos(WORKSPACE);
+    // HITL has no agent config bundle to sync repo scope from — treat every
+    // cloned repo as always-in-scope.
+    reviewDeps = await buildReviewDeps({
+      ghJson,
+      getScopedRepos: () => allRepos,
+      hasScopeSynced: () => true,
+    });
+    patchDeps = await buildPatchDeps({
+      ghJson,
+      ghGraphql,
+      getCurrentUser,
+      getScopedRepos: () => allRepos,
+      hasScopeSynced: () => true,
+    });
+  }
+
+  const client = createTaskStoreClient();
+
   while (true) {
     const tasks = await fetchReadyTasks();
+    const taskCandidates: WorkTaskCandidate[] = tasks.map((t) => ({
+      id: t.id,
+      createdAt: t.createdAt ?? "",
+      title: t.title,
+    }));
 
-    if (tasks.length === 0) {
-      log(`no ready tasks — retrying in ${POLL_INTERVAL_S}s`);
+    let prCandidates: WorkPrCandidate[] = [];
+    if (hasRepos && reviewDeps && patchDeps) {
+      try {
+        const [reviewCands, patchCands] = await Promise.all([
+          getReviewCandidates(reviewDeps),
+          getPatchCandidates(patchDeps),
+        ]);
+        prCandidates = [...reviewCands, ...patchCands];
+      } catch (err) {
+        log(
+          `PR candidate collection failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
+    const next = selectNextWorkItem(taskCandidates, prCandidates);
+
+    if (!next) {
+      log(`no ready work — retrying in ${POLL_INTERVAL_S}s`);
       await sleep(POLL_INTERVAL_S * 1000);
       continue;
     }
 
-    const task = tasks[0];
-    const command = buildTaskCommand(task);
+    let command: string;
+    let label: string;
+
+    if (next.type === "task") {
+      let claimed: boolean;
+      try {
+        claimed = await client.claim(next.task.id);
+      } catch (err) {
+        log(
+          `task ${next.task.id} claim failed: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
+      if (!claimed) {
+        log(`task ${next.task.id} already claimed (409) — skipping`);
+        continue;
+      }
+      const fullTask = tasks.find((t) => t.id === next.task.id);
+      command = buildTaskCommand({ id: next.task.id, hitl: fullTask?.hitl });
+      label = `${next.task.id} — ${next.task.title ?? ""}`;
+    } else {
+      const parsed = parseCandidateId(next.pr.id);
+      if (!parsed) {
+        log(`malformed PR candidate id: ${next.pr.id} — skipping`);
+        continue;
+      }
+      if (!next.pr.phase) {
+        log(`PR candidate ${next.pr.id} missing phase — skipping`);
+        continue;
+      }
+
+      let claimResult: Awaited<ReturnType<typeof client.claimPr>>;
+      try {
+        claimResult = await client.claimPr({
+          repo: parsed.repo,
+          prNumber: parsed.prNumber,
+          commitSha: next.pr.commitSha,
+          phase: next.pr.phase,
+        });
+      } catch (err) {
+        log(
+          `PR ${next.pr.id} claim failed: ${err instanceof Error ? err.message : err}`,
+        );
+        continue;
+      }
+      if (!claimResult) {
+        log(`PR ${next.pr.id} already claimed (409) — skipping`);
+        continue;
+      }
+
+      const preclaimMarker = `[preclaim:${claimResult.id}:${claimResult.commitSha}]`;
+      command =
+        next.pr.phase === "review"
+          ? `/shipwright:review ${next.pr.id} ${preclaimMarker}`
+          : `/shipwright:patch ${next.pr.id} ${preclaimMarker}`;
+      label = `${next.pr.id} — ${next.pr.title ?? ""}`;
+    }
 
     console.log("");
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    log(`next: ${task.id} — ${task.title}`);
-    log(`hitl: ${task.hitl ?? false} → ${command}`);
+    log(`next: ${label}`);
+    log(`type: ${next.type} → ${command}`);
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("");
 
