@@ -490,6 +490,28 @@ async function withCapturedWarnings(
   return warnMessages;
 }
 
+// ─── console.error capture (LPF-7.2) ────────────────────────────────────────
+
+// Captures console.error calls for the duration of `fn`, restoring the
+// original afterward even if `fn` throws. Mirrors withCapturedWarnings above
+// — used to assert on the busy-stall escalation's console.error call without
+// touching the console.warn capture used by the non-escalated busy-skip path.
+async function withCapturedErrors(
+  fn: () => Promise<void>,
+): Promise<string[]> {
+  const errorMessages: string[] = [];
+  const originalError = console.error.bind(console);
+  console.error = (...args: unknown[]) => {
+    errorMessages.push(args.map(String).join(" "));
+  };
+  try {
+    await fn();
+  } finally {
+    console.error = originalError;
+  }
+  return errorMessages;
+}
+
 // ─── console.log / console.info capture (LTO-1.1) ──────────────────────────
 
 // Captures console.log AND console.info calls for the duration of `fn`,
@@ -699,6 +721,112 @@ describe("createLoopOrchestrator", () => {
     // Must surface the elapsed time since busySince (5000ms, derived from the
     // injected clock, not a raw Date.now()/new Date() call).
     expect(busyLogs.some((msg) => msg.includes("5000"))).toBe(true);
+  });
+
+  test("LPF-7.2: a busy-skip at or below the stall threshold still logs via console.warn, not console.error", async () => {
+    // Same two-tick-overlap-with-gate pattern as the LPF-7.1 test above, but
+    // advances the clock to exactly the BUSY_STALL_THRESHOLD_MS boundary —
+    // still within the safety margin, so the existing (unescalated) warn
+    // behavior must be unchanged and console.error must not fire.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates: async () => {
+          await gate;
+          return [];
+        },
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Exactly at the threshold (35 minutes) — must NOT escalate, since the
+    // escalation is defined as strictly beyond the threshold.
+    advanceMs(35 * 60 * 1000);
+
+    let errorMessages: string[] = [];
+    const warnMessages = await withCapturedWarnings(async () => {
+      errorMessages = await withCapturedErrors(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages).toEqual([]);
+    const busyLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyLogs.length).toBeGreaterThan(0);
+    expect(busyLogs.some((msg) => msg.includes(String(35 * 60 * 1000)))).toBe(
+      true,
+    );
+  });
+
+  test("LPF-7.2: a busy-skip beyond the stall threshold escalates to console.error with a stuck/wedged message", async () => {
+    // Same pattern, but advances the clock well past BUSY_STALL_THRESHOLD_MS
+    // — a prior tick draining this long can no longer self-recover (claude.ts
+    // caps a single runner() call at 30 minutes), so this must escalate to
+    // console.error with wording that clearly signals a stuck/wedged tick,
+    // not an ordinary busy overlap.
+    let release!: () => void;
+    const gate = new Promise<void>((res) => {
+      release = res;
+    });
+    const { clock, advanceMs } = makeMutableClockForBackoff(
+      "2026-01-01T00:00:00Z",
+    );
+
+    const deps = {
+      ...makeDeps({
+        getDevTaskCandidates: async () => {
+          await gate;
+          return [];
+        },
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    const first = loop(ALL_PHASES_ON);
+    // Well beyond the threshold (40 minutes) — must escalate.
+    advanceMs(40 * 60 * 1000);
+
+    let warnMessages: string[] = [];
+    const errorMessages = await withCapturedErrors(async () => {
+      warnMessages = await withCapturedWarnings(async () => {
+        await loop(ALL_PHASES_ON);
+      });
+    });
+
+    release();
+    await first;
+
+    expect(errorMessages.length).toBeGreaterThan(0);
+    const stuckLogs = errorMessages.filter(
+      (msg) =>
+        msg.toLowerCase().includes("stuck") ||
+        msg.toLowerCase().includes("wedged"),
+    );
+    expect(stuckLogs.length).toBeGreaterThan(0);
+    expect(stuckLogs.some((msg) => msg.includes(String(40 * 60 * 1000)))).toBe(
+      true,
+    );
+    // This particular busy-skip must not have also warned — it fully
+    // escalates to console.error rather than logging both.
+    const busyWarnLogs = warnMessages.filter(
+      (msg) => msg.toLowerCase().includes("busy") || msg.includes("draining"),
+    );
+    expect(busyWarnLogs.length).toBe(0);
   });
 
   test("skips disabled phases: a disabled phase's qualification fn is never called", async () => {

@@ -232,6 +232,19 @@ const DEFAULT_EMPTY_BACKOFF_MS = 300_000;
 const DEFAULT_EMPTY_BACKOFF_ATTEMPTS = 3;
 
 /**
+ * LPF-7.2 — busy-stall safety margin. claude.ts's runner() call is bounded by
+ * a 30-minute ceiling (`timeoutMs: number = 30 * 60 * 1000`), so a healthy
+ * tick's `busy` flag can never legitimately stay true past that. This
+ * threshold is set comfortably above that ceiling (35 minutes) so it never
+ * fires during normal drain overlap — only once a tick has clearly hung
+ * somewhere before ever reaching dispatch()/runner() (e.g. a wedge in
+ * candidate collection), meaning it cannot self-recover without a process
+ * restart. Once busySince's elapsed time exceeds this, the busy-skip log
+ * below escalates from console.warn to console.error.
+ */
+const BUSY_STALL_THRESHOLD_MS = 35 * 60 * 1000;
+
+/**
  * Parses a positive-integer env var, falling back to `fallback` when unset or
  * not a valid positive integer. Read fresh on every call (never cached) so an
  * operator's env change takes effect on the very next tick without a restart
@@ -582,13 +595,25 @@ export function createLoopOrchestrator(
     // next scheduled invocation is a stronger operator signal than a plain
     // informational skip, and the elapsed time (derived from busySince via
     // the injected clock) shows how long the prior tick has been draining.
+    // LPF-7.2: once that elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well
+    // past claude.ts's 30-minute runner() ceiling — a prior tick can no
+    // longer be "still draining normally"; it's wedged somewhere before ever
+    // reaching dispatch()/runner() and cannot self-recover, so escalate to
+    // console.error (Sentry-eligible, matching the spin-detection warn's
+    // style) instead of the routine console.warn.
     if (busy) {
       const elapsedMs = busySince
         ? clock.now().getTime() - busySince.getTime()
         : 0;
-      console.warn(
-        `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms (still running)`,
-      );
+      if (elapsedMs > BUSY_STALL_THRESHOLD_MS) {
+        console.error(
+          `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms, which exceeds the ${BUSY_STALL_THRESHOLD_MS}ms safety margin — this tick appears stuck/wedged and will not self-recover without a process restart`,
+        );
+      } else {
+        console.warn(
+          `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms (still running)`,
+        );
+      }
       return;
     }
     busy = true;
