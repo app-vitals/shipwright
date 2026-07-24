@@ -62,6 +62,10 @@ import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import {
+  type AgentTypeManifestResolver,
+  AgentTypeRegistry,
+} from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
@@ -241,6 +245,13 @@ export interface AdminUIDeps {
     | "updateFields"
   >;
   provisioner: AgentProvisioner;
+  /**
+   * Resolves an agent's typeName to its parsed Agent Type manifest and lists
+   * the registry's discoverable types (for the new-agent type picker).
+   * Defaults to a disk-backed AgentTypeRegistry, matching the DI pattern
+   * already used by agents-api.ts's AdminDeps.
+   */
+  agentTypeRegistry?: AgentTypeManifestResolver;
   /**
    * Cleanup deps for the full delete-agent orchestration (POST
    * /admin/agents/:id/delete → deleteAgentFully()). Matches
@@ -477,6 +488,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     agentMemberService,
     agentService,
     provisioner,
+    agentTypeRegistry = new AgentTypeRegistry(),
     taskStore,
     chatService,
     slack,
@@ -758,6 +770,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "Invalid delivery target — set channel or user (or enable silent mode).",
     invalid_repo_format:
       "Repo must be in org/repo format (e.g. my-org/my-repo).",
+    invalid_type: "Select a valid agent type.",
   };
 
   // ─── New local agent form (MUST be before /:id to avoid "new" being captured as param)
@@ -766,7 +779,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
-    return html(renderNewLocalAgentPage(c.var.userEmail, error));
+    const types = agentTypeRegistry.listTypes();
+    return html(renderNewLocalAgentPage(c.var.userEmail, types, { error }));
   });
 
   // ─── Create agent (local / self-hosted) ──────────────────────────────────
@@ -774,10 +788,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.post("/admin/agents", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     let name: string | undefined;
+    let typeName: string | undefined;
     let reposRaw: string | undefined;
     try {
       const formData = await c.req.formData();
       name = formData.get("name")?.toString()?.trim();
+      typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
     } catch {
       return c.redirect("/admin/agents/new", 302);
@@ -785,7 +801,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!name) {
       return c.redirect("/admin/agents/new?error=missing_fields", 302);
     }
-    const agent = await agentService.create({ name, selfHosted: true });
+    // Resolve the requested type BEFORE creating any row — an unknown/missing
+    // type must redirect with zero rows created, mirroring the tryGetManifest
+    // validation POST /agents already does in agents-api.ts.
+    if (!typeName || !agentTypeRegistry.tryGetManifest(typeName)) {
+      return c.redirect("/admin/agents/new?error=invalid_type", 302);
+    }
+    const agent = await agentService.create({
+      name,
+      selfHosted: true,
+      typeName,
+    });
     // Attach repos if provided
     if (reposRaw) {
       const repos = reposRaw
@@ -818,6 +844,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
+      typeName: agent.typeName,
     };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -1293,6 +1320,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
+      typeName: agent.typeName,
     };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);
