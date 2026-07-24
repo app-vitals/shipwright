@@ -226,6 +226,7 @@ const GetAgentResultSchema = z
     slackId: z.string().nullable().optional(),
     selfHosted: z.boolean(),
     repos: z.array(z.string()),
+    typeName: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   })
@@ -1678,6 +1679,7 @@ function serializeAgent(agent: {
   slackId: string | null | undefined;
   selfHosted: boolean;
   repos?: string[];
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }): z.infer<typeof GetAgentResultSchema> {
@@ -1687,6 +1689,7 @@ function serializeAgent(agent: {
     slackId: agent.slackId,
     selfHosted: agent.selfHosted,
     repos: agent.repos ?? [],
+    typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
   };
