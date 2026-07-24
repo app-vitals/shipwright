@@ -17,10 +17,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "bun:test";
-import {
-  type AgentTypeManifest,
-  parseAgentTypeManifest,
-} from "../../admin/src/agent-type-registry.ts";
+import { parseAgentTypeManifest } from "../../admin/src/agent-type-registry.ts";
 import { SYSTEM_CRONS } from "../../admin/src/system-crons.ts";
 
 const MANIFEST_PATH = join(import.meta.dir, "manifest.yaml");
@@ -33,9 +30,8 @@ describe("agent-types/coding/manifest.yaml — parses via AgentTypeRegistry", ()
     expect(() => parseAgentTypeManifest(rawContent)).not.toThrow();
   });
 
-  let manifest: AgentTypeManifest;
   it("produces a manifest object", () => {
-    manifest = parseAgentTypeManifest(rawContent);
+    const manifest = parseAgentTypeManifest(rawContent);
     expect(manifest).toBeDefined();
   });
 
