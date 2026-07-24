@@ -1,0 +1,243 @@
+{
+  "$ref": "#/definitions/AgentTypeManifest",
+  "definitions": {
+    "AgentTypeManifest": {
+      "type": "object",
+      "properties": {
+        "apiVersion": {
+          "type": "string",
+          "const": "shipwright.dev/v1alpha1"
+        },
+        "kind": {
+          "type": "string",
+          "const": "AgentType"
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "skills": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "id",
+                  "name",
+                  "description"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "name",
+            "displayName",
+            "description",
+            "version",
+            "skills"
+          ],
+          "additionalProperties": false
+        },
+        "identity": {
+          "type": "object",
+          "properties": {
+            "templatesDir": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "templatesDir"
+          ],
+          "additionalProperties": false
+        },
+        "crons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "schedule": {
+                "type": "string",
+                "minLength": 1
+              },
+              "prompt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "preCheck": {
+                "type": "string"
+              },
+              "silent": {
+                "type": "boolean",
+                "default": false
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "parentCron": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "schedule",
+              "prompt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "properties": {
+            "required": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "key",
+                  "description",
+                  "secret"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "optional": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/AgentTypeManifest/properties/env/properties/required/items"
+              }
+            }
+          },
+          "required": [
+            "required",
+            "optional"
+          ],
+          "additionalProperties": false
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "repos": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "chat": {
+          "type": "boolean"
+        },
+        "voice": {
+          "type": "boolean"
+        },
+        "resources": {
+          "type": "object",
+          "properties": {
+            "requests": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "type": "string"
+                },
+                "memory": {
+                  "type": "string"
+                },
+                "ephemeral-storage": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "limits": {
+              "$ref": "#/definitions/AgentTypeManifest/properties/resources/properties/requests"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "apiVersion",
+        "kind",
+        "metadata",
+        "identity",
+        "crons",
+        "plugins",
+        "tools",
+        "env",
+        "members",
+        "repos",
+        "chat",
+        "voice"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}
