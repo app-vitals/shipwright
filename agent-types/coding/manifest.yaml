@@ -1,20 +1,19 @@
 # agent-types/coding/manifest.yaml
 #
 # AgentType manifest for the "coding" agent type — Shipwright's default
-# autonomous delivery agent. Expresses today's coding agent defaults
-# (ATS-2.1) in the Agent Type format: the SYSTEM_CRONS entries
-# (admin/src/system-crons.ts), the DEFAULT_AGENT_TOOLS tool set
+# autonomous delivery agent. This is the runtime source of truth for the
+# coding agent's default system crons, the DEFAULT_AGENT_TOOLS tool set
 # (lib/agent-default-tools.ts), the bundled shipwright plugin, and the
 # agent's env contract.
 #
 # Validated against admin/src/agent-type-registry.ts's AgentTypeManifestSchema
-# (see agent-types/coding/manifest.content.test.ts for the parity assertions
-# against the still-live SYSTEM_CRONS TS source).
+# (see agent-types/coding/manifest.content.test.ts).
 #
-# Temporary parity note: crons[] below is transcribed byte-for-byte from
-# admin/src/system-crons.ts's SYSTEM_CRONS array, which remains the live
-# runtime source until ATS-3.2 cuts the seeding logic over to read this
-# manifest instead and deletes the TS array. Keep both in sync until then.
+# crons[] below is the source of truth for the coding agent's default system
+# crons. AgentCronJobService.reconcileSystemCrons() (admin/src/agent-cron-jobs.ts)
+# resolves this manifest via the AgentTypeRegistry and seeds/updates each
+# agent's system crons from it on every boot (ATS-3.2). The manifest→row
+# golden regression lives in admin/src/agent-cron-jobs.integration.test.ts.
 apiVersion: shipwright.dev/v1alpha1
 kind: AgentType
 metadata:
