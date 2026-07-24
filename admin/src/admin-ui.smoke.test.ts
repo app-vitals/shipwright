@@ -307,6 +307,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
+        missingRequiredEnv: [],
       }),
       updateFields: async () => ({
         id: AGENT_ID,
@@ -317,6 +318,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
+        missingRequiredEnv: [],
       }),
     },
     sessionSecret: SESSION_SECRET,
@@ -1102,6 +1104,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
         }),
@@ -1197,6 +1200,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
         }),
@@ -1223,6 +1227,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
           agentEnvService: {
@@ -1260,6 +1265,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
           agentCronJobService: {
@@ -1315,6 +1321,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
           agentToolService: {
@@ -1356,6 +1363,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
+              missingRequiredEnv: [],
             }),
           },
         }),
@@ -2292,6 +2300,7 @@ describe("admin UI — provision start form", () => {
             repos: input.repos ?? [],
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
         getDetail: async () => ({
@@ -2303,6 +2312,7 @@ describe("admin UI — provision start form", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: ["my-org/repo-one"],
+          missingRequiredEnv: [],
         }),
       },
       slackClient: {
@@ -2395,6 +2405,7 @@ describe("admin UI — provision start form", () => {
           repos: input.repos ?? [],
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async (id: string) => {
           deleteCalledWith = id;
@@ -2408,6 +2419,7 @@ describe("admin UI — provision start form", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
+          missingRequiredEnv: [],
         }),
       },
       provisioner: {
@@ -2473,6 +2485,7 @@ describe("admin UI — provision start form", () => {
           repos: input.repos ?? [],
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async (id: string) => {
           deleteCalledWith = id;
@@ -2486,6 +2499,7 @@ describe("admin UI — provision start form", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
+          missingRequiredEnv: [],
         }),
       },
       provisioner: {
@@ -4899,6 +4913,7 @@ describe("admin UI — repos mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
+        missingRequiredEnv: [],
       }),
       updateFields: async (
         id: string,
@@ -4914,6 +4929,7 @@ describe("admin UI — repos mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
+          missingRequiredEnv: [],
         };
       },
     };

@@ -242,6 +242,12 @@ const GetAgentResultSchema = z
     typeName: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
+    /**
+     * Required env keys declared by the agent's type manifest that have no
+     * corresponding AgentEnv row yet — key names only, never values
+     * (secrets_in_logs). Always present; informational only (ATS-4.2).
+     */
+    missingRequiredEnv: z.array(z.string()),
   })
   .openapi("GetAgentResult");
 
@@ -1715,6 +1721,7 @@ function serializeAgent(agent: {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  missingRequiredEnv?: string[];
 }): z.infer<typeof GetAgentResultSchema> {
   return {
     id: agent.id,
@@ -1725,6 +1732,7 @@ function serializeAgent(agent: {
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
+    missingRequiredEnv: agent.missingRequiredEnv ?? [],
   };
 }
 

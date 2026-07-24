@@ -143,6 +143,13 @@ export interface AgentDetail {
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
+  /**
+   * Required env keys declared by the agent's type manifest with no
+   * corresponding AgentEnv row yet — key names only, never values. Always
+   * present; purely informational (ATS-4.2), see renderAgentDetailPage's Env
+   * Vars card.
+   */
+  missingRequiredEnv: string[];
 }
 
 export interface CronJobItem {
@@ -999,8 +1006,17 @@ export function renderAgentDetailPage(
 
     ${
       !agent.selfHosted
-        ? `<div class="card">
+        ? `<div class="card" id="env-vars">
       <div class="card-title">Env Vars</div>
+      ${
+        agent.missingRequiredEnv.length > 0
+          ? `<div class="alert alert-warning">
+        Missing required env var${agent.missingRequiredEnv.length === 1 ? "" : "s"}:
+        ${agent.missingRequiredEnv.map((key) => `<span class="badge badge-warning">${escapeHtml(key)}</span>`).join(" ")}
+        — <a href="#env-vars">set ${agent.missingRequiredEnv.length === 1 ? "it" : "them"} below</a>.
+      </div>`
+          : ""
+      }
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
         <div class="form-row" style="flex-wrap:wrap;gap:8px">
           <div class="form-group">

@@ -229,6 +229,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       updateFields: async () => ({
         id: NEW_AGENT_ID,
@@ -239,6 +240,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
     },
     sessionSecret: SESSION_SECRET,
@@ -401,6 +403,7 @@ describe("admin UI — new local agent create flow", () => {
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },

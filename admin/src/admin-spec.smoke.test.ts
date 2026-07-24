@@ -74,6 +74,7 @@ function buildSpecApp() {
         typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
+        missingRequiredEnv: [],
       }),
     },
     agentEnvService: {

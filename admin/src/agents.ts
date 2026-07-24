@@ -7,6 +7,10 @@
  */
 
 import type { PrismaClient } from "../prisma/client/index.js";
+import {
+  type AgentTypeManifestResolver,
+  AgentTypeRegistry,
+} from "./agent-type-manifest-loader.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +50,14 @@ export interface AgentDetail {
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Required env keys declared by the agent's type manifest that have no
+   * corresponding AgentEnv row yet — key names only, never values
+   * (secrets_in_logs). Always present (empty array when the type's required
+   * contract is empty or every required key is set). Informational only —
+   * not a create blocker or provisioning gate (ATS-4.2).
+   */
+  missingRequiredEnv: string[];
 }
 
 export interface UpdateSelfHostedInput {
@@ -99,7 +111,10 @@ const DETAIL_SELECT = {
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class AgentService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
+  ) {}
 
   /**
    * Create a new agent row.
@@ -146,14 +161,50 @@ export class AgentService {
   }
 
   /**
-   * Get the full agent record (incl. repos/typeName/timestamps). Returns
-   * null if not found.
+   * The env-contract gap: the type manifest's required env keys minus the
+   * keys already present in this agent's AgentEnv rows (key names only,
+   * never values — the AgentEnv query below selects only `key`, never
+   * `value`, so decrypted secrets can never reach this computation).
+   * Skips the AgentEnv query entirely when the manifest declares no required
+   * keys. Purely informational: never blocks create or gates provisioning
+   * (ATS-4.2).
+   */
+  private async computeMissingRequiredEnv(
+    agentId: string,
+    typeName: string,
+  ): Promise<string[]> {
+    const requiredKeys = this.agentTypeRegistry
+      .getManifest(typeName)
+      .env.required.map((entry) => entry.key);
+
+    if (requiredKeys.length === 0) return [];
+
+    // Key names only — never select/decrypt AgentEnv.value here.
+    const presentEnvRows = await this.prisma.agentEnv.findMany({
+      where: { agentId },
+      select: { key: true },
+    });
+    const presentKeys = new Set(presentEnvRows.map((r) => r.key));
+    return requiredKeys.filter((key) => !presentKeys.has(key));
+  }
+
+  /**
+   * Get the full agent record (incl. repos/typeName/timestamps), plus
+   * `missingRequiredEnv` (see computeMissingRequiredEnv). Returns null if not
+   * found.
    */
   async getDetail(id: string): Promise<AgentDetail | null> {
-    return this.prisma.agent.findUnique({
+    const row = await this.prisma.agent.findUnique({
       where: { id },
       select: DETAIL_SELECT,
     });
+    if (!row) return null;
+
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**
@@ -175,7 +226,7 @@ export class AgentService {
     id: string,
     input: UpdateSelfHostedInput,
   ): Promise<AgentDetail> {
-    return this.prisma.agent.update({
+    const row = await this.prisma.agent.update({
       where: { id },
       data: {
         selfHosted: input.selfHosted,
@@ -183,6 +234,11 @@ export class AgentService {
       },
       select: DETAIL_SELECT,
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**
@@ -246,7 +302,7 @@ export class AgentService {
     id: string,
     input: UpdateAgentFieldsInput,
   ): Promise<AgentDetail> {
-    return this.prisma.agent.update({
+    const row = await this.prisma.agent.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),
@@ -258,5 +314,10 @@ export class AgentService {
       },
       select: DETAIL_SELECT,
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 }

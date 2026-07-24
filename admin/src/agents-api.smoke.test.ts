@@ -246,6 +246,7 @@ function makeMockDeps(): AdminDeps {
               typeName: "coding",
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
+              missingRequiredEnv: [],
             }
           : null,
       exists: async (id: string) => id === AGENT_ID,
@@ -261,6 +262,7 @@ function makeMockDeps(): AdminDeps {
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
     },
     agentEnvService: {
@@ -1724,6 +1726,7 @@ describe("admin API — delete agent", () => {
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
       },
@@ -2408,6 +2411,71 @@ describe("admin API — typeName field", () => {
   });
 });
 
+// ─── missingRequiredEnv field smoke tests (ATS-4.2) ────────────────────────────
+
+describe("admin API — missingRequiredEnv field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents/:id includes an empty missingRequiredEnv array when nothing is missing", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.missingRequiredEnv)).toBe(true);
+    expect(body.missingRequiredEnv).toEqual([]);
+  });
+
+  it("GET /agents/:id surfaces missing required env keys by name only — no values in the raw response JSON", async () => {
+    const base = makeMockDeps();
+    const SECRET_VALUE = "sk-super-secret-decrypted-value";
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: ["CLAUDE_CODE_OAUTH_TOKEN"],
+              }
+            : null,
+      },
+      // Sanity: even if the env service were consulted, it must never leak a
+      // decrypted value into this route's response — it isn't consulted at
+      // all by GET /agents/:id, but assert the raw JSON is clean regardless.
+      agentEnvService: {
+        ...base.agentEnvService,
+        getByAgentId: async () => ({
+          env: { CLAUDE_CODE_OAUTH_TOKEN: SECRET_VALUE },
+          secretKeys: ["CLAUDE_CODE_OAUTH_TOKEN"],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const rawText = await res.text();
+    expect(rawText).not.toContain(SECRET_VALUE);
+    const body = JSON.parse(rawText);
+    expect(body.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+});
+
 // ─── repos field smoke tests ──────────────────────────────────────────────────
 
 describe("admin API — repos field", () => {
@@ -2449,6 +2517,7 @@ describe("admin API — repos field", () => {
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
         updateSelfHosted: async (
@@ -2463,6 +2532,7 @@ describe("admin API — repos field", () => {
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };
@@ -2497,6 +2567,7 @@ describe("admin API — repos field", () => {
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
         updateSelfHosted: async (
@@ -2511,6 +2582,7 @@ describe("admin API — repos field", () => {
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };

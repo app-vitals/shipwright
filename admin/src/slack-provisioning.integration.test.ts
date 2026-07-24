@@ -239,6 +239,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         typeName: "coding",
+        missingRequiredEnv: [],
       }),
       updateFields: async () => {
         throw new Error("not implemented");
