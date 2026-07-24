@@ -445,7 +445,7 @@ describe("AgentService.updateSelfHosted", () => {
   it("updates the selfHosted flag and returns the full record", async () => {
     const row = seedRow({ id: "a1", selfHosted: false });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", { selfHosted: true });
 
@@ -456,7 +456,7 @@ describe("AgentService.updateSelfHosted", () => {
   it("updates repos when provided", async () => {
     const row = seedRow({ id: "a1", repos: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", {
       selfHosted: false,
@@ -469,7 +469,7 @@ describe("AgentService.updateSelfHosted", () => {
   it("leaves repos untouched when not provided", async () => {
     const row = seedRow({ id: "a1", repos: ["org/existing"] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", { selfHosted: true });
 
@@ -623,7 +623,7 @@ describe("AgentService.updateFields", () => {
       repos: ["org/old"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { name: "New Name" });
 
@@ -636,7 +636,7 @@ describe("AgentService.updateFields", () => {
   it("updates repos when provided", async () => {
     const row = seedRow({ id: "a1", repos: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", {
       repos: ["org/new-repo"],
@@ -648,7 +648,7 @@ describe("AgentService.updateFields", () => {
   it("updates selfHosted when provided", async () => {
     const row = seedRow({ id: "a1", selfHosted: false });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { selfHosted: true });
 
@@ -658,7 +658,7 @@ describe("AgentService.updateFields", () => {
   it("updates slackId to null when explicitly passed null", async () => {
     const row = seedRow({ id: "a1", slackId: "U123" });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { slackId: null });
 
