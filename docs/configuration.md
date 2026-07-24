@@ -192,6 +192,7 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 | `SHIPWRIGHT_HITL_HOME` | `string` | `~/.shipwright` | Root directory for the human-in-the-loop runner workspace (`task hitl`). The workspace contains `repos/`, `worktrees/`, `state/reviews/`, and `.claude/` subdirectories. |
 | `SHIPWRIGHT_HITL_HOST` | `string` | `localhost` | Hostname for service URLs in the HITL runner. Used to construct URLs for task-store and admin services (e.g. `http://localhost:3002` for task-store). |
 | `SHIPWRIGHT_HITL_REPOS` | `string` | — | Comma-separated list of `org/repo` strings assigned to the HITL agent record. Controls which task-store tasks the HITL agent token can claim via repo-scoped ownership (e.g. `app-vitals/shipwright`). |
+| `SHIPWRIGHT_HITL_AUTHORS` | `string` | — | Comma-separated GitHub usernames. When set, restricts the HITL runner's review candidates to PRs authored by one of these logins. Dev-tool-only — wired into `getReviewCandidates()` via `CheckReviewDeps.isAuthorAllowed` inside `scripts/hitl.ts`; not used by the autonomous `shipwright-loop` cron. |
 | `SHIPWRIGHT_HITL_POLL_INTERVAL` | `number` | `15` | Polling interval in seconds for the HITL runner's task fetch loop. When no ready tasks are found, the runner waits this many seconds before retrying. |
 
 ---
