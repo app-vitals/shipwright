@@ -28,7 +28,16 @@ Routes marked **admin-only** require `isAdmin=true`. Per-agent bearer tokens can
 POST /agents
 ```
 
-Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. On successful agent creation, seeds the default tool allowlist (`["Bash", "WebSearch", "WebFetch", "Agent"]`) before provisioning — if provisioning fails, these seeded tools are cascade-deleted along with the rolled-back agent row.
+Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload.
+
+The `type` field (optional, defaults to `"coding"`) selects an Agent Type manifest (`agent-types/<type>/manifest.yaml`) that drives seeding: an unknown `type` returns `400` **before any row is created** (zero agent/tool/plugin/member rows persist). On successful agent creation, the resolved manifest is used to seed:
+
+- **AgentTool** rows from the manifest's `tools[]`
+- **AgentPlugin** rows from the manifest's `plugins[]` (for the default "coding" type, this includes the `shipwright` plugin)
+- **AgentMember** rows from the manifest's `members[]`
+- **`repos`** — the manifest's `repos[]` merged (deduplicated) with any request-supplied `repos`
+
+All seeding happens inside the same rollback-guarded block as provisioning — if any seeding step or provisioning fails, every already-seeded child row (tools/plugins/members) is cascade-deleted along with the rolled-back agent row.
 
 Body:
 
@@ -37,9 +46,10 @@ Body:
 | `name` | yes | Agent slug — used as the K8s Deployment name |
 | `slackId` | no | Slack user ID for the agent's bot account |
 | `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
-| `repos` | no | Array of `org/repo` strings scoped to this agent |
+| `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
+| `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt }`. `typeName` is not settable at creation yet — it always defaults to `"coding"` (see the `Agent` model reference below).
+Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt }`. Returns `400` for an unknown `type`.
 
 ### List agents
 

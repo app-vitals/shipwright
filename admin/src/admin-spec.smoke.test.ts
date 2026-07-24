@@ -273,6 +273,14 @@ function buildSpecApp() {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentMemberService: {
+      add: async (agentId: string, email: string) => ({
+        id: "member-1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
+    },
     agentChatTokenService: {
       upsertDailyByModel: async (
         _agentId: string,

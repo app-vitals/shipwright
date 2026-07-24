@@ -18,11 +18,14 @@ import { AgentCronJobService } from "./agent-cron-jobs.ts";
 import { AgentCronRunStatsService } from "./agent-cron-run-stats.ts";
 import { AgentCronRunService } from "./agent-cron-runs.ts";
 import { AgentEnvService } from "./agent-envs.ts";
+import { AgentMemberService } from "./agent-members.ts";
 import { AgentPluginService } from "./agent-plugins.ts";
 import { NoopAgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import { AgentTokenService } from "./agent-tokens.ts";
 import { AgentToolService } from "./agent-tools.ts";
+import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
+import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentWorkQueueService } from "./agent-work-queue.ts";
 import { createAdminApp } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
@@ -66,9 +69,61 @@ async function createAgent(
   return agent.id;
 }
 
+/** A minimal valid "coding" manifest used to drive seeding assertions below. */
+const CODING_MANIFEST: AgentTypeManifest = {
+  apiVersion: "shipwright.dev/v1alpha1",
+  kind: "AgentType",
+  metadata: {
+    name: "coding",
+    displayName: "Coding Agent",
+    description: "test manifest",
+    version: "1.0.0",
+    skills: [],
+  },
+  identity: { templatesDir: "agent/workspace/" },
+  crons: [],
+  plugins: ["shipwright"],
+  tools: [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+    "Skill",
+    "Agent",
+  ],
+  env: { required: [], optional: [] },
+  members: [],
+  repos: [],
+  chat: true,
+  voice: true,
+};
+
+/**
+ * Fake AgentTypeManifestResolver — resolves a fixed map of manifests by
+ * typeName. tryGetManifest() returns undefined (no fallback) for anything
+ * not in the map, mirroring AgentTypeRegistry's real contract.
+ */
+function fakeAgentTypeRegistry(
+  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
+): AgentTypeManifestResolver {
+  return {
+    getManifest(typeName: string): AgentTypeManifest {
+      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    },
+    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+      return byType[typeName];
+    },
+  };
+}
+
 function makeDeps(
   prisma: PrismaClient,
   provisioner: AgentProvisioner = new NoopAgentProvisioner(),
+  agentTypeRegistry: AgentTypeManifestResolver = fakeAgentTypeRegistry(),
 ): AdminDeps {
   const savedKey = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
   process.env.SHIPWRIGHT_ENCRYPTION_KEY = REAL_KEY;
@@ -84,6 +139,8 @@ function makeDeps(
     agentToolService: new AgentToolService(prisma),
     agentTokenService: new AgentTokenService(prisma),
     agentPluginService: new AgentPluginService(prisma),
+    agentMemberService: new AgentMemberService(prisma),
+    agentTypeRegistry,
     agentChatTokenService: new AgentChatTokenService(prisma),
     agentWorkQueueService: new AgentWorkQueueService(prisma),
     prisma,
@@ -114,6 +171,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
     await prisma.agentCronJob.deleteMany();
     await prisma.agentTool.deleteMany();
     await prisma.agentEnv.deleteMany();
+    await prisma.agentMember.deleteMany();
     await prisma.agent.deleteMany();
 
     agentId = await createAgent(prisma);
@@ -486,9 +544,9 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(rows).toHaveLength(0);
   });
 
-  // ─── Seeded default AgentTool rows ─────────────────────────────────────────
+  // ─── Manifest-driven seeding (ATS-3.3) ─────────────────────────────────────
 
-  it("POST /agents creates exactly 4 default AgentTool rows: Bash, WebSearch, WebFetch, Agent", async () => {
+  it("POST /agents without type seeds AgentTool rows matching the coding manifest tools, and an AgentPlugin row for shipwright (decision-A delta)", async () => {
     const res = await app.request("/agents", {
       method: "POST",
       body: JSON.stringify({ name: "New Agent With Tools" }),
@@ -500,33 +558,144 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(res.status).toBe(201);
     const body = await res.json();
     const newAgentId: string = body.id;
+    expect(body.typeName).toBe("coding");
 
     // Query the AgentTool rows for this agent
     const tools = await prisma.agentTool.findMany({
       where: { agentId: newAgentId },
       orderBy: { pattern: "asc" },
     });
-
-    // Should have exactly 4 rows
-    expect(tools).toHaveLength(4);
-
-    // Extract patterns and verify all are enabled
     const patterns = tools.map((t) => t.pattern).sort();
-    expect(patterns).toEqual(["Agent", "Bash", "WebFetch", "WebSearch"]);
-
-    // All should be enabled: true
+    expect(patterns).toEqual(
+      [
+        "Agent",
+        "Bash",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Read",
+        "Skill",
+        "WebFetch",
+        "WebSearch",
+        "Write",
+      ].sort(),
+    );
     for (const tool of tools) {
       expect(tool.enabled).toBe(true);
     }
+
+    // decision-A delta: admin-created agents now get the shipwright plugin
+    // installed too (previously zero plugins were seeded at all).
+    const plugins = await prisma.agentPlugin.findMany({
+      where: { agentId: newAgentId },
+    });
+    expect(plugins.map((p) => p.name)).toEqual(["shipwright"]);
   });
 
-  it("POST /agents with provisioner failure rolls back seeded AgentTool rows via cascade delete", async () => {
+  it('POST /agents with type="coding" seeds identically to the default (no type field)', async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Explicit Coding Agent", type: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const newAgentId: string = body.id;
+
+    const tools = await prisma.agentTool.findMany({
+      where: { agentId: newAgentId },
+    });
+    expect(tools).toHaveLength(10);
+
+    const plugins = await prisma.agentPlugin.findMany({
+      where: { agentId: newAgentId },
+    });
+    expect(plugins.map((p) => p.name)).toEqual(["shipwright"]);
+  });
+
+  it("POST /agents with an unknown type returns 400 and creates zero rows (no agent, no tools, no plugins)", async () => {
+    const beforeAgentCount = await prisma.agent.count();
+
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Bad Type Agent",
+        type: "does-not-exist",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+
+    // No new agent row exists — the count is unchanged from before the request.
+    const afterAgentCount = await prisma.agent.count();
+    expect(afterAgentCount).toBe(beforeAgentCount);
+
+    // No tool/plugin rows were created for a nonexistent agent either.
+    const orphanTools = await prisma.agentTool.findMany({
+      where: { agent: { name: "Bad Type Agent" } },
+    });
+    expect(orphanTools).toHaveLength(0);
+  });
+
+  it("a mid-seed failure (plugin seeding throws) rolls back the agent row and every already-seeded child row", async () => {
+    const throwingPluginRegistry = fakeAgentTypeRegistry();
+    const base = makeDeps(
+      prisma,
+      new NoopAgentProvisioner(),
+      throwingPluginRegistry,
+    );
+    const failingApp = createAdminApp({
+      ...base,
+      agentPluginService: {
+        ...base.agentPluginService,
+        add: async () => {
+          throw new Error("plugin seeding failure");
+        },
+      },
+    });
+
+    const res = await failingApp.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Mid-Seed Failure Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(500);
+
+    // The agent row itself was rolled back...
+    const agents = await prisma.agent.findMany({
+      where: { name: "Mid-Seed Failure Agent" },
+    });
+    expect(agents).toHaveLength(0);
+
+    // ...and cascade delete took every already-seeded AgentTool row with it.
+    // Query unscoped (not via a join through the now-deleted Agent row) since
+    // beforeEach truncates agentTool per test — this doomed agent's seeded
+    // rows are the only rows that could exist here.
+    const allToolsCount = await prisma.agentTool.count();
+    expect(allToolsCount).toBe(0);
+  });
+
+  it("POST /agents with provisioner failure rolls back seeded AgentTool and AgentPlugin rows via cascade delete", async () => {
     const throwingProvisioner: AgentProvisioner = {
       provision: async () => {
         throw new Error("provisioner failure");
       },
       deprovision: async () => {},
-      reconcile: async () => ({ recreated: [], orphans: [], failed: [], updated: [] }),
+      reconcile: async () => ({
+        recreated: [],
+        orphans: [],
+        failed: [],
+        updated: [],
+      }),
     };
 
     const appWithFailingProvisioner = createAdminApp(
@@ -544,13 +713,17 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(res.status).toBe(500);
 
-    // After rollback, NO AgentTool rows should remain at all. A relation filter like
-    // `where: { agent: { name: ... } }` would join through the now-deleted Agent row and
-    // return [] regardless of whether the AgentTool rows were actually cascade-deleted or
-    // merely orphaned and unreachable via that join. Query unscoped instead — this is valid
-    // because `beforeEach` truncates `agentTool` per test, so this doomed agent's seeded rows
-    // are the only rows that could ever exist here.
+    // After rollback, NO AgentTool or AgentPlugin rows should remain at all.
+    // A relation filter like `where: { agent: { name: ... } }` would join
+    // through the now-deleted Agent row and return [] regardless of whether
+    // the rows were actually cascade-deleted or merely orphaned and
+    // unreachable via that join. Query unscoped instead — this is valid
+    // because `beforeEach` truncates `agentTool`/`agentPlugin` per test, so
+    // this doomed agent's seeded rows are the only rows that could ever
+    // exist here.
     const allToolsCount = await prisma.agentTool.count();
     expect(allToolsCount).toBe(0);
+    const allPluginsCount = await prisma.agentPlugin.count();
+    expect(allPluginsCount).toBe(0);
   });
 });

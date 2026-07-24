@@ -97,15 +97,30 @@ describe("agent-types/coding/manifest.yaml — cron count", () => {
   });
 });
 
-// ─── Tools parity vs DEFAULT_AGENT_TOOLS (resolved decision A) ─────────────
+// ─── Tools set (resolved decision A) ───────────────────────────────────────
+//
+// This manifest is the single source of truth for the coding agent's tool
+// set as of ATS-3.3 — the former hardcoded tools constant module has been
+// deleted; both admin/src/agents-api.ts (POST /agents) and
+// scripts/seed-dev-agent.ts now resolve tools from this manifest via
+// AgentTypeRegistry instead. This test pins the expected tool set directly
+// so a regression here fails loudly rather than silently drifting.
 
-describe("agent-types/coding/manifest.yaml — tools parity vs DEFAULT_AGENT_TOOLS", () => {
-  it("byte-matches lib/agent-default-tools.ts DEFAULT_AGENT_TOOLS", async () => {
-    const { DEFAULT_AGENT_TOOLS } = await import(
-      "../../lib/agent-default-tools.ts"
-    );
+describe("agent-types/coding/manifest.yaml — tools set", () => {
+  it("declares the expected full tool set", () => {
     const manifest = parseAgentTypeManifest(rawContent);
-    expect(manifest.tools).toEqual(DEFAULT_AGENT_TOOLS);
+    expect(manifest.tools).toEqual([
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "Bash",
+      "WebSearch",
+      "WebFetch",
+      "Skill",
+      "Agent",
+    ]);
   });
 });
 

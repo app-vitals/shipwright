@@ -72,6 +72,11 @@ function fakeRegistry(
       if (!crons) throw new Error(`no manifest for ${typeName}`);
       return manifestWithCrons(crons);
     },
+    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+      lookups.push(typeName);
+      const crons = byType[typeName];
+      return crons ? manifestWithCrons(crons) : undefined;
+    },
   };
 }
 

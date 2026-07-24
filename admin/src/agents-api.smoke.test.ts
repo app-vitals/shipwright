@@ -11,8 +11,60 @@ import { sign } from "hono/jwt";
 import type { Prisma } from "../prisma/client/index.js";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+
+// ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
+//
+// Mirrors the shape used by agent-cron-jobs.unit.test.ts's fakeRegistry —
+// resolves a fixed set of manifests by typeName, with tryGetManifest()
+// returning undefined (no fallback) for anything not in the map.
+
+const CODING_MANIFEST: AgentTypeManifest = {
+  apiVersion: "shipwright.dev/v1alpha1",
+  kind: "AgentType",
+  metadata: {
+    name: "coding",
+    displayName: "Coding Agent",
+    description: "test manifest",
+    version: "1.0.0",
+    skills: [],
+  },
+  identity: { templatesDir: "agent/workspace/" },
+  crons: [],
+  plugins: ["shipwright"],
+  tools: [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+    "Skill",
+    "Agent",
+  ],
+  env: { required: [], optional: [] },
+  members: [],
+  repos: [],
+  chat: true,
+  voice: true,
+};
+
+function fakeAgentTypeRegistry(
+  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
+): AdminDeps["agentTypeRegistry"] {
+  return {
+    getManifest(typeName: string) {
+      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    },
+    tryGetManifest(typeName: string) {
+      return byType[typeName];
+    },
+  };
+}
 
 // ─── Recording fake provisioner ───────────────────────────────────────────────
 
@@ -399,6 +451,15 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentMemberService: {
+      add: async (agentId: string, email: string) => ({
+        id: "member-test-id",
+        agentId,
+        email,
+        createdAt: new Date("2024-01-01"),
+      }),
+    },
+    agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: {
       upsertDailyByModel: async (
         _agentId: string,
@@ -673,7 +734,10 @@ describe("admin API — env vars", () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       method: "PATCH",
-      body: JSON.stringify({ env: { MY_SECRET: "s3cr3t" }, secretKeys: ["MY_SECRET"] }),
+      body: JSON.stringify({
+        env: { MY_SECRET: "s3cr3t" },
+        secretKeys: ["MY_SECRET"],
+      }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -1412,6 +1476,161 @@ describe("admin API — create agent", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  // ─── type field contract (ATS-3.3) ────────────────────────────────────────
+
+  it("POST /agents without type seeds tools from the coding manifest and includes the shipwright plugin", async () => {
+    const cookie = await makeSessionCookie();
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentToolService: {
+        ...base.agentToolService,
+        add: async (_agentId: string, pattern: string) => {
+          seededTools.push(pattern);
+          return {
+            id: TOOL_ID,
+            agentId: AGENT_ID,
+            pattern,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+          };
+        },
+      },
+      agentPluginService: {
+        ...base.agentPluginService,
+        add: async (_agentId: string, name: string) => {
+          seededPlugins.push(name);
+          return {
+            id: PLUGIN_ID,
+            agentId: AGENT_ID,
+            name,
+            version: null,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Default Type Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    expect(seededTools.sort()).toEqual(
+      [
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Bash",
+        "WebSearch",
+        "WebFetch",
+        "Skill",
+        "Agent",
+      ].sort(),
+    );
+    expect(seededPlugins).toContain("shipwright");
+  });
+
+  it('POST /agents with type="coding" produces the same seeded tools/plugins as the default', async () => {
+    const cookie = await makeSessionCookie();
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentToolService: {
+        ...base.agentToolService,
+        add: async (_agentId: string, pattern: string) => {
+          seededTools.push(pattern);
+          return {
+            id: TOOL_ID,
+            agentId: AGENT_ID,
+            pattern,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+          };
+        },
+      },
+      agentPluginService: {
+        ...base.agentPluginService,
+        add: async (_agentId: string, name: string) => {
+          seededPlugins.push(name);
+          return {
+            id: PLUGIN_ID,
+            agentId: AGENT_ID,
+            name,
+            version: null,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Explicit Coding Agent", type: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    expect(seededTools).toHaveLength(10);
+    expect(seededPlugins).toEqual(["shipwright"]);
+  });
+
+  it("POST /agents with an unknown type returns 400 and creates no agent row", async () => {
+    const cookie = await makeSessionCookie();
+    const created: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: { name: string }) => {
+          created.push(input.name);
+          return {
+            id: "agent-should-not-exist",
+            name: input.name,
+            slackId: null,
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Bad Type Agent",
+        type: "nonexistent-type",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    // agentService.create() must never be called for an unknown type — the
+    // validation happens before any row is created.
+    expect(created).toHaveLength(0);
+  });
 });
 
 // ─── Delete agent smoke tests ─────────────────────────────────────────────────
@@ -1647,9 +1866,7 @@ describe("admin API — delete agent", () => {
     const body = await res.json();
     expect(body.agentDeleted).toBe(true);
     expect(body.completed).toContain("slack-app");
-    expect(slackCalls).toEqual([
-      { token: "xoxp-user-token", appId: "A123" },
-    ]);
+    expect(slackCalls).toEqual([{ token: "xoxp-user-token", appId: "A123" }]);
   });
 
   it("DELETE /agents/:id unknown id → 404 (no deprovision)", async () => {

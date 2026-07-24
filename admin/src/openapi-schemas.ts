@@ -70,6 +70,26 @@ export const CreateAgentBodySchema = z
     name: z.string().min(1).openapi({ example: "Bodhi" }),
     slackId: z.string().optional().openapi({ example: "U0AALR8M69X" }),
     selfHosted: z.boolean().optional().openapi({ example: false }),
+    /**
+     * Agent Type name (see agent-types/<type>/manifest.yaml). Optional —
+     * defaults to "coding". An unknown type returns 400 before any row is
+     * created. Drives seeding of AgentTool/AgentPlugin/AgentMember rows and
+     * (merged with `repos` below) the agent's repos field from the resolved
+     * manifest.
+     */
+    type: z.string().optional().openapi({ example: "coding" }),
+    /**
+     * Additional `org/repo` entries merged with the resolved type's manifest
+     * repos[] at creation time. Mirrors PatchAgentBodySchema's repos shape.
+     */
+    repos: z
+      .array(
+        z.string().refine(isOrgRepo, {
+          message: "each repo must be in org/repo format",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["my-org/my-repo"] }),
   })
   .openapi("CreateAgentBody");
 
@@ -94,10 +114,7 @@ export const PatchAgentBodySchema = z
  */
 export const DeleteAgentBodySchema = z
   .object({
-    xoxpToken: z
-      .string()
-      .optional()
-      .openapi({ example: "xoxp-user-token" }),
+    xoxpToken: z.string().optional().openapi({ example: "xoxp-user-token" }),
   })
   .openapi("DeleteAgentBody");
 
@@ -252,30 +269,21 @@ export const AgentCronRunSchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().openapi({ example: "success" }),
     error: z.string().nullable().openapi({ example: null }),
-    phaseId: z
-      .string()
-      .nullable()
-      .openapi({
-        example: "clx0987654321",
-        description:
-          "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.",
-      }),
-    itemType: z
-      .string()
-      .nullable()
-      .openapi({
-        example: "task",
-        description:
-          'Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch (skipped tick, empty queue).',
-      }),
-    itemId: z
-      .string()
-      .nullable()
-      .openapi({
-        example: "WLS-2.2",
-        description:
-          'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch.',
-      }),
+    phaseId: z.string().nullable().openapi({
+      example: "clx0987654321",
+      description:
+        "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.",
+    }),
+    itemType: z.string().nullable().openapi({
+      example: "task",
+      description:
+        'Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch (skipped tick, empty queue).',
+    }),
+    itemId: z.string().nullable().openapi({
+      example: "WLS-2.2",
+      description:
+        'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123"). Null when the tick had no dispatch.',
+    }),
     inputTokens: z.number().int().nullable().openapi({ example: 1234 }),
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
@@ -321,33 +329,21 @@ export const CreateAgentCronRunBodySchema = z
       .openapi({ example: "pre-check returned false" }),
     outcome: z.string().nullable().optional().openapi({ example: "success" }),
     error: z.string().nullable().optional().openapi({ example: null }),
-    phaseId: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "clx0987654321",
-        description:
-          "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)",
-      }),
-    itemType: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "task",
-        description:
-          'Work item type this run was dispatched against ("task" | "pr")',
-      }),
-    itemId: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({
-        example: "WLS-2.2",
-        description:
-          'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123")',
-      }),
+    phaseId: z.string().nullable().optional().openapi({
+      example: "clx0987654321",
+      description:
+        "Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)",
+    }),
+    itemType: z.string().nullable().optional().openapi({
+      example: "task",
+      description:
+        'Work item type this run was dispatched against ("task" | "pr")',
+    }),
+    itemId: z.string().nullable().optional().openapi({
+      example: "WLS-2.2",
+      description:
+        'Work item id this run was dispatched against (e.g. "WLS-2.2" or "acme/x#123")',
+    }),
   })
   .openapi("CreateAgentCronRunBody");
 
@@ -578,9 +574,7 @@ export const AgentEnvBodySchema = z.record(z.string()).openapi("AgentEnvBody");
  */
 export const AgentEnvPatchBodySchema = z
   .object({
-    env: z
-      .record(z.string())
-      .openapi({ example: { MY_VAR: "value" } }),
+    env: z.record(z.string()).openapi({ example: { MY_VAR: "value" } }),
     secretKeys: z
       .array(z.string())
       .optional()
@@ -783,11 +777,7 @@ const KeyedTokenAggregateSchema = TokenAggregateSchema.extend({
 const DoubleKeyedTokenAggregateSchema = TokenAggregateSchema.extend({
   key1: z.string().openapi({ example: "agent-id-123" }),
   key2: z.string().openapi({ example: "morning-brief" }),
-  phase: z
-    .string()
-    .nullable()
-    .optional()
-    .openapi({ example: "dev-task" }),
+  phase: z.string().nullable().optional().openapi({ example: "dev-task" }),
 }).openapi("DoubleKeyedTokenAggregate");
 
 /** A token aggregate bucketed by day (YYYY-MM-DD). */

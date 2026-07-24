@@ -14,6 +14,10 @@ export interface CreateAgentInput {
   name: string;
   slackId?: string | null;
   selfHosted?: boolean;
+  /** Agent Type name. Omitted means Prisma's column default ("coding") applies. */
+  typeName?: string;
+  /** Initial repos[] — the manifest repos merged with any request-supplied repos. */
+  repos?: string[];
 }
 
 export interface AgentRecord {
@@ -106,6 +110,8 @@ export class AgentService {
         name: input.name,
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        ...(input.typeName !== undefined ? { typeName: input.typeName } : {}),
+        ...(input.repos !== undefined ? { repos: input.repos } : {}),
       },
     });
   }
