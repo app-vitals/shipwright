@@ -51,6 +51,7 @@ function makeDeps(
     ...new Set(prs.map((pr) => pr.repo ?? "")),
   ],
   hasScopeSynced: () => boolean = () => true,
+  isBundleComplete?: (branch: string) => Promise<boolean>,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
@@ -60,6 +61,7 @@ function makeDeps(
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
+    ...(isBundleComplete ? { isBundleComplete } : {}),
   };
 }
 
@@ -628,5 +630,42 @@ describe("getReviewCandidates", () => {
     expect(deps.isAuthorAllowed).toBeUndefined();
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
+  });
+
+  // ─── bundle completeness gate (RBG-1.1) ──────────────────────────────────
+
+  test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-incomplete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch !== "feat/bundle-incomplete",
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR when isBundleComplete resolves true for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-complete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch === "feat/bundle-complete",
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
   });
 });

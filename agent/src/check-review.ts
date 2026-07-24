@@ -30,6 +30,7 @@
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
@@ -106,6 +107,9 @@ export interface CheckReviewDeps {
    * autonomous-loop caller, so their behavior is unchanged.
    */
   isAuthorAllowed?: (login: string) => boolean;
+  // Bundle completeness gate: returns false if any bundle-mate task on the branch
+  // is still pending/in_progress/blocked. PR is skipped when it returns false.
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -162,6 +166,13 @@ export async function getReviewCandidates(
     // has already been escalated to (or the task is otherwise blocked) and
     // needs to act before review tries again (CBD-2.2, PRB-2.3).
     if (isTaskBlockedForDispatch(linkedTask)) continue;
+
+    if (deps.isBundleComplete) {
+      const bundleComplete = await deps
+        .isBundleComplete(pr.headRefName)
+        .catch(() => true);
+      if (!bundleComplete) continue;
+    }
 
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
@@ -265,5 +276,6 @@ export async function buildProductionDeps(opts: {
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
   };
 }
