@@ -188,6 +188,7 @@ function buildMockDeps(): AdminUIDeps {
           name: ADMIN_E2E_AGENT.name,
           slackId: ADMIN_E2E_AGENT.slackId,
           selfHosted: false,
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         },
@@ -197,11 +198,12 @@ function buildMockDeps(): AdminUIDeps {
       listOptions: async () => [
         { id: ADMIN_E2E_AGENT.id, name: ADMIN_E2E_AGENT.name },
       ],
-      create: async () => ({
+      create: async (input: { name: string; typeName?: string }) => ({
         id: ADMIN_E2E_AGENT.id,
-        name: ADMIN_E2E_AGENT.name,
+        name: input.name ?? ADMIN_E2E_AGENT.name,
         slackId: ADMIN_E2E_AGENT.slackId,
         selfHosted: false,
+        typeName: input.typeName ?? "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
@@ -211,6 +213,7 @@ function buildMockDeps(): AdminUIDeps {
         name: ADMIN_E2E_AGENT.name,
         slackId: ADMIN_E2E_AGENT.slackId,
         selfHosted: false,
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
@@ -221,6 +224,7 @@ function buildMockDeps(): AdminUIDeps {
         name: ADMIN_E2E_AGENT.name,
         slackId: ADMIN_E2E_AGENT.slackId,
         selfHosted: false,
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],

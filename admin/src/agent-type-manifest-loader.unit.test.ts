@@ -152,4 +152,101 @@ describe("AgentTypeRegistry", () => {
 
     expect(reads).toBe(1);
   });
+
+  // ─── listTypes — populates the new-agent type picker ─────────────────────
+  //
+  // Discovers every directory under agent-types/ via the injected `list` fn,
+  // then resolves each one's manifest via the existing `read` path — so
+  // listTypes() shares the same disk-free-in-tests DI contract as
+  // getManifest()/tryGetManifest().
+
+  it("listTypes lists every discovered type as {name, displayName}", () => {
+    const registry = new AgentTypeRegistry({
+      list: () => ["coding"],
+      read: (t) => manifestYaml(t),
+    });
+
+    const types = registry.listTypes();
+
+    expect(types).toEqual([{ name: "coding", displayName: "coding" }]);
+  });
+
+  it("listTypes resolves displayName from each manifest's metadata.displayName", () => {
+    const registry = new AgentTypeRegistry({
+      list: () => ["coding"],
+      read: () => `apiVersion: shipwright.dev/v1alpha1
+kind: AgentType
+metadata:
+  name: coding
+  displayName: Coding Agent
+  description: test manifest
+  version: 1.0.0
+  skills: []
+identity:
+  templatesDir: agent/workspace/
+crons: []
+plugins: []
+tools: []
+env:
+  required: []
+  optional: []
+members: []
+repos: []
+chat: true
+voice: true
+`,
+    });
+
+    const types = registry.listTypes();
+
+    expect(types).toEqual([{ name: "coding", displayName: "Coding Agent" }]);
+  });
+
+  it("listTypes lists multiple discovered types", () => {
+    const registry = new AgentTypeRegistry({
+      list: () => ["coding", "research"],
+      read: (t) => manifestYaml(t),
+    });
+
+    const types = registry.listTypes();
+
+    expect(types).toEqual([
+      { name: "coding", displayName: "coding" },
+      { name: "research", displayName: "research" },
+    ]);
+  });
+
+  it("listTypes skips a directory whose manifest fails to load or parse", () => {
+    const warnings: string[] = [];
+    const registry = new AgentTypeRegistry({
+      list: () => ["coding", "broken"],
+      read: (t) => {
+        if (t === "broken") throw new Error("ENOENT: broken manifest");
+        return manifestYaml(t);
+      },
+      warn: (m) => warnings.push(m),
+    });
+
+    const types = registry.listTypes();
+
+    expect(types).toEqual([{ name: "coding", displayName: "coding" }]);
+  });
+
+  it("listTypes returns an empty array when no type directories are discovered", () => {
+    const registry = new AgentTypeRegistry({
+      list: () => [],
+      read: (t) => manifestYaml(t),
+    });
+
+    expect(registry.listTypes()).toEqual([]);
+  });
+
+  it("listTypes discovers the real committed agent-types/ dir via the default list fn", () => {
+    // No injected list/read — exercises the real disk-backed discovery so a
+    // broken repo-root path or missing coding manifest is caught.
+    const registry = new AgentTypeRegistry();
+    const types = registry.listTypes();
+    expect(types.length).toBeGreaterThan(0);
+    expect(types.some((t) => t.name === "coding")).toBe(true);
+  });
 });

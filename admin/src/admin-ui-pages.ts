@@ -13,6 +13,7 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
+import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -143,6 +144,8 @@ export interface AgentDetail {
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
+  /** The agent's type name (e.g. "coding"), resolved at creation time. */
+  typeName: string;
   /**
    * Required env keys declared by the agent's type manifest with no
    * corresponding AgentEnv row yet — key names only, never values. Always
@@ -585,11 +588,19 @@ export function renderAgentsPage(
 
 export function renderNewLocalAgentPage(
   userName: string,
-  error?: string,
+  types: AgentTypeOption[],
+  opts?: { error?: string },
 ): string {
+  const error = opts?.error;
   const errorHtml = error
     ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
     : "";
+  const typeOptions = types
+    .map(
+      (t) =>
+        `<option value="${escapeHtml(t.name)}">${escapeHtml(t.displayName)}</option>`,
+    )
+    .join("\n");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -625,6 +636,12 @@ export function renderNewLocalAgentPage(
             required
             autofocus
           />
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="type">Agent type <span style="color:#ef4444">*</span></label>
+          <select id="type" name="type" class="form-input" required>
+            ${typeOptions}
+          </select>
         </div>
         <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
@@ -974,6 +991,7 @@ export function renderAgentDetailPage(
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
+        <span style="font-size:13px;color:#6b7280">Type: <span class="mono">${escapeHtml(agent.typeName)}</span></span>
         ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
       ${

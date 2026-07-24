@@ -77,6 +77,9 @@ function fakeRegistry(
       const crons = byType[typeName];
       return crons ? manifestWithCrons(crons) : undefined;
     },
+    listTypes() {
+      return Object.keys(byType).map((name) => ({ name, displayName: name }));
+    },
   };
 }
 

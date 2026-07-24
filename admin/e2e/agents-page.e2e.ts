@@ -233,4 +233,76 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     const innerWidth = await page.evaluate(() => window.innerWidth);
     expect(docScrollWidth).toBeLessThanOrEqual(innerWidth + 1);
   });
+
+  test("agent type name is visible on the detail page", async ({
+    page,
+    context,
+  }) => {
+    await loadAgentDetailPage(page, context);
+    await expect(page.locator("body")).toContainText("coding");
+  });
+});
+
+// ─── New-agent type picker (ATS-4.1) ──────────────────────────────────────────
+
+async function loadNewAgentPage(
+  page: Page,
+  context: BrowserContext,
+): Promise<void> {
+  const token = await mintSession();
+  await context.addCookies([
+    {
+      name: SESSION_COOKIE,
+      value: token,
+      domain: "localhost",
+      path: "/",
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
+  await page.goto(`${BASE_URL}/admin/agents/new`);
+}
+
+test.describe("GET /admin/agents/new — type picker", () => {
+  test("a required select[name=type] is present", async ({
+    page,
+    context,
+  }) => {
+    await loadNewAgentPage(page, context);
+    const typeSelect = page.locator('select[name="type"]');
+    await expect(typeSelect).toBeAttached();
+    await expect(typeSelect).toHaveAttribute("required", "");
+  });
+
+  test('the select lists "Coding Agent" (value coding)', async ({
+    page,
+    context,
+  }) => {
+    await loadNewAgentPage(page, context);
+    const codingOption = page.locator(
+      'select[name="type"] option[value="coding"]',
+    );
+    await expect(codingOption).toBeAttached();
+    await expect(codingOption).toHaveText("Coding Agent");
+  });
+});
+
+test.describe("POST /admin/agents — create-with-type journey", () => {
+  test("filling the form (incl. type) and submitting lands on the new agent's detail page showing its type", async ({
+    page,
+    context,
+  }) => {
+    await loadNewAgentPage(page, context);
+
+    await page.fill('input[name="name"]', "My New Coding Agent");
+    await page.selectOption('select[name="type"]', "coding");
+    // Scoped to the new-agent form specifically — the page also has a
+    // "Sign out" button[type="submit"] in the toolbar, and an unscoped
+    // selector matches that one first (it's earlier in the DOM), which
+    // logs the session out instead of submitting this form.
+    await page.click('form[action="/admin/agents"] button[type="submit"]');
+
+    await page.waitForURL(/\/admin\/agents\/[^/]+$/);
+    await expect(page.locator("body")).toContainText("coding");
+  });
 });

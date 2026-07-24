@@ -32,6 +32,7 @@ import {
   renderChatThreadPage,
   renderCronLogsPage,
   renderLoginPage,
+  renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
@@ -56,6 +57,7 @@ const AGENT: AgentDetail = {
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
+  typeName: "coding",
   missingRequiredEnv: [],
 };
 
@@ -538,6 +540,32 @@ describe("renderAgentDetailPage — overview", () => {
     expect(html).toContain('href="/admin/agents"');
   });
 
+  test("agent type name is displayed", () => {
+    const html = render();
+    expect(html).toContain("coding");
+  });
+
+  test("XSS: agent type name is escaped", () => {
+    const xssAgent: AgentDetail = {
+      ...AGENT,
+      typeName: '<script>alert("xss")</script>',
+    };
+    const html = renderAgentDetailPage(
+      xssAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    expect(html).not.toContain('alert("xss")');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
   test("danger zone: delete form uses data-agent-name attribute (XSS-safe)", () => {
     const xssAgent: AgentDetail = {
       ...AGENT,
@@ -576,6 +604,63 @@ describe("renderAgentDetailPage — overview", () => {
     );
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
+  });
+});
+
+// ─── renderNewLocalAgentPage ──────────────────────────────────────────────────
+
+describe("renderNewLocalAgentPage", () => {
+  const CODING_TYPE = { name: "coding", displayName: "Coding Agent" };
+
+  test("returns a valid HTML document", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+  });
+
+  test("renders a required select[name=type]", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<select[^>]*name="type"[^>]*required[^>]*>|<select[^>]*required[^>]*name="type"[^>]*>/,
+    );
+  });
+
+  test("renders exactly one option per registry type, value=name label=displayName", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    const optionMatches = html.match(/<option /g) ?? [];
+    expect(optionMatches).toHaveLength(1);
+  });
+
+  test("renders multiple options when the registry has multiple types", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [
+      CODING_TYPE,
+      { name: "research", displayName: "Research Agent" },
+    ]);
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    expect(html).toContain('<option value="research">Research Agent</option>');
+  });
+
+  test("XSS: type name/displayName are escaped", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [
+      { name: "coding", displayName: '<script>alert("xss")</script>' },
+    ]);
+    expect(html).not.toContain('alert("xss")');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("no error alert when no error", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).not.toContain('class="alert alert-error"');
+  });
+
+  test("error alert shown when error is passed", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      error: "Something went wrong",
+    });
+    expect(html).toContain('class="alert alert-error"');
+    expect(html).toContain("Something went wrong");
   });
 });
 

@@ -117,6 +117,12 @@ function fakeAgentTypeRegistry(
     tryGetManifest(typeName: string): AgentTypeManifest | undefined {
       return byType[typeName];
     },
+    listTypes() {
+      return Object.entries(byType).map(([name, manifest]) => ({
+        name,
+        displayName: manifest.metadata.displayName,
+      }));
+    },
   };
 }
 
