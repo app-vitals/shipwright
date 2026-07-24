@@ -112,7 +112,7 @@
 | `admin/src/slack-provisioning-client.ts`, `chat-service-provisioning-client.ts`, `task-store-provisioning-client.ts`, `http-chat-client.ts` | 5. External integration / 2. service-boundary (internal HTTP) | integration (recorded fixture) | high | n/a |
 | `admin/src/attachment-validation.ts` (pure size/MIME checks) | 1. Pure business logic | unit | medium | n/a |
 | `admin/src/openapi-schemas.ts` | 1. Pure business logic (schema defs) | unit | medium | n/a |
-| `admin/src/system-crons.ts` (default cron job data) | 1. Pure business logic (data) | unit | medium | n/a |
+| `agent-types/coding/manifest.yaml` (default cron job data) + `admin/src/agent-type-manifest-loader.ts` (registry/fallback) | 1. Pure business logic (data + resolution) | unit | medium | n/a |
 | `admin/src/errors.ts` | 4. Error/failure-path (logic-only) | unit | high | n/a |
 | `task-store/src/routes/tasks.ts`, `prs.ts`, `tokens.ts` | 3. HTTP route | smoke | critical | n/a |
 | `task-store/src/task-service.ts`, `pull-request-service.ts`, `token-service.ts` (Prisma-backed services) | 2. Service-boundary code | integration | critical | n/a |

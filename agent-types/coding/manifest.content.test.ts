@@ -6,19 +6,18 @@
  * (ATS-2.1). No real I/O boundary beyond reading the two static source files
  * being compared; this is a content-assertion test, not integration.
  *
- * Parity note (temporary): this test compares the manifest's crons[] against
- * the still-live admin/src/system-crons.ts SYSTEM_CRONS array. Both sources
- * exist side by side until ATS-3.2 cuts SYSTEM_CRONS over to read from the
- * manifest and deletes the TS array — at that point this parity assertion is
- * retired and replaced by a golden regression test against the manifest
- * alone. Do not delete this test before ATS-3.2 lands.
+ * ATS-3.2 note: this test previously compared the manifest's crons[] against
+ * the hardcoded admin/src/system-crons.ts SYSTEM_CRONS array as a temporary
+ * parity check. ATS-3.2 cut cron reconciliation over to read this manifest
+ * (via AgentTypeRegistry) and deleted the TS array, so that parity assertion
+ * has been retired. The manifest→row golden regression now lives in
+ * admin/src/agent-cron-jobs.integration.test.ts (GOLDEN_CODING_CRONS).
  */
 
+import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "bun:test";
 import { parseAgentTypeManifest } from "../../admin/src/agent-type-registry.ts";
-import { SYSTEM_CRONS } from "../../admin/src/system-crons.ts";
 
 const MANIFEST_PATH = join(import.meta.dir, "manifest.yaml");
 const rawContent = readFileSync(MANIFEST_PATH, "utf-8");
@@ -96,41 +95,6 @@ describe("agent-types/coding/manifest.yaml — cron count", () => {
     const manifest = parseAgentTypeManifest(rawContent);
     expect(manifest.crons).toHaveLength(13);
   });
-
-  it("matches the SYSTEM_CRONS source count (sanity check on the fixture itself)", () => {
-    expect(SYSTEM_CRONS).toHaveLength(13);
-  });
-});
-
-// ─── Acceptance criterion 2 — byte-match parity vs SYSTEM_CRONS ────────────
-
-describe("agent-types/coding/manifest.yaml — cron parity vs SYSTEM_CRONS (temporary, retired in ATS-3.2)", () => {
-  const manifest = parseAgentTypeManifest(rawContent);
-
-  it("has a manifest cron entry for every SYSTEM_CRONS name, in the same order", () => {
-    const manifestNames = manifest.crons.map((c) => c.name);
-    const systemCronNames = SYSTEM_CRONS.map((c) => c.name);
-    expect(manifestNames).toEqual(systemCronNames);
-  });
-
-  for (const systemCron of SYSTEM_CRONS) {
-    describe(`cron "${systemCron.name}"`, () => {
-      it("byte-matches schedule, prompt, preCheck, silent, enabled, parentCron", () => {
-        const manifestCron = manifest.crons.find(
-          (c) => c.name === systemCron.name,
-        );
-        expect(manifestCron).toBeDefined();
-        if (!manifestCron) return;
-
-        expect(manifestCron.schedule).toBe(systemCron.schedule);
-        expect(manifestCron.prompt).toBe(systemCron.prompt);
-        expect(manifestCron.preCheck).toBe(systemCron.preCheck);
-        expect(manifestCron.silent).toBe(systemCron.silent ?? false);
-        expect(manifestCron.enabled).toBe(systemCron.enabled);
-        expect(manifestCron.parentCron).toBe(systemCron.parentCron);
-      });
-    });
-  }
 });
 
 // ─── Tools parity vs DEFAULT_AGENT_TOOLS (resolved decision A) ─────────────
