@@ -232,6 +232,76 @@ describe("docs/agent-types.md — Rules section", () => {
   });
 });
 
+// ─── GitHub source references (ATS-5.2, paper spec) ────────────────────────
+
+describe("docs/agent-types.md — GitHub source references section", () => {
+  const sectionHeading = "## GitHub source references";
+  const sectionStart = content.indexOf(sectionHeading);
+  const generatedSchemaStart = content.indexOf("## Generated JSON Schema");
+
+  it(`contains a "${sectionHeading}" heading`, () => {
+    expect(sectionStart).toBeGreaterThan(-1);
+  });
+
+  it("is placed before the Generated JSON Schema section", () => {
+    expect(generatedSchemaStart).toBeGreaterThan(sectionStart);
+  });
+
+  const section = content.slice(sectionStart, generatedSchemaStart);
+
+  it('carries the "Specified, not implemented" marker', () => {
+    expect(section).toContain("Specified, not implemented");
+  });
+
+  it("documents the reference grammar (github:owner/repo[/path]@ref)", () => {
+    expect(section).toContain("github:owner/repo");
+    expect(section).toContain("@ref");
+  });
+
+  it("documents the pinning rule — @ref required, tag or commit SHA only, no branch tracking", () => {
+    expect(section).toMatch(/tag or commit sha/i);
+    expect(section).toMatch(/no branch(es)? tracking|not a branch|branches? (are|is) not/i);
+  });
+
+  it("documents owner/repo validation via lib/org-repo.ts's isOrgRepo", () => {
+    expect(section).toContain("lib/org-repo.ts");
+    expect(section).toContain("isOrgRepo");
+  });
+
+  it("documents the conventional layout — manifest.yaml required, identity templates dir optional", () => {
+    expect(section).toContain("manifest.yaml");
+    expect(section).toMatch(/identity templates?( directory| dir)?.{0,40}optional|optional.{0,40}identity templates?/i);
+  });
+
+  it("documents private-repo auth via the agent-env mechanism and GitHub App auth", () => {
+    expect(section).toMatch(/agent-env|AgentEnv/);
+    expect(section).toContain("agent/src/github-app-auth.ts");
+    expect(section).toContain("@octokit/auth-app");
+  });
+
+  it("mentions a single reserved-but-unused optional manifest field for the future schema hook", () => {
+    expect(section).toMatch(/reserved/i);
+    expect(section).toContain("`source`");
+  });
+
+  it('has a "Security requirements" subsection', () => {
+    expect(section).toMatch(/security requirements/i);
+  });
+
+  const securityStart = section.search(/security requirements/i);
+  const securitySection = section.slice(securityStart);
+
+  it("the Security requirements subsection mandates ref pinning, content review, and allowlisting as future work", () => {
+    expect(securitySection).toMatch(/ref pinning|pin(ning)? (the |a )?ref/i);
+    expect(securitySection).toMatch(/content review/i);
+    expect(securitySection).toMatch(/allowlist/i);
+  });
+
+  it("frames this as an external-code-injection surface (third-party manifest/markdown becomes agent config/prompt)", () => {
+    expect(securitySection).toMatch(/code injection|code-injection/i);
+  });
+});
+
 // ─── CLAUDE.md Reference index ─────────────────────────────────────────────
 
 describe("CLAUDE.md — Reference index includes docs/agent-types.md", () => {
