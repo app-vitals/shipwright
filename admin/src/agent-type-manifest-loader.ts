@@ -96,7 +96,7 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
     return this.loadOrThrow(DEFAULT_AGENT_TYPE_NAME);
   }
 
-  /** Load + cache a manifest, returning undefined if the type has no file. */
+  /** Load + cache a manifest, returning undefined only if the file is missing. */
   private tryLoad(typeName: string): AgentTypeManifest | undefined {
     const cached = this.cache.get(typeName);
     if (cached) return cached;
@@ -106,16 +106,18 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
     } catch {
       return undefined;
     }
-    const manifest = parseAgentTypeManifest(raw);
-    this.cache.set(typeName, manifest);
-    return manifest;
+    return this.parseAndCache(typeName, raw);
   }
 
   /** Load + cache a manifest, propagating any read/parse error. */
   private loadOrThrow(typeName: string): AgentTypeManifest {
     const cached = this.cache.get(typeName);
     if (cached) return cached;
-    const manifest = parseAgentTypeManifest(this.read(typeName));
+    return this.parseAndCache(typeName, this.read(typeName));
+  }
+
+  private parseAndCache(typeName: string, raw: string): AgentTypeManifest {
+    const manifest = parseAgentTypeManifest(raw);
     this.cache.set(typeName, manifest);
     return manifest;
   }
