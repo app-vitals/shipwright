@@ -58,9 +58,10 @@ A `preCheck` value is resolved either as a file path (relative to the agent's wo
 
 System crons — the ones seeded automatically for every agent — are created and kept in sync by a
 reconcile pass (`POST /agents/:id/crons/reconcile`), which runs at agent startup and can also be
-triggered on demand. Reconcile is a two-pass strategy over the canonical `SYSTEM_CRONS` list:
+triggered on demand. Reconcile is a two-pass strategy over the cron list declared by the agent's
+type manifest (`agent-types/{typeName}/manifest.yaml`):
 
-1. **Pass 1** creates or updates each `SYSTEM_CRONS` entry by name. If a matching row already
+1. **Pass 1** creates or updates each manifest cron entry by name. If a matching row already
    exists, it's updated in place — schedule, prompt, `silent`, and `preCheck` are refreshed, but
    the row's `id` is preserved (so its `AgentCronRun` history survives) and, importantly, **the
    `enabled` toggle is never touched on update**. A human's enable/disable decision survives every
@@ -70,12 +71,13 @@ triggered on demand. Reconcile is a two-pass strategy over the canonical `SYSTEM
    missing gets it set, and a child whose `parentCron` declaration was removed gets `parentCronId`
    cleared back to `null`.
 
-A final orphan pass deletes any existing system cron whose name is no longer present in
-`SYSTEM_CRONS`, so removed crons clean themselves up on the next reconcile.
+A final orphan pass deletes any existing system cron whose name is no longer present in the
+manifest, so removed crons clean themselves up on the next reconcile.
 
 Because of this, **system crons can't be edited directly** via the admin API or console — they're
 read-only after creation except for the `enabled` toggle. Anything else (schedule, prompt,
-preCheck) is owned by `SYSTEM_CRONS` and only changes when the code changes and a reconcile runs.
+preCheck) is owned by the agent type manifest and only changes when the manifest changes and a
+reconcile runs.
 
 ### Loop-driven vs standalone crons
 

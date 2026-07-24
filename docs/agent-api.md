@@ -227,7 +227,7 @@ Returns `204`. System crons (flagged `isSystem=true`) cannot be deleted — retu
 POST /agents/:id/crons/reconcile
 ```
 
-Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harness. Called automatically on agent startup. Returns `200` with a summary:
+Reconciles the agent's system crons against the cron list declared by its agent type manifest (`agent-types/{typeName}/manifest.yaml`, resolved via the `AgentTypeRegistry`; an unknown `typeName` falls back to the `coding` manifest with a logged warning, so this boot-path call never fails). Called automatically on agent startup. Returns `200` with a summary:
 
 ```json
 {
@@ -241,9 +241,9 @@ Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harne
 
 The process runs in three passes within a single transaction for atomicity:
 
-- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from `SYSTEM_CRONS`, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Crons in `SYSTEM_CRONS` that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
-- **Pass 2 — Link parents:** For each `SYSTEM_CRONS` entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. If an entry does not declare a resolvable `parentCron`, any existing non-null `parentCronId` on that row is cleared back to `null`. This self-heals the parent/child link on every reconcile call in both directions — null→set (e.g., if it was previously null on a pre-existing row) and set→null (e.g., if a `parentCron` declaration is later removed from `SYSTEM_CRONS`). The order of entries in `SYSTEM_CRONS` does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
-- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in `SYSTEM_CRONS` are deleted.
+- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from the manifest's `crons` array, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Manifest crons that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
+- **Pass 2 — Link parents:** For each manifest cron entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. If an entry does not declare a resolvable `parentCron`, any existing non-null `parentCronId` on that row is cleared back to `null`. This self-heals the parent/child link on every reconcile call in both directions — null→set (e.g., if it was previously null on a pre-existing row) and set→null (e.g., if a `parentCron` declaration is later removed from the manifest). The order of entries in the manifest's `crons` array does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
+- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in the manifest's `crons` array are deleted.
 
 ### Cron summary
 
