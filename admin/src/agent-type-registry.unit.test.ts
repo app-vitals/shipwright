@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { stringify as stringifyYaml } from "yaml";
 import {
   AgentTypeManifestSchema,
   parseAgentTypeManifest,
@@ -13,56 +14,98 @@ import {
 
 // ─── Fixtures ───────────────────────────────────────────────────────────────
 
-const validManifestYaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: A laid-back team member agent.
-  version: 1.0.0
-  skills:
-    - id: chill
-      name: Stay Chill
-      description: Keeps things mellow.
-      tags: [vibe]
-identity:
-  templatesDir: templates/dude
-crons:
-  - name: morning-brief
-    schedule: "0 9 * * 1-5"
-    prompt: Run the morning brief.
-plugins:
-  - "@shipwright/plugin"
-tools:
-  - Read
-  - Write
-env:
-  required:
-    - key: SHIPWRIGHT_API_URL
-      description: Base URL of the admin API.
-      secret: false
-  optional:
-    - key: GROQ_API_KEY
-      description: Optional Groq API key for voice.
-      secret: true
-members:
-  - alice
-repos:
-  - my-org/my-repo
-chat: true
-voice: false
-`;
+/** A minimal valid manifest object. Pass overrides for the fields a test cares about. */
+function baseManifest(overrides: Record<string, unknown> = {}) {
+  return {
+    apiVersion: "shipwright.dev/v1alpha1",
+    kind: "AgentType",
+    metadata: {
+      name: "dude-agent",
+      displayName: "The Dude",
+      description: "A laid-back team member agent.",
+      version: "1.0.0",
+      skills: [],
+    },
+    identity: { templatesDir: "templates/dude" },
+    crons: [],
+    plugins: [],
+    tools: [],
+    env: { required: [], optional: [] },
+    members: [],
+    repos: [],
+    chat: true,
+    voice: false,
+    ...overrides,
+  };
+}
 
-function parseYamlFixture(yaml: string) {
-  return parseAgentTypeManifest(yaml);
+/** Round-trips a manifest object through YAML so tests exercise the real parse path. */
+function parseManifestYaml(manifest: Record<string, unknown>) {
+  return parseAgentTypeManifest(stringifyYaml(manifest));
+}
+
+function expectThrowsWithMessage(manifest: Record<string, unknown>, ...fragments: string[]) {
+  expect(() => parseManifestYaml(manifest)).toThrow();
+  try {
+    parseManifestYaml(manifest);
+    throw new Error("expected parseAgentTypeManifest to throw");
+  } catch (err) {
+    const message = (err as Error).message;
+    for (const fragment of fragments) {
+      expect(message).toContain(fragment);
+    }
+  }
 }
 
 // ─── Valid manifest ─────────────────────────────────────────────────────────
 
 describe("parseAgentTypeManifest — valid manifest", () => {
   it("parses a valid minimal manifest successfully", () => {
-    const manifest = parseYamlFixture(validManifestYaml);
+    const manifest = parseManifestYaml(
+      baseManifest({
+        metadata: {
+          name: "dude-agent",
+          displayName: "The Dude",
+          description: "A laid-back team member agent.",
+          version: "1.0.0",
+          skills: [
+            {
+              id: "chill",
+              name: "Stay Chill",
+              description: "Keeps things mellow.",
+              tags: ["vibe"],
+            },
+          ],
+        },
+        crons: [
+          {
+            name: "morning-brief",
+            schedule: "0 9 * * 1-5",
+            prompt: "Run the morning brief.",
+          },
+        ],
+        plugins: ["@shipwright/plugin"],
+        tools: ["Read", "Write"],
+        env: {
+          required: [
+            {
+              key: "SHIPWRIGHT_API_URL",
+              description: "Base URL of the admin API.",
+              secret: false,
+            },
+          ],
+          optional: [
+            {
+              key: "GROQ_API_KEY",
+              description: "Optional Groq API key for voice.",
+              secret: true,
+            },
+          ],
+        },
+        members: ["alice"],
+        repos: ["my-org/my-repo"],
+      }),
+    );
     expect(manifest.apiVersion).toBe("shipwright.dev/v1alpha1");
     expect(manifest.kind).toBe("AgentType");
     expect(manifest.metadata.name).toBe("dude-agent");
@@ -73,36 +116,23 @@ describe("parseAgentTypeManifest — valid manifest", () => {
   });
 
   it("accepts a cron whose parentCron resolves to a sibling cron name", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: A laid-back team member agent.
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons:
-  - name: parent-cron
-    schedule: "0 9 * * 1-5"
-    prompt: Parent prompt.
-  - name: child-cron
-    schedule: "0 10 * * 1-5"
-    prompt: Child prompt.
-    parentCron: parent-cron
-plugins: []
-tools: []
-env:
-  required: []
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-`;
-    const manifest = parseYamlFixture(yaml);
+    const manifest = parseManifestYaml(
+      baseManifest({
+        crons: [
+          {
+            name: "parent-cron",
+            schedule: "0 9 * * 1-5",
+            prompt: "Parent prompt.",
+          },
+          {
+            name: "child-cron",
+            schedule: "0 10 * * 1-5",
+            prompt: "Child prompt.",
+            parentCron: "parent-cron",
+          },
+        ],
+      }),
+    );
     expect(manifest.crons[1].parentCron).toBe("parent-cron");
   });
 });
@@ -111,182 +141,72 @@ voice: false
 
 describe("parseAgentTypeManifest — invalid manifests fail with field-path errors", () => {
   it("rejects a cron missing its required schedule field", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: desc
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons:
-  - name: bad-cron
-    prompt: Missing schedule.
-plugins: []
-tools: []
-env:
-  required: []
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-`;
-    expect(() => parseYamlFixture(yaml)).toThrow();
-    try {
-      parseYamlFixture(yaml);
-      throw new Error("expected parseAgentTypeManifest to throw");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("crons");
-      expect(message).toContain("schedule");
-    }
+    expectThrowsWithMessage(
+      baseManifest({
+        crons: [{ name: "bad-cron", prompt: "Missing schedule." }],
+      }),
+      "crons",
+      "schedule",
+    );
   });
 
   it("rejects an unknown top-level field", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: desc
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons: []
-plugins: []
-tools: []
-env:
-  required: []
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-unknownField: surprise
-`;
-    expect(() => parseYamlFixture(yaml)).toThrow();
-    try {
-      parseYamlFixture(yaml);
-      throw new Error("expected parseAgentTypeManifest to throw");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("unknownField");
-    }
+    expectThrowsWithMessage(
+      baseManifest({ unknownField: "surprise" }),
+      "unknownField",
+    );
   });
 
   it("rejects an env entry carrying a value key (trust boundary)", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: desc
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons: []
-plugins: []
-tools: []
-env:
-  required:
-    - key: SOME_KEY
-      description: has a value, which is forbidden
-      secret: false
-      value: "should not be allowed"
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-`;
-    expect(() => parseYamlFixture(yaml)).toThrow();
-    try {
-      parseYamlFixture(yaml);
-      throw new Error("expected parseAgentTypeManifest to throw");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("env");
-      expect(message).toContain("value");
-    }
+    expectThrowsWithMessage(
+      baseManifest({
+        env: {
+          required: [
+            {
+              key: "SOME_KEY",
+              description: "has a value, which is forbidden",
+              secret: false,
+              value: "should not be allowed",
+            },
+          ],
+          optional: [],
+        },
+      }),
+      "env",
+      "value",
+    );
   });
 
   it("rejects a dangling parentCron reference", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: dude-agent
-  displayName: The Dude
-  description: desc
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons:
-  - name: only-cron
-    schedule: "0 9 * * 1-5"
-    prompt: Prompt.
-    parentCron: does-not-exist
-plugins: []
-tools: []
-env:
-  required: []
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-`;
-    expect(() => parseYamlFixture(yaml)).toThrow();
-    try {
-      parseYamlFixture(yaml);
-      throw new Error("expected parseAgentTypeManifest to throw");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("parentCron");
-    }
+    expectThrowsWithMessage(
+      baseManifest({
+        crons: [
+          {
+            name: "only-cron",
+            schedule: "0 9 * * 1-5",
+            prompt: "Prompt.",
+            parentCron: "does-not-exist",
+          },
+        ],
+      }),
+      "parentCron",
+    );
   });
 
   it("rejects a non-RFC1123 metadata.name", () => {
-    const yaml = `
-apiVersion: shipwright.dev/v1alpha1
-kind: AgentType
-metadata:
-  name: Dude_Agent!
-  displayName: The Dude
-  description: desc
-  version: 1.0.0
-  skills: []
-identity:
-  templatesDir: templates/dude
-crons: []
-plugins: []
-tools: []
-env:
-  required: []
-  optional: []
-members: []
-repos: []
-chat: true
-voice: false
-`;
-    expect(() => parseYamlFixture(yaml)).toThrow();
-    try {
-      parseYamlFixture(yaml);
-      throw new Error("expected parseAgentTypeManifest to throw");
-    } catch (err) {
-      const message = (err as Error).message;
-      expect(message).toContain("metadata");
-      expect(message).toContain("name");
-    }
+    expectThrowsWithMessage(
+      baseManifest({
+        metadata: {
+          name: "Dude_Agent!",
+          displayName: "The Dude",
+          description: "desc",
+          version: "1.0.0",
+          skills: [],
+        },
+      }),
+      "metadata",
+      "name",
+    );
   });
 });
 
@@ -294,63 +214,29 @@ voice: false
 
 describe("AgentTypeManifestSchema.safeParse", () => {
   it("rejects a self-referencing parentCron", () => {
-    const result = AgentTypeManifestSchema.safeParse({
-      apiVersion: "shipwright.dev/v1alpha1",
-      kind: "AgentType",
-      metadata: {
-        name: "dude-agent",
-        displayName: "The Dude",
-        description: "desc",
-        version: "1.0.0",
-        skills: [],
-      },
-      identity: { templatesDir: "templates/dude" },
-      crons: [
-        {
-          name: "self-cron",
-          schedule: "0 9 * * 1-5",
-          prompt: "Prompt.",
-          parentCron: "self-cron",
-        },
-      ],
-      plugins: [],
-      tools: [],
-      env: { required: [], optional: [] },
-      members: [],
-      repos: [],
-      chat: true,
-      voice: false,
-    });
+    const result = AgentTypeManifestSchema.safeParse(
+      baseManifest({
+        crons: [
+          {
+            name: "self-cron",
+            schedule: "0 9 * * 1-5",
+            prompt: "Prompt.",
+            parentCron: "self-cron",
+          },
+        ],
+      }),
+    );
     expect(result.success).toBe(false);
   });
 
   it("defaults silent/enabled on a cron entry when omitted", () => {
-    const result = AgentTypeManifestSchema.safeParse({
-      apiVersion: "shipwright.dev/v1alpha1",
-      kind: "AgentType",
-      metadata: {
-        name: "dude-agent",
-        displayName: "The Dude",
-        description: "desc",
-        version: "1.0.0",
-        skills: [],
-      },
-      identity: { templatesDir: "templates/dude" },
-      crons: [
-        {
-          name: "morning-brief",
-          schedule: "0 9 * * 1-5",
-          prompt: "Prompt.",
-        },
-      ],
-      plugins: [],
-      tools: [],
-      env: { required: [], optional: [] },
-      members: [],
-      repos: [],
-      chat: true,
-      voice: false,
-    });
+    const result = AgentTypeManifestSchema.safeParse(
+      baseManifest({
+        crons: [
+          { name: "morning-brief", schedule: "0 9 * * 1-5", prompt: "Prompt." },
+        ],
+      }),
+    );
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.crons[0].silent).toBe(false);
@@ -359,78 +245,28 @@ describe("AgentTypeManifestSchema.safeParse", () => {
   });
 
   it("rejects a bad apiVersion literal", () => {
-    const result = AgentTypeManifestSchema.safeParse({
-      apiVersion: "shipwright.dev/v1",
-      kind: "AgentType",
-      metadata: {
-        name: "dude-agent",
-        displayName: "The Dude",
-        description: "desc",
-        version: "1.0.0",
-        skills: [],
-      },
-      identity: { templatesDir: "templates/dude" },
-      crons: [],
-      plugins: [],
-      tools: [],
-      env: { required: [], optional: [] },
-      members: [],
-      repos: [],
-      chat: true,
-      voice: false,
-    });
+    const result = AgentTypeManifestSchema.safeParse(
+      baseManifest({ apiVersion: "shipwright.dev/v1" }),
+    );
     expect(result.success).toBe(false);
   });
 
   it("rejects a repos entry not in org/repo format", () => {
-    const result = AgentTypeManifestSchema.safeParse({
-      apiVersion: "shipwright.dev/v1alpha1",
-      kind: "AgentType",
-      metadata: {
-        name: "dude-agent",
-        displayName: "The Dude",
-        description: "desc",
-        version: "1.0.0",
-        skills: [],
-      },
-      identity: { templatesDir: "templates/dude" },
-      crons: [],
-      plugins: [],
-      tools: [],
-      env: { required: [], optional: [] },
-      members: [],
-      repos: ["not-a-valid-repo"],
-      chat: true,
-      voice: false,
-    });
+    const result = AgentTypeManifestSchema.safeParse(
+      baseManifest({ repos: ["not-a-valid-repo"] }),
+    );
     expect(result.success).toBe(false);
   });
 
   it("accepts an optional resources override", () => {
-    const result = AgentTypeManifestSchema.safeParse({
-      apiVersion: "shipwright.dev/v1alpha1",
-      kind: "AgentType",
-      metadata: {
-        name: "dude-agent",
-        displayName: "The Dude",
-        description: "desc",
-        version: "1.0.0",
-        skills: [],
-      },
-      identity: { templatesDir: "templates/dude" },
-      crons: [],
-      plugins: [],
-      tools: [],
-      env: { required: [], optional: [] },
-      members: [],
-      repos: [],
-      chat: true,
-      voice: false,
-      resources: {
-        requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "1Gi" },
-        limits: { memory: "8Gi", "ephemeral-storage": "1Gi" },
-      },
-    });
+    const result = AgentTypeManifestSchema.safeParse(
+      baseManifest({
+        resources: {
+          requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "1Gi" },
+          limits: { memory: "8Gi", "ephemeral-storage": "1Gi" },
+        },
+      }),
+    );
     expect(result.success).toBe(true);
   });
 });
