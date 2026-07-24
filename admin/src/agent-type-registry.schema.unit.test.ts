@@ -1,9 +1,9 @@
 /**
- * admin/src/agent-type-registry.content.test.ts
- * Content-layer test: regenerates the AgentType JSON Schema in-memory from
- * its Zod source and diffs it (deep-equal, not string-equal) against the
- * committed docs/schemas/agent-type.schema.json artifact. This guarantees
- * the committed artifact can never silently drift from the Zod source —
+ * admin/src/agent-type-registry.schema.unit.test.ts
+ * Regenerates the AgentType JSON Schema in-memory from its Zod source and
+ * diffs it (deep-equal, not string-equal) against the committed
+ * docs/schemas/agent-type.schema.json artifact. This guarantees the
+ * committed artifact can never silently drift from the Zod source —
  * `scripts/generate-agent-type-schema.ts` must be re-run (and its output
  * re-committed) whenever AgentTypeManifestSchema changes.
  */
