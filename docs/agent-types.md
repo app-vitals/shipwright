@@ -258,7 +258,7 @@ The env contract (`env.required[]` / `env.optional[]`) is deliberately **keys-on
 
 Per the plugin constitution (`plugins/shipwright/CLAUDE.md`'s "System Cron Changes" section): any new cron added to a published Agent Type must ship with `enabled: false`. This avoids a new cron firing unexpectedly on existing agents of that type before they've opted in. Enable it per-agent once verified. The exception is a cron explicitly replacing a prior one — even then, add the replacement disabled, verify it, then flip it on and disable the old one, rather than swapping both in the same change.
 
-The four core loop-phase crons (`dev-task`, `review`, `patch`) are a deliberate exception to "new crons ship disabled" — as pre-existing core phases (not new additions), they ship `enabled: true` by default in the reference coding manifest. `deploy` ships `enabled: false` as an explicit opt-in even though it's also a core phase. A brand-new maintenance cron (docs freshness, entropy patrol, etc.) always ships `enabled: false`.
+The core shipwright loop has four phases — `dev-task`, `review`, `patch`, and `deploy`. Three of them (`dev-task`, `review`, `patch`) are a deliberate exception to "new crons ship disabled" — as pre-existing core phases (not new additions), they ship `enabled: true` by default in the reference coding manifest. `deploy` ships `enabled: false` as an explicit opt-in even though it's also a core phase. A brand-new maintenance cron (docs freshness, entropy patrol, etc.) always ships `enabled: false`.
 
 ### Resolution model
 
