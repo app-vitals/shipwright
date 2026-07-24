@@ -64,6 +64,15 @@ export interface AgentTypeManifestResolver {
    * unknown type — only if the "coding" fallback itself fails to load.
    */
   getManifest(typeName: string): AgentTypeManifest;
+  /**
+   * Resolve `typeName` to its parsed manifest WITHOUT falling back to
+   * "coding" — returns undefined for an unknown type instead. No warning is
+   * logged (an unknown type here is an expected, callers-handle-it outcome,
+   * not a degraded-boot condition). Used by POST /agents to reject an
+   * unknown requested `type` with 400 rather than silently seeding a
+   * "coding" agent under a different label.
+   */
+  tryGetManifest(typeName: string): AgentTypeManifest | undefined;
 }
 
 export class AgentTypeRegistry implements AgentTypeManifestResolver {
@@ -94,6 +103,15 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
       );
     }
     return this.loadOrThrow(DEFAULT_AGENT_TYPE_NAME);
+  }
+
+  /**
+   * Resolve `typeName` without falling back to "coding" — see the interface
+   * doc comment. Thin public wrapper around the existing tryLoad() used
+   * internally by getManifest().
+   */
+  tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+    return this.tryLoad(typeName);
   }
 
   /** Load + cache a manifest, returning undefined only if the file is missing. */

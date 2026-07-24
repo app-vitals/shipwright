@@ -20,7 +20,6 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
-import { DEFAULT_ADMIN_AGENT_TOOLS } from "@shipwright/lib/agent-default-tools";
 import { callerLabel } from "@shipwright/lib/request-context";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { PrismaClient } from "../prisma/client/index.js";
@@ -34,10 +33,15 @@ import type { AgentCronRunService } from "./agent-cron-runs.ts";
 import type { DeleteAgentFullyDeps } from "./agent-deletion.ts";
 import { deleteAgentFully } from "./agent-deletion.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentPluginService } from "./agent-plugins.ts";
 import type { AgentProvisioner } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
 import type { AgentToolService } from "./agent-tools.ts";
+import {
+  type AgentTypeManifestResolver,
+  AgentTypeRegistry,
+} from "./agent-type-manifest-loader.ts";
 import type { AgentWorkQueueService } from "./agent-work-queue.ts";
 import type { AgentService } from "./agents.ts";
 import { createAdminAuthMiddleware, parseAdminApiKeys } from "./api-auth.ts";
@@ -137,6 +141,15 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
+  agentMemberService: Pick<AgentMemberService, "add">;
+  /**
+   * Resolves an agent-type name to its parsed Agent Type manifest — the
+   * source of truth for the tools/plugins/members/repos seeded at create
+   * time (see createAgentRoute below). Defaults to the real disk-backed
+   * AgentTypeRegistry, matching the DI pattern already used by
+   * AgentCronJobService (agent-cron-jobs.ts).
+   */
+  agentTypeRegistry?: AgentTypeManifestResolver;
   agentChatTokenService: Pick<
     AgentChatTokenService,
     "upsertDailyByModel" | "queryStats"
@@ -878,6 +891,8 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentMemberService,
+    agentTypeRegistry = new AgentTypeRegistry(),
     agentChatTokenService,
     agentWorkQueueService,
     prisma,
@@ -912,10 +927,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     }
     if (err instanceof ApiError) {
       sentryClient?.captureException(err);
-      return c.json(
-        { error: err.message },
-        err.statusCode as 500 | 502,
-      );
+      return c.json({ error: err.message }, err.statusCode as 500 | 502);
     }
     sentryClient?.captureException(err);
     console.error(
@@ -951,26 +963,47 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       );
     }
     const body = c.req.valid("json");
+
+    // Resolve the requested type (default "coding") to its manifest BEFORE
+    // creating any row — an unknown type must 400 with zero rows created,
+    // not roll back after the fact. tryGetManifest() (unlike getManifest())
+    // never silently falls back to "coding" for an unknown type.
+    const typeName = body.type ?? "coding";
+    const manifest = agentTypeRegistry.tryGetManifest(typeName);
+    if (!manifest) {
+      throw new BadRequestError(`unknown agent type "${typeName}"`);
+    }
+
+    const repos = [...new Set([...manifest.repos, ...(body.repos ?? [])])];
+
     const agent = await agentService.create({
       name: body.name,
       slackId: body.slackId ?? null,
       selfHosted: body.selfHosted ?? false,
+      typeName,
+      repos,
     });
 
-    // Seed default AgentTool rows, then provision the backing workload — both
-    // wrapped in the same try/catch so a failure at either step rolls the
-    // agent row back (never leaving a half-created agent with 0-3 seeded
-    // AgentTool rows and no cleanup). Self-hosted agents manage their own
-    // workload — skip provisioning, but still seed tools and still roll back
-    // on a seeding failure.
+    // Seed AgentTool/AgentPlugin/AgentMember rows from the resolved
+    // manifest, then provision the backing workload — all wrapped in the
+    // same try/catch so a failure at any step rolls the agent row back
+    // (never leaving a half-created agent with partially-seeded child rows
+    // and no cleanup). Self-hosted agents manage their own workload — skip
+    // provisioning, but still seed and still roll back on a seeding failure.
     try {
-      for (const pattern of DEFAULT_ADMIN_AGENT_TOOLS) {
+      for (const pattern of manifest.tools) {
         await agentToolService.add(agent.id, pattern);
       }
+      for (const pluginName of manifest.plugins) {
+        await agentPluginService.add(agent.id, pluginName);
+      }
+      for (const email of manifest.members) {
+        await agentMemberService.add(agent.id, email);
+      }
 
-      // Provision AFTER the row (and its tools) exist — the provisioner
-      // mints a per-agent token tied to the agent id. The Noop provisioner
-      // never throws, preserving today's create behavior exactly.
+      // Provision AFTER the row (and its seeded children) exist — the
+      // provisioner mints a per-agent token tied to the agent id. The Noop
+      // provisioner never throws, preserving today's create behavior exactly.
       if (!agent.selfHosted) {
         await provisioner.provision(agent.id, { slug: agent.name });
       }

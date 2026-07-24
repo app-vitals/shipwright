@@ -33,8 +33,9 @@ export function setLiveClaudeConfig(patch: Partial<LiveClaudeConfig>): void {
  * Bash, WebSearch, WebFetch, and Agent are deliberately NOT included here:
  * they now flow entirely through `liveClaudeConfig.allowedTools` /
  * `extraAllowedTools`, sourced from the AgentTool DB table (seeded at agent
- * creation and backfilled for existing agents — see
- * lib/agent-default-tools.ts). This is the capability-narrowing step: an
+ * creation from the resolved Agent Type manifest — see
+ * agent-types/coding/manifest.yaml and admin/src/agents-api.ts — and
+ * backfilled for existing agents). This is the capability-narrowing step: an
  * agent with no AgentTool rows (or a 404'd config bundle) no longer gets
  * Bash/WebSearch/WebFetch/Agent for free.
  */
@@ -249,7 +250,9 @@ export function createRunClaude(
       extraAllowedTools ?? liveClaudeConfig.allowedTools;
 
     // Deduplicate tools: Set preserves insertion order, so first-occurrence wins
-    const deduplicatedTools = [...new Set([...FLOOR_TOOLS, ...resolvedExtraAllowedTools])];
+    const deduplicatedTools = [
+      ...new Set([...FLOOR_TOOLS, ...resolvedExtraAllowedTools]),
+    ];
 
     const args = [
       "-p",

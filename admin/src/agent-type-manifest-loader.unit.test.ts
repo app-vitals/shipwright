@@ -105,4 +105,51 @@ describe("AgentTypeRegistry", () => {
     expect(manifest.metadata.name).toBe("coding");
     expect(manifest.crons.length).toBeGreaterThan(0);
   });
+
+  // ─── tryGetManifest — non-fallback lookup ────────────────────────────────
+  //
+  // Unlike getManifest(), tryGetManifest() must NOT fall back to "coding" for
+  // an unknown typeName — it returns undefined instead. This is what lets
+  // POST /agents distinguish "resolved to the exact requested type" from
+  // "silently degraded", which the cron-reconcile boot path (getManifest())
+  // deliberately does not need to distinguish.
+
+  it("tryGetManifest resolves a known typeName to its parsed manifest", () => {
+    const registry = new AgentTypeRegistry({
+      read: (t) => manifestYaml(t),
+    });
+    const manifest = registry.tryGetManifest("coding");
+    expect(manifest?.metadata.name).toBe("coding");
+  });
+
+  it("tryGetManifest returns undefined for an unknown typeName — no fallback, no warning", () => {
+    const warnings: string[] = [];
+    const registry = new AgentTypeRegistry({
+      read: (t) => {
+        if (t === DEFAULT_AGENT_TYPE_NAME) return manifestYaml("coding");
+        throw new Error(`ENOENT: no manifest for ${t}`);
+      },
+      warn: (m) => warnings.push(m),
+    });
+
+    const manifest = registry.tryGetManifest("nonexistent-type");
+
+    expect(manifest).toBeUndefined();
+    expect(warnings).toHaveLength(0);
+  });
+
+  it("tryGetManifest shares the cache with getManifest — reader called once per type", () => {
+    let reads = 0;
+    const registry = new AgentTypeRegistry({
+      read: (t) => {
+        reads++;
+        return manifestYaml(t);
+      },
+    });
+
+    registry.getManifest("coding");
+    registry.tryGetManifest("coding");
+
+    expect(reads).toBe(1);
+  });
 });

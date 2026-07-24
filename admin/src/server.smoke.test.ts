@@ -114,6 +114,7 @@ function buildComposedApp() {
       remove: notImplemented,
       removeByName: notImplemented,
     },
+    agentMemberService: { add: notImplemented },
     agentChatTokenService: {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,

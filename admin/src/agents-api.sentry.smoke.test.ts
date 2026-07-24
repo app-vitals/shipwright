@@ -174,6 +174,9 @@ function makeBaseDeps(
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentMemberService: {
+      add: async () => ({}) as never,
+    },
     agentChatTokenService: {
       upsertDailyByModel: async () => ({}) as never,
       queryStats: async () => ({
