@@ -129,9 +129,17 @@ This opens a tmux session (`shipwright`) with 6 panes:
 | agent | Shipwright agent in Docker | _(terminal)_ |
 | logs | Scratch shell | _(terminal)_ |
 
-A browser window opens automatically to the admin dev-login page.
+A browser window opens automatically to the admin dev-login page. The **agent** pane does not start a container yet — `task stack` creates zero agents automatically. It prints a pointer and waits.
 
-### Step 3 — Send a chat turn (plugin install coming soon)
+### Step 3 — Create your agent
+
+In the admin console, go to **Agents → New** (<http://localhost:3001/admin/agents/new>) and create an agent, picking a type from the picker (e.g. **Coding Agent**).
+
+The agent pane's wait-loop polls the database and detects the new agent automatically — no stack restart needed. Once detected, it seeds the agent's chat token and starts the Docker container with that agent's id.
+
+Relaunching the stack later with an agent already created proceeds immediately — the wait-loop resolves on its first check, so you never need to delete and recreate an agent just to restart `task stack`.
+
+### Step 4 — Send a chat turn (plugin install coming soon)
 
 > 🚧 The `/plugin install` step (Phase A) is not yet ready for general use. Once it ships, you'll run this inside a Claude Code session pointed at this repo:
 >
@@ -139,7 +147,7 @@ A browser window opens automatically to the admin dev-login page.
 > /plugin install shipwright@app-vitals/shipwright
 > ```
 
-Open the **Chat** tab in the admin console (<http://localhost:3001/admin/chat>), select the `dev-agent`, create a thread, and send a message. The turn should round-trip through the Docker agent: the agent's chat poll loop claims the message from the chat service, runs it through Claude, and posts the reply back into the thread.
+Open the **Chat** tab in the admin console (<http://localhost:3001/admin/chat>), select the agent you created, create a thread, and send a message. The turn should round-trip through the Docker agent: the agent's chat poll loop claims the message from the chat service, runs it through Claude, and posts the reply back into the thread.
 
 ### Stopping the stack
 
