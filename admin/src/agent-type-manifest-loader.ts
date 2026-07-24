@@ -25,7 +25,7 @@
  * without touching the filesystem (see agent-cron-jobs.unit.test.ts).
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AgentTypeManifest,
@@ -42,15 +42,36 @@ export type ManifestReader = (typeName: string) => string;
 export type WarnFn = (message: string) => void;
 
 /**
+ * Lists the typeName of every discoverable agent type directory (e.g. the
+ * names of the subdirectories under agent-types/). Used by listTypes() to
+ * discover candidates before resolving each one's manifest via `read`.
+ */
+export type TypeDirLister = () => string[];
+
+/** A discovered agent type, as surfaced to the new-agent type picker. */
+export interface AgentTypeOption {
+  name: string;
+  displayName: string;
+}
+
+/**
  * Repo root resolved relative to this module (admin/src/ → ../../). The
  * agent-types/ directory lives at the repo root alongside admin/.
  */
 const REPO_ROOT = join(import.meta.dir, "..", "..");
+const AGENT_TYPES_DIR = join(REPO_ROOT, "agent-types");
 
 /** Default reader: loads agent-types/{typeName}/manifest.yaml from disk. */
 export function defaultManifestReader(typeName: string): string {
   const path = join(REPO_ROOT, "agent-types", typeName, "manifest.yaml");
   return readFileSync(path, "utf-8");
+}
+
+/** Default lister: the directory names under agent-types/ on disk. */
+export function defaultTypeDirLister(): string[] {
+  return readdirSync(AGENT_TYPES_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 }
 
 /**
@@ -73,16 +94,29 @@ export interface AgentTypeManifestResolver {
    * "coding" agent under a different label.
    */
   tryGetManifest(typeName: string): AgentTypeManifest | undefined;
+  /**
+   * Discover every agent type directory (via the injected `list` fn) and
+   * resolve each to its {name, displayName} for populating the new-agent
+   * type picker. A directory whose manifest fails to load or parse is
+   * skipped (not thrown) — the picker still renders every other valid type
+   * rather than 500ing the whole /admin/agents/new page over one bad
+   * manifest. Order matches the underlying `list` fn's order.
+   */
+  listTypes(): AgentTypeOption[];
 }
 
 export class AgentTypeRegistry implements AgentTypeManifestResolver {
   private readonly read: ManifestReader;
   private readonly warn: WarnFn;
+  private readonly list: TypeDirLister;
   private readonly cache = new Map<string, AgentTypeManifest>();
 
-  constructor(opts: { read?: ManifestReader; warn?: WarnFn } = {}) {
+  constructor(
+    opts: { read?: ManifestReader; warn?: WarnFn; list?: TypeDirLister } = {},
+  ) {
     this.read = opts.read ?? defaultManifestReader;
     this.warn = opts.warn ?? ((m) => console.warn(m));
+    this.list = opts.list ?? defaultTypeDirLister;
   }
 
   getManifest(typeName: string): AgentTypeManifest {
@@ -112,6 +146,20 @@ export class AgentTypeRegistry implements AgentTypeManifestResolver {
    */
   tryGetManifest(typeName: string): AgentTypeManifest | undefined {
     return this.tryLoad(typeName);
+  }
+
+  listTypes(): AgentTypeOption[] {
+    const typeNames = this.list();
+    const options: AgentTypeOption[] = [];
+    for (const typeName of typeNames) {
+      const manifest = this.tryLoad(typeName);
+      if (!manifest) continue;
+      options.push({
+        name: manifest.metadata.name,
+        displayName: manifest.metadata.displayName,
+      });
+    }
+    return options;
   }
 
   /** Load + cache a manifest, returning undefined only if the file is missing. */
