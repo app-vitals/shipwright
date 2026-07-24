@@ -117,10 +117,12 @@ export class AgentService {
   ) {}
 
   /**
-   * Create a new agent row.
+   * Create a new agent row, plus `missingRequiredEnv` (see
+   * computeMissingRequiredEnv) — a freshly created agent has no AgentEnv rows
+   * yet, so this always reflects the full set of the type's required keys.
    */
-  async create(input: CreateAgentInput): Promise<AgentRecord> {
-    return this.prisma.agent.create({
+  async create(input: CreateAgentInput): Promise<AgentDetail> {
+    const row = await this.prisma.agent.create({
       data: {
         name: input.name,
         slackId: input.slackId ?? null,
@@ -129,6 +131,11 @@ export class AgentService {
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
       },
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      row.id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**

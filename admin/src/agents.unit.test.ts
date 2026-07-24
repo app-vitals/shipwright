@@ -191,6 +191,12 @@ function fakeRegistry(
       if (!(typeName in requiredEnvByType)) return undefined;
       return this.getManifest(typeName);
     },
+    listTypes() {
+      return Object.keys(requiredEnvByType).map((name) => ({
+        name,
+        displayName: name,
+      }));
+    },
   };
 }
 
@@ -235,6 +241,31 @@ describe("AgentService.create", () => {
 
     expect(agent.slackId).toBeNull();
     expect(agent.selfHosted).toBe(false);
+  });
+
+  it("lists a required env key in missingRequiredEnv for a freshly created agent (no AgentEnv rows yet)", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
+    );
+
+    const agent = await service.create({ name: "New Agent" });
+
+    expect(agent.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  it("returns an empty missingRequiredEnv array (not undefined/null) when the type's required contract is empty", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const agent = await service.create({ name: "New Agent" });
+
+    expect(agent.missingRequiredEnv).toEqual([]);
+    expect(agent.missingRequiredEnv).not.toBeUndefined();
   });
 });
 

@@ -293,9 +293,11 @@ function makeMockDeps(
         name: "Test Agent",
         slackId: "U123456",
         selfHosted: false,
+        repos: [],
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       delete: async () => {},
       getDetail: async () => ({
@@ -2284,9 +2286,11 @@ describe("admin UI — provision start form", () => {
             name: input.name,
             slackId: null,
             selfHosted: input.selfHosted ?? false,
+            repos: [],
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
         updateFields: async (id: string, input: { repos?: string[] }) => {
@@ -2392,9 +2396,11 @@ describe("admin UI — provision start form", () => {
           name: "doomed-agent",
           slackId: null,
           selfHosted: false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         updateFields: async (id: string, input: { repos?: string[] }) => ({
           id,
@@ -2472,9 +2478,11 @@ describe("admin UI — provision start form", () => {
           name: "doomed-agent-2",
           slackId: null,
           selfHosted: false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         updateFields: async (id: string, input: { repos?: string[] }) => ({
           id,

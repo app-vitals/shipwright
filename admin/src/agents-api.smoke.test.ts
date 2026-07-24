@@ -213,9 +213,11 @@ function makeMockDeps(): AdminDeps {
         name: input.name,
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        repos: [],
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       delete: async (_id: string) => {},
       list: async () => [
@@ -1416,9 +1418,11 @@ describe("admin API — create agent", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async (id: string) => {
           deleted.push(id);
@@ -1615,9 +1619,11 @@ describe("admin API — create agent", () => {
             name: input.name,
             slackId: null,
             selfHosted: false,
+            repos: [],
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -2208,9 +2214,11 @@ describe("admin API — selfHosted field", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };
@@ -2478,6 +2486,43 @@ describe("admin API — missingRequiredEnv field", () => {
     const rawText = await res.text();
     expect(rawText).not.toContain(SECRET_VALUE);
     const body = JSON.parse(rawText);
+    expect(body.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  it("POST /agents includes missingRequiredEnv in the create response (201)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: ["CLAUDE_CODE_OAUTH_TOKEN"],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
     expect(body.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
   });
 });
