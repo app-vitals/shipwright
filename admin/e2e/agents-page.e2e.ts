@@ -296,7 +296,11 @@ test.describe("POST /admin/agents — create-with-type journey", () => {
 
     await page.fill('input[name="name"]', "My New Coding Agent");
     await page.selectOption('select[name="type"]', "coding");
-    await page.click('button[type="submit"]');
+    // Scoped to the new-agent form specifically — the page also has a
+    // "Sign out" button[type="submit"] in the toolbar, and an unscoped
+    // selector matches that one first (it's earlier in the DOM), which
+    // logs the session out instead of submitting this form.
+    await page.click('form[action="/admin/agents"] button[type="submit"]');
 
     await page.waitForURL(/\/admin\/agents\/[^/]+$/);
     await expect(page.locator("body")).toContainText("coding");
