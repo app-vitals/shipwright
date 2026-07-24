@@ -1,0 +1,203 @@
+# agent-types/coding/manifest.yaml
+#
+# AgentType manifest for the "coding" agent type — Shipwright's default
+# autonomous delivery agent. Expresses today's coding agent defaults
+# (ATS-2.1) in the Agent Type format: the SYSTEM_CRONS entries
+# (admin/src/system-crons.ts), the DEFAULT_AGENT_TOOLS tool set
+# (lib/agent-default-tools.ts), the bundled shipwright plugin, and the
+# agent's env contract.
+#
+# Validated against admin/src/agent-type-registry.ts's AgentTypeManifestSchema
+# (see agent-types/coding/manifest.content.test.ts for the parity assertions
+# against the still-live SYSTEM_CRONS TS source).
+#
+# Temporary parity note: crons[] below is transcribed byte-for-byte from
+# admin/src/system-crons.ts's SYSTEM_CRONS array, which remains the live
+# runtime source until ATS-3.2 cuts the seeding logic over to read this
+# manifest instead and deletes the TS array. Keep both in sync until then.
+apiVersion: shipwright.dev/v1alpha1
+kind: AgentType
+metadata:
+  name: coding
+  displayName: Coding Agent
+  description: >-
+    Shipwright's default autonomous delivery agent — runs the
+    spec-to-plan-to-execute-to-review-to-deploy loop via the shipwright
+    plugin, plus scheduled maintenance patrols (docs freshness, entropy,
+    error, security, and consolidation scans).
+  version: 1.0.0
+  skills:
+    - id: dev-task
+      name: Develop Task
+      description: >-
+        Picks up a ready task from the task store, implements it on a
+        feature branch with tests, and opens a pull request.
+    - id: review
+      name: Review Pull Request
+      description: >-
+        Reviews an explicitly named pull request against GitHub's live
+        state and the project's review policy, posting findings.
+    - id: patch
+      name: Patch Pull Request
+      description: >-
+        Applies fixes to an explicitly named pull request in response to
+        unresolved review threads or failing CI.
+    - id: deploy
+      name: Deploy Pull Request
+      description: >-
+        Merges and ships an explicitly named, approved, green pull
+        request per the repo's deploy model.
+    - id: maintenance-patrols
+      name: Maintenance Patrols
+      description: >-
+        Scheduled scans and fixes for docs freshness, test readiness,
+        entropy, errors, security, and consolidation opportunities.
+      tags:
+        - maintenance
+        - scheduled
+identity:
+  templatesDir: agent/workspace/
+crons:
+  - name: shipwright-dev-task
+    schedule: "* * * * *"
+    prompt: /shipwright:dev-task
+    silent: true
+    enabled: true
+    parentCron: shipwright-loop
+  - name: shipwright-patch
+    schedule: "* * * * *"
+    prompt: /shipwright:patch
+    silent: true
+    enabled: true
+    parentCron: shipwright-loop
+  - name: shipwright-review
+    schedule: "* * * * *"
+    prompt: /shipwright:review
+    silent: true
+    enabled: true
+    parentCron: shipwright-loop
+  - name: shipwright-deploy
+    schedule: "* * * * *"
+    prompt: /shipwright:deploy
+    silent: true
+    enabled: false
+    parentCron: shipwright-loop
+  - name: shipwright-loop
+    schedule: "* * * * *"
+    prompt: "internal: dispatched via handleLoopCronRequest, not run through Claude"
+    silent: true
+    enabled: false
+  - name: shipwright-test-readiness
+    schedule: "0 6 * * *"
+    prompt: /shipwright:test-readiness --full --publish
+    preCheck: shipwright:check-test-readiness.ts
+    silent: true
+    enabled: false
+  - name: shipwright-docs-freshness
+    schedule: "0 7 * * *"
+    prompt: /shipwright:research-docs --auto
+    preCheck: shipwright:check-docs-freshness.ts
+    silent: true
+    enabled: false
+  - name: learn-dream
+    schedule: "0 3 * * *"
+    preCheck: shipwright:check-learn-dream.ts
+    prompt: /shipwright:learn-dream --since 1d --review
+    silent: true
+    enabled: false
+  - name: dependabot-triage
+    schedule: "0 8 * * *"
+    prompt: /shipwright:triage-dependabot-prs
+    silent: true
+    enabled: false
+  - name: entropy-patrol-maintenance
+    schedule: "0 4 * * 1"
+    prompt: |-
+      /shipwright:entropy-scan
+      /shipwright:entropy-fix
+      After the fix run completes, write state/entropy-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.
+    silent: true
+    enabled: false
+  - name: error-patrol-maintenance
+    schedule: "0 4 * * *"
+    prompt: |-
+      /shipwright:error-scan
+      /shipwright:error-fix
+      /shipwright:error-resolve
+      After the chain completes, write state/error-patrol-ledger.json's lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.
+    silent: true
+    preCheck: shipwright:check-error-patrol.ts
+    enabled: false
+  - name: security-patrol-maintenance
+    schedule: "0 6 * * 1"
+    prompt: |-
+      /shipwright:security-scan
+      /shipwright:security-fix
+      After the fix run completes, write state/security-patrol-last-run.json: {"lastRun": "<ISO timestamp>"}. Use [silent] if no pr_worthy findings are found.
+    silent: true
+    enabled: false
+  - name: consolidation-patrol-maintenance
+    schedule: "0 5 * * 1"
+    prompt: |-
+      /shipwright:consolidation-scan
+      /shipwright:consolidation-fix
+      After the chain completes, write state/consolidation-ledger.json's lastRun field: "<ISO timestamp>". Use [silent] if no ready_to_propose findings are found.
+    silent: true
+    preCheck: shipwright:check-consolidation-patrol.ts
+    enabled: false
+plugins:
+  - shipwright
+tools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+  - WebSearch
+  - WebFetch
+  - Skill
+  - Agent
+env:
+  required:
+    - key: CLAUDE_CODE_OAUTH_TOKEN
+      description: >-
+        Claude Code OAuth token used to authenticate the agent's Claude
+        sessions (alternative to ANTHROPIC_API_KEY).
+      secret: true
+  optional:
+    - key: GH_TOKEN
+      description: >-
+        GitHub Personal Access Token, used as a fallback for GitHub API
+        access when GitHub App credentials are not configured.
+      secret: true
+    - key: SLACK_BOT_TOKEN
+      description: Slack bot user OAuth token, required for chat over Slack.
+      secret: true
+    - key: SLACK_APP_TOKEN
+      description: Slack app-level token for Socket Mode, required for chat over Slack.
+      secret: true
+    - key: SLACK_SIGNING_SECRET
+      description: Used to verify incoming Slack request signatures.
+      secret: true
+    - key: GROQ_API_KEY
+      description: Groq API key for voice transcription/processing.
+      secret: true
+    - key: ELEVENLABS_API_KEY
+      description: ElevenLabs API key for voice speech synthesis.
+      secret: true
+    - key: ELEVENLABS_VOICE_ID
+      description: ElevenLabs voice ID to use for speech synthesis.
+      secret: false
+    - key: WHISPER_SERVICE_URL
+      description: URL of a Whisper transcription service for voice input.
+      secret: false
+    - key: PIPER_VOICE
+      description: >-
+        Piper voice name to use for local (offline) speech synthesis when
+        no cloud voice provider is configured.
+      secret: false
+members: []
+repos: []
+chat: true
+voice: true
