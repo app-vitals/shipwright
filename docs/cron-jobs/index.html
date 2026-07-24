@@ -64,9 +64,10 @@ broken preCheck script doesn’t fail invisibly forever.</li>
 <h3 id="reconcile">Reconcile</h3>
 <p>System crons — the ones seeded automatically for every agent — are created and kept in sync by a
 reconcile pass (<code>POST /agents/:id/crons/reconcile</code>), which runs at agent startup and can also be
-triggered on demand. Reconcile is a two-pass strategy over the canonical <code>SYSTEM_CRONS</code> list:</p>
+triggered on demand. Reconcile is a two-pass strategy over the cron list declared by the agent’s
+type manifest (<code>agent-types/{typeName}/manifest.yaml</code>):</p>
 <ol>
-<li><strong>Pass 1</strong> creates or updates each <code>SYSTEM_CRONS</code> entry by name. If a matching row already
+<li><strong>Pass 1</strong> creates or updates each manifest cron entry by name. If a matching row already
 exists, it’s updated in place — schedule, prompt, <code>silent</code>, and <code>preCheck</code> are refreshed, but
 the row’s <code>id</code> is preserved (so its <code>AgentCronRun</code> history survives) and, importantly, <strong>the
 <code>enabled</code> toggle is never touched on update</strong>. A human’s enable/disable decision survives every
@@ -76,11 +77,12 @@ the id map built in Pass 1. This self-heals in both directions: a child whose pa
 missing gets it set, and a child whose <code>parentCron</code> declaration was removed gets <code>parentCronId</code>
 cleared back to <code>null</code>.</li>
 </ol>
-<p>A final orphan pass deletes any existing system cron whose name is no longer present in
-<code>SYSTEM_CRONS</code>, so removed crons clean themselves up on the next reconcile.</p>
+<p>A final orphan pass deletes any existing system cron whose name is no longer present in the
+manifest, so removed crons clean themselves up on the next reconcile.</p>
 <p>Because of this, <strong>system crons can’t be edited directly</strong> via the admin API or console — they’re
 read-only after creation except for the <code>enabled</code> toggle. Anything else (schedule, prompt,
-preCheck) is owned by <code>SYSTEM_CRONS</code> and only changes when the code changes and a reconcile runs.</p>
+preCheck) is owned by the agent type manifest and only changes when the manifest changes and a
+reconcile runs.</p>
 <h3 id="loop-driven-vs-standalone-crons">Loop-driven vs standalone crons</h3>
 <p>Not every cron discovers its own work. The four pipeline crons — <code>shipwright-dev-task</code>,
 <code>shipwright-review</code>, <code>shipwright-patch</code>, and <code>shipwright-deploy</code> — are children of
