@@ -269,6 +269,53 @@ Agent Type names are resolved from a **built-in registry first**. As of this wri
 
 Treat this section as the intended contract for authors, not a description of already-enforced runtime behavior — check `admin/src/agent-type-registry.ts` and its surrounding modules for the current implementation status before relying on shadow-rejection actually happening today.
 
+## GitHub source references
+
+> **Specified, not implemented.** This section documents the intended design for plugging a custom Agent Type manifest in from a user's GitHub repo. No fetch logic, loader, or schema field described here exists yet — nothing in this section should be read as already-shipped behavior. It exists so the eventual implementation has an agreed contract to build against, and so reviewers have something concrete to hold that implementation to.
+
+### Reference grammar and pinning
+
+A GitHub source reference has the form:
+
+```
+github:owner/repo[/path]@ref
+```
+
+- `owner/repo` — the GitHub repository hosting the Agent Type manifest.
+- `/path` — optional; a subdirectory within the repo where the manifest lives, for repos that host more than one Agent Type or that keep the manifest alongside unrelated code. Omitted, the manifest is expected at the repo root.
+- `@ref` — **required, no exceptions.** `ref` must resolve to a tag or a commit SHA — **never a branch name**. A branch is a moving pointer; an Agent Type manifest controls what crons an agent runs and what tools it's granted, so a moving reference would let upstream repo activity silently change a running agent's crons/tools without any action on the agent owner's part. That is not acceptable, hence the grammar has no unpinned form and no branch tracking mode — branches are explicitly out of scope for `ref`. A future loader must reject a reference whose `ref` segment is missing or is not a tag or commit SHA.
+
+### `owner/repo` validation
+
+The `owner/repo` portion of the reference is validated with the same rule already used elsewhere in this codebase for org/repo strings: [`lib/org-repo.ts`](../lib/org-repo.ts)'s `isOrgRepo` — split on `/`, require exactly two non-empty parts. A future loader is expected to reuse `isOrgRepo` directly rather than reimplement the check.
+
+### Conventional layout
+
+At the referenced path (repo root, or `/path` when given), the loader expects a conventional layout:
+
+- `manifest.yaml` — **required.** The `AgentType` manifest itself, in the same `shipwright.dev/v1alpha1` format documented above in this guide.
+- an identity templates directory — **optional.** Workspace template files matching what `identity.templatesDir` in the manifest points at (see [Identity](#identity)). When absent, the referenced type is expected to fall back to a built-in default templates directory rather than fail to load.
+
+No other files at the referenced path carry meaning to the loader; a repo is free to host other content alongside these.
+
+### Private-repo auth
+
+A source reference may point at a private repository. Fetching it is expected to reuse the **existing agent-env mechanism** — the same encrypted `AgentEnv` key/value store already used for every other per-agent credential (see [Env contract](#env-contract) above) — to supply a GitHub token, rather than inventing a new credential-storage path for this one feature.
+
+The likely fetch mechanism is the GitHub App auth already implemented in [`agent/src/github-app-auth.ts`](../agent/src/github-app-auth.ts) (`createAppAuth` from `@octokit/auth-app`, installation-token caching with proactive refresh) — the same mechanism the agent runtime already uses to authenticate its own GitHub API calls. A future implementation should prefer that path over asking users to mint and store a separate personal access token, falling back to a PAT (mirroring the existing `GH_TOKEN` optional-env pattern in the worked env example above) only where a GitHub App installation isn't available for the target repo.
+
+This guide reserves a single **optional**, reserved-but-unused top-level manifest field name, `source`, as the intended future hook for "this Agent Type's canonical manifest was fetched from this GitHub reference" — a string carrying the `github:owner/repo[/path]@ref` value. `source` is **not** present in `AgentTypeManifestSchema` today; it is named here only so a future schema change has an agreed field name to add, not to declare it live.
+
+### Security requirements
+
+A GitHub source reference is an **external-code-injection surface**: the referenced repo's `manifest.yaml` becomes an agent's live cron/tool/env configuration, and any markdown or prompt content it pulls in (workspace templates, skill/command bodies) becomes text an agent will treat as instructions. Both are attacker-controlled the moment a source reference points at a repo the agent owner doesn't fully trust or doesn't control the write access to. Before any implementation of this feature ships, it must include:
+
+- **Ref pinning is mandatory, not advisory.** The grammar above already forbids branch tracking; the loader must enforce it (reject on load, not just recommend in docs) so a manifest's source can never silently drift to new upstream content.
+- **Content review before first use.** A source reference must not be auto-fetched and auto-applied the first time it's configured without a human reviewing the manifest (and any templates it pulls in) at the pinned ref — analogous to reviewing a dependency before adding it, not just trusting a URL.
+- **Allowlisting.** The set of `owner/repo` values a deployment is willing to fetch custom Agent Type manifests from must be explicitly allowlisted by an operator, not open to any public GitHub repo by default. An unlisted `owner/repo` must fail closed.
+
+These three requirements are **required work for the future implementation pass** — none of them exist today because none of the fetch/load code exists today.
+
 ## Generated JSON Schema
 
 The full JSON Schema for `AgentTypeManifestSchema` is generated from the Zod source of truth and committed at [`docs/schemas/agent-type.schema.json`](./schemas/agent-type.schema.json). Regenerate it after any schema change:

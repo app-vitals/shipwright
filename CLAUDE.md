@@ -183,4 +183,4 @@ To load additional context into a session, add `@docs/filename.md` entries here 
 - **docs/migration.md** — breaking changes and migration steps across versions (e.g. `AgentProvisioner.reconcile()` interface change)
 - **docs/observability.md** — Sentry error/log reporting: what's collected, what's scrubbed, how to disable, and self-hosted Sentry support
 - **docs/consolidation.md** — consolidation-patrol system: the ledger format, the decisions registry, and the cron (disabled by default, opt-in per agent)
-- **docs/agent-types.md** — authoring guide for Agent Type manifests: field reference, blank template, worked examples, and the FLOOR_TOOLS/no-secrets/crons-disabled rules; regenerate the JSON Schema with `bun run scripts/generate-agent-type-schema.ts`
+- **docs/agent-types.md** — authoring guide for Agent Type manifests: field reference, blank template, worked examples, the FLOOR_TOOLS/no-secrets/crons-disabled rules, and a "Specified, not implemented" spec for GitHub-hosted custom Agent Type source references; regenerate the JSON Schema with `bun run scripts/generate-agent-type-schema.ts`
