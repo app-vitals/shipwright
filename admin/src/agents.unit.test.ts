@@ -16,6 +16,7 @@ interface FakeAgentRow {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +50,7 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
         slackId: data.slackId,
         selfHosted: data.selfHosted,
         repos: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       };
@@ -151,6 +153,7 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     slackId: null,
     selfHosted: false,
     repos: [],
+    typeName: "coding",
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
     ...overrides,
@@ -204,7 +207,7 @@ describe("AgentService.delete", () => {
 // ─── list ───────────────────────────────────────────────────────────────────
 
 describe("AgentService.list", () => {
-  it("returns id/name/selfHosted for all agents, ordered by name asc", async () => {
+  it("returns id/name/selfHosted/typeName for all agents, ordered by name asc", async () => {
     const prisma = makeFakePrisma([
       seedRow({ id: "a1", name: "Zeta", selfHosted: false }),
       seedRow({ id: "a2", name: "Alpha", selfHosted: true }),
@@ -214,8 +217,8 @@ describe("AgentService.list", () => {
     const result = await service.list();
 
     expect(result).toEqual([
-      { id: "a2", name: "Alpha", selfHosted: true },
-      { id: "a1", name: "Zeta", selfHosted: false },
+      { id: "a2", name: "Alpha", selfHosted: true, typeName: "coding" },
+      { id: "a1", name: "Zeta", selfHosted: false, typeName: "coding" },
     ]);
   });
 
@@ -230,7 +233,7 @@ describe("AgentService.list", () => {
 // ─── getSummary ─────────────────────────────────────────────────────────────
 
 describe("AgentService.getSummary", () => {
-  it("returns {id, name, selfHosted} for an existing agent", async () => {
+  it("returns {id, name, selfHosted, typeName} for an existing agent", async () => {
     const row = seedRow({ id: "a1", name: "Existing", selfHosted: true });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never);
@@ -239,6 +242,7 @@ describe("AgentService.getSummary", () => {
       id: "a1",
       name: "Existing",
       selfHosted: true,
+      typeName: "coding",
     });
   });
 
@@ -253,7 +257,7 @@ describe("AgentService.getSummary", () => {
 // ─── getDetail ──────────────────────────────────────────────────────────────
 
 describe("AgentService.getDetail", () => {
-  it("returns the full record including repos and timestamps", async () => {
+  it("returns the full record including repos, typeName, and timestamps", async () => {
     const row = seedRow({
       id: "a1",
       name: "Existing",
@@ -271,9 +275,20 @@ describe("AgentService.getDetail", () => {
       slackId: "U999",
       selfHosted: false,
       repos: ["org/repo"],
+      typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
+  });
+
+  it("defaults typeName to 'coding' when the row was seeded without an explicit value", async () => {
+    const row = seedRow({ id: "a1" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.typeName).toBe("coding");
   });
 
   it("returns null when the agent does not exist", async () => {
@@ -548,6 +563,7 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
+      typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: new Date("2024-01-02"),
     });

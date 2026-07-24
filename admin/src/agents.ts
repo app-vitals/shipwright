@@ -21,6 +21,7 @@ export interface AgentRecord {
   name: string;
   slackId: string | null;
   selfHosted: boolean;
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +30,7 @@ export interface AgentSummary {
   id: string;
   name: string;
   selfHosted: boolean;
+  typeName: string;
 }
 
 export interface AgentDetail {
@@ -37,6 +39,7 @@ export interface AgentDetail {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,7 +74,12 @@ export interface UpdateAgentFieldsInput {
 
 // ─── Select shapes ────────────────────────────────────────────────────────────
 
-const SUMMARY_SELECT = { id: true, name: true, selfHosted: true } as const;
+const SUMMARY_SELECT = {
+  id: true,
+  name: true,
+  selfHosted: true,
+  typeName: true,
+} as const;
 
 const DETAIL_SELECT = {
   id: true,
@@ -79,6 +87,7 @@ const DETAIL_SELECT = {
   slackId: true,
   selfHosted: true,
   repos: true,
+  typeName: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -110,7 +119,7 @@ export class AgentService {
   }
 
   /**
-   * List all agents (id + name + selfHosted), ordered by name asc.
+   * List all agents (id + name + selfHosted + typeName), ordered by name asc.
    */
   async list(): Promise<AgentSummary[]> {
     return this.prisma.agent.findMany({
@@ -120,7 +129,8 @@ export class AgentService {
   }
 
   /**
-   * Get {id, name, selfHosted} for a single agent. Returns null if not found.
+   * Get {id, name, selfHosted, typeName} for a single agent. Returns null if
+   * not found.
    */
   async getSummary(id: string): Promise<AgentSummary | null> {
     return this.prisma.agent.findUnique({
@@ -130,7 +140,8 @@ export class AgentService {
   }
 
   /**
-   * Get the full agent record (incl. repos/timestamps). Returns null if not found.
+   * Get the full agent record (incl. repos/typeName/timestamps). Returns
+   * null if not found.
    */
   async getDetail(id: string): Promise<AgentDetail | null> {
     return this.prisma.agent.findUnique({

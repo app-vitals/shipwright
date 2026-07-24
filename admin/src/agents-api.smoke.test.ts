@@ -155,17 +155,33 @@ function makeMockDeps(): AdminDeps {
         name: input.name,
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
       delete: async (_id: string) => {},
       list: async () => [
-        { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
-        { id: "agent-other-id", name: "Other Agent", selfHosted: false },
+        {
+          id: AGENT_ID,
+          name: "Existing Agent",
+          selfHosted: false,
+          typeName: "coding",
+        },
+        {
+          id: "agent-other-id",
+          name: "Other Agent",
+          selfHosted: false,
+          typeName: "coding",
+        },
       ],
       getSummary: async (id: string) =>
         id === AGENT_ID
-          ? { id: AGENT_ID, name: "Existing Agent", selfHosted: false }
+          ? {
+              id: AGENT_ID,
+              name: "Existing Agent",
+              selfHosted: false,
+              typeName: "coding",
+            }
           : null,
       getDetail: async (id: string) =>
         id === AGENT_ID
@@ -175,6 +191,7 @@ function makeMockDeps(): AdminDeps {
               slackId: null,
               selfHosted: false,
               repos: [],
+              typeName: "coding",
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
             }
@@ -189,6 +206,7 @@ function makeMockDeps(): AdminDeps {
         slackId: null,
         selfHosted: input.selfHosted ?? false,
         repos: input.repos ?? [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       }),
@@ -1326,6 +1344,7 @@ describe("admin API — create agent", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: false,
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
@@ -1483,6 +1502,7 @@ describe("admin API — delete agent", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: [],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
               }
@@ -1917,7 +1937,12 @@ describe("admin API — provision agent", () => {
         ...base.agentService,
         getSummary: async (id: string) =>
           id === AGENT_ID
-            ? { id: AGENT_ID, name: "Self-Hosted Agent", selfHosted: true }
+            ? {
+                id: AGENT_ID,
+                name: "Self-Hosted Agent",
+                selfHosted: true,
+                typeName: "coding",
+              }
             : null,
       },
     };
@@ -1957,6 +1982,7 @@ describe("admin API — selfHosted field", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: input.selfHosted ?? false,
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
@@ -1998,8 +2024,18 @@ describe("admin API — selfHosted field", () => {
       agentService: {
         ...base.agentService,
         list: async () => [
-          { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
-          { id: "agent-other-id", name: "Other Agent", selfHosted: true },
+          {
+            id: AGENT_ID,
+            name: "Existing Agent",
+            selfHosted: false,
+            typeName: "coding",
+          },
+          {
+            id: "agent-other-id",
+            name: "Other Agent",
+            selfHosted: true,
+            typeName: "coding",
+          },
         ],
       },
     };
@@ -2092,11 +2128,17 @@ describe("admin API — selfHosted field", () => {
       agentService: {
         ...base.agentService,
         list: async () => [
-          { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
+          {
+            id: AGENT_ID,
+            name: "Regular Agent",
+            selfHosted: false,
+            typeName: "coding",
+          },
           {
             id: "self-hosted-id",
             name: "Self-Hosted Agent",
             selfHosted: true,
+            typeName: "coding",
           },
         ],
       },
@@ -2115,6 +2157,37 @@ describe("admin API — selfHosted field", () => {
     expect(agentsPassed.map((a) => a.id)).not.toContain("self-hosted-id");
     // Regular agent IS passed
     expect(agentsPassed.map((a) => a.id)).toContain(AGENT_ID);
+  });
+});
+
+// ─── typeName field smoke tests ───────────────────────────────────────────────
+
+describe("admin API — typeName field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents includes typeName in each list entry", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body[0].typeName).toBe("coding");
+  });
+
+  it("GET /agents/:id includes typeName in the full record", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.typeName).toBe("coding");
   });
 });
 
@@ -2156,6 +2229,7 @@ describe("admin API — repos field", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: [],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
               }
@@ -2169,6 +2243,7 @@ describe("admin API — repos field", () => {
           slackId: null,
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),
@@ -2202,6 +2277,7 @@ describe("admin API — repos field", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: ["my-org/my-repo"],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
               }
@@ -2215,6 +2291,7 @@ describe("admin API — repos field", () => {
           slackId: null,
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
         }),

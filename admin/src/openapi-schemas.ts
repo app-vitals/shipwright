@@ -41,6 +41,7 @@ export const AgentSchema = z
       .optional()
       .openapi({ example: "U0AALR8M69X" }),
     selfHosted: z.boolean().openapi({ example: false }),
+    typeName: z.string().openapi({ example: "coding" }),
     createdAt: z
       .string()
       .datetime()
@@ -60,6 +61,7 @@ export const AgentSummarySchema = z
     id: z.string().openapi({ example: "clx1234567890" }),
     name: z.string().openapi({ example: "Bodhi" }),
     selfHosted: z.boolean().openapi({ example: false }),
+    typeName: z.string().openapi({ example: "coding" }),
   })
   .openapi("AgentSummary");
 

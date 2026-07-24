@@ -39,7 +39,7 @@ Body:
 | `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
 | `repos` | no | Array of `org/repo` strings scoped to this agent |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, createdAt, updatedAt }`.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt }`. `typeName` is not settable at creation yet — it always defaults to `"coding"` (see the `Agent` model reference below).
 
 ### List agents
 
@@ -47,7 +47,7 @@ Returns `201` with `{ id, name, slackId, selfHosted, repos, createdAt, updatedAt
 GET /agents
 ```
 
-Admin-only. Returns all agents with `id`, `name`, and `selfHosted` fields. Used for metrics name resolution.
+Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` fields. Used for metrics name resolution.
 
 ### Get agent
 
@@ -55,7 +55,7 @@ Admin-only. Returns all agents with `id`, `name`, and `selfHosted` fields. Used 
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted` and `repos`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, and `typeName`.
 
 ### Update agent
 
@@ -63,7 +63,7 @@ Admin-only. Returns the full agent record including `selfHosted` and `repos`.
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format). Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
