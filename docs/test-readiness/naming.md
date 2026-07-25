@@ -113,6 +113,33 @@ rename work landed since T-048:
 
 Still no cross-runner discovery gaps.
 
+**Re-confirmed (T-075):** re-ran the isolation check per-entry-point against the
++18-file delta this cycle, which includes the 4 new Agent Type manifest test files
+(`admin/src/agent-type-manifest-loader.unit.test.ts`,
+`admin/src/agent-type-registry.unit.test.ts`,
+`admin/src/agent-type-registry.schema.unit.test.ts`,
+`agent-types/coding/manifest.content.test.ts`):
+
+- `bun test unit` (positional pattern match) discovered 118 files, all matching
+  `*.unit.test.ts` — including the 3 new Agent Type unit test files above. `bun test
+  integration` discovered 56 files, all matching `*.integration.test.ts`. `bun test
+  smoke` discovered 43 files, all matching `*.smoke.test.ts`. Zero cross-layer files in
+  any of the three filtered scans.
+- `bunx playwright test --list` against `metrics/playwright.config.ts` discovered 31
+  tests in exactly 1 file (`dashboard.e2e.ts`); against `admin/playwright.config.ts`, 25
+  tests in exactly 2 files (`agents-page.e2e.ts`, `login-page.e2e.ts`) — no
+  unit/integration/smoke/content file picked up by either.
+- `cd site && npx playwright test --list` discovered 220 tests in exactly 20 files, all
+  matching `*.spec.ts` — `site/tests/` contains only those 20 spec files plus the
+  non-test `helpers.ts`.
+- Coverage still has no separate `pathIgnorePatterns` — it inherits the same `[test]`
+  config as the `bun test` scan above, so the same zero-bleed isolation applies.
+- `plugins/shipwright/test/test-naming-convention.content.test.ts` (the automated
+  regression guard) passes: 11/11 tests.
+
+The 4 new Agent Type manifest test files landed inside the existing suffix convention,
+not a parallel one. Still no cross-runner discovery gaps.
+
 ## Collision rules
 
 1. **One suffix per file.** A test file must match exactly one row in the suffix table.
