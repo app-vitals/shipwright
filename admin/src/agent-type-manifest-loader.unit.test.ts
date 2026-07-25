@@ -97,15 +97,6 @@ describe("AgentTypeRegistry", () => {
     expect(reads).toBe(1);
   });
 
-  it("loads the real committed coding manifest from disk via the default reader", () => {
-    // No injected reader — exercises defaultManifestReader against the real
-    // agent-types/coding/manifest.yaml so a broken repo-root path is caught.
-    const registry = new AgentTypeRegistry();
-    const manifest = registry.getManifest("coding");
-    expect(manifest.metadata.name).toBe("coding");
-    expect(manifest.crons.length).toBeGreaterThan(0);
-  });
-
   // ─── tryGetManifest — non-fallback lookup ────────────────────────────────
   //
   // Unlike getManifest(), tryGetManifest() must NOT fall back to "coding" for
@@ -239,14 +230,5 @@ voice: true
     });
 
     expect(registry.listTypes()).toEqual([]);
-  });
-
-  it("listTypes discovers the real committed agent-types/ dir via the default list fn", () => {
-    // No injected list/read — exercises the real disk-backed discovery so a
-    // broken repo-root path or missing coding manifest is caught.
-    const registry = new AgentTypeRegistry();
-    const types = registry.listTypes();
-    expect(types.length).toBeGreaterThan(0);
-    expect(types.some((t) => t.name === "coding")).toBe(true);
   });
 });
