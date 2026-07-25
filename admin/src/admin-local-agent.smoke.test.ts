@@ -215,9 +215,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         name: "New Local Agent",
         slackId: null,
         selfHosted: true,
+        repos: [],
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       delete: async () => {},
       getDetail: async () => ({
@@ -229,6 +231,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       updateFields: async () => ({
         id: NEW_AGENT_ID,
@@ -239,6 +242,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
     },
     sessionSecret: SESSION_SECRET,
@@ -344,9 +348,11 @@ describe("admin UI — new local agent create flow", () => {
             name: input.name,
             slackId: null,
             selfHosted: input.selfHosted ?? false,
+            repos: [],
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -400,9 +406,11 @@ describe("admin UI — new local agent create flow", () => {
           name: input.name,
           slackId: null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         updateFields: async (id: string, input: { repos?: string[] }) => {
           updateArgs = { id, repos: input.repos ?? [] };
@@ -415,6 +423,7 @@ describe("admin UI — new local agent create flow", () => {
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -474,9 +483,11 @@ describe("admin UI — new local agent create flow", () => {
             name: input.name,
             slackId: null,
             selfHosted: input.selfHosted ?? false,
+            repos: [],
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -510,9 +521,11 @@ describe("admin UI — new local agent create flow", () => {
             name: input.name,
             slackId: null,
             selfHosted: input.selfHosted ?? false,
+            repos: [],
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -547,9 +560,11 @@ describe("admin UI — new local agent create flow", () => {
           name: input.name,
           slackId: null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async () => {
           deleteCalled = true;

@@ -217,6 +217,7 @@ function buildMockDeps(): AdminUIDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
+        missingRequiredEnv: [],
       }),
       updateFields: async () => ({
         id: ADMIN_E2E_AGENT.id,
@@ -227,6 +228,7 @@ function buildMockDeps(): AdminUIDeps {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
+        missingRequiredEnv: [],
       }),
     },
     sessionSecret: ADMIN_E2E_SESSION_SECRET,

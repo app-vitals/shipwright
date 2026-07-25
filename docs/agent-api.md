@@ -49,7 +49,7 @@ Body:
 | `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
 | `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt }`. Returns `400` for an unknown `type`.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt, missingRequiredEnv }`. Returns `400` for an unknown `type`.
 
 ### List agents
 
@@ -65,7 +65,9 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, and `typeName`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `typeName`, and `missingRequiredEnv`.
+
+`missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
 ### Update agent
 

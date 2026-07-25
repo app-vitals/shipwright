@@ -845,6 +845,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       typeName: agent.typeName,
+      missingRequiredEnv: agent.missingRequiredEnv,
     };
 
     if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
@@ -1321,6 +1322,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       typeName: agent.typeName,
+      missingRequiredEnv: agent.missingRequiredEnv,
     };
     try {
       const { rawToken } = await agentTokenService.create(agentId, label);

@@ -58,6 +58,7 @@ const AGENT: AgentDetail = {
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
   typeName: "coding",
+  missingRequiredEnv: [],
 };
 
 const AGENT_LIST_ITEM: AgentListItem = {
@@ -740,6 +741,65 @@ describe("renderAgentDetailPage — env vars", () => {
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Key<\/th>/,
     );
+  });
+});
+
+// ─── renderAgentDetailPage — missingRequiredEnv badge (ATS-4.2) ──────────────
+
+describe("renderAgentDetailPage — missingRequiredEnv badge", () => {
+  function render(missingRequiredEnv: string[]): string {
+    const agent: AgentDetail = { ...AGENT, missingRequiredEnv };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("missing required env key renders a badge/callout referencing the key name", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(html).toContain('class="badge badge-warning"');
+    expect(html).toContain('class="alert alert-warning"');
+  });
+
+  test("badge links to the env editor card", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    expect(html).toContain('id="env-vars"');
+    expect(html).toContain('href="#env-vars"');
+  });
+
+  test("multiple missing keys are all listed", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN", "GH_TOKEN"]);
+    expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(html).toContain("GH_TOKEN");
+  });
+
+  test("empty missingRequiredEnv renders no badge/callout", () => {
+    const html = render([]);
+    expect(html).not.toContain('class="badge badge-warning"');
+    expect(html).not.toContain("Missing required env var");
+  });
+
+  test("no env values ever appear alongside the badge — key names only", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    // The rendered badge must carry only the key name, never a value —
+    // there is no value to render here since AgentDetail.missingRequiredEnv
+    // is string[] of key names (secrets_in_logs).
+    expect(html).not.toContain("secret-value");
+  });
+
+  test("XSS: missing env key names are escaped", () => {
+    const html = render(['<script>alert("xss")</script>']);
+    expect(html).not.toContain('alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 
