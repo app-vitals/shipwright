@@ -58,8 +58,10 @@ const DUMMY_ENCRYPTION_KEY =
   "0000000000000000000000000000000000000000000000000000000000000000";
 // SHIPWRIGHT_INTERNAL_API_KEY removed in UNI-1.2 — runtime routes now use the same
 // admin-key / per-agent-token / session-cookie auth as the CRUD routes.
-// Agent API key for dev-agent. Must be registered in SHIPWRIGHT_ADMIN_API_KEYS on the
-// admin pane so that runtime polling (config sync) succeeds at startup.
+// Agent API key handed to the container. Must be registered in
+// SHIPWRIGHT_ADMIN_API_KEYS on the admin pane (scope "*") so that runtime
+// polling (config sync) succeeds at startup, regardless of which agent id
+// the developer's created agent ends up with.
 const DUMMY_AGENT_API_KEY = "dev-agent-key";
 // Obviously-fake dev admin token for the task-store. Seeded (hashed) into the
 // task-store DB by a preflight and handed to the admin pane verbatim so the admin
@@ -107,7 +109,13 @@ const PG_FORMULA = "postgresql@16";
  * `bun install` (as `admin` was) silently has none, and the pane crashes on a
  * missing package. The preflight installs deps when any of these is missing.
  */
-const STACK_WORKSPACE_DIRS = ["metrics", "agent", "admin", "task-store", "chat"];
+const STACK_WORKSPACE_DIRS = [
+  "metrics",
+  "agent",
+  "admin",
+  "task-store",
+  "chat",
+];
 const DEV_AGENT_HOME = "state/agent-home";
 
 // ---------------------------------------------------------------------------
@@ -154,6 +162,56 @@ export type BuildOpts = {
 // ---------------------------------------------------------------------------
 // Pane definitions — the 6-pane stack
 // ---------------------------------------------------------------------------
+
+/**
+ * Build the agent pane's shell command: NO agent is created implicitly
+ * (ATS-6.1). Instead the pane:
+ *   1. Waits for the developer to create an agent via the admin UI
+ *      (scripts/wait-for-agent.ts polls the admin DB and prints ONLY the
+ *      resolved id to stdout — status/pointer text goes to stderr so the
+ *      `$(...)` capture below stays clean).
+ *   2. Seeds the chat agent token for THAT resolved id (moved out of the
+ *      chat-svc preflight, which used to hardcode "dev-agent").
+ *   3. Starts the Docker container with `-e SHIPWRIGHT_AGENT_ID=<resolved>`.
+ *
+ * A stack relaunched with an agent already created resolves on the very
+ * first poll (see wait-for-agent.ts) — no forced delete/recreate.
+ *
+ * Returns one shell line for `tmux send-keys`, mirroring buildLogsBanner().
+ */
+export function buildAgentPaneScript(repoPath: string): string {
+  const waitCmd = `bun run scripts/wait-for-agent.ts --db-url ${DEV_DATABASE_URL}`;
+  const seedTokenCmd = `bun run scripts/seed-chat-tokens.ts --db-url ${DEV_CHAT_DATABASE_URL} --admin-token ${DEV_CHAT_ADMIN_TOKEN} --agent-token ${DEV_CHAT_AGENT_TOKEN} --agent-id "$AGENT_ID"`;
+  const dockerRunCmd = [
+    "docker",
+    "run",
+    "--rm",
+    "--name",
+    DEV_DOCKER_IMAGE,
+    "-v",
+    `${DEV_AGENT_VOLUME}:/data/agent-home`,
+    "-v",
+    `${repoPath}:/repo:ro`,
+    "--add-host=host.docker.internal:host-gateway",
+    "--env-file",
+    "state/dev-agent.env",
+    "-e",
+    `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
+    "-e",
+    '"SHIPWRIGHT_AGENT_ID=$AGENT_ID"',
+    "-e",
+    `SHIPWRIGHT_AGENT_API_KEY=${DUMMY_AGENT_API_KEY}`,
+    // Chat poll loop: the agent claims user messages from the chat service
+    // and posts replies. The agent-scoped token is seeded (for this id) above.
+    "-e",
+    `SHIPWRIGHT_CHAT_SERVICE_URL=http://host.docker.internal:${CHAT_SERVICE_PORT}`,
+    "-e",
+    `SHIPWRIGHT_CHAT_SERVICE_TOKEN=${DEV_CHAT_AGENT_TOKEN}`,
+    DEV_DOCKER_IMAGE,
+  ].join(" ");
+
+  return [`AGENT_ID=$(${waitCmd})`, seedTokenCmd, dockerRunCmd].join(" && ");
+}
 
 /**
  * The logs pane's command: print a signpost banner — where the UI and services
@@ -206,10 +264,13 @@ export const STACK_PANES: Pane[] = [
       DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
       SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
       SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
-      // Register the dev-agent API key so runtime polling (config sync) passes
-      // auth. Format: "<agentId>:<apiKey>:<scope>" — scope "dev-agent" scopes it
-      // to this agent; use "*" for an admin bypass key.
-      SHIPWRIGHT_ADMIN_API_KEYS: `dev-agent:${DUMMY_AGENT_API_KEY}:dev-agent`,
+      // Register a dev API key so runtime polling (config sync) passes auth.
+      // Format: "<name>:<apiKey>:<scope>". No agent exists yet when this pane
+      // starts (ATS-6.1 — no implicit agent creation) — the real agent id
+      // isn't known until a developer creates one via the UI, so scope must
+      // be "*" (admin bypass, ignores per-agent scope enforcement) rather
+      // than a specific agent id. "dev-agent" here is just a label.
+      SHIPWRIGHT_ADMIN_API_KEYS: `dev-agent:${DUMMY_AGENT_API_KEY}:*`,
       ADMIN_DEV_AUTH: "true",
       // Point the admin toolbar's "Metrics" link at the running metrics
       // dashboard (:3460). Without this it uses the same-host relative /dashboard,
@@ -257,39 +318,14 @@ export const STACK_PANES: Pane[] = [
   },
   {
     label: "agent",
-    // All env is passed via -e flags inside cmd; pane env stays empty so
-    // paneShellLine() emits no inline prefix — docker manages its own env.
-    // Secrets (CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY) come from the
-    // developer's local state/dev-agent.env — see state/dev-agent.env.example.
-    cmd: [
-      "docker",
-      "run",
-      "--rm",
-      "--name",
-      DEV_DOCKER_IMAGE,
-      "-v",
-      `${DEV_AGENT_VOLUME}:/data/agent-home`,
-      // Repo is mounted read-only at build time; the exact host path is
-      // substituted in buildStackCommands (repoPath opt, default process.cwd()).
-      // Placeholder replaced in buildStackCommands — see note there.
-      "__REPO_VOLUME_PLACEHOLDER__",
-      "--add-host=host.docker.internal:host-gateway",
-      "--env-file",
-      "state/dev-agent.env",
-      "-e",
-      `SHIPWRIGHT_API_URL=http://host.docker.internal:${ADMIN_PORT}`,
-      "-e",
-      "SHIPWRIGHT_AGENT_ID=dev-agent",
-      "-e",
-      `SHIPWRIGHT_AGENT_API_KEY=${DUMMY_AGENT_API_KEY}`,
-      // Chat poll loop: the agent claims user messages from the chat service
-      // and posts replies. The agent-scoped token is seeded by a preflight.
-      "-e",
-      `SHIPWRIGHT_CHAT_SERVICE_URL=http://host.docker.internal:${CHAT_SERVICE_PORT}`,
-      "-e",
-      `SHIPWRIGHT_CHAT_SERVICE_TOKEN=${DEV_CHAT_AGENT_TOKEN}`,
-      DEV_DOCKER_IMAGE,
-    ],
+    // No agent is created implicitly (ATS-6.1). The pane's command is a
+    // wait-loop + docker run, built by buildAgentPaneScript() — see there.
+    // The `repoPath` needed for the volume mount is substituted in
+    // buildStackCommands (repoPath opt, default process.cwd()); this
+    // placeholder entry is never sent to a real shell as-is.
+    // All env is embedded in the script itself (docker -e flags); pane env
+    // stays empty so paneShellLine() emits no inline prefix.
+    cmd: [buildAgentPaneScript("__REPO_VOLUME_PLACEHOLDER__")],
     env: {},
   },
   {
@@ -472,29 +508,16 @@ export function buildStackCommands(
           `cd chat && bunx prisma generate --schema=prisma/schema.prisma && DATABASE_URL_SHIPWRIGHT_CHAT=${DEV_CHAT_DATABASE_URL} bunx prisma migrate deploy --schema=prisma/schema.prisma`,
         ],
       });
-      // Preflight: seed the chat tokens — the admin token the /admin/chat UI
-      // uses and the agent-scoped token the agent's poll loop uses. Idempotent
-      // upsert (no-op when they already exist). Runs after the migrate-deploy
-      // above so the ChatToken table exists.
-      cmds.push({
-        kind: "preflight",
-        argv: [
-          "sh",
-          "-c",
-          `bun run scripts/seed-chat-tokens.ts --db-url ${DEV_CHAT_DATABASE_URL} --admin-token ${DEV_CHAT_ADMIN_TOKEN} --agent-token ${DEV_CHAT_AGENT_TOKEN} --agent-id dev-agent`,
-        ],
-      });
+      // Note: seeding the chat agent-scoped token used to run here as an
+      // upfront preflight hardcoded to "dev-agent" — no agent is created
+      // implicitly now (ATS-6.1), so that seed call moved into the agent
+      // pane's own script (buildAgentPaneScript), run AFTER the wait-loop
+      // resolves the real, developer-created agent id. The admin token seed
+      // stays out of scope here — see the chat-svc migrate-deploy preflight
+      // above, which still runs early so the ChatToken table exists in time
+      // for the agent pane's later seed call.
     }
     if (i === agentIndex) {
-      // Preflight: seed the dev agent record (upsert agent + env + plugin + tools).
-      cmds.push({
-        kind: "preflight",
-        argv: [
-          "sh",
-          "-c",
-          `bun run scripts/seed-dev-agent.ts --db-url ${DEV_DATABASE_URL}`,
-        ],
-      });
       // Preflight: remove any leftover agent container from a prior session so
       // the `docker run --name` below cannot collide. A stack torn down with
       // `tmux kill-session` (instead of `task stack:down`) leaves the container
@@ -503,7 +526,11 @@ export function buildStackCommands(
       // `-f` is a no-op when nothing is there, so this is safe on a clean machine.
       cmds.push({
         kind: "preflight",
-        argv: ["sh", "-c", `docker rm -f ${DEV_DOCKER_IMAGE} 2>/dev/null || true`],
+        argv: [
+          "sh",
+          "-c",
+          `docker rm -f ${DEV_DOCKER_IMAGE} 2>/dev/null || true`,
+        ],
       });
       // Preflight: build the Docker image that the agent pane will run.
       cmds.push({
@@ -516,14 +543,17 @@ export function buildStackCommands(
       });
     }
 
-    // Resolve the repo-volume placeholder in the agent pane's docker run cmd.
+    // Resolve the repo-volume placeholder embedded in the agent pane's script
+    // (buildAgentPaneScript's docker run cmd) — repoPath is I/O
+    // (process.cwd()) in the real entrypoint, so it can't be baked into the
+    // pure STACK_PANES definition; injected here instead.
     const resolvedPane: Pane =
       pane.label === "agent"
         ? {
             ...pane,
             cmd: pane.cmd.map((token) =>
-              token === "__REPO_VOLUME_PLACEHOLDER__"
-                ? `-v ${repoPath}:/repo:ro`
+              token.includes("__REPO_VOLUME_PLACEHOLDER__")
+                ? token.replaceAll("__REPO_VOLUME_PLACEHOLDER__", repoPath)
                 : token,
             ),
           }
