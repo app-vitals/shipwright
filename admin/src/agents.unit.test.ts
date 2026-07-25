@@ -18,6 +18,7 @@ interface FakeAgentRow {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  authorAllowlist: string[];
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -52,14 +53,21 @@ function makeFakePrisma(
     async create({
       data,
     }: {
-      data: { name: string; slackId: string | null; selfHosted: boolean };
+      data: {
+        name: string;
+        slackId: string | null;
+        selfHosted: boolean;
+        repos?: string[];
+        authorAllowlist?: string[];
+      };
     }): Promise<FakeAgentRow> {
       const row: FakeAgentRow = {
         id: `agent-${nextId++}`,
         name: data.name,
         slackId: data.slackId,
         selfHosted: data.selfHosted,
-        repos: [],
+        repos: data.repos ?? [],
+        authorAllowlist: data.authorAllowlist ?? [],
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
@@ -133,6 +141,7 @@ function makeFakePrisma(
         slackId?: string | null;
         selfHosted?: boolean;
         repos?: string[];
+        authorAllowlist?: string[];
       };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
     }): Promise<FakeAgentRow> {
@@ -144,6 +153,9 @@ function makeFakePrisma(
         ...(data.slackId !== undefined && { slackId: data.slackId }),
         ...(data.selfHosted !== undefined && { selfHosted: data.selfHosted }),
         ...(data.repos !== undefined && { repos: data.repos }),
+        ...(data.authorAllowlist !== undefined && {
+          authorAllowlist: data.authorAllowlist,
+        }),
         updatedAt: new Date("2024-01-02"),
       };
       rows.set(where.id, updated);
@@ -207,6 +219,7 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     slackId: null,
     selfHosted: false,
     repos: [],
+    authorAllowlist: [],
     typeName: "coding",
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
@@ -241,6 +254,27 @@ describe("AgentService.create", () => {
 
     expect(agent.slackId).toBeNull();
     expect(agent.selfHosted).toBe(false);
+  });
+
+  it("creates an agent with the given authorAllowlist", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const agent = await service.create({
+      name: "New Agent",
+      authorAllowlist: ["octocat", "hubot"],
+    });
+
+    expect(agent.authorAllowlist).toEqual(["octocat", "hubot"]);
+  });
+
+  it("defaults authorAllowlist to an empty array when omitted", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const agent = await service.create({ name: "Plain Agent" });
+
+    expect(agent.authorAllowlist).toEqual([]);
   });
 
   it("lists a required env key in missingRequiredEnv for a freshly created agent (no AgentEnv rows yet)", async () => {
@@ -342,6 +376,7 @@ describe("AgentService.getDetail", () => {
       name: "Existing",
       slackId: "U999",
       repos: ["org/repo"],
+      authorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(
@@ -357,6 +392,7 @@ describe("AgentService.getDetail", () => {
       slackId: "U999",
       selfHosted: false,
       repos: ["org/repo"],
+      authorAllowlist: ["octocat"],
       typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -506,6 +542,29 @@ describe("AgentService.updateSelfHosted", () => {
 
     expect(updated.repos).toEqual(["org/existing"]);
   });
+
+  it("updates authorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: [] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", {
+      selfHosted: false,
+      authorAllowlist: ["octocat"],
+    });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("leaves authorAllowlist untouched when not provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: ["octocat"] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", { selfHosted: true });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
+  });
 });
 
 // ─── getById ────────────────────────────────────────────────────────────────
@@ -519,6 +578,7 @@ describe("AgentService.getById", () => {
     expect(await service.getById("a1")).toEqual({
       id: "a1",
       repos: ["org/repo1", "org/repo2"],
+      authorAllowlist: [],
     });
   });
 
@@ -527,6 +587,22 @@ describe("AgentService.getById", () => {
     const service = new AgentService(prisma as never);
 
     expect(await service.getById("missing")).toBeNull();
+  });
+
+  it("includes authorAllowlist for the runtime config lookup", async () => {
+    const row = seedRow({
+      id: "a1",
+      repos: ["org/repo1"],
+      authorAllowlist: ["octocat", "hubot"],
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.getById("a1")).toEqual({
+      id: "a1",
+      repos: ["org/repo1"],
+      authorAllowlist: ["octocat", "hubot"],
+    });
   });
 });
 
@@ -676,6 +752,18 @@ describe("AgentService.updateFields", () => {
     expect(updated.repos).toEqual(["org/new-repo"]);
   });
 
+  it("updates authorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: [] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateFields("a1", {
+      authorAllowlist: ["octocat"],
+    });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
+  });
+
   it("updates selfHosted when provided", async () => {
     const row = seedRow({ id: "a1", selfHosted: false });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
@@ -703,6 +791,7 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
+      authorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never, fakeRegistry({ coding: [] }));
@@ -715,6 +804,7 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
+      authorAllowlist: ["octocat"],
       typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: new Date("2024-01-02"),
