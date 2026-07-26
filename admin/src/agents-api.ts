@@ -239,6 +239,7 @@ const GetAgentResultSchema = z
     slackId: z.string().nullable().optional(),
     selfHosted: z.boolean(),
     repos: z.array(z.string()),
+    authorAllowlist: z.array(z.string()),
     typeName: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -988,6 +989,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       selfHosted: body.selfHosted ?? false,
       typeName,
       repos,
+      ...(body.authorAllowlist !== undefined
+        ? { authorAllowlist: body.authorAllowlist }
+        : {}),
     });
 
     // Seed AgentTool/AgentPlugin/AgentMember rows from the resolved
@@ -1094,6 +1098,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     const agent = await agentService.updateSelfHosted(agentId, {
       selfHosted: body.selfHosted,
       ...(body.repos !== undefined ? { repos: body.repos } : {}),
+      ...(body.authorAllowlist !== undefined
+        ? { authorAllowlist: body.authorAllowlist }
+        : {}),
     });
     return c.json(serializeAgent(agent), 200);
   });
@@ -1718,6 +1725,7 @@ function serializeAgent(agent: {
   slackId: string | null | undefined;
   selfHosted: boolean;
   repos?: string[];
+  authorAllowlist?: string[];
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -1729,6 +1737,7 @@ function serializeAgent(agent: {
     slackId: agent.slackId,
     selfHosted: agent.selfHosted,
     repos: agent.repos ?? [],
+    authorAllowlist: agent.authorAllowlist ?? [],
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),

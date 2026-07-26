@@ -7,6 +7,7 @@
  */
 
 import { z } from "@hono/zod-openapi";
+import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 
 // ─── Common ───────────────────────────────────────────────────────────────────
@@ -90,6 +91,18 @@ export const CreateAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
+    /**
+     * Initial authorAllowlist[] — GitHub logins permitted to trigger this
+     * agent. Mirrors PatchAgentBodySchema's authorAllowlist shape.
+     */
+    authorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
   })
   .openapi("CreateAgentBody");
 
@@ -104,6 +117,14 @@ export const PatchAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
+    authorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
   })
   .openapi("PatchAgentBody");
 
@@ -837,6 +858,7 @@ export const AgentConfigResponseSchema = z
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
     repos: z.array(z.string()).openapi({ example: ["org/repo1", "org/repo2"] }),
+    authorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
   })
   .openapi("AgentConfigResponse");
 
