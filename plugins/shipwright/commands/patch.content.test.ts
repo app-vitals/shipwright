@@ -781,3 +781,96 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(section).toContain("model: PATCH_MODEL");
   });
 });
+
+describe("patch.md — [C.5] Add test coverage in fix subagent prompts (PTR-1.1)", () => {
+  function getStep5bSection() {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    return content.slice(step5bIdx, step5cIdx);
+  }
+
+  function getStep6cSection() {
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    expect(step6cIdx).toBeGreaterThan(-1);
+    expect(step6dIdx).toBeGreaterThan(-1);
+    return content.slice(step6cIdx, step6dIdx);
+  }
+
+  it("Step 5b prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
+    const section = getStep5bSection();
+    const cIdx = section.indexOf("[C] Validate");
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    expect(cIdx).toBeGreaterThan(-1);
+    expect(c5Idx).toBeGreaterThan(cIdx);
+    expect(dIdx).toBeGreaterThan(c5Idx);
+  });
+
+  it("Step 6c prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
+    const section = getStep6cSection();
+    const cIdx = section.indexOf("[C] Validate");
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    expect(cIdx).toBeGreaterThan(-1);
+    expect(c5Idx).toBeGreaterThan(cIdx);
+    expect(dIdx).toBeGreaterThan(c5Idx);
+  });
+
+  it("Step 5b's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
+    const section = getStep5bSection();
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    const c5Section = section.slice(c5Idx, dIdx);
+    expect(c5Section.toLowerCase()).toContain("test framework");
+    expect(c5Section.toLowerCase()).toContain("existing tests");
+    expect(c5Section.toLowerCase()).toContain("no test is needed");
+  });
+
+  it("Step 6c's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
+    const section = getStep6cSection();
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    const c5Section = section.slice(c5Idx, dIdx);
+    expect(c5Section.toLowerCase()).toContain("test framework");
+    expect(c5Section.toLowerCase()).toContain("existing tests");
+    expect(c5Section.toLowerCase()).toContain("no test is needed");
+  });
+
+  it("neither [C.5] block hardcodes a repo-specific test-suffix convention", () => {
+    const step5bSection = getStep5bSection();
+    const step6cSection = getStep6cSection();
+    const c5In5b = step5bSection.slice(
+      step5bSection.indexOf("[C.5] Add test coverage"),
+      step5bSection.indexOf("[D] Commit"),
+    );
+    const c5In6c = step6cSection.slice(
+      step6cSection.indexOf("[C.5] Add test coverage"),
+      step6cSection.indexOf("[D] Commit"),
+    );
+    for (const c5Section of [c5In5b, c5In6c]) {
+      expect(c5Section).not.toContain("*.unit.test.ts");
+      expect(c5Section).not.toContain("*.integration.test.ts");
+      expect(c5Section).not.toContain("*.smoke.test.ts");
+      expect(c5Section).not.toContain("*.content.test.ts");
+    }
+  });
+
+  it("Step 5b's [F] Report back block includes a TESTS_ADDED: field", () => {
+    const section = getStep5bSection();
+    const fIdx = section.indexOf("[F] Report back");
+    expect(fIdx).toBeGreaterThan(-1);
+    const fSection = section.slice(fIdx);
+    expect(fSection).toContain("TESTS_ADDED:");
+  });
+
+  it("Step 6c's [E] Report back block includes a TESTS_ADDED: field", () => {
+    const section = getStep6cSection();
+    const eIdx = section.indexOf("[E] Report back");
+    expect(eIdx).toBeGreaterThan(-1);
+    const eSection = section.slice(eIdx);
+    expect(eSection).toContain("TESTS_ADDED:");
+  });
+});
