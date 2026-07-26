@@ -10,12 +10,14 @@
  * function was ported there in WL-2.1) and are not duplicated here.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
   type PrRecord,
+  buildProductionDeps,
   getReviewCandidates,
 } from "./check-review.ts";
 
@@ -602,7 +604,7 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  // ─── author allowlist filtering (HRA-1.1, dev-tool-only via hitl.ts) ──────
+  // ─── author allowlist filtering (HRA-1.1) ────────────────────────────────
 
   test("isAuthorAllowed filters out a PR whose author does not match", async () => {
     const pr = makePr({ author: { login: "danmcaulay" } });
@@ -620,14 +622,6 @@ describe("getReviewCandidates", () => {
       ...makeDeps([pr], async () => null),
       isAuthorAllowed: (login) => login === "danmcaulay",
     };
-    const result = await getReviewCandidates(deps);
-    expect(result).toHaveLength(1);
-  });
-
-  test("isAuthorAllowed is a no-op when omitted (regression guard for autonomous-loop callers)", async () => {
-    const pr = makePr({ author: { login: "danmcaulay" } });
-    const deps = makeDeps([pr], async () => null);
-    expect(deps.isAuthorAllowed).toBeUndefined();
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
   });
@@ -667,5 +661,41 @@ describe("getReviewCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+});
+
+describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
+  beforeEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  afterEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+
+  test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
+    agentAuthorAllowlistRef.set([]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+  });
+
+  test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
+    agentAuthorAllowlistRef.set(["allowed-user"]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed?.("allowed-user")).toBe(true);
+    expect(deps.isAuthorAllowed?.("someone-else")).toBe(false);
+  });
+
+  test("an explicit opts.isAuthorAllowed overrides the ref-backed default", async () => {
+    agentAuthorAllowlistRef.set(["ref-user"]);
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      isAuthorAllowed: (login) => login === "explicit-user",
+    });
+    expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
+    expect(deps.isAuthorAllowed?.("explicit-user")).toBe(true);
   });
 });
