@@ -22,6 +22,8 @@ export interface CreateAgentInput {
   typeName?: string;
   /** Initial repos[] — the manifest repos merged with any request-supplied repos. */
   repos?: string[];
+  /** Initial authorAllowlist[]. */
+  authorAllowlist?: string[];
 }
 
 export interface AgentRecord {
@@ -47,6 +49,7 @@ export interface AgentDetail {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  authorAllowlist: string[];
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -69,11 +72,13 @@ export interface UpdateSelfHostedInput {
    */
   selfHosted?: boolean;
   repos?: string[];
+  authorAllowlist?: string[];
 }
 
 export interface AgentIdAndRepos {
   id: string;
   repos: string[];
+  authorAllowlist: string[];
 }
 
 export interface AgentOption {
@@ -84,6 +89,7 @@ export interface AgentOption {
 export interface UpdateAgentFieldsInput {
   name?: string;
   repos?: string[];
+  authorAllowlist?: string[];
   selfHosted?: boolean;
   slackId?: string | null;
 }
@@ -103,6 +109,7 @@ const DETAIL_SELECT = {
   slackId: true,
   selfHosted: true,
   repos: true,
+  authorAllowlist: true,
   typeName: true,
   createdAt: true,
   updatedAt: true,
@@ -129,6 +136,9 @@ export class AgentService {
         selfHosted: input.selfHosted ?? false,
         ...(input.typeName !== undefined ? { typeName: input.typeName } : {}),
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
+        ...(input.authorAllowlist !== undefined
+          ? { authorAllowlist: input.authorAllowlist }
+          : {}),
       },
     });
     const missingRequiredEnv = await this.computeMissingRequiredEnv(
@@ -238,6 +248,9 @@ export class AgentService {
       data: {
         selfHosted: input.selfHosted,
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
+        ...(input.authorAllowlist !== undefined
+          ? { authorAllowlist: input.authorAllowlist }
+          : {}),
       },
       select: DETAIL_SELECT,
     });
@@ -249,13 +262,13 @@ export class AgentService {
   }
 
   /**
-   * Get {id, repos} for a single agent — used by the runtime config/crons
-   * routes. Returns null if not found.
+   * Get {id, repos, authorAllowlist} for a single agent — used by the runtime
+   * config/crons routes. Returns null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     return this.prisma.agent.findUnique({
       where: { id },
-      select: { id: true, repos: true },
+      select: { id: true, repos: true, authorAllowlist: true },
     });
   }
 
@@ -301,9 +314,9 @@ export class AgentService {
   }
 
   /**
-   * Generic partial-field update for an agent's name/repos/selfHosted/slackId.
-   * Only fields present in the input are touched. Returns the full updated
-   * detail record.
+   * Generic partial-field update for an agent's
+   * name/repos/authorAllowlist/selfHosted/slackId. Only fields present in the
+   * input are touched. Returns the full updated detail record.
    */
   async updateFields(
     id: string,
@@ -314,6 +327,9 @@ export class AgentService {
       data: {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.repos !== undefined && { repos: input.repos }),
+        ...(input.authorAllowlist !== undefined && {
+          authorAllowlist: input.authorAllowlist,
+        }),
         ...(input.selfHosted !== undefined && {
           selfHosted: input.selfHosted,
         }),
