@@ -462,6 +462,31 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(getBody.repos).toEqual(["my-org/my-repo"]);
   });
 
+  // ─── authorAllowlist field round-trip ──────────────────────────────────────────
+
+  it("PATCH /agents/:id with authorAllowlist sets the field; GET /agents/:id returns it", async () => {
+    // PATCH to set authorAllowlist
+    const patchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ authorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.authorAllowlist).toEqual(["octocat"]);
+
+    // GET to confirm persisted value
+    const getRes = await app.request(`/agents/${agentId}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.authorAllowlist).toEqual(["octocat"]);
+  });
+
   // ─── Work queue snapshot upsert semantics ─────────────────────────────────────
 
   it("POST /work-queue twice overwrites the row rather than creating a second one", async () => {

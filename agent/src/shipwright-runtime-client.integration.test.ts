@@ -23,6 +23,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   allowedTools: ["Read", "Bash"],
   plugins: [{ marketplace: "shipwright", plugin: "my-plugin" }],
   repos: [],
+  authorAllowlist: [],
 };
 
 const SAMPLE_CRONS: AgentCronJob[] = [
