@@ -144,6 +144,7 @@ export interface AgentDetail {
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
+  authorAllowlist: string[];
   /** The agent's type name (e.g. "coding"), resolved at creation time. */
   typeName: string;
   /**
@@ -654,6 +655,17 @@ export function renderNewLocalAgentPage(
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
         </div>
+        <div class="form-group">
+          <label class="form-label" for="authorAllowlist">Author allowlist (optional, one GitHub login per line)</label>
+          <textarea
+            id="authorAllowlist"
+            name="authorAllowlist"
+            class="form-input"
+            rows="4"
+            placeholder="octocat&#10;another-user"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
+        </div>
         <div>
           <button type="submit" class="btn btn-primary">Create agent →</button>
           <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
@@ -1097,6 +1109,47 @@ export function renderAgentDetailPage(
             <td>
               <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/delete" style="display:inline">
                 <input type="hidden" name="repo" value="${escapeHtml(repo)}" />
+                <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+              </form>
+            </td>
+          </tr>`,
+                    )
+                    .join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Author allowlist</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/add" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="login" type="text" class="form-input" placeholder="octocat" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>GitHub login</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              agent.authorAllowlist.length === 0
+                ? `<tr><td colspan="2" class="empty-state">No author allowlist entries configured.</td></tr>`
+                : agent.authorAllowlist
+                    .map(
+                      (login) => `<tr>
+            <td class="mono">${escapeHtml(login)}</td>
+            <td>
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/delete" style="display:inline">
+                <input type="hidden" name="login" value="${escapeHtml(login)}" />
                 <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
               </form>
             </td>
