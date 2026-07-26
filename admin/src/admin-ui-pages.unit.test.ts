@@ -57,6 +57,7 @@ const AGENT: AgentDetail = {
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
+  authorAllowlist: [],
   typeName: "coding",
   missingRequiredEnv: [],
 };
@@ -661,6 +662,11 @@ describe("renderNewLocalAgentPage", () => {
     });
     expect(html).toContain('class="alert alert-error"');
     expect(html).toContain("Something went wrong");
+  });
+
+  test("renders an authorAllowlist textarea", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
   });
 });
 
@@ -2013,6 +2019,59 @@ describe("renderAgentDetailPage — repos", () => {
     const html = render(["my-org/my-repo"]);
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Repo<\/th>/,
+    );
+  });
+});
+
+// ─── renderAgentDetailPage — author allowlist section ────────────────────────
+
+describe("renderAgentDetailPage — author allowlist", () => {
+  function render(authorAllowlist: string[]): string {
+    const agent: AgentDetail = { ...AGENT, authorAllowlist };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("renders empty author allowlist state", () => {
+    const html = render([]);
+    expect(html).toContain("No author allowlist entries configured.");
+  });
+
+  test("renders author allowlist list", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain("octocat");
+  });
+
+  test("author allowlist section has add form", () => {
+    const html = render([]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/author-allowlist/add"`,
+    );
+    expect(html).toContain('name="login"');
+  });
+
+  test("author allowlist section has remove button for existing login", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/author-allowlist/delete"`,
+    );
+    expect(html).toContain('value="octocat"');
+  });
+
+  test("Author allowlist table is wrapped in .data-table-wrapper", () => {
+    const html = render(["octocat"]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
     );
   });
 });
