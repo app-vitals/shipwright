@@ -48,8 +48,9 @@ Body:
 | `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
 | `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
 | `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
+| `authorAllowlist` | no | Array of GitHub login strings — authors permitted to file pull requests scoped to this agent (default empty array = all authenticated users) |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, typeName, createdAt, updatedAt, missingRequiredEnv }`. Returns `400` for an unknown `type`.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, typeName, createdAt, updatedAt, missingRequiredEnv }`. Returns `400` for an unknown `type`.
 
 ### List agents
 
@@ -65,7 +66,9 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, `typeName`, and `missingRequiredEnv`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `typeName`, and `missingRequiredEnv`.
+
+`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty or unset, all authenticated users are allowed.
 
 `missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
@@ -75,7 +78,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `type
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format). `typeName` is not updatable via this route. Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
@@ -526,5 +529,6 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `allowedTools` — array of tool patterns
 - `plugins` — installed plugins with derived marketplace URLs
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
+- `authorAllowlist` — array of GitHub login strings (authors permitted to file pull requests scoped to this agent; empty array = all authenticated users allowed)
 
 Returns `404` if the agent doesn't exist.
