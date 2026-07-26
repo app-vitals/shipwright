@@ -20,6 +20,7 @@
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
+import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { Hono, type MiddlewareHandler } from "hono";
@@ -770,6 +771,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       "Invalid delivery target — set channel or user (or enable silent mode).",
     invalid_repo_format:
       "Repo must be in org/repo format (e.g. my-org/my-repo).",
+    invalid_author_allowlist_format:
+      "Author allowlist entries must be valid GitHub logins.",
     invalid_type: "Select a valid agent type.",
   };
 
@@ -790,11 +793,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let name: string | undefined;
     let typeName: string | undefined;
     let reposRaw: string | undefined;
+    let authorAllowlistRaw: string | undefined;
     try {
       const formData = await c.req.formData();
       name = formData.get("name")?.toString()?.trim();
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
+      authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
     } catch {
       return c.redirect("/admin/agents/new", 302);
     }
@@ -827,6 +832,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         await agentService.updateFields(agent.id, { repos });
       }
     }
+    // Attach authorAllowlist if provided
+    if (authorAllowlistRaw) {
+      const authorAllowlist = [
+        ...new Set(
+          authorAllowlistRaw
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0),
+        ),
+      ];
+      const invalid = authorAllowlist.filter((l) => !isGithubLogin(l));
+      if (invalid.length > 0) {
+        await agentService.delete(agent.id);
+        return c.redirect(
+          "/admin/agents/new?error=invalid_author_allowlist_format",
+          302,
+        );
+      }
+      if (authorAllowlist.length > 0) {
+        await agentService.updateFields(agent.id, { authorAllowlist });
+      }
+    }
     return c.redirect(`/admin/agents/${agent.id}`, 302);
   });
 
@@ -844,6 +871,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
+      authorAllowlist: agent.authorAllowlist,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };
@@ -1062,6 +1090,65 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
+
+  // ─── Author allowlist mutations ────────────────────────────────────────────
+
+  app.post("/admin/agents/:id/author-allowlist/add", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let login: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      login = formData.get("login")?.toString()?.trim();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    if (!login || !isGithubLogin(login)) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=invalid_author_allowlist_format`,
+        302,
+      );
+    }
+    const agent = await agentService.getDetail(agentId);
+    if (!agent) {
+      return new Response("Agent not found", { status: 404 });
+    }
+    const existing = agent.authorAllowlist ?? [];
+    const deduped = existing.includes(login) ? existing : [...existing, login];
+    await agentService.updateFields(agentId, { authorAllowlist: deduped });
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
+
+  app.post(
+    "/admin/agents/:id/author-allowlist/delete",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (login) {
+        const agent = await agentService.getDetail(agentId);
+        if (!agent) {
+          return new Response("Agent not found", { status: 404 });
+        }
+        const updated = (agent.authorAllowlist ?? []).filter(
+          (l) => l !== login,
+        );
+        await agentService.updateFields(agentId, { authorAllowlist: updated });
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
 
   // ─── Cron job mutations ───────────────────────────────────────────────────
 
@@ -1321,6 +1408,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
+      authorAllowlist: agent.authorAllowlist,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };
