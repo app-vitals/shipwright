@@ -27,6 +27,7 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
@@ -100,11 +101,13 @@ export interface CheckReviewDeps {
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
   /**
-   * Optional author allowlist hook — dev-tool-only (wired in via
-   * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var). When set,
-   * getReviewCandidates() skips any PR whose pr.author.login this returns
-   * false for. Omitted entirely by buildProductionDeps() and every
-   * autonomous-loop caller, so their behavior is unchanged.
+   * Optional author allowlist hook. When set, getReviewCandidates() skips any
+   * PR whose pr.author.login this returns false for. buildProductionDeps()
+   * defaults this to a closure backed by the agent's synced authorAllowlist
+   * config field (via agentAuthorAllowlistRef) — an empty allowlist means
+   * unfiltered. Callers can still pass an explicit override (e.g.
+   * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
+   * ref-backed default entirely.
    */
   isAuthorAllowed?: (login: string) => boolean;
   // Bundle completeness gate: returns false if any bundle-mate task on the branch
@@ -242,10 +245,11 @@ export async function buildProductionDeps(opts: {
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
   /**
-   * Dev-tool-only author allowlist hook (scripts/hitl.ts's
-   * SHIPWRIGHT_HITL_AUTHORS). Autonomous-loop callers never pass this, so
-   * CheckReviewDeps.isAuthorAllowed stays undefined for them — unchanged
-   * behavior.
+   * Optional explicit override for the ref-backed author-allowlist default
+   * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
+   * When omitted, defaults to a closure reading agentAuthorAllowlistRef live,
+   * so allowlist changes from config-sync take effect on the next call
+   * without rebuilding deps.
    */
   isAuthorAllowed?: (login: string) => boolean;
 }): Promise<CheckReviewDeps> {
@@ -258,7 +262,11 @@ export async function buildProductionDeps(opts: {
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
-    ...(opts.isAuthorAllowed ? { isAuthorAllowed: opts.isAuthorAllowed } : {}),
+    isAuthorAllowed:
+      opts.isAuthorAllowed ??
+      ((login: string) =>
+        agentAuthorAllowlistRef.get().length === 0 ||
+        agentAuthorAllowlistRef.get().includes(login)),
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
