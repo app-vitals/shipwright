@@ -10,6 +10,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   type Task,
+  HITL_ALLOWED_TOOLS,
   buildClaudeSpawnEnv,
   buildTaskCommand,
   computeProvisionPlan,
@@ -141,6 +142,23 @@ describe("computeProvisionPlan", () => {
     );
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(true);
+  });
+});
+
+describe("HITL_ALLOWED_TOOLS", () => {
+  test("includes FLOOR_TOOLS and web access", () => {
+    for (const t of ["Read", "Write", "Edit", "Glob", "Grep", "TodoWrite", "Skill", "WebSearch", "WebFetch"]) {
+      expect(HITL_ALLOWED_TOOLS).toContain(t);
+    }
+  });
+
+  test("excludes Bash and Agent", () => {
+    expect(HITL_ALLOWED_TOOLS).not.toContain("Bash");
+    expect(HITL_ALLOWED_TOOLS).not.toContain("Agent");
+  });
+
+  test("contains no duplicates", () => {
+    expect(HITL_ALLOWED_TOOLS.length).toBe(new Set(HITL_ALLOWED_TOOLS).size);
   });
 });
 
