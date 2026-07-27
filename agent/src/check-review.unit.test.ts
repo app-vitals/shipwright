@@ -662,6 +662,26 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("example-org/example-repo#42");
   });
+
+  test("includes a PR when isBundleComplete rejects for its branch (fail-open)", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-check-throws" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("bundle status check failed");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
 });
 
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
