@@ -256,8 +256,20 @@ If **any** of the following are true, this PR has substantive unresolved feedbac
 
 If substantive unresolved feedback is found: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
-release the claim so the record returns to `pending`
-(`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), respond `[silent]`, and stop.
+mark the PR as reviewed-at-this-commit (without staging) so the record is not re-evaluated at the
+same commit:
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
+  -d '{"reviewState": "posted", "commitSha": "{headRefOid}"}' >/dev/null
+```
+Note: `staged` is NOT set here, so this does not interact with `/shipwright:review-staged`'s
+staged-record flow — this is purely a commit-level dedup to prevent re-review at the same head
+until new commits land. The claim (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) is
+auto-cleared by `pull-request-service.ts` when `reviewState` is set to `posted`.
+Respond `[silent]`, and stop.
 
 8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
    together run longer than the claim TTL, so renew the heartbeat now, before starting the

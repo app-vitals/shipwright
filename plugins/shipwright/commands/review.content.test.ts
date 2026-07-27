@@ -231,3 +231,64 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     );
   });
 });
+
+describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit (BHE-1.3)", () => {
+  it("Step 5's Unresolved Comment Check no longer contains a bare /prs/{PR_RECORD_ID}/release call", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(-1);
+    const section = content.slice(step5Idx, step6Idx);
+
+    // The unresolved-feedback skip path should NOT have the old release call
+    expect(section).not.toContain("POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release");
+  });
+
+  it("Step 5's Unresolved Comment Check contains a PATCH call to /prs/{PR_RECORD_ID} with reviewState:posted", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+
+    expect(section).toContain("PATCH");
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}");
+    expect(section).toContain("reviewState");
+    expect(section).toContain("posted");
+  });
+
+  it("Step 5's Unresolved Comment Check PATCH call includes commitSha set to headRefOid", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+
+    const patchBlock = section.slice(patchIdx, patchIdx + 500);
+    expect(patchBlock).toContain("commitSha");
+    expect(patchBlock).toContain("headRefOid");
+  });
+
+  it("Step 5's Unresolved Comment Check PATCH call does NOT set staged:true", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+
+    const patchBlock = section.slice(patchIdx, patchIdx + 500);
+    // Should not contain staged:true in this particular call
+    expect(patchBlock).not.toContain('"staged": true');
+    expect(patchBlock).not.toContain("'staged': true");
+  });
+
+  it("Step 5's Unresolved Comment Check documentation notes that this does not interact with review-staged flow", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+
+    const unresolvedSection = section.slice(unresolvedIdx);
+    // Should contain explicit documentation about review-staged
+    expect(unresolvedSection).toContain("review-staged");
+  });
+});
