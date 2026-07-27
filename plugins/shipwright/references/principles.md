@@ -279,6 +279,30 @@ logged values are not secrets), and the fix is usually a redaction or field-allo
 decision specific to the call site; this entry carries no Detection field and is never
 entropy-scanned.
 
+### `workflow_job_timeout`
+
+**Domain:** security
+**Severity:** medium
+
+Every job in a GitHub Actions workflow must set a job-level `timeout-minutes`. Without
+one, GitHub falls back to its own default ceiling of 360 minutes — a hung step (a stuck
+test runner, a network call that never times out, a wedged process waiting on input) burns
+a full 6 hours of runner time before anything notices, instead of failing fast and visibly.
+Classification is always obvious by construction (the `timeout-minutes` key is either
+present on a job or it isn't), so it routes to an autonomous fix.
+
+**Detection:** Parse every `.github/workflows/*.yml` file's `jobs:` mapping. Flag any job
+missing a job-level `timeout-minutes` key (distinct from a per-step `timeout-minutes`,
+which does not bound the whole job). When proposing a value: for test-layer jobs
+(unit/integration/smoke/e2e, identified by job name or the test command the job runs), use
+the per-layer figures already documented in `speed-budgets/SKILL.md`'s "Ongoing CI
+enforcement" section — unit: 3m, integration: 8m, smoke: 5m, e2e: 20m. Every other job type
+defaults to a flat table: lint/typecheck: 10m, docker/image build: 20m, deploy/helm/infra:
+30m, release/version-bump automation: 15m — unless the repo's own CI docs specify a
+different figure. Report: workflow file, job name, proposed value.
+**PR-worthy:** true
+**HITL:** never
+
 ---
 
 ## Inconsistent Patterns
