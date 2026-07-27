@@ -13,6 +13,7 @@ import {
   renderAdminToolbar,
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
+import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -143,6 +144,16 @@ export interface AgentDetail {
   createdAt: Date;
   updatedAt: Date;
   repos: string[];
+  authorAllowlist: string[];
+  /** The agent's type name (e.g. "coding"), resolved at creation time. */
+  typeName: string;
+  /**
+   * Required env keys declared by the agent's type manifest with no
+   * corresponding AgentEnv row yet — key names only, never values. Always
+   * present; purely informational (ATS-4.2), see renderAgentDetailPage's Env
+   * Vars card.
+   */
+  missingRequiredEnv: string[];
 }
 
 export interface CronJobItem {
@@ -578,11 +589,19 @@ export function renderAgentsPage(
 
 export function renderNewLocalAgentPage(
   userName: string,
-  error?: string,
+  types: AgentTypeOption[],
+  opts?: { error?: string },
 ): string {
+  const error = opts?.error;
   const errorHtml = error
     ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
     : "";
+  const typeOptions = types
+    .map(
+      (t) =>
+        `<option value="${escapeHtml(t.name)}">${escapeHtml(t.displayName)}</option>`,
+    )
+    .join("\n");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -620,6 +639,12 @@ export function renderNewLocalAgentPage(
           />
         </div>
         <div class="form-group">
+          <label class="form-label" for="type">Agent type <span style="color:#ef4444">*</span></label>
+          <select id="type" name="type" class="form-input" required>
+            ${typeOptions}
+          </select>
+        </div>
+        <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
           <textarea
             id="repos"
@@ -629,6 +654,17 @@ export function renderNewLocalAgentPage(
             placeholder="my-org/repo-one&#10;my-org/repo-two"
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="authorAllowlist">Author allowlist (optional, one GitHub login per line)</label>
+          <textarea
+            id="authorAllowlist"
+            name="authorAllowlist"
+            class="form-input"
+            rows="4"
+            placeholder="octocat&#10;another-user"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
         </div>
         <div>
           <button type="submit" class="btn btn-primary">Create agent →</button>
@@ -967,6 +1003,7 @@ export function renderAgentDetailPage(
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
         <h1 class="page-title" style="margin-top:4px">${escapeHtml(agent.name)}</h1>
+        <span style="font-size:13px;color:#6b7280">Type: <span class="mono">${escapeHtml(agent.typeName)}</span></span>
         ${agent.slackId ? `<span style="font-size:13px;color:#6b7280">Slack ID: <span class="mono">${escapeHtml(agent.slackId)}</span></span>` : ""}
       </div>
       ${
@@ -999,8 +1036,17 @@ export function renderAgentDetailPage(
 
     ${
       !agent.selfHosted
-        ? `<div class="card">
+        ? `<div class="card" id="env-vars">
       <div class="card-title">Env Vars</div>
+      ${
+        agent.missingRequiredEnv.length > 0
+          ? `<div class="alert alert-warning">
+        Missing required env var${agent.missingRequiredEnv.length === 1 ? "" : "s"}:
+        ${agent.missingRequiredEnv.map((key) => `<span class="badge badge-warning">${escapeHtml(key)}</span>`).join(" ")}
+        — <a href="#env-vars">set ${agent.missingRequiredEnv.length === 1 ? "it" : "them"} below</a>.
+      </div>`
+          : ""
+      }
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/envs" style="margin-bottom:16px">
         <div class="form-row" style="flex-wrap:wrap;gap:8px">
           <div class="form-group">
@@ -1063,6 +1109,47 @@ export function renderAgentDetailPage(
             <td>
               <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/repos/delete" style="display:inline">
                 <input type="hidden" name="repo" value="${escapeHtml(repo)}" />
+                <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+              </form>
+            </td>
+          </tr>`,
+                    )
+                    .join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Author allowlist</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/add" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="login" type="text" class="form-input" placeholder="octocat" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>GitHub login</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              agent.authorAllowlist.length === 0
+                ? `<tr><td colspan="2" class="empty-state">No author allowlist entries configured.</td></tr>`
+                : agent.authorAllowlist
+                    .map(
+                      (login) => `<tr>
+            <td class="mono">${escapeHtml(login)}</td>
+            <td>
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/delete" style="display:inline">
+                <input type="hidden" name="login" value="${escapeHtml(login)}" />
                 <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
               </form>
             </td>

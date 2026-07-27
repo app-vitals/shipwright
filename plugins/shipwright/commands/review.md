@@ -46,6 +46,13 @@ when a human runs `/shipwright:review` with no argument.
 
 ## Step 1: Load Policy
 
+Capture the workspace root before Step 4's worktree checkout moves cwd:
+```bash
+WORKSPACE_ROOT=$(pwd)
+```
+Steps 9-11 and Step 14 use `$WORKSPACE_ROOT` to reference `state/reviews/` — that directory
+only ever exists at the workspace root, never inside a worktree.
+
 Read `state/agent-policy.md`. If the file doesn't exist, use these conservative defaults:
 
 | Setting | Default |
@@ -159,7 +166,9 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
   (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
   respond `[silent]`, and stop — there is no other PR to fall back to in explicit-target mode.
 
-All subsequent steps run from `worktrees/{repo}-{branch-slug}/`.
+All subsequent steps run from `worktrees/{repo}-{branch-slug}/` — except `state/reviews/`
+file operations (Steps 9-11, Step 14's cross-reference), which use `$WORKSPACE_ROOT`
+captured in Step 1, since `state/reviews/` only ever exists at the workspace root.
 
 ### Resolve the linked task's model tier
 
@@ -338,7 +347,7 @@ more, trim to the highest-confidence few.
 
 ## Step 9: Write Review File
 
-Write `state/reviews/PR_REVIEW_{pr}.md`:
+Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`:
 
 ```markdown
 # PR Review: #{pr} - {title}
@@ -403,8 +412,8 @@ Write `state/reviews/PR_REVIEW_{pr}.md`:
 
 ### Re-Review (Update)
 
-If this agent reviewed this PR before — detected by the local file `state/reviews/PR_REVIEW_{pr}.md`
-already existing (`test -f state/reviews/PR_REVIEW_{pr}.md`):
+If this agent reviewed this PR before — detected by the local file `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`
+already existing (`test -f $WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`):
 
 Append an update section instead of creating a new file. (Do not use `reviewCycles` from the
 task store — another agent may have incremented it without this agent ever reviewing, so the
@@ -460,7 +469,7 @@ treats it as an unaddressed finding forever. Always lead the body with the liter
 label, on both the initial-review and re-review paths (Steps 10/11 run identically for both;
 see Step 14's re-review flow).
 
-Write `state/reviews/pr_review_{pr}.json`:
+Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 
 ```json
 {
@@ -504,7 +513,7 @@ should be held; the inline comments convey the specific feedback to the author.
 1. Submit via GitHub API, capturing both the exit status and the response body:
    ```bash
    POST_RESPONSE=$(gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
-     --input state/reviews/pr_review_{pr}.json)
+     --input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json)
    POST_EXIT=$?
    ```
 2. Capture `html_url` from `$POST_RESPONSE` (e.g. `echo "$POST_RESPONSE" | jq -r '.html_url'`).
@@ -714,7 +723,7 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
   ```
   Continue from **Step 4** (checkout into worktree) with this PR as the target. The
   Step 9 "Re-Review (Update)" mechanics append an update section to the existing
-  `state/reviews/PR_REVIEW_{pr}.md`, and Step 11 re-stages the record — the same
+  `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`, and Step 11 re-stages the record — the same
   policy-gated staging path any other review goes through. This command never posts
   it; running `/shipwright:review-staged` afterward is how the owner acts on it.
 

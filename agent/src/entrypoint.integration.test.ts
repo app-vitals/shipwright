@@ -25,6 +25,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   allowedTools: ["Read", "Write", "Bash"],
   plugins: [{ marketplace: "my-market", plugin: "my-plugin" }],
   repos: [],
+  authorAllowlist: [],
 };
 
 // ─── Temp dir helpers ──────────────────────────────────────────────────────────
@@ -249,6 +250,7 @@ describe("runEntrypoint — config with empty env", () => {
       allowedTools: [],
       plugins: [],
       repos: [],
+      authorAllowlist: [],
     };
     const configClient = new RecordedShipwrightConfigClient(emptyConfig);
     const { deps, exitCodes, spawnCalls } = makeDeps(configClient);

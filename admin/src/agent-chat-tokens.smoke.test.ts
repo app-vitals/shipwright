@@ -199,6 +199,11 @@ function makeMockDeps(opts?: {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentMemberService: {
+      add: async () => {
+        throw new Error("not implemented");
+      },
+    },
     agentChatTokenService: {
       upsertDailyByModel: opts?.agentChatTokenServiceThrows
         ? async (_agentId: string) => {
