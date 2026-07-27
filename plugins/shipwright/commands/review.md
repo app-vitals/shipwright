@@ -256,8 +256,32 @@ If **any** of the following are true, this PR has substantive unresolved feedbac
 
 If substantive unresolved feedback is found: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
-release the claim so the record returns to `pending`
-(`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), respond `[silent]`, and stop.
+mark the PR as reviewed-at-this-commit (without staging) so the record is not re-evaluated at the
+same commit:
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
+  -d '{"reviewState": "posted", "commitSha": "{headRefOid}"}' >/dev/null
+```
+Note: `staged` is NOT set here, so this does not interact with `/shipwright:review-staged`'s
+staged-record flow — this is purely a commit-level dedup to prevent re-review at the same head
+until new commits land. The claim (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) is
+auto-cleared by `pull-request-service.ts` when `reviewState` is set to `posted`.
+
+**Caveat:** this dedup only reliably holds when the substantive unresolved feedback came from a
+formal `CHANGES_REQUESTED`/`COMMENTED` review object at head. `agent/src/pr-state-reconciler.ts`'s
+background `reconcilePostedReviewStateRecord()` heals a `posted` record back to `pending` once its
+`hasAnyReviewAtHead()` check finds no formal review object at the current head commit — it does not
+inspect issue-level PR comments. So when the substantive unresolved feedback is a plain PR
+comment with no accompanying formal review at head, the very next reconcile pass (every 30-60
+min) PATCHes `reviewState` back to `pending`, and this PR becomes re-selectable for review — the
+dedup set here does not persist for that case. This is not a regression vs. the old
+`release`-based skip (which produced the same eventual `pending` state, just immediately instead
+of after a reconcile delay); it just means the delay before the same re-review-at-this-commit
+churn resumes is longer, not zero, for the plain-comment trigger.
+Respond `[silent]`, and stop.
 
 8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
    together run longer than the claim TTL, so renew the heartbeat now, before starting the
