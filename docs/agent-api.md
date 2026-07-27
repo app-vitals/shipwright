@@ -68,7 +68,7 @@ GET /agents/:id
 
 Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `typeName`, and `missingRequiredEnv`.
 
-`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty or unset, all authenticated users are allowed.
+`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty, all authenticated users are allowed.
 
 `missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
