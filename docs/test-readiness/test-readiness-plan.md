@@ -29,11 +29,16 @@ unescalated risk, across the 2026-07-19 and 2026-07-21 cycles — it did **not**
 resolution had already happened by the time this cycle's carry-forward check would have
 triggered it.
 
-**T-071 (`mcp-server/src/main.ts` fail-closed auth-guard test) is still not queued to
-task-store** — no `test-t-071-shipwright` record exists (confirmed via a fresh query
-across all `test-t-NNN-shipwright` IDs this cycle; max existing ID is still `070`). The
-underlying gap the 2026-07-21 plan wrote this task up for is **still open** and now
-**unresolved for a second consecutive cycle** — see Milestone 2 and Open risks below.
+**T-071 (`mcp-server/src/main.ts` fail-closed auth-guard test) was still not queued to
+task-store as of this section's own drafting** — the fresh query run at that point found
+no `test-t-071-shipwright` record (max existing ID was still `070`). **Superseded same-day:**
+a separate `test-fix` run (Phase 5, see the Summary above) queued `test-t-071-shipwright`,
+`test-t-072-shipwright`, and `test-t-073-shipwright` later on 2026-07-23 (all `createdAt:
+2026-07-23T06:14:14Z`), before this doc merged. `test-t-071-shipwright` has since merged
+and deployed (PR #2178); `test-t-072-shipwright` has merged and deployed (PR #2177);
+`test-t-073-shipwright` is `pending` under HITL awaiting a human scoping decision (see
+T-073 below). No escalation is needed for this item — see Milestone 2 and Open risks
+below.
 
 ## 1. Where we are now
 
@@ -57,11 +62,14 @@ question, not a straightforward unit-layer gap. See Milestone 4 / Section 5.
 `readme.content.test.ts` — plus 3 new `site/` Playwright specs plus a +5 correction of a
 stale undercount inherited from the 2026-07-21 doc, see `test-migration.md`). T-051 (the
 sole carried-forward item from the last two cycles) is now **resolved** (see Status
-section above). `mcp-server/src/main.ts` remains a **real, untested, security-relevant
-gap**, now unresolved for a second consecutive cycle since its module-level fail-closed
-guard on `SHIPWRIGHT_MCP_SERVER_TOKEN` still has zero test coverage. Two new low-priority
-net-new gaps surfaced this cycle: `lib/agent-default-tools.ts` (trivial, unit-eligible)
-and `site/src/lib/html-escape.ts` (trivial but scoping-blocked). See Milestone 2 / 4 and
+section above). As of this phase's drafting, `mcp-server/src/main.ts` was a **real,
+untested, security-relevant gap**, unresolved for a second consecutive cycle since its
+module-level fail-closed guard on `SHIPWRIGHT_MCP_SERVER_TOKEN` still had zero test
+coverage — **superseded same-day** by Phase 5's `test-fix` run, which queued and landed
+T-071 (PR #2178) before this doc merged; see the Status section above. Two new
+low-priority net-new gaps surfaced this cycle: `lib/agent-default-tools.ts` (trivial,
+unit-eligible; also landed same-day via T-072, PR #2177) and `site/src/lib/html-escape.ts`
+(trivial but scoping-blocked; T-073 remains `pending` under HITL). See Milestone 2 / 4 and
 Section 5 below.
 
 ### Local-runnable status
@@ -154,8 +162,10 @@ verification task is needed this cycle either.
 with zero test coverage (Phase 3's reconciled verdict, unchanged from the 2026-07-21
 pass; see Section 3 above): its fail-closed `SHIPWRIGHT_MCP_SERVER_TOKEN` guard runs at
 module load and is never exercised by `index.smoke.test.ts` or any other test in the
-repo. **This is the second consecutive cycle this gap has gone unqueued to task-store**
-(no `test-t-071-shipwright` record exists) — see Open risks below.
+repo. **This section's own drafting found the gap unqueued for a second consecutive cycle**
+(no `test-t-071-shipwright` record at that point) — but a same-day `test-fix` run (Phase 5)
+superseded this before the doc merged: `test-t-071-shipwright` was queued, merged, and
+deployed via PR #2178 the same day. See Open risks below.
 
 1. **T-071 — `mcp-server/src/main.ts` fail-closed auth guard smoke-adjacent test.** One test asserting the process refuses to start (the module throws) when `SHIPWRIGHT_MCP_SERVER_TOKEN` is unset, e.g. via a dynamic `import()` of `main.ts` in a subprocess or with the env var deleted before import. Mirrors the shape of the prior cycles' T-069/T-070 net-new coverage tasks. Unchanged in scope from the 2026-07-21 plan.
 
@@ -202,10 +212,13 @@ Root `CLAUDE.md` declares `direct` — no staging/production GitHub Environments
 ## 5. Task list
 
 Flat, ordered, agent-executable. T-071 carries forward from the 2026-07-21 plan, unchanged
-in scope — a fresh task-store query this cycle confirms `test-t-071-shipwright` still does
-not exist (max existing `test-t-NNN-shipwright` ID found is still `070`, queried across all
-`test-t-*-shipwright`-pattern tasks regardless of status). T-072 and T-073 are genuinely
-new this cycle, using the next two unclaimed numbers in sequence.
+in scope — a fresh task-store query at this section's drafting found `test-t-071-shipwright`
+did not yet exist (max existing `test-t-NNN-shipwright` ID found was still `070`, queried
+across all `test-t-*-shipwright`-pattern tasks regardless of status). T-072 and T-073 use
+the next two unclaimed numbers in sequence. **Superseded same-day:** a separate `test-fix`
+run (Phase 5) queued all three (`test-t-071/072/073-shipwright`, `createdAt:
+2026-07-23T06:14:14Z`) before this doc merged — see the Status section above for current
+statuses.
 
 | ID | Milestone | Files to touch | Layer | Bucket origin | Expected outcome | Verification command | Depends on |
 |---|---|---|---|---|---|---|---|
@@ -213,12 +226,12 @@ new this cycle, using the next two unclaimed numbers in sequence.
 | T-072 | 4 | `lib/agent-default-tools.unit.test.ts` (new) | unit | net-new | `DEFAULT_ADMIN_AGENT_TOOLS`/`DEFAULT_AGENT_TOOLS` array contents asserted | `bun test lib/agent-default-tools.unit.test.ts` | — |
 | T-073 | 4 | `docs/test-readiness/test-system.md` + optionally `site/src/lib/html-escape.unit.test.ts` | unit (pending scoping) | net-new | `site/`'s unit-test scoping question resolved and documented, or a dedicated test lands | `bun test site/src/lib/html-escape.unit.test.ts` (if applicable) | — |
 
-No task in this cycle exceeds the ~1000-line cap, touches more than one functional concern, or represents an N-service repeated operation — no task splitting was required. Phase 5 (`test-fix`) should confirm `test-t-071-shipwright` genuinely does not exist before creating it (it has now been written up in two consecutive roadmap docs without being queued — see Open risks), and should create fresh `test-t-072-shipwright`/`test-t-073-shipwright` records for the two new tasks.
+No task in this cycle exceeds the ~1000-line cap, touches more than one functional concern, or represents an N-service repeated operation — no task splitting was required. This is what Phase 5 (`test-fix`, run separately from this PR) did: it re-verified live task-store state directly rather than trusting this plan doc's snapshot, found all three (`test-t-071/072/073-shipwright`) already queued by an earlier same-day run, and queued 0 new tasks as a result. See the Status section above and the Summary in the PR description for details.
 
 ## 6. Open risks
 
 - **T-051 is resolved — no further risk.** Closed 2026-07-22 via HITL, branch protection updated directly via `gh api PUT`. Included here only for continuity with the prior two cycles' risk entries.
-- **T-071 has now been written up in two consecutive roadmap docs (2026-07-21, 2026-07-23) without ever being queued to task-store.** No `test-t-071-shipwright` record exists as of this cycle's fresh query. Unlike T-051 (which needed elevated GitHub API scope this sandbox doesn't have), T-071 has **no external blocker** — it's a self-contained smoke test an agent can write and land directly. Its non-queuing across two cycles looks like a Phase 5 (`test-fix`) process gap, not a genuine access blocker: this cycle's `test-fix` run (Phase 5 below) should queue it as the priority item. If T-071 is still unqueued at the *next* `/test-roadmap` run, escalate — a critical-tier security gap sitting unactioned for three cycles with no external blocker would be a process failure worth surfacing to a human directly, not silently carrying forward a fourth time.
+- **T-071 resolved same-day — no further risk.** This section's own drafting found T-071 written up in two consecutive roadmap docs (2026-07-21, 2026-07-23) without ever being queued to task-store, with no external blocker (unlike T-051). That premise was superseded before this doc merged: a separate same-day `test-fix` run (Phase 5) queued `test-t-071-shipwright` (along with `test-t-072-shipwright` and `test-t-073-shipwright`), and it has since merged and deployed via PR #2178. Included here only for continuity with how this risk was tracked mid-cycle — no escalation is needed.
 - **Speed baseline is a point-in-time measurement (2026-07-15), now three cycles stale.** It predates 2026-07-19's 19-file delta, 2026-07-21's 6-file delta, and this cycle's 11-file delta (243 → 249 → 260 files). No single delta is large enough to plausibly threaten the <15min full-PR budget (per `test-system.md`'s own override-condition analysis), but the baseline itself doesn't reflect current file count and the gap is widening. Not urgent enough to re-measure this cycle; worth a fresh capture the next time suite growth is non-trivial or a flake/slowness pattern is reported.
 - **Recorded-fixture coverage breadth** (Phase 2's gaps-summary item 2: ~9 remaining `Http*Client` modules that could extend the `Recorded*Client` pattern) is a design-level backlog item, not a migration-bucket verdict on any existing file — no task emitted this cycle since Phase 3 found no test currently missing coverage because of it. Revisit if a future inventory pass tags one of those clients as critical/high with no test.
 - **`agent/src/piper-voice.ts` reclassification watch item** (Phase 1/2: unit today, integration once Piper synthesis lands per PPR-1.2) — no action needed until that lands, still not landed as of this cycle; flagged so a future Phase 3 doesn't silently miss the transition.
