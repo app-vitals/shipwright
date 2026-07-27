@@ -57,6 +57,16 @@ import {
   type WorkTaskCandidate,
   selectNextWorkItem,
 } from "../agent/src/work-selector.ts";
+import { FLOOR_TOOLS } from "../agent/src/claude.ts";
+
+// ---------------------------------------------------------------------------
+// Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can
+// execute arbitrary commands; keep them behind the approval prompt).
+// ---------------------------------------------------------------------------
+
+export const HITL_ALLOWED_TOOLS = [
+  ...new Set([...FLOOR_TOOLS, "WebSearch", "WebFetch"]),
+];
 
 // ---------------------------------------------------------------------------
 // Paths — anchored to this script, not cwd
@@ -726,13 +736,23 @@ async function runLoop(): Promise<void> {
     log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     console.log("");
 
-    const claude = Bun.spawn(["claude", command], {
-      cwd: WORKSPACE,
-      env: buildClaudeSpawnEnv(process.env),
-      stdout: "inherit",
-      stderr: "inherit",
-      stdin: "inherit",
-    });
+    const claude = Bun.spawn(
+      [
+        "claude",
+        "--permission-mode",
+        "acceptEdits",
+        "--allowedTools",
+        ...HITL_ALLOWED_TOOLS,
+        command,
+      ],
+      {
+        cwd: WORKSPACE,
+        env: buildClaudeSpawnEnv(process.env),
+        stdout: "inherit",
+        stderr: "inherit",
+        stdin: "inherit",
+      },
+    );
 
     await claude.exited;
 
