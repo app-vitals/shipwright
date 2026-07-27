@@ -16,6 +16,7 @@ import {
   createAgentAuthorAllowlistRef,
 } from "./agent-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
+import type { PrReviewData, ReviewNode } from "./check-patch.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
@@ -40,6 +41,20 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
   };
 }
 
+/** Default fetchPrReviews stub: no reviews at all — "no terminal review", every PR stays eligible. */
+async function defaultFetchPrReviews(
+  _org: string,
+  _repo: string,
+  _pr: number,
+): Promise<PrReviewData> {
+  return {
+    headRefOid: "abc123def456",
+    reviews: { nodes: [] },
+    reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
+  };
+}
+
 function makeDeps(
   prs: PrInfo[],
   queryPrRecordFn: (
@@ -57,6 +72,11 @@ function makeDeps(
   ],
   hasScopeSynced: () => boolean = () => true,
   isBundleComplete?: (branch: string) => Promise<boolean>,
+  fetchPrReviews: (
+    org: string,
+    repo: string,
+    pr: number,
+  ) => Promise<PrReviewData> = defaultFetchPrReviews,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
@@ -66,7 +86,31 @@ function makeDeps(
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
+    fetchPrReviews,
     ...(isBundleComplete ? { isBundleComplete } : {}),
+  };
+}
+
+// ─── Live-review fixture helpers (RVD-1.1) ───────────────────────────────────
+
+function makeReviewNode(overrides: Partial<ReviewNode> = {}): ReviewNode {
+  return {
+    author: { login: "some-reviewer" },
+    state: "COMMENTED",
+    submittedAt: "2026-07-15T10:00:00.000Z",
+    commit: { oid: "abc123def456" },
+    body: "",
+    ...overrides,
+  };
+}
+
+function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
+  return {
+    headRefOid: "abc123def456",
+    reviews: { nodes: [] },
+    reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
+    ...overrides,
   };
 }
 
@@ -233,6 +277,7 @@ describe("getReviewCandidates", () => {
       isSelfReviewAllowed: false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
+      fetchPrReviews: defaultFetchPrReviews,
     };
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
@@ -684,6 +729,124 @@ describe("getReviewCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  // ─── live-GitHub review dedup (RVD-1.1) ──────────────────────────────────
+
+  test("excludes a PR with a live terminal review at head from a non-self author, even with no task-store record (identity-agnostic dedup)", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "out-of-band-reviewer" },
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null, // no task-store record — this instance never claimed it
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR whose only live reviews are at a stale (non-head) commit", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "old-stale-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("fails open (stays eligible) when fetchPrReviews throws/rejects", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("GraphQL rate limited");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("a live terminal review at head still excludes the PR even when the task-store record independently says eligible", async () => {
+    // The second, independent signal: even a fresh/pending task-store record
+    // must not override a live terminal review at head.
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({ commitSha: null, reviewState: "pending" }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
   });
 });
 

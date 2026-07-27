@@ -1057,7 +1057,7 @@ export async function createProductionLoopOrchestrator(
   opts: LoopOrchestratorProductionOptions,
 ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
   const devTaskDeps = buildDevTaskDeps();
-  const reviewDeps = await buildReviewDeps({ ghJson });
+  const reviewDeps = await buildReviewDeps({ ghJson, ghGraphql });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
   const deployDeps = await buildDeployDeps({ ghJson });
   const taskStoreClient = createTaskStoreClient();
