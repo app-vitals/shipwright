@@ -10,12 +10,14 @@
  * function was ported there in WL-2.1) and are not duplicated here.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
   type PrRecord,
+  buildProductionDeps,
   getReviewCandidates,
 } from "./check-review.ts";
 
@@ -51,6 +53,7 @@ function makeDeps(
     ...new Set(prs.map((pr) => pr.repo ?? "")),
   ],
   hasScopeSynced: () => boolean = () => true,
+  isBundleComplete?: (branch: string) => Promise<boolean>,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
@@ -60,6 +63,7 @@ function makeDeps(
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
+    ...(isBundleComplete ? { isBundleComplete } : {}),
   };
 }
 
@@ -598,5 +602,120 @@ describe("getReviewCandidates", () => {
       ),
     );
     expect(result).toEqual([]);
+  });
+
+  // ─── author allowlist filtering (HRA-1.1) ────────────────────────────────
+
+  test("isAuthorAllowed filters out a PR whose author does not match", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("isAuthorAllowed passes through a PR whose author matches", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "danmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  // ─── bundle completeness gate (RBG-1.1) ──────────────────────────────────
+
+  test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-incomplete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch !== "feat/bundle-incomplete",
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR when isBundleComplete resolves true for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-complete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch === "feat/bundle-complete",
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("includes a PR when isBundleComplete rejects for its branch (fail-open)", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-check-throws" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("bundle status check failed");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+});
+
+describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
+  beforeEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  afterEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+
+  test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
+    agentAuthorAllowlistRef.set([]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+  });
+
+  test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
+    agentAuthorAllowlistRef.set(["allowed-user"]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed?.("allowed-user")).toBe(true);
+    expect(deps.isAuthorAllowed?.("someone-else")).toBe(false);
+  });
+
+  test("an explicit opts.isAuthorAllowed overrides the ref-backed default", async () => {
+    agentAuthorAllowlistRef.set(["ref-user"]);
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      isAuthorAllowed: (login) => login === "explicit-user",
+    });
+    expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
+    expect(deps.isAuthorAllowed?.("explicit-user")).toBe(true);
   });
 });

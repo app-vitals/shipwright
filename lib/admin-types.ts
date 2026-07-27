@@ -1584,6 +1584,8 @@ export interface components {
             slackId?: string | null;
             /** @example false */
             selfHosted: boolean;
+            /** @example coding */
+            typeName: string;
             /**
              * Format: date-time
              * @example 2026-01-01T00:00:00.000Z
@@ -1606,6 +1608,20 @@ export interface components {
             slackId?: string;
             /** @example false */
             selfHosted?: boolean;
+            /** @example coding */
+            type?: string;
+            /**
+             * @example [
+             *       "my-org/my-repo"
+             *     ]
+             */
+            repos?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            authorAllowlist?: string[];
         };
         ReconcileAgentsResult: {
             recreated: string[];
@@ -1632,10 +1648,13 @@ export interface components {
             slackId?: string | null;
             selfHosted: boolean;
             repos: string[];
+            authorAllowlist: string[];
+            typeName: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+            missingRequiredEnv: string[];
         };
         PatchAgentBody: {
             /** @example false */
@@ -1646,6 +1665,12 @@ export interface components {
              *     ]
              */
             repos?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            authorAllowlist?: string[];
         };
         FailedStep: {
             /** @example k8s */
@@ -1684,6 +1709,8 @@ export interface components {
             name: string;
             /** @example false */
             selfHosted: boolean;
+            /** @example coding */
+            typeName: string;
         };
         Ok: {
             /** @enum {boolean} */
@@ -1882,10 +1909,10 @@ export interface components {
             /** @example null */
             error: string | null;
             /**
-             * @description Pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons.
-             * @example dev-task
+             * @description Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy). Null for legacy five-job crons or ticks with no phase attribution.
+             * @example clx0987654321
              */
-            phase: string | null;
+            phaseId: string | null;
             /**
              * @description Work item type this run was dispatched against ("task" | "pr"). Null when the tick had no dispatch (skipped tick, empty queue).
              * @example task
@@ -1934,10 +1961,10 @@ export interface components {
             /** @example null */
             error?: string | null;
             /**
-             * @description Pipeline phase this run served (dev-task/review/patch/deploy)
-             * @example dev-task
+             * @description Child AgentCronJob id (FK) of the pipeline phase this run served (dev-task/review/patch/deploy)
+             * @example clx0987654321
              */
-            phase?: string | null;
+            phaseId?: string | null;
             /**
              * @description Work item type this run was dispatched against ("task" | "pr")
              * @example task
@@ -2257,6 +2284,12 @@ export interface components {
              *     ]
              */
             repos: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            authorAllowlist: string[];
         };
         RuntimeError: {
             /** @example Not found */

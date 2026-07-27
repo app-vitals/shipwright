@@ -36,7 +36,7 @@ function makeCron(id: string): AgentCronJob {
 }
 
 function makeConfig(env: Record<string, string>): AgentConfigResponse {
-  return { env, allowedTools: [], plugins: [], repos: [] };
+  return { env, allowedTools: [], plugins: [], repos: [], authorAllowlist: [] };
 }
 
 // ─── Recorded double ──────────────────────────────────────────────────────────

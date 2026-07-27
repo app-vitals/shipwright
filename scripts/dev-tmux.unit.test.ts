@@ -246,7 +246,8 @@ describe("buildStackCommands", () => {
     expect(tokenMatch).not.toBeNull();
     const adminToken = tokenMatch?.[1] ?? "";
     const seedCmd =
-      calls.find((c) => c.argv.join(" ").includes("seed-task-store-token.ts"))
+      calls
+        .find((c) => c.argv.join(" ").includes("seed-task-store-token.ts"))
         ?.argv.join(" ") ?? "";
     expect(seedCmd).toContain(`--token ${adminToken}`);
   });
@@ -266,7 +267,9 @@ describe("runStack — per-pane commands via injected exec", () => {
     const { calls, exec } = makeRecorder();
     runStack(STACK_PANES, exec);
     const sk = sendKeysForPane(calls, 0)?.join(" ") ?? "";
-    expect(sk).toContain(`METRICS_ADMIN_APP_URL=http://localhost:${ADMIN_PORT}`);
+    expect(sk).toContain(
+      `METRICS_ADMIN_APP_URL=http://localhost:${ADMIN_PORT}`,
+    );
   });
 
   test("admin pane (pane 1) runs admin/src/main.ts with PORT=3001 and DATABASE_URL_SHIPWRIGHT_ADMIN", () => {
@@ -594,11 +597,17 @@ describe("admin pane — dev auth", () => {
     expect(admin.env?.SHIPWRIGHT_INTERNAL_API_KEY).toBeUndefined();
   });
 
-  test("admin pane has SHIPWRIGHT_ADMIN_API_KEYS with dev-agent entry (UNI-1.2)", () => {
+  test("admin pane has SHIPWRIGHT_ADMIN_API_KEYS scoped '*' (ATS-6.1 — no agent id known at admin-pane startup)", () => {
     const admin = STACK_PANES.find((p) => p.label === "admin") as Pane;
-    // Must be set so the dev-agent's runtime polling (config sync) passes auth
+    // No agent exists yet when the admin pane starts (nothing is seeded
+    // implicitly), so the key can't be scoped to a specific agent id — it
+    // must bypass per-agent scope enforcement ("*") so runtime polling
+    // (config sync) still passes auth once a developer creates an agent.
     expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS).toBeDefined();
-    expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS).toContain("dev-agent");
+    expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS).toContain(":*");
+    expect(admin.env?.SHIPWRIGHT_ADMIN_API_KEYS?.trim().endsWith(":*")).toBe(
+      true,
+    );
   });
 
   // A zero-length HS256 secret makes Web Crypto throw "DataError" the moment
@@ -611,12 +620,43 @@ describe("admin pane — dev auth", () => {
   });
 });
 
-describe("agent pane — docker run", () => {
-  test("agent pane runs docker run (not bun run-agent.ts)", () => {
+describe("agent pane — wait-loop + docker run", () => {
+  test("agent pane script runs docker run (not bun run-agent.ts)", () => {
     const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
-    expect(agent.cmd[0]).toBe("docker");
-    expect(agent.cmd[1]).toBe("run");
-    expect(agent.cmd.join(" ")).not.toContain("run-agent.ts");
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("docker run");
+    expect(cmdStr).not.toContain("run-agent.ts");
+  });
+
+  test("agent pane script waits for a developer-created agent before starting docker (no implicit agent — ATS-6.1)", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("scripts/wait-for-agent.ts");
+    // The wait-loop's resolved id must be captured and threaded into both the
+    // chat-token seed call and the docker run's SHIPWRIGHT_AGENT_ID — never a
+    // hardcoded "dev-agent" id.
+    expect(cmdStr).toContain("AGENT_ID=$(");
+    expect(cmdStr).not.toContain("SHIPWRIGHT_AGENT_ID=dev-agent");
+    expect(cmdStr).toMatch(/SHIPWRIGHT_AGENT_ID=.*AGENT_ID/);
+  });
+
+  test("agent pane script seeds the chat agent token for the resolved id, not a hardcoded 'dev-agent'", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    expect(cmdStr).toContain("scripts/seed-chat-tokens.ts");
+    expect(cmdStr).not.toContain("--agent-id dev-agent");
+    expect(cmdStr).toMatch(/--agent-id "?\$AGENT_ID"?/);
+  });
+
+  test("agent pane script runs the wait-loop, then the token seed, then docker run, in that order", () => {
+    const agent = STACK_PANES.find((p) => p.label === "agent") as Pane;
+    const cmdStr = agent.cmd.join(" ");
+    const waitIdx = cmdStr.indexOf("wait-for-agent.ts");
+    const seedIdx = cmdStr.indexOf("seed-chat-tokens.ts");
+    const dockerIdx = cmdStr.indexOf("docker run");
+    expect(waitIdx).toBeGreaterThanOrEqual(0);
+    expect(seedIdx).toBeGreaterThan(waitIdx);
+    expect(dockerIdx).toBeGreaterThan(seedIdx);
   });
 
   test("agent pane docker run mounts named volume shipwright-agent-home at /data/agent-home", () => {
@@ -731,38 +771,20 @@ describe("buildStackCommands — docker build + seed preflights", () => {
     expect(rm?.argv.join(" ")).toContain("|| true");
   });
 
-  test("buildStackCommands includes seed preflight after migrate and before agent pane", () => {
+  // Retired (ATS-6.1): "buildStackCommands includes seed preflight after
+  // migrate and before agent pane" and "seed preflight uses bun to run
+  // seed-dev-agent.ts" — `task stack` no longer seeds any agent implicitly.
+  // scripts/seed-dev-agent.ts still exists as a standalone convenience
+  // script (see scripts/seed-dev-agent.unit.test.ts) but buildStackCommands()
+  // never invokes it. Replaced by the positive assertion below.
+  test("buildStackCommands never invokes seed-dev-agent.ts — zero agents created implicitly", () => {
     const cmds = buildStackCommands(STACK_PANES, {
       repoPath: "/fake/repo",
     });
-    const migrateIdx = cmds.findIndex((c) =>
-      c.argv.join(" ").includes("migrate deploy"),
-    );
-    const seedIdx = cmds.findIndex((c) =>
+    const seedDevAgentCall = cmds.find((c) =>
       c.argv.join(" ").includes("seed-dev-agent"),
     );
-    const agentSendKeysIdx = cmds.findIndex(
-      (c) =>
-        c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
-    );
-    expect(seedIdx).toBeGreaterThanOrEqual(0);
-    expect(migrateIdx).toBeGreaterThanOrEqual(0);
-    expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
-    expect(migrateIdx).toBeLessThan(seedIdx);
-    expect(seedIdx).toBeLessThan(agentSendKeysIdx);
-  });
-
-  test("seed preflight uses bun to run seed-dev-agent.ts", () => {
-    const cmds = buildStackCommands(STACK_PANES, {
-      repoPath: "/fake/repo",
-    });
-    const seed = cmds.find((c) => c.argv.join(" ").includes("seed-dev-agent"));
-    expect(seed).toBeDefined();
-    expect(seed?.kind).toBe("preflight");
-    const cmdStr = seed?.argv.join(" ") ?? "";
-    expect(cmdStr).toContain("bun");
-    expect(cmdStr).toContain("seed-dev-agent.ts");
+    expect(seedDevAgentCall).toBeUndefined();
   });
 
   test("docker run in agent pane uses repoPath for the host volume mount", () => {
@@ -906,24 +928,38 @@ describe("chat-svc pane", () => {
     );
   });
 
-  test("seeds the chat tokens AFTER the chat migrate deploy, before the pane starts", () => {
+  // Retired (ATS-6.1): the chat-token seed call used to run as its own
+  // upfront preflight (before ANY pane started), hardcoded to
+  // "--agent-id dev-agent". No agent is created implicitly now, so that call
+  // moved INTO the agent pane's own send-keys script, running after its
+  // wait-loop resolves a real, developer-created id (see the "agent pane —
+  // wait-loop + docker run" describe block above for the ordering + id
+  // assertions). The chat-svc migrate-deploy preflight itself is unchanged —
+  // it still must run before the agent pane's later seed call, so the
+  // ChatToken table exists in time.
+  test("chat-svc migrate deploy preflight fires before the agent pane's send-keys (which seeds chat tokens later)", () => {
     const cmds = buildStackCommands(STACK_PANES);
     const chatMigrateIdx = cmds.findIndex((c) =>
       c.argv.join(" ").includes("DATABASE_URL_SHIPWRIGHT_CHAT="),
     );
-    const seedIdx = cmds.findIndex((c) =>
-      c.argv.join(" ").includes("seed-chat-tokens.ts"),
-    );
-    const chatSendKeysIdx = cmds.findIndex(
+    const agentSendKeysIdx = cmds.findIndex(
       (c) =>
         c.kind === "send-keys" &&
-        c.argv.some((a) => a.includes("chat/src/main.ts")),
+        c.argv.some((a) => a.includes(`${SESSION_NAME}:0.4`)),
     );
-    expect(seedIdx).toBeGreaterThanOrEqual(0);
-    expect(cmds[seedIdx]?.kind).toBe("preflight");
-    // ChatToken table must exist before seeding into it.
-    expect(chatMigrateIdx).toBeLessThan(seedIdx);
-    expect(seedIdx).toBeLessThan(chatSendKeysIdx);
+    expect(chatMigrateIdx).toBeGreaterThanOrEqual(0);
+    expect(agentSendKeysIdx).toBeGreaterThanOrEqual(0);
+    expect(chatMigrateIdx).toBeLessThan(agentSendKeysIdx);
+  });
+
+  test("buildStackCommands no longer emits a standalone seed-chat-tokens.ts preflight (it moved into the agent pane's script)", () => {
+    const cmds = buildStackCommands(STACK_PANES);
+    const standalonePreflight = cmds.find(
+      (c) =>
+        c.kind === "preflight" &&
+        c.argv.join(" ").includes("seed-chat-tokens.ts"),
+    );
+    expect(standalonePreflight).toBeUndefined();
   });
 
   test("the seeded admin token matches the token handed to the admin pane", () => {
@@ -936,14 +972,11 @@ describe("chat-svc pane", () => {
       /SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN=(\S+)/,
     );
     expect(tokenMatch).not.toBeNull();
-    const seedCmd =
-      calls
-        .find((c) => c.argv.join(" ").includes("seed-chat-tokens.ts"))
-        ?.argv.join(" ") ?? "";
-    expect(seedCmd).toContain(`--admin-token ${tokenMatch?.[1] ?? ""}`);
+    const agentSk = sendKeysForPane(calls, 4)?.join(" ") ?? "";
+    expect(agentSk).toContain(`--admin-token ${tokenMatch?.[1] ?? ""}`);
   });
 
-  test("the seeded agent token matches the token handed to the agent container", () => {
+  test("the seeded agent token matches the token handed to the agent container, scoped to the resolved (not hardcoded) id", () => {
     // Same drift guard for the poll loop: agent token mismatch → 401 → the
     // agent silently never claims messages.
     const { calls, exec } = makeRecorder();
@@ -951,13 +984,10 @@ describe("chat-svc pane", () => {
     const agentSk = sendKeysForPane(calls, 4)?.join(" ") ?? "";
     const tokenMatch = agentSk.match(/SHIPWRIGHT_CHAT_SERVICE_TOKEN=(\S+)/);
     expect(tokenMatch).not.toBeNull();
-    const seedCmd =
-      calls
-        .find((c) => c.argv.join(" ").includes("seed-chat-tokens.ts"))
-        ?.argv.join(" ") ?? "";
-    expect(seedCmd).toContain(`--agent-token ${tokenMatch?.[1] ?? ""}`);
-    // And the seed scopes that token to the seeded dev agent record.
-    expect(seedCmd).toContain("--agent-id dev-agent");
+    expect(agentSk).toContain(`--agent-token ${tokenMatch?.[1] ?? ""}`);
+    // Scoped to the wait-loop's resolved id, never a hardcoded "dev-agent".
+    expect(agentSk).not.toContain("--agent-id dev-agent");
+    expect(agentSk).toMatch(/--agent-id "?\$AGENT_ID"?/);
   });
 
   test("admin pane wires the chat-service URL + admin token so the Chat tab is not degraded", () => {

@@ -32,6 +32,7 @@ import {
   renderChatThreadPage,
   renderCronLogsPage,
   renderLoginPage,
+  renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
@@ -56,6 +57,9 @@ const AGENT: AgentDetail = {
   createdAt: new Date("2024-01-01T00:00:00Z"),
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
+  authorAllowlist: [],
+  typeName: "coding",
+  missingRequiredEnv: [],
 };
 
 const AGENT_LIST_ITEM: AgentListItem = {
@@ -537,6 +541,32 @@ describe("renderAgentDetailPage — overview", () => {
     expect(html).toContain('href="/admin/agents"');
   });
 
+  test("agent type name is displayed", () => {
+    const html = render();
+    expect(html).toContain("coding");
+  });
+
+  test("XSS: agent type name is escaped", () => {
+    const xssAgent: AgentDetail = {
+      ...AGENT,
+      typeName: '<script>alert("xss")</script>',
+    };
+    const html = renderAgentDetailPage(
+      xssAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    expect(html).not.toContain('alert("xss")');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
   test("danger zone: delete form uses data-agent-name attribute (XSS-safe)", () => {
     const xssAgent: AgentDetail = {
       ...AGENT,
@@ -575,6 +605,68 @@ describe("renderAgentDetailPage — overview", () => {
     );
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
+  });
+});
+
+// ─── renderNewLocalAgentPage ──────────────────────────────────────────────────
+
+describe("renderNewLocalAgentPage", () => {
+  const CODING_TYPE = { name: "coding", displayName: "Coding Agent" };
+
+  test("returns a valid HTML document", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("<html");
+    expect(html).toContain("</html>");
+  });
+
+  test("renders a required select[name=type]", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<select[^>]*name="type"[^>]*required[^>]*>|<select[^>]*required[^>]*name="type"[^>]*>/,
+    );
+  });
+
+  test("renders exactly one option per registry type, value=name label=displayName", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    const optionMatches = html.match(/<option /g) ?? [];
+    expect(optionMatches).toHaveLength(1);
+  });
+
+  test("renders multiple options when the registry has multiple types", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [
+      CODING_TYPE,
+      { name: "research", displayName: "Research Agent" },
+    ]);
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+    expect(html).toContain('<option value="research">Research Agent</option>');
+  });
+
+  test("XSS: type name/displayName are escaped", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [
+      { name: "coding", displayName: '<script>alert("xss")</script>' },
+    ]);
+    expect(html).not.toContain('alert("xss")');
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  test("no error alert when no error", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).not.toContain('class="alert alert-error"');
+  });
+
+  test("error alert shown when error is passed", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      error: "Something went wrong",
+    });
+    expect(html).toContain('class="alert alert-error"');
+    expect(html).toContain("Something went wrong");
+  });
+
+  test("renders an authorAllowlist textarea", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
   });
 });
 
@@ -655,6 +747,65 @@ describe("renderAgentDetailPage — env vars", () => {
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Key<\/th>/,
     );
+  });
+});
+
+// ─── renderAgentDetailPage — missingRequiredEnv badge (ATS-4.2) ──────────────
+
+describe("renderAgentDetailPage — missingRequiredEnv badge", () => {
+  function render(missingRequiredEnv: string[]): string {
+    const agent: AgentDetail = { ...AGENT, missingRequiredEnv };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("missing required env key renders a badge/callout referencing the key name", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(html).toContain('class="badge badge-warning"');
+    expect(html).toContain('class="alert alert-warning"');
+  });
+
+  test("badge links to the env editor card", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    expect(html).toContain('id="env-vars"');
+    expect(html).toContain('href="#env-vars"');
+  });
+
+  test("multiple missing keys are all listed", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN", "GH_TOKEN"]);
+    expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(html).toContain("GH_TOKEN");
+  });
+
+  test("empty missingRequiredEnv renders no badge/callout", () => {
+    const html = render([]);
+    expect(html).not.toContain('class="badge badge-warning"');
+    expect(html).not.toContain("Missing required env var");
+  });
+
+  test("no env values ever appear alongside the badge — key names only", () => {
+    const html = render(["CLAUDE_CODE_OAUTH_TOKEN"]);
+    // The rendered badge must carry only the key name, never a value —
+    // there is no value to render here since AgentDetail.missingRequiredEnv
+    // is string[] of key names (secrets_in_logs).
+    expect(html).not.toContain("secret-value");
+  });
+
+  test("XSS: missing env key names are escaped", () => {
+    const html = render(['<script>alert("xss")</script>']);
+    expect(html).not.toContain('alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 
@@ -1868,6 +2019,59 @@ describe("renderAgentDetailPage — repos", () => {
     const html = render(["my-org/my-repo"]);
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>Repo<\/th>/,
+    );
+  });
+});
+
+// ─── renderAgentDetailPage — author allowlist section ────────────────────────
+
+describe("renderAgentDetailPage — author allowlist", () => {
+  function render(authorAllowlist: string[]): string {
+    const agent: AgentDetail = { ...AGENT, authorAllowlist };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("renders empty author allowlist state", () => {
+    const html = render([]);
+    expect(html).toContain("No author allowlist entries configured.");
+  });
+
+  test("renders author allowlist list", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain("octocat");
+  });
+
+  test("author allowlist section has add form", () => {
+    const html = render([]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/author-allowlist/add"`,
+    );
+    expect(html).toContain('name="login"');
+  });
+
+  test("author allowlist section has remove button for existing login", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/author-allowlist/delete"`,
+    );
+    expect(html).toContain('value="octocat"');
+  });
+
+  test("Author allowlist table is wrapped in .data-table-wrapper", () => {
+    const html = render(["octocat"]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
     );
   });
 });

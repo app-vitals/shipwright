@@ -1581,15 +1581,23 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
+    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
+    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.WORKSPACE_PATH;
+    } else {
+      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
+    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
@@ -2564,15 +2572,23 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
+    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
+    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.WORKSPACE_PATH;
+    } else {
+      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
+    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
@@ -2651,15 +2667,23 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
+    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
+    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
+    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
+      // biome-ignore lint/performance/noDelete: restore to fully-unset state
+      delete process.env.WORKSPACE_PATH;
+    } else {
+      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
+    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;

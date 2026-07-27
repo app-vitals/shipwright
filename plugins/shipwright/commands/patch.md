@@ -843,6 +843,15 @@ INSTRUCTIONS — follow in order:
   - Fix any failures introduced by your changes
   - Re-run until both pass cleanly
 
+[C.5] Add test coverage
+  - Detect the test framework and file-naming conventions from nearby existing tests in
+    the repo
+  - Add or update a test covering the new or changed behavior, following those existing
+    patterns
+  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - If no test is needed (test-file-only change, config change, or pure deletion with no
+    new behavior), state that explicitly instead of adding one
+
 [D] Commit
   These two conditions are independent — both can fire in the same run (a mixed
   ACCEPT+REJECT outcome), only the first can fire (all findings accepted/modified), only
@@ -922,6 +931,10 @@ INSTRUCTIONS — follow in order:
 
   FINDINGS_ADDRESSED:
   {bullet list of each finding addressed and how}
+
+  TESTS_ADDED:
+  {bullet list of tests added, or "none — {justification}" if [C.5] determined no test
+  was needed}
 
   CONCERNS: (if DONE_WITH_CONCERNS)
   {whenever CONCERNS lists any REJECTed finding — whether every finding was REJECT and no
@@ -1260,6 +1273,15 @@ INSTRUCTIONS — follow in order:
   - Fix any failures introduced by your changes
   - Re-run until both pass cleanly
 
+[C.5] Add test coverage
+  - Detect the test framework and file-naming conventions from nearby existing tests in
+    the repo
+  - Add or update a test covering the new or changed behavior, following those existing
+    patterns
+  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - If no test is needed (test-file-only change, config change, or pure deletion with no
+    new behavior), state that explicitly instead of adding one
+
 [D] Commit
   - Stage only the files you changed: `git add {changed files}`
   - Commit with a conventional commit message describing what was fixed:
@@ -1273,6 +1295,10 @@ INSTRUCTIONS — follow in order:
 
   FAILURES_FIXED:
   {bullet list of each CI failure addressed and how}
+
+  TESTS_ADDED:
+  {bullet list of tests added, or "none — {justification}" if [C.5] determined no test
+  was needed}
 
   CONCERNS: (if DONE_WITH_CONCERNS)
   BLOCKER: (if BLOCKED)

@@ -7,6 +7,10 @@
  */
 
 import type { PrismaClient } from "../prisma/client/index.js";
+import {
+  type AgentTypeManifestResolver,
+  AgentTypeRegistry,
+} from "./agent-type-manifest-loader.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -14,6 +18,12 @@ export interface CreateAgentInput {
   name: string;
   slackId?: string | null;
   selfHosted?: boolean;
+  /** Agent Type name. Omitted means Prisma's column default ("coding") applies. */
+  typeName?: string;
+  /** Initial repos[] — the manifest repos merged with any request-supplied repos. */
+  repos?: string[];
+  /** Initial authorAllowlist[]. */
+  authorAllowlist?: string[];
 }
 
 export interface AgentRecord {
@@ -21,6 +31,7 @@ export interface AgentRecord {
   name: string;
   slackId: string | null;
   selfHosted: boolean;
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +40,7 @@ export interface AgentSummary {
   id: string;
   name: string;
   selfHosted: boolean;
+  typeName: string;
 }
 
 export interface AgentDetail {
@@ -37,8 +49,18 @@ export interface AgentDetail {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  authorAllowlist: string[];
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Required env keys declared by the agent's type manifest that have no
+   * corresponding AgentEnv row yet — key names only, never values
+   * (secrets_in_logs). Always present (empty array when the type's required
+   * contract is empty or every required key is set). Informational only —
+   * not a create blocker or provisioning gate (ATS-4.2).
+   */
+  missingRequiredEnv: string[];
 }
 
 export interface UpdateSelfHostedInput {
@@ -50,11 +72,13 @@ export interface UpdateSelfHostedInput {
    */
   selfHosted?: boolean;
   repos?: string[];
+  authorAllowlist?: string[];
 }
 
 export interface AgentIdAndRepos {
   id: string;
   repos: string[];
+  authorAllowlist: string[];
 }
 
 export interface AgentOption {
@@ -65,13 +89,19 @@ export interface AgentOption {
 export interface UpdateAgentFieldsInput {
   name?: string;
   repos?: string[];
+  authorAllowlist?: string[];
   selfHosted?: boolean;
   slackId?: string | null;
 }
 
 // ─── Select shapes ────────────────────────────────────────────────────────────
 
-const SUMMARY_SELECT = { id: true, name: true, selfHosted: true } as const;
+const SUMMARY_SELECT = {
+  id: true,
+  name: true,
+  selfHosted: true,
+  typeName: true,
+} as const;
 
 const DETAIL_SELECT = {
   id: true,
@@ -79,6 +109,8 @@ const DETAIL_SELECT = {
   slackId: true,
   selfHosted: true,
   repos: true,
+  authorAllowlist: true,
+  typeName: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -86,19 +118,34 @@ const DETAIL_SELECT = {
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class AgentService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(
+    private prisma: PrismaClient,
+    private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
+  ) {}
 
   /**
-   * Create a new agent row.
+   * Create a new agent row, plus `missingRequiredEnv` (see
+   * computeMissingRequiredEnv) — a freshly created agent has no AgentEnv rows
+   * yet, so this always reflects the full set of the type's required keys.
    */
-  async create(input: CreateAgentInput): Promise<AgentRecord> {
-    return this.prisma.agent.create({
+  async create(input: CreateAgentInput): Promise<AgentDetail> {
+    const row = await this.prisma.agent.create({
       data: {
         name: input.name,
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        ...(input.typeName !== undefined ? { typeName: input.typeName } : {}),
+        ...(input.repos !== undefined ? { repos: input.repos } : {}),
+        ...(input.authorAllowlist !== undefined
+          ? { authorAllowlist: input.authorAllowlist }
+          : {}),
       },
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      row.id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**
@@ -110,7 +157,7 @@ export class AgentService {
   }
 
   /**
-   * List all agents (id + name + selfHosted), ordered by name asc.
+   * List all agents (id + name + selfHosted + typeName), ordered by name asc.
    */
   async list(): Promise<AgentSummary[]> {
     return this.prisma.agent.findMany({
@@ -120,7 +167,8 @@ export class AgentService {
   }
 
   /**
-   * Get {id, name, selfHosted} for a single agent. Returns null if not found.
+   * Get {id, name, selfHosted, typeName} for a single agent. Returns null if
+   * not found.
    */
   async getSummary(id: string): Promise<AgentSummary | null> {
     return this.prisma.agent.findUnique({
@@ -130,13 +178,50 @@ export class AgentService {
   }
 
   /**
-   * Get the full agent record (incl. repos/timestamps). Returns null if not found.
+   * The env-contract gap: the type manifest's required env keys minus the
+   * keys already present in this agent's AgentEnv rows (key names only,
+   * never values — the AgentEnv query below selects only `key`, never
+   * `value`, so decrypted secrets can never reach this computation).
+   * Skips the AgentEnv query entirely when the manifest declares no required
+   * keys. Purely informational: never blocks create or gates provisioning
+   * (ATS-4.2).
+   */
+  private async computeMissingRequiredEnv(
+    agentId: string,
+    typeName: string,
+  ): Promise<string[]> {
+    const requiredKeys = this.agentTypeRegistry
+      .getManifest(typeName)
+      .env.required.map((entry) => entry.key);
+
+    if (requiredKeys.length === 0) return [];
+
+    // Key names only — never select/decrypt AgentEnv.value here.
+    const presentEnvRows = await this.prisma.agentEnv.findMany({
+      where: { agentId },
+      select: { key: true },
+    });
+    const presentKeys = new Set(presentEnvRows.map((r) => r.key));
+    return requiredKeys.filter((key) => !presentKeys.has(key));
+  }
+
+  /**
+   * Get the full agent record (incl. repos/typeName/timestamps), plus
+   * `missingRequiredEnv` (see computeMissingRequiredEnv). Returns null if not
+   * found.
    */
   async getDetail(id: string): Promise<AgentDetail | null> {
-    return this.prisma.agent.findUnique({
+    const row = await this.prisma.agent.findUnique({
       where: { id },
       select: DETAIL_SELECT,
     });
+    if (!row) return null;
+
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**
@@ -158,24 +243,32 @@ export class AgentService {
     id: string,
     input: UpdateSelfHostedInput,
   ): Promise<AgentDetail> {
-    return this.prisma.agent.update({
+    const row = await this.prisma.agent.update({
       where: { id },
       data: {
         selfHosted: input.selfHosted,
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
+        ...(input.authorAllowlist !== undefined
+          ? { authorAllowlist: input.authorAllowlist }
+          : {}),
       },
       select: DETAIL_SELECT,
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 
   /**
-   * Get {id, repos} for a single agent — used by the runtime config/crons
-   * routes. Returns null if not found.
+   * Get {id, repos, authorAllowlist} for a single agent — used by the runtime
+   * config/crons routes. Returns null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     return this.prisma.agent.findUnique({
       where: { id },
-      select: { id: true, repos: true },
+      select: { id: true, repos: true, authorAllowlist: true },
     });
   }
 
@@ -221,19 +314,22 @@ export class AgentService {
   }
 
   /**
-   * Generic partial-field update for an agent's name/repos/selfHosted/slackId.
-   * Only fields present in the input are touched. Returns the full updated
-   * detail record.
+   * Generic partial-field update for an agent's
+   * name/repos/authorAllowlist/selfHosted/slackId. Only fields present in the
+   * input are touched. Returns the full updated detail record.
    */
   async updateFields(
     id: string,
     input: UpdateAgentFieldsInput,
   ): Promise<AgentDetail> {
-    return this.prisma.agent.update({
+    const row = await this.prisma.agent.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.repos !== undefined && { repos: input.repos }),
+        ...(input.authorAllowlist !== undefined && {
+          authorAllowlist: input.authorAllowlist,
+        }),
         ...(input.selfHosted !== undefined && {
           selfHosted: input.selfHosted,
         }),
@@ -241,5 +337,10 @@ export class AgentService {
       },
       select: DETAIL_SELECT,
     });
+    const missingRequiredEnv = await this.computeMissingRequiredEnv(
+      id,
+      row.typeName,
+    );
+    return { ...row, missingRequiredEnv };
   }
 }

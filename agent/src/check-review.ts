@@ -27,9 +27,11 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
@@ -98,6 +100,19 @@ export interface CheckReviewDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Optional author allowlist hook. When set, getReviewCandidates() skips any
+   * PR whose pr.author.login this returns false for. buildProductionDeps()
+   * defaults this to a closure backed by the agent's synced authorAllowlist
+   * config field (via agentAuthorAllowlistRef) — an empty allowlist means
+   * unfiltered. Callers can still pass an explicit override (e.g.
+   * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
+   * ref-backed default entirely.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
+  // Bundle completeness gate: returns false if any bundle-mate task on the branch
+  // is still pending/in_progress/blocked. PR is skipped when it returns false.
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -127,6 +142,8 @@ export async function getReviewCandidates(
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
+    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
+      continue;
 
     let record: PrRecord | null = null;
     try {
@@ -152,6 +169,13 @@ export async function getReviewCandidates(
     // has already been escalated to (or the task is otherwise blocked) and
     // needs to act before review tries again (CBD-2.2, PRB-2.3).
     if (isTaskBlockedForDispatch(linkedTask)) continue;
+
+    if (deps.isBundleComplete) {
+      const bundleComplete = await deps
+        .isBundleComplete(pr.headRefName)
+        .catch(() => true);
+      if (!bundleComplete) continue;
+    }
 
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
@@ -220,6 +244,14 @@ export async function buildProductionDeps(opts: {
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  /**
+   * Optional explicit override for the ref-backed author-allowlist default
+   * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
+   * When omitted, defaults to a closure reading agentAuthorAllowlistRef live,
+   * so allowlist changes from config-sync take effect on the next call
+   * without rebuilding deps.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
@@ -230,6 +262,11 @@ export async function buildProductionDeps(opts: {
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
+    isAuthorAllowed:
+      opts.isAuthorAllowed ??
+      ((login: string) =>
+        agentAuthorAllowlistRef.get().length === 0 ||
+        agentAuthorAllowlistRef.get().includes(login)),
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
@@ -247,5 +284,6 @@ export async function buildProductionDeps(opts: {
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
   };
 }

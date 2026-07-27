@@ -74,7 +74,7 @@ Determine which repos to process, in this priority order:
    `repos/`, applied the opt-in qualification (a repo qualifies only if it has
    a `docs/test-readiness/` directory — a repo without one is not the implicit
    target and is skipped), and its stdout — which became this prompt (see
-   `admin/src/system-crons.ts`'s header comment: "When a preCheck script is
+   the agent type manifest's cron `preCheck` contract: "When a preCheck script is
    set, its stdout becomes the actual prompt sent to Claude") — lists exactly
    which repo(s) have a stale or missing phase artifact, one repo name
    (`org/repo`) per section. Parse the repo names out of the invoking prompt

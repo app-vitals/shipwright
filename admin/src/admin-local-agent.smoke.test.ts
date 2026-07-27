@@ -215,8 +215,12 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         name: "New Local Agent",
         slackId: null,
         selfHosted: true,
+        repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       delete: async () => {},
       getDetail: async () => ({
@@ -225,8 +229,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         slackId: null,
         selfHosted: true,
         repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       updateFields: async () => ({
         id: NEW_AGENT_ID,
@@ -234,8 +241,11 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
         slackId: null,
         selfHosted: true,
         repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
     },
     sessionSecret: SESSION_SECRET,
@@ -301,6 +311,17 @@ describe("admin UI — new local agent create flow", () => {
     expect(html).toContain("New Local Agent");
   });
 
+  it("GET /admin/agents/new — renders a required type select listing the registry's built-in types", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toMatch(/<select[^>]*name="type"[^>]*required/);
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+  });
+
   it("GET /admin/agents/new — non-admin session returns 403", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents/new", {
@@ -330,14 +351,21 @@ describe("admin UI — new local agent create flow", () => {
             name: input.name,
             slackId: null,
             selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: [],
+            typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
     });
     const app = createAdminUIApp(deps);
-    const body = new URLSearchParams({ name: "My Local Agent" });
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+    });
     const res = await app.request("/admin/agents", {
       method: "POST",
       body: body.toString(),
@@ -357,7 +385,10 @@ describe("admin UI — new local agent create flow", () => {
 
   it("POST /admin/agents — non-admin session returns 403", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const body = new URLSearchParams({ name: "My Local Agent" });
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+    });
     const res = await app.request("/admin/agents", {
       method: "POST",
       body: body.toString(),
@@ -379,13 +410,14 @@ describe("admin UI — new local agent create flow", () => {
           name: input.name,
           slackId: null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
-        updateFields: async (
-          id: string,
-          input: { repos?: string[] },
-        ) => {
+        updateFields: async (id: string, input: { repos?: string[] }) => {
           updateArgs = { id, repos: input.repos ?? [] };
           return {
             id,
@@ -393,8 +425,11 @@ describe("admin UI — new local agent create flow", () => {
             slackId: null,
             selfHosted: true,
             repos: input.repos ?? [],
+            authorAllowlist: [],
+            typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
           };
         },
       },
@@ -402,6 +437,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
+      type: "coding",
       repos: "my-org/repo-one\nmy-org/repo-two",
     });
     const res = await app.request("/admin/agents", {
@@ -441,6 +477,87 @@ describe("admin UI — new local agent create flow", () => {
     expect(isErrorResponse).toBe(true);
   });
 
+  it("POST /admin/agents with missing type — redirects with error, no agent created", async () => {
+    let createCalled = false;
+    const deps = makeMockDeps({
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => {
+          createCalled = true;
+          return {
+            id: NEW_AGENT_ID,
+            name: input.name,
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: [],
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ name: "My Local Agent" });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=invalid_type",
+    );
+    expect(createCalled).toBe(false);
+  });
+
+  it("POST /admin/agents with a bogus type — redirects with error, no agent created", async () => {
+    let createCalled = false;
+    const deps = makeMockDeps({
+      agentService: {
+        ...makeMockDeps().agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => {
+          createCalled = true;
+          return {
+            id: NEW_AGENT_ID,
+            name: input.name,
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: [],
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "not-a-real-type",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=invalid_type",
+    );
+    expect(createCalled).toBe(false);
+  });
+
   it("POST /admin/agents with invalid repo format — deletes agent and redirects to error page", async () => {
     let deleteCalled = false;
     const deps = makeMockDeps({
@@ -451,8 +568,12 @@ describe("admin UI — new local agent create flow", () => {
           name: input.name,
           slackId: null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async () => {
           deleteCalled = true;
@@ -462,6 +583,7 @@ describe("admin UI — new local agent create flow", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({
       name: "My Local Agent",
+      type: "coding",
       repos: "not-valid-repo",
     });
     const res = await app.request("/admin/agents", {

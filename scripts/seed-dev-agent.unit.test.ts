@@ -7,12 +7,60 @@
  */
 
 import { beforeEach, describe, expect, it } from "bun:test";
-import {
-  DEFAULT_TOOLS,
-  type SeedDeps,
-  parseEnvFile,
-  seedDevAgent,
-} from "./seed-dev-agent.ts";
+import type { AgentTypeManifestResolver } from "../admin/src/agent-type-manifest-loader.ts";
+import type { AgentTypeManifest } from "../admin/src/agent-type-registry.ts";
+import { type SeedDeps, parseEnvFile, seedDevAgent } from "./seed-dev-agent.ts";
+
+// ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
+//
+// Resolves a fixed "coding" manifest — mirrors the fakes used in
+// agent-cron-jobs.unit.test.ts and agents-api.integration.test.ts. Keeps this
+// suite's manifest-driven tool/plugin list independent of the real
+// agent-types/coding/manifest.yaml file on disk.
+
+const CODING_TOOLS = [
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "Bash",
+  "WebSearch",
+  "WebFetch",
+  "Skill",
+  "Agent",
+];
+
+function fakeCodingManifest(): AgentTypeManifest {
+  return {
+    apiVersion: "shipwright.dev/v1alpha1",
+    kind: "AgentType",
+    metadata: {
+      name: "coding",
+      displayName: "Coding Agent",
+      description: "test manifest",
+      version: "1.0.0",
+      skills: [],
+    },
+    identity: { templatesDir: "agent/workspace/" },
+    crons: [],
+    plugins: ["shipwright"],
+    tools: CODING_TOOLS,
+    env: { required: [], optional: [] },
+    members: [],
+    repos: [],
+    chat: true,
+    voice: true,
+  };
+}
+
+function fakeAgentTypeRegistry(): AgentTypeManifestResolver {
+  const manifest = fakeCodingManifest();
+  return {
+    getManifest: () => manifest,
+    tryGetManifest: () => manifest,
+  };
+}
 
 // ─── Prisma double factory ────────────────────────────────────────────────────
 
@@ -91,6 +139,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
+      agentTypeRegistry: fakeAgentTypeRegistry(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -123,16 +172,87 @@ describe("seedDevAgent", () => {
     };
     expect(pluginCreate.name).toBe("shipwright");
 
-    // AgentTool upserts — all DEFAULT_TOOLS
-    expect(double.agentToolUpserts).toHaveLength(DEFAULT_TOOLS.length);
+    // AgentTool upserts — the full manifest-resolved tool set
+    expect(double.agentToolUpserts).toHaveLength(CODING_TOOLS.length);
     const toolPatterns = double.agentToolUpserts.map(
       (u) =>
         (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
           .pattern,
     );
-    for (const tool of DEFAULT_TOOLS) {
+    for (const tool of CODING_TOOLS) {
       expect(toolPatterns).toContain(tool);
     }
+  });
+
+  // ─── Registry-driven parity (ATS-3.3) ───────────────────────────────────
+
+  it("resolves its tool set from the injected AgentTypeManifestResolver rather than a hardcoded constant", async () => {
+    const customTools = ["Read", "Bash"];
+    const customRegistry: AgentTypeManifestResolver = {
+      getManifest: () => ({
+        ...fakeCodingManifest(),
+        tools: customTools,
+        plugins: ["shipwright"],
+      }),
+      tryGetManifest: () => ({
+        ...fakeCodingManifest(),
+        tools: customTools,
+        plugins: ["shipwright"],
+      }),
+    };
+
+    const deps: SeedDeps = {
+      prisma: double.prisma as never,
+      readEnvFile: () => "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token",
+      agentTypeRegistry: customRegistry,
+      exit: (_code: number, _msg: string): never => {
+        throw new Error("should not exit");
+      },
+    };
+
+    await seedDevAgent(deps);
+
+    const toolPatterns = double.agentToolUpserts.map(
+      (u) =>
+        (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
+          .pattern,
+    );
+    expect(toolPatterns.sort()).toEqual([...customTools].sort());
+  });
+
+  it("produces the same tool/plugin set as a manifest-created coding agent (parity assert against the real registry)", async () => {
+    const { AgentTypeRegistry } = await import(
+      "../admin/src/agent-type-manifest-loader.ts"
+    );
+    const realRegistry = new AgentTypeRegistry();
+    const codingManifest = realRegistry.getManifest("coding");
+
+    const deps: SeedDeps = {
+      prisma: double.prisma as never,
+      readEnvFile: () => "CLAUDE_CODE_OAUTH_TOKEN=test-oauth-token",
+      agentTypeRegistry: realRegistry,
+      exit: (_code: number, _msg: string): never => {
+        throw new Error("should not exit");
+      },
+    };
+
+    await seedDevAgent(deps);
+
+    // Tool set matches the real coding manifest exactly (parity with the
+    // admin POST /agents seeding path, which resolves the same manifest).
+    const toolPatterns = double.agentToolUpserts.map(
+      (u) =>
+        (u.where as { agentId_pattern: { pattern: string } }).agentId_pattern
+          .pattern,
+    );
+    expect(toolPatterns.sort()).toEqual([...codingManifest.tools].sort());
+
+    // Plugin set matches too — the script's hardcoded "shipwright" upsert is
+    // now backed by (and equal to) the manifest's plugins[] array.
+    const pluginNames = double.agentPluginUpserts.map(
+      (u) => (u.create as { name: string }).name,
+    );
+    expect(pluginNames).toEqual(codingManifest.plugins);
   });
 
   it("seeds CLAUDE_CODE_OAUTH_TOKEN without GH_TOKEN when GH_TOKEN is absent", async () => {
@@ -141,6 +261,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
+      agentTypeRegistry: fakeAgentTypeRegistry(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
@@ -164,6 +285,7 @@ describe("seedDevAgent", () => {
       readEnvFile: () => {
         throw new Error("ENOENT: no such file or directory");
       },
+      agentTypeRegistry: fakeAgentTypeRegistry(),
       exit: (code: number, msg: string): never => {
         exitCode = code;
         exitMessage = msg;
@@ -185,6 +307,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => "GH_TOKEN=ghp_test123\n# just a comment",
+      agentTypeRegistry: fakeAgentTypeRegistry(),
       exit: (code: number, msg: string): never => {
         exitCode = code;
         exitMessage = msg;
@@ -205,6 +328,7 @@ describe("seedDevAgent", () => {
     const deps: SeedDeps = {
       prisma: double.prisma as never,
       readEnvFile: () => envFileContent,
+      agentTypeRegistry: fakeAgentTypeRegistry(),
       exit: (_code: number, _msg: string): never => {
         throw new Error("should not exit");
       },
