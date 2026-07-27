@@ -11,7 +11,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import {
+  agentAuthorAllowlistRef,
+  createAgentAuthorAllowlistRef,
+} from "./agent-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
   type CheckReviewDeps,
@@ -717,5 +720,88 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
     });
     expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
     expect(deps.isAuthorAllowed?.("explicit-user")).toBe(true);
+  });
+});
+
+describe("buildProductionDeps isAuthorAllowed default — never-synced equivalence (T-078)", () => {
+  // Deliberately NOT using the shared agentAuthorAllowlistRef singleton or its
+  // beforeEach(() => ref.set([])) reset (see the AAL-2.2 block above) — that
+  // reset stamps hasSynced() === true before every test in that block, which
+  // makes it structurally impossible to exercise the true "never synced"
+  // (hasSynced() === false) state from in there. Each test below builds its
+  // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
+
+  const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+
+  test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    expect(neverSyncedRef.hasSynced()).toBe(false);
+    expect(neverSyncedRef.get()).toEqual([]);
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+    expect(deps.isAuthorAllowed?.("literally-anyone-else")).toBe(true);
+  });
+
+  test("a ref synced-to-empty (hasSynced() === true, .set([]) called) behaves identically: also fails open / unfiltered", async () => {
+    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    syncedEmptyRef.set([]);
+    expect(syncedEmptyRef.hasSynced()).toBe(true);
+    expect(syncedEmptyRef.get()).toEqual([]);
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: syncedEmptyRef,
+    });
+
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+    expect(deps.isAuthorAllowed?.("literally-anyone-else")).toBe(true);
+  });
+
+  test("never-synced and synced-to-empty are intentionally, not accidentally, equivalent: same input, same output", async () => {
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    syncedEmptyRef.set([]);
+
+    const neverSyncedDeps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+    const syncedEmptyDeps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: syncedEmptyRef,
+    });
+
+    for (const login of ["danmcaulay", "anyone-at-all", ""]) {
+      expect(neverSyncedDeps.isAuthorAllowed?.(login)).toBe(
+        syncedEmptyDeps.isAuthorAllowed?.(login),
+      );
+      expect(neverSyncedDeps.isAuthorAllowed?.(login)).toBe(true);
+    }
+  });
+
+  test("a never-synced ref does not affect the singleton-backed default in the other describe block", async () => {
+    // Sanity guard: using an injected fresh ref must not accidentally reach
+    // into / mutate the process-wide singleton.
+    agentAuthorAllowlistRef.set(["some-user"]);
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+
+    expect(deps.isAuthorAllowed?.("some-user")).toBe(true);
+    expect(deps.isAuthorAllowed?.("unrelated-user")).toBe(true);
+    expect(agentAuthorAllowlistRef.get()).toEqual(["some-user"]);
+
+    // cleanup so this doesn't leak into other describe blocks in the file
+    agentAuthorAllowlistRef.set([]);
   });
 });
