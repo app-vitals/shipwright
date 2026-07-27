@@ -20,35 +20,20 @@
  *   SHIPWRIGHT_HITL_HOME          — root dir (default: ~/.shipwright)
  *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
  *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
- *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered — dev-tool-only, not wired into the autonomous loop)
+ *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered). hitl.ts's local equivalent of the agent's authorAllowlist config field, kept in sync on the persisted hitl agent record via PATCH.
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
  */
 
 import {
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
 } from "node:fs";
-import { resolve, join } from "node:path";
 import { homedir } from "node:os";
+import { join, resolve } from "node:path";
 
-import {
-  buildProductionDeps as buildReviewDeps,
-  getReviewCandidates,
-  type CheckReviewDeps,
-} from "../agent/src/check-review.ts";
-import {
-  buildProductionDeps as buildPatchDeps,
-  getPatchCandidates,
-  type CheckPatchDeps,
-} from "../agent/src/check-patch.ts";
-import {
-  selectNextWorkItem,
-  type WorkPrCandidate,
-  type WorkTaskCandidate,
-} from "../agent/src/work-selector.ts";
 import {
   createTaskStoreClient,
   getCurrentUser,
@@ -57,6 +42,21 @@ import {
   parseCandidateId,
   resolveAllRepos,
 } from "../agent/src/check-helpers.ts";
+import {
+  type CheckPatchDeps,
+  buildProductionDeps as buildPatchDeps,
+  getPatchCandidates,
+} from "../agent/src/check-patch.ts";
+import {
+  type CheckReviewDeps,
+  buildProductionDeps as buildReviewDeps,
+  getReviewCandidates,
+} from "../agent/src/check-review.ts";
+import {
+  type WorkPrCandidate,
+  type WorkTaskCandidate,
+  selectNextWorkItem,
+} from "../agent/src/work-selector.ts";
 
 // ---------------------------------------------------------------------------
 // Paths — anchored to this script, not cwd
@@ -103,8 +103,11 @@ const HITL_REPOS = parseHitlRepos(process.env.SHIPWRIGHT_HITL_REPOS);
 /**
  * Parses the comma-separated SHIPWRIGHT_HITL_AUTHORS env value into a list of
  * GitHub usernames, trimming whitespace and dropping empty entries. Mirrors
- * parseHitlRepos() exactly — dev-tool-only author allowlist, wired into
- * getReviewCandidates() via CheckReviewDeps.isAuthorAllowed in runLoop().
+ * parseHitlRepos() exactly. authorAllowlist is a real per-agent config field
+ * (see admin's AgentRecord); hitl.ts is one particular caller that sources
+ * its value from this env var, wires it into getReviewCandidates() via
+ * CheckReviewDeps.isAuthorAllowed in runLoop(), and mirrors it onto the
+ * persisted hitl agent record via ensureHitlAgent()'s PATCH.
  */
 export function parseHitlAuthors(raw: string | undefined): string[] {
   return raw
@@ -223,9 +226,14 @@ async function runPreflight(): Promise<void> {
   log("running task-store prisma generate + migrate...");
   const tsGen = Bun.spawnSync(
     ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"],
-    { cwd: join(REPO_ROOT, "task-store"), stdout: "inherit", stderr: "inherit" },
+    {
+      cwd: join(REPO_ROOT, "task-store"),
+      stdout: "inherit",
+      stderr: "inherit",
+    },
   );
-  if (tsGen.exitCode !== 0) throw new Error("task-store prisma generate failed");
+  if (tsGen.exitCode !== 0)
+    throw new Error("task-store prisma generate failed");
 
   const tsMigrate = Bun.spawnSync(
     ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
@@ -305,25 +313,22 @@ function startServices(): ServiceHandle[] {
     },
   );
 
-  const admin = Bun.spawn(
-    ["bun", join(REPO_ROOT, "admin", "src", "main.ts")],
-    {
-      cwd: REPO_ROOT,
-      env: {
-        ...process.env,
-        PORT: String(ADMIN_PORT),
-        DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
-        SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
-        SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
-        ADMIN_DEV_AUTH: "true",
-        SHIPWRIGHT_ADMIN_API_KEYS: `hitl:${DEV_ADMIN_API_KEY}:*`,
-        SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
-        SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TOKEN,
-      },
-      stdout: "inherit",
-      stderr: "inherit",
+  const admin = Bun.spawn(["bun", join(REPO_ROOT, "admin", "src", "main.ts")], {
+    cwd: REPO_ROOT,
+    env: {
+      ...process.env,
+      PORT: String(ADMIN_PORT),
+      DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
+      SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
+      SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
+      ADMIN_DEV_AUTH: "true",
+      SHIPWRIGHT_ADMIN_API_KEYS: `hitl:${DEV_ADMIN_API_KEY}:*`,
+      SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
+      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TOKEN,
     },
-  );
+    stdout: "inherit",
+    stderr: "inherit",
+  });
 
   return [
     { label: "task-store", proc: taskStore },
@@ -353,54 +358,78 @@ interface AgentSummary {
   selfHosted: boolean;
 }
 
-/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos`. */
+/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos` and `authorAllowlist`. */
 interface AgentRecord {
   id: string;
   name: string;
   repos: string[];
+  authorAllowlist: string[];
 }
 
 /** Injectable fetch type so tests can supply a double instead of real network calls. */
 type FetchLike = typeof fetch;
 
-async function patchHitlAgentRepos(
+/** Order-independent array-equality check — same semantics for repos and authorAllowlist. */
+function sameMembers(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
+}
+
+/**
+ * PATCHes whichever of `repos`/`authorAllowlist` are provided onto the hitl
+ * agent record in a single request (PATCH /agents/:id accepts a partial
+ * body — omitted fields are left unchanged).
+ */
+async function patchHitlAgent(
   agentId: string,
-  repos: string[],
+  fields: { repos?: string[]; authorAllowlist?: string[] },
   fetchImpl: FetchLike,
   headers: Record<string, string>,
 ): Promise<void> {
   const patchRes = await fetchImpl(`${ADMIN_URL}/agents/${agentId}`, {
     method: "PATCH",
     headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({ repos }),
+    body: JSON.stringify(fields),
   });
   if (patchRes.ok) {
-    log(`updated hitl agent repos: ${repos.join(", ")}`);
+    if (fields.repos !== undefined) {
+      log(`updated hitl agent repos: ${fields.repos.join(", ")}`);
+    }
+    if (fields.authorAllowlist !== undefined) {
+      log(
+        `updated hitl agent authorAllowlist: ${fields.authorAllowlist.join(", ")}`,
+      );
+    }
   } else {
-    log(`warning: failed to update hitl agent repos (${patchRes.status})`);
+    log(`warning: failed to update hitl agent (${patchRes.status})`);
   }
 }
 
 export async function ensureHitlAgent(
   fetchImpl: FetchLike = fetch,
   repos: string[] = HITL_REPOS,
+  authors: string[] = HITL_AUTHORS,
 ): Promise<string | null> {
   const headers = { Authorization: `Bearer ${DEV_ADMIN_API_KEY}` };
 
   const listRes = await fetchImpl(`${ADMIN_URL}/agents`, { headers });
   if (!listRes.ok) {
-    log(`warning: could not list agents (${listRes.status}) — scope resolver may not work`);
+    log(
+      `warning: could not list agents (${listRes.status}) — scope resolver may not work`,
+    );
     return null;
   }
   const agents: AgentSummary[] = await listRes.json();
   const existingSummary = agents.find((a) => a.name === HITL_AGENT_NAME);
 
   if (existingSummary) {
-    // The list response has no `repos` field — fetch the full record so we
-    // can compare against the desired repos.
-    const getRes = await fetchImpl(`${ADMIN_URL}/agents/${existingSummary.id}`, {
-      headers,
-    });
+    // The list response has no `repos`/`authorAllowlist` fields — fetch the
+    // full record so we can compare against the desired values.
+    const getRes = await fetchImpl(
+      `${ADMIN_URL}/agents/${existingSummary.id}`,
+      {
+        headers,
+      },
+    );
     if (!getRes.ok) {
       log(
         `warning: could not fetch hitl agent detail (${getRes.status}) — scope resolver may not work`,
@@ -409,13 +438,20 @@ export async function ensureHitlAgent(
     }
     const existing: AgentRecord = await getRes.json();
 
-    const reposMatch =
-      existing.repos.length === repos.length &&
-      existing.repos.every((r) => repos.includes(r));
-    if (!reposMatch && repos.length > 0) {
-      await patchHitlAgentRepos(existing.id, repos, fetchImpl, headers);
+    const reposMatch = sameMembers(existing.repos, repos);
+    const authorsMatch = sameMembers(existing.authorAllowlist ?? [], authors);
+
+    const patchFields: { repos?: string[]; authorAllowlist?: string[] } = {};
+    if (!reposMatch && repos.length > 0) patchFields.repos = repos;
+    if (!authorsMatch && authors.length > 0)
+      patchFields.authorAllowlist = authors;
+
+    if (Object.keys(patchFields).length > 0) {
+      await patchHitlAgent(existing.id, patchFields, fetchImpl, headers);
     } else {
-      log(`hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"})`);
+      log(
+        `hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"}, authorAllowlist: ${(existing.authorAllowlist ?? []).join(", ") || "none"})`,
+      );
     }
     return existing.id;
   }
@@ -431,16 +467,24 @@ export async function ensureHitlAgent(
 
   if (createRes.ok) {
     const created: AgentRecord = await createRes.json();
-    // CreateAgentBodySchema doesn't accept `repos` — persist it via a
-    // follow-up PATCH (mirrors the existing-agent-mismatch branch above).
-    if (repos.length > 0) {
-      await patchHitlAgentRepos(created.id, repos, fetchImpl, headers);
+    // CreateAgentBodySchema doesn't accept `repos`/`authorAllowlist` —
+    // persist them via a follow-up PATCH (mirrors the existing-agent-mismatch
+    // branch above).
+    const patchFields: { repos?: string[]; authorAllowlist?: string[] } = {};
+    if (repos.length > 0) patchFields.repos = repos;
+    if (authors.length > 0) patchFields.authorAllowlist = authors;
+    if (Object.keys(patchFields).length > 0) {
+      await patchHitlAgent(created.id, patchFields, fetchImpl, headers);
     }
-    log(`created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"})`);
+    log(
+      `created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"}, authorAllowlist: ${authors.join(", ") || "none"})`,
+    );
     return created.id;
   }
 
-  log(`warning: failed to create hitl agent (${createRes.status}) — scope resolver may not work`);
+  log(
+    `warning: failed to create hitl agent (${createRes.status}) — scope resolver may not work`,
+  );
   return null;
 }
 
