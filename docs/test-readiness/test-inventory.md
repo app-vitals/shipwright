@@ -45,7 +45,7 @@
 | `lib/claim-ttl.ts` (claim TTL constants, `DEFAULT_CLAIM_TTL_MS`) | 1. Pure business logic | unit | critical | n/a |
 | `lib/sentry.ts` (scrubbing config) | 1. Pure business logic (scrub rules) / 5. external integration (Sentry SDK init) | unit (scrub rules) / integration (init wiring) | high | n/a |
 | `lib/web/toolbar.ts` (shared HTML render) | 1. Pure business logic | unit | medium | n/a |
-| `lib/admin-types.ts`, `lib/task-store-types.ts` (generated OpenAPI types) | (generated code — excluded) | — | — | n/a |
+| `lib/admin-types.ts` (generated OpenAPI types) | (generated code — excluded) | — | — | n/a |
 | `agent/src/fixtures/stream-json/*.ts` (recorded `claude -p` stream-JSON transcripts) | (test fixture data — excluded) | — | — | n/a |
 | `metrics/src/formatters.ts` (date range + envelope formatting) | 1. Pure business logic | unit | high | n/a |
 | `metrics/src/select-provider.ts` (backend mode selector) | 1. Pure business logic | unit | high | n/a |
