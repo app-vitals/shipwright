@@ -510,7 +510,16 @@ Parse the subagent's STATUS report:
 - **DONE**: Proceed to Step 6.
 - **DONE_WITH_CONCERNS**: Read the concerns. If they indicate correctness or scope gaps, address them before Step 6. If they are observations only (e.g., "this file is growing large"), note them and proceed.
 - **NEEDS_CONTEXT**: Provide the missing context and re-dispatch with the same prompt augmented with the answer.
-- **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user.
+- **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user. Otherwise — a genuine dead end the model-upgrade ladder could not resolve — mark the task blocked via the task store API:
+
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+    -d '{"status": "blocked", "blockedReason": "implementation_blocked_after_model_escalation"}' | jq .
+  ```
+  Stop. No PR exists yet at this point in the pipeline (Step 5 runs before Step 9's PR
+  creation), so there is no PR to comment on or close.
 
 ### 5d. Renew the Claim Heartbeat
 
