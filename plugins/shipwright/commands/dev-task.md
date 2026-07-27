@@ -165,7 +165,7 @@ Now detect the project toolchain for `{repo}` (used throughout):
 
 Auto-detect the project toolchain (run once, reuse throughout), checking the cross-run cache before any fresh detection:
 
-1. **Check the cache.** Compute the fingerprint against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` and look up `state/toolchain-cache.json`'s `{repo}` entry — see `references/toolchain-patterns.md`'s "Caching Across Runs" section for the exact fingerprint command and cache format. If the fingerprint matches, reuse the cached commands and skip to Step 4.
+1. **Check the cache.** Compute the fingerprint against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` and read `state/toolchain-cache/{repo}.json` — see `references/toolchain-patterns.md`'s "Caching Across Runs" section for the exact fingerprint command and cache format. If the file exists and its fingerprint matches, reuse the cached commands and skip to Step 4.
 
 2. **Docs-first discovery** (cache miss only). Read `CLAUDE.md` and any `docs/*.md` / `ai-docs/*.md` for explicit build/test/lint/typecheck commands — many projects wrap the raw tool invocations (custom scripts, task runners, mise-managed runtimes) that config-file scanning alone won't catch. See `references/toolchain-patterns.md`'s "Docs-First Discovery" section. Treat anything found here as authoritative.
 
@@ -188,7 +188,7 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
    - **typecheck**: Type check command if applicable (e.g., `pnpm -r check`, `tsc --noEmit`)
    - **build**: Build command (e.g., `pnpm build`, `cargo build`, `go build ./...`)
 
-   On a cache miss (step 2/3 ran), write the new fingerprint + commands back to `state/toolchain-cache.json` (per-repo key merge — don't clobber other repos' entries).
+   On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
 

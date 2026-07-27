@@ -353,12 +353,12 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and look up `state/toolchain-cache.json`'s `{repo}` entry. If the fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 4a.6.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 4a.6.
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-4. On a cache miss, write the new fingerprint + commands back to `state/toolchain-cache.json` (per-repo key merge — don't clobber other repos' entries).
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 ### Step 4a.6: Claim PR Record (pre-work lock)
 
@@ -596,12 +596,12 @@ All subsequent steps for this PR run from `~/worktrees/{repo}-{branch-slug}/`.
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and look up `state/toolchain-cache.json`'s `{repo}` entry. If the fingerprint matches, reuse the cached **lint**/**test** commands and skip to the diff collection below.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to the diff collection below.
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-4. On a cache miss, write the new fingerprint + commands back to `state/toolchain-cache.json` (per-repo key merge — don't clobber other repos' entries).
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 From inside the worktree, collect the full picture of what needs fixing:
 
@@ -1147,12 +1147,12 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Compute the fingerprint against `{worktree-path}` and look up `state/toolchain-cache.json`'s `{repo}` entry. If the fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 6b.
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 6b.
 2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-4. On a cache miss, write the new fingerprint + commands back to `state/toolchain-cache.json` (per-repo key merge — don't clobber other repos' entries).
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 ### Step 6b: Collect CI Failure Output
 
