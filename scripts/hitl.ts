@@ -739,11 +739,11 @@ async function runLoop(): Promise<void> {
     const claude = Bun.spawn(
       [
         "claude",
+        command,
         "--permission-mode",
         "acceptEdits",
         "--allowedTools",
         ...HITL_ALLOWED_TOOLS,
-        command,
       ],
       {
         cwd: WORKSPACE,
