@@ -262,12 +262,13 @@ The core shipwright loop has four phases — `dev-task`, `review`, `patch`, and 
 
 ### Resolution model
 
-Agent Type names are resolved from a **built-in registry first**. As of this writing, the schema, YAML parser (`parseAgentTypeManifest`), and JSON Schema generator (`buildAgentTypeJsonSchema`) in `admin/src/agent-type-registry.ts` are implemented and validated against the reference `coding` type, but the disk-loading/registry-resolution layer that will load custom Agent Type manifests at runtime is not yet built. The design contract this guide documents — and that the loader is expected to enforce once it lands — is:
+The schema, YAML parser (`parseAgentTypeManifest`), and JSON Schema generator (`buildAgentTypeJsonSchema`) live in `admin/src/agent-type-registry.ts`. Disk-loading and runtime resolution are implemented separately in `admin/src/agent-type-manifest-loader.ts`'s `AgentTypeRegistry` class, which resolves a `typeName` to `agent-types/{typeName}/manifest.yaml` (relative to the repo root) and validates it via `parseAgentTypeManifest`:
 
-- **Built-in registry wins.** Names shipped with Shipwright itself (e.g. `coding`) are resolved from the built-in registry, not from any custom manifest a deployment supplies.
-- **Custom types cannot shadow built-in names.** A custom Agent Type manifest whose `metadata.name` collides with a built-in type's name is rejected at load time — it cannot silently override or replace the built-in definition.
+- **`getManifest(typeName)`** — used by cron reconciliation (`AgentCronJobService.reconcileSystemCrons()` in `admin/src/agent-cron-jobs.ts`). An unknown `typeName` falls back to the `coding` manifest with a logged warning rather than failing the boot-path call; if the `coding` fallback itself can't load, that's treated as a startup-time bug and the error propagates.
+- **`tryGetManifest(typeName)`** — used by `POST /agents` (`admin/src/agents-api.ts`) to validate a requested `type`. Returns `undefined` for an unknown type (no fallback, no warning) so the route can reject with `400` instead of silently seeding a `coding` agent under a different label.
+- **`listTypes()`** — discovers every directory under `agent-types/` and resolves each to `{name, displayName}` for the new-agent type picker (called from the `GET /admin/agents/new` handler in `admin/src/admin-ui.ts`, which passes the resolved types into `renderNewLocalAgentPage()` in `admin/src/admin-ui-pages.ts`). A directory whose manifest fails to load or parse is skipped rather than 500ing the whole page.
 
-Treat this section as the intended contract for authors, not a description of already-enforced runtime behavior — check `admin/src/agent-type-registry.ts` and its surrounding modules for the current implementation status before relying on shadow-rejection actually happening today.
+There is currently **no built-in-vs-custom distinction or shadow-rejection check** — every `typeName` is resolved the same way, by directory lookup under `agent-types/` on disk. The registry does not yet support loading a manifest from anywhere other than the local `agent-types/` directory (e.g. a GitHub source reference — see below), so the question of a custom manifest colliding with a shipped type's name does not yet arise in practice. Revisit this section once GitHub source references (below) land and introduce a second manifest source.
 
 ## GitHub source references
 
