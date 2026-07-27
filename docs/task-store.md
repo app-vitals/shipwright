@@ -283,6 +283,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 
 **Side effect:** When `reviewState` is set to `posted` or `approved`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are cleared in the same write. This releases the review claim as soon as the review is done, so a PR awaiting patch/deploy is not held by a stale claim that the reaper would otherwise reap (which would regress `reviewState` and re-dispatch a duplicate review).
 
+**Commit-level dedup pattern:** Setting `reviewState=posted` together with `commitSha` (e.g. `PATCH /prs/:id` with `{"reviewState": "posted", "commitSha": "abc123..."}`) records that this PR was reviewed at a specific commit head. The claim is cleared by the side effect above, but the next `/prs/claim` at the same `commitSha` will receive a `409` (already reviewed at this commit) and halt — preventing re-review of the same head until new commits land. This is distinct from `POST /prs/:id/release`, which resets `reviewState=pending` and allows re-review at the same commit.
+
 #### PR lifecycle endpoints
 
 | Endpoint | Effect |
