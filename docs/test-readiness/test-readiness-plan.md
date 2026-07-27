@@ -40,6 +40,17 @@ IDs**, not re-numbered).
 `test-t-NNN-shipwright` record is `test-t-076-shipwright`; T-077/T-078 below are the first
 IDs this cycle mints.)
 
+> **Post-merge correction:** T-077 and T-078 (both described below) shipped
+> independently via PR [#2227](https://github.com/app-vitals/shipwright/pull/2227)
+> (`778b3ba1`) and PR [#2228](https://github.com/app-vitals/shipwright/pull/2228)
+> (`45435444`), merged to `main` after this branch's own commits but before this
+> branch's merge commit (`f8fa3fcd`) picked up `main`'s tip. Both are confirmed
+> implemented at current `HEAD`: `agent/src/check-review.unit.test.ts:669` has the
+> T-077 fail-open test case, and `agent/src/check-review.unit.test.ts:726`'s
+> `describe` block plus `agent/src/check-review.ts:266`'s injectable
+> `authorAllowlistRef` param cover T-078. **Neither is open work — see the strikethrough
+> notes on each task below.**
+
 ## 1. Where we are now
 
 ### Layer coverage map
@@ -197,15 +208,18 @@ it's the review-candidate qualification gate. Its `isBundleComplete` fail-open
 test coverage: a task-store hiccup during the bundle-completeness check must never
 silently block review, and nothing currently proves that.
 
-1. **T-077 — `check-review.ts`'s `isBundleComplete` fail-open catch-path test.** One new
+~~1. **T-077 — `check-review.ts`'s `isBundleComplete` fail-open catch-path test.** One new
    `test(...)` block in `check-review.unit.test.ts`, modeled directly on the two adjacent
    bundle-gate cases at lines 631-664: inject `async () => { throw new Error(...) }` as
    `isBundleComplete`, assert `getReviewCandidates`'s result still includes the PR
-   (proceeds rather than excludes).
+   (proceeds rather than excludes).~~ **Already shipped independently — PR #2227
+   (`778b3ba1`) landed exactly this test case (`check-review.unit.test.ts:669`,
+   `"includes a PR when isBundleComplete rejects for its branch (fail-open)"`) on `main`
+   before this branch's merge commit. Not open work; no task-store record needed.
 
 | Task | Files to touch | Layer | Bucket origin | Expected outcome | Verification command |
 |---|---|---|---|---|---|
-| T-077 | `agent/src/check-review.unit.test.ts` | unit | net-new (test case, not new file) | `isBundleComplete` rejection confirmed to fail-open (PR proceeds, not excluded) | `bun test agent/src/check-review.unit.test.ts` |
+| ~~T-077~~ *(shipped via PR #2227, `778b3ba1`)* | `agent/src/check-review.unit.test.ts` | unit | net-new (test case, not new file) | `isBundleComplete` rejection confirmed to fail-open (PR proceeds, not excluded) | `bun test agent/src/check-review.unit.test.ts` |
 
 ### Milestone 3 — Canary suite live
 **DOD:** canary not applicable — `deploy_model=direct`.
@@ -223,7 +237,7 @@ implicit (both states happen to produce the same safe fail-open behavior by
 construction, not by an explicit test proving it), and the existing test file's shared
 `beforeEach` structurally prevents adding a "never synced" case without a design change.
 
-2. **T-078 — Make `isAuthorAllowed`'s ref dependency injectable, then add the
+~~2. **T-078 — Make `isAuthorAllowed`'s ref dependency injectable, then add the
    never-synced equivalence test.** Two parts, scoped as one task since the test can't
    be written correctly without the injectability change: (a) thread the
    `agentAuthorAllowlistRef` (or an equivalent fresh-instance abstraction) into
@@ -232,11 +246,16 @@ construction, not by an explicit test proving it), and the existing test file's 
    (not the shared-`beforeEach` one at `check-review.unit.test.ts:668-670`) that
    constructs a fresh, never-`.set()`-called ref and asserts `isAuthorAllowed` still
    behaves unfiltered — proving the never-synced and synced-to-empty states are
-   intentionally, not accidentally, equivalent.
+   intentionally, not accidentally, equivalent.~~ **Already shipped independently — PR
+   #2228 (`45435444`) landed both the injectable `authorAllowlistRef` param
+   (`check-review.ts:266`) and the never-synced equivalence tests (the
+   `"buildProductionDeps isAuthorAllowed default — never-synced equivalence (T-078)"`
+   describe block at `check-review.unit.test.ts:726`) on `main` before this branch's
+   merge commit. Not open work; no task-store record needed.
 
 | Task | Files to touch | Layer | Bucket origin | Expected outcome | Verification command |
 |---|---|---|---|---|---|
-| T-078 | `agent/src/check-review.ts`, `agent/src/check-review.unit.test.ts` | unit | net-new (design change + test case) | `isAuthorAllowed`'s ref dependency injectable; never-synced state explicitly proven to fail-open the same as synced-to-empty | `bun test agent/src/check-review.unit.test.ts` |
+| ~~T-078~~ *(shipped via PR #2228, `45435444`)* | `agent/src/check-review.ts`, `agent/src/check-review.unit.test.ts` | unit | net-new (design change + test case) | `isAuthorAllowed`'s ref dependency injectable; never-synced state explicitly proven to fail-open the same as synced-to-empty | `bun test agent/src/check-review.unit.test.ts` |
 
 `admin/src/clock.ts` remains the sole other Net-new item from Phase 3 — carried forward,
 unchanged, explicitly a non-gap (established `Clock`-file convention, near-zero logic,
@@ -251,26 +270,32 @@ generalizable learning surfaced this cycle warranting a `# Harness TODO`.
 
 ## 5. Task list
 
-Flat, ordered, agent-executable. **T-077 and T-078 are the only genuinely new tasks this
-cycle** — both continue the existing `test-t-NNN-shipwright` sequence (highest prior
-record: `test-t-076-shipwright`), confirmed via a direct task-store query, not inferred
-from the 2026-07-21 doc's numbering (which had stopped at T-071 and was already five
-IDs stale). **T-073 and T-074 are carried forward under their existing IDs**, both
-already correctly filed with `hitl: true` — this plan does not re-mint or re-describe
-them, only points to their current status.
+Flat, ordered, agent-executable. **T-077 and T-078 were this cycle's only genuinely new
+tasks — both have since shipped independently** (PR #2227 / `778b3ba1` and PR #2228 /
+`45435444`, both merged to `main` before this branch's own merge commit picked up
+`main`'s tip) and are struck from the active list below; they continued the existing
+`test-t-NNN-shipwright` sequence (highest prior record: `test-t-076-shipwright`),
+confirmed via a direct task-store query, not inferred from the 2026-07-21 doc's
+numbering (which had stopped at T-071 and was already five IDs stale). **T-073 and
+T-074 are carried forward under their existing IDs**, both already correctly filed with
+`hitl: true` — this plan does not re-mint or re-describe them, only points to their
+current status.
 
 | ID | Milestone | Files to touch | Layer | Bucket origin | Expected outcome | Verification command | Depends on |
 |---|---|---|---|---|---|---|---|
 | T-073 *(carried forward, existing)* | 1 (task-store) / 4 (by criticality) | `docs/test-readiness/test-system.md` + optionally `site/src/lib/html-escape.unit.test.ts` | unit (pending scoping) | net-new, HITL | `site/`'s unit-test scoping question resolved and documented | `bun test site/src/lib/html-escape.unit.test.ts` (if that path is chosen) | — |
 | T-074 *(carried forward, existing)* | 1 | `docs/test-readiness/speed-baseline.md`, `docs/test-readiness/test-system.md` | infra | reuse (measurement refresh), HITL | Real per-layer p95/wall-clock numbers captured against a Postgres-enabled run | `DATABASE_URL_SHIPWRIGHT_ADMIN=... DATABASE_URL_SHIPWRIGHT_TASK_STORE=... DATABASE_URL_SHIPWRIGHT_CHAT=... bun test --coverage` (or CI equivalent) | — |
-| T-077 *(new)* | 2 | `agent/src/check-review.unit.test.ts` | unit | net-new | `isBundleComplete` fail-open catch path proven via a rejecting-dependency test case | `bun test agent/src/check-review.unit.test.ts` | — |
-| T-078 *(new)* | 4 | `agent/src/check-review.ts`, `agent/src/check-review.unit.test.ts` | unit | net-new | Ref dependency made injectable; never-synced fail-open equivalence explicitly tested | `bun test agent/src/check-review.unit.test.ts` | — |
+| ~~T-077~~ *(shipped via PR #2227, `778b3ba1` — no longer open)* | 2 | `agent/src/check-review.unit.test.ts` | unit | net-new | `isBundleComplete` fail-open catch path proven via a rejecting-dependency test case | `bun test agent/src/check-review.unit.test.ts` | — |
+| ~~T-078~~ *(shipped via PR #2228, `45435444` — no longer open)* | 4 | `agent/src/check-review.ts`, `agent/src/check-review.unit.test.ts` | unit | net-new | Ref dependency made injectable; never-synced fail-open equivalence explicitly tested | `bun test agent/src/check-review.unit.test.ts` | — |
 
-No task in this cycle exceeds the ~1000-line cap, touches more than one functional
-concern, or represents an N-service repeated operation. T-078 bundles a small design
-change (injectable ref parameter) with its test because the test cannot be correctly
-authored without it — not a violation of the one-concern-per-task rule, since both parts
-serve the single goal of proving the never-synced equivalence.
+**No active new tasks remain from this cycle** — T-077 and T-078 both shipped
+independently before this branch merged (see above); the only genuinely open items in
+this plan are the carried-forward T-073 and T-074. No task in this cycle exceeded the
+~1000-line cap, touched more than one functional concern, or represented an N-service
+repeated operation; T-078 (as shipped) bundled a small design change (injectable ref
+parameter) with its test because the test could not be correctly authored without it —
+not a violation of the one-concern-per-task rule, since both parts served the single
+goal of proving the never-synced equivalence.
 
 **Resolved and removed from the active list this cycle** (confirmed `done`/`deployed`/
 `deploying` via direct task-store query, not carried forward from the 2026-07-21 doc):
@@ -312,7 +337,7 @@ seeding — no follow-up needed, the test was correctly retired along with it), 
   exercised indirectly), but shouldn't silently age past its 3rd cycle unaddressed
   either — flagging now so a future `/test-roadmap` pass doesn't have to re-diagnose it
   from scratch if it's still open next time.
-- **T-078's test-authoring subtlety is real, not just an estimation footnote.** The
+- ~~**T-078's test-authoring subtlety is real, not just an estimation footnote.** The
   shared `beforeEach(() => { agentAuthorAllowlistRef.set([]); })` at
   `check-review.unit.test.ts:668-670` structurally prevents a literal "never synced" test
   from living inside that `describe` block as-is. Whoever picks up T-078 should not try
@@ -320,7 +345,12 @@ seeding — no follow-up needed, the test was correctly retired along with it), 
   the *consumer* (`isAuthorAllowed`'s default closure) behaves correctly against a truly
   fresh, never-synced ref instance, which requires the injectability change described
   above, not a narrower unit test of `hasSynced()` itself (that already exists and is
-  not in question).
+  not in question).~~ **Resolved — no longer a risk.** PR #2228 (`45435444`) shipped
+  exactly this: the injectable `authorAllowlistRef` param on `check-review.ts:266` and a
+  dedicated never-synced-vs-synced-to-empty equivalence `describe` block at
+  `check-review.unit.test.ts:726`, independent of the shared `beforeEach`. Confirmed
+  present at current `HEAD`; this bullet is retained only as a record of the reasoning,
+  not as an open item.
 - **Content-layer file count not independently re-verified this cycle.** Phase 1/3 both
   flag that `plugins/shipwright/commands/` (~19 → 28 `.md` files) was batch-classified
   as content-covered without individually confirming each new file has a matching
