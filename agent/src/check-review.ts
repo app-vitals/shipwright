@@ -28,6 +28,7 @@
  */
 
 import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import type { AgentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
@@ -252,10 +253,22 @@ export async function buildProductionDeps(opts: {
    * without rebuilding deps.
    */
   isAuthorAllowed?: (login: string) => boolean;
+  /**
+   * Optional override for which AgentAuthorAllowlistRef instance the default
+   * isAuthorAllowed closure reads from. Defaults to the process-wide
+   * agentAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
+   * independent ref (e.g. via createAgentAuthorAllowlistRef()) to exercise
+   * the true "never synced" (hasSynced() === false) state, which the
+   * singleton — shared across the whole test file — cannot represent once
+   * any other test has called .set() on it. Mirrors the fetchFn injection
+   * pattern used elsewhere in this file (e.g. createPrRecordQuery).
+   */
+  authorAllowlistRef?: AgentAuthorAllowlistRef;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
+  const authorAllowlistRef = opts.authorAllowlistRef ?? agentAuthorAllowlistRef;
 
   return {
     getCurrentUser,
@@ -265,8 +278,8 @@ export async function buildProductionDeps(opts: {
     isAuthorAllowed:
       opts.isAuthorAllowed ??
       ((login: string) =>
-        agentAuthorAllowlistRef.get().length === 0 ||
-        agentAuthorAllowlistRef.get().includes(login)),
+        authorAllowlistRef.get().length === 0 ||
+        authorAllowlistRef.get().includes(login)),
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
