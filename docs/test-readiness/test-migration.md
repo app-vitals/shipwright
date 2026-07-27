@@ -55,17 +55,23 @@ test breaching a hard cap. A real per-layer measurement continues to exist at
 cross-referenced into `test-system.md`'s Speed budgets section since the 2026-07-19 pass
 per T-067/PR #1930 — no further correction needed this cycle).
 
-**Note on the SKILL's carried-forward-measurement-item rule:** this is not the trigger
-case the SKILL's Failure-modes section warns about — that rule targets a load-bearing
-measurement that has *never* been taken and is silently carried forward unaddressed
-across cycles. Here, a real, `time`-wrapped measurement was already taken once
-(`speed-baseline.md`, committed 2026-07-15, PR #1580) and is correctly cross-referenced;
-what's carried forward each pass is only this specific sandbox's inability to *re-measure*
-(no local Postgres), which is a sandbox constraint on re-verification, not an unaddressed
-design gap. No Milestone-1 escalation is warranted from this alone. See
-`project_shipwright_metrics_full_suite_flake` and `project_shipwright_admin_full_suite_flake`
-in memory for the two known pre-existing full-suite flakes (unrelated to layer/speed, not
-relevant to this audit).
+**Correction, made during this same cycle's Phase 4 task-store reconciliation:** the
+paragraph above, written before Phase 4 queried task-store directly, understated this.
+Phase 4 found that a prior cycle's `/test-fix` run **already** applied the SKILL's
+3-consecutive-cycle carried-forward-measurement-item rule to this exact item — it cites 5
+consecutive cycles (2026-07-16, -19, -21, -23, -25) in its own task body and is tracked as
+`test-t-074-shipwright`, `status: blocked`, `hitl: true`,
+`blockedReason: requires_postgres_infra_access`. So this **is** a case the SKILL's rule
+already caught and correctly escalated — not a case where "no escalation is warranted."
+The distinction that still holds: the measurement itself was taken once for real
+(`speed-baseline.md`, 2026-07-15, PR #1580) and what's carried forward is the *sandbox's*
+inability to re-measure, not a case of a measurement that was never taken at all — but
+that distinction doesn't change the fact that an open, HITL-gated task-store record
+already exists for it. See `test-readiness-plan.md`'s Task-store reconciliation section
+for the full accounting; no new escalation is created by this pass, the existing one is
+simply referenced. See `project_shipwright_metrics_full_suite_flake` and
+`project_shipwright_admin_full_suite_flake` in memory for the two known pre-existing
+full-suite flakes (unrelated to layer/speed, not relevant to this audit).
 
 ## Summary
 
