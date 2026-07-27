@@ -8,6 +8,7 @@ import { describe, expect, it } from "bun:test";
 import {
   agentAuthorAllowlistRef,
   createAgentAuthorAllowlistRef,
+  resolveAuthorAllowlist,
 } from "./agent-author-allowlist-ref.ts";
 
 describe("createAgentAuthorAllowlistRef", () => {
@@ -83,5 +84,47 @@ describe("agentAuthorAllowlistRef (process-wide singleton)", () => {
     agentAuthorAllowlistRef.set(["alice"]);
     expect(agentAuthorAllowlistRef.get()).toEqual(["alice"]);
     expect(independent.get()).toEqual(["should-not-leak"]);
+  });
+});
+
+describe("resolveAuthorAllowlist", () => {
+  // Regression coverage for AAL-2.3: the live config-bundle API has been
+  // observed returning authorAllowlist: null in production (Sentry issue
+  // 7633628941), even though AgentConfigResponse types it as a non-nullable
+  // string[]. syncConfig() must default this to [] before handing it to
+  // agentAuthorAllowlistRef.set(), so downstream .length checks never throw.
+  it("defaults a null authorAllowlist (as returned by the live config-bundle API) to []", () => {
+    const bundle = { authorAllowlist: null } as unknown as {
+      authorAllowlist: string[];
+    };
+
+    expect(resolveAuthorAllowlist(bundle.authorAllowlist)).toEqual([]);
+  });
+
+  it("defaults an undefined authorAllowlist to []", () => {
+    expect(resolveAuthorAllowlist(undefined)).toEqual([]);
+  });
+
+  it("syncing a null authorAllowlist into the ref does not throw and leaves get() as []", () => {
+    const ref = createAgentAuthorAllowlistRef();
+    const bundle = { authorAllowlist: null } as unknown as {
+      authorAllowlist: string[];
+    };
+
+    expect(() =>
+      ref.set(resolveAuthorAllowlist(bundle.authorAllowlist)),
+    ).not.toThrow();
+    expect(ref.get()).toEqual([]);
+    expect(ref.get().length).toBe(0);
+  });
+
+  it("passes through a real authorAllowlist array unchanged (no behavior change for real values)", () => {
+    const real = ["alice", "bob"];
+    expect(resolveAuthorAllowlist(real)).toBe(real);
+    expect(resolveAuthorAllowlist(real)).toEqual(["alice", "bob"]);
+  });
+
+  it("passes through an already-empty authorAllowlist array unchanged", () => {
+    expect(resolveAuthorAllowlist([])).toEqual([]);
   });
 });

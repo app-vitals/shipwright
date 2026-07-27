@@ -30,6 +30,24 @@ export interface AgentAuthorAllowlistRef {
   set(authorLogins: string[]): void;
 }
 
+/**
+ * Defaults a config-bundle's authorAllowlist to [] when the value is
+ * null/undefined before it's handed to agentAuthorAllowlistRef.set().
+ *
+ * The AgentConfigResponse type declares authorAllowlist as a non-nullable
+ * string[], but the live config-bundle API has been observed returning
+ * `null` in production (see Sentry issue 7633628941) — a runtime/type
+ * mismatch that, left unguarded, gets baked into the process-wide
+ * agentAuthorAllowlistRef singleton and later throws in any consumer that
+ * calls .length on the (null) result of ref.get(). Defaulting here, at the
+ * config-sync write site, protects every downstream consumer of the ref.
+ */
+export function resolveAuthorAllowlist(
+  authorAllowlist: string[] | null | undefined,
+): string[] {
+  return authorAllowlist ?? [];
+}
+
 /** Creates a new, independent agent author-allowlist ref defaulting to an empty list. */
 export function createAgentAuthorAllowlistRef(): AgentAuthorAllowlistRef {
   let authorLogins: string[] = [];

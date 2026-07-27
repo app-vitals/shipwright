@@ -17,7 +17,10 @@ import * as Sentry from "@sentry/bun";
 import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
-import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import {
+  agentAuthorAllowlistRef,
+  resolveAuthorAllowlist,
+} from "./agent-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -253,7 +256,7 @@ if (runtimeClient && agentId) {
       agentReposRef.set(bundle.repos);
 
       // Sync the agent's author-allowlist live ref
-      agentAuthorAllowlistRef.set(bundle.authorAllowlist);
+      agentAuthorAllowlistRef.set(resolveAuthorAllowlist(bundle.authorAllowlist));
     } catch (err) {
       if (
         (err as { statusCode?: number }).statusCode === 404 &&
