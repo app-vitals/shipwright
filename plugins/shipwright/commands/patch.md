@@ -495,14 +495,53 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 4c.5.
-- **BLOCKED**: Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
+  re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
+  tick — `claimedBy`/`hitl` are the only exclusions it checks, and releasing the claim below
+  clears the former without setting the latter. Escalate to HITL first, mirroring Step
+  5a.7's (RPF-1.3) escalation pattern, before releasing the claim:
+
+  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-4c-{pr}.txt:
+     #   The merge-conflict resolution subagent reported BLOCKED and could not complete —
+     #   flagging for a human decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-4c-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-4c-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
   Include the blocker in the final report.
 
@@ -997,14 +1036,55 @@ Parse the subagent's STATUS:
   literal shell test — evaluate it the same way you just evaluated the "confirm ... rebuttal
   ... AND ... resolved the inline threads" check earlier in this bullet, then set the
   variable accordingly before Step 5c.5 reads it.
-- **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: This is a first-round BLOCKED report from the fix subagent itself — distinct
+  from Step 5a.7's (RPF-1.3) second-round-disagreement escalation, which fires *before*
+  dispatch when the same finding was already rebutted once. Here the subagent was dispatched
+  and came back unable to complete the fix. The same unbounded-retry risk applies: a generic
+  release with no escalation flag makes this PR immediately re-eligible for
+  `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop` tick. Escalate to
+  HITL first, mirroring Step 5a.7's escalation pattern, before releasing the claim:
+
+  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-5c-{pr}.txt:
+     #   The review-finding fix subagent reported BLOCKED and could not complete — flagging
+     #   for a human decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-5c-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-5c-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
   Include the blocker in the final report.
 
@@ -1312,14 +1392,55 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 6d.5.
-- **BLOCKED**: Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
+  re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
+  tick — and, absent the `hitl` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to
+  have this same CI-fix subagent re-dispatched against it next cycle. Escalate to HITL
+  first, mirroring Step 5a.7's (RPF-1.3) escalation pattern, before releasing the claim —
+  this is the same `hitl` flag Step 6b.6 already reads pre-dispatch (it runs before dispatch,
+  this runs after a BLOCKED report; they compose without conflict):
+
+  1. Reuse `PR_TASK_ID`, already resolved in Step 6b.6 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-6d-{pr}.txt:
+     #   The CI-fix subagent reported BLOCKED and could not complete — flagging for a human
+     #   decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-6d-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-6d-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
   Include the blocker in the final report.
 
