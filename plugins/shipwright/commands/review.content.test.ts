@@ -291,4 +291,21 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     // Should contain explicit documentation about review-staged
     expect(unresolvedSection).toContain("review-staged");
   });
+
+  it("Step 5's Unresolved Comment Check documents the reconciler caveat for the plain-comment trigger case", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+
+    const unresolvedSection = section.slice(unresolvedIdx);
+    // Should caveat that the dedup does not reliably persist when the trigger
+    // was a plain PR comment with no formal review object at head, since
+    // pr-state-reconciler.ts's hasAnyReviewAtHead() only inspects formal
+    // review objects and does not account for issue-level comments.
+    expect(unresolvedSection).toContain("pr-state-reconciler.ts");
+    expect(unresolvedSection).toContain("hasAnyReviewAtHead");
+    expect(unresolvedSection).toContain("issue-level PR comments");
+  });
 });
