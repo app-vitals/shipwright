@@ -36,7 +36,7 @@ One file per repo (not one shared file keyed by repo) — a shared file read-mod
 **Fingerprint** — a cheap staleness check scoped only to the paths that can change the toolchain, so unrelated commits elsewhere in the repo don't force a redundant re-detection:
 
 ```bash
-git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json package-lock.json yarn.lock pnpm-lock.yaml bun.lock bun.lockb Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile pom.xml build.gradle build.gradle.kts
+git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json package-lock.json yarn.lock pnpm-lock.yaml bun.lock bun.lockb Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts
 ```
 
 `{repo-dir}` is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.

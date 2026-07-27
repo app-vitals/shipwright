@@ -271,6 +271,23 @@ describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TD
   });
 });
 
+describe("toolchain-patterns.md — fingerprint path list covers task-runner/version-manager config (CPF-review-2242)", () => {
+  it("includes Taskfile.yml, justfile/Justfile, and mise.toml/.mise.toml alongside the other fingerprinted paths", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const fingerprintIdx = referencesContent.indexOf("git -C {repo-dir} log -1 --format=%H --");
+    expect(fingerprintIdx).toBeGreaterThan(-1);
+    const fingerprintLine = referencesContent.slice(fingerprintIdx, referencesContent.indexOf("\n", fingerprintIdx));
+
+    expect(fingerprintLine).toContain("Taskfile.yml");
+    expect(fingerprintLine).toContain("justfile");
+    expect(fingerprintLine).toContain("Justfile");
+    expect(fingerprintLine).toContain("mise.toml");
+    expect(fingerprintLine).toContain(".mise.toml");
+  });
+});
+
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
