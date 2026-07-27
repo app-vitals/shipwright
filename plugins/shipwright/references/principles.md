@@ -296,7 +296,7 @@ missing a job-level `timeout-minutes` key (distinct from a per-step `timeout-min
 which does not bound the whole job). When proposing a value: for test-layer jobs
 (unit/integration/smoke/e2e, identified by job name or the test command the job runs), use
 the per-layer figures already documented in `speed-budgets/SKILL.md`'s "Ongoing CI
-enforcement" section — unit: 3m, integration: 8m, smoke: 5m, e2e: 20m. Every other job type
+enforcement" section — unit: 3m, integration: 8m, smoke: 2m, e2e: 20m. Every other job type
 defaults to a flat table: lint/typecheck: 10m, docker/image build: 20m, deploy/helm/infra:
 30m, release/version-bump automation: 15m — unless the repo's own CI docs specify a
 different figure. Report: workflow file, job name, proposed value.
