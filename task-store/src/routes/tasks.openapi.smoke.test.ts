@@ -147,16 +147,18 @@ function fakeTaskService(
   };
 }
 
-/** Build a typed parent app that injects the given auth context (agentId, repos). */
+/** Build a typed parent app that injects the given auth context (agentId, repos, scopeDegraded). */
 function makeParent(
   app: OpenAPIHono<TaskStoreAuthEnv>,
   agentId: string | null,
   repos: string[] | null,
+  scopeDegraded = false,
 ) {
   const parent = new OpenAPIHono<TaskStoreAuthEnv>();
   parent.use("*", async (c, next) => {
     c.set("agentId", agentId);
     c.set("repos", repos);
+    c.set("scopeDegraded", scopeDegraded);
     await next();
   });
   parent.onError((err, c) => {
@@ -170,8 +172,11 @@ function makeParent(
 }
 
 /** Build a typed parent app that injects admin context (agentId=null, repos=null). */
-function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
-  return makeParent(app, null, null);
+function makeAdminParent(
+  app: OpenAPIHono<TaskStoreAuthEnv>,
+  scopeDegraded = false,
+) {
+  return makeParent(app, null, null, scopeDegraded);
 }
 
 /** Build a typed parent app that injects agent-token context (agentId set, scoped repos). */
@@ -179,8 +184,9 @@ function makeAgentParent(
   app: OpenAPIHono<TaskStoreAuthEnv>,
   agentId: string,
   repos: string[] | null = [],
+  scopeDegraded = false,
 ) {
-  return makeParent(app, agentId, repos);
+  return makeParent(app, agentId, repos, scopeDegraded);
 }
 
 describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
@@ -199,6 +205,21 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     const body = (await res.json()) as { tasks: Task[]; total: number };
     expect(Array.isArray(body.tasks)).toBe(true);
     expect(typeof body.total).toBe("number");
+  });
+
+  it("GET / includes scopeDegraded: true in the response body when the scope resolver failed upstream", async () => {
+    const task = makeTask({ id: "t-1" });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAdminParent(app, true);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: Task[];
+      total: number;
+      scopeDegraded: boolean;
+    };
+    expect(body.scopeDegraded).toBe(true);
   });
 
   it("GET /:id returns 200 with task shape", async () => {
