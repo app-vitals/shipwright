@@ -29,6 +29,17 @@ export class AgentPluginService {
   }
 
   /**
+   * List enabled plugins for a given agent, ordered by createdAt.
+   * Filters `enabled: true` server-side.
+   */
+  async listEnabled(agentId: string): Promise<AgentPlugin[]> {
+    return this.prisma.agentPlugin.findMany({
+      where: { agentId, enabled: true },
+      orderBy: { createdAt: "asc" },
+    });
+  }
+
+  /**
    * Add a plugin for the given agent.
    * Uses upsert so re-adding an existing plugin updates its version and re-enables it.
    */

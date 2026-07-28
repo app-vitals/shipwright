@@ -73,19 +73,15 @@ interface AgentServiceLike {
   ): Promise<{ id: string; repos: string[]; authorAllowlist: string[] } | null>;
 }
 
-interface PrismaLike {
-  agentPlugin: {
-    findMany(args: {
-      where: { agentId: string; enabled: boolean };
-    }): Promise<Array<{ name: string }>>;
-  };
+interface AgentPluginServiceLike {
+  listEnabled(agentId: string): Promise<Array<{ name: string }>>;
 }
 
 export interface AgentRuntimeDeps {
   agentEnvService: AgentEnvServiceLike;
   agentCronJobService: AgentCronJobServiceLike;
   agentService: AgentServiceLike;
-  prisma: PrismaLike;
+  agentPluginService: AgentPluginServiceLike;
   /** Session secret for cookie auth (SHIPWRIGHT_SESSION_SECRET). */
   sessionSecret: string;
   /** Parsed SHIPWRIGHT_ADMIN_API_KEYS — optional; absent means env key auth is disabled. */
@@ -156,7 +152,12 @@ const getCronsRoute = createRoute({
  * Inject real services for production; inject mocks for tests.
  */
 export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
-  const { agentEnvService, agentCronJobService, agentService, prisma } = deps;
+  const {
+    agentEnvService,
+    agentCronJobService,
+    agentService,
+    agentPluginService,
+  } = deps;
 
   const app = new OpenAPIHono();
 
@@ -185,7 +186,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     // Fetch env bundle and plugins in parallel
     const [bundle, plugins] = await Promise.all([
       agentEnvService.getConfigBundle(id),
-      prisma.agentPlugin.findMany({ where: { agentId: id, enabled: true } }),
+      agentPluginService.listEnabled(id),
     ]);
 
     const response: AgentConfigResponse = {

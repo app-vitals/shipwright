@@ -36,18 +36,11 @@ const runtimeApp = createAgentRuntimeApp({
       return [];
     },
   },
-  prisma: {
-    agent: {
-      async findUnique() {
-        return null;
-      },
+  agentPluginService: {
+    async listEnabled() {
+      return [];
     },
-    agentPlugin: {
-      async findMany() {
-        return [];
-      },
-    },
-  } as never,
+  },
   adminApiKeys,
   agentTokenService: { validate: async () => null },
   sessionSecret: SESSION_SECRET,

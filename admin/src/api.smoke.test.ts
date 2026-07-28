@@ -103,23 +103,12 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
   };
 }
 
-function makeMockPrisma(plugins: Map<string, MockPlugin[]>): {
-  agentPlugin: {
-    findMany: (args: {
-      where: { agentId: string; enabled: boolean };
-    }) => Promise<MockPlugin[]>;
-  };
+function makeMockAgentPluginService(plugins: Map<string, MockPlugin[]>): {
+  listEnabled: (agentId: string) => Promise<MockPlugin[]>;
 } {
   return {
-    agentPlugin: {
-      async findMany({
-        where,
-      }: {
-        where: { agentId: string; enabled: boolean };
-      }): Promise<MockPlugin[]> {
-        const all = plugins.get(where.agentId) ?? [];
-        return all.filter((p) => p.enabled === where.enabled);
-      },
+    async listEnabled(agentId: string): Promise<MockPlugin[]> {
+      return (plugins.get(agentId) ?? []).filter((p) => p.enabled);
     },
   };
 }
@@ -213,7 +202,7 @@ function buildApp(opts?: {
     agentEnvService: makeMockAgentEnvService(bundles),
     agentCronJobService: makeMockAgentCronJobService(cronMap),
     agentService: makeMockAgentService(agents),
-    prisma: makeMockPrisma(pluginMap) as never,
+    agentPluginService: makeMockAgentPluginService(pluginMap),
     adminApiKeys: parseAdminApiKeys(`admin:${VALID_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
@@ -448,13 +437,11 @@ function buildCombinedApp() {
         return { id: COMBINED_AGENT_ID, repos: [], authorAllowlist: [] };
       },
     },
-    prisma: {
-      agentPlugin: {
-        async findMany() {
-          return [];
-        },
+    agentPluginService: {
+      async listEnabled() {
+        return [];
       },
-    } as never,
+    },
     adminApiKeys: parseAdminApiKeys(`admin:${COMBINED_ADMIN_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: COMBINED_SESSION_SECRET,
