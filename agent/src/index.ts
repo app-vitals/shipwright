@@ -358,7 +358,7 @@ if (runtimeClient && agentId) {
 
     try {
       worktreeReaperDeps ??= buildWorktreeReaperDeps({
-        scopedRepos: agentReposRef.get(),
+        getScopedRepos: agentReposRef.get,
       });
       await reconcileStaleWorktrees(worktreeReaperDeps);
     } catch (err) {

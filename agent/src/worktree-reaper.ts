@@ -53,8 +53,14 @@ export interface WorktreeReaperDeps {
   readAgentPolicy: () => string;
   /** Lists dirnames directly under worktrees/ (not full paths). */
   listWorktreeDirs: () => string[];
-  /** The list of repo names to prefix-match worktree dirnames against. */
-  scopedRepos: string[];
+  /**
+   * Returns the agent's currently-configured repo scope, read fresh on
+   * every reconcileStaleWorktrees() call — mirrors PrStateReconcilerDeps's
+   * own getScopedRepos field, so a scope change (a repo added/removed via
+   * syncConfig()) is picked up on the very next reconcile pass instead of
+   * being frozen at first-tick memoization time.
+   */
+  getScopedRepos: () => string[];
   /** mtime lookup for a given worktree dirname. */
   statMtime: (dirname: string) => Date;
   /** Force-removes a worktree: `git -C repos/{repo} worktree remove worktrees/{dirname} --force`. */
@@ -121,9 +127,10 @@ export async function reconcileStaleWorktrees(
   const now = deps.clock.now();
 
   const dirs = deps.listWorktreeDirs();
+  const scopedRepos = deps.getScopedRepos();
 
   for (const dirname of dirs) {
-    const repo = resolveOwningRepo(dirname, deps.scopedRepos);
+    const repo = resolveOwningRepo(dirname, scopedRepos);
     if (repo === null) {
       console.error(
         `[worktree-reaper] skipping ${dirname} — no scoped repo matches this worktree dirname's prefix`,
@@ -154,7 +161,7 @@ export async function reconcileStaleWorktrees(
  */
 export function buildProductionDeps(opts?: {
   clock?: Clock;
-  scopedRepos?: string[];
+  getScopedRepos?: () => string[];
 }): WorktreeReaperDeps {
   const workspacePath = resolveWorkspacePath();
 
@@ -180,7 +187,7 @@ export function buildProductionDeps(opts?: {
         return [];
       }
     },
-    scopedRepos: opts?.scopedRepos ?? [],
+    getScopedRepos: opts?.getScopedRepos ?? (() => []),
     statMtime: (dirname: string) =>
       statSync(join(workspacePath, "worktrees", dirname)).mtime,
     removeWorktree: async (repo: string, dirname: string) => {
