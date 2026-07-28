@@ -186,6 +186,11 @@ export function baseStyles(): string {
       color: #065f46;
       border: 1px solid #a7f3d0;
     }
+    .alert-warning {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
 
     /* ─── Badges ────────────────────────────────────────── */
     .badge {
@@ -203,6 +208,10 @@ export function baseStyles(): string {
     .badge-gray {
       background: #f3f4f6;
       color: #6b7280;
+    }
+    .badge-warning {
+      background: #fde68a;
+      color: #92400e;
     }
 
     /* ─── Provision page ────────────────────────────────── */

@@ -249,6 +249,59 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
   });
 });
 
+describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
+  it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
+    const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5cIdx + 2500);
+
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}"');
+    expect(section).toMatch(/-X PATCH/);
+    expect(section).toMatch(/-d '\{"status": "blocked", "blockedReason": "[a-z_]+"\}'/);
+  });
+
+  it("uses the same curl shape as Steps 1/7/9/9b.5 (curl -sf -X PATCH ... | jq .)", () => {
+    const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5cIdx + 2500);
+
+    expect(section).toContain("curl -sf -X PATCH -H \"Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN\"");
+    expect(section).toContain('-H "Content-Type: application/json"');
+    expect(section).toMatch(/\| jq \./);
+  });
+
+  it("does NOT fire the blocked-status PATCH for the context/size/plan cases the step already knows how to resolve", () => {
+    const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5cIdx + 2500);
+
+    // The three self-correcting branches (context, too-large, wrong-plan) must appear
+    // BEFORE the blocked-status PATCH, and the PATCH must be scoped to the remaining
+    // dead-end case only — not interleaved into each resolvable branch.
+    const contextIdx = section.search(/context problem, provide more context/i);
+    const tooLargeIdx = section.search(/task is too large, break it into smaller sub-tasks/i);
+    const planIdx = section.search(/plan is wrong, escalate to the user/i);
+    const patchIdx = section.search(/-X PATCH/);
+
+    expect(contextIdx).toBeGreaterThan(-1);
+    expect(tooLargeIdx).toBeGreaterThan(-1);
+    expect(planIdx).toBeGreaterThan(-1);
+    expect(patchIdx).toBeGreaterThan(-1);
+    expect(contextIdx).toBeLessThan(patchIdx);
+    expect(tooLargeIdx).toBeLessThan(patchIdx);
+    expect(planIdx).toBeLessThan(patchIdx);
+  });
+
+  it("does not comment on or close a PR — Step 5c runs before Step 9 (PR creation), so no PR exists yet", () => {
+    const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5cIdx, step5cIdx + 2500);
+
+    expect(section).not.toContain("gh pr comment");
+    expect(section).not.toContain("gh pr close");
+  });
+});
+
 describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
   it("runs the reality check before any `git worktree add -b {branch}` invocation, regardless of task-store status", () => {
     const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");

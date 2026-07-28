@@ -69,8 +69,9 @@
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import {
+  classifyReviewState,
   createPrRecordQuery,
-  isCleanApproveBody,
+  hasAnyReviewAtHead,
   resolveAllRepos,
   resolveWorkspacePath,
   splitOrgRepo,
@@ -717,85 +718,12 @@ export async function reconcilePrState(
 }
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
-
-/** Filter a PR's reviews down to only those submitted at the current head commit. */
-function reviewsAtHeadCommit(
-  data: PrReviewData,
-): PrReviewData["reviews"]["nodes"] {
-  const { headRefOid, reviews } = data;
-  return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
-}
-
-/**
- * CHU-2.4: does ANY review at all exist at the PR's current head commit?
- * Extracted out of `classifyReviewState`'s existing `reviewsAtHead.length ===
- * 0` check so the posted-scan pass can distinguish this specific null case
- * ("nothing at head at all" — a posted verdict has gone stale because a new
- * commit landed with no review yet targeting it) from the OTHER null case
- * `classifyReviewState` returns (a genuine unresolved finding at head, which
- * must leave a posted record untouched). `classifyReviewState`'s own
- * existing behavior/signature is unchanged — it still returns null for both
- * cases, exactly as before.
- */
-function hasAnyReviewAtHead(data: PrReviewData): boolean {
-  return reviewsAtHeadCommit(data).length > 0;
-}
-
-/**
- * Classify a PR's review state from live GitHub review data. Mirrors the
- * SHAPE of check-patch.ts's private `hasUnaddressedFindings` filtering
- * (reviews-at-head, unresolved-threads-or-non-empty-body) but keyed on
- * `isCleanApproveBody` for the approve/non-finding split instead of
- * self-authorship — this reconciler exists specifically to catch an
- * OUT-OF-BAND reviewer, so ANY author's clean-approve-shaped COMMENTED
- * review counts, not just self-authored ones.
- *
- * Genuine findings are checked FIRST, independent of whether an approve also
- * exists at head — an approve from one reviewer must never mask an unresolved
- * thread or non-empty finding body left by a different reviewer's
- * COMMENTED/CHANGES_REQUESTED review at the same head commit (mirrors
- * `hasUnaddressedFindings`'s filtering order in check-patch.ts).
- *
- * Returns:
- *   - "approved" — a real APPROVED review, or a clean-approve-shaped
- *     COMMENTED review, at the current head commit, AND no genuine
- *     unaddressed finding from any other review at the same head commit.
- *   - "posted" — a terminal (no unresolved threads, no qualifying non-empty
- *     finding body) non-approve review at the current head commit.
- *   - null — no review at all at the current head commit, OR a genuine
- *     unaddressed finding at the current head commit. Both cases must leave
- *     the record completely untouched.
- */
-function classifyReviewState(data: PrReviewData): "approved" | "posted" | null {
-  const { reviewThreads } = data;
-  const reviewsAtHead = reviewsAtHeadCommit(data);
-  if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
-
-  const qualifyingReviews = reviewsAtHead.filter(
-    (r) =>
-      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
-      !isCleanApproveBody(r.body),
-  );
-
-  if (qualifyingReviews.length > 0) {
-    const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
-    if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
-
-    const hasFindingBody = qualifyingReviews.some(
-      (r) => r.body.trim().length > 0,
-    );
-    if (hasFindingBody) return null; // genuine finding — untouched
-  }
-
-  const hasApprove = reviewsAtHead.some(
-    (r) =>
-      r.state === "APPROVED" ||
-      (r.state === "COMMENTED" && isCleanApproveBody(r.body)),
-  );
-  if (hasApprove) return "approved";
-
-  return "posted"; // terminal, non-approve, no finding
-}
+//
+// reviewsAtHeadCommit/hasAnyReviewAtHead/classifyReviewState now live in
+// check-helpers.ts (RVD-1.1) — promoted so check-review.ts's candidate
+// selection can reuse the same live-review classification for its own
+// identity-agnostic dedup, not just this file's async background reconcile
+// pass. Imported above; see check-helpers.ts for the full doc comments.
 
 /**
  * A record is "actively claimed" (skip it — never overwrite a live claim's

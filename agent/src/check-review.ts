@@ -16,6 +16,15 @@
  * eligible; a query failure is also treated as eligible (graceful
  * degradation, matching the plugin's "err permissive" precheck philosophy).
  *
+ * RVD-1.1 adds a second, independent dedup signal against LIVE GitHub review
+ * data (via classifyReviewState(), promoted to check-helpers.ts from
+ * pr-state-reconciler.ts) — the task-store record alone can't see a review
+ * posted by an agent running against a DIFFERENT task-store instance, since
+ * that agent never wrote a record here. This check is identity-agnostic (any
+ * author's terminal review at the PR's current head commit counts) and
+ * applies regardless of what the task-store record says. Same fail-open
+ * philosophy: a fetchPrReviews failure is treated as eligible.
+ *
  * age is populated from the linked task's createdAt (via queryTaskStatus,
  * LPF-3.2), falling back to the PR's GitHub createdAt when no task is linked
  * or the lookup fails — readyForReviewAt is a necessarily-recent
@@ -27,20 +36,27 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
+import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import type { AgentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
+  classifyReviewState,
+  createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   getCurrentUser,
+  ghGraphql as ghGraphqlDefault,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
   resolveAllRepos,
   resolveWorkspacePath,
+  splitOrgRepo,
 } from "./check-helpers.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
+import type { PrReviewData } from "./check-patch.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -98,6 +114,33 @@ export interface CheckReviewDeps {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  /**
+   * Optional author allowlist hook. When set, getReviewCandidates() skips any
+   * PR whose pr.author.login this returns false for. buildProductionDeps()
+   * defaults this to a closure backed by the agent's synced authorAllowlist
+   * config field (via agentAuthorAllowlistRef) — an empty allowlist means
+   * unfiltered. Callers can still pass an explicit override (e.g.
+   * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
+   * ref-backed default entirely.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
+  // Bundle completeness gate: returns false if any bundle-mate task on the branch
+  // is still pending/in_progress/blocked. PR is skipped when it returns false.
+  isBundleComplete?: (branch: string) => Promise<boolean>;
+  /**
+   * Fetch head commit + reviews + review threads for a single PR (RVD-1.1).
+   * Used to dedup against LIVE GitHub review data, independent of the
+   * task-store PR record — a PR reviewed by an agent running against a
+   * DIFFERENT task-store instance leaves no trace in this instance's record,
+   * so the record-based dedup above can't see it. classifyReviewState()
+   * (check-helpers.ts) is identity-agnostic: any author's terminal review at
+   * the PR's current head commit counts, matching pr-state-reconciler.ts's
+   * reconcileReviewState() semantics. A throw/rejection here is caught and
+   * treated as "no terminal review at head" (fail open — PR stays eligible),
+   * matching this function's existing permissive-on-error philosophy for
+   * queryPrRecord failures above.
+   */
+  fetchPrReviews: (org: string, repo: string, pr: number) => Promise<PrReviewData>;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -127,12 +170,32 @@ export async function getReviewCandidates(
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
     if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
+    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
+      continue;
 
     let record: PrRecord | null = null;
     try {
       record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
     } catch {
       // Query failed → treat as eligible (no dedup)
+    }
+
+    // Live-GitHub review dedup (RVD-1.1) — a second, independent signal from
+    // the task-store record above: skip this PR when a terminal review
+    // already exists at its CURRENT head commit on GitHub, regardless of
+    // author and regardless of what the task-store record says (it may have
+    // no record at all, e.g. an agent running against a different
+    // task-store instance already reviewed it). Applied unconditionally
+    // before the record-based eligibility checks below, since it excludes
+    // rather than includes. A fetch failure is caught and treated as "no
+    // terminal review" — fail open, matching queryPrRecord's own permissive-
+    // on-error handling above.
+    try {
+      const [org, repoName] = splitOrgRepo(pr.repo ?? "");
+      const reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
+      if (classifyReviewState(reviewData) !== null) continue;
+    } catch {
+      // Fetch failed → treat as "no terminal review" (no dedup)
     }
 
     // Task-store task lookup, used to source the age field from the linked
@@ -152,6 +215,13 @@ export async function getReviewCandidates(
     // has already been escalated to (or the task is otherwise blocked) and
     // needs to act before review tries again (CBD-2.2, PRB-2.3).
     if (isTaskBlockedForDispatch(linkedTask)) continue;
+
+    if (deps.isBundleComplete) {
+      const bundleComplete = await deps
+        .isBundleComplete(pr.headRefName)
+        .catch(() => true);
+      if (!bundleComplete) continue;
+    }
 
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
@@ -217,19 +287,53 @@ export async function getReviewCandidates(
 
 export async function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
+  /**
+   * Optional override for the GraphQL client backing fetchPrReviews
+   * (RVD-1.1) — mirrors check-patch.ts's buildProductionDeps's required
+   * ghGraphql param, but kept optional here (defaulting to check-helpers.ts's
+   * shared ghGraphql) so existing callers/tests that only pass ghJson keep
+   * working unchanged.
+   */
+  ghGraphql?: <T>(query: string) => Promise<T>;
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  /**
+   * Optional explicit override for the ref-backed author-allowlist default
+   * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
+   * When omitted, defaults to a closure reading agentAuthorAllowlistRef live,
+   * so allowlist changes from config-sync take effect on the next call
+   * without rebuilding deps.
+   */
+  isAuthorAllowed?: (login: string) => boolean;
+  /**
+   * Optional override for which AgentAuthorAllowlistRef instance the default
+   * isAuthorAllowed closure reads from. Defaults to the process-wide
+   * agentAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
+   * independent ref (e.g. via createAgentAuthorAllowlistRef()) to exercise
+   * the true "never synced" (hasSynced() === false) state, which the
+   * singleton — shared across the whole test file — cannot represent once
+   * any other test has called .set() on it. Mirrors the fetchFn injection
+   * pattern used elsewhere in this file (e.g. createPrRecordQuery).
+   */
+  authorAllowlistRef?: AgentAuthorAllowlistRef;
 }): Promise<CheckReviewDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
+  const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;
+  const authorAllowlistRef = opts.authorAllowlistRef ?? agentAuthorAllowlistRef;
 
   return {
     getCurrentUser,
     isSelfReviewAllowed: readAllowSelfReview(workspacePath),
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
+    isAuthorAllowed:
+      opts.isAuthorAllowed ??
+      ((login: string) =>
+        authorAllowlistRef.get().length === 0 ||
+        authorAllowlistRef.get().includes(login)),
     listOpenPrs: async (_repo: string) => {
       return mapReposTolerant(allRepos, "check-review", async (repo) => {
         const repoPrs = await ghJsonFn<PrInfo[]>([
@@ -247,5 +351,46 @@ export async function buildProductionDeps(opts: {
     },
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
     queryTaskStatus: createTaskStatusQuery({ fetchFn: opts.fetchFn }),
+    isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
+    fetchPrReviews: async (org: string, repo: string, pr: number) => {
+      const query = `{
+  repository(owner: "${org}", name: "${repo}") {
+    pullRequest(number: ${pr}) {
+      headRefOid
+      reviews(first: 50) {
+        nodes {
+          author { login }
+          state
+          submittedAt
+          commit { oid }
+          body
+        }
+      }
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              author { login }
+              body
+            }
+          }
+        }
+      }
+      comments(last: 50) {
+        nodes {
+          author { login }
+          body
+          createdAt
+        }
+      }
+    }
+  }
+}`;
+      const response = await ghGraphqlFn<{
+        data: { repository: { pullRequest: PrReviewData } };
+      }>(query);
+      return response.data.repository.pullRequest;
+    },
   };
 }

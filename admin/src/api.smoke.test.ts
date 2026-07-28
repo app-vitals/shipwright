@@ -35,6 +35,7 @@ interface MockAgent {
   id: string;
   name: string;
   repos: string[];
+  authorAllowlist: string[];
 }
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -74,14 +75,30 @@ function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
 }
 
 function makeMockAgentService(agents: Map<string, MockAgent>): {
-  getById: (agentId: string) => Promise<{ id: string; repos: string[] } | null>;
+  getById: (
+    agentId: string,
+  ) => Promise<{
+    id: string;
+    repos: string[];
+    authorAllowlist: string[];
+  } | null>;
 } {
   return {
     async getById(
       agentId: string,
-    ): Promise<{ id: string; repos: string[] } | null> {
+    ): Promise<{
+      id: string;
+      repos: string[];
+      authorAllowlist: string[];
+    } | null> {
       const agent = agents.get(agentId);
-      return agent ? { id: agent.id, repos: agent.repos } : null;
+      return agent
+        ? {
+            id: agent.id,
+            repos: agent.repos,
+            authorAllowlist: agent.authorAllowlist,
+          }
+        : null;
     },
   };
 }
@@ -157,6 +174,7 @@ function buildApp(opts?: {
   plugins?: MockPlugin[];
   crons?: AgentCronJob[];
   repos?: string[];
+  authorAllowlist?: string[];
 }) {
   const hasAgent = opts?.hasAgent ?? true;
   const bundle: AgentEnvBundle | null =
@@ -172,6 +190,7 @@ function buildApp(opts?: {
   ];
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
   const repos = opts?.repos ?? ["org/repo1", "org/repo2"];
+  const authorAllowlist = opts?.authorAllowlist ?? [];
 
   const agents = new Map<string, MockAgent>();
   const bundles = new Map<string, AgentEnvBundle | null>();
@@ -183,6 +202,7 @@ function buildApp(opts?: {
       id: KNOWN_AGENT_ID,
       name: "Test Agent",
       repos,
+      authorAllowlist,
     });
     bundles.set(KNOWN_AGENT_ID, bundle);
     pluginMap.set(KNOWN_AGENT_ID, plugins);
@@ -231,6 +251,28 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.repos).toEqual([]);
+  });
+
+  test("200 returns authorAllowlist exactly as stored on the agent", async () => {
+    const app = buildApp({ authorAllowlist: ["octocat", "hubot"] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat", "hubot"]);
+  });
+
+  test("200 returns authorAllowlist as an empty array when the agent has none", async () => {
+    const app = buildApp({ authorAllowlist: [] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual([]);
   });
 
   test("parses the canonical plugin@marketplace spec, defaulting bare names to shipwright", async () => {
@@ -403,7 +445,7 @@ function buildCombinedApp() {
     },
     agentService: {
       async getById() {
-        return { id: COMBINED_AGENT_ID, repos: [] };
+        return { id: COMBINED_AGENT_ID, repos: [], authorAllowlist: [] };
       },
     },
     prisma: {
@@ -425,8 +467,12 @@ function buildCombinedApp() {
         name: "",
         slackId: null,
         selfHosted: false,
+        repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
+        missingRequiredEnv: [],
       }),
       delete: async () => {},
       list: async () => [],
@@ -439,8 +485,11 @@ function buildCombinedApp() {
         slackId: null,
         selfHosted: false,
         repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
+        missingRequiredEnv: [],
       }),
     },
     agentEnvService: {
@@ -646,6 +695,14 @@ function buildCombinedApp() {
       }),
       remove: async () => {},
       removeByName: async () => {},
+    },
+    agentMemberService: {
+      add: async (agentId: string, email: string) => ({
+        id: "member-1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

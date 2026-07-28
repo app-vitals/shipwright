@@ -28,6 +28,7 @@ const validAgent = {
   name: "Bodhi",
   slackId: "U01234567",
   selfHosted: false,
+  typeName: "coding",
   createdAt: now,
   updatedAt: now,
 };

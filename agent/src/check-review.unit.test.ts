@@ -10,12 +10,18 @@
  * function was ported there in WL-2.1) and are not duplicated here.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import {
+  agentAuthorAllowlistRef,
+  createAgentAuthorAllowlistRef,
+} from "./agent-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
+import type { PrReviewData, ReviewNode } from "./check-patch.ts";
 import {
   type CheckReviewDeps,
   type PrInfo,
   type PrRecord,
+  buildProductionDeps,
   getReviewCandidates,
 } from "./check-review.ts";
 
@@ -35,6 +41,20 @@ function makePr(overrides: Partial<PrInfo> = {}): PrInfo {
   };
 }
 
+/** Default fetchPrReviews stub: no reviews at all — "no terminal review", every PR stays eligible. */
+async function defaultFetchPrReviews(
+  _org: string,
+  _repo: string,
+  _pr: number,
+): Promise<PrReviewData> {
+  return {
+    headRefOid: "abc123def456",
+    reviews: { nodes: [] },
+    reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
+  };
+}
+
 function makeDeps(
   prs: PrInfo[],
   queryPrRecordFn: (
@@ -51,6 +71,12 @@ function makeDeps(
     ...new Set(prs.map((pr) => pr.repo ?? "")),
   ],
   hasScopeSynced: () => boolean = () => true,
+  isBundleComplete?: (branch: string) => Promise<boolean>,
+  fetchPrReviews: (
+    org: string,
+    repo: string,
+    pr: number,
+  ) => Promise<PrReviewData> = defaultFetchPrReviews,
 ): CheckReviewDeps {
   return {
     listOpenPrs: async (_repo: string) => prs,
@@ -60,6 +86,31 @@ function makeDeps(
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
+    fetchPrReviews,
+    ...(isBundleComplete ? { isBundleComplete } : {}),
+  };
+}
+
+// ─── Live-review fixture helpers (RVD-1.1) ───────────────────────────────────
+
+function makeReviewNode(overrides: Partial<ReviewNode> = {}): ReviewNode {
+  return {
+    author: { login: "some-reviewer" },
+    state: "COMMENTED",
+    submittedAt: "2026-07-15T10:00:00.000Z",
+    commit: { oid: "abc123def456" },
+    body: "",
+    ...overrides,
+  };
+}
+
+function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
+  return {
+    headRefOid: "abc123def456",
+    reviews: { nodes: [] },
+    reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
+    ...overrides,
   };
 }
 
@@ -226,6 +277,7 @@ describe("getReviewCandidates", () => {
       isSelfReviewAllowed: false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
+      fetchPrReviews: defaultFetchPrReviews,
     };
     const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
@@ -598,5 +650,321 @@ describe("getReviewCandidates", () => {
       ),
     );
     expect(result).toEqual([]);
+  });
+
+  // ─── author allowlist filtering (HRA-1.1) ────────────────────────────────
+
+  test("isAuthorAllowed filters out a PR whose author does not match", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("isAuthorAllowed passes through a PR whose author matches", async () => {
+    const pr = makePr({ author: { login: "danmcaulay" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "danmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  // ─── bundle completeness gate (RBG-1.1) ──────────────────────────────────
+
+  test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-incomplete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch !== "feat/bundle-incomplete",
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR when isBundleComplete resolves true for its branch", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-complete" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async (branch: string) => branch === "feat/bundle-complete",
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("includes a PR when isBundleComplete rejects for its branch (fail-open)", async () => {
+    const pr = makePr({ headRefName: "feat/bundle-check-throws" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("bundle status check failed");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  // ─── live-GitHub review dedup (RVD-1.1) ──────────────────────────────────
+
+  test("excludes a PR with a live terminal review at head from a non-self author, even with no task-store record (identity-agnostic dedup)", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "out-of-band-reviewer" },
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null, // no task-store record — this instance never claimed it
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR whose only live reviews are at a stale (non-head) commit", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "old-stale-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("fails open (stays eligible) when fetchPrReviews throws/rejects", async () => {
+    const pr = makePr({ headRefOid: "head-sha" });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("GraphQL rate limited");
+        },
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("example-org/example-repo#42");
+  });
+
+  test("a live terminal review at head still excludes the PR even when the task-store record independently says eligible", async () => {
+    // The second, independent signal: even a fresh/pending task-store record
+    // must not override a live terminal review at head.
+    const pr = makePr({ headRefOid: "head-sha" });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({ commitSha: null, reviewState: "pending" }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+});
+
+describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
+  beforeEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  afterEach(() => {
+    agentAuthorAllowlistRef.set([]);
+  });
+
+  const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+
+  test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
+    agentAuthorAllowlistRef.set([]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+  });
+
+  test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
+    agentAuthorAllowlistRef.set(["allowed-user"]);
+    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    expect(deps.isAuthorAllowed?.("allowed-user")).toBe(true);
+    expect(deps.isAuthorAllowed?.("someone-else")).toBe(false);
+  });
+
+  test("an explicit opts.isAuthorAllowed overrides the ref-backed default", async () => {
+    agentAuthorAllowlistRef.set(["ref-user"]);
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      isAuthorAllowed: (login) => login === "explicit-user",
+    });
+    expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
+    expect(deps.isAuthorAllowed?.("explicit-user")).toBe(true);
+  });
+});
+
+describe("buildProductionDeps isAuthorAllowed default — never-synced equivalence (T-078)", () => {
+  // Deliberately NOT using the shared agentAuthorAllowlistRef singleton or its
+  // beforeEach(() => ref.set([])) reset (see the AAL-2.2 block above) — that
+  // reset stamps hasSynced() === true before every test in that block, which
+  // makes it structurally impossible to exercise the true "never synced"
+  // (hasSynced() === false) state from in there. Each test below builds its
+  // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
+
+  const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+
+  test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    expect(neverSyncedRef.hasSynced()).toBe(false);
+    expect(neverSyncedRef.get()).toEqual([]);
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+    expect(deps.isAuthorAllowed?.("literally-anyone-else")).toBe(true);
+  });
+
+  test("a ref synced-to-empty (hasSynced() === true, .set([]) called) behaves identically: also fails open / unfiltered", async () => {
+    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    syncedEmptyRef.set([]);
+    expect(syncedEmptyRef.hasSynced()).toBe(true);
+    expect(syncedEmptyRef.get()).toEqual([]);
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: syncedEmptyRef,
+    });
+
+    expect(deps.isAuthorAllowed).toBeDefined();
+    expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
+    expect(deps.isAuthorAllowed?.("literally-anyone-else")).toBe(true);
+  });
+
+  test("never-synced and synced-to-empty are intentionally, not accidentally, equivalent: same input, same output", async () => {
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    syncedEmptyRef.set([]);
+
+    const neverSyncedDeps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+    const syncedEmptyDeps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: syncedEmptyRef,
+    });
+
+    for (const login of ["danmcaulay", "anyone-at-all", ""]) {
+      expect(neverSyncedDeps.isAuthorAllowed?.(login)).toBe(
+        syncedEmptyDeps.isAuthorAllowed?.(login),
+      );
+      expect(neverSyncedDeps.isAuthorAllowed?.(login)).toBe(true);
+    }
+  });
+
+  test("a never-synced ref does not affect the singleton-backed default in the other describe block", async () => {
+    // Sanity guard: using an injected fresh ref must not accidentally reach
+    // into / mutate the process-wide singleton.
+    agentAuthorAllowlistRef.set(["some-user"]);
+    const neverSyncedRef = createAgentAuthorAllowlistRef();
+
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      authorAllowlistRef: neverSyncedRef,
+    });
+
+    expect(deps.isAuthorAllowed?.("some-user")).toBe(true);
+    expect(deps.isAuthorAllowed?.("unrelated-user")).toBe(true);
+    expect(agentAuthorAllowlistRef.get()).toEqual(["some-user"]);
+
+    // cleanup so this doesn't leak into other describe blocks in the file
+    agentAuthorAllowlistRef.set([]);
   });
 });

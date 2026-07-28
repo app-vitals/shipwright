@@ -443,6 +443,7 @@ async function startServer(): Promise<void> {
     agentToolService,
     agentTokenService,
     agentPluginService,
+    agentMemberService,
     agentChatTokenService,
     agentWorkQueueService,
     prisma,

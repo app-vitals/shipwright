@@ -77,7 +77,7 @@ tag values are currently reporting:
 
 ```bash
 curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
-  "https://sentry.io/api/0/organizations/$SENTRY_ORG/$PROJECT_SLUG/tags/service/values/"
+  "https://sentry.io/api/0/projects/$SENTRY_ORG/$PROJECT_SLUG/tags/service/values/"
 ```
 
 1. This returns a JSON array of tag-value objects; extract each `value` field (e.g. via `jq

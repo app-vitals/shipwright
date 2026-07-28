@@ -56,8 +56,12 @@ function buildSpecApp() {
         name: "",
         slackId: null,
         selfHosted: false,
+        repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
+        missingRequiredEnv: [],
       }),
       delete: async () => {},
       list: async () => [],
@@ -70,8 +74,11 @@ function buildSpecApp() {
         slackId: null,
         selfHosted: false,
         repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
+        missingRequiredEnv: [],
       }),
     },
     agentEnvService: {
@@ -270,6 +277,14 @@ function buildSpecApp() {
       }),
       remove: async () => {},
       removeByName: async () => {},
+    },
+    agentMemberService: {
+      add: async (agentId: string, email: string) => ({
+        id: "member-1",
+        agentId,
+        email,
+        createdAt: new Date(),
+      }),
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

@@ -32,7 +32,7 @@ Mode: auto (unattended)
 
 Determine the list of repos to process, in this priority order:
 
-1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (see `agent/src/system-crons.ts`'s header comment: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
+1. **Precheck-driven (preferred).** This cron's `preCheck` (`shipwright:check-docs-freshness.ts`) already iterated every repo under `repos/` and its stdout — which became this prompt (per the agent type manifest's cron `preCheck` contract: "When a preCheck script is set, its stdout becomes the actual prompt sent to Claude") — lists exactly which repo(s) have qualifying changes, one repo name (`org/repo`) per section. Parse the repo names out of the invoking prompt and use that as the repo list. Skip any repo not named in the precheck output — it had nothing to check.
 2. **Fallback (manual invocation, or no repo list available in the prompt).** Iterate `repos/*` directly:
    ```bash
    for dir in repos/*/; do

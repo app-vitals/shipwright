@@ -52,8 +52,8 @@ const ALL_PHASES_ON: CronJobLike[] = [
 
 /**
  * Builds a CronJobLike fixture representing a child phase row exactly as
- * reconcileSystemCrons() (admin/src/system-crons.ts, LPC-1.2) produces it —
- * parentCronId set to the loop row's own id. Distinct from the local job()
+ * reconcileSystemCrons() (agent-types/coding/manifest.yaml, LPC-1.2) produces
+ * it — parentCronId set to the loop row's own id. Distinct from the local job()
  * helper above (which defaults parentCronId to the CBD-2.1 test's fixed
  * "shipwright-loop" id) since this section's tests use their own explicit
  * parent loop id to make the parent/child relationship visible in the
@@ -277,7 +277,7 @@ describe("loop-orchestrator + child AgentCronJob rows (LPC-2.1)", () => {
   /**
    * A realistic reconciled cron-job set: a parent loop row plus four child
    * phase rows (parentCronId: PARENT_LOOP_ID), mirroring exactly what
-   * reconcileSystemCrons() produces per admin/src/system-crons.ts's
+   * reconcileSystemCrons() produces per agent-types/coding/manifest.yaml's
    * parentCron: "shipwright-loop" declarations. Only the dev-task child's
    * enabled flag varies between fixtures below.
    */
@@ -501,6 +501,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
 
   test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown", async () => {
     const devTaskCandidates = [task("SWC-2.2", "2026-01-01T00:00:00Z")];
+    const consumed = new Set<string>();
     const { reporter, completeCalls } = makeRecordingReporter();
 
     const partialUsage = makeUsage({ inputTokens: 10, outputTokens: 5 });
@@ -509,11 +510,19 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     };
 
     const loop = createLoopOrchestrator({
-      getDevTaskCandidates: async () => devTaskCandidates,
+      getDevTaskCandidates: async () =>
+        devTaskCandidates.filter((t) => !consumed.has(t.id)),
       getReviewCandidates: async () => [],
       getPatchCandidates: async () => [],
       getDeployCandidates: async () => [],
-      claimTask: async () => true,
+      // Claim succeeding removes the item from candidacy (matches real
+      // claimTask semantics) — without this, CBD-2.3's caught-and-isolated
+      // dispatch throw would keep re-selecting the same always-failing item
+      // forever instead of the tick resolving after one dispatch.
+      claimTask: async (taskId: string) => {
+        consumed.add(taskId);
+        return true;
+      },
       claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
       recordSkip: async () => {},
       resetSkip: async () => {},
@@ -524,9 +533,9 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
     });
 
-    await expect(loop([job("shipwright-dev-task", true)])).rejects.toThrow(
-      ClaudeTimeoutError,
-    );
+    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
+    // tick resolves normally instead of the throw propagating out of it.
+    await loop([job("shipwright-dev-task", true)]);
 
     expect(completeCalls).toHaveLength(1);
     expect(completeCalls[0]?.outcome).toBe("failed");
