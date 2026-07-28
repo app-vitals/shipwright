@@ -4419,30 +4419,22 @@ describe("renderCronLogsPage", () => {
 
   test("renders an em-dash in the Detail cell when both error and skipReason are null", () => {
     const html = render([makeRun({ error: null, skipReason: null })]);
-    // Use tbody extraction pattern to check the Detail cell specifically.
-    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
-    expect(bodyRowMatch).not.toBeNull();
-    // The Detail cell should be the last <td> in the row and contain an em-dash.
-    // We check that an em-dash exists in the tbody (could be from phase or item cells too,
-    // but the Detail cell is the last one).
-    const rowMatch = bodyRowMatch?.[1].match(/<tr>([\s\S]*?)<\/tr>/);
-    expect(rowMatch).not.toBeNull();
-    // Check that the row ends with a <td> containing just an em-dash (the Detail cell).
-    const cells = rowMatch?.[1].match(/<td[^>]*>([^<]*)<\/td>/g) || [];
-    const lastCell = cells[cells.length - 1];
-    expect(lastCell).toContain("—");
+    // The Detail cell's exact style attributes make this substring unique to it.
+    expect(html).toContain(
+      '<td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</td>',
+    );
   });
 
   test("a long/multi-line error string is fully present in a title attribute", () => {
     const longError =
       "Error: something failed\n    at foo (file.ts:10)\n    at bar (file.ts:20)";
     const html = render([makeRun({ error: longError })]);
-    // The full error should be in a title attribute. Since escapeHtml may not escape
-    // newlines, check that the full string (or its escaped form) is present.
-    expect(html).toContain(`title="`);
-    // Check that the error text appears in the detail cell with a title attribute.
-    const detailMatch = html.match(/<span title="([^"]*)">[^<]*Error[^<]*<\/span>/);
-    expect(detailMatch).not.toBeNull();
+    // The Detail cell renders `<span title="{full}">{full}</span>` with no other
+    // attributes, so this exact substring uniquely identifies it (the outcome
+    // badge span also carries a title but has class/style attrs and different
+    // inner text). Visual truncation is CSS-only (max-width/ellipsis) — the
+    // full, untruncated string must appear in both the title and the span body.
+    expect(html).toContain(`<span title="${longError}">${longError}</span>`);
   });
 
   test("empty-state colspan updates from 8 to 9 for the new Detail column", () => {
