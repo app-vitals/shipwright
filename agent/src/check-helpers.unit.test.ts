@@ -35,6 +35,7 @@ import {
   resolveAllRepos,
   resolveRepos,
   reviewsAtHeadCommit,
+  VERDICT_TERMINAL_LABEL,
 } from "./check-helpers.ts";
 import * as checkHelpers from "./check-helpers.ts";
 
@@ -1475,6 +1476,48 @@ describe("isCleanApproveBody", () => {
   test("does not match a non-APPROVE verdict", () => {
     expect(isCleanApproveBody("Verdict: CHANGES_REQUESTED")).toBe(false);
     expect(isCleanApproveBody("Verdict: DISAPPROVE")).toBe(false);
+  });
+});
+
+describe("VERDICT_TERMINAL_LABEL", () => {
+  test("matches 'Verdict: APPROVE'", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("Verdict: APPROVE")).toBe(true);
+  });
+
+  test("matches 'Verdict: COMMENT'", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("Verdict: COMMENT")).toBe(true);
+  });
+
+  test("matches case-insensitively", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("verdict: approve")).toBe(true);
+    expect(VERDICT_TERMINAL_LABEL.test("VERDICT: COMMENT")).toBe(true);
+  });
+
+  test("matches with markdown bold markers around either word", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("**Verdict**: **APPROVE**")).toBe(true);
+    expect(
+      VERDICT_TERMINAL_LABEL.test("verdict: **comment** — see notes"),
+    ).toBe(true);
+  });
+
+  test("matches a narrative label trailing reasoning on the same line", () => {
+    expect(
+      VERDICT_TERMINAL_LABEL.test(
+        "All 5 acceptance criteria met. Verdict: APPROVE (posted as COMMENT — GitHub disallows self-approval via the API).",
+      ),
+    ).toBe(true);
+  });
+
+  test("does not match a non-terminal verdict", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("Verdict: CHANGES_REQUESTED")).toBe(
+      false,
+    );
+  });
+
+  test("does not match plain narrative text with no Verdict label", () => {
+    expect(VERDICT_TERMINAL_LABEL.test("Looks good, no blocking issues.")).toBe(
+      false,
+    );
   });
 });
 

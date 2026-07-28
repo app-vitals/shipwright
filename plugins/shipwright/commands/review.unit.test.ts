@@ -170,3 +170,45 @@ describe("review.md — RPF-1.4 verify review post before complete", () => {
     );
   });
 });
+
+describe("review.md — RVD-1.2 live-review pre-check regex parity", () => {
+  const CHECK_HELPERS_PATH = join(
+    import.meta.dir,
+    "..",
+    "..",
+    "..",
+    "agent",
+    "src",
+    "check-helpers.ts",
+  );
+
+  it("bash jq regex in Step 14's Live-Review Pre-Check matches check-helpers.ts's VERDICT_TERMINAL_LABEL", () => {
+    const checkHelpersSource = readFileSync(CHECK_HELPERS_PATH, "utf-8");
+
+    const tsMatch = checkHelpersSource.match(
+      /export const VERDICT_TERMINAL_LABEL =\s*\/(.*)\/i;/,
+    );
+    expect(tsMatch).not.toBeNull();
+    const tsPattern = tsMatch?.[1] ?? "";
+    expect(tsPattern.length).toBeGreaterThan(0);
+
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const jqMatch = section.match(/test\("([^"]+)";\s*"i"\)/);
+    expect(jqMatch).not.toBeNull();
+    const jqPattern = jqMatch?.[1] ?? "";
+    expect(jqPattern.length).toBeGreaterThan(0);
+
+    // The jq pattern lives inside a single-quoted bash heredoc string, so a
+    // literal backslash must be doubled (`\\`) to survive jq's own string
+    // parsing. Normalize that back down to a single backslash to compare
+    // against the TS regex literal's source text.
+    const normalizedJqPattern = jqPattern.replace(/\\\\/g, "\\");
+
+    expect(normalizedJqPattern).toBe(tsPattern);
+  });
+});

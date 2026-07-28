@@ -103,6 +103,24 @@ export function parseAllowSelfReview(content: string): boolean {
 export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
 
 /**
+ * The canonical TS-side pattern that `plugins/shipwright/commands/review.md`'s
+ * Step 14 Live-Review Pre-Check (RVD-1.2) mirrors as a bash/jq regex, since
+ * review.md is bash/gh/curl-driven and can't import TS. Unlike
+ * `VERDICT_APPROVE_LABEL` (APPROVE only, used for self-review clean-approve
+ * detection), this also matches COMMENT — because review.md's own Step 10
+ * always posts a `Verdict: APPROVE` or `Verdict: COMMENT` line, and BOTH
+ * represent "already reviewed, terminal" as far as the live-review pre-check
+ * is concerned (mirrors the intent of `classifyReviewState()`'s "posted" vs
+ * "approved" split, but collapsed into a single boolean here since Step 14
+ * only needs to know whether ANY terminal review exists at the current head
+ * commit). Not currently consumed anywhere in TS — it exists purely as the
+ * source of truth for the bash regex embedded in review.md, verified in sync
+ * via a content test in plugins/shipwright/commands/review.unit.test.ts.
+ */
+export const VERDICT_TERMINAL_LABEL =
+  /verdict\**\s*:\s*\**(approve|comment)\b/i;
+
+/**
  * True when a review body is a clean APPROVE verdict, matched either by:
  * - a leading `APPROVE` (after stripping leading markdown bold markers), or
  * - a "Verdict: APPROVE" label anywhere in the body (the narrative
