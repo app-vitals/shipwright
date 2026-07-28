@@ -548,14 +548,14 @@ should be held; the inline comments convey the specific feedback to the author.
    POST_EXIT=0
    gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
      --input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json \
-     > "$TMPDIR/pr_post_{pr}.json" 2>&1 || POST_EXIT=$?
+     > "/tmp/pr_post_{pr}.json" 2>&1 || POST_EXIT=$?
    ```
    **Never re-execute this POST.** If parsing fails, re-parse the temp file — do not
    re-run `gh api -X POST`, which submits a duplicate review that cannot be deleted or
    dismissed (GitHub does not allow deleting/dismissing COMMENTED reviews via the API).
 2. Capture `html_url` from the temp file:
    ```bash
-   REVIEW_URL=$(jq -r '.html_url // empty' "$TMPDIR/pr_post_{pr}.json")
+   REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{pr}.json")
    ```
 3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
    - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 4-6 below.

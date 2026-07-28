@@ -92,12 +92,12 @@ contains embedded newlines that break `echo "$var" | jq` parsing):
 ```bash
 gh api -X POST /repos/{org}/{repo}/pulls/{number}/reviews \
   --input state/reviews/pr_review_{number}.json \
-  > "$TMPDIR/pr_post_{number}.json" 2>&1
+  > "/tmp/pr_post_{number}.json" 2>&1
 ```
 
 Parse `html_url` from the temp file:
 ```bash
-REVIEW_URL=$(jq -r '.html_url // empty' "$TMPDIR/pr_post_{number}.json")
+REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{number}.json")
 ```
 
 **Never re-execute the POST to fix a parse failure** — it submits a duplicate review
