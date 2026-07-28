@@ -121,6 +121,27 @@ export interface PrOpenTaskRecord {
   branch?: string;
   /** Merge timestamp; read by the deploying→deployed pass (DSR-2.1) to gate against a stale promote run. */
   mergedAt?: string | null;
+  /**
+   * Task-store's write-once "first claimed at" timestamp (RCP-1.1) —
+   * task-service.ts's claim() sets this via COALESCE (never overwritten on a
+   * re-claim) and release() (task-store/src/task-service.ts:450-464) leaves
+   * it untouched even though it nulls `claimedAt` back out. This is the
+   * durable signal this file's two branch-based heal paths
+   * (`reconcileOrphanedTask`, `reconcilePrOpenTask`'s branch-fallback path)
+   * gate on: `null`/`undefined` (never claimed, pre-dating this field, or a
+   * genuinely-never-worked task) means a branch-only PR match can't be
+   * trusted to be THIS task's own work, even when the BBR-1.1 headcount
+   * guard alone would pass (exactly one task shares the branch) — confirmed
+   * failing live on TRD-1.2 (PR 2270) and RSG-1.2 (PR 2287), both healed to
+   * a merged/deploying-looking state despite claimedBy/claimedAt/startedAt
+   * all being null, because each shared a branch with a legitimately-worked
+   * bundle-mate. `claimedAt` is deliberately NOT used for this gate — a
+   * stale-claim reaper releasing a crashed session's claim nulls `claimedAt`
+   * even though the session pushed a real commit and opened a real PR before
+   * crashing, which is exactly the case `reconcileOrphanedTask` exists to
+   * recover.
+   */
+  startedAt?: string | null;
 }
 
 export interface PrStateReconcilerDeps {
@@ -553,6 +574,42 @@ function resolveTaskRepo(
 }
 
 /**
+ * RCP-1.1: a hard precondition for both of this file's branch-based heal
+ * paths (`reconcileOrphanedTask`, `reconcilePrOpenTask`'s branch-fallback
+ * path) — `task.startedAt` must be set before a branch-only PR match is ever
+ * trusted as this task's own work, regardless of what the BBR-1.1 headcount
+ * guard (`listAllTasksForBranch`) finds. That guard only answers "how many
+ * task-store records share this branch" — a single-task branch still passes
+ * it even when that one task was never actually claimed/started, which is
+ * exactly the gap TRD-1.2 (PR 2270) and RSG-1.2 (PR 2287) fell through: both
+ * healed to a merged/deploying-looking state purely because a bundle-mate's
+ * real work happened to live on the same branch.
+ *
+ * Falsy-checked (`!task.startedAt`) rather than strictly `=== null` —
+ * `startedAt` is only ever a non-empty ISO string or null/undefined
+ * (undefined covers task-store records that pre-date this field), and both
+ * must skip identically.
+ *
+ * Deliberately checked by callers BEFORE their GitHub list call (not just
+ * before the BBR-1.1 guard) — a task that can't qualify regardless of what's
+ * found on GitHub shouldn't spend a GitHub API call finding out.
+ */
+function hasStarted(task: PrOpenTaskRecord): boolean {
+  return !!task.startedAt;
+}
+
+/**
+ * Distinct-from-BBR-1.1 skip log for the RCP-1.1 startedAt precondition
+ * above — shared by both branch-based heal paths so the message shape stays
+ * identical between them.
+ */
+function logStartedAtSkip(task: PrOpenTaskRecord, taskRepo: string): void {
+  console.error(
+    `[pr-state-reconciler] skipping branch-based heal for task ${task.id} — startedAt is null/missing on ${taskRepo}#${task.branch}, cannot confirm this task was ever actually claimed/started, so a branch-only PR match cannot be trusted as this task's own work`,
+  );
+}
+
+/**
  * Reconcile one pr_open task against live GitHub state (DSR-1.1 —
  * ports check-deploy.ts's reconcileStalePrOpenTasks two-path logic into the
  * ongoing background sweep instead of a one-shot precheck script).
@@ -587,6 +644,14 @@ async function reconcilePrOpenTask(
     prNumber = task.pr;
     mergedAt = ghState.mergedAt ?? deps.now();
   } else if (task.branch) {
+    // RCP-1.1: checked before the GitHub call — a task that was never
+    // claimed/started can't qualify for the branch-fallback heal regardless
+    // of what's found on GitHub, so no gh call should be spent finding out.
+    if (!hasStarted(task)) {
+      logStartedAtSkip(task, taskRepo);
+      return;
+    }
+
     const merged = await deps.ghListMergedPrsForBranch(taskRepo, task.branch);
     const first = merged[0];
     if (!first) return; // no merged PR found for this branch yet
@@ -709,6 +774,14 @@ async function reconcileOrphanedTask(
   if (!taskRepo) return; // no repo to resolve against — skip defensively
 
   if (!task.branch) return; // shouldn't happen given the dep contract, but defend anyway
+
+  // RCP-1.1: checked before the GitHub call — a task that was never
+  // claimed/started can't qualify for the orphan heal regardless of what's
+  // found on GitHub, so no gh call should be spent finding out.
+  if (!hasStarted(task)) {
+    logStartedAtSkip(task, taskRepo);
+    return;
+  }
 
   const open = await deps.ghListOpenPrsForBranch(taskRepo, task.branch);
   const first = open[0];
