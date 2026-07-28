@@ -636,6 +636,70 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("do not reset");
     expect(section).toContain("reviewState");
   });
+
+  it("requires an explicit SAME_FINDING/DIFFERENT_FINDING judgment with justification for each candidate reply before escalating", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("SAME_FINDING");
+    expect(section).toContain("DIFFERENT_FINDING");
+    expect(section.toLowerCase()).toContain("justification");
+    // The judgment must be printed/decided before the escalation branch runs, not after.
+    const judgmentIdx = section.indexOf("SAME_FINDING");
+    const escalationBranchIdx = section.indexOf(
+      "**If any qualifying review has an author-reply comment",
+    );
+    expect(escalationBranchIdx).toBe(-1); // old unconditional-timestamp escalation framing must be gone
+    const ifEscalateIdx = section.search(/\*\*If.{0,80}SAME_FINDING/is);
+    expect(ifEscalateIdx).toBeGreaterThan(-1);
+    expect(judgmentIdx).toBeLessThan(ifEscalateIdx);
+  });
+
+  it("states the anti-pattern explicitly: a reply predating the review is not sufficient by itself to escalate", () => {
+    const section = getStep5a7Section();
+    expect(section.toLowerCase()).toContain("anti-pattern");
+    expect(section).toMatch(
+      /predat(e|ing|es) the review.{0,200}(not sufficient|is not enough|alone is not)/is,
+    );
+    expect(section.toLowerCase()).toContain("content must be verified");
+  });
+
+  it("gates escalation on at least one candidate reply judged SAME_FINDING, not on timestamp precedence alone", () => {
+    const section = getStep5a7Section();
+    expect(section).toMatch(/at least one.{0,40}candidate.{0,60}SAME_FINDING/is);
+    expect(section).not.toContain(
+      "If any qualifying review has an author-reply comment dated before its `submittedAt`",
+    );
+  });
+
+  it("the no-escalation path covers both no-candidate-replies and all-candidates-judged-DIFFERENT_FINDING, proceeding to Step 5b as a first-round finding", () => {
+    const section = getStep5a7Section();
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("proceed normally to Step 5b");
+    expect(otherwiseSection.toLowerCase()).toContain("first-round finding");
+    expect(otherwiseSection).toMatch(/no candidate replies|no candidates/i);
+    expect(otherwiseSection).toContain("DIFFERENT_FINDING");
+  });
+
+  it("prefers inline-thread anchors (stable path/line) over freeform PR-comment text matching when the finding came from a thread", () => {
+    const section = getStep5a7Section();
+    expect(section.toLowerCase()).toContain("inline-thread anchor");
+    expect(section).toContain("path");
+    expect(section).toContain("line");
+    expect(section.toLowerCase()).toMatch(/freeform (pr-comment )?text matching/);
+  });
+
+  it("frames the timestamp check as a shared pre-filter with check-patch.ts, and explains why the extra correlation judgment is needed here but not there", () => {
+    const section = getStep5a7Section();
+    expect(section).toContain("isAddressedByAuthorReply");
+    expect(section.toLowerCase()).toContain("pre-filter");
+    // Must no longer imply timestamp-order alone is sufficient signal for this step's decision.
+    expect(section).not.toContain(
+      "a reply dated *before* the\ncurrent review means we already rebutted once, the reviewer looked at that\nrebuttal, and\nstill raised a finding this round.",
+    );
+    // Should explain reply-after-review is inherently a stronger signal than reply-before-review.
+    expect(section).toMatch(/after a review.{0,120}(stronger|inherent)/is);
+  });
 });
 
 describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation already exists (CFE-1.1)", () => {

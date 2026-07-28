@@ -423,7 +423,7 @@ async function startServer(): Promise<void> {
     agentEnvService,
     agentCronJobService,
     agentService,
-    prisma: prisma as never,
+    agentPluginService,
     sessionSecret,
     adminApiKeys,
     agentTokenService,

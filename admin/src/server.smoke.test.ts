@@ -57,7 +57,7 @@ function buildComposedApp() {
       listWithRunSummary: notImplemented,
     },
     agentService: { getById: notImplemented },
-    prisma: stubPrisma,
+    agentPluginService: { listEnabled: notImplemented },
     sessionSecret: SESSION_SECRET,
     agentTokenService: stubAgentTokenService,
   });

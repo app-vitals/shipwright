@@ -13,6 +13,7 @@
     "./request-context": "./request-context.ts",
     "./secret-env-vars": "./secret-env-vars.ts",
     "./sentry": "./sentry.ts",
+    "./task-store-types": "./task-store-types.ts",
     "./web/*": "./web/*"
   },
   "dependencies": {
