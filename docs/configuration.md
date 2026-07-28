@@ -230,8 +230,8 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 | `allow_self_review` | `bool` | `true` | Read by `agent/src/check-review.ts`'s `getReviewCandidates()` (the `shipwright-loop` cron's in-process review candidate provider) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
-| `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove worktrees for merged branches. |
-| `cleanup_after_days` | `number` | `14` | Age threshold (days) before a merged-branch worktree is eligible for cleanup. |
+| `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove stale worktrees older than `cleanup_after_days`. |
+| `cleanup_after_days` | `number` | `14` | Age threshold (days) before a worktree is eligible for automatic cleanup via `reconcileStaleWorktrees()`. |
 
 ### Example
 
