@@ -394,9 +394,16 @@ export function createRunClaude(
     args: string[],
     perCallOnProgress?: ProgressCallback,
   ): Promise<ClaudeRunResult> {
+    // Strip SENTRY_DSN so a spawned Claude Code session (and any `bun test`
+    // it runs internally) can never construct a real Sentry client from
+    // ambient env — this is not the agent's own operational Sentry
+    // reporting (see the reportCronFailure / captureException call sites),
+    // which runs in this parent process against its own client, unaffected
+    // by the child's env.
+    const { SENTRY_DSN: _sentryDsn, ...spawnEnv } = process.env;
     const proc = spawner(["claude", ...args], {
       cwd: workspace,
-      env: process.env,
+      env: spawnEnv,
       stdout: "pipe",
       stderr: "pipe",
     });
