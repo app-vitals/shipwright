@@ -68,11 +68,13 @@
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   classifyReviewState,
   createPrRecordQuery,
   hasAnyReviewAtHead,
+  readCleanupAfterDays,
   readCleanupMergedWorktrees,
   resolveAllRepos,
   resolveWorkspacePath,
@@ -1117,6 +1119,36 @@ function makeListTasksByBranch(opts: {
   };
 }
 
+/**
+ * WTR-1.4 staleness gate for `removeWorktree`'s production implementation
+ * (review finding on #2313): a worktree directory whose mtime is more
+ * recent than `cleanupAfterDays` is presumed still in active use by a
+ * concurrent dev-task/patch/deploy session and is left alone, mirroring the
+ * `cleanup_after_days` policy field already used elsewhere to decide when a
+ * stale worktree is safe to remove.
+ *
+ * Uses the worktree directory's own mtime rather than a marker file inside
+ * it — simplest signal available, and any file write within an active
+ * session (git operations, editor saves, etc.) bumps the containing
+ * directory's mtime on every mainstream filesystem this runs on (ext4,
+ * APFS, etc.), so this doesn't require a session to touch any particular
+ * file to stay "fresh".
+ *
+ * Missing directory (already removed, never created, wrong path) is
+ * treated as stale — there's nothing to protect, so this should not block
+ * `git worktree remove` from failing normally on a missing path.
+ */
+export function isWorktreeStale(
+  worktreePath: string,
+  cleanupAfterDays: number,
+): boolean {
+  if (!existsSync(worktreePath)) return true;
+  const { mtimeMs } = statSync(worktreePath);
+  const ageMs = Date.now() - mtimeMs;
+  const thresholdMs = cleanupAfterDays * 24 * 60 * 60 * 1000;
+  return ageMs >= thresholdMs;
+}
+
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -1307,6 +1339,24 @@ export function buildProductionDeps(opts: {
         process.env.SHIPWRIGHT_WORKTREE_DIR ?? join(workspacePath, "worktrees")
       ).trim();
       const worktreePath = join(worktreeRoot, worktreeDirName);
+
+      // WTR-1.4 (review finding on #2313): `--force` bypasses git's own
+      // uncommitted/untracked-changes safety check and is triggered purely
+      // by GitHub-reported merge/close state, with no signal for whether a
+      // concurrent dev-task/patch/deploy session still has this exact
+      // worktree open (e.g. a human merges the PR mid-session). Gate the
+      // force-removal on the same `cleanup_after_days` staleness threshold
+      // that already governs "remove worktrees older than N days" — a
+      // worktree modified more recently than that threshold is presumed
+      // still in active use and is left alone rather than force-removed.
+      const cleanupAfterDays = readCleanupAfterDays(workspacePath);
+      if (!isWorktreeStale(worktreePath, cleanupAfterDays)) {
+        console.log(
+          `[pr-state-reconciler] skipping removal of ${worktreePath} — modified within the last ${cleanupAfterDays} day(s), may still be in use`,
+        );
+        return;
+      }
+
       const proc = Bun.spawn(
         ["git", "worktree", "remove", worktreePath, "--force"],
         {

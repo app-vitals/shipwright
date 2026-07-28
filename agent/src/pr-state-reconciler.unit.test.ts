@@ -15,6 +15,16 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
@@ -26,6 +36,7 @@ import {
   type PrStateRecord,
   buildProductionDeps,
   buildReviewStateProductionDeps,
+  isWorktreeStale,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -2885,5 +2896,180 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBeUndefined();
     expect(calls[0].reviewState).toBe("posted");
+  });
+});
+
+// ─── isWorktreeStale (WTR-1.4) ─────────────────────────────────────────────────
+
+describe("isWorktreeStale", () => {
+  let tmpDir: string;
+  let worktreePath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "worktree-staleness-test-"));
+    worktreePath = join(tmpDir, "example-repo-feat-some-branch");
+    mkdirSync(worktreePath, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns true when the directory does not exist — nothing to protect", () => {
+    const missingPath = join(tmpDir, "does-not-exist");
+    expect(isWorktreeStale(missingPath, 14)).toBe(true);
+  });
+
+  test("returns false for a freshly-modified directory (well within the threshold)", () => {
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(false);
+  });
+
+  test("returns true for a directory modified well before the threshold", () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(true);
+  });
+
+  test("returns false for a directory modified just under the threshold", () => {
+    const justUnderThreshold = new Date(
+      Date.now() - 13 * 24 * 60 * 60 * 1000,
+    );
+    utimesSync(worktreePath, justUnderThreshold, justUnderThreshold);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(false);
+  });
+
+  test("returns true for a directory modified just over the threshold", () => {
+    const justOverThreshold = new Date(
+      Date.now() - 15 * 24 * 60 * 60 * 1000,
+    );
+    utimesSync(worktreePath, justOverThreshold, justOverThreshold);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(true);
+  });
+
+  test("cleanupAfterDays of 0 treats any existing directory as immediately stale", () => {
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+    expect(isWorktreeStale(worktreePath, 0)).toBe(true);
+  });
+});
+
+// ─── buildProductionDeps().removeWorktree staleness gate (WTR-1.4) ─────────────
+
+describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
+    savedEnv.SHIPWRIGHT_WORKTREE_DIR = process.env.SHIPWRIGHT_WORKTREE_DIR;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  /**
+   * Sets up a fake workspace with `state/agent-policy.md` (configuring
+   * `cleanup_after_days`), a `repos/<shortRepo>` git repo, and a
+   * `worktrees/<shortRepo>-<branchSlug>` directory registered as a real git
+   * worktree of that repo — so `deps.removeWorktree()` exercises the actual
+   * `git worktree remove --force` invocation end-to-end when the staleness
+   * gate allows it through.
+   */
+  function setupFakeWorkspace(opts: { cleanupAfterDays: number }): {
+    workspacePath: string;
+    shortRepo: string;
+    worktreeDirName: string;
+    worktreePath: string;
+  } {
+    const workspacePath = mkdtempSync(
+      join(tmpdir(), "removeworktree-staleness-test-"),
+    );
+    mkdirSync(join(workspacePath, "state"), { recursive: true });
+    writeFileSync(
+      join(workspacePath, "state", "agent-policy.md"),
+      `**cleanup_after_days**: ${opts.cleanupAfterDays}`,
+    );
+
+    const shortRepo = "example-repo";
+    const repoPath = join(workspacePath, "repos", shortRepo);
+    mkdirSync(repoPath, { recursive: true });
+    Bun.spawnSync(["git", "init", "--quiet"], { cwd: repoPath });
+    Bun.spawnSync(["git", "config", "user.email", "test@example.com"], {
+      cwd: repoPath,
+    });
+    Bun.spawnSync(["git", "config", "user.name", "Test"], { cwd: repoPath });
+    writeFileSync(join(repoPath, "README.md"), "hello\n");
+    Bun.spawnSync(["git", "add", "README.md"], { cwd: repoPath });
+    Bun.spawnSync(["git", "commit", "--quiet", "-m", "init"], {
+      cwd: repoPath,
+    });
+
+    const worktreeDirName = `${shortRepo}-feat-some-branch`;
+    const worktreeRoot = join(workspacePath, "worktrees");
+    mkdirSync(worktreeRoot, { recursive: true });
+    const worktreePath = join(worktreeRoot, worktreeDirName);
+    const addResult = Bun.spawnSync(
+      ["git", "worktree", "add", worktreePath, "-b", "feat/some-branch"],
+      { cwd: repoPath },
+    );
+    if (addResult.exitCode !== 0) {
+      throw new Error(
+        `git worktree add failed in test setup: ${addResult.stderr.toString()}`,
+      );
+    }
+
+    return { workspacePath, shortRepo, worktreeDirName, worktreePath };
+  }
+
+  test("fresh worktree (mtime within cleanup_after_days) is skipped, not removed", async () => {
+    const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
+      setupFakeWorkspace({ cleanupAfterDays: 14 });
+    process.env.WORKSPACE_PATH = workspacePath;
+    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
+    delete process.env.SHIPWRIGHT_WORKTREE_DIR;
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      getScopedRepos: () => [],
+    });
+
+    await deps.removeWorktree(shortRepo, worktreeDirName);
+
+    // Still present — the staleness gate skipped the actual removal.
+    expect(existsSync(worktreePath)).toBe(true);
+
+    rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  test("stale worktree (mtime older than cleanup_after_days) is force-removed", async () => {
+    const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
+      setupFakeWorkspace({ cleanupAfterDays: 14 });
+    process.env.WORKSPACE_PATH = workspacePath;
+    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
+    delete process.env.SHIPWRIGHT_WORKTREE_DIR;
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);
+
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      getScopedRepos: () => [],
+    });
+
+    await deps.removeWorktree(shortRepo, worktreeDirName);
+
+    // Removed by git worktree remove --force.
+    expect(existsSync(worktreePath)).toBe(false);
+
+    rmSync(workspacePath, { recursive: true, force: true });
   });
 });

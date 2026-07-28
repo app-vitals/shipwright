@@ -505,6 +505,31 @@ describe("parseCleanupAfterDays", () => {
   });
 });
 
+describe("readCleanupAfterDays", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "read-cleanup-after-days-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_after_days` | 7 |",
+    );
+    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(7);
+  });
+
+  test("defaults to 14 when the policy file does not exist", () => {
+    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(14);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // isMergeOnlyUpdate
 // ---------------------------------------------------------------------------
