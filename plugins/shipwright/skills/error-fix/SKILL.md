@@ -159,13 +159,24 @@ Stop after printing.
 
 Skip this step entirely if `--dry-run` was passed (handled in Step 4 instead).
 
-Run:
+Run. `GET /tasks` defaults to `limit=50` and truncates silently unless the caller raises it —
+pass an explicit high `limit=1000` on both queries:
 ```bash
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=pending&limit=1000" | jq .
 curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress" | jq '.tasks'
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=in_progress&limit=1000" | jq .
 ```
+
+**Pagination guard — do not silently proceed with a partial result set.** `limit=1000`
+covers the common case, but the active-task count across all repos can still exceed 1000.
+After each call, check the response's `total` field against the number of tasks actually
+returned (`.tasks | length`): if `total <= tasks.length`, the page is complete. If `total >
+tasks.length`, the first `limit=1000` page did not cover every active task — re-run the same
+query with `&offset=1000` (then `&offset=2000`, and so on) and merge the `.tasks` arrays
+until `tasks.length` (summed across pages) `>= total`. Only treat the dedup query as complete
+once every page has been fetched this way; never build the "already active" set (below) from
+a page that fails this check.
 
 Parse both `.tasks` arrays. From the combined results, collect tasks where:
 - `source == "shipwright"`, OR
