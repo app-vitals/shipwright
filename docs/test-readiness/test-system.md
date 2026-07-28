@@ -416,6 +416,15 @@ explicitly.
   directories. No new work this pass beyond the manifest-fixture builder above, which is
   a sibling pattern (real-file fixtures, not recorded-HTTP fixtures) rather than an
   extension of this exact loader.
+- **Thin codegen-wrapper scripts are conventionally untested (class-level decision,
+  T-079).** `scripts/generate-agent-type-schema.ts` and its siblings
+  (`generate-*-spec.ts`, `generate-mcp-*.ts`) are thin CLI wrappers around
+  already-unit-tested logic (e.g. `admin/src/agent-type-registry.ts`'s
+  `buildAgentTypeJsonSchema()`, covered by `agent-type-registry.unit.test.ts`) — the
+  only untested surface per script is a `writeFileSync` call and the
+  `import.meta.main` CLI-entry guard. Human decision (2026-07-28): this repo does not
+  test this class of script. This is a repo-wide convention, not a per-file
+  exemption — do not re-litigate it file-by-file in future test-readiness cycles.
 
 ## Repo configuration
 
