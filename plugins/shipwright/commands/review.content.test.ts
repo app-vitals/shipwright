@@ -309,3 +309,103 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(unresolvedSection).toContain("issue-level PR comments");
   });
 });
+
+describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
+  let step14Section: string;
+
+  beforeAll(() => {
+    const step14Idx = content.indexOf(
+      "## Step 14: Resolve and Claim the Target PR",
+    );
+    const step14EndIdx = content.indexOf(
+      "## Review Quality Rules",
+      step14Idx,
+    );
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(step14EndIdx).toBeGreaterThan(step14Idx);
+    step14Section = content.slice(step14Idx, step14EndIdx);
+  });
+
+  it("Step 14 contains a Live-Review Pre-Check (RVD-1.2) heading", () => {
+    expect(step14Section).toContain("### Live-Review Pre-Check (RVD-1.2)");
+  });
+
+  it("the Live-Review Pre-Check heading appears before the Pre-Claim Fast Path heading", () => {
+    const preCheckIdx = content.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(-1);
+    expect(preCheckIdx).toBeLessThan(fastPathIdx);
+  });
+
+  it("the Live-Review Pre-Check section appears before the task-store record fetch", () => {
+    const preCheckIdx = content.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const recordFetchIdx = content.indexOf(
+      "Fetch the PR record from the task store",
+    );
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(recordFetchIdx).toBeGreaterThan(-1);
+    expect(preCheckIdx).toBeLessThan(recordFetchIdx);
+  });
+
+  it("the section references VERDICT_TERMINAL_LABEL and check-helpers.ts by name", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("VERDICT_TERMINAL_LABEL");
+    expect(section).toContain("check-helpers.ts");
+  });
+
+  it("the section documents no-claim / no-checkout / no-author-filtering behavior", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section.toLowerCase()).toContain("no claim");
+    expect(section.toLowerCase()).toContain("no checkout");
+    expect(section.toLowerCase()).toContain("no author filtering");
+  });
+
+  it("the section runs a gh api graphql query and checks reviews at headRefOid", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("gh api graphql -f query=");
+    expect(section).toContain("headRefOid");
+    expect(section).toContain("reviews(first: 50)");
+    expect(section).toContain("commit {");
+  });
+
+  it("the section prints a cross-task-store skip message and stops before checkout/claim", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("cross-task-store");
+    expect(section.toLowerCase()).toContain("stop");
+  });
+});
