@@ -123,6 +123,19 @@ describe("SKILL.md — dedup check widened to recently-closed done tasks", () =>
       content.toLowerCase().includes("recently-closed");
     expect(hasClosedWording).toBe(true);
   });
+
+  it("resolves {outcome} from the done task's note field first", () => {
+    expect(content).toContain("the done task's `note`");
+  });
+
+  it("documents note as the field hitl.md Step 6 sets from the human's close-out summary", () => {
+    expect(content).toContain("/shipwright:hitl` Step 6 optionally sets");
+  });
+
+  it("falls back to blockedReason, then the literal 'resolved', when note is absent", () => {
+    expect(content).toContain('then its `blockedReason`');
+    expect(content).toContain('then the literal\n`"resolved"`');
+  });
 });
 
 describe("SKILL.md — embedded rule classification table", () => {

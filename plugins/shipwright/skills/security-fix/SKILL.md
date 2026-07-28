@@ -216,16 +216,20 @@ Extract the rule IDs from these tasks by parsing the `id` field (format:
 From the `status=done` results (already filtered to the last 14 days by `updatedSince`), apply
 the same `source`/`title` filter and rule-ID extraction to build a separate "recently closed"
 set — keyed by rule ID, each entry keeping the done task's `completedAt` (or `updatedAt` if
-`completedAt` is absent) and `blockedReason` (or, if no `blockedReason` is set on the task,
-treat the outcome as `"resolved"`) for use in the skip message below.
+`completedAt` is absent) and an outcome string for use in the skip message below. Resolve the
+outcome as the first of these that is a non-empty string: the done task's `note` (the field
+`/shipwright:hitl` Step 6 optionally sets from the human's close-out summary — the primary
+path for the PR's motivating HITL-false-positive case), then its `blockedReason` (set by other
+close paths, even though it's not typically paired with `status: "done"`), then the literal
+`"resolved"` if neither is present.
 
 For each rule group:
 - If its `rule` is in the "already active" set, skip it. Print:
   `Skipping {rule} — task already active`.
 - Else if its `rule` is in the "recently closed" set, skip it. Print:
   `Skipping {rule} — closed {date} as {outcome}, still within 14-day dedup window`
-  (`{date}` is the done task's `completedAt`/`updatedAt`, `{outcome}` is its `blockedReason` or
-  `"resolved"`) — distinctly worded from the "already active" message above so operators can
+  (`{date}` is the done task's `completedAt`/`updatedAt`, `{outcome}` is the resolved outcome
+  string above) — distinctly worded from the "already active" message above so operators can
   tell an active in-flight task from a recently-closed one at a glance in run output.
 
 ### 6q.2 Build Task JSON
