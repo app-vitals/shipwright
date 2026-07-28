@@ -39,6 +39,15 @@
           {
             "schema": {
               "type": "string",
+              "example": "entropy-fix"
+            },
+            "required": false,
+            "name": "source",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "example": "session-123"
             },
             "required": false,
@@ -116,6 +125,16 @@
             },
             "required": false,
             "name": "ready",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"],
+              "example": "true"
+            },
+            "required": false,
+            "name": "hitl",
             "in": "query"
           },
           {
@@ -803,6 +822,124 @@
         }
       }
     },
+    "/tasks/{id}/skip": {
+      "post": {
+        "tags": ["tasks"],
+        "summary": "Record a skip — increments skipCount, auto-blocks at threshold",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tasks/{id}/skip/reset": {
+      "post": {
+        "tags": ["tasks"],
+        "summary": "Reset skip tracking — skipCount back to 0",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated task",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tokens": {
       "get": {
         "tags": ["tokens"],
@@ -1099,6 +1236,17 @@
             },
             "required": false,
             "name": "ready",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"],
+              "description": "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
+              "example": "true"
+            },
+            "required": false,
+            "name": "blocked",
             "in": "query"
           },
           {
@@ -1487,6 +1635,84 @@
           }
         }
       }
+    },
+    "/prs/{id}/skip": {
+      "post": {
+        "tags": ["PRs"],
+        "summary": "Record a skip — increments skipCount, auto-blocks at threshold",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/{id}/skip/reset": {
+      "post": {
+        "tags": ["PRs"],
+        "summary": "Reset skip tracking — skipCount back to 0",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated PR",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PullRequest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1648,6 +1874,16 @@
             "type": ["string", "null"],
             "example": "2026-01-02T00:00:00.000Z"
           },
+          "skipCount": {
+            "type": "integer",
+            "default": 0,
+            "description": "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+            "example": 0
+          },
+          "lastSkippedAt": {
+            "type": ["string", "null"],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
           "claimedBy": {
             "type": ["string", "null"],
             "example": "agent-id-123"
@@ -1748,9 +1984,14 @@
           "total": {
             "type": "integer",
             "example": 10
+          },
+          "scopeDegraded": {
+            "type": "boolean",
+            "description": "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.",
+            "example": false
           }
         },
-        "required": ["tasks", "total"]
+        "required": ["tasks", "total", "scopeDegraded"]
       },
       "Error": {
         "type": "object",
@@ -2070,6 +2311,29 @@
           "readyForDeployAt": {
             "type": ["string", "null"],
             "example": null
+          },
+          "hitl": {
+            "type": "boolean",
+            "default": false,
+            "example": false
+          },
+          "hitlNotifiedAt": {
+            "type": ["string", "null"],
+            "example": "2026-01-02T00:00:00.000Z"
+          },
+          "blockedReason": {
+            "type": ["string", "null"],
+            "example": "no linked task"
+          },
+          "skipCount": {
+            "type": "integer",
+            "default": 0,
+            "description": "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+            "example": 0
+          },
+          "lastSkippedAt": {
+            "type": ["string", "null"],
+            "example": "2026-01-02T00:00:00.000Z"
           },
           "createdAt": {
             "type": "string",

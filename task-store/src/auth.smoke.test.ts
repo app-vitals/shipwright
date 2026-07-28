@@ -12,6 +12,9 @@
  *      b. No scope resolver (URL not set path) → repos defaults to []
  *      c. Scope resolver throws → repos defaults to [] (no crash)
  *      d. Admin token (agentId null) → repos = null (unrestricted), resolver not called
+ *      e. scopeDegraded distinguishes "the resolver call itself failed" from
+ *         "the resolver succeeded and legitimately returned []" — both leave
+ *         repos: [] unchanged, so this is the signal that tells them apart
  *   3. Shared Caller (AOB-3.3):
  *      a. Admin token → caller = {name: 'admin', scope: '*'}
  *      b. Agent token → caller = {name: agentId, scope: agentId}
@@ -49,7 +52,7 @@ function fakeAgentTokenService(): Pick<TokenServiceLike, "validate"> {
 }
 
 /** Build a minimal Hono app that mounts the bearer auth middleware and exposes
- *  the resolved `repos` on GET /whoami for inspection. */
+ *  the resolved `repos`/`scopeDegraded` on GET /whoami for inspection. */
 function makeAuthApp(
   tokenService: Pick<TokenServiceLike, "validate">,
   scopeResolver?: (agentId: string) => Promise<string[]>,
@@ -62,6 +65,7 @@ function makeAuthApp(
       agentId: c.get("agentId"),
       repos: c.get("repos"),
       caller: c.get("caller"),
+      scopeDegraded: c.get("scopeDegraded"),
     });
   });
   return app;
@@ -187,6 +191,66 @@ describe("bearer auth middleware — scope resolver", () => {
     };
     expect(body.agentId).toBeNull();
     expect(body.repos).toBeNull();
+    expect(resolverCalled).toBe(false);
+  });
+
+  it("sets scopeDegraded: true when the scope resolver throws/rejects", async () => {
+    const resolver = async (_agentId: string): Promise<string[]> => {
+      throw new Error("agents service unavailable");
+    };
+
+    const app = makeAuthApp(fakeAgentTokenService(), resolver);
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      repos: string[];
+      scopeDegraded: boolean;
+    };
+    expect(body.repos).toEqual([]);
+    expect(body.scopeDegraded).toBe(true);
+  });
+
+  it("sets scopeDegraded: false when the resolver resolves to a legitimate empty array", async () => {
+    const resolver = async (_agentId: string): Promise<string[]> => [];
+
+    const app = makeAuthApp(fakeAgentTokenService(), resolver);
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${AGENT_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      repos: string[];
+      scopeDegraded: boolean;
+    };
+    expect(body.repos).toEqual([]);
+    expect(body.scopeDegraded).toBe(false);
+  });
+
+  it("always sets scopeDegraded: false for admin tokens (resolver not called)", async () => {
+    let resolverCalled = false;
+    const resolver = async (_agentId: string) => {
+      resolverCalled = true;
+      return ["org/should-not-appear"];
+    };
+
+    const app = makeAuthApp(fakeAdminTokenService(), resolver);
+    const res = await app.request("/whoami", {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agentId: string | null;
+      repos: string[] | null;
+      scopeDegraded: boolean;
+    };
+    expect(body.agentId).toBeNull();
+    expect(body.repos).toBeNull();
+    expect(body.scopeDegraded).toBe(false);
     expect(resolverCalled).toBe(false);
   });
 });

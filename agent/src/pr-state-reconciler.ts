@@ -68,10 +68,14 @@
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { existsSync, statSync } from "node:fs";
+import { join } from "node:path";
 import {
   classifyReviewState,
   createPrRecordQuery,
   hasAnyReviewAtHead,
+  readCleanupAfterDays,
+  readCleanupMergedWorktrees,
   resolveAllRepos,
   resolveWorkspacePath,
   splitOrgRepo,
@@ -94,10 +98,19 @@ export interface PrStateRecord {
   commitSha?: string | null;
 }
 
-/** Result of `gh pr view <n> --json state,mergedAt`. */
+/** Result of `gh pr view <n> --json state,mergedAt,headRefName`. */
 export interface GhPrView {
   state: "OPEN" | "MERGED" | "CLOSED";
   mergedAt: string | null;
+  /**
+   * Source branch name (WTR-1.3) — reused to derive the worktree-cleanup
+   * side effect's branch slug in `reconcileRecord()` below, piggybacking on
+   * this same `gh pr view` call instead of adding a second GitHub lookup.
+   * Optional so pre-existing fixtures/fakes that don't set it keep
+   * typechecking; `reconcileRecord()` defensively skips worktree removal
+   * when it's missing or empty.
+   */
+  headRefName?: string;
 }
 
 /** Minimal shape of a task-store Task this reconciler needs for the pr_open pass (DSR-1.1). */
@@ -233,6 +246,27 @@ export interface PrStateReconcilerDeps {
    * stay fast and unaffected.
    */
   delay: (ms: number) => Promise<void>;
+  /**
+   * Whether the `cleanup_merged_worktrees` policy field (state/agent-policy.md,
+   * WTR-1.1) is enabled — read once at `buildProductionDeps()` time via
+   * `readCleanupMergedWorktrees()` (check-helpers.ts), mirroring
+   * `check-deploy.ts`/`check-review.ts`'s established
+   * `readAllowSelfReview()` → `isSelfReviewAllowed` pattern: the
+   * already-parsed boolean is injected, not raw file content, so tests can
+   * set it directly without faking a file read.
+   */
+  isCleanupMergedWorktreesEnabled: boolean;
+  /**
+   * Remove a local git worktree (WTR-1.3) — called from `reconcileRecord()`
+   * after a successful state PATCH to merged/closed, when
+   * `isCleanupMergedWorktreesEnabled` is true. `shortRepo` is the repo name
+   * without its org prefix (via `splitOrgRepo`); `worktreeDirName` is the
+   * full `<shortRepo>-<branchSlug>` directory name, matching this repo's
+   * documented worktree naming convention (`<repo>-<branch>`, see
+   * CLAUDE.md's Worktrees section). Failures are caught and logged by the
+   * caller — this dep itself may simply reject.
+   */
+  removeWorktree: (shortRepo: string, worktreeDirName: string) => Promise<void>;
 }
 
 /** Minimal shape of a task-store PullRequest record reviewState reconciliation needs. */
@@ -408,6 +442,14 @@ async function listAllPrOpenTasks(
  * Reconcile a single PR record against live GitHub state. Issues a PATCH
  * only when GitHub reports MERGED or CLOSED while the record still says
  * "open" — records still OPEN on GitHub are left completely untouched.
+ *
+ * WTR-1.3: once that PATCH succeeds, also removes the PR's local worktree
+ * (when `cleanup_merged_worktrees` policy is enabled) — piggybacking on this
+ * same `gh pr view` call's `headRefName` field instead of adding a second,
+ * independent PR-listing/gh-view pass (see this file's module doc comment's
+ * PSR-1.2 rate-limit-incident rationale). The removal is isolated in its own
+ * try/catch: a failure is logged but never propagates, and never undoes or
+ * blocks the already-succeeded state PATCH above.
  */
 async function reconcileRecord(
   deps: PrStateReconcilerDeps,
@@ -435,6 +477,20 @@ async function reconcileRecord(
   }
 
   await deps.patchPrRecord(record.id, fields);
+
+  if (!deps.isCleanupMergedWorktreesEnabled) return;
+  if (!ghState.headRefName) return; // defensive — no branch to derive a worktree path from
+
+  try {
+    const [, shortRepo] = splitOrgRepo(record.repo);
+    const branchSlug = ghState.headRefName.replaceAll("/", "-");
+    await deps.removeWorktree(shortRepo, `${shortRepo}-${branchSlug}`);
+  } catch (err) {
+    console.error(
+      `[pr-state-reconciler] failed to remove worktree for ${record.repo}#${record.prNumber}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
 }
 
 /**
@@ -1063,6 +1119,36 @@ function makeListTasksByBranch(opts: {
   };
 }
 
+/**
+ * WTR-1.4 staleness gate for `removeWorktree`'s production implementation
+ * (review finding on #2313): a worktree directory whose mtime is more
+ * recent than `cleanupAfterDays` is presumed still in active use by a
+ * concurrent dev-task/patch/deploy session and is left alone, mirroring the
+ * `cleanup_after_days` policy field already used elsewhere to decide when a
+ * stale worktree is safe to remove.
+ *
+ * Uses the worktree directory's own mtime rather than a marker file inside
+ * it — simplest signal available, and any file write within an active
+ * session (git operations, editor saves, etc.) bumps the containing
+ * directory's mtime on every mainstream filesystem this runs on (ext4,
+ * APFS, etc.), so this doesn't require a session to touch any particular
+ * file to stay "fresh".
+ *
+ * Missing directory (already removed, never created, wrong path) is
+ * treated as stale — there's nothing to protect, so this should not block
+ * `git worktree remove` from failing normally on a missing path.
+ */
+export function isWorktreeStale(
+  worktreePath: string,
+  cleanupAfterDays: number,
+): boolean {
+  if (!existsSync(worktreePath)) return true;
+  const { mtimeMs } = statSync(worktreePath);
+  const ageMs = Date.now() - mtimeMs;
+  const thresholdMs = cleanupAfterDays * 24 * 60 * 60 * 1000;
+  return ageMs >= thresholdMs;
+}
+
 export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -1174,7 +1260,10 @@ export function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "state,mergedAt",
+        // headRefName (WTR-1.3) piggybacks on this same call — see
+        // GhPrView's doc comment and reconcileRecord()'s worktree-removal
+        // side effect above.
+        "state,mergedAt,headRefName",
       ]);
     },
     listPrOpenTasks: (limit: number, offset: number, updatedSince: string) =>
@@ -1244,6 +1333,49 @@ export function buildProductionDeps(opts: {
     }),
     now: () => new Date().toISOString(),
     delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+    isCleanupMergedWorktreesEnabled: readCleanupMergedWorktrees(workspacePath),
+    removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
+      const worktreeRoot = (
+        process.env.SHIPWRIGHT_WORKTREE_DIR ?? join(workspacePath, "worktrees")
+      ).trim();
+      const worktreePath = join(worktreeRoot, worktreeDirName);
+
+      // WTR-1.4 (review finding on #2313): `--force` bypasses git's own
+      // uncommitted/untracked-changes safety check and is triggered purely
+      // by GitHub-reported merge/close state, with no signal for whether a
+      // concurrent dev-task/patch/deploy session still has this exact
+      // worktree open (e.g. a human merges the PR mid-session). Gate the
+      // force-removal on the same `cleanup_after_days` staleness threshold
+      // that already governs "remove worktrees older than N days" — a
+      // worktree modified more recently than that threshold is presumed
+      // still in active use and is left alone rather than force-removed.
+      const cleanupAfterDays = readCleanupAfterDays(workspacePath);
+      if (!isWorktreeStale(worktreePath, cleanupAfterDays)) {
+        console.log(
+          `[pr-state-reconciler] skipping removal of ${worktreePath} — modified within the last ${cleanupAfterDays} day(s), may still be in use`,
+        );
+        return;
+      }
+
+      const proc = Bun.spawn(
+        ["git", "worktree", "remove", worktreePath, "--force"],
+        {
+          cwd: join(workspacePath, "repos", shortRepo),
+          env: process.env,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [stderr, status] = await Promise.all([
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (status !== 0) {
+        throw new Error(
+          `git worktree remove ${worktreePath} failed (exit ${status}): ${stderr}`,
+        );
+      }
+    },
   };
 }
 

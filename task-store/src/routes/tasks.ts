@@ -15,7 +15,10 @@
  *
  * Routes:
  *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?limit, ?offset, ?ready=true)
- *                              returns { tasks, total }
+ *                              returns { tasks, total, scopeDegraded } — scopeDegraded
+ *                              mirrors the auth middleware's scopeDegraded context var
+ *                              (true only when the agent's repo-scope resolver call itself
+ *                              failed upstream; see auth.ts)
  *   POST   /tasks               create one (409 if id exists)
  *   POST   /tasks/bulk          insert array, skip 409s → { inserted, updated, skipped }
  *                              (skipped lists the IDs that collided with an existing task)
@@ -540,6 +543,7 @@ export function createTasksRoutes(
   app.openapi(listRoute, async (c): Promise<any> => {
     const agentId = c.get("agentId");
     const repos = c.get("repos");
+    const scopeDegraded = c.get("scopeDegraded");
     const stateRaw = c.req.query("state");
 
     // Note: ?updatedSince is intentionally NOT threaded into listReady()/
@@ -554,7 +558,7 @@ export function createTasksRoutes(
         agentId ?? undefined,
         repos ?? undefined,
       );
-      return c.json({ tasks, total: tasks.length }, 200);
+      return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
 
     // ?state=blocked delegates to listBlocked().
@@ -563,7 +567,7 @@ export function createTasksRoutes(
         agentId ?? undefined,
         repos !== null ? repos : undefined,
       );
-      return c.json({ tasks, total: tasks.length }, 200);
+      return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
 
     const prRaw = c.req.query("pr");
@@ -621,7 +625,7 @@ export function createTasksRoutes(
           }
         : { assignee: agentId ?? c.req.query("assignee") }),
     });
-    return c.json(result, 200);
+    return c.json({ ...result, scopeDegraded }, 200);
   });
 
   // ─── Create ────────────────────────────────────────────────────────────────
