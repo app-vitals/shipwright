@@ -424,6 +424,93 @@ describe("deploy.md — validate workflow names before Step 5b watch (DWV-1.1)",
   });
 });
 
+describe("deploy.md — Terminal Conditions SHA_ONLY_FALLBACK branch coverage (DWV-1.1)", () => {
+  function extractTerminalConditionsSection(md: string): string {
+    const match = md.match(/### Terminal Conditions[\s\S]*?(?=\n## )/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("branches on SHA_ONLY_FALLBACK=true before the named-stage checks", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackIdx = section.indexOf("If `SHA_ONLY_FALLBACK=true`");
+    const namedModeIdx = section.indexOf(
+      "Otherwise (named-stage mode, the default)",
+    );
+    expect(fallbackIdx).toBeGreaterThan(-1);
+    expect(namedModeIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeLessThan(namedModeIdx);
+  });
+
+  it("SHA_ONLY_FALLBACK branch covers all-success, any-failure, and budget-exhausted outcomes", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackMatch = section.match(
+      /If `SHA_ONLY_FALLBACK=true`[\s\S]*?(?=\*\*Otherwise)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("All runs completed successfully");
+    expect(fallbackSection).toContain("Any run fails");
+    expect(fallbackSection).toContain("Budget exhausted (30 minutes)");
+  });
+
+  it("SHA_ONLY_FALLBACK all-success case marks the task deployed and prints the SHA-only handoff line", () => {
+    const section = extractTerminalConditionsSection(content);
+    const successMatch = section.match(
+      /All runs completed successfully[\s\S]*?(?=- \*\*Any run fails)/,
+    );
+    expect(successMatch).not.toBeNull();
+    const successSection = successMatch?.[0] ?? "";
+    expect(successSection).toContain('`status: "deployed"` task-store');
+    expect(successSection).toContain(
+      "Pipeline: SHA-only fallback ({elapsed}m)",
+    );
+  });
+
+  it("SHA_ONLY_FALLBACK any-failure case sets blocked/hitl status, mirroring Step 5c", () => {
+    const section = extractTerminalConditionsSection(content);
+    const failureMatch = section.match(
+      /Any run fails[\s\S]*?(?=- \*\*Budget exhausted)/,
+    );
+    expect(failureMatch).not.toBeNull();
+    const failureSection = failureMatch?.[0] ?? "";
+    expect(failureSection.toLowerCase()).toContain("blocked");
+    expect(failureSection).toContain("hitl");
+  });
+
+  it("SHA_ONLY_FALLBACK budget-exhausted case marks deployed for manual check and prints the pending-at-timeout handoff", () => {
+    const section = extractTerminalConditionsSection(content);
+    const timeoutMatch = section.match(
+      /Budget exhausted \(30 minutes\)\*\* with runs still pending[\s\S]*?(?=Skip the named-stage bullets)/,
+    );
+    expect(timeoutMatch).not.toBeNull();
+    const timeoutSection = timeoutMatch?.[0] ?? "";
+    expect(timeoutSection).toContain('`status: "deployed"` (task');
+    expect(timeoutSection).toContain(
+      "Pipeline: SHA-only fallback (pending at timeout)",
+    );
+  });
+
+  it("explicitly skips the named-stage bullets in SHA_ONLY_FALLBACK mode", () => {
+    const section = extractTerminalConditionsSection(content);
+    expect(section).toContain(
+      "Skip the named-stage bullets below entirely in this mode",
+    );
+  });
+
+  it("scopes the SHA_ONLY_FALLBACK budget to this step's own 30 minutes rather than Step 5c's window", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackMatch = section.match(
+      /If `SHA_ONLY_FALLBACK=true`[\s\S]*?(?=\*\*Otherwise)/,
+    );
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("30-minute budget");
+    expect(fallbackSection.replace(/\s+/g, " ")).toContain(
+      "Step 5c's separate 10-minute window",
+    );
+  });
+});
+
 describe("deploy.md — Monitor-tool polling for Step 5a (MTP-1.1)", () => {
   it("Step 5a's polling implementation names the Monitor tool and drops the old chained-Bash-loop framing", () => {
     const step5aSection = extractStep5aSection(content);
