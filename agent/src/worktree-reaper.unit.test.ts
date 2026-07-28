@@ -51,7 +51,7 @@ function makeDeps(opts: MakeDepsOptions = {}): {
   const deps: WorktreeReaperDeps = {
     readAgentPolicy: () => policyContent,
     listWorktreeDirs: () => dirs,
-    scopedRepos,
+    getScopedRepos: () => scopedRepos,
     statMtime: (dirname: string) => {
       const mtime = mtimes[dirname];
       if (!mtime) {
@@ -268,6 +268,44 @@ describe("reconcileStaleWorktrees", () => {
 
     expect(removeCalls).toEqual([
       { repo: "example-repo", dirname: "example-repo-feat-stale" },
+    ]);
+  });
+
+  test("getScopedRepos is invoked live on each call — a repo added between two reconcile passes is picked up on the second pass without rebuilding deps", async () => {
+    const oldMtime = new Date("2026-07-08T00:00:00.000Z");
+    // Mutable backing array, mirroring agentReposRef.get()'s live-scope semantics.
+    let backingScopedRepos: string[] = ["example-repo"];
+    const { deps, removeCalls } = makeDeps({
+      dirs: ["example-repo-feat-foo", "shipwright-feat-bar"],
+      mtimes: {
+        "example-repo-feat-foo": oldMtime,
+        "shipwright-feat-bar": oldMtime,
+      },
+    });
+    const liveDeps: WorktreeReaperDeps = {
+      ...deps,
+      getScopedRepos: () => backingScopedRepos,
+    };
+
+    // First pass: "shipwright" is not yet in scope — its worktree is skipped.
+    await reconcileStaleWorktrees(liveDeps);
+    expect(removeCalls).toEqual([
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
+    ]);
+
+    // Scope changes out-of-band (e.g. syncConfig() adds a repo) between passes.
+    backingScopedRepos = ["example-repo", "shipwright"];
+
+    // Second pass against the SAME deps object: the live getter must reflect
+    // the mutation without deps being rebuilt/memoized. (The fake
+    // removeWorktree doesn't actually delete anything, so
+    // "example-repo-feat-foo" is still stale and removed again on this pass —
+    // the assertion only cares that "shipwright-feat-bar" is now included.)
+    await reconcileStaleWorktrees(liveDeps);
+    expect(removeCalls).toEqual([
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
+      { repo: "shipwright", dirname: "shipwright-feat-bar" },
     ]);
   });
 });

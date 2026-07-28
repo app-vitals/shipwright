@@ -542,15 +542,23 @@ should be held; the inline comments convey the specific feedback to the author.
 
 ### If `auto_post_reviews` is true (policy):
 
-1. Submit via GitHub API, capturing both the exit status and the response body:
+1. Submit via GitHub API, writing the response to a temp file (NOT a shell variable —
+   the response JSON contains embedded newlines that corrupt `echo "$var" | jq` parsing):
    ```bash
-   POST_RESPONSE=$(gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
-     --input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json)
-   POST_EXIT=$?
+   POST_EXIT=0
+   gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews \
+     --input $WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json \
+     > "/tmp/pr_post_{pr}.json" 2>&1 || POST_EXIT=$?
    ```
-2. Capture `html_url` from `$POST_RESPONSE` (e.g. `echo "$POST_RESPONSE" | jq -r '.html_url'`).
-3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `html_url` both count as failure:
-   - **Success** (`POST_EXIT == 0` and `html_url` present): continue to steps 4-6 below.
+   **Never re-execute this POST.** If parsing fails, re-parse the temp file — do not
+   re-run `gh api -X POST`, which submits a duplicate review that cannot be deleted or
+   dismissed (GitHub does not allow deleting/dismissing COMMENTED reviews via the API).
+2. Capture `html_url` from the temp file:
+   ```bash
+   REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{pr}.json")
+   ```
+3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
+   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 4-6 below.
    - **Failure**: the GitHub post did not land, so nothing was actually reviewed at HEAD.
      Do not run Step 11b — marking the record posted here would let
      `check-review.ts`'s `commitSha`/`reviewState` dedup permanently hide this PR from
@@ -564,7 +572,7 @@ should be held; the inline comments convey the specific feedback to the author.
      2. Print a warning: `Warning: review post for #{pr} failed (exit {POST_EXIT}) — released claim, will retry next pass.`
      3. Stop — do not proceed to Step 11b or the Slack message below.
 4. Run Step 11b to mark the PR record posted.
-5. Print: `Posted review for #{pr}: {html_url}`
+5. Print: `Posted review for #{pr}: {REVIEW_URL}`
 6. Post Slack message (see below)
 
 ### If `auto_post_reviews` is false (default):
