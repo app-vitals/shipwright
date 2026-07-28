@@ -57,6 +57,7 @@ Manual test scenarios for each command across different project types.
 | 40 | `/dev-task` Step 8.5 | Any | Unparseable agent result is recorded, not silent | Agent returns no/garbled `AUTO_DOCS_METRICS` block; `⚠ ... agent_error` printed; metrics record has `skipped_reason:"agent_error"`, `updated:false`; pipeline continues |
 | 41 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL configured) | Plan viz link after markdown write | `PLAN.md`/`PRODUCT-SPEC.md` written unchanged, then a `${SHIPWRIGHT_ADMIN_APP_BASE_URL}/admin/sessions/{session}` link is constructed and a `Plan viz: {url}` line is surfaced in the confirmation block |
 | 42 | `/plan-session` Step 6a / `/prd` Phase 4 | Any (admin app base URL unset) | Plan viz graceful skip | `⏭ Plan viz skipped — SHIPWRIGHT_ADMIN_APP_BASE_URL unset.` printed; markdown still written; no `Plan viz:` line; command never blocks |
+| 44 | `/shipwright:hitl` Step 6a | Any (gitleaks-secret/hardcoded-credential HITL task) | Gitleaksignore suppression sub-step | Two distinct questions asked (false-positive vs. rotated); suppression never offered for rotated findings; confirmed findings flow through worktree → `.gitleaksignore` append → commit → push → PR; declining suppression still reaches Step 6b mark-done |
 
 ---
 
@@ -1154,6 +1155,63 @@ As `agent-A`, invoke `/shipwright:dev-task`
 
 ### Related — task-store API
 - [ ] `GET /tasks?status=in_progress&assignee={own-agent-id}` on a repo-scoped token now actually narrows results to that assignee (previously silently ignored the query param) — see `task-store/src/api.smoke.test.ts` and `tasks.integration.test.ts`
+
+---
+
+## Scenario 44: /shipwright:hitl — Gitleaksignore Suppression Sub-Step
+
+Covers the fix for a real gap: once a human confirms a `gitleaks-secret` or
+`hardcoded-credential` HITL finding is a false positive and closes the task via
+`/shipwright:hitl`, nothing previously recorded that decision anywhere gitleaks itself
+respects — the same full-history scan re-detected the identical commits every subsequent
+ISO week and `security-fix` re-filed an identical task (this happened for real on a
+downstream repo and had to be backfilled manually). Step 6a now offers to permanently
+suppress confirmed false positives via `.gitleaksignore`, while never conflating that with
+a rotated-credential closure.
+
+### Setup
+1. A HITL task in the task store whose `description` ends with a trailer line
+   `Rule: gitleaks-secret | Severity: high | Tier: 1 | HITL: true | requires-credential-action: true`
+   and a findings list of 2 entries, e.g.:
+   ```
+   Findings (2 total):
+   - config/settings.example.py:14 — placeholder-looking API key literal
+   - scripts/legacy-deploy.sh:22 — hardcoded token string
+   ```
+2. A target repo cloned at `repos/{repo}` with no existing `.gitleaksignore`.
+
+### Run
+Invoke `/shipwright:hitl {task-id}`. When prompted at Step 6, tell the agent: finding 1
+(`config/settings.example.py:14`) is a confirmed false positive (a template placeholder);
+finding 2 (`scripts/legacy-deploy.sh:22`) was closed because the credential was rotated.
+
+### Verify
+- [ ] Step 6a is triggered (task's `Rule:` line matches `gitleaks-secret`)
+- [ ] The agent asks two distinct questions — which findings are confirmed false positives
+      to suppress, and which were closed via rotation — not a single combined prompt
+- [ ] Suppression is **never offered** for finding 2 (the rotated one) — no
+      `.gitleaksignore` entry is proposed or written for it
+- [ ] For finding 1, the agent asks for (or derives) the full gitleaks fingerprint
+      (`commit:file:rule:startLine`), since `TASK_DESC` only has `file:line`
+- [ ] A worktree is created for the target repo following the standard convention
+      (`git -C repos/{repo} pull`, `git -C repos/{repo} worktree add {absolute-path} origin/main -b {branch}`)
+- [ ] `.gitleaksignore` is created at the repo root (it didn't exist) with the confirmed
+      fingerprint appended, preceded by a comment citing the HITL task ID and today's date
+- [ ] A commit (`fix:` or `docs:` prefix per the target repo's convention), push, and PR
+      are produced for the `.gitleaksignore` change
+- [ ] After the suppression flow completes, Step 6b's `PATCH /tasks/{id}` with
+      `"status": "done"` still runs unchanged, and the `HITL TASK COMPLETE` banner prints
+
+### Negative case — decline / all-rotated
+Repeat with a task where every finding is closed via rotation (no false positives).
+- [ ] The agent does not propose any `.gitleaksignore` entry or worktree
+- [ ] Step 6b's mark-done PATCH runs immediately, unaffected
+
+### Negative case — non-security-fix HITL task
+Repeat with a HITL task whose `description` has no `Rule:` trailer line at all (e.g. a
+manually-filed infra task).
+- [ ] Step 6a is skipped entirely — no suppression questions asked
+- [ ] Step 6b's mark-done flow behaves exactly as it did before this change
 
 ---
 

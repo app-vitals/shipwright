@@ -424,7 +424,33 @@ explicitly.
   `agent/src/shipwright-config-client.ts`) plus per-workspace `src/fixtures/`
   directories. This design extends the loader pattern to every remaining `Http*Client`
   in the Local execution architecture table above — same loader shape, more fixture
-  files, no new infrastructure.
+  files, no new infrastructure. No new work this pass beyond the manifest-fixture
+  builder above, which is a sibling pattern (real-file fixtures, not recorded-HTTP
+  fixtures) rather than an extension of this exact loader.
+- **Thin codegen-wrapper scripts are conventionally untested (class-level decision,
+  T-079) — narrowly scoped to three scripts.** `scripts/generate-agent-type-schema.ts`,
+  `scripts/generate-chat-spec.ts`, and `scripts/generate-task-store-spec.ts` are thin
+  CLI wrappers around already-unit-tested logic (e.g. `admin/src/agent-type-registry.ts`'s
+  `buildAgentTypeJsonSchema()`, covered by `agent-type-registry.unit.test.ts`) — the
+  only untested surface per script is a `writeFileSync` call and the
+  `import.meta.main` CLI-entry guard. Human decision (2026-07-28): this repo does not
+  test these three scripts. This is a narrow, named-file convention, not a glob-based
+  or repo-wide one — do not re-litigate these three files individually in future
+  test-readiness cycles, but do not extend the exemption to other `generate-*.ts`
+  scripts by pattern-matching the name.
+  - **Not covered by this exemption — real, open gaps:** `scripts/generate-admin-spec.ts`
+    has no `import.meta.main` guard; its OpenAPI merge and colon-to-brace path-rewrite
+    logic runs unconditionally at module load and isn't extracted into a tested
+    function (`admin/src/admin-spec.smoke.test.ts` tests the live Hono `/doc` format,
+    not this script's output, so it doesn't exercise that logic).
+    `scripts/generate-mcp-tools.ts` has no test file and exports several substantial,
+    I/O-free pure functions (`deriveToolName`, `resolveRef`, `resolveBodySchema`,
+    `inlineObjectSchema`, `generateTools`) that are straightforward to unit test.
+    Both should be tracked as follow-up test-readiness tasks, not swept under this
+    convention.
+  - **Already covered, not part of the untested class:** `scripts/generate-mcp-docs.ts`
+    has `generate-mcp-docs.unit.test.ts` covering its `renderMcpToolsDoc()` render
+    logic.
 
 ## Repo configuration
 
