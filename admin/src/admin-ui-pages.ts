@@ -3194,6 +3194,23 @@ export function renderCronLogsPage(opts: {
           }</span>`
         : "—";
 
+    // Detail cell: mirrors badgeTitle's priority above — skipReason wins whenever
+    // the run is skipped (even if error is also set), then falls back to error,
+    // else renders an em-dash. Multi-line/long error text is truncated for
+    // display via CSS (max-width/overflow/ellipsis) but fully present in a title
+    // attribute. When the value is the em-dash "—", no title is needed.
+    const detailCell = (() => {
+      if (r.skipped && r.skipReason) {
+        const escapedReason = escapeHtml(r.skipReason);
+        return `<span title="${escapedReason}">${escapedReason}</span>`;
+      }
+      if (r.error) {
+        const escapedError = escapeHtml(r.error);
+        return `<span title="${escapedError}">${escapedError}</span>`;
+      }
+      return "—";
+    })();
+
     return `<tr>
       <td>${outcomeCell}</td>
       <td style="font-size:12px">${cronCell}</td>
@@ -3203,12 +3220,13 @@ export function renderCronLogsPage(opts: {
       <td class="col-model" style="font-size:12px">${modelCell}</td>
       <td style="font-size:12px">${phaseCell}</td>
       <td style="font-size:12px">${itemCell}</td>
+      <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${detailCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="8" class="empty-state">No runs match the selected filters.</td></tr>`
+      ? `<tr><td colspan="9" class="empty-state">No runs match the selected filters.</td></tr>`
       : runs.map(row).join("\n");
 
   // Filter form
@@ -3305,6 +3323,7 @@ export function renderCronLogsPage(opts: {
               <th class="col-model">Model</th>
               <th>Phase</th>
               <th>Item</th>
+              <th>Detail</th>
             </tr>
           </thead>
           <tbody>

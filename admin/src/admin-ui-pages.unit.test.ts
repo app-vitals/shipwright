@@ -4052,6 +4052,7 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
     expect(html).toContain("<th>Item</th>");
+    expect(html).toContain("<th>Detail</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
   });
@@ -4295,8 +4296,10 @@ describe("renderCronLogsPage", () => {
         error: "Database connection timeout",
       }),
     ]);
-    expect(html).toContain('title="Rate limit exceeded"');
-    expect(html).not.toContain('title="Database connection timeout"');
+    // The outcome badge (first title attribute in the row) should show skipReason.
+    const badgeMatch = html.match(/<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/);
+    expect(badgeMatch).not.toBeNull();
+    expect(badgeMatch?.[1]).toBe("Rate limit exceeded");
   });
 
   test("escapes XSS in the error field within the title attribute", () => {
@@ -4393,6 +4396,64 @@ describe("renderCronLogsPage", () => {
     const badgeMatch = html.match(/<span class="badge"[^>]*>([^<]*)<\/span>/);
     expect(badgeMatch).not.toBeNull();
     expect(badgeMatch?.[1]).toBe("skipped");
+  });
+
+  // ─── Detail column ────────────────────────────────────────────────────────────
+
+  test("renders the Detail column header", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("<th>Detail</th>");
+  });
+
+  test("renders error text in the Detail column when error is set", () => {
+    const html = render([makeRun({ error: "boom: connection refused" })]);
+    expect(html).toContain("boom: connection refused");
+  });
+
+  test("falls back to skipReason in the Detail column when skipped is true and error is null", () => {
+    const html = render([
+      makeRun({ skipped: true, skipReason: "queue empty", error: null }),
+    ]);
+    expect(html).toContain("queue empty");
+  });
+
+  test("shows skipReason (not error) in the Detail column when skipped is true and both are set", () => {
+    const html = render([
+      makeRun({
+        skipped: true,
+        skipReason: "Rate limit exceeded",
+        error: "Database connection timeout",
+      }),
+    ]);
+    expect(html).toContain(
+      '<span title="Rate limit exceeded">Rate limit exceeded</span>',
+    );
+    expect(html).not.toContain("Database connection timeout");
+  });
+
+  test("renders an em-dash in the Detail cell when both error and skipReason are null", () => {
+    const html = render([makeRun({ error: null, skipReason: null })]);
+    // The Detail cell's exact style attributes make this substring unique to it.
+    expect(html).toContain(
+      '<td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</td>',
+    );
+  });
+
+  test("a long/multi-line error string is fully present in a title attribute", () => {
+    const longError =
+      "Error: something failed\n    at foo (file.ts:10)\n    at bar (file.ts:20)";
+    const html = render([makeRun({ error: longError })]);
+    // The Detail cell renders `<span title="{full}">{full}</span>` with no other
+    // attributes, so this exact substring uniquely identifies it (the outcome
+    // badge span also carries a title but has class/style attrs and different
+    // inner text). Visual truncation is CSS-only (max-width/ellipsis) — the
+    // full, untruncated string must appear in both the title and the span body.
+    expect(html).toContain(`<span title="${longError}">${longError}</span>`);
+  });
+
+  test("empty-state colspan updates from 8 to 9 for the new Detail column", () => {
+    const html = render([]);
+    expect(html).toContain('colspan="9"');
   });
 });
 
