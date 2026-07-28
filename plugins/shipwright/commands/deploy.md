@@ -548,8 +548,8 @@ gh api repos/{org}/{repo}/actions/workflows --jq '[.workflows[].name]'
   and elapsed time rather than Step 5c's separate 10-minute window. A name mismatch
   alone never sets `blocked` by itself — only an actual run outcome (success/failure)
   or a genuine timeout in this SHA-only fallback does. **Set `SHA_ONLY_FALLBACK=true`**
-  for the remainder of this step — the poll loop and the Terminal Conditions section below
-  both branch on this flag.
+  for the remainder of this step — the Terminal Conditions section below branches on
+  this flag.
 
 Print progress on each poll (each loop iteration):
 ```
