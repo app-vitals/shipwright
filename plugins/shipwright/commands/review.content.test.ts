@@ -176,6 +176,19 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     expect(section).toContain("Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`");
   });
 
+  it("Step 5.7's test-readiness read is anchored to the SHIPWRIGHT_WORKTREE_DIR convention", () => {
+    const stepIdx = content.indexOf("**Test-readiness context**");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const section = content.slice(stepIdx, stepIdx + 400);
+
+    expect(section).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md",
+    );
+    expect(section).not.toContain(
+      "read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`",
+    );
+  });
+
   it("Step 9's re-review detection tests for the file at $WORKSPACE_ROOT/state/reviews/", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
     const step10Idx = content.indexOf("## Step 10: Build Review JSON");
