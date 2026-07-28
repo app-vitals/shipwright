@@ -12,20 +12,27 @@ test layer or coverage approach isn't clear-cut — is resolved one way or anoth
 or proactively (when the team already knows a coverage gap is intentional and
 wants to pre-empt future cycles re-flagging it). This file lives at the same
 override tier as `.claude/shipwright/consolidation-decisions.md` and
-`.claude/shipwright/principles.md` — repo-local, human-owned, loaded by the
-skills but never written by them.
+`.claude/shipwright/principles.md` — repo-local, human-owned, intended to be
+loaded by the skills but never written by them (see the consumption note below
+for the current not-yet-wired-in status).
 
-**How `test-inventory` and `test-fix` consume it:** each skill checks for this
-file at the start of its ambiguous-item handling. If it's missing, that's a
-graceful no-op — "no durable decisions recorded" — the same tier as a missing
-`principles.md` override. If it exists, the skills load and parse entries
-generically (they do not hardcode the exact heading/field structure below — they
-read defensively for "one entry per resolved item, with a decision and an
-optional revisit condition" and skip anything they can't confidently interpret)
-and build an in-memory resolved-items list. That list is consulted before an item
-is (re-)surfaced as ambiguous — the gate that stops an already-resolved item from
-being reported again — unless the entry's revisit condition has been met, in
-which case the resolution no longer applies and the item is eligible to resurface.
+**How `test-inventory` and `test-fix` will consume it:** this consumption step is
+**not yet implemented** — tracked as a follow-up. The intended mechanism (mirroring
+`consolidation-scan`'s "Step 1: Load the Decisions Registry" for
+`consolidation-decisions.md`) is: each skill would check for this file at the
+start of its ambiguous-item handling. If it's missing, that would be a graceful
+no-op — "no durable decisions recorded" — the same tier as a missing
+`principles.md` override. If it exists, the skills would load and parse entries
+generically (not hardcoding the exact heading/field structure below — reading
+defensively for "one entry per resolved item, with a decision and an optional
+revisit condition" and skipping anything they can't confidently interpret) and
+build an in-memory resolved-items list. That list would be consulted before an
+item is (re-)surfaced as ambiguous — the gate that stops an already-resolved item
+from being reported again — unless the entry's revisit condition has been met, in
+which case the resolution would no longer apply and the item would be eligible to
+resurface again. Until that consumption step is wired in, this file is
+documentation and seed data only — the entries below have no operational effect
+on `test-inventory`/`test-fix` runs yet.
 
 ---
 
