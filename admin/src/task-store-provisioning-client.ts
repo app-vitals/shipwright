@@ -9,6 +9,8 @@
  * omitting the client from KubernetesAgentProvisionerConfig).
  */
 
+import type { components } from "@shipwright/lib/task-store-types";
+
 // ─── Interface ───────────────────────────────────────────────────────────────
 
 export interface TaskStoreProvisioningClient {
@@ -72,20 +74,25 @@ export class HttpTaskStoreProvisioningClient
     label: string,
     agentId?: string,
   ): Promise<{ id: string; rawToken: string }> {
+    const tokenBody: components["schemas"]["TokenBody"] = {
+      label,
+      ...(agentId ? { agentId } : {}),
+    };
     const res = await this.fetchFn(`${this.baseUrl}/tokens`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.adminToken}`,
       },
-      body: JSON.stringify({ label, ...(agentId ? { agentId } : {}) }),
+      body: JSON.stringify(tokenBody),
     });
     if (!res.ok) {
       throw new Error(
         `task-store POST /tokens failed: ${res.status} ${res.statusText}`,
       );
     }
-    const body = (await res.json()) as { id: string; rawToken: string };
+    const body =
+      (await res.json()) as components["schemas"]["TaskTokenWithRaw"];
     return { id: body.id, rawToken: body.rawToken };
   }
 
@@ -115,7 +122,8 @@ export class HttpTaskStoreProvisioningClient
         `task-store GET /tokens failed: ${res.status} ${res.statusText}`,
       );
     }
-    const tokens = (await res.json()) as { id: string; agentId?: string | null }[];
+    const tokens =
+      (await res.json()) as components["schemas"]["TaskToken"][];
     return tokens
       .filter((token) => token.agentId === agentId)
       .map((token) => ({ id: token.id }));
