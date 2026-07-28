@@ -15,6 +15,16 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
@@ -26,6 +36,7 @@ import {
   type PrStateRecord,
   buildProductionDeps,
   buildReviewStateProductionDeps,
+  isWorktreeStale,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -86,6 +97,20 @@ interface MakeDepsOptions {
    * with a >1-length array for the branch under test.
    */
   tasksForBranch?: Record<string, PrOpenTaskRecord[] | Error>;
+  /**
+   * WTR-1.3's injected worktree-cleanup policy boolean. Defaults to `false`
+   * so every pre-existing test — none of which configures this — never
+   * triggers the new removeWorktree side effect.
+   */
+  cleanupMergedWorktreesEnabled?: boolean;
+  /**
+   * WTR-1.3's removeWorktree fake. Defaults to a no-op resolve; tests
+   * exercising the failure path override this to reject.
+   */
+  removeWorktree?: (
+    shortRepo: string,
+    worktreeDirName: string,
+  ) => Promise<void>;
 }
 
 function makeDeps({
@@ -101,6 +126,8 @@ function makeDeps({
   orphanCandidateTasks = [],
   openBranchResults = {},
   tasksForBranch = {},
+  cleanupMergedWorktreesEnabled = false,
+  removeWorktree = async () => {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -110,6 +137,7 @@ function makeDeps({
   orphanCandidateUpdatedSinceCalls: string[];
   delayCalls: number[];
   listAllTasksForBranchCalls: string[];
+  removeWorktreeCalls: Array<{ shortRepo: string; worktreeDirName: string }>;
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
@@ -118,6 +146,10 @@ function makeDeps({
   const orphanCandidateUpdatedSinceCalls: string[] = [];
   const delayCalls: number[] = [];
   const listAllTasksForBranchCalls: string[] = [];
+  const removeWorktreeCalls: Array<{
+    shortRepo: string;
+    worktreeDirName: string;
+  }> = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -188,6 +220,11 @@ function makeDeps({
     delay: async (ms: number) => {
       delayCalls.push(ms);
     },
+    isCleanupMergedWorktreesEnabled: cleanupMergedWorktreesEnabled,
+    removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
+      removeWorktreeCalls.push({ shortRepo, worktreeDirName });
+      await removeWorktree(shortRepo, worktreeDirName);
+    },
   };
 
   return {
@@ -199,6 +236,7 @@ function makeDeps({
     orphanCandidateUpdatedSinceCalls,
     delayCalls,
     listAllTasksForBranchCalls,
+    removeWorktreeCalls,
   };
 }
 
@@ -294,6 +332,124 @@ describe("reconcilePrState", () => {
     expect(patchCalls[0].fields.claimedAt).toBeNull();
     expect(patchCalls[0].fields.heartbeatAt).toBeNull();
     expect(patchCalls[0].fields.phase).toBeNull();
+  });
+
+  // ─── WTR-1.3: worktree removal side effect ───────────────────────────────
+
+  test("merged on GitHub + cleanup_merged_worktrees true — removeWorktree called with repo+branch-slug path, in addition to the state PATCH", async () => {
+    const record = makeRecord({ id: "pr-4", prNumber: 4 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#4": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/some-cool-thing",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(1);
+    expect(removeWorktreeCalls[0]).toEqual({
+      shortRepo: "example-repo",
+      worktreeDirName: "example-repo-feat-some-cool-thing",
+    });
+  });
+
+  test("closed on GitHub + cleanup_merged_worktrees true — removeWorktree called with repo+branch-slug path, in addition to the state PATCH", async () => {
+    const record = makeRecord({ id: "pr-5", prNumber: 5 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#5": {
+          state: "CLOSED",
+          mergedAt: null,
+          headRefName: "fix/another-thing",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("closed");
+    expect(removeWorktreeCalls).toHaveLength(1);
+    expect(removeWorktreeCalls[0]).toEqual({
+      shortRepo: "example-repo",
+      worktreeDirName: "example-repo-fix-another-thing",
+    });
+  });
+
+  test("still OPEN on GitHub — removeWorktree is never called, even with cleanup_merged_worktrees true", async () => {
+    const record = makeRecord({ id: "pr-6", prNumber: 6 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#6": {
+          state: "OPEN",
+          mergedAt: null,
+          headRefName: "feat/still-open",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+    expect(removeWorktreeCalls).toHaveLength(0);
+  });
+
+  test("cleanup_merged_worktrees false — state PATCH still happens, but removeWorktree is not called", async () => {
+    const record = makeRecord({ id: "pr-7", prNumber: 7 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#7": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/no-cleanup",
+        },
+      },
+      cleanupMergedWorktreesEnabled: false,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(0);
+  });
+
+  test("removeWorktree throwing is caught and logged — does not affect the already-succeeded state PATCH, and does not propagate", async () => {
+    const record = makeRecord({ id: "pr-8", prNumber: 8 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#8": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/removal-fails",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+      removeWorktree: async () => {
+        throw new Error("git worktree remove failed: directory not found");
+      },
+    });
+
+    // Must not throw — the failure is isolated to the worktree side effect.
+    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(1);
   });
 
   test("gh lookup failure for one PR does not abort reconciliation of the others in the same batch", async () => {
@@ -2740,5 +2896,180 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBeUndefined();
     expect(calls[0].reviewState).toBe("posted");
+  });
+});
+
+// ─── isWorktreeStale (WTR-1.4) ─────────────────────────────────────────────────
+
+describe("isWorktreeStale", () => {
+  let tmpDir: string;
+  let worktreePath: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "worktree-staleness-test-"));
+    worktreePath = join(tmpDir, "example-repo-feat-some-branch");
+    mkdirSync(worktreePath, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("returns true when the directory does not exist — nothing to protect", () => {
+    const missingPath = join(tmpDir, "does-not-exist");
+    expect(isWorktreeStale(missingPath, 14)).toBe(true);
+  });
+
+  test("returns false for a freshly-modified directory (well within the threshold)", () => {
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(false);
+  });
+
+  test("returns true for a directory modified well before the threshold", () => {
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(true);
+  });
+
+  test("returns false for a directory modified just under the threshold", () => {
+    const justUnderThreshold = new Date(
+      Date.now() - 13 * 24 * 60 * 60 * 1000,
+    );
+    utimesSync(worktreePath, justUnderThreshold, justUnderThreshold);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(false);
+  });
+
+  test("returns true for a directory modified just over the threshold", () => {
+    const justOverThreshold = new Date(
+      Date.now() - 15 * 24 * 60 * 60 * 1000,
+    );
+    utimesSync(worktreePath, justOverThreshold, justOverThreshold);
+    expect(isWorktreeStale(worktreePath, 14)).toBe(true);
+  });
+
+  test("cleanupAfterDays of 0 treats any existing directory as immediately stale", () => {
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+    expect(isWorktreeStale(worktreePath, 0)).toBe(true);
+  });
+});
+
+// ─── buildProductionDeps().removeWorktree staleness gate (WTR-1.4) ─────────────
+
+describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () => {
+  const savedEnv: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    savedEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
+    savedEnv.SHIPWRIGHT_WORKTREE_DIR = process.env.SHIPWRIGHT_WORKTREE_DIR;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
+  /**
+   * Sets up a fake workspace with `state/agent-policy.md` (configuring
+   * `cleanup_after_days`), a `repos/<shortRepo>` git repo, and a
+   * `worktrees/<shortRepo>-<branchSlug>` directory registered as a real git
+   * worktree of that repo — so `deps.removeWorktree()` exercises the actual
+   * `git worktree remove --force` invocation end-to-end when the staleness
+   * gate allows it through.
+   */
+  function setupFakeWorkspace(opts: { cleanupAfterDays: number }): {
+    workspacePath: string;
+    shortRepo: string;
+    worktreeDirName: string;
+    worktreePath: string;
+  } {
+    const workspacePath = mkdtempSync(
+      join(tmpdir(), "removeworktree-staleness-test-"),
+    );
+    mkdirSync(join(workspacePath, "state"), { recursive: true });
+    writeFileSync(
+      join(workspacePath, "state", "agent-policy.md"),
+      `**cleanup_after_days**: ${opts.cleanupAfterDays}`,
+    );
+
+    const shortRepo = "example-repo";
+    const repoPath = join(workspacePath, "repos", shortRepo);
+    mkdirSync(repoPath, { recursive: true });
+    Bun.spawnSync(["git", "init", "--quiet"], { cwd: repoPath });
+    Bun.spawnSync(["git", "config", "user.email", "test@example.com"], {
+      cwd: repoPath,
+    });
+    Bun.spawnSync(["git", "config", "user.name", "Test"], { cwd: repoPath });
+    writeFileSync(join(repoPath, "README.md"), "hello\n");
+    Bun.spawnSync(["git", "add", "README.md"], { cwd: repoPath });
+    Bun.spawnSync(["git", "commit", "--quiet", "-m", "init"], {
+      cwd: repoPath,
+    });
+
+    const worktreeDirName = `${shortRepo}-feat-some-branch`;
+    const worktreeRoot = join(workspacePath, "worktrees");
+    mkdirSync(worktreeRoot, { recursive: true });
+    const worktreePath = join(worktreeRoot, worktreeDirName);
+    const addResult = Bun.spawnSync(
+      ["git", "worktree", "add", worktreePath, "-b", "feat/some-branch"],
+      { cwd: repoPath },
+    );
+    if (addResult.exitCode !== 0) {
+      throw new Error(
+        `git worktree add failed in test setup: ${addResult.stderr.toString()}`,
+      );
+    }
+
+    return { workspacePath, shortRepo, worktreeDirName, worktreePath };
+  }
+
+  test("fresh worktree (mtime within cleanup_after_days) is skipped, not removed", async () => {
+    const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
+      setupFakeWorkspace({ cleanupAfterDays: 14 });
+    process.env.WORKSPACE_PATH = workspacePath;
+    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
+    delete process.env.SHIPWRIGHT_WORKTREE_DIR;
+    const now = new Date();
+    utimesSync(worktreePath, now, now);
+
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      getScopedRepos: () => [],
+    });
+
+    await deps.removeWorktree(shortRepo, worktreeDirName);
+
+    // Still present — the staleness gate skipped the actual removal.
+    expect(existsSync(worktreePath)).toBe(true);
+
+    rmSync(workspacePath, { recursive: true, force: true });
+  });
+
+  test("stale worktree (mtime older than cleanup_after_days) is force-removed", async () => {
+    const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
+      setupFakeWorkspace({ cleanupAfterDays: 14 });
+    process.env.WORKSPACE_PATH = workspacePath;
+    // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
+    delete process.env.SHIPWRIGHT_WORKTREE_DIR;
+    const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    utimesSync(worktreePath, twentyDaysAgo, twentyDaysAgo);
+
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      getScopedRepos: () => [],
+    });
+
+    await deps.removeWorktree(shortRepo, worktreeDirName);
+
+    // Removed by git worktree remove --force.
+    expect(existsSync(worktreePath)).toBe(false);
+
+    rmSync(workspacePath, { recursive: true, force: true });
   });
 });

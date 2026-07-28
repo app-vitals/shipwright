@@ -255,6 +255,53 @@ export function readAllowSelfReview(workspacePath: string): boolean {
   }
 }
 
+/**
+ * Read and parse the `cleanup_merged_worktrees` policy field (WTR-1.1) from
+ * `state/agent-policy.md`, mirroring `readAllowSelfReview()` exactly:
+ * defaults `true` on any read failure (missing file, missing workspace,
+ * etc.) — `parseCleanupMergedWorktrees()` itself already defaults `true`
+ * when the field is present in the file but simply unset.
+ */
+export function readCleanupMergedWorktrees(workspacePath: string): boolean {
+  try {
+    const content = readFileSync(
+      join(workspacePath, "state", "agent-policy.md"),
+      "utf-8",
+    );
+    return parseCleanupMergedWorktrees(content);
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Read and parse the `cleanup_after_days` policy field from
+ * `state/agent-policy.md`, mirroring `readCleanupMergedWorktrees()` exactly:
+ * defaults to 14 on any read failure (missing file, missing workspace, etc.)
+ * — `parseCleanupAfterDays()` itself already defaults to 14 when the field
+ * is present in the file but simply unset or unparseable.
+ *
+ * WTR-1.4: reused as the staleness threshold gating the force-removal of a
+ * merged/closed PR's worktree (see `removeWorktree`'s production
+ * implementation in pr-state-reconciler.ts) — the same field that already
+ * governs "remove worktrees older than N days, even if the PR is still
+ * open" now also governs "don't force-remove a worktree younger than N days
+ * even if its PR just merged/closed", so a worktree still being actively
+ * worked on by a concurrent dev-task/patch/deploy session isn't yanked out
+ * from under it purely on remote GitHub state.
+ */
+export function readCleanupAfterDays(workspacePath: string): number {
+  try {
+    const content = readFileSync(
+      join(workspacePath, "state", "agent-policy.md"),
+      "utf-8",
+    );
+    return parseCleanupAfterDays(content);
+  } catch {
+    return 14;
+  }
+}
+
 // ─── Workspace path ───────────────────────────────────────────────────────────
 
 /**
