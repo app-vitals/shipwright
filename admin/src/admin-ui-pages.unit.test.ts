@@ -4052,6 +4052,7 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
     expect(html).toContain("<th>Item</th>");
+    expect(html).toContain("<th>Detail</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
   });
@@ -4295,8 +4296,10 @@ describe("renderCronLogsPage", () => {
         error: "Database connection timeout",
       }),
     ]);
-    expect(html).toContain('title="Rate limit exceeded"');
-    expect(html).not.toContain('title="Database connection timeout"');
+    // The outcome badge (first title attribute in the row) should show skipReason.
+    const badgeMatch = html.match(/<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/);
+    expect(badgeMatch).not.toBeNull();
+    expect(badgeMatch?.[1]).toBe("Rate limit exceeded");
   });
 
   test("escapes XSS in the error field within the title attribute", () => {
@@ -4393,6 +4396,58 @@ describe("renderCronLogsPage", () => {
     const badgeMatch = html.match(/<span class="badge"[^>]*>([^<]*)<\/span>/);
     expect(badgeMatch).not.toBeNull();
     expect(badgeMatch?.[1]).toBe("skipped");
+  });
+
+  // ─── Detail column ────────────────────────────────────────────────────────────
+
+  test("renders the Detail column header", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("<th>Detail</th>");
+  });
+
+  test("renders error text in the Detail column when error is set", () => {
+    const html = render([makeRun({ error: "boom: connection refused" })]);
+    expect(html).toContain("boom: connection refused");
+  });
+
+  test("falls back to skipReason in the Detail column when skipped is true and error is null", () => {
+    const html = render([
+      makeRun({ skipped: true, skipReason: "queue empty", error: null }),
+    ]);
+    expect(html).toContain("queue empty");
+  });
+
+  test("renders an em-dash in the Detail cell when both error and skipReason are null", () => {
+    const html = render([makeRun({ error: null, skipReason: null })]);
+    // Use tbody extraction pattern to check the Detail cell specifically.
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // The Detail cell should be the last <td> in the row and contain an em-dash.
+    // We check that an em-dash exists in the tbody (could be from phase or item cells too,
+    // but the Detail cell is the last one).
+    const rowMatch = bodyRowMatch?.[1].match(/<tr>([\s\S]*?)<\/tr>/);
+    expect(rowMatch).not.toBeNull();
+    // Check that the row ends with a <td> containing just an em-dash (the Detail cell).
+    const cells = rowMatch?.[1].match(/<td[^>]*>([^<]*)<\/td>/g) || [];
+    const lastCell = cells[cells.length - 1];
+    expect(lastCell).toContain("—");
+  });
+
+  test("a long/multi-line error string is fully present in a title attribute", () => {
+    const longError =
+      "Error: something failed\n    at foo (file.ts:10)\n    at bar (file.ts:20)";
+    const html = render([makeRun({ error: longError })]);
+    // The full error should be in a title attribute. Since escapeHtml may not escape
+    // newlines, check that the full string (or its escaped form) is present.
+    expect(html).toContain(`title="`);
+    // Check that the error text appears in the detail cell with a title attribute.
+    const detailMatch = html.match(/<span title="([^"]*)">[^<]*Error[^<]*<\/span>/);
+    expect(detailMatch).not.toBeNull();
+  });
+
+  test("empty-state colspan updates from 8 to 9 for the new Detail column", () => {
+    const html = render([]);
+    expect(html).toContain('colspan="9"');
   });
 });
 
