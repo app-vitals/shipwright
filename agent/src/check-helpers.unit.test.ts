@@ -19,18 +19,22 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import {
+  classifyReviewState,
   createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
   createTaskStoreClient,
   getCurrentUser,
+  hasAnyReviewAtHead,
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   parseCandidateId,
   resolveAllRepos,
   resolveRepos,
+  reviewsAtHeadCommit,
 } from "./check-helpers.ts";
 import * as checkHelpers from "./check-helpers.ts";
 
@@ -1471,6 +1475,217 @@ describe("isCleanApproveBody", () => {
   test("does not match a non-APPROVE verdict", () => {
     expect(isCleanApproveBody("Verdict: CHANGES_REQUESTED")).toBe(false);
     expect(isCleanApproveBody("Verdict: DISAPPROVE")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reviewsAtHeadCommit / hasAnyReviewAtHead / classifyReviewState (RVD-1.1)
+//
+// Promoted from pr-state-reconciler.ts — pr-state-reconciler.unit.test.ts
+// already exercises these thoroughly end-to-end via reconcileReviewState(),
+// so this block covers the pure functions directly (now that they're
+// check-helpers.ts's own exports) rather than duplicating every scenario.
+// ---------------------------------------------------------------------------
+
+function makeReviewNode(overrides: Partial<ReviewNode> = {}): ReviewNode {
+  return {
+    author: { login: "some-reviewer" },
+    state: "COMMENTED",
+    submittedAt: "2026-07-15T10:00:00.000Z",
+    commit: { oid: "head-sha" },
+    body: "",
+    ...overrides,
+  };
+}
+
+function makeReviewThread(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  return {
+    isResolved: true,
+    comments: { nodes: [{ author: { login: "some-reviewer" }, body: "" }] },
+    ...overrides,
+  };
+}
+
+function makeReviewData(overrides: Partial<PrReviewData> = {}): PrReviewData {
+  return {
+    headRefOid: "head-sha",
+    reviews: { nodes: [] },
+    reviewThreads: { nodes: [] },
+    comments: { nodes: [] },
+    ...overrides,
+  };
+}
+
+describe("reviewsAtHeadCommit", () => {
+  test("returns only reviews whose commit.oid matches headRefOid", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({ commit: { oid: "head-sha" }, body: "at head" }),
+          makeReviewNode({ commit: { oid: "old-sha" }, body: "stale" }),
+        ],
+      },
+    });
+    const result = reviewsAtHeadCommit(data);
+    expect(result).toHaveLength(1);
+    expect(result[0].body).toBe("at head");
+  });
+
+  test("returns an empty array when no reviews exist", () => {
+    expect(reviewsAtHeadCommit(makeReviewData())).toEqual([]);
+  });
+
+  test("returns an empty array when all reviews are at a stale commit", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: { nodes: [makeReviewNode({ commit: { oid: "old-sha" } })] },
+    });
+    expect(reviewsAtHeadCommit(data)).toEqual([]);
+  });
+});
+
+describe("hasAnyReviewAtHead", () => {
+  test("true when at least one review is at head", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: { nodes: [makeReviewNode({ commit: { oid: "head-sha" } })] },
+    });
+    expect(hasAnyReviewAtHead(data)).toBe(true);
+  });
+
+  test("false when no reviews exist at all", () => {
+    expect(hasAnyReviewAtHead(makeReviewData())).toBe(false);
+  });
+
+  test("false when reviews exist only at a stale commit", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: { nodes: [makeReviewNode({ commit: { oid: "old-sha" } })] },
+    });
+    expect(hasAnyReviewAtHead(data)).toBe(false);
+  });
+});
+
+describe("classifyReviewState", () => {
+  test("returns null when no review exists at head", () => {
+    expect(classifyReviewState(makeReviewData())).toBeNull();
+  });
+
+  test("returns null when reviews only exist at a stale commit", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: { nodes: [makeReviewNode({ commit: { oid: "old-sha" } })] },
+    });
+    expect(classifyReviewState(data)).toBeNull();
+  });
+
+  test("returns 'approved' for a real APPROVED review at head", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    expect(classifyReviewState(data)).toBe("approved");
+  });
+
+  test("returns 'approved' for a clean-approve-shaped COMMENTED review at head, from any author", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "out-of-band-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "head-sha" },
+            body: "**APPROVE** — nothing else to add.",
+          }),
+        ],
+      },
+    });
+    expect(classifyReviewState(data)).toBe("approved");
+  });
+
+  test("returns 'posted' for a terminal non-approve review at head with no unresolved threads or finding body", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "head-sha" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+    });
+    expect(classifyReviewState(data)).toBe("posted");
+  });
+
+  test("returns null for a genuine unresolved finding at head (unresolved thread)", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "head-sha" },
+            body: "Please fix the auth flow.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: false })] },
+    });
+    expect(classifyReviewState(data)).toBeNull();
+  });
+
+  test("returns null for a genuine finding via non-empty body, even with all threads resolved", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "head-sha" },
+            body: "Rename this variable before merging.",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: true })] },
+    });
+    expect(classifyReviewState(data)).toBeNull();
+  });
+
+  test("an approve from one reviewer never masks an independent unresolved finding from another reviewer at head", () => {
+    const data = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "reviewer-a" },
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "head-sha" },
+            body: "This breaks the auth flow.",
+          }),
+          makeReviewNode({
+            author: { login: "reviewer-b" },
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [makeReviewThread({ isResolved: false })] },
+    });
+    expect(classifyReviewState(data)).toBeNull();
   });
 });
 
