@@ -46,11 +46,28 @@ describe("SKILL.md — Failure modes: measurement-only items carried forward acr
     expect(hasCarryoverBullet).toBe(true);
   });
 
-  it("references a threshold of 3 or more consecutive cycles", () => {
-    const hasThreshold = /\b3\b[^.]*consecutive|\bconsecutive\b[^.]*\b3\b/i.test(
-      content,
-    );
-    expect(hasThreshold).toBe(true);
+  it("gates mandatory M1 escalation on an actual Tier-1 budget breach, not a bare cycle count", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    expect(failureModesIdx).toBeGreaterThan(-1);
+    const section = content.slice(failureModesIdx);
+    const hasTier1BreachGate =
+      /Tier[\s-]?1/i.test(section) && /budget breach/i.test(section);
+    expect(hasTier1BreachGate).toBe(true);
+  });
+
+  it("references speed-budgets' escalation formula rather than a bare cycle-count threshold", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    expect(section).toContain("speed-budgets");
+    expect(section).toMatch(/escalation formula/i);
+  });
+
+  it("does not gate mandatory M1 escalation on persistence across cycles alone", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    const section = content.slice(failureModesIdx);
+    const hasBareCycleCountGate =
+      /\b3\b[^.]*consecutive|\bconsecutive\b[^.]*\b3\b/i.test(section);
+    expect(hasBareCycleCountGate).toBe(false);
   });
 
   it("requires test-roadmap to place the item as the first/mandatory M1 task by construction", () => {
