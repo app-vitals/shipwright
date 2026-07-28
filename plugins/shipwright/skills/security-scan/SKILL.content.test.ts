@@ -98,6 +98,28 @@ describe("SKILL.md — Tier 1 pinned-version + sha256 download steps", () => {
   });
 });
 
+describe("SKILL.md — Step 3.1 gitleaks .gitleaksignore auto-discovery", () => {
+  it("documents that .gitleaksignore is auto-discovered at the scan source root", () => {
+    expect(content).toContain(".gitleaksignore");
+  });
+
+  it("documents the fingerprint format commit:file:rule:startLine", () => {
+    expect(content).toContain("commit:file:rule:startLine");
+  });
+
+  it("documents that suppression entries are added only via human HITL confirmation", () => {
+    const text = content.toLowerCase();
+    const hasHITL =
+      text.includes("hitl") || text.includes("human") || text.includes("closing");
+    const hasNeverAuto =
+      text.includes("never automatically") ||
+      text.includes("not automatically") ||
+      text.includes("human confirming") ||
+      text.includes("only");
+    expect(hasHITL && hasNeverAuto).toBe(true);
+  });
+});
+
 describe("SKILL.md — per-tool fallback behavior", () => {
   it("documents that a failed tool download is skipped, not fatal", () => {
     const hasFallback =
