@@ -27,7 +27,7 @@ Distilled from Phase 3:
 - Layer coverage map (counts: how many tests at each layer, how many ought to be there)
 - Local-runnable status: % of tests that run locally with no network
 - Canary status: size of current canary suite vs. target (from Phase 2 critical-path roster)
-- Speed status: current p95 per layer vs. budget
+- Speed status: Tier 1 aggregate wall-clock vs. budget; per-layer p95 only if Tier 2 was triggered
 - "Rebuild" debt: count by layer and effort
 - "Delete (redundant)" count and what it implies about false-confidence coverage
 
