@@ -65,6 +65,7 @@ describe("principles.md — required rule IDs present", () => {
     "injection_at_trust_boundary",
     "least_privilege_tokens",
     "secrets_in_logs",
+    "workflow_job_timeout",
     // inconsistent patterns
     "duplicated_utility",
     // architecture
@@ -147,6 +148,25 @@ describe("principles.md — webhook_signature_verification entry", () => {
   it("has HITL: always", () => {
     const block = entryBlock(readPrinciples(), "webhook_signature_verification");
     expect(block).toContain("**HITL:** always");
+  });
+});
+
+// ── workflow_job_timeout entry is entropy-scannable ──────────────────────────
+
+describe("principles.md — workflow_job_timeout entry", () => {
+  it("has a Detection field", () => {
+    const block = entryBlock(readPrinciples(), "workflow_job_timeout");
+    expect(block).toContain("**Detection:**");
+  });
+
+  it("is PR-worthy: true", () => {
+    const block = entryBlock(readPrinciples(), "workflow_job_timeout");
+    expect(block).toContain("**PR-worthy:** true");
+  });
+
+  it("has HITL: never", () => {
+    const block = entryBlock(readPrinciples(), "workflow_job_timeout");
+    expect(block).toContain("**HITL:** never");
   });
 });
 

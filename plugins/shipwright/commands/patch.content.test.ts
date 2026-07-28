@@ -1010,3 +1010,32 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(blocked).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
   });
 });
+
+describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)", () => {
+  function checkSite(step: string, next: string) {
+    const stepIdx = content.indexOf(step);
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextIdx = content.indexOf(next, stepIdx);
+    expect(nextIdx).toBeGreaterThan(stepIdx);
+    const section = content.slice(stepIdx, nextIdx);
+    expect(section).toContain("state/toolchain-cache/{repo}.json");
+    expect(section).toMatch(/CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is);
+    expect(section).toMatch(/authoritative if found/i);
+  }
+
+  it("Step 4a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
+  });
+
+  it("Step 5a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
+  });
+
+  it("Step 6a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
+  });
+
+  it("does not reference the old single shared cache file", () => {
+    expect(content).not.toContain("state/toolchain-cache.json");
+  });
+});

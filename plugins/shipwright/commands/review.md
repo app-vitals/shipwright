@@ -13,6 +13,14 @@ claims are atomic, so two agents won't review the same commit simultaneously. Th
 narrative itself is still written locally to `state/reviews/PR_REVIEW_{pr}.md` and
 `state/reviews/pr_review_{pr}.json` for posting.
 
+Dedup is two-layered: the task-store-local atomic claim above prevents two agents *on the
+same task-store instance* from racing on the same commit, but it's blind to reviews posted
+by an agent running against a *different* task-store instance, or by a human running this
+command directly. Step 14's live-GitHub pre-check is the cross-task-store defense layer that
+closes that gap — it queries GitHub directly for a terminal review at the current head
+commit before any claim or checkout happens, independent of what the local task-store record
+says.
+
 > **Task store setup:** This command updates task status in the Shipwright task store after review. If `SHIPWRIGHT_TASK_STORE_URL` or `SHIPWRIGHT_TASK_STORE_TOKEN` is missing, invoke `/shipwright:task-store` for setup instructions.
 
 ---
@@ -256,8 +264,32 @@ If **any** of the following are true, this PR has substantive unresolved feedbac
 
 If substantive unresolved feedback is found: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
-release the claim so the record returns to `pending`
-(`POST $SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}/release`), respond `[silent]`, and stop.
+mark the PR as reviewed-at-this-commit (without staging) so the record is not re-evaluated at the
+same commit:
+```bash
+curl -sf -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
+  -d '{"reviewState": "posted", "commitSha": "{headRefOid}"}' >/dev/null
+```
+Note: `staged` is NOT set here, so this does not interact with `/shipwright:review-staged`'s
+staged-record flow — this is purely a commit-level dedup to prevent re-review at the same head
+until new commits land. The claim (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) is
+auto-cleared by `pull-request-service.ts` when `reviewState` is set to `posted`.
+
+**Caveat:** this dedup only reliably holds when the substantive unresolved feedback came from a
+formal `CHANGES_REQUESTED`/`COMMENTED` review object at head. `agent/src/pr-state-reconciler.ts`'s
+background `reconcilePostedReviewStateRecord()` heals a `posted` record back to `pending` once its
+`hasAnyReviewAtHead()` check finds no formal review object at the current head commit — it does not
+inspect issue-level PR comments. So when the substantive unresolved feedback is a plain PR
+comment with no accompanying formal review at head, the very next reconcile pass (every 30-60
+min) PATCHes `reviewState` back to `pending`, and this PR becomes re-selectable for review — the
+dedup set here does not persist for that case. This is not a regression vs. the old
+`release`-based skip (which produced the same eventual `pending` state, just immediately instead
+of after a reconcile delay); it just means the delay before the same re-review-at-this-commit
+churn resumes is longer, not zero, for the plain-comment trigger.
+Respond `[silent]`, and stop.
 
 8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
    together run longer than the claim TTL, so renew the heartbeat now, before starting the
@@ -654,6 +686,62 @@ Arguments section for the required no-argument `[silent]` stop.
    ```
    Fall back to the current workspace repo if the command fails.
    **Limitation**: bare numbers only check the first configured repo (`repos[0]`). Multi-repo agents should use the full `org/repo#number` form to target a PR in any repo beyond the first.
+
+### Live-Review Pre-Check (RVD-1.2)
+
+Run this **before** the Pre-Claim Fast Path below and before any task-store record fetch —
+and even when a pre-claim marker is present. A pre-claim marker only proves the
+orchestrator's own task-store instance had this PR queued; it says nothing about whether
+some OTHER reviewer (an agent running against a different task-store instance, or a human)
+already posted a terminal review at this exact head commit. This is the cross-task-store
+defense layer described at the top of this file — it catches the race window between
+candidate selection and dispatch, and the case of a human invoking this command directly
+with an explicit PR#, both of which the task-store-record dedup further down in Step 14
+can't see.
+
+Query GitHub directly for reviews at the current head commit:
+
+```bash
+precheck=$(gh api graphql -f query='
+{
+  repository(owner: "{org}", name: "{repo}") {
+    pullRequest(number: {pr}) {
+      headRefOid
+      reviews(first: 50) {
+        nodes {
+          body
+          commit {
+            oid
+          }
+        }
+      }
+    }
+  }
+}' --jq '.data.repository.pullRequest as $pr | {headRefOid: $pr.headRefOid, terminal: ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid) | .body] | any(test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")))}')
+headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
+terminal=$(echo "$precheck" | jq -r '.terminal')
+```
+
+This filters reviews down to only those submitted at the current `headRefOid`, then tests
+whether ANY of their bodies matches a terminal verdict label. The jq program outputs a JSON
+object with the `headRefOid` string and a `terminal` boolean, captured into shell variables
+of the same names.
+
+This bash regex mirrors `agent/src/check-helpers.ts`'s exported `VERDICT_TERMINAL_LABEL` —
+a literal `Verdict:` label match rather than the fuller thread/finding-body analysis
+`classifyReviewState()` does. That's acceptable here because review.md's own postings (Step
+10) always carry an explicit `Verdict: APPROVE` or `Verdict: COMMENT` line, so a literal
+label match is sufficient to detect "already reviewed, terminal" at this commit. There is
+no author filtering — a review from any identity counts, not just self-authored ones.
+
+**If `$terminal` is `true`** (a terminal review already exists at head on GitHub): print
+```
+Skipping #{pr} — a review already exists at this commit (${headRefOid:0:7}) on GitHub (cross-task-store check), nothing to do.
+```
+Stop. No claim, no checkout (no worktree checkout happens).
+
+**If `$terminal` is `false`**: continue to the Pre-Claim Fast Path subsection immediately
+below, unchanged.
 
 ### Pre-Claim Fast Path (CBD-1.4)
 

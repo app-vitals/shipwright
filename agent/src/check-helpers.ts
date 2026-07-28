@@ -23,6 +23,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import type { PrReviewData } from "./check-patch.ts";
 
 // ─── Task types ───────────────────────────────────────────────────────────────
 
@@ -102,6 +103,24 @@ export function parseAllowSelfReview(content: string): boolean {
 export const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
 
 /**
+ * The canonical TS-side pattern that `plugins/shipwright/commands/review.md`'s
+ * Step 14 Live-Review Pre-Check (RVD-1.2) mirrors as a bash/jq regex, since
+ * review.md is bash/gh/curl-driven and can't import TS. Unlike
+ * `VERDICT_APPROVE_LABEL` (APPROVE only, used for self-review clean-approve
+ * detection), this also matches COMMENT — because review.md's own Step 10
+ * always posts a `Verdict: APPROVE` or `Verdict: COMMENT` line, and BOTH
+ * represent "already reviewed, terminal" as far as the live-review pre-check
+ * is concerned (mirrors the intent of `classifyReviewState()`'s "posted" vs
+ * "approved" split, but collapsed into a single boolean here since Step 14
+ * only needs to know whether ANY terminal review exists at the current head
+ * commit). Not currently consumed anywhere in TS — it exists purely as the
+ * source of truth for the bash regex embedded in review.md, verified in sync
+ * via a content test in plugins/shipwright/commands/review.unit.test.ts.
+ */
+export const VERDICT_TERMINAL_LABEL =
+  /verdict\**\s*:\s*\**(approve|comment)\b/i;
+
+/**
  * True when a review body is a clean APPROVE verdict, matched either by:
  * - a leading `APPROVE` (after stripping leading markdown bold markers), or
  * - a "Verdict: APPROVE" label anywhere in the body (the narrative
@@ -116,6 +135,96 @@ export function isCleanApproveBody(body: string): boolean {
     body.trimStart().replace(/^\*+/, "").startsWith("APPROVE") ||
     VERDICT_APPROVE_LABEL.test(body)
   );
+}
+
+// ─── Live review-state classification ─────────────────────────────────────────
+//
+// Promoted from pr-state-reconciler.ts (RVD-1.1) — pure move, same bodies —
+// so check-review.ts's candidate selection can also dedup against live
+// GitHub review data (identity-agnostic, any author's terminal review
+// counts), not just pr-state-reconciler.ts's async background reconcile
+// pass. pr-state-reconciler.ts now imports these from here instead of
+// defining them locally.
+
+/** Filter a PR's reviews down to only those submitted at the current head commit. */
+export function reviewsAtHeadCommit(
+  data: PrReviewData,
+): PrReviewData["reviews"]["nodes"] {
+  const { headRefOid, reviews } = data;
+  return reviews.nodes.filter((r) => r.commit.oid === headRefOid);
+}
+
+/**
+ * CHU-2.4: does ANY review at all exist at the PR's current head commit?
+ * Extracted out of `classifyReviewState`'s existing `reviewsAtHead.length ===
+ * 0` check so the posted-scan pass can distinguish this specific null case
+ * ("nothing at head at all" — a posted verdict has gone stale because a new
+ * commit landed with no review yet targeting it) from the OTHER null case
+ * `classifyReviewState` returns (a genuine unresolved finding at head, which
+ * must leave a posted record untouched). `classifyReviewState`'s own
+ * existing behavior/signature is unchanged — it still returns null for both
+ * cases, exactly as before.
+ */
+export function hasAnyReviewAtHead(data: PrReviewData): boolean {
+  return reviewsAtHeadCommit(data).length > 0;
+}
+
+/**
+ * Classify a PR's review state from live GitHub review data. Mirrors the
+ * SHAPE of check-patch.ts's private `hasUnaddressedFindings` filtering
+ * (reviews-at-head, unresolved-threads-or-non-empty-body) but keyed on
+ * `isCleanApproveBody` for the approve/non-finding split instead of
+ * self-authorship — this reconciler exists specifically to catch an
+ * OUT-OF-BAND reviewer, so ANY author's clean-approve-shaped COMMENTED
+ * review counts, not just self-authored ones.
+ *
+ * Genuine findings are checked FIRST, independent of whether an approve also
+ * exists at head — an approve from one reviewer must never mask an unresolved
+ * thread or non-empty finding body left by a different reviewer's
+ * COMMENTED/CHANGES_REQUESTED review at the same head commit (mirrors
+ * `hasUnaddressedFindings`'s filtering order in check-patch.ts).
+ *
+ * Returns:
+ *   - "approved" — a real APPROVED review, or a clean-approve-shaped
+ *     COMMENTED review, at the current head commit, AND no genuine
+ *     unaddressed finding from any other review at the same head commit.
+ *   - "posted" — a terminal (no unresolved threads, no qualifying non-empty
+ *     finding body) non-approve review at the current head commit.
+ *   - null — no review at all at the current head commit, OR a genuine
+ *     unaddressed finding at the current head commit. Both cases must leave
+ *     the record completely untouched.
+ */
+export function classifyReviewState(
+  data: PrReviewData,
+): "approved" | "posted" | null {
+  const { reviewThreads } = data;
+  const reviewsAtHead = reviewsAtHeadCommit(data);
+  if (reviewsAtHead.length === 0) return null; // nothing at head — untouched
+
+  const qualifyingReviews = reviewsAtHead.filter(
+    (r) =>
+      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
+      !isCleanApproveBody(r.body),
+  );
+
+  if (qualifyingReviews.length > 0) {
+    const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
+    if (unresolvedThreads.length > 0) return null; // genuine finding — untouched
+
+    const hasFindingBody = qualifyingReviews.some(
+      (r) => r.body.trim().length > 0,
+    );
+    if (hasFindingBody) return null; // genuine finding — untouched
+  }
+
+  const hasApprove = reviewsAtHead.some(
+    (r) =>
+      r.state === "APPROVED" ||
+      (r.state === "COMMENTED" && isCleanApproveBody(r.body)),
+  );
+  if (hasApprove) return "approved";
+
+  return "posted"; // terminal, non-approve, no finding
 }
 
 export function readAllowSelfReview(workspacePath: string): boolean {

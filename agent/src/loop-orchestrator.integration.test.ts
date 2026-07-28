@@ -499,7 +499,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     expect(callOrder).toEqual(["recordProgress", "completeRun"]);
   });
 
-  test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown", async () => {
+  test("a thrown ClaudeTimeoutError with partial usage results in completeRun's failed call carrying modelBreakdown, without aborting the tick", async () => {
     const devTaskCandidates = [task("SWC-2.2", "2026-01-01T00:00:00Z")];
     const consumed = new Set<string>();
     const { reporter, completeCalls } = makeRecordingReporter();
@@ -509,6 +509,10 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       throw new ClaudeTimeoutError(600_000, "ceiling", partialUsage);
     };
 
+    // Only offer the candidate once — mirrors production, where a
+    // successful pre-claim (claimTask below always resolves true) removes
+    // the task-store record from subsequent candidate queries even though
+    // the dispatch itself went on to fail.
     const loop = createLoopOrchestrator({
       getDevTaskCandidates: async () =>
         devTaskCandidates.filter((t) => !consumed.has(t.id)),
@@ -533,8 +537,8 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
     });
 
-    // CBD-2.3: a thrown dispatch is now caught and isolated per-item — the
-    // tick resolves normally instead of the throw propagating out of it.
+    // Resolves cleanly — the throw is caught per-item in the drain loop
+    // (throw isolation) rather than propagated out of the tick.
     await loop([job("shipwright-dev-task", true)]);
 
     expect(completeCalls).toHaveLength(1);
