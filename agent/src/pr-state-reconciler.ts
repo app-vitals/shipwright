@@ -558,17 +558,11 @@ function hasStarted(task: PrOpenTaskRecord): boolean {
 /**
  * Distinct-from-BBR-1.1 skip log for the RCP-1.1 startedAt precondition
  * above — shared by both branch-based heal paths so the message shape stays
- * identical between them. `logPrefix` lets each caller keep its own existing
- * `[pr-state-reconciler]`-prefixed convention (both call sites in this file
- * currently share the same prefix, but this avoids hard-coding it twice).
+ * identical between them.
  */
-function logStartedAtSkip(
-  logPrefix: string,
-  task: PrOpenTaskRecord,
-  taskRepo: string,
-): void {
+function logStartedAtSkip(task: PrOpenTaskRecord, taskRepo: string): void {
   console.error(
-    `${logPrefix} skipping branch-based heal for task ${task.id} — startedAt is null/missing on ${taskRepo}#${task.branch}, cannot confirm this task was ever actually claimed/started, so a branch-only PR match cannot be trusted as this task's own work`,
+    `[pr-state-reconciler] skipping branch-based heal for task ${task.id} — startedAt is null/missing on ${taskRepo}#${task.branch}, cannot confirm this task was ever actually claimed/started, so a branch-only PR match cannot be trusted as this task's own work`,
   );
 }
 
@@ -611,7 +605,7 @@ async function reconcilePrOpenTask(
     // claimed/started can't qualify for the branch-fallback heal regardless
     // of what's found on GitHub, so no gh call should be spent finding out.
     if (!hasStarted(task)) {
-      logStartedAtSkip("[pr-state-reconciler]", task, taskRepo);
+      logStartedAtSkip(task, taskRepo);
       return;
     }
 
@@ -729,7 +723,7 @@ async function reconcileOrphanedTask(
   // claimed/started can't qualify for the orphan heal regardless of what's
   // found on GitHub, so no gh call should be spent finding out.
   if (!hasStarted(task)) {
-    logStartedAtSkip("[pr-state-reconciler]", task, taskRepo);
+    logStartedAtSkip(task, taskRepo);
     return;
   }
 
