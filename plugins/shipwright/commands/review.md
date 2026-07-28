@@ -70,44 +70,11 @@ Read `state/agent-policy.md`. If the file doesn't exist, use these conservative 
 | `allow_self_review` | true |
 | `min_confidence` | 75 |
 | `max_findings` | 5 |
-| `cleanup_merged_worktrees` | true |
-| `cleanup_after_days` | 14 |
 
 Print a one-line policy summary:
 ```
 Policy: {staging|auto-posting} reviews
 ```
-
----
-
-## Step 2: Clean Up Worktrees
-
-If `cleanup_merged_worktrees` is true:
-
-1. List PR records for each configured repo:
-   ```bash
-   curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}" | jq -c '.prs[]'
-   ```
-2. For each record whose `reviewState` is `in_progress`, `posted`, or `approved`:
-   - Check if the PR is merged or closed: `gh pr view {pr} --repo {org}/{repo} --json state -q '.state'`
-   - If `MERGED` or `CLOSED`:
-     - Remove the worktree if it exists: `git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`
-     - Mark the record terminal in one PATCH:
-       ```bash
-       curl -sf -X PATCH \
-         -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-         -H "Content-Type: application/json" \
-         "$SHIPWRIGHT_TASK_STORE_URL/prs/{record.id}" \
-         -d "{\"state\": \"merged\", \"mergedAt\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" >/dev/null
-       ```
-       `state: "merged"` is the terminal state — no further status progression is needed.
-3. Remove stale worktrees older than `cleanup_after_days`:
-   ```bash
-   find worktrees/ -maxdepth 1 -type d -mtime +{cleanup_after_days} -exec basename {} \;
-   ```
-   For each, remove via `git worktree remove`.
-4. If any cleaned: print `Cleaned {N} worktrees`
 
 ---
 

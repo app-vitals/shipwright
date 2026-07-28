@@ -146,10 +146,10 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
 describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)", () => {
   it("Step 1 captures WORKSPACE_ROOT before the Step 4 worktree checkout", () => {
     const step1Idx = content.indexOf("## Step 1: Load Policy");
-    const step2Idx = content.indexOf("## Step 2: Clean Up Worktrees");
+    const step3Idx = content.indexOf("## Step 3: Resolve Current User and Target");
     expect(step1Idx).toBeGreaterThan(-1);
-    expect(step2Idx).toBeGreaterThan(-1);
-    const section = content.slice(step1Idx, step2Idx);
+    expect(step3Idx).toBeGreaterThan(-1);
+    const section = content.slice(step1Idx, step3Idx);
 
     expect(section).toContain("WORKSPACE_ROOT=$(pwd)");
     expect(section).toContain("state/reviews/");
