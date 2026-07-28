@@ -63,12 +63,52 @@ See `test-design/SKILL.md` Step 6 for the explicit threshold on when per-workspa
 
 - **`test-inventory`** does not measure speed (no tests exist for some items). It only assigns layer.
 - **`test-design`** copies the budget table into `test-system.md` and adds the parallelization plan.
-- **`test-migration`** measures existing tests against the table. Hard-cap violation → `rebuild`. Soft 95p violation → `promote`.
-- **`test-roadmap`** includes a mandatory **speed delta** section: current per-layer p95 vs. target.
+- **`test-migration`** measures existing tests against the table. Hard-cap violation → `rebuild`. Soft 95p violation → `promote`. Its Step 4a/4b split mirrors this skill's two-tier model.
+- **`test-roadmap`** includes a mandatory **speed delta** section: aggregate wall-clock vs. the <15 min budget (Tier 1), with per-layer p95 vs. target included only when Tier 2 was actually triggered.
 
 ## Measuring speed (for Phase 3)
 
-If actually running the suite is feasible, capture per-test timings via the test runner's reporter:
+### Two-tier measurement model
+
+Speed measurement is aggregate-first, not per-layer-first. An audit sandbox rarely has the
+live Postgres / service infrastructure a per-layer breakdown needs — but that infra gap is not
+itself a speed problem, and it must never be treated as one.
+
+- **Tier 1 — aggregate (default, always-on).** Pull the full-suite wall-clock, pass/fail/skip
+  counts, and file/test counts from the most recent green CI run of the `lint / typecheck /
+  test` job — the job that runs with real Postgres via `task test:coverage`. This is always
+  obtainable: it requires only `gh` CLI access to the repo's Actions history, not local
+  service infra. Tier 1 alone is a complete, valid measurement.
+- **Tier 2 — per-layer breakdown (conditional).** Only performed when the escalation formula
+  below trips. Captures per-test timings and aggregates them to per-layer count, 95p, and
+  suite wall-time.
+
+**Escalation formula (Tier 1 → Tier 2):** if the aggregate wall-clock exceeds 50% of the <15
+min Full-PR-pipeline budget (i.e. >7.5 min), sustained across 2 consecutive measurements,
+escalate to Tier 2. A single over-50% reading is not enough — it must repeat on the next
+measurement before the per-layer breakdown is warranted. Below that threshold, Tier 1 is the
+complete and sufficient answer; do not manufacture Tier 2 work for a suite that's comfortably
+in budget.
+
+### Tier 1 — pull the CI aggregate
+
+Pull the most recent green run of the `lint / typecheck / test` job:
+
+```bash
+gh run list --workflow=<ci-workflow> --status=success --limit=1
+gh run view <run-id> --log
+```
+
+Record: total tests, total files, wall-clock duration, skip count, fail count (should be 0 on
+a green run). Compare the wall-clock against the <15 min Full PR pipeline budget from the
+table above — that comparison alone answers "are we converging" for the vast majority of
+repos, with no local Postgres or per-layer infra required.
+
+### Tier 2 — per-layer breakdown (only when escalation formula trips)
+
+Only run this tier if Tier 1's aggregate wall-clock triggered the escalation formula above. If
+actually running the suite locally is feasible, capture per-test timings via the test runner's
+reporter:
 
 - Vitest / Jest: `--reporter=json` or `--reporter=verbose`
 - bun test: built-in timing output
@@ -80,7 +120,7 @@ Aggregate to:
 - Per-layer suite wall-time
 - Top N slowest tests in each layer
 
-These numbers populate the speed-delta section in Phase 4.
+These numbers populate the speed-delta section in Phase 4, alongside the Tier 1 aggregate.
 
 ## Ongoing CI enforcement
 

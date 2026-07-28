@@ -43,4 +43,4 @@ The output is intended to be handed to:
 ## Notes
 
 - Read-only. The synthesis step never modifies source or test files.
-- Includes a mandatory **speed delta** section — current per-layer p95 vs. target.
+- Includes a mandatory **speed delta** section — leads with the Tier 1 aggregate wall-clock vs. budget; per-layer p95 numbers are included only when Tier 2 was actually triggered.
