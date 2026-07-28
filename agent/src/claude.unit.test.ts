@@ -309,6 +309,27 @@ describe("runClaude", () => {
     expect(opts.stderr).toBe("pipe");
   });
 
+  test("strips SENTRY_DSN from the spawned child's env but keeps unrelated vars", async () => {
+    const priorSentryDsn = process.env.SENTRY_DSN;
+    process.env.SENTRY_DSN = "https://fake@sentry.example/123";
+    try {
+      await runClaude("test");
+      const [, opts] = mockSpawn.mock.calls[0] as [
+        string[],
+        { env: Record<string, string | undefined> },
+      ];
+      expect(opts.env.SENTRY_DSN).toBeUndefined();
+      expect(opts.env.PATH).toBe(process.env.PATH);
+    } finally {
+      if (priorSentryDsn === undefined) {
+        // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+        delete process.env.SENTRY_DSN;
+      } else {
+        process.env.SENTRY_DSN = priorSentryDsn;
+      }
+    }
+  });
+
   test("passes message as last arg without identity injection", async () => {
     await runClaude("my prompt");
     const [cmd] = mockSpawn.mock.calls[0] as [string[]];
