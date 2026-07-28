@@ -139,7 +139,100 @@ If the human asks for help with a step, provide the relevant commands and contex
 ## Step 6: Mark Task Done
 
 When the human confirms the task is complete (e.g. says "done", "finished", "all good",
-"mark it done", or similar), mark the task done in the task store:
+"mark it done", or similar):
+
+1. First run **Step 6a** below if it applies to this task.
+2. Then mark the task done in the task store as described further down.
+
+### 6a. Offer Gitleaksignore Suppression
+
+**Gate:** parse `TASK_DESC` for a trailer line of the form
+`Rule: {rule} | Severity: {severity} | Tier: {tier} | HITL: true | requires-credential-action: true`
+(this is the exact format `security-fix/SKILL.md` Step 6q.5 writes for credential-rotation
+tasks). Extract `{rule}`.
+
+- If `TASK_DESC` has **no `Rule:` line** at all (this HITL task did not originate from
+  `/shipwright:security-fix`), **skip this sub-step entirely** and proceed straight to
+  marking the task done, unchanged from today.
+- If `{rule}` is **not** `gitleaks-secret` or `hardcoded-credential`, skip this sub-step
+  entirely and proceed straight to marking the task done.
+- Otherwise ({rule} is `gitleaks-secret` or `hardcoded-credential`), continue below.
+
+**Why this exists:** a committed secret's exposure can't be undone by a code edit — the
+gitleaks full-history scan will keep re-detecting the same commits every subsequent scan
+unless the human's disposition is recorded somewhere gitleaks itself respects
+(`.gitleaksignore`). Without this, a human closing the task as a false positive today gets
+an identical task re-filed next week.
+
+**Ask the human two distinct questions — do not conflate them:**
+
+1. "Which of the findings listed above (if any) are **confirmed false positives** you want
+   to permanently suppress via `.gitleaksignore`?"
+2. "Which of the findings (if any) were closed because the **credential was rotated/revoked**?"
+
+These are separate human answers. Suppression is **never offered for rotated credentials** —
+never for a finding closed via rotation. An old fingerprint from a rotated secret is
+harmless to leave undetected, but suppression must only ever be applied to findings the
+human explicitly confirms as false positives. If a finding is rotated, it needs no
+`.gitleaksignore` entry at all; just let it be. Only the false-positive-confirmed findings
+are candidates for `.gitleaksignore` — even when the same task has a mix of some findings
+rotated and some false-positive, ask about suppression only for the false-positive subset.
+
+If the human is still deciding, or all findings in this task were closed via rotation (no
+false positives to suppress), **skip suppression** and go straight to marking the task done
+— this sub-step is additive, not required.
+
+**If the human confirms one or more findings for suppression:**
+
+1. **Resolve each confirmed finding to a gitleaks fingerprint.** The gitleaks fingerprint
+   format is `commit:file:rule:startLine` (verified against gitleaks v8.27.2).
+   - If `TASK_DESC` already breaks out full fingerprints for its findings (e.g. a backfill
+     task written directly in that format), use those fingerprints directly — no further
+     lookup needed.
+   - Otherwise, `TASK_DESC`'s findings list is plain `- {file}:{line} — {finding_description}`
+     (per `security-fix/SKILL.md` Step 6q.5) with no commit SHA. Ask the human to supply the
+     full fingerprint for each confirmed finding, since that is what gitleaks actually
+     matches on. If they only have `file:line`, tell them to look up the commit SHA via
+     `git blame`/`git log` on that file/line, or via the original `security-report.md` that
+     generated the task (security-scan writes the commit SHA per finding there).
+
+2. **Create a worktree for the target repo**, following the standard convention:
+   ```bash
+   git -C repos/{repo} pull
+   git -C repos/{repo} worktree add /absolute/path/to/worktrees/{repo}-{branch} origin/main -b {branch}
+   ```
+   Use an absolute path for the worktree (naming: `{repo}-{branch}`, no timestamps, no
+   nesting) per the standard worktree convention.
+
+3. **Append the confirmed fingerprint lines to that repo's root `.gitleaksignore`**,
+   creating the file if it doesn't exist. Each appended line carries a comment citing the
+   HITL task ID and today's date:
+   ```
+   # Suppressed via HITL task {TASK_ID} on {YYYY-MM-DD} — confirmed false positive
+   {fingerprint}
+   ```
+
+4. **Commit, push, and open a PR** in that worktree, using a `fix:` or `docs:` prefix per
+   the target repo's own commit-message convention (`fix:` if the repo treats a
+   `.gitleaksignore` entry as suppressing a would-be finding/check failure; `docs:` if the
+   repo treats it as a non-functional record-keeping change):
+   ```bash
+   git add .gitleaksignore
+   git commit -m "fix: suppress confirmed false-positive gitleaks finding ({TASK_ID})"
+   git push -u origin {branch}
+   gh pr create --title "fix: suppress confirmed false-positive gitleaks finding ({TASK_ID})" \
+     --body "Confirmed false positive during HITL review of {TASK_ID}. See task for finding detail."
+   ```
+
+5. Then proceed to mark the task done as normal (below).
+
+**If the human declines suppression** (still deciding, or all findings were rotated rather
+than false-positive), skip straight to marking the task done — do not block on this
+sub-step.
+
+### 6b. Mark Task Done
+
+Mark the task done in the task store:
 
 ```bash
 COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
