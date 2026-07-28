@@ -2084,6 +2084,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
       id: "task-4",
       repo: "acme/example-repo",
       branch: "feat/sw-x-y",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls } = makeDeps({
       prOpenTasks: [task],
@@ -2108,6 +2109,10 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
       id: "task-bundle-sibling-merged",
       repo: "acme/example-repo",
       branch: "feat/asa-slack-oauth-ui",
+      // startedAt set so this test still exercises the BBR-1.1 headcount
+      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
+      // and is covered by its own dedicated test above).
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls, patchCalls, listAllTasksForBranchCalls } =
       makeDeps({
@@ -2159,6 +2164,67 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  test("RCP-1.1: a single-task branch (BBR-1.1 headcount guard passes) with task.startedAt null is skipped in the branch-fallback merged path — no PATCH, no ghListMergedPrsForBranch call, distinct skip logged", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-never-started-merged",
+      repo: "acme/example-repo",
+      branch: "feat/never-started",
+      startedAt: null,
+    };
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
+      prOpenTasks: [task],
+      branchResults: {
+        "acme/example-repo#feat/never-started": [{ number: 700 }],
+      },
+      // Deliberately NOT overriding tasksForBranch — makeDeps's default
+      // single-element stand-in means the BBR-1.1 headcount guard alone
+      // would pass (only one task shares this branch).
+    });
+
+    const ghListMergedPrsForBranchCalls: string[] = [];
+    const originalGhListMergedPrsForBranch = deps.ghListMergedPrsForBranch;
+    deps.ghListMergedPrsForBranch = async (repo: string, branch: string) => {
+      ghListMergedPrsForBranchCalls.push(`${repo}#${branch}`);
+      return await originalGhListMergedPrsForBranch(repo, branch);
+    };
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    // No GitHub call at all — the startedAt-null check must happen before
+    // ghListMergedPrsForBranch is ever invoked.
+    expect(ghListMergedPrsForBranchCalls).toHaveLength(0);
+    expect(taskPatchCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+    // Distinct from the BBR-1.1 "N tasks share this branch" message — must
+    // mention this specific task and that it was never started.
+    expect(
+      errorSpy.some((args) =>
+        args.some(
+          (a) =>
+            typeof a === "string" &&
+            a.includes("task-never-started-merged") &&
+            a.includes("startedAt"),
+        ),
+      ),
+    ).toBe(true);
+    // Must NOT be the BBR-1.1 bundle-mate message (which mentions "share branch").
+    expect(
+      errorSpy.some((args) =>
+        args.some((a) => typeof a === "string" && a.includes("share branch")),
+      ),
+    ).toBe(false);
   });
 
   test("task with no pr AND no branch is skipped — no PATCH, no throw", async () => {
@@ -2380,6 +2446,7 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       id: "task-orphan-1",
       repo: "acme/example-repo",
       branch: "feat/tcr-1-2-orphan",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls } = makeDeps({
       orphanCandidateTasks: [task],
@@ -2469,11 +2536,13 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       id: "task-orphan-fail",
       repo: "acme/example-repo",
       branch: "feat/will-fail",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const taskB: PrOpenTaskRecord = {
       id: "task-orphan-ok",
       repo: "acme/example-repo",
       branch: "feat/will-succeed",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls } = makeDeps({
       orphanCandidateTasks: [taskA, taskB],
@@ -2499,11 +2568,13 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       id: "task-orphan-match",
       repo: "acme/example-repo",
       branch: "feat/has-pr",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const taskNoMatch: PrOpenTaskRecord = {
       id: "task-orphan-no-match",
       repo: "acme/example-repo",
       branch: "feat/no-pr-yet",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls } = makeDeps({
       orphanCandidateTasks: [taskMatch, taskNoMatch],
@@ -2539,11 +2610,13 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       id: "task-orphan-in-scope",
       repo: "acme/repo-a",
       branch: "feat/in-scope",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const taskOutOfScope: PrOpenTaskRecord = {
       id: "task-orphan-out-of-scope",
       repo: "acme/repo-b",
       branch: "feat/out-of-scope",
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const ghCalls: string[] = [];
     const { deps, taskPatchCalls } = makeDeps({
@@ -2579,6 +2652,10 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       id: "task-bundle-sibling",
       repo: "acme/example-repo",
       branch: "feat/asa-slack-oauth-ui",
+      // startedAt set so this test still exercises the BBR-1.1 headcount
+      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
+      // and is covered by its own dedicated test above).
+      startedAt: "2026-07-01T00:00:00.000Z",
     };
     const { deps, taskPatchCalls, listAllTasksForBranchCalls } = makeDeps({
       orphanCandidateTasks: [sibling],
@@ -2623,6 +2700,68 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
         ),
       ),
     ).toBe(true);
+  });
+
+  test("RCP-1.1: a single-task branch (BBR-1.1 headcount guard passes) with task.startedAt null/missing is skipped in the orphan pass — no PATCH, no ghListOpenPrsForBranch call, distinct skip logged", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-never-started-orphan",
+      repo: "acme/example-repo",
+      branch: "feat/never-started-orphan",
+      // startedAt omitted entirely — must be treated the same as null.
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {
+        "acme/example-repo#feat/never-started-orphan": [
+          { number: 800, createdAt: "2026-07-21T00:00:00.000Z" },
+        ],
+      },
+      // Deliberately NOT overriding tasksForBranch — makeDeps's default
+      // single-element stand-in means the BBR-1.1 headcount guard alone
+      // would pass (only one task shares this branch).
+    });
+
+    const ghListOpenPrsForBranchCalls: string[] = [];
+    const originalGhListOpenPrsForBranch = deps.ghListOpenPrsForBranch;
+    deps.ghListOpenPrsForBranch = async (repo: string, branch: string) => {
+      ghListOpenPrsForBranchCalls.push(`${repo}#${branch}`);
+      return await originalGhListOpenPrsForBranch(repo, branch);
+    };
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    // No GitHub call at all — the startedAt-null check must happen before
+    // ghListOpenPrsForBranch is ever invoked.
+    expect(ghListOpenPrsForBranchCalls).toHaveLength(0);
+    expect(taskPatchCalls).toHaveLength(0);
+    // Distinct from the BBR-1.1 "N tasks share this branch" message — must
+    // mention this specific task and that it was never started.
+    expect(
+      errorSpy.some((args) =>
+        args.some(
+          (a) =>
+            typeof a === "string" &&
+            a.includes("task-never-started-orphan") &&
+            a.includes("startedAt"),
+        ),
+      ),
+    ).toBe(true);
+    // Must NOT be the BBR-1.1 bundle-mate message (which mentions "share branch").
+    expect(
+      errorSpy.some((args) =>
+        args.some((a) => typeof a === "string" && a.includes("share branch")),
+      ),
+    ).toBe(false);
   });
 });
 
