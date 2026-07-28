@@ -114,7 +114,7 @@ describe("review.md — WLS-3.2 explicit-target-only", () => {
   it("claim 409 responds [silent] and stops, with no retry against a different PR", () => {
     const claimIdx = content.indexOf("### Claim using pre-captured commit SHA");
     expect(claimIdx).toBeGreaterThan(-1);
-    const claimSection = content.slice(claimIdx, claimIdx + 1500);
+    const claimSection = content.slice(claimIdx, claimIdx + 1600);
     expect(claimSection.includes("409")).toBe(true);
     expect(claimSection.includes("[silent]")).toBe(true);
     expect(claimSection.includes("return to Step 3")).toBe(false);
