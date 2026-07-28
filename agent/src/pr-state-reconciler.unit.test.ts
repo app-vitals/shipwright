@@ -34,6 +34,7 @@ import {
   type PrReviewStateRecord,
   type PrStateReconcilerDeps,
   type PrStateRecord,
+  SCOPE_DEGRADED,
   buildProductionDeps,
   buildReviewStateProductionDeps,
   isWorktreeStale,
@@ -94,9 +95,19 @@ interface MakeDepsOptions {
    * derived per-call from the branch alone (a single-element array) so every
    * pre-existing test — none of which configures this — keeps auto-healing
    * exactly as before. Tests exercising the bundle case override this map
-   * with a >1-length array for the branch under test.
+   * with a >1-length array for the branch under test. Tests exercising
+   * RSG-1.2's degraded-scope guard set the entry to `SCOPE_DEGRADED` — this
+   * fake's `listAllTasksForBranch` returns it verbatim (mirroring how
+   * `buildProductionDeps`'s real implementation surfaces "still degraded
+   * after retry" to its callers), letting both BBR-1.1 call sites be tested
+   * against the sentinel without going through the retry/delay machinery
+   * itself (that machinery is covered separately by the
+   * `buildProductionDeps` describe block below).
    */
-  tasksForBranch?: Record<string, PrOpenTaskRecord[] | Error>;
+  tasksForBranch?: Record<
+    string,
+    PrOpenTaskRecord[] | typeof SCOPE_DEGRADED | Error
+  >;
   /**
    * WTR-1.3's injected worktree-cleanup policy boolean. Defaults to `false`
    * so every pre-existing test — none of which configures this — never
@@ -1903,6 +1914,159 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
     ]);
   });
 
+  // ─── RSG-1.2: degraded scope resolution retry ────────────────────────────
+
+  /**
+   * Fake fetchFn for `listAllTasksForBranch` (RSG-1.2) — same request shape
+   * as `makeFakeBranchTaskStoreFetch` above, but every response also carries
+   * a `scopeDegraded` flag (mirroring RSG-1.1's real GET /tasks response
+   * shape — `{ tasks, total, scopeDegraded }`, task-store/src/routes/tasks.ts).
+   * `degradedForCalls` responses are degraded (scopeDegraded:true, tasks:[]
+   * — mirrors the real under-count symptom: the resolver failure forces
+   * `repos` to `[]` server-side, which starves the agent-scope OR-union and
+   * silently drops pool/bundle-mate tasks from the result) before the
+   * response settles into whatever `tasksByRepoBranch` actually holds.
+   */
+  function makeFakeDegradableBranchTaskStoreFetch(opts: {
+    tasksByRepoBranch: Record<string, PrOpenTaskRecord[]>;
+    /** How many leading calls return scopeDegraded:true (with an empty tasks page). */
+    degradedForCalls: number;
+  }): {
+    fetchFn: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+    calls: Array<{
+      repo: string;
+      branch: string;
+      limit: number;
+      offset: number;
+    }>;
+  } {
+    const calls: Array<{
+      repo: string;
+      branch: string;
+      limit: number;
+      offset: number;
+    }> = [];
+    let callCount = 0;
+    const fetchFn = async (url: RequestInfo | URL) => {
+      const parsed = new URL(String(url));
+      const repo = parsed.searchParams.get("repo") ?? "";
+      const branch = parsed.searchParams.get("branch") ?? "";
+      const limit = Number(parsed.searchParams.get("limit"));
+      const offset = Number(parsed.searchParams.get("offset"));
+      calls.push({ repo, branch, limit, offset });
+      callCount += 1;
+      if (callCount <= opts.degradedForCalls) {
+        return new Response(
+          JSON.stringify({ tasks: [], total: 0, scopeDegraded: true }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      const all = opts.tasksByRepoBranch[`${repo}#${branch}`] ?? [];
+      const page = all.slice(offset, offset + limit);
+      return new Response(
+        JSON.stringify({
+          tasks: page,
+          total: all.length,
+          scopeDegraded: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    };
+    return { fetchFn, calls };
+  }
+
+  test("RSG-1.2: listAllTasksForBranch retries once (bounded delay) then still-degraded — returns SCOPE_DEGRADED without paging further", async () => {
+    const tasks = [
+      { id: "t1", repo: "acme/example-repo", branch: "feat/bundle" },
+      { id: "t2", repo: "acme/example-repo", branch: "feat/bundle" },
+    ];
+    const { fetchFn, calls } = makeFakeDegradableBranchTaskStoreFetch({
+      tasksByRepoBranch: { "acme/example-repo#feat/bundle": tasks },
+      // Both the initial call and the single retry come back degraded.
+      degradedForCalls: 2,
+    });
+    const delayCalls: number[] = [];
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+    const originalDelay = deps.delay;
+    deps.delay = async (ms: number) => {
+      delayCalls.push(ms);
+      await originalDelay(0); // don't actually wait in the test
+    };
+
+    const result = await deps.listAllTasksForBranch(
+      "acme/example-repo",
+      "feat/bundle",
+    );
+
+    expect(result).toBe(SCOPE_DEGRADED);
+    // Exactly one retry — the initial call plus one bounded-delay retry, no more.
+    expect(calls).toHaveLength(2);
+    expect(delayCalls).toHaveLength(1);
+    expect(delayCalls[0]).toBeGreaterThan(0);
+  });
+
+  test("RSG-1.2: listAllTasksForBranch retries once then recovers — returns the true sibling count, behaving identically to a non-degraded response", async () => {
+    const tasks = [
+      { id: "t1", repo: "acme/example-repo", branch: "feat/bundle" },
+      { id: "t2", repo: "acme/example-repo", branch: "feat/bundle" },
+    ];
+    const { fetchFn, calls } = makeFakeDegradableBranchTaskStoreFetch({
+      tasksByRepoBranch: { "acme/example-repo#feat/bundle": tasks },
+      // Only the initial call is degraded; the retry succeeds.
+      degradedForCalls: 1,
+    });
+    const delayCalls: number[] = [];
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+    const originalDelay = deps.delay;
+    deps.delay = async (ms: number) => {
+      delayCalls.push(ms);
+      await originalDelay(0);
+    };
+
+    const result = await deps.listAllTasksForBranch(
+      "acme/example-repo",
+      "feat/bundle",
+    );
+
+    expect(result).toEqual(tasks);
+    expect(delayCalls).toHaveLength(1);
+  });
+
+  test("RSG-1.2: a non-degraded response with 0 or 1 tasks is unaffected — no retry, no delay call", async () => {
+    const { fetchFn, calls } = makeFakeDegradableBranchTaskStoreFetch({
+      tasksByRepoBranch: { "acme/example-repo#feat/solo": [] },
+      degradedForCalls: 0,
+    });
+    const delayCalls: number[] = [];
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+    });
+    const originalDelay = deps.delay;
+    deps.delay = async (ms: number) => {
+      delayCalls.push(ms);
+      await originalDelay(0);
+    };
+
+    const result = await deps.listAllTasksForBranch(
+      "acme/example-repo",
+      "feat/solo",
+    );
+
+    expect(result).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(delayCalls).toHaveLength(0);
+  });
+
   test("listOrphanCandidateTasks pages past the default 50-row task-store page for both statuses (regression: previously silently truncated at 50)", async () => {
     // 62 pending + 55 in_progress tasks, all orphan candidates (branch set,
     // no pr linked) — mirrors the live truncation this finding reported
@@ -2225,6 +2389,125 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
         args.some((a) => typeof a === "string" && a.includes("share branch")),
       ),
     ).toBe(false);
+  });
+
+  // ─── RSG-1.2: degraded scope resolution guard ────────────────────────────
+
+  test("RSG-1.2: listAllTasksForBranch signals SCOPE_DEGRADED (still degraded after retry) — branch-fallback merge heal is skipped with a distinct log message, not the 'N tasks share this branch' message", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-degraded-branch-fallback",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui",
+      // startedAt set so this test exercises the RSG-1.2 degraded-scope
+      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
+      // and is covered by its own dedicated test above).
+      startedAt: "2026-07-01T00:00:00.000Z",
+    };
+    const { deps, taskPatchCalls, patchCalls, listAllTasksForBranchCalls } =
+      makeDeps({
+        prOpenTasks: [task],
+        branchResults: {
+          "acme/example-repo#feat/asa-slack-oauth-ui": [{ number: 501 }],
+        },
+        prRecords: {
+          "acme/example-repo#501": {
+            id: "pr-record-501",
+            repo: "acme/example-repo",
+            prNumber: 501,
+            state: "open",
+            taskId: null,
+          },
+        },
+        tasksForBranch: {
+          "acme/example-repo#feat/asa-slack-oauth-ui": SCOPE_DEGRADED,
+        },
+      });
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(listAllTasksForBranchCalls).toContain(
+      "acme/example-repo#feat/asa-slack-oauth-ui",
+    );
+    // No status:"merged" PATCH and no taskId backfill — same effective
+    // outcome as the >1-sibling case above.
+    expect(taskPatchCalls).toHaveLength(0);
+    expect(patchCalls).toHaveLength(0);
+    // The skip must be logged, but with a message distinguishable from the
+    // existing "N tasks share this branch" wording — this asserts the
+    // degraded-scope message mentions the task and does NOT claim a
+    // confirmed sibling count via the "share branch" phrasing.
+    const degradedLog = errorSpy.find((args) =>
+      args.some(
+        (a) =>
+          typeof a === "string" && a.includes("task-degraded-branch-fallback"),
+      ),
+    );
+    expect(degradedLog).toBeDefined();
+    expect(
+      degradedLog?.some((a) => typeof a === "string" && /degraded/i.test(a)),
+    ).toBe(true);
+    expect(
+      degradedLog?.some(
+        (a) => typeof a === "string" && a.includes("share branch"),
+      ),
+    ).toBe(false);
+  });
+
+  test("RSG-1.2: listAllTasksForBranch recovers on retry (non-degraded, true single-task count) — branch-fallback merge heal proceeds normally", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-recovered-branch-fallback",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui-recovered",
+      // startedAt set so this test exercises the RSG-1.2 recovery path
+      // specifically, not RCP-1.1's own startedAt-null skip.
+      startedAt: "2026-07-01T00:00:00.000Z",
+    };
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
+      prOpenTasks: [task],
+      branchResults: {
+        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [
+          { number: 502 },
+        ],
+      },
+      prRecords: {
+        "acme/example-repo#502": {
+          id: "pr-record-502",
+          repo: "acme/example-repo",
+          prNumber: 502,
+          state: "open",
+          taskId: null,
+        },
+      },
+      // Only the sibling itself is returned — a real, non-degraded single-task
+      // branch (as if the first call had been degraded and a retry recovered
+      // to reveal the true count) — the heal must proceed exactly as the
+      // pre-existing single-task-stand-in default behaves.
+      tasksForBranch: {
+        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [task],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-recovered-branch-fallback");
+    expect(taskPatchCalls[0].fields.status).toBe("merged");
+    expect(taskPatchCalls[0].fields.pr).toBe(502);
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-record-502");
+    expect(patchCalls[0].fields).toEqual({
+      taskId: "task-recovered-branch-fallback",
+    });
   });
 
   test("task with no pr AND no branch is skipped — no PATCH, no throw", async () => {
@@ -2763,6 +3046,94 @@ describe("reconcilePrState — orphaned pending/in_progress task reconciliation 
       ),
     ).toBe(false);
   });
+
+  // ─── RSG-1.2: degraded scope resolution guard ────────────────────────────
+
+  test("RSG-1.2: listAllTasksForBranch signals SCOPE_DEGRADED (still degraded after retry) — orphan pr_open heal is skipped with a distinct log message, not the 'N tasks share this branch' message", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-degraded-orphan",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui",
+      // startedAt set so this test exercises the RSG-1.2 degraded-scope
+      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
+      // and is covered by its own dedicated test above).
+      startedAt: "2026-07-01T00:00:00.000Z",
+    };
+    const { deps, taskPatchCalls, listAllTasksForBranchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {
+        "acme/example-repo#feat/asa-slack-oauth-ui": [
+          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
+        ],
+      },
+      tasksForBranch: {
+        "acme/example-repo#feat/asa-slack-oauth-ui": SCOPE_DEGRADED,
+      },
+    });
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(listAllTasksForBranchCalls).toContain(
+      "acme/example-repo#feat/asa-slack-oauth-ui",
+    );
+    expect(taskPatchCalls).toHaveLength(0);
+    const degradedLog = errorSpy.find((args) =>
+      args.some(
+        (a) => typeof a === "string" && a.includes("task-degraded-orphan"),
+      ),
+    );
+    expect(degradedLog).toBeDefined();
+    expect(
+      degradedLog?.some((a) => typeof a === "string" && /degraded/i.test(a)),
+    ).toBe(true);
+    expect(
+      degradedLog?.some(
+        (a) => typeof a === "string" && a.includes("share branch"),
+      ),
+    ).toBe(false);
+  });
+
+  test("RSG-1.2: listAllTasksForBranch recovers on retry (non-degraded, true single-task count) — orphan pr_open heal proceeds normally", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-recovered-orphan",
+      repo: "acme/example-repo",
+      branch: "feat/asa-slack-oauth-ui-recovered",
+      // startedAt set so this test exercises the RSG-1.2 recovery path
+      // specifically, not RCP-1.1's own startedAt-null skip.
+      startedAt: "2026-07-01T00:00:00.000Z",
+    };
+    const { deps, taskPatchCalls } = makeDeps({
+      orphanCandidateTasks: [task],
+      openBranchResults: {
+        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [
+          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
+        ],
+      },
+      // Only the task itself is returned — a real, non-degraded single-task
+      // branch (as if the first call had been degraded and a retry recovered
+      // to reveal the true count).
+      tasksForBranch: {
+        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [task],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-recovered-orphan");
+    expect(taskPatchCalls[0].fields.status).toBe("pr_open");
+    expect(taskPatchCalls[0].fields.pr).toBe(500);
+  });
 });
 
 // ─── gh-call throttling (PSR-1.2) ──────────────────────────────────────────────
@@ -3072,17 +3443,13 @@ describe("isWorktreeStale", () => {
   });
 
   test("returns false for a directory modified just under the threshold", () => {
-    const justUnderThreshold = new Date(
-      Date.now() - 13 * 24 * 60 * 60 * 1000,
-    );
+    const justUnderThreshold = new Date(Date.now() - 13 * 24 * 60 * 60 * 1000);
     utimesSync(worktreePath, justUnderThreshold, justUnderThreshold);
     expect(isWorktreeStale(worktreePath, 14)).toBe(false);
   });
 
   test("returns true for a directory modified just over the threshold", () => {
-    const justOverThreshold = new Date(
-      Date.now() - 15 * 24 * 60 * 60 * 1000,
-    );
+    const justOverThreshold = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000);
     utimesSync(worktreePath, justOverThreshold, justOverThreshold);
     expect(isWorktreeStale(worktreePath, 14)).toBe(true);
   });

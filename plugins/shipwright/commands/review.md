@@ -102,15 +102,15 @@ dedup check before checkout — see Step 14 for the full targeted flow.
 
 ```bash
 git -C repos/{repo} fetch origin
-git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
+git -C repos/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
 ```
 
 Branch slug = branch name with `/` replaced by `-`.
 
 If the worktree already exists (prior interrupted run):
 ```bash
-git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force
-git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
+git -C repos/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+git -C repos/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
 ```
 
 ### Claim using pre-captured commit SHA
@@ -138,10 +138,10 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
 - `409` (conflict): another agent holds the claim at this commit. Remove the worktree
-  (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
+  (`git -C repos/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force 2>/dev/null`),
   respond `[silent]`, and stop — there is no other PR to fall back to in explicit-target mode.
 
-All subsequent steps run from `worktrees/{repo}-{branch-slug}/` — except `state/reviews/`
+All subsequent steps run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/` — except `state/reviews/`
 file operations (Steps 9-11, Step 14's cross-reference), which use `$WORKSPACE_ROOT`
 captured in Step 1, since `state/reviews/` only ever exists at the workspace root.
 
@@ -203,7 +203,7 @@ back to `'sonnet'`.
 
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
-7. **Test-readiness context** (optional): try to read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
+7. **Test-readiness context** (optional): try to read `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
 
 `lastReviewedCommit` is the `LAST_REVIEWED_COMMIT` value saved from the pre-claim record in
 Step 14 (the record's `commitSha` before the claim overwrote it).

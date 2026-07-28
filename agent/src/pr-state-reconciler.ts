@@ -232,11 +232,26 @@ export interface PrStateReconcilerDeps {
    * contains, so guessing is worse than leaving the task untouched (a real
    * bundle only advances a sibling when something explicit says so, e.g.
    * dev-task's own status PATCH — never by branch-level inference alone).
+   *
+   * RSG-1.2: may resolve to the `SCOPE_DEGRADED` sentinel instead of an
+   * array. The task-store's GET /tasks response carries a `scopeDegraded`
+   * flag (RSG-1.1) that is true only when the calling agent token's
+   * repo-scope resolver call itself failed, forcing `repos` to `[]`
+   * server-side — which silently starves the agent-scope OR-union this
+   * query relies on and under-counts (or zeroes out) real bundle-mates. A
+   * production implementation retries once (bounded delay) on a degraded
+   * response; if still degraded after the retry, the true sibling count is
+   * unknowable, so it resolves to `SCOPE_DEGRADED` rather than the
+   * (possibly under-counted) task list — callers must treat this exactly
+   * like the already-handled ">1 sibling" case (skip the heal), but log a
+   * distinct message so the two causes stay distinguishable in practice. A
+   * non-degraded response (including a legitimate 0- or 1-task result)
+   * still resolves to a plain array, identical to pre-RSG-1.2 behavior.
    */
   listAllTasksForBranch: (
     repo: string,
     branch: string,
-  ) => Promise<PrOpenTaskRecord[]>;
+  ) => Promise<PrOpenTaskRecord[] | typeof SCOPE_DEGRADED>;
   /** Look up a task-store PullRequest record by repo+prNumber, for the taskId backfill (DSR-1.1). */
   findPrRecordByRepoAndPrNumber: (
     repo: string,
@@ -360,6 +375,34 @@ export interface PrReviewStateReconcilerDeps {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DEFAULT_PAGE_LIMIT = 50;
+
+/**
+ * Sentinel returned by `listAllTasksForBranch` (RSG-1.2) when the
+ * task-store's GET /tasks response reported `scopeDegraded: true` both on
+ * the initial call and its single bounded-delay retry — signals "the true
+ * sibling count for this branch is unknown" to both BBR-1.1 guard call
+ * sites, as distinct from a confirmed count (including a confirmed >1).
+ * A plain string literal (not a class/Symbol) keeps the sentinel trivially
+ * serializable/comparable across the dependency-injection boundary tests
+ * exercise, and `typeof SCOPE_DEGRADED` gives callers/tests a precise
+ * literal type instead of widening to `string`.
+ */
+export const SCOPE_DEGRADED = "scope-degraded" as const;
+
+/**
+ * Bounded pause (RSG-1.2) before `listAllTasksForBranch`'s single retry of a
+ * scopeDegraded:true GET /tasks response — reuses the same
+ * `deps.delay`/`SHIPWRIGHT_RECONCILER_DELAY_MS`-style injected-pause pattern
+ * this file already uses for its gh-call throttling (PSR-1.2), so tests
+ * inject a no-op and production waits for real. Deliberately its own
+ * constant (not reusing `DEFAULT_RECONCILER_DELAY_MS`) since this retry is a
+ * one-shot "give the resolver a beat to recover" pause, not a
+ * per-batch-item throttle — a distinct, independently-tunable env var keeps
+ * the two concerns from being accidentally coupled.
+ */
+const SCOPE_DEGRADED_RETRY_DELAY_MS = Number(
+  process.env.SHIPWRIGHT_RECONCILER_SCOPE_DEGRADED_RETRY_DELAY_MS ?? 1000,
+);
 
 /**
  * Default pause between gh-call-issuing loop iterations (PSR-1.2), in ms.
@@ -618,7 +661,20 @@ async function reconcilePrOpenTask(
     // this branch), skip the auto-heal entirely (both the status PATCH below
     // and the taskId backfill) rather than guessing. Single-task branches
     // (the original DSR-1.1 crash-recovery case) are unaffected.
+    //
+    // RSG-1.2: `listAllTasksForBranch` may resolve to `SCOPE_DEGRADED`
+    // instead of a task list when the task-store couldn't confirm the true
+    // sibling count (its own scope resolver failed, even after a retry) —
+    // treat that identically to the >1-sibling skip above (same outcome:
+    // don't guess), but log a message that names the real cause instead of
+    // implying a confirmed count.
     const branchTasks = await deps.listAllTasksForBranch(taskRepo, task.branch);
+    if (branchTasks === SCOPE_DEGRADED) {
+      console.error(
+        `[pr-state-reconciler] skipping branch-fallback merge heal for task ${task.id} — degraded scope resolution for ${taskRepo}#${task.branch} (sibling task count unknown, not a confirmed single-task branch), cannot determine which one PR #${first.number} belongs to`,
+      );
+      return;
+    }
     if (branchTasks.length > 1) {
       console.error(
         `[pr-state-reconciler] skipping branch-fallback merge heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
@@ -736,7 +792,18 @@ async function reconcileOrphanedTask(
   // branch), skip the auto-heal rather than guessing which sibling the PR
   // belongs to. Single-task branches (the original TCR-1.2 crash-recovery
   // case) are unaffected.
+  //
+  // RSG-1.2: see reconcilePrOpenTask's branch-fallback path above for the
+  // full rationale — `listAllTasksForBranch` may resolve to `SCOPE_DEGRADED`
+  // when the true sibling count is unconfirmable; skip identically to the
+  // >1-sibling case but log a message naming the real cause.
   const branchTasks = await deps.listAllTasksForBranch(taskRepo, task.branch);
+  if (branchTasks === SCOPE_DEGRADED) {
+    console.error(
+      `[pr-state-reconciler] skipping orphan pr_open heal for task ${task.id} — degraded scope resolution for ${taskRepo}#${task.branch} (sibling task count unknown, not a confirmed single-task branch), cannot determine which one PR #${first.number} belongs to`,
+    );
+    return;
+  }
   if (branchTasks.length > 1) {
     console.error(
       `[pr-state-reconciler] skipping orphan pr_open heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
@@ -1148,6 +1215,20 @@ function makeListTasksByStatus(opts: {
   };
 }
 
+/** A single GET /tasks?repo=&branch= page, plus RSG-1.1's scopeDegraded signal. */
+interface TasksByBranchPage {
+  tasks: PrOpenTaskRecord[];
+  /**
+   * Mirrors the task-store's own `scopeDegraded` response field (RSG-1.1) —
+   * true only when the calling agent token's repo-scope resolver call
+   * itself failed upstream, forcing this response's `tasks` (and the
+   * agent-scope OR-union it depends on) to under-report. Defaults to
+   * `false` for legacy bare-array responses (pre-RSG-1.1 fixtures/servers),
+   * matching that field's own documented default semantics.
+   */
+  scopeDegraded: boolean;
+}
+
 /**
  * GET /tasks?repo=<repo>&branch=<branch>&limit=<limit>&offset=<offset> helper
  * for `listAllTasksForBranch` (BBR-1.1's bundle-mate guard) — same request
@@ -1157,6 +1238,10 @@ function makeListTasksByStatus(opts: {
  * check-deploy.ts's `createBundleCompleteQuery` (GET /tasks?branch=), the
  * existing "check every task on a branch individually" pattern this guard
  * follows.
+ *
+ * RSG-1.2: unlike `makeListTasksByStatus`, this returns the page alongside
+ * the response's `scopeDegraded` flag (rather than just the task array) —
+ * `listAllTasksForBranchImpl` below needs it to decide whether to retry.
  */
 function makeListTasksByBranch(opts: {
   baseUrl: string;
@@ -1167,7 +1252,7 @@ function makeListTasksByBranch(opts: {
   branch: string,
   limit: number,
   offset: number,
-) => Promise<PrOpenTaskRecord[]> {
+) => Promise<TasksByBranchPage> {
   const { baseUrl, headers, doFetch } = opts;
   return async (
     repo: string,
@@ -1187,8 +1272,14 @@ function makeListTasksByBranch(opts: {
     }
     const data = (await res.json()) as unknown;
     // Same legacy-bare-array tolerance as createTaskStoreClient's query().
-    if (Array.isArray(data)) return data as PrOpenTaskRecord[];
-    return (data as TaskListResponseJson).tasks;
+    if (Array.isArray(data)) {
+      return { tasks: data as PrOpenTaskRecord[], scopeDegraded: false };
+    }
+    const parsed = data as TaskListResponseJson & { scopeDegraded?: boolean };
+    return {
+      tasks: parsed.tasks,
+      scopeDegraded: parsed.scopeDegraded ?? false,
+    };
   };
 }
 
@@ -1282,26 +1373,58 @@ export function buildProductionDeps(opts: {
    * this file, but over `listTasksByBranch`. Used by `listAllTasksForBranch`
    * below so a bundle branch with more task-store records than one page
    * still yields its true sibling count instead of silently truncating.
+   *
+   * RSG-1.2: the *first* page's `scopeDegraded` flag gates a single bounded
+   * retry of that same first page before any further pagination happens —
+   * a degraded response means the task-store's own agent-scope OR-union was
+   * starved by a resolver failure, so continuing to page a response that
+   * may already be under-counted would just compound the problem. If the
+   * retried first page is STILL degraded, the true count is unknowable and
+   * this resolves to `SCOPE_DEGRADED` without ever paging further. A
+   * non-degraded first page (0, 1, or N tasks) proceeds exactly as before —
+   * no retry, no delay call, identical to pre-RSG-1.2 behavior.
+   *
+   * Reads `deps.delay` (via the `deps` closure below, populated once
+   * `buildProductionDeps` assembles its return object) rather than a
+   * separately-captured delay function, so a caller that reassigns
+   * `deps.delay` post-construction (this file's own tests do exactly that,
+   * to inject a no-op/spy) transparently governs this retry's pause too —
+   * there is only ever one "the delay dep" for a given deps object.
    */
   const listAllTasksForBranchImpl = async (
     repo: string,
     branch: string,
-  ): Promise<PrOpenTaskRecord[]> => {
+  ): Promise<PrOpenTaskRecord[] | typeof SCOPE_DEGRADED> => {
     const limit = DEFAULT_PAGE_LIMIT;
-    const tasks: PrOpenTaskRecord[] = [];
-    let offset = 0;
 
+    let firstPage = await listTasksByBranch(repo, branch, limit, 0);
+    if (firstPage.scopeDegraded) {
+      await deps.delay(SCOPE_DEGRADED_RETRY_DELAY_MS);
+      firstPage = await listTasksByBranch(repo, branch, limit, 0);
+      if (firstPage.scopeDegraded) {
+        return SCOPE_DEGRADED;
+      }
+    }
+
+    const tasks: PrOpenTaskRecord[] = [...firstPage.tasks];
+    if (firstPage.tasks.length < limit) return tasks;
+
+    let offset = limit;
     for (;;) {
       const page = await listTasksByBranch(repo, branch, limit, offset);
-      tasks.push(...page);
-      if (page.length < limit) break;
+      tasks.push(...page.tasks);
+      if (page.tasks.length < limit) break;
       offset += limit;
     }
 
     return tasks;
   };
 
-  return {
+  // RSG-1.2: assembled as a named `const` (rather than a bare `return {...}`)
+  // so `listAllTasksForBranchImpl` above can close over `deps.delay` by
+  // reference — see its doc comment for why that matters for post-construction
+  // test overrides of the delay dep.
+  const deps: PrStateReconcilerDeps = {
     repos,
     getScopedRepos: opts.getScopedRepos,
     listOpenPrRecords: async (
@@ -1450,6 +1573,8 @@ export function buildProductionDeps(opts: {
       }
     },
   };
+
+  return deps;
 }
 
 /**

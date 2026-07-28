@@ -157,7 +157,7 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
 
   it("Step 4's worktree-transition line notes state/reviews/ as an exception", () => {
     const transitionIdx = content.indexOf(
-      "All subsequent steps run from `worktrees/{repo}-{branch-slug}/`",
+      "All subsequent steps run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/`",
     );
     expect(transitionIdx).toBeGreaterThan(-1);
     const section = content.slice(transitionIdx, transitionIdx + 400);
@@ -174,6 +174,19 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     const section = content.slice(step9Idx, step10Idx);
 
     expect(section).toContain("Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`");
+  });
+
+  it("Step 5.7's test-readiness read is anchored to the SHIPWRIGHT_WORKTREE_DIR convention", () => {
+    const stepIdx = content.indexOf("**Test-readiness context**");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const section = content.slice(stepIdx, stepIdx + 400);
+
+    expect(section).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md",
+    );
+    expect(section).not.toContain(
+      "read `worktrees/{repo}-{branch-slug}/docs/test-readiness/test-system.md`",
+    );
   });
 
   it("Step 9's re-review detection tests for the file at $WORKSPACE_ROOT/state/reviews/", () => {
