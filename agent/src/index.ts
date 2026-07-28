@@ -69,6 +69,10 @@ import {
   HttpWorkQueueReporter,
   NoopWorkQueueReporter,
 } from "./work-queue-reporter.ts";
+import {
+  buildProductionDeps as buildWorktreeReaperDeps,
+  reconcileStaleWorktrees,
+} from "./worktree-reaper.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -307,11 +311,23 @@ if (runtimeClient && agentId) {
 // (not a second timer): reviewState drift from an out-of-band GitHub
 // reviewer. Its own try/catch means one pass failing never prevents the
 // other from running — see reconcileReviewState() in pr-state-reconciler.ts.
+//
+// WTR-1.4 adds a third, independent pass on this SAME tick: WTR-1.2's
+// reconcileStaleWorktrees, a pure-filesystem sweep (no GitHub/task-store
+// calls) that force-removes worktrees/<repo>-<branch> dirs older than
+// agent-policy.md's cleanup_after_days. Same lazy-deps + own-try/catch
+// shape as the two passes above, so a failure here never blocks the other
+// two — see worktree-reaper.ts. WTR-1.3's removeWorktree wiring for the
+// *merged/closed-PR* cleanup path needed no separate pass here: it already
+// flows through the existing PR-state-reconciler pass above, since
+// buildPrStateReconcilerDeps (buildProductionDeps in pr-state-reconciler.ts)
+// constructs removeWorktree internally.
 if (runtimeClient && agentId) {
   let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
   let reviewStateReconcilerDeps:
     | ReturnType<typeof buildReviewStateReconcilerDeps>
     | undefined;
+  let worktreeReaperDeps: ReturnType<typeof buildWorktreeReaperDeps> | undefined;
 
   async function runPrStateReconciler() {
     try {
@@ -336,6 +352,18 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[pr-state-reconciler:review] tick failed (non-fatal):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    try {
+      worktreeReaperDeps ??= buildWorktreeReaperDeps({
+        scopedRepos: agentReposRef.get(),
+      });
+      await reconcileStaleWorktrees(worktreeReaperDeps);
+    } catch (err) {
+      console.error(
+        "[pr-state-reconciler:worktree-reaper] tick failed (non-fatal):",
         err instanceof Error ? err.message : String(err),
       );
     }

@@ -21,9 +21,9 @@
  * rest of the batch, and a `buildProductionDeps()` factory wiring real
  * fs/git calls at the bottom.
  *
- * Not wired into agent/src/index.ts's setInterval registration — that's
- * out of scope for this task (WTR-1.2 covers only the module + its unit
- * tests).
+ * Wired into agent/src/index.ts's PR-state-reconciler setInterval (WTR-1.4)
+ * as a third, independent try/catch pass on the same tick — see the Step 5b
+ * doc comment in index.ts for the full rationale.
  */
 
 import { execFile } from "node:child_process";
