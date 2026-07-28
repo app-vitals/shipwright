@@ -679,19 +679,69 @@ resolve. Before dispatching the fix subagent (which is where RPF-1.1's rebuttal-
 lives, in Step 5b Instructions [D]), check whether this PR's List A finding is a *second*
 round of the same disagreement.
 
-For each qualifying review from Step 3a (`state == "COMMENTED"` or `"CHANGES_REQUESTED"`,
-contributing to this PR's List A membership), check the PR-level
-comments already fetched in Step 3a (`comments.nodes`) for an author reply: a comment whose
-`author.login == CURRENT_USER` with `createdAt` **before** that review's `submittedAt`. This
-mirrors `check-patch.ts`'s `isAddressedByAuthorReply` (an author reply *after* a review marks
-that review addressed) but checks the opposite direction — a reply dated *before* the
-current review means we already rebutted once, the reviewer looked at that rebuttal, and
-still raised a finding this round.
+**Step 1 — cheap timestamp pre-filter to find candidate prior replies.** This stays a cheap
+pre-filter, not the final gate — see Step 2 below for the decisive judgment. For each
+qualifying review from Step 3a (`state == "COMMENTED"` or `"CHANGES_REQUESTED"`, contributing
+to this PR's List A membership), check the PR-level comments already fetched in Step 3a
+(`comments.nodes`) for an author reply: a comment whose `author.login == CURRENT_USER` with
+`createdAt` **before** that review's `submittedAt`. This mirrors `check-patch.ts`'s
+`isAddressedByAuthorReply` (an author reply *after* a review marks that review addressed) as
+a shared timestamp-comparison mechanism, but checks the opposite direction — a reply dated
+*before* the current review is only a **candidate** signal that we already rebutted once and
+the reviewer looked at that rebuttal before still raising a finding this round; unlike
+`isAddressedByAuthorReply`, this direction is not treated as sufficient signal on its own.
+A reply dated *after a review* is inherently a stronger, self-sufficient signal already — a
+reply posted after a review is reasonably a response to that review, so timestamp order alone
+is enough for `isAddressedByAuthorReply`. A reply dated *before* the review has no such
+inherent connection: an earlier reply could be about a completely different, unrelated
+finding that simply happens to predate this review's timestamp. That's exactly why this step
+needs an extra layer `isAddressedByAuthorReply` doesn't: the content-correlation judgment in
+Step 2 below, before a candidate can justify escalating.
 
-**If any qualifying review has an author-reply comment dated before its `submittedAt`**
-(second round on the same disagreement): escalate instead of looping. Skip the rest of Step
-5 for this PR entirely — do not dispatch the fix subagent, do not post another rebuttal, and
-do not reset `reviewState`.
+**Anti-pattern:** a reply predating the review is not sufficient by itself to classify this
+as a second round, and it is not sufficient by itself to escalate. Timestamp precedence only
+narrows down which prior replies are worth reading — content must be verified before any
+escalation decision is made. This is exactly the bug that motivated this step's rewrite
+(RPF-1.5): PR #2153 had an unrelated earlier rebuttal comment (about a different, already-
+fixed finding) that happened to predate a brand-new finding's review, and a timestamp-only
+check escalated to HITL instead of ever attempting a fix — repeating the same false
+escalation days later when the HITL flag was cleared, because nothing about the *content* had
+actually recurred.
+
+**Step 2 — content-correlation judgment for each candidate.** For each candidate reply found
+in Step 1, read the reply's `body` and the current finding's text, then print an explicit
+judgment before deciding anything:
+
+```
+Candidate reply ({createdAt}): "{reply body, or a representative excerpt}"
+Current finding ({review submittedAt}): "{finding text, or a representative excerpt}"
+Judgment: SAME_FINDING | DIFFERENT_FINDING
+Justification: {one or two sentences — what specifically makes this the same issue
+  recurring, or a different issue that happens to share a timestamp ordering}
+```
+
+The "current finding's text" depends on where the finding came from:
+- **Review body** — use the qualifying review's `body` from Step 3a directly.
+- **Inline thread** — when the finding originated from one of Step 3a's
+  `reviewThreads.nodes[]` rather than (or in addition to) the review body, prefer that
+  thread's inline-thread anchor — its first comment's stable `path` and `line`, plus its
+  `body` — over freeform PR-comment text matching. A thread's `path`/`line` pinpoints the
+  exact code location a finding is about; matching on freeform comment prose alone is
+  comparatively unreliable prose-similarity guessing at what a comment refers to, especially
+  across differently-worded restatements of the same underlying issue. If the candidate
+  reply is itself a reply to that specific thread (an inline thread reply, not a PR-level
+  comment), correlate against the thread's `path`/`line` first and its text second.
+
+`SAME_FINDING` means the candidate reply is a rebuttal of the same underlying issue the
+current review/finding is raising again — the reviewer read that rebuttal and is still
+unconvinced. `DIFFERENT_FINDING` means the reply addresses a different issue that merely
+happens to predate this review's timestamp (the PR #2153 case) — unrelated content, no real
+second round.
+
+**If at least one candidate reply is judged `SAME_FINDING`** (a genuine second round on the
+same disagreement): escalate instead of looping. Skip the rest of Step 5 for this PR
+entirely — do not dispatch the fix subagent, do not post another rebuttal, and do not reset
+`reviewState`.
 
 1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. (Step 2.1
    fetched `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right
@@ -766,9 +816,13 @@ do not reset `reviewState`.
    ```
 7. Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
 
-**Otherwise** (no qualifying review has an author-reply comment dated before its
-`submittedAt` — a first-round rebuttal, or no rebuttal history at all): this is unaffected
-by RPF-1.3 — proceed normally to Step 5b, and RPF-1.1/1.2 behavior applies as before.
+**Otherwise** — either no candidate replies were found at all in Step 1 (a first-round
+rebuttal, or no rebuttal history at all), or candidates were found but every one was judged
+`DIFFERENT_FINDING` in Step 2 (timestamp precedence matched, but content correlation ruled
+out a real second round, as in the PR #2153 incident): this is unaffected by RPF-1.3. Treat
+it as a first-round finding and proceed normally to Step 5b.
+
+RPF-1.1/1.2 behavior applies as before.
 
 ### Step 5b: Dispatch Fix Subagent
 
