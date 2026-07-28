@@ -249,6 +249,45 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
   });
 });
 
+describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TDF-1.1)", () => {
+  it("checks the cache before doing any fresh detection", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    expect(stepIdx).toBeGreaterThan(-1);
+    const section = content.slice(stepIdx, stepIdx + 2000);
+    expect(section).toMatch(/\*\*Check the cache\.\*\*/i);
+    expect(section).toContain("state/toolchain-cache/{repo}.json");
+  });
+
+  it("reads CLAUDE.md and docs/ai-docs before falling back to config-file scanning", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    const section = content.slice(stepIdx, stepIdx + 2000);
+    expect(section).toMatch(/\*\*Docs-first discovery\*\*/i);
+    expect(section).toMatch(/CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is);
+    expect(section).toMatch(/\*\*Config-file fallback\*\*/i);
+  });
+
+  it("does not reference the old single shared cache file", () => {
+    expect(content).not.toContain("state/toolchain-cache.json");
+  });
+});
+
+describe("toolchain-patterns.md — fingerprint path list covers task-runner/version-manager config (CPF-review-2242)", () => {
+  it("includes Taskfile.yml, justfile/Justfile, and mise.toml/.mise.toml alongside the other fingerprinted paths", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const fingerprintIdx = referencesContent.indexOf("git -C {repo-dir} log -1 --format=%H --");
+    expect(fingerprintIdx).toBeGreaterThan(-1);
+    const fingerprintLine = referencesContent.slice(fingerprintIdx, referencesContent.indexOf("\n", fingerprintIdx));
+
+    expect(fingerprintLine).toContain("Taskfile.yml");
+    expect(fingerprintLine).toContain("justfile");
+    expect(fingerprintLine).toContain("Justfile");
+    expect(fingerprintLine).toContain("mise.toml");
+    expect(fingerprintLine).toContain(".mise.toml");
+  });
+});
+
 describe("dev-task.md Step 5c — BLOCKED dead-end PATCHes task status (BHE-1.2)", () => {
   it("PATCHes status:'blocked' with a blockedReason when the model-upgrade ladder is exhausted and the blocker is a genuine dead end", () => {
     const step5cIdx = content.indexOf("### 5c. Handle Subagent Status");
