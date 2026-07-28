@@ -53,9 +53,14 @@ name: Auto-Bump Chart Version
 #      only the second run's `debounce` job completes and proceeds.
 #   3. Observe `bump-chart` opens exactly one PR, and its body/CHANGELOG entry
 #      credits both agent-v9.9.8 and admin-v9.9.9.
-#   4. Verify the PR merges once checks pass, and chart-release.yml fires
+#   4. In the "Wait for checks and merge" step's logs, confirm the initial
+#      poll waits specifically for a required check to register — even if a
+#      non-required check (e.g. "Detect changed paths") registers first, the
+#      step must keep polling rather than handing off to `--watch --required`
+#      early and failing with "no required checks reported".
+#   5. Verify the PR merges once checks pass, and chart-release.yml fires
 #      exactly once.
-#   5. Delete the dummy tags to clean up:
+#   6. Delete the dummy tags to clean up:
 #        git push origin --delete agent-v9.9.8 admin-v9.9.9
 #
 # Logic tests live in .github/workflows/test-auto-bump-chart.sh.
@@ -579,14 +584,18 @@ jobs:
         run: |
           PR_URL="${{ steps.pr.outputs.pr_url }}"
 
-          # `gh pr checks --watch` fails fast with "no checks reported" if it
-          # runs before GitHub has registered any check runs on the new
-          # commit — the check-triggering workflows haven't started yet
-          # immediately after `gh pr create`. Poll until at least one check
-          # appears before handing off to --watch.
-          echo "Waiting for checks to register on ${PR_URL}..."
+          # `gh pr checks --watch --required` fails fast with "no required
+          # checks reported" if it runs before GitHub has registered any
+          # *required* check run on the new commit. A non-required check
+          # (e.g. "Detect changed paths") commonly registers first — polling
+          # for ANY check (no --required filter) let this loop exit early on
+          # that non-required check, before a required check had appeared,
+          # handing off to --watch --required prematurely and failing
+          # instantly. Poll specifically for a required check to register
+          # before handing off to --watch --required below.
+          echo "Waiting for required checks to register on ${PR_URL}..."
           for _ in $(seq 1 30); do
-            CHECK_COUNT=$(gh pr checks "$PR_URL" --json name -q 'length' 2>/dev/null || echo 0)
+            CHECK_COUNT=$(gh pr checks "$PR_URL" --required --json name -q 'length' 2>/dev/null || echo 0)
             [ "$CHECK_COUNT" -gt 0 ] && break
             sleep 2
           done
