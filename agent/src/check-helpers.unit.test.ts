@@ -393,6 +393,94 @@ describe("readAllowSelfReview", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseCleanupMergedWorktrees
+// ---------------------------------------------------------------------------
+
+describe("parseCleanupMergedWorktrees", () => {
+  test("returns true when the table cell says true", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | true |"),
+    ).toBe(true);
+  });
+
+  test("returns false when the table cell says false", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees("| `cleanup_merged_worktrees` | false |"),
+    ).toBe(false);
+  });
+
+  test("returns false for bold-style false", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: false"),
+    ).toBe(false);
+  });
+
+  test("returns true for bold-style true", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: true"),
+    ).toBe(true);
+  });
+
+  test("defaults to true when the field is missing entirely", () => {
+    expect(checkHelpers.parseCleanupMergedWorktrees("no policy here")).toBe(true);
+  });
+
+  test("defaults to true when content is empty", () => {
+    expect(checkHelpers.parseCleanupMergedWorktrees("")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseCleanupAfterDays
+// ---------------------------------------------------------------------------
+
+describe("parseCleanupAfterDays", () => {
+  test("parses numeric value from table format", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("| `cleanup_after_days` | 7 |"),
+    ).toBe(7);
+  });
+
+  test("parses numeric value from bold-style format", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 21"),
+    ).toBe(21);
+  });
+
+  test("defaults to 14 when the field is missing", () => {
+    expect(checkHelpers.parseCleanupAfterDays("no policy here")).toBe(14);
+  });
+
+  test("defaults to 14 when content is empty", () => {
+    expect(checkHelpers.parseCleanupAfterDays("")).toBe(14);
+  });
+
+  test("handles leading/trailing whitespace around numeric value", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**:   30   "),
+    ).toBe(30);
+  });
+
+  test("defaults to 14 when value is not a valid number", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: abc"),
+    ).toBe(14);
+  });
+
+  test("defaults to 14 when parsed value is NaN", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: NaN"),
+    ).toBe(14);
+  });
+
+  test("parses zero as a valid value", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 0"),
+    ).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // isMergeOnlyUpdate
 // ---------------------------------------------------------------------------
 
