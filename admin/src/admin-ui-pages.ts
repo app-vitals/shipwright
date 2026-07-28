@@ -3194,18 +3194,19 @@ export function renderCronLogsPage(opts: {
           }</span>`
         : "—";
 
-    // Detail cell: shows error text if present, falls back to skipReason when skipped
-    // with no error, else renders an em-dash. Multi-line/long error text is truncated
-    // for display via CSS (max-width/overflow/ellipsis) but fully present in a title
+    // Detail cell: mirrors badgeTitle's priority above — skipReason wins whenever
+    // the run is skipped (even if error is also set), then falls back to error,
+    // else renders an em-dash. Multi-line/long error text is truncated for
+    // display via CSS (max-width/overflow/ellipsis) but fully present in a title
     // attribute. When the value is the em-dash "—", no title is needed.
     const detailCell = (() => {
-      if (r.error) {
-        const escapedError = escapeHtml(r.error);
-        return `<span title="${escapedError}">${escapedError}</span>`;
-      }
       if (r.skipped && r.skipReason) {
         const escapedReason = escapeHtml(r.skipReason);
         return `<span title="${escapedReason}">${escapedReason}</span>`;
+      }
+      if (r.error) {
+        const escapedError = escapeHtml(r.error);
+        return `<span title="${escapedError}">${escapedError}</span>`;
       }
       return "—";
     })();

@@ -4417,6 +4417,20 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("queue empty");
   });
 
+  test("shows skipReason (not error) in the Detail column when skipped is true and both are set", () => {
+    const html = render([
+      makeRun({
+        skipped: true,
+        skipReason: "Rate limit exceeded",
+        error: "Database connection timeout",
+      }),
+    ]);
+    expect(html).toContain(
+      '<span title="Rate limit exceeded">Rate limit exceeded</span>',
+    );
+    expect(html).not.toContain("Database connection timeout");
+  });
+
   test("renders an em-dash in the Detail cell when both error and skipReason are null", () => {
     const html = render([makeRun({ error: null, skipReason: null })]);
     // The Detail cell's exact style attributes make this substring unique to it.
