@@ -131,6 +131,13 @@ tar -xz -f gitleaks.tar.gz gitleaks
 (Full-history mode: run `gitleaks detect` **without** `--no-git` so it walks the git log.)
 Record each finding in the common finding-record shape (Step 6).
 
+> **Suppression via `.gitleaksignore`.** This invocation auto-discovers and respects a
+> `.gitleaksignore` file at the scan source root (gitleaks natively defaults
+> `-i`/`--gitleaks-ignore-path` to `.` — no flag change is needed). Entries in
+> `.gitleaksignore` use the fingerprint format `commit:file:rule:startLine`. Suppression
+> entries are only added when a human confirms a false-positive finding while closing a HITL
+> task via `/shipwright:hitl` (see GLB-2.2), never automatically.
+
 ### 3.2 osv-scanner — lockfile / dependency CVEs
 
 osv-scanner ships a bare linux amd64 binary named `osv-scanner_linux_amd64` (no version in
