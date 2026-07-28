@@ -133,9 +133,9 @@ PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)
 
-For each PR discovered in Step 2, use the `mergeStateStatus` field (already fetched in Step 2) to identify DIRTY PRs.
+Using the `mergeStateStatus` field already fetched for the target PR resolved in Step 2, check whether it is DIRTY.
 
-For each DIRTY PR, attempt an automatic rebase via GitHub:
+If the target PR is DIRTY, attempt an automatic rebase via GitHub:
 ```bash
 gh pr update-branch --rebase {number} --repo {org}/{repo}
 ```
@@ -151,13 +151,13 @@ gh pr update-branch --rebase {number} --repo {org}/{repo}
 
 ## Step 3: Classify PRs into Three Lists
 
-Check each PR against all three conditions independently. A PR may appear in multiple lists.
+Check the target PR against all three conditions independently. It may appear in multiple lists.
 
 - **List A** — PRs with unresolved review or PR comments
 - **List C** — PRs with merge conflicts (DIRTY)
 - **List D** — PRs with failing CI
 
-Work through all PRs before continuing. When a PR appears in multiple lists, all applicable fixes run — processed in the order the steps execute (C → A → D).
+When the target PR appears in multiple lists, all applicable fixes run — processed in the order the steps execute (C → A → D).
 
 **This command does not read `state/reviews.json`.** All data comes from GitHub directly.
 
@@ -1498,6 +1498,110 @@ After a successful push (subagent status DONE or DONE_WITH_CONCERNS with push co
 ```bash
 git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
 ```
+
+---
+
+## Step 6.5: Verify CI After Patch
+
+Steps 4, 5, and 6 each fix a different condition (merge conflict, review finding, failing
+CI) and push independently. A push from any one of them can leave CI red in a way none of
+the individual steps re-checks — e.g. a conflict resolution or a review-finding fix can
+introduce a new test failure that Step 6's own CI-fix pass never ran against, since Step 6
+only fires when List D already flagged the PR *before* any of this cycle's pushes. Before
+reporting success in Step 7, verify the PR's actual, current HEAD SHA is green.
+
+**Only runs if at least one push happened this cycle.** If Step 4c/4c.5, Step 5c/5c.5, and
+Step 6d/6d.5 all completed this run with no successful push (no DONE or DONE_WITH_CONCERNS
+report reached its post-fix upsert step with a changed HEAD SHA), there is nothing new to
+verify — the PR's CI state is exactly what Step 3c already evaluated. Skip Step 6.5 entirely
+with a one-line message and proceed directly to Step 7:
+```
+⏭ No commit pushed this cycle — skipping CI verification.
+```
+
+Otherwise, proceed below.
+
+### Step 6.5a: Poll for the Final CI Result
+
+Reuse the same "poll the GitHub Actions API, dedupe by latest run per workflow, skip
+cleanly when nothing is configured" pattern as `dev-task.md`'s Step 9b.2 — same shape, a
+tighter cadence: 30-second interval, capped at **~5 minutes** (10 polls max) rather than
+Step 9b.2's 10-minute cap, since this is a final gate on a patch cycle that already ran
+fixes, not a first-attempt wait.
+
+Resolve the repo and current HEAD SHA (the worktree for whichever of Steps 4/5/6 pushed
+last has already been cleaned up in 4d/5d/6e, so re-fetch live from GitHub rather than a
+local worktree path):
+
+```bash
+REPO="{org}/{repo}"
+HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+```
+
+Poll every 30 seconds, up to 10 times (~5 minutes total). On **each poll iteration**, renew
+the claim heartbeat first — this loop can run long enough on its own to threaten the claim
+TTL, same reasoning as the heartbeat renewals before every subagent dispatch in Steps
+4b/5b/6c:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+
+gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
+  --jq '[.workflow_runs[] | {id, name, workflow_id, run_number, status, conclusion}]'
+```
+
+Filter to runs where `head_sha == HEAD_SHA`. Keep polling while any run has `status` of
+`queued`, `in_progress`, or `waiting`. **Deduplicate by workflow:** evaluate only the latest
+run per workflow (highest `run_number` per `workflow_id`), same as Step 3c and `dev-task.md`
+Step 9b.2, to avoid a stale failed run being counted alongside its passing rerun.
+
+**No CI configured:** if no matching runs appear after 60 seconds (2 polls), skip the rest
+of Step 6.5 and proceed to Step 7 — mirroring `dev-task.md` Step 9b.2's identical
+no-CI-configured skip. Print:
+```
+⏭ No CI checks configured — skipping CI verification gate
+```
+
+**All checks pass:** if all latest-per-workflow runs have `conclusion == "success"`, print
+and proceed to the existing Step 7 report unchanged:
+```
+✓ CI checks passed after patch
+```
+
+**Poll window exhausted (~5 minutes) with any check still failing or pending:** treat it as
+still-red and continue to Step 6.5b.
+
+### Step 6.5b: Dispatch One Bonus CI-Fix Subagent on Still-Red
+
+If CI is still red after the poll window, collect fresh failure logs using the same
+approach as Step 6b (most recent failed run on the branch, last 200 lines):
+
+```bash
+RUN_ID=$(gh run list --branch {branch} --repo {org}/{repo} \
+  --json databaseId,conclusion \
+  --jq '[.[] | select(.conclusion == "failure")] | first | .databaseId')
+
+gh run view "$RUN_ID" --log --failed --repo {org}/{repo} 2>&1 | tail -200
+```
+
+Re-set up the worktree the same way Step 6a does (it was already removed by whichever of
+4d/5d/6e cleaned up after this cycle's push), then dispatch **exactly one** bonus CI-fix
+subagent using the exact same prompt template as Step 6c — do not restate or duplicate that
+prompt text here — substituting these freshly-collected failure logs for the `CI FAILURE
+OUTPUT` block and this same `{pr}`/`{title}`/`{org}`/`{repo}`/`{branch}`/`{worktree-path}`
+context. Pass `model: PATCH_MODEL`, same as Step 6c. This bonus dispatch pushes once if the
+subagent succeeds — do not re-poll or retry further after it reports back, regardless of
+outcome. This is a single bonus attempt, not a new fix loop.
+
+**On DONE or DONE_WITH_CONCERNS with a push:** log the fix, clean up the worktree (same
+pattern as Step 6e), and proceed to the existing Step 7 report unchanged.
+
+**On BLOCKED:** reuse the exact same HITL-escalation branch as Step 6d's BLOCKED handling —
+same `hitl` PATCH to the linked task (or the PR record when no task is linked), same PR
+comment convention, same claim release — rather than adding a new escalation path here. Log
+the blocker and proceed to the existing Step 7 report unchanged.
 
 ---
 
