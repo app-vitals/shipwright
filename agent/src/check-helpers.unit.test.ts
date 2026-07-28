@@ -430,6 +430,31 @@ describe("parseCleanupMergedWorktrees", () => {
   });
 });
 
+describe("readCleanupMergedWorktrees", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "read-cleanup-merged-worktrees-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_merged_worktrees` | false |",
+    );
+    expect(checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(false);
+  });
+
+  test("defaults to true when the policy file does not exist", () => {
+    expect(checkHelpers.readCleanupMergedWorktrees(tmpDir)).toBe(true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // parseCleanupAfterDays
 // ---------------------------------------------------------------------------
@@ -477,6 +502,31 @@ describe("parseCleanupAfterDays", () => {
     expect(
       checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 0"),
     ).toBe(0);
+  });
+});
+
+describe("readCleanupAfterDays", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "read-cleanup-after-days-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "| `cleanup_after_days` | 7 |",
+    );
+    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(7);
+  });
+
+  test("defaults to 14 when the policy file does not exist", () => {
+    expect(checkHelpers.readCleanupAfterDays(tmpDir)).toBe(14);
   });
 });
 
