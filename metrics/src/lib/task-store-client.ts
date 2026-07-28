@@ -13,47 +13,63 @@
  *   const tasks = await client.listTasks({ from, to });
  */
 
-// ─── Inline record types (no Prisma dependency) ──────────────────────────────
+import type { components } from "@shipwright/lib/task-store-types";
+
+// ─── Record types derived from the generated task-store schema ───────────────
+//
+// TaskRecord/PrRecord are Pick<>'d from the OpenAPI-generated
+// components["schemas"]["Task"] / ["PullRequest"] types (@shipwright/lib/
+// task-store-types) rather than hand-rolled — the field list below is exactly
+// the subset the metrics provider reads. The generated schema marks several
+// of these fields as required (e.g. Task.status/createdAt,
+// PullRequest.id/repo/reviewState/createdAt/...) because every row the *store*
+// returns always has them; metrics code and its fixtures/tests, however,
+// build partial literals (e.g. a PR fixture with no `id`), so each Pick is
+// widened back to optional via `Partial<...>` for exactly the fields that
+// need it — preserving the same shape metrics has always read.
+
+type TaskSchema = components["schemas"]["Task"];
+type PullRequestSchema = components["schemas"]["PullRequest"];
+
+/** Fields required on the generated Task schema that TaskRecord treats as optional. */
+type TaskOptionalOverrides = Pick<TaskSchema, "createdAt">;
 
 /**
  * Slim Task record — only the fields the metrics provider reads. Terminal /
  * completed statuses are `merged | done | deployed | deploying`; `blocked` is
  * blocked; `in_progress | pr_open | approved` are mid-flight.
  */
-export interface TaskRecord {
-  id: string;
-  status: string;
-  session?: string | null;
-  layer?: string | null;
-  /** Owning repository in `org/repo` form. Used for public-mode repo scoping. */
-  repo?: string | null;
-  /** Estimated hours for the task. */
-  hours?: number | null;
-  complexity?: number | null;
-  startedAt?: string | null;
-  completedAt?: string | null;
-  mergedAt?: string | null;
-  prCreatedAt?: string | null;
-  ciFixAttempts?: number | null;
-  simplifyTotal?: number | null;
-  createdAt?: string | null;
-  /** Model used to execute this task (e.g. "opus", "claude-opus-4-8", "sonnet"). */
-  model?: string | null;
-  /** Effort level passed to Claude CLI via --effort: "low" | "medium" | "high" | "xhigh" | "max" */
-  effortLevel?: string | null;
-  /** Coverage delta from code-review pass (percentage points). */
-  coverageDelta?: number | null;
-  /** Simplify pass: dry-run findings count. */
-  simplifyDry?: number | null;
-  /** Simplify pass: dead code findings count. */
-  simplifyDeadCode?: number | null;
-  /** Simplify pass: naming findings count. */
-  simplifyNaming?: number | null;
-  /** Simplify pass: complexity findings count. */
-  simplifyComplexity?: number | null;
-  /** Simplify pass: consistency findings count. */
-  simplifyConsistency?: number | null;
-}
+export type TaskRecord = Pick<
+  TaskSchema,
+  | "id"
+  | "status"
+  | "session"
+  | "layer"
+  | "repo"
+  | "hours"
+  | "complexity"
+  | "startedAt"
+  | "completedAt"
+  | "mergedAt"
+  | "prCreatedAt"
+  | "ciFixAttempts"
+  | "simplifyTotal"
+  | "model"
+  | "effortLevel"
+  | "coverageDelta"
+  | "simplifyDry"
+  | "simplifyDeadCode"
+  | "simplifyNaming"
+  | "simplifyComplexity"
+  | "simplifyConsistency"
+> &
+  Partial<TaskOptionalOverrides>;
+
+/** Fields required on the generated PullRequest schema that PrRecord treats as optional. */
+type PrOptionalOverrides = Pick<
+  PullRequestSchema,
+  "id" | "repo" | "reviewState" | "createdAt" | "reviewCycles" | "patchCycles"
+>;
 
 /**
  * Slim PR record — drives review-derived metrics. `reviewState` takes the live
@@ -61,17 +77,8 @@ export interface TaskRecord {
  * "ship it" equivalent). The store records no per-PR findings count, so
  * `avg_review_findings` is emitted as null by this provider.
  */
-export interface PrRecord {
-  id?: string;
-  taskId?: string | null;
-  reviewState?: string | null;
-  createdAt?: string | null;
-  mergedAt?: string | null;
-  /** Owning repository in `org/repo` form. Used for public-mode repo scoping. */
-  repo?: string | null;
-  reviewCycles?: number | null;
-  patchCycles?: number | null;
-}
+export type PrRecord = Pick<PullRequestSchema, "taskId" | "mergedAt"> &
+  Partial<PrOptionalOverrides>;
 
 // ─── Error type ───────────────────────────────────────────────────────────────
 
@@ -159,14 +166,22 @@ export function inWindow(
 /** Page size requested per list call when paginating the live store. */
 const PAGE_SIZE = 200;
 
-/** Envelope shape returned by the paginated `/tasks` and `/prs` list routes. */
-interface PageEnvelope<T> {
-  total?: number;
-  limit?: number;
-  offset?: number;
-  // The data array lives under a route-specific key (`tasks` or `prs`).
-  [key: string]: T[] | number | undefined;
-}
+/**
+ * Envelope shape returned by the paginated `/tasks` and `/prs` list routes,
+ * derived from the generated TaskListResponse/PrListResponse schemas. Both
+ * report `total`; only PrListResponse reports `limit`/`offset` (asymmetric
+ * with TaskListResponse), so those are read defensively at the call site
+ * regardless — hence `Partial` here rather than requiring them. The data
+ * array itself lives under a route-specific key (`tasks` or `prs`), typed
+ * generically over `T` since fetchAllPages is shared by both routes.
+ */
+type PageEnvelope<T> = Partial<
+  Pick<components["schemas"]["TaskListResponse"], "total"> &
+    Pick<components["schemas"]["PrListResponse"], "limit" | "offset">
+> & {
+  tasks?: T[];
+  prs?: T[];
+};
 
 /** Minimal `fetch` shape — injectable so the client is testable without
  * overriding any global (Bun shares the test process). Defaults to the
