@@ -41,6 +41,17 @@ FROM oven/bun:1-slim AS base
 #     agent can build client code at runtime (e.g. Rust projects + OpenSSL crates).
 #     (Piper TTS for voice-out is bundled in the runtime stage below; ffmpeg /
 #     python-edge-tts stay omitted — Piper emits WAV natively.)
+#   - Chromium/chromium-headless-shell OS deps for Playwright (PW-1.1/PW-1.2 —
+#     agent/src/browser.ts, follow-up task) — installed here as root so the
+#     runtime stage's `playwright install chromium-headless-shell` (run as USER
+#     1000, no --with-deps) has everything the binary needs to actually launch.
+#     This exact package list is Playwright 1.61.1's real dependency set —
+#     verified by running `playwright install-deps --dry-run chromium-headless-shell`
+#     against an installed 1.61.1, not assumed from docs or an older version's
+#     source. That dry run confirms chromium-headless-shell needs the identical
+#     package set as full `chromium` on this OS.
+#     oven/bun:1-slim is Debian trixie (13) — see node-source stage comment above
+#     — hence the t64-suffixed package names (Debian's 64-bit time_t transition).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
@@ -50,6 +61,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libssl-dev \
     pkg-config \
+    fonts-freefont-ttf \
+    fonts-ipafont-gothic \
+    fonts-liberation \
+    fonts-noto-color-emoji \
+    fonts-tlwg-loma-otf \
+    fonts-unifont \
+    fonts-wqy-zenhei \
+    libasound2t64 \
+    libatk-bridge2.0-0t64 \
+    libatk1.0-0t64 \
+    libatspi2.0-0t64 \
+    libcairo2 \
+    libcups2t64 \
+    libdbus-1-3 \
+    libdrm2 \
+    libfontconfig1 \
+    libfreetype6 \
+    libgbm1 \
+    libglib2.0-0t64 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libx11-6 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
+    xfonts-scalable \
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install gh CLI via official GitHub apt keyring
@@ -178,6 +221,22 @@ COPY --from=build --chown=1000:1000 /app/.claude-plugin ./.claude-plugin
 # Make the credential helper and gh wrapper executable
 RUN chmod +x /app/agent/scripts/bin/git-credential-shipwright.sh \
     && chmod +x /app/agent/scripts/bin/gh
+
+# ─── Playwright chromium-headless-shell (agent/src/browser.ts, PW-1.2) ────────
+# Installed as the already-active USER 1000, under /home/bun — mirrors mise's
+# non-root-first pattern above rather than Piper's root-then-chown below, so no
+# chown step is needed and nothing lands root-owned. PLAYWRIGHT_BROWSERS_PATH is
+# an ENV (not just a build-time var), so it stays set for the running container
+# too — Playwright's launch API resolves the browser path from this same var.
+# `playwright` is pinned to 1.61.1 in agent/package.json: site's @playwright/test
+# is ^1.61.1 and metrics' is ^1.49.0 — these diverge, but bun's resolver already
+# hoists metrics' range up to 1.61.1 (the newest version satisfying both ranges),
+# so 1.61.1 is the version already present in this repo's bun.lock; the agent's
+# own `playwright` runtime dep is pinned to match rather than introducing a third
+# version. No --with-deps here (that would `apt-get install` as non-root and
+# fail) — the OS-level deps were already installed as root in the base stage.
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/bun/.cache/ms-playwright
+RUN ./agent/node_modules/.bin/playwright install chromium-headless-shell
 
 # ─── Piper offline TTS (voice-out) ────────────────────────────────────────────
 # Bundle the Piper binary + the default voice so the agent can synthesize voice
