@@ -52,12 +52,26 @@ Query params:
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
 | `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
-| `limit` | number | Page size |
-| `offset` | number | Page offset |
+| `limit` | number | Page size. Defaults to `50` when omitted. |
+| `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 | `updatedSince` | string | ISO timestamp. Only return tasks with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
 
-Returns `{ tasks: Task[], total: number }`.
+Returns `{ tasks: Task[], total: number, limit: number, offset: number }`. `total` is the
+count of *all* tasks matching the filters, independent of `limit`/`offset` — compare it
+against `tasks.length` to detect truncation. A caller that queries without an explicit
+`&limit=` and gets back 50 tasks with `total: 137` has only seen the first page; re-issue the
+query with `&limit=` raised (or page via `&offset=`, accumulating pages until the summed
+`tasks.length >= total`) rather than treating the 50-task response as the full result set.
+This matters most for any dedup-style check (e.g. `entropy-fix`/`error-fix`/`test-fix`/
+`consolidation-fix`'s "Dedup Check" steps) that queries `?status=pending`/`?status=in_progress`
+before filing new tasks — an unbounded default-limit query on a repo with more than 50 active
+tasks will silently miss the tail of the list.
+
+`?ready=true` (or `?state=ready`) and `?state=blocked` are unpaginated convenience endpoints —
+they compute over the entire task graph (dependency resolution needs every task, not a
+`limit`/`offset` slice) and always return every matching task in one response. Their `total`
+is simply `tasks.length`; `limit`/`offset` query params have no effect on these two branches.
 
 Agent tokens with a repo scope return tasks where `assignee === agentId` OR `repo` is in the agent's scope (pool tasks). Agent tokens without a repo scope see only tasks where `assignee === agentId`.
 

@@ -109,6 +109,35 @@ describe("consolidation-fix — dedup mechanism mirrors entropy-fix", () => {
   });
 });
 
+// ── Dedup query is pagination-safe (task-store /tasks pagination gap) ──────
+
+describe("consolidation-fix — dedup query is pagination-safe", () => {
+  it("raises the dedup query limit well above the API's default page size", () => {
+    expect(readSkill()).toContain("limit=1000");
+  });
+
+  it("documents checking the response's total field against what was fetched", () => {
+    const lower = readSkill().toLowerCase();
+    expect(lower).toContain("total");
+    expect(lower).toMatch(/check(ing)?.{0,40}total|total.{0,40}check/s);
+  });
+
+  it("documents paging via offset when total exceeds the fetched page", () => {
+    const lower = readSkill().toLowerCase();
+    expect(lower).toContain("offset");
+    expect(lower).toContain("page");
+  });
+
+  it("does not silently proceed with a partial result set", () => {
+    const lower = readSkill().toLowerCase();
+    expect(
+      lower.includes("do not silently proceed") ||
+        lower.includes("never silently proceed") ||
+        lower.includes("without a partial"),
+    ).toBe(true);
+  });
+});
+
 // ── "Consolidation:" title prefix ────────────────────────────────────────────
 
 describe("consolidation-fix — queued task titles use a 'Consolidation:' prefix", () => {
