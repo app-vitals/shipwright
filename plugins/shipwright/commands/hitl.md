@@ -196,7 +196,9 @@ false positives to suppress), **skip suppression** and go straight to marking th
      `git blame`/`git log` on that file/line, or via the original `security-report.md` that
      generated the task (security-scan writes the commit SHA per finding there).
 
-2. **Create a worktree for the target repo**, following the standard convention:
+2. **Create a worktree for the target repo**, following the standard convention. Use branch
+   name `chore/gitleaksignore-suppress-{TASK_ID}` for this suppression PR (a new, distinct
+   change from the original credential-rotation task — do not reuse that task's branch):
    ```bash
    git -C repos/{repo} pull
    git -C repos/{repo} worktree add /absolute/path/to/worktrees/{repo}-{branch} origin/main -b {branch}

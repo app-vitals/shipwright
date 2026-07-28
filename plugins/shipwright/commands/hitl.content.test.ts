@@ -101,6 +101,13 @@ describe("hitl.md — worktree → .gitleaksignore → commit → push → PR fl
     expect(section.toLowerCase()).toContain("absolute");
   });
 
+  it("defines an explicit branch name for the suppression worktree, distinct from the original task's branch", () => {
+    const section = extractSuppressionSubStep(content);
+    expect(section).toContain("chore/gitleaksignore-suppress-{TASK_ID}");
+    const lower = section.toLowerCase();
+    expect(lower).toContain("do not reuse that task's branch");
+  });
+
   it("appends confirmed fingerprint lines to the target repo's root .gitleaksignore, creating it if absent", () => {
     const section = extractSuppressionSubStep(content);
     expect(section).toContain(".gitleaksignore");
