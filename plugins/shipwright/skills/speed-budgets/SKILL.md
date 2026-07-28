@@ -104,6 +104,10 @@ jobs:
     timeout-minutes: 8        # 3min budget + headroom
     runs-on: ubuntu-latest
 
+  test-smoke:
+    timeout-minutes: 2        # 60s budget + headroom
+    runs-on: ubuntu-latest
+
   test-e2e:
     timeout-minutes: 20       # 10min budget + headroom
     runs-on: ubuntu-latest

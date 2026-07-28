@@ -34,17 +34,48 @@ describe("parseSeedArgs", () => {
   test("parses --db-url and --token in space form", () => {
     expect(
       parseSeedArgs(["--db-url", "postgresql://x/y", "--token", "abc"]),
-    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc" });
+    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc", agentId: undefined });
   });
 
   test("parses --db-url= and --token= in equals form", () => {
     expect(
       parseSeedArgs(["--db-url=postgresql://x/y", "--token=abc"]),
-    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc" });
+    ).toEqual({ dbUrl: "postgresql://x/y", token: "abc", agentId: undefined });
   });
 
   test("returns undefined fields when flags are absent", () => {
-    expect(parseSeedArgs([])).toEqual({ dbUrl: undefined, token: undefined });
+    expect(parseSeedArgs([])).toEqual({
+      dbUrl: undefined,
+      token: undefined,
+      agentId: undefined,
+    });
+  });
+
+  test("parses --agent-id in space form", () => {
+    expect(
+      parseSeedArgs([
+        "--db-url",
+        "postgresql://x/y",
+        "--token",
+        "abc",
+        "--agent-id",
+        "hitl",
+      ]),
+    ).toEqual({
+      dbUrl: "postgresql://x/y",
+      token: "abc",
+      agentId: "hitl",
+    });
+  });
+
+  test("parses --agent-id= in equals form", () => {
+    expect(
+      parseSeedArgs(["--token=abc", "--agent-id=hitl"]),
+    ).toEqual({
+      dbUrl: undefined,
+      token: "abc",
+      agentId: "hitl",
+    });
   });
 });
 
@@ -81,6 +112,28 @@ describe("seedTaskStoreAdminToken", () => {
       agentId: null,
     });
     // Empty update => idempotent: re-running leaves an existing token untouched.
+    expect(args.update).toEqual({});
+  });
+
+  test("upserts an agent-scoped token (agentId set) keyed by the hashed raw value", async () => {
+    const { prisma, calls } = makePrismaDouble();
+    await seedTaskStoreAdminToken({
+      // biome-ignore lint/suspicious/noExplicitAny: test double
+      prisma: prisma as any,
+      rawToken: "dev-task-store-hitl-token",
+      label: "dev-hitl",
+      agentId: "hitl",
+    });
+
+    expect(calls).toHaveLength(1);
+    const args = calls[0];
+    const hashed = hashRawToken("dev-task-store-hitl-token");
+    expect(args.where).toEqual({ token: hashed });
+    expect(args.create).toEqual({
+      token: hashed,
+      label: "dev-hitl",
+      agentId: "hitl",
+    });
     expect(args.update).toEqual({});
   });
 });

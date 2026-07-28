@@ -99,12 +99,14 @@ Returns `404` if the task doesn't exist or is outside the agent's scope.
 PATCH /tasks/:id
 ```
 
-Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). **Agent tokens cannot set the following fields via PATCH** — these are managed exclusively by their lifecycle endpoints:
+Body: partial task fields. Agent tokens can only update their own tasks (by `assignee` or `claimedBy`). Writable fields (agents): `status` (except `'pending'`), `blockedReason`, `description`, `note`, `model`, and any other fields not listed below. **Agent tokens cannot set the following fields via PATCH** — these are managed exclusively by their lifecycle endpoints:
 
 - `claimedBy`, `claimedAt`, `heartbeatAt` — use `/claim` or `/release`
 - `status: 'pending'` — use `/release` to unclaim, or `/claim` to reclaim
 
 Admin tokens (`agentId === null`) may set any field. Returns the updated task.
+
+**Common use:** Agents use PATCH to set `status: 'blocked'` alongside `blockedReason` when an implementation attempt hits an unrecoverable dead end (e.g., after exhausting model-upgrade escalations in dev-task Step 5c).
 
 #### Delete task
 
@@ -280,6 +282,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
 **Side effect:** When `reviewState` is set to `posted` or `approved`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are cleared in the same write. This releases the review claim as soon as the review is done, so a PR awaiting patch/deploy is not held by a stale claim that the reaper would otherwise reap (which would regress `reviewState` and re-dispatch a duplicate review).
+
+**Commit-level dedup pattern:** Setting `reviewState=posted` together with `commitSha` (e.g. `PATCH /prs/:id` with `{"reviewState": "posted", "commitSha": "abc123..."}`) records that this PR was reviewed at a specific commit head. The claim is cleared by the side effect above, and the next `/prs/claim` at the same `commitSha` will receive a `409` (already reviewed at this commit) and halt — preventing re-review of the same head until new commits land, for as long as the `posted` marker holds. This is distinct from `POST /prs/:id/release`, which resets `reviewState=pending` and allows re-review at the same commit immediately. Caveat: `agent/src/pr-state-reconciler.ts`'s background `reconcilePostedReviewStateRecord()` heals a `posted` record back to `pending` once it finds no formal GitHub review object at the current head commit (`hasAnyReviewAtHead()` does not inspect issue-level PR comments) — so this dedup only persists indefinitely when the marker was set in response to a formal review at head. When the marker was set in response to a plain PR comment (no formal review object at head), the reconciler's next pass (every 30-60 min) reverts `reviewState` to `pending`, and the same commit becomes re-claimable again after that delay.
 
 #### PR lifecycle endpoints
 

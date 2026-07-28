@@ -6,6 +6,8 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
+import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentService } from "./agents.ts";
 
 // ─── In-memory prisma.agent test double ────────────────────────────────────
@@ -16,6 +18,8 @@ interface FakeAgentRow {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
+  authorAllowlist: string[];
+  typeName: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,7 +37,15 @@ function applySelect<T extends object>(
   return projected;
 }
 
-function makeFakePrisma(seed: FakeAgentRow[] = []) {
+/**
+ * In-memory prisma.agentEnv.findMany double, keyed by agentId — only the
+ * `key` column is ever selected by AgentService.getDetail(), mirroring the
+ * production query that never touches AgentEnv.value (secrets_in_logs).
+ */
+function makeFakePrisma(
+  seed: FakeAgentRow[] = [],
+  envSeed: Record<string, string[]> = {},
+) {
   const rows = new Map<string, FakeAgentRow>(seed.map((r) => [r.id, r]));
   let nextId = 1;
 
@@ -41,14 +53,22 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
     async create({
       data,
     }: {
-      data: { name: string; slackId: string | null; selfHosted: boolean };
+      data: {
+        name: string;
+        slackId: string | null;
+        selfHosted: boolean;
+        repos?: string[];
+        authorAllowlist?: string[];
+      };
     }): Promise<FakeAgentRow> {
       const row: FakeAgentRow = {
         id: `agent-${nextId++}`,
         name: data.name,
         slackId: data.slackId,
         selfHosted: data.selfHosted,
-        repos: [],
+        repos: data.repos ?? [],
+        authorAllowlist: data.authorAllowlist ?? [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
       };
@@ -121,6 +141,7 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
         slackId?: string | null;
         selfHosted?: boolean;
         repos?: string[];
+        authorAllowlist?: string[];
       };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
     }): Promise<FakeAgentRow> {
@@ -132,6 +153,9 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
         ...(data.slackId !== undefined && { slackId: data.slackId }),
         ...(data.selfHosted !== undefined && { selfHosted: data.selfHosted }),
         ...(data.repos !== undefined && { repos: data.repos }),
+        ...(data.authorAllowlist !== undefined && {
+          authorAllowlist: data.authorAllowlist,
+        }),
         updatedAt: new Date("2024-01-02"),
       };
       rows.set(where.id, updated);
@@ -139,10 +163,54 @@ function makeFakePrisma(seed: FakeAgentRow[] = []) {
     },
   };
 
-  return { agent, __rows: rows };
+  const agentEnv = {
+    async findMany({
+      where,
+    }: {
+      where: { agentId: string };
+      select?: { key: true };
+    }): Promise<{ key: string }[]> {
+      const keys = envSeed[where.agentId] ?? [];
+      return keys.map((key) => ({ key }));
+    },
+  };
+
+  return { agent, agentEnv, __rows: rows };
 }
 
 type FakePrisma = ReturnType<typeof makeFakePrisma>;
+
+/** A registry double that always returns a fixed manifest — mirrors the
+ * fakeRegistry() pattern in agent-cron-jobs.unit.test.ts. */
+function fakeRegistry(
+  requiredEnvByType: Record<string, string[]>,
+): AgentTypeManifestResolver {
+  return {
+    getManifest(typeName: string): AgentTypeManifest {
+      const required = requiredEnvByType[typeName] ?? [];
+      return {
+        env: {
+          required: required.map((key) => ({
+            key,
+            description: `${key} description`,
+            secret: true,
+          })),
+          optional: [],
+        },
+      } as unknown as AgentTypeManifest;
+    },
+    tryGetManifest(typeName: string): AgentTypeManifest | undefined {
+      if (!(typeName in requiredEnvByType)) return undefined;
+      return this.getManifest(typeName);
+    },
+    listTypes() {
+      return Object.keys(requiredEnvByType).map((name) => ({
+        name,
+        displayName: name,
+      }));
+    },
+  };
+}
 
 function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
   return {
@@ -151,6 +219,8 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     slackId: null,
     selfHosted: false,
     repos: [],
+    authorAllowlist: [],
+    typeName: "coding",
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
     ...overrides,
@@ -185,6 +255,52 @@ describe("AgentService.create", () => {
     expect(agent.slackId).toBeNull();
     expect(agent.selfHosted).toBe(false);
   });
+
+  it("creates an agent with the given authorAllowlist", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const agent = await service.create({
+      name: "New Agent",
+      authorAllowlist: ["octocat", "hubot"],
+    });
+
+    expect(agent.authorAllowlist).toEqual(["octocat", "hubot"]);
+  });
+
+  it("defaults authorAllowlist to an empty array when omitted", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const agent = await service.create({ name: "Plain Agent" });
+
+    expect(agent.authorAllowlist).toEqual([]);
+  });
+
+  it("lists a required env key in missingRequiredEnv for a freshly created agent (no AgentEnv rows yet)", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
+    );
+
+    const agent = await service.create({ name: "New Agent" });
+
+    expect(agent.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  it("returns an empty missingRequiredEnv array (not undefined/null) when the type's required contract is empty", async () => {
+    const prisma = makeFakePrisma() as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const agent = await service.create({ name: "New Agent" });
+
+    expect(agent.missingRequiredEnv).toEqual([]);
+    expect(agent.missingRequiredEnv).not.toBeUndefined();
+  });
 });
 
 // ─── delete ─────────────────────────────────────────────────────────────────
@@ -204,7 +320,7 @@ describe("AgentService.delete", () => {
 // ─── list ───────────────────────────────────────────────────────────────────
 
 describe("AgentService.list", () => {
-  it("returns id/name/selfHosted for all agents, ordered by name asc", async () => {
+  it("returns id/name/selfHosted/typeName for all agents, ordered by name asc", async () => {
     const prisma = makeFakePrisma([
       seedRow({ id: "a1", name: "Zeta", selfHosted: false }),
       seedRow({ id: "a2", name: "Alpha", selfHosted: true }),
@@ -214,8 +330,8 @@ describe("AgentService.list", () => {
     const result = await service.list();
 
     expect(result).toEqual([
-      { id: "a2", name: "Alpha", selfHosted: true },
-      { id: "a1", name: "Zeta", selfHosted: false },
+      { id: "a2", name: "Alpha", selfHosted: true, typeName: "coding" },
+      { id: "a1", name: "Zeta", selfHosted: false, typeName: "coding" },
     ]);
   });
 
@@ -230,7 +346,7 @@ describe("AgentService.list", () => {
 // ─── getSummary ─────────────────────────────────────────────────────────────
 
 describe("AgentService.getSummary", () => {
-  it("returns {id, name, selfHosted} for an existing agent", async () => {
+  it("returns {id, name, selfHosted, typeName} for an existing agent", async () => {
     const row = seedRow({ id: "a1", name: "Existing", selfHosted: true });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never);
@@ -239,6 +355,7 @@ describe("AgentService.getSummary", () => {
       id: "a1",
       name: "Existing",
       selfHosted: true,
+      typeName: "coding",
     });
   });
 
@@ -253,15 +370,19 @@ describe("AgentService.getSummary", () => {
 // ─── getDetail ──────────────────────────────────────────────────────────────
 
 describe("AgentService.getDetail", () => {
-  it("returns the full record including repos and timestamps", async () => {
+  it("returns the full record including repos, typeName, timestamps, and an empty missingRequiredEnv when the type has no required contract", async () => {
     const row = seedRow({
       id: "a1",
       name: "Existing",
       slackId: "U999",
       repos: ["org/repo"],
+      authorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
 
     const detail = await service.getDetail("a1");
 
@@ -271,16 +392,98 @@ describe("AgentService.getDetail", () => {
       slackId: "U999",
       selfHosted: false,
       repos: ["org/repo"],
+      authorAllowlist: ["octocat"],
+      typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
+      missingRequiredEnv: [],
     });
+  });
+
+  it("defaults typeName to 'coding' when the row was seeded without an explicit value", async () => {
+    const row = seedRow({ id: "a1" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.typeName).toBe("coding");
   });
 
   it("returns null when the agent does not exist", async () => {
     const prisma = makeFakePrisma() as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     expect(await service.getDetail("missing")).toBeNull();
+  });
+
+  it("lists a required env key in missingRequiredEnv when no AgentEnv row exists for it", async () => {
+    const row = seedRow({ id: "a1", typeName: "coding" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  it("clears a required key from missingRequiredEnv once its AgentEnv row is seeded", async () => {
+    const row = seedRow({ id: "a1", typeName: "coding" });
+    const prisma = makeFakePrisma(
+      [row],
+      { a1: ["CLAUDE_CODE_OAUTH_TOKEN"] },
+    ) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.missingRequiredEnv).toEqual([]);
+  });
+
+  it("returns an empty missingRequiredEnv array (not undefined/null) when the manifest's required contract is empty, without querying AgentEnv", async () => {
+    const row = seedRow({ id: "a1", typeName: "coding" });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    let findManyCalled = false;
+    const originalFindMany = prisma.agentEnv.findMany.bind(prisma.agentEnv);
+    prisma.agentEnv.findMany = (async (args: never) => {
+      findManyCalled = true;
+      return originalFindMany(args);
+    }) as typeof prisma.agentEnv.findMany;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(detail?.missingRequiredEnv).toEqual([]);
+    expect(detail?.missingRequiredEnv).not.toBeUndefined();
+    expect(findManyCalled).toBe(false);
+  });
+
+  it("never includes AgentEnv values in the computed result — only key names are read", async () => {
+    const row = seedRow({ id: "a1", typeName: "coding" });
+    const prisma = makeFakePrisma([row], {
+      a1: ["CLAUDE_CODE_OAUTH_TOKEN"],
+    }) as unknown as FakePrisma;
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
+    );
+
+    const detail = await service.getDetail("a1");
+
+    expect(JSON.stringify(detail)).not.toContain("value");
+    expect(detail?.missingRequiredEnv).toEqual([]);
   });
 });
 
@@ -309,7 +512,7 @@ describe("AgentService.updateSelfHosted", () => {
   it("updates the selfHosted flag and returns the full record", async () => {
     const row = seedRow({ id: "a1", selfHosted: false });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", { selfHosted: true });
 
@@ -320,7 +523,7 @@ describe("AgentService.updateSelfHosted", () => {
   it("updates repos when provided", async () => {
     const row = seedRow({ id: "a1", repos: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", {
       selfHosted: false,
@@ -333,11 +536,34 @@ describe("AgentService.updateSelfHosted", () => {
   it("leaves repos untouched when not provided", async () => {
     const row = seedRow({ id: "a1", repos: ["org/existing"] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateSelfHosted("a1", { selfHosted: true });
 
     expect(updated.repos).toEqual(["org/existing"]);
+  });
+
+  it("updates authorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: [] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", {
+      selfHosted: false,
+      authorAllowlist: ["octocat"],
+    });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("leaves authorAllowlist untouched when not provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: ["octocat"] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateSelfHosted("a1", { selfHosted: true });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
   });
 });
 
@@ -352,6 +578,7 @@ describe("AgentService.getById", () => {
     expect(await service.getById("a1")).toEqual({
       id: "a1",
       repos: ["org/repo1", "org/repo2"],
+      authorAllowlist: [],
     });
   });
 
@@ -360,6 +587,22 @@ describe("AgentService.getById", () => {
     const service = new AgentService(prisma as never);
 
     expect(await service.getById("missing")).toBeNull();
+  });
+
+  it("includes authorAllowlist for the runtime config lookup", async () => {
+    const row = seedRow({
+      id: "a1",
+      repos: ["org/repo1"],
+      authorAllowlist: ["octocat", "hubot"],
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    expect(await service.getById("a1")).toEqual({
+      id: "a1",
+      repos: ["org/repo1"],
+      authorAllowlist: ["octocat", "hubot"],
+    });
   });
 });
 
@@ -487,7 +730,7 @@ describe("AgentService.updateFields", () => {
       repos: ["org/old"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { name: "New Name" });
 
@@ -500,7 +743,7 @@ describe("AgentService.updateFields", () => {
   it("updates repos when provided", async () => {
     const row = seedRow({ id: "a1", repos: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", {
       repos: ["org/new-repo"],
@@ -509,10 +752,22 @@ describe("AgentService.updateFields", () => {
     expect(updated.repos).toEqual(["org/new-repo"]);
   });
 
+  it("updates authorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", authorAllowlist: [] });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never, fakeRegistry({}));
+
+    const updated = await service.updateFields("a1", {
+      authorAllowlist: ["octocat"],
+    });
+
+    expect(updated.authorAllowlist).toEqual(["octocat"]);
+  });
+
   it("updates selfHosted when provided", async () => {
     const row = seedRow({ id: "a1", selfHosted: false });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { selfHosted: true });
 
@@ -522,7 +777,7 @@ describe("AgentService.updateFields", () => {
   it("updates slackId to null when explicitly passed null", async () => {
     const row = seedRow({ id: "a1", slackId: "U123" });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", { slackId: null });
 
@@ -536,9 +791,10 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
+      authorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
+    const service = new AgentService(prisma as never, fakeRegistry({ coding: [] }));
 
     const updated = await service.updateFields("a1", {});
 
@@ -548,8 +804,11 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
+      authorAllowlist: ["octocat"],
+      typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: new Date("2024-01-02"),
+      missingRequiredEnv: [],
     });
   });
 });

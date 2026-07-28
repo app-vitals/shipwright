@@ -3,8 +3,10 @@
  * Idempotent seed script for the local dev agent.
  *
  * Upserts a dev agent (id: "dev-agent") into the admin Prisma DB with its
- * AgentEnv (CLAUDE_CODE_OAUTH_TOKEN, optional GH_TOKEN), AgentPlugin
- * (shipwright), and AgentTool defaults.
+ * AgentEnv (CLAUDE_CODE_OAUTH_TOKEN, optional GH_TOKEN), and its
+ * AgentPlugin/AgentTool rows resolved from the "coding" Agent Type manifest
+ * (agent-types/coding/manifest.yaml) via AgentTypeRegistry — the same
+ * manifest-driven source of truth used by admin POST /agents (ATS-3.3).
  *
  * Reads secrets from state/dev-agent.env (git-ignored). Exits non-zero with
  * a clear message if the file is missing or CLAUDE_CODE_OAUTH_TOKEN is absent.
@@ -19,19 +21,14 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { DEFAULT_AGENT_TOOLS } from "../lib/agent-default-tools.ts";
+import type { AgentTypeManifestResolver } from "../admin/src/agent-type-manifest-loader.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEV_AGENT_ID = "dev-agent";
 const DEV_AGENT_NAME = "Dev Agent";
 const DEV_AGENT_ENV_FILE = "state/dev-agent.env";
-const DEV_PLUGIN_NAME = "shipwright";
-
-// Single source of truth lives in lib/agent-default-tools.ts (shared with the
-// admin POST /agents route) — re-exported here under the name this script's
-// tests already reference.
-export const DEFAULT_TOOLS = DEFAULT_AGENT_TOOLS;
+const DEV_AGENT_TYPE = "coding";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -80,6 +77,12 @@ export interface SeedDeps {
   prisma: SeedPrisma;
   /** Read the env file contents — throws on missing file. */
   readEnvFile: () => string;
+  /**
+   * Resolves the "coding" Agent Type manifest for its tools[]/plugins[] —
+   * the single source of truth this script and admin POST /agents both seed
+   * from. Injectable for testability (see seed-dev-agent.unit.test.ts).
+   */
+  agentTypeRegistry: AgentTypeManifestResolver;
   /** Called when the script should exit with an error. The implementation should throw. */
   exit: (code: number, message: string) => never;
 }
@@ -114,7 +117,11 @@ export function parseEnvFile(content: string): Record<string, string> {
  * Accepts injected deps for testability.
  */
 export async function seedDevAgent(deps: SeedDeps): Promise<void> {
-  const { prisma, readEnvFile, exit } = deps;
+  const { prisma, readEnvFile, agentTypeRegistry, exit } = deps;
+
+  // Resolve the "coding" manifest up front — its tools[]/plugins[] are this
+  // script's single source of truth (mirrors admin POST /agents' seeding).
+  const manifest = agentTypeRegistry.getManifest(DEV_AGENT_TYPE);
 
   // 1. Read and parse the env file
   let envVars: Record<string, string>;
@@ -177,22 +184,28 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
     `[seed-dev-agent] upserted env vars: ${Object.keys(envToSeed).join(", ")}`,
   );
 
-  // 5. Upsert plugin
-  await prisma.agentPlugin.upsert({
-    where: { agentId_name: { agentId: DEV_AGENT_ID, name: DEV_PLUGIN_NAME } },
-    create: {
-      agentId: DEV_AGENT_ID,
-      name: DEV_PLUGIN_NAME,
-      version: null,
-      enabled: true,
-    },
-    update: { version: null, enabled: true },
-  });
-  console.log(`[seed-dev-agent] upserted plugin: ${DEV_PLUGIN_NAME}`);
-
-  // 6. Upsert default tools
+  // 5. Upsert plugins from the manifest
   await prisma.$transaction(
-    DEFAULT_TOOLS.map((pattern) =>
+    manifest.plugins.map((name) =>
+      prisma.agentPlugin.upsert({
+        where: { agentId_name: { agentId: DEV_AGENT_ID, name } },
+        create: {
+          agentId: DEV_AGENT_ID,
+          name,
+          version: null,
+          enabled: true,
+        },
+        update: { version: null, enabled: true },
+      }),
+    ),
+  );
+  console.log(
+    `[seed-dev-agent] upserted plugins: ${manifest.plugins.join(", ")}`,
+  );
+
+  // 6. Upsert tools from the manifest
+  await prisma.$transaction(
+    manifest.tools.map((pattern) =>
       prisma.agentTool.upsert({
         where: { agentId_pattern: { agentId: DEV_AGENT_ID, pattern } },
         create: { agentId: DEV_AGENT_ID, pattern, enabled: true },
@@ -201,7 +214,7 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
     ),
   );
   console.log(
-    `[seed-dev-agent] upserted ${DEFAULT_TOOLS.length} tools: ${DEFAULT_TOOLS.join(", ")}`,
+    `[seed-dev-agent] upserted ${manifest.tools.length} tools: ${manifest.tools.join(", ")}`,
   );
 
   console.log(`[seed-dev-agent] done — dev agent "${DEV_AGENT_ID}" is ready.`);
@@ -211,6 +224,9 @@ export async function seedDevAgent(deps: SeedDeps): Promise<void> {
 
 if (import.meta.main) {
   const { PrismaClient } = await import("../admin/prisma/client/index.js");
+  const { AgentTypeRegistry } = await import(
+    "../admin/src/agent-type-manifest-loader.ts"
+  );
 
   const argv = process.argv.slice(2);
   const dbUrl = (() => {
@@ -239,6 +255,7 @@ if (import.meta.main) {
     await seedDevAgent({
       prisma,
       readEnvFile: () => fs.readFileSync(envFilePath, "utf8"),
+      agentTypeRegistry: new AgentTypeRegistry(),
       exit: (code, message) => {
         console.error(message);
         process.exit(code);

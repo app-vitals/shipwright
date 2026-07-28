@@ -43,6 +43,7 @@ export interface AgentConfigResponse {
   allowedTools: string[];
   plugins: AgentPlugin[];
   repos: string[];
+  authorAllowlist: string[];
 }
 
 interface AgentEnvServiceLike {
@@ -67,7 +68,9 @@ interface AgentCronJobServiceLike {
 }
 
 interface AgentServiceLike {
-  getById(agentId: string): Promise<{ id: string; repos: string[] } | null>;
+  getById(
+    agentId: string,
+  ): Promise<{ id: string; repos: string[]; authorAllowlist: string[] } | null>;
 }
 
 interface PrismaLike {
@@ -200,6 +203,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
           : { plugin: p.name.slice(0, at), marketplace: p.name.slice(at + 1) };
       }),
       repos: agent.repos,
+      authorAllowlist: agent.authorAllowlist,
     };
 
     return c.json(response, 200);

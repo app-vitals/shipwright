@@ -351,25 +351,14 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 ### Step 4a.5: Detect Project Toolchain
 
-From `{worktree-path}`, detect the project toolchain:
+Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Scan the project root for config files:
-   - `package.json` + lockfile → Node.js (detect manager: pnpm/yarn/npm/bun)
-   - `Cargo.toml` → Rust
-   - `go.mod` → Go
-   - `pom.xml` → Java/Maven (use `./mvnw` wrapper if present, else `mvn`)
-   - `build.gradle` / `build.gradle.kts` → Java/Gradle (use `./gradlew` wrapper if present, else `gradle`)
-   - `pyproject.toml` / `setup.py` → Python
-   - `Gemfile` → Ruby
-   - `Makefile` → Generic Make
-
-2. For Node.js: read `package.json` scripts for `test` and `lint`
-
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 4a.6.
+2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-
-Refer to `references/toolchain-patterns.md` for the full detection lookup table.
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 ### Step 4a.6: Claim PR Record (pre-work lock)
 
@@ -495,14 +484,53 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 4c.5.
-- **BLOCKED**: Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
+  re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
+  tick — `claimedBy`/`hitl` are the only exclusions it checks, and releasing the claim below
+  clears the former without setting the latter. Escalate to HITL first, mirroring Step
+  5a.7's (RPF-1.3) escalation pattern, before releasing the claim:
+
+  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-4c-{pr}.txt:
+     #   The merge-conflict resolution subagent reported BLOCKED and could not complete —
+     #   flagging for a human decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-4c-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-4c-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
   Include the blocker in the final report.
 
@@ -566,25 +594,14 @@ All subsequent steps for this PR run from `~/worktrees/{repo}-{branch-slug}/`.
 
 ### Step 5a.5: Detect Project Toolchain
 
-From `{worktree-path}`, detect the project toolchain:
+Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Scan the project root for config files:
-   - `package.json` + lockfile → Node.js (detect manager: pnpm/yarn/npm/bun)
-   - `Cargo.toml` → Rust
-   - `go.mod` → Go
-   - `pom.xml` → Java/Maven (use `./mvnw` wrapper if present, else `mvn`)
-   - `build.gradle` / `build.gradle.kts` → Java/Gradle (use `./gradlew` wrapper if present, else `gradle`)
-   - `pyproject.toml` / `setup.py` → Python
-   - `Gemfile` → Ruby
-   - `Makefile` → Generic Make
-
-2. For Node.js: read `package.json` scripts for `test` and `lint`
-
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to the diff collection below.
+2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-
-Refer to `references/toolchain-patterns.md` for the full detection lookup table.
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 From inside the worktree, collect the full picture of what needs fixing:
 
@@ -843,6 +860,15 @@ INSTRUCTIONS — follow in order:
   - Fix any failures introduced by your changes
   - Re-run until both pass cleanly
 
+[C.5] Add test coverage
+  - Detect the test framework and file-naming conventions from nearby existing tests in
+    the repo
+  - Add or update a test covering the new or changed behavior, following those existing
+    patterns
+  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - If no test is needed (test-file-only change, config change, or pure deletion with no
+    new behavior), state that explicitly instead of adding one
+
 [D] Commit
   These two conditions are independent — both can fire in the same run (a mixed
   ACCEPT+REJECT outcome), only the first can fire (all findings accepted/modified), only
@@ -923,6 +949,10 @@ INSTRUCTIONS — follow in order:
   FINDINGS_ADDRESSED:
   {bullet list of each finding addressed and how}
 
+  TESTS_ADDED:
+  {bullet list of tests added, or "none — {justification}" if [C.5] determined no test
+  was needed}
+
   CONCERNS: (if DONE_WITH_CONCERNS)
   {whenever CONCERNS lists any REJECTed finding — whether every finding was REJECT and no
   push happened, or this was a mixed ACCEPT+REJECT run where a push also happened —
@@ -984,14 +1014,55 @@ Parse the subagent's STATUS:
   literal shell test — evaluate it the same way you just evaluated the "confirm ... rebuttal
   ... AND ... resolved the inline threads" check earlier in this bullet, then set the
   variable accordingly before Step 5c.5 reads it.
-- **BLOCKED**: Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: This is a first-round BLOCKED report from the fix subagent itself — distinct
+  from Step 5a.7's (RPF-1.3) second-round-disagreement escalation, which fires *before*
+  dispatch when the same finding was already rebutted once. Here the subagent was dispatched
+  and came back unable to complete the fix. The same unbounded-retry risk applies: a generic
+  release with no escalation flag makes this PR immediately re-eligible for
+  `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop` tick. Escalate to
+  HITL first, mirroring Step 5a.7's escalation pattern, before releasing the claim:
+
+  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-5c-{pr}.txt:
+     #   The review-finding fix subagent reported BLOCKED and could not complete — flagging
+     #   for a human decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-5c-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-5c-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
   Include the blocker in the final report.
 
@@ -1074,25 +1145,14 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 
 ### Step 6a.5: Detect Project Toolchain
 
-From `{worktree-path}`, detect the project toolchain:
+Check the cache before any fresh detection, then fall back to docs-first discovery and config-file scanning — see `references/toolchain-patterns.md`'s "Caching Across Runs" and "Docs-First Discovery" sections for the exact protocol:
 
-1. Scan the project root for config files:
-   - `package.json` + lockfile → Node.js (detect manager: pnpm/yarn/npm/bun)
-   - `Cargo.toml` → Rust
-   - `go.mod` → Go
-   - `pom.xml` → Java/Maven (use `./mvnw` wrapper if present, else `mvn`)
-   - `build.gradle` / `build.gradle.kts` → Java/Gradle (use `./gradlew` wrapper if present, else `gradle`)
-   - `pyproject.toml` / `setup.py` → Python
-   - `Gemfile` → Ruby
-   - `Makefile` → Generic Make
-
-2. For Node.js: read `package.json` scripts for `test` and `lint`
-
+1. Compute the fingerprint against `{worktree-path}` and read `state/toolchain-cache/{repo}.json`. If the file exists and its fingerprint matches, reuse the cached **lint**/**test** commands and skip to Step 6b.
+2. Otherwise, read `CLAUDE.md` + `docs/*.md`/`ai-docs/*.md` for explicit lint/test commands first (authoritative if found), then fall back to the config-file lookup table in `references/toolchain-patterns.md` to fill any gaps.
 3. Store detected commands:
    - **{lint command}**: e.g., `bun run lint`, `cargo clippy`, `golangci-lint run`
    - **{test command}**: e.g., `bun test`, `cargo test`, `go test ./...`, `pytest`
-
-Refer to `references/toolchain-patterns.md` for the full detection lookup table.
+4. On a cache miss, overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
 
 ### Step 6b: Collect CI Failure Output
 
@@ -1260,6 +1320,15 @@ INSTRUCTIONS — follow in order:
   - Fix any failures introduced by your changes
   - Re-run until both pass cleanly
 
+[C.5] Add test coverage
+  - Detect the test framework and file-naming conventions from nearby existing tests in
+    the repo
+  - Add or update a test covering the new or changed behavior, following those existing
+    patterns
+  - Re-run {test command} from [C] to confirm the new test passes alongside the rest
+  - If no test is needed (test-file-only change, config change, or pure deletion with no
+    new behavior), state that explicitly instead of adding one
+
 [D] Commit
   - Stage only the files you changed: `git add {changed files}`
   - Commit with a conventional commit message describing what was fixed:
@@ -1274,6 +1343,10 @@ INSTRUCTIONS — follow in order:
   FAILURES_FIXED:
   {bullet list of each CI failure addressed and how}
 
+  TESTS_ADDED:
+  {bullet list of tests added, or "none — {justification}" if [C.5] determined no test
+  was needed}
+
   CONCERNS: (if DONE_WITH_CONCERNS)
   BLOCKER: (if BLOCKED)
 ```
@@ -1286,14 +1359,55 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 6d.5.
-- **BLOCKED**: Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch
-  run within the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix
-  never completed, so nothing is actually in flight:
-  ```bash
-  [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-  ```
+- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
+  re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
+  tick — and, absent the `hitl` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to
+  have this same CI-fix subagent re-dispatched against it next cycle. Escalate to HITL
+  first, mirroring Step 5a.7's (RPF-1.3) escalation pattern, before releasing the claim —
+  this is the same `hitl` flag Step 6b.6 already reads pre-dispatch (it runs before dispatch,
+  this runs after a BLOCKED report; they compose without conflict):
+
+  1. Reuse `PR_TASK_ID`, already resolved in Step 6b.6 — no second fetch here. If
+     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
+       -d '{"hitl": true}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     ```
+     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
+     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
+     patch candidate every cycle, spinning forever:
+     ```bash
+     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+       -d '{"hitl": true, "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     ```
+     Still post the PR comment below either way.
+  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
+     file first, same convention as Step 5a.7's escalation comment (heredocs break
+     permission glob matching):
+     ```bash
+     # Write to /tmp/shipwright-patch-blocked-6d-{pr}.txt:
+     #   The CI-fix subagent reported BLOCKED and could not complete — flagging for a human
+     #   decision instead of retrying indefinitely.
+     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-6d-{pr}.txt
+     rm /tmp/shipwright-patch-blocked-6d-{pr}.txt
+     ```
+     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
+     across all worktrees.
+  3. Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch run within
+     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
+     completed, so nothing is actually in flight:
+     ```bash
+     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+     ```
+
   Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
   Include the blocker in the final report.
 

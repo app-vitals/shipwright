@@ -163,9 +163,13 @@ Now detect the project toolchain for `{repo}` (used throughout):
 
 ### 0b. Detect Project Toolchain
 
-Auto-detect the project toolchain (run once, reuse throughout):
+Auto-detect the project toolchain (run once, reuse throughout), checking the cross-run cache before any fresh detection:
 
-1. Scan the project root for config files:
+1. **Check the cache.** Compute the fingerprint against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` and read `state/toolchain-cache/{repo}.json` — see `references/toolchain-patterns.md`'s "Caching Across Runs" section for the exact fingerprint command and cache format. If the file exists and its fingerprint matches, reuse the cached commands and skip to Step 4.
+
+2. **Docs-first discovery** (cache miss only). Read `CLAUDE.md` and any `docs/*.md` / `ai-docs/*.md` for explicit build/test/lint/typecheck commands — many projects wrap the raw tool invocations (custom scripts, task runners, mise-managed runtimes) that config-file scanning alone won't catch. See `references/toolchain-patterns.md`'s "Docs-First Discovery" section. Treat anything found here as authoritative.
+
+3. **Config-file fallback** (fills whatever the docs didn't cover). Scan the project root for config files:
    - `package.json` + lockfile → Node.js (detect manager: pnpm/yarn/npm/bun)
    - `Cargo.toml` → Rust
    - `go.mod` → Go
@@ -175,18 +179,18 @@ Auto-detect the project toolchain (run once, reuse throughout):
    - `Gemfile` → Ruby
    - `Makefile` → Generic Make
 
-2. For Node.js: read `package.json` scripts for `validate`, `build`, `test`, `lint`, `typecheck`/`check`
+   For Node.js: read `package.json` scripts for `validate`, `build`, `test`, `lint`, `typecheck`/`check`. Check for monorepo indicators.
 
-3. Check for monorepo indicators
-
-4. Store the detected commands:
+4. **Store and cache.** Store the detected commands:
    - **validate**: Full validation command (e.g., `pnpm validate`, `cargo clippy && cargo test`, `make check`)
    - **test**: Test command (e.g., `pnpm test`, `cargo test`, `go test ./...`, `pytest`)
    - **lint**: Lint command (e.g., `pnpm lint`, `cargo clippy`, `golangci-lint run`, `ruff check`)
    - **typecheck**: Type check command if applicable (e.g., `pnpm -r check`, `tsc --noEmit`)
    - **build**: Build command (e.g., `pnpm build`, `cargo build`, `go build ./...`)
 
-Refer to `references/toolchain-patterns.md` for the full detection lookup table.
+   On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+
+Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
 
 ## Step 2: Mark In-Progress
 
@@ -510,7 +514,16 @@ Parse the subagent's STATUS report:
 - **DONE**: Proceed to Step 6.
 - **DONE_WITH_CONCERNS**: Read the concerns. If they indicate correctness or scope gaps, address them before Step 6. If they are observations only (e.g., "this file is growing large"), note them and proceed.
 - **NEEDS_CONTEXT**: Provide the missing context and re-dispatch with the same prompt augmented with the answer.
-- **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user.
+- **BLOCKED**: First, attempt a model upgrade: if the effective model (`task.model ?? 'sonnet'`) is 'haiku', re-dispatch with 'sonnet' and set `EFFECTIVE_MODEL = 'sonnet'`; if the effective model is 'sonnet', re-dispatch with 'opus' and set `EFFECTIVE_MODEL = 'opus'`. Re-dispatch the subagent once at the upgraded tier with the same prompt plus the blocker context appended. If still BLOCKED after the upgrade re-dispatch, or if the effective model is already 'opus', assess the blocker: if it is a context problem, provide more context; if the task is too large, break it into smaller sub-tasks; if the plan is wrong, escalate to the user. Otherwise — a genuine dead end the model-upgrade ladder could not resolve — mark the task blocked via the task store API:
+
+  ```bash
+  curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
+    -d '{"status": "blocked", "blockedReason": "implementation_blocked_after_model_escalation"}' | jq .
+  ```
+  Stop. No PR exists yet at this point in the pipeline (Step 5 runs before Step 9's PR
+  creation), so there is no PR to comment on or close.
 
 ### 5d. Renew the Claim Heartbeat
 

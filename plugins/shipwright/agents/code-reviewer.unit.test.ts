@@ -195,6 +195,17 @@ describe("code-reviewer.md — Rule 8 security-domain adherence", () => {
         rule8Section.includes("filter"));
     expect(hasRule5Reference).toBe(true);
   });
+
+  it("documents an activation clause for workflow file jobs", () => {
+    const rule8Section = reviewerContent.slice(
+      reviewerContent.indexOf("Security-domain adherence"),
+      reviewerContent.indexOf("## Confidence Scoring"),
+    );
+    const hasWorkflowClause =
+      rule8Section.includes(".github/workflows/*.yml") &&
+      rule8Section.toLowerCase().includes("job");
+    expect(hasWorkflowClause).toBe(true);
+  });
 });
 
 describe("code-reviewer.md — architecture category in output format", () => {

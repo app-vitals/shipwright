@@ -96,7 +96,13 @@ INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
   {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
   Waiting for bundle-mates to reach pr_open before deploying.
 ```
-Stop here `[silent]` — there is no other candidate to fall back to.
+Stop here. There is no other candidate to fall back to. Emit `[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]`
+alongside `[silent]` (interpolating `{HEAD_BRANCH}` from the value fetched above) — order
+relative to `[silent]` does not matter, both are recognized regardless of position. The
+skip-reason marker records exactly which branch's bundle gate blocked this dispatch in the
+`AgentCronRun.skipReason` field, visible in the admin cron-logs UI, instead of the generic
+`command:no-work` reason the loop orchestrator falls back to for silent dispatches that
+don't tag a specific reason (see `agent/src/loop-orchestrator.ts` and `agent/src/markers.ts`).
 
 **Otherwise** (`INCOMPLETE == 0` — no tasks tracked, or all tasks are `pr_open` or beyond):
 proceed to Step 3.
@@ -353,26 +359,29 @@ read or tool call is needed. Look for a `## Deploy model` section:
 
 Before starting the full 30-minute pipeline watch, poll for a Deploy workflow run matching `SQUASH_SHA` for up to **5 minutes** (poll every 30 seconds, up to 10 polls).
 
-**Implementation: inline in-Bash sleep loop.** Do not wait between polls via a
-scheduled wakeup mechanism that resumes the session later (each resumption is a
-brand-new process invocation — costly and unnecessary here). Instead, run the
-30-second-interval checks as a shell-level loop inside a single Bash tool call. The
-full 5-minute/10-poll budget fits comfortably within one Bash call, well under Bash's
-practical ~10-minute ceiling, so — unlike Step 5b's 30-minute watch — no chaining
-across multiple Bash calls is needed here:
+**Implementation: Monitor tool.** A single Monitor call replaces the chained Bash
+sleep loop: the poll script below runs as a backgrounded shell command, and Monitor
+surfaces one event per stdout line. The script stays silent and emits nothing until a
+Deploy workflow run matching `SQUASH_SHA` appears — only then does it `echo` the match
+and `break`, ending the watch. Silence for the full budget is a valid terminal state
+here (it means "no Deploy workflow", not a crash): Monitor's own `timeout_ms` (default
+300000ms = 5 minutes, matching this budget exactly, so no override is needed) kills the
+process if nothing was ever emitted — that's the expected shape of the "no pipeline"
+outcome, not a failure.
 
-```bash
-for i in $(seq 1 10); do
-  REPO="{org}/{repo}"
-  gh api "repos/$REPO/actions/runs?per_page=50" \
-    --jq "[.workflow_runs[] | select(.head_sha == \"$SQUASH_SHA\" and .name == \"Deploy\") | {id, name, status, conclusion}]"
-  # break out of the loop immediately once a Deploy workflow run appears
-  sleep 30
-done
+```
+Monitor({
+  description: "Poll for Deploy workflow run matching SQUASH_SHA",
+  command: "REPO=\"{org}/{repo}\"; while true; do RESULT=$(gh api \"repos/$REPO/actions/runs?per_page=50\" --jq \"[.workflow_runs[] | select(.head_sha == \\\"$SQUASH_SHA\\\" and .name == \\\"Deploy\\\") | {id, name, status, conclusion}]\" 2>/dev/null) || RESULT=\"[]\"; if [ \"$RESULT\" != \"[]\" ]; then echo \"$RESULT\"; break; fi; sleep 30; done",
+  timeout_ms: 300000,
+  persistent: false
+})
 ```
 
-- **Deploy workflow appears**: Break the 5-minute poll early and proceed to the main pipeline watch (Step 5b).
-- **No Deploy workflow after 5 minutes**: The repo has no deploy pipeline. Print:
+- **Deploy workflow appears** (Monitor reports an event — the poll script emitted the
+  matched run): Break the poll early and proceed to the main pipeline watch (Step 5b).
+- **No Deploy workflow after 5 minutes** (Monitor times out with no event emitted): The
+  repo has no deploy pipeline. Print:
   ```
   ⏭  No Deploy workflow triggered — watching post-merge CI runs on {SQUASH_SHA[0..7]}
   ```
@@ -513,6 +522,35 @@ Track three stages by workflow name (`.name`):
 | `"Canary"`       | Canary  |
 | `"Promote to Prod"` | Promote |
 
+**Validate stage names against live workflows.** Before starting the poll above, confirm
+the resolved stage names (custom from `CLAUDE.md`, or the literal defaults) actually
+correspond to real workflows in the target repo — a one-time, cheap check that works even
+before this SHA's own runs exist:
+
+```bash
+gh api repos/{org}/{repo}/actions/workflows --jq '[.workflows[].name]'
+```
+
+- **All resolved stage names are present** in the returned list: proceed exactly as
+  above — no behavior change, use the named three-stage table and print format.
+- **One or more resolved names are absent**: do not commit to the blind 30-minute
+  named-stage watch — a name that will never appear would exhaust the full budget on a
+  false "deploy is broken" signal. Print a mismatch warning naming the missing stage(s)
+  and the actual available workflow names:
+  ```
+  ⚠ Stage name mismatch — {missing names} not found among live workflows: {actual workflow names}
+    Falling back to SHA-only watch (unnamed) for the remainder of the 30-minute budget.
+  ```
+  Then fall back to watching all workflow runs matching `$SQUASH_SHA` by SHA only
+  (unnamed, no `.name` filter) for the remainder of the 30-minute budget — same query
+  shape as Step 5c's `head_sha`-only filter, and the same success/failure/timeout
+  terminal-condition handling, but continuing within this step's own 30-minute budget
+  and elapsed time rather than Step 5c's separate 10-minute window. A name mismatch
+  alone never sets `blocked` by itself — only an actual run outcome (success/failure)
+  or a genuine timeout in this SHA-only fallback does. **Set `SHA_ONLY_FALLBACK=true`**
+  for the remainder of this step — the Terminal Conditions section below branches on
+  this flag.
+
 Print progress on each poll (each loop iteration):
 ```
 [{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}
@@ -553,6 +591,34 @@ If the Deploy stage (or any stage) has `status: "queued"` for 15 or more minutes
 Re-surface this message every 5 minutes while the queue remains stuck.
 
 ### Terminal Conditions
+
+**If `SHA_ONLY_FALLBACK=true`** (set above when resolved stage names didn't match live
+workflows): the named-stage checks below do not apply — there is no `.name` to match
+against them. Instead, evaluate the same generic, name-agnostic scheme Step 5c's own
+"Terminal conditions:" subsection uses (all-success / any-failure / budget-exhausted over
+the full set of runs matched by `$SQUASH_SHA` alone), reusing that subsection's
+conclusion checks and task-store/PR-record update bash blocks verbatim, but scoped to
+*this* step's 30-minute budget and elapsed time rather than Step 5c's separate 10-minute
+window:
+
+- **All runs completed successfully** (at least one run seen, `conclusion == "success"`
+  for every run seen): print the same success format as Step 5c ("Pipeline monitoring
+  passed" in place of "Post-merge CI passed"), run the same `status: "deployed"` task-store
+  update, print the handoff block (Step 9) with `Pipeline: SHA-only fallback ({elapsed}m)`.
+  Stop.
+- **Any run fails** (`conclusion == "failure"` on any run): print the same failure format
+  as Step 5c ("Pipeline monitoring failed" in place of "Post-merge CI failed"), run the
+  same `status: "blocked"` / PR-record `hitl` update. Stop.
+- **Budget exhausted (30 minutes)** with runs still pending: print the same pending-timeout
+  format as Step 5c ("Pipeline monitoring still pending after 30 minutes" in place of
+  "Post-merge CI still pending after 10 minutes"), run the same `status: "deployed"` (task
+  marked done, human checks manually) task-store update, print the handoff block (Step 9)
+  with `Pipeline: SHA-only fallback (pending at timeout)`. Stop.
+
+Skip the named-stage bullets below entirely in this mode — they require `.name` matching
+that fallback mode has no data for.
+
+**Otherwise (named-stage mode, the default)** — continue with the checks below:
 
 **Deploy stage failed** (`conclusion == "failure"` on the Deploy run):
 ```

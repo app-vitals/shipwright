@@ -31,6 +31,7 @@ const EXCLUDE_PREFIXES = [
   "scripts/seed-task-store-token.ts",
   "scripts/seed-chat-tokens.ts",
   "scripts/seed-dev-agent.ts",
+  "scripts/wait-for-agent.ts",
 
   // Browser-loaded dashboard client — a plain (non-module) <script>, mostly
   // DOM manipulation and chart rendering with no in-process request seam to

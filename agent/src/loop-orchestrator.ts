@@ -231,6 +231,25 @@ const DEFAULT_EMPTY_BACKOFF_MS = 300_000;
 const DEFAULT_EMPTY_BACKOFF_ATTEMPTS = 3;
 
 /**
+ * LPF-7.2 — busy-stall safety margin. claude.ts's runner() call is bounded by
+ * a 30-minute ceiling (`timeoutMs: number = 30 * 60 * 1000`), so a healthy
+ * *single drain iteration* (candidate collection through one dispatch) can
+ * never legitimately run past that. This threshold is set comfortably above
+ * that ceiling (35 minutes) so it never fires during normal drain overlap —
+ * only once an iteration has clearly hung somewhere before ever completing
+ * dispatch()/runner() (e.g. a wedge in candidate collection or a runner()
+ * call that itself failed to respect its own timeout), meaning it cannot
+ * self-recover without a process restart. busySince is reset at the top of
+ * every drain iteration (not just once at tick-start), so elapsedMs reflects
+ * only the current iteration's duration — a tick that sequentially works
+ * through many candidates stays busy for longer than any single dispatch,
+ * but that cumulative time is healthy, not stall evidence. Once busySince's
+ * elapsed time exceeds this, the busy-skip log below escalates from
+ * console.warn to console.error.
+ */
+const BUSY_STALL_THRESHOLD_MS = 35 * 60 * 1000;
+
+/**
  * Parses a positive-integer env var, falling back to `fallback` when unset or
  * not a valid positive integer. Read fresh on every call (never cached) so an
  * operator's env change takes effect on the very next tick without a restart
@@ -337,6 +356,12 @@ export function createLoopOrchestrator(
 
   // Persisted across ticks: guards against a second concurrent drain.
   let busy = false;
+  // LPF-7.1: set (via the injected clock) whenever `busy` flips to true and
+  // cleared everywhere `busy` resets to false (the backoff-skip early
+  // return and the tick's `finally` block) — lets the busy-skip warn below
+  // report how long the in-flight tick has been draining, with no stale
+  // leakage into a later tick.
+  let busySince: Date | null = null;
 
   // Spin detection state: tracks the last dispatched itemId and consecutive
   // repeat count to warn when the same item is dispatched repeatedly.
@@ -517,6 +542,19 @@ export function createLoopOrchestrator(
     const isSilent = markers.some((m) => m.type === "silent");
 
     if (isSilent) {
+      // DBV-1.1: a command can tag its own silent dispatch with a specific,
+      // machine-readable [skip-reason:text] marker (e.g. deploy's Step 2b
+      // bundle-completeness gate) so the AgentCronRun.skipReason field
+      // records exactly why nothing happened, instead of the generic
+      // "command:no-work" literal. Falls back to that literal when the
+      // command didn't tag a reason, leaving every other command's behavior
+      // unchanged.
+      const skipReasonMarker = markers.find((m) => m.type === "skip-reason");
+      const skipReason =
+        skipReasonMarker?.type === "skip-reason"
+          ? skipReasonMarker.reason
+          : "command:no-work";
+
       // The command was dispatched (it was selected), but found nothing to do
       // once it ran — one row, marked skipped. runner(message) already ran
       // and may have spent real tokens before reporting nothing-to-do, so
@@ -527,7 +565,7 @@ export function createLoopOrchestrator(
         loopCronId,
         runId,
         clock.now(),
-        "command:no-work",
+        skipReason,
         buildTokenPayload(runResult.usage, runResult.modelUsage),
         phaseId ?? undefined,
         itemType,
@@ -558,13 +596,40 @@ export function createLoopOrchestrator(
     // shipwright-loop gap can tell "still draining a prior tick" apart from
     // the backoff-active and genuinely-empty no-op paths below — see the
     // file's top doc comment / LTO-1.1 for why this matters.
+    // LPF-7.1: console.warn (not console.log) — a tick still busy on the
+    // next scheduled invocation is a stronger operator signal than a plain
+    // informational skip, and the elapsed time (derived from busySince via
+    // the injected clock) shows how long the current drain iteration has
+    // been running.
+    // LPF-7.2: busySince is reset at the top of every drain iteration (see
+    // the reset inside the while loop below), so this elapsed time reflects
+    // only the current iteration, not the whole tick's cumulative drain
+    // time — a tick sequentially working through many candidates is
+    // legitimately busy far longer than any single dispatch, and measuring
+    // from tick-start would misread that as a stall. Once the current
+    // iteration's elapsed time exceeds BUSY_STALL_THRESHOLD_MS — well past
+    // claude.ts's 30-minute runner() ceiling — it can no longer be "still
+    // running normally"; it's wedged somewhere before ever completing
+    // dispatch()/runner() and cannot self-recover, so escalate to
+    // console.error (Sentry-eligible, matching the spin-detection warn's
+    // style) instead of the routine console.warn.
     if (busy) {
-      console.log(
-        "[loop-orchestrator] tick skipped: busy — a prior tick is still draining",
-      );
+      const elapsedMs = busySince
+        ? clock.now().getTime() - busySince.getTime()
+        : 0;
+      if (elapsedMs > BUSY_STALL_THRESHOLD_MS) {
+        console.error(
+          `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms, which exceeds the ${BUSY_STALL_THRESHOLD_MS}ms safety margin — this tick appears stuck/wedged and will not self-recover without a process restart`,
+        );
+      } else {
+        console.warn(
+          `[loop-orchestrator] tick skipped: busy — a prior tick has been draining for ${elapsedMs}ms (still running)`,
+        );
+      }
       return;
     }
     busy = true;
+    busySince = clock.now();
 
     // SKT-2.2 empty-queue backoff: if a prior tick's run of consecutive empty
     // ticks reached the configured threshold, skip this tick entirely — no
@@ -580,6 +645,7 @@ export function createLoopOrchestrator(
         `[loop-orchestrator] tick skipped: empty-queue backoff active — ${remainingMs}ms remaining until ${backoffUntil.toISOString()}`,
       );
       busy = false;
+      busySince = null;
       return;
     }
 
@@ -626,6 +692,17 @@ export function createLoopOrchestrator(
       // Each iteration re-reads toggles and re-collects candidates so a phase
       // toggled off mid-drain (or freshly-consumed work) is reflected at once.
       while (true) {
+        // LPF-7.2: reset busySince at the top of every iteration, not just
+        // once at tick-start. A drain that sequentially works through many
+        // candidates (each dispatch its own bounded runner() call) is
+        // legitimately busy for longer than any single dispatch — measuring
+        // from tick-start would treat that healthy cumulative time as stall
+        // evidence. Resetting per-iteration makes elapsedMs reflect only how
+        // long the *current* iteration (candidate collection through
+        // dispatch) has been running, which — like a single dispatch — is
+        // bounded by claude.ts's 30-minute runner() ceiling, so the safety
+        // margin below still only fires on a genuinely wedged iteration.
+        busySince = clock.now();
         const toggles = resolveLoopPhaseToggles(jobs, loopCronId);
 
         // Unreconciled-agent guard (LPC-2.1 follow-up): resolveLoopPhaseToggles
@@ -892,6 +969,7 @@ export function createLoopOrchestrator(
       }
     } finally {
       busy = false;
+      busySince = null;
     }
   };
 }
@@ -986,7 +1064,7 @@ export async function createProductionLoopOrchestrator(
   opts: LoopOrchestratorProductionOptions,
 ): Promise<(jobs: CronJobLike[]) => Promise<void>> {
   const devTaskDeps = buildDevTaskDeps();
-  const reviewDeps = await buildReviewDeps({ ghJson });
+  const reviewDeps = await buildReviewDeps({ ghJson, ghGraphql });
   const patchDeps = await buildPatchDeps({ ghJson, ghGraphql, getCurrentUser });
   const deployDeps = await buildDeployDeps({ ghJson });
   const taskStoreClient = createTaskStoreClient();

@@ -26,6 +26,8 @@ model Agent {
   anthropicApiKey String?  // AES-256-GCM encrypted at the service layer
   selfHosted      Boolean  @default(false)
   repos           String[] @default([])
+  authorAllowlist String[] @default([])
+  typeName        String   @default("coding")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

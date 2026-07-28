@@ -11,8 +11,66 @@ import { sign } from "hono/jwt";
 import type { Prisma } from "../prisma/client/index.js";
 import type { AgentProvisioner, ProvisionResult } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
+import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { createAdminApp, parseAdminApiKeys } from "./agents-api.ts";
 import type { AdminDeps } from "./agents-api.ts";
+
+// ─── Fake AgentTypeManifestResolver ────────────────────────────────────────
+//
+// Mirrors the shape used by agent-cron-jobs.unit.test.ts's fakeRegistry —
+// resolves a fixed set of manifests by typeName, with tryGetManifest()
+// returning undefined (no fallback) for anything not in the map.
+
+const CODING_MANIFEST: AgentTypeManifest = {
+  apiVersion: "shipwright.dev/v1alpha1",
+  kind: "AgentType",
+  metadata: {
+    name: "coding",
+    displayName: "Coding Agent",
+    description: "test manifest",
+    version: "1.0.0",
+    skills: [],
+  },
+  identity: { templatesDir: "agent/workspace/" },
+  crons: [],
+  plugins: ["shipwright"],
+  tools: [
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "Bash",
+    "WebSearch",
+    "WebFetch",
+    "Skill",
+    "Agent",
+  ],
+  env: { required: [], optional: [] },
+  members: [],
+  repos: [],
+  chat: true,
+  voice: true,
+};
+
+function fakeAgentTypeRegistry(
+  byType: Record<string, AgentTypeManifest> = { coding: CODING_MANIFEST },
+): AdminDeps["agentTypeRegistry"] {
+  return {
+    getManifest(typeName: string) {
+      return byType[typeName] ?? (byType.coding as AgentTypeManifest);
+    },
+    tryGetManifest(typeName: string) {
+      return byType[typeName];
+    },
+    listTypes() {
+      return Object.entries(byType).map(([name, manifest]) => ({
+        name,
+        displayName: manifest.metadata.displayName,
+      }));
+    },
+  };
+}
 
 // ─── Recording fake provisioner ───────────────────────────────────────────────
 
@@ -155,17 +213,36 @@ function makeMockDeps(): AdminDeps {
         name: input.name,
         slackId: input.slackId ?? null,
         selfHosted: input.selfHosted ?? false,
+        repos: [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
       delete: async (_id: string) => {},
       list: async () => [
-        { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
-        { id: "agent-other-id", name: "Other Agent", selfHosted: false },
+        {
+          id: AGENT_ID,
+          name: "Existing Agent",
+          selfHosted: false,
+          typeName: "coding",
+        },
+        {
+          id: "agent-other-id",
+          name: "Other Agent",
+          selfHosted: false,
+          typeName: "coding",
+        },
       ],
       getSummary: async (id: string) =>
         id === AGENT_ID
-          ? { id: AGENT_ID, name: "Existing Agent", selfHosted: false }
+          ? {
+              id: AGENT_ID,
+              name: "Existing Agent",
+              selfHosted: false,
+              typeName: "coding",
+            }
           : null,
       getDetail: async (id: string) =>
         id === AGENT_ID
@@ -175,8 +252,11 @@ function makeMockDeps(): AdminDeps {
               slackId: null,
               selfHosted: false,
               repos: [],
+              authorAllowlist: [],
+              typeName: "coding",
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
+              missingRequiredEnv: [],
             }
           : null,
       exists: async (id: string) => id === AGENT_ID,
@@ -189,8 +269,11 @@ function makeMockDeps(): AdminDeps {
         slackId: null,
         selfHosted: input.selfHosted ?? false,
         repos: input.repos ?? [],
+        authorAllowlist: [],
+        typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
       }),
     },
     agentEnvService: {
@@ -381,6 +464,15 @@ function makeMockDeps(): AdminDeps {
       remove: async () => {},
       removeByName: async () => {},
     },
+    agentMemberService: {
+      add: async (agentId: string, email: string) => ({
+        id: "member-test-id",
+        agentId,
+        email,
+        createdAt: new Date("2024-01-01"),
+      }),
+    },
+    agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: {
       upsertDailyByModel: async (
         _agentId: string,
@@ -655,7 +747,10 @@ describe("admin API — env vars", () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request(`/agents/${AGENT_ID}/envs`, {
       method: "PATCH",
-      body: JSON.stringify({ env: { MY_SECRET: "s3cr3t" }, secretKeys: ["MY_SECRET"] }),
+      body: JSON.stringify({
+        env: { MY_SECRET: "s3cr3t" },
+        secretKeys: ["MY_SECRET"],
+      }),
       headers: {
         "Content-Type": "application/json",
         Cookie: `admin_session=${cookie}`,
@@ -1326,8 +1421,12 @@ describe("admin API — create agent", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: false,
+          repos: [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
         delete: async (id: string) => {
           deleted.push(id);
@@ -1392,6 +1491,164 @@ describe("admin API — create agent", () => {
       },
     });
     expect(res.status).toBe(400);
+  });
+
+  // ─── type field contract (ATS-3.3) ────────────────────────────────────────
+
+  it("POST /agents without type seeds tools from the coding manifest and includes the shipwright plugin", async () => {
+    const cookie = await makeSessionCookie();
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentToolService: {
+        ...base.agentToolService,
+        add: async (_agentId: string, pattern: string) => {
+          seededTools.push(pattern);
+          return {
+            id: TOOL_ID,
+            agentId: AGENT_ID,
+            pattern,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+          };
+        },
+      },
+      agentPluginService: {
+        ...base.agentPluginService,
+        add: async (_agentId: string, name: string) => {
+          seededPlugins.push(name);
+          return {
+            id: PLUGIN_ID,
+            agentId: AGENT_ID,
+            name,
+            version: null,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Default Type Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    expect(seededTools.sort()).toEqual(
+      [
+        "Read",
+        "Write",
+        "Edit",
+        "Glob",
+        "Grep",
+        "Bash",
+        "WebSearch",
+        "WebFetch",
+        "Skill",
+        "Agent",
+      ].sort(),
+    );
+    expect(seededPlugins).toContain("shipwright");
+  });
+
+  it('POST /agents with type="coding" produces the same seeded tools/plugins as the default', async () => {
+    const cookie = await makeSessionCookie();
+    const seededTools: string[] = [];
+    const seededPlugins: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentToolService: {
+        ...base.agentToolService,
+        add: async (_agentId: string, pattern: string) => {
+          seededTools.push(pattern);
+          return {
+            id: TOOL_ID,
+            agentId: AGENT_ID,
+            pattern,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+          };
+        },
+      },
+      agentPluginService: {
+        ...base.agentPluginService,
+        add: async (_agentId: string, name: string) => {
+          seededPlugins.push(name);
+          return {
+            id: PLUGIN_ID,
+            agentId: AGENT_ID,
+            name,
+            version: null,
+            enabled: true,
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Explicit Coding Agent", type: "coding" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    expect(seededTools).toHaveLength(10);
+    expect(seededPlugins).toEqual(["shipwright"]);
+  });
+
+  it("POST /agents with an unknown type returns 400 and creates no agent row", async () => {
+    const cookie = await makeSessionCookie();
+    const created: string[] = [];
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: { name: string }) => {
+          created.push(input.name);
+          return {
+            id: "agent-should-not-exist",
+            name: input.name,
+            slackId: null,
+            selfHosted: false,
+            repos: [],
+            authorAllowlist: [],
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Bad Type Agent",
+        type: "nonexistent-type",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    // agentService.create() must never be called for an unknown type — the
+    // validation happens before any row is created.
+    expect(created).toHaveLength(0);
   });
 });
 
@@ -1483,8 +1740,11 @@ describe("admin API — delete agent", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: [],
+                authorAllowlist: [],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
       },
@@ -1627,9 +1887,7 @@ describe("admin API — delete agent", () => {
     const body = await res.json();
     expect(body.agentDeleted).toBe(true);
     expect(body.completed).toContain("slack-app");
-    expect(slackCalls).toEqual([
-      { token: "xoxp-user-token", appId: "A123" },
-    ]);
+    expect(slackCalls).toEqual([{ token: "xoxp-user-token", appId: "A123" }]);
   });
 
   it("DELETE /agents/:id unknown id → 404 (no deprovision)", async () => {
@@ -1917,7 +2175,12 @@ describe("admin API — provision agent", () => {
         ...base.agentService,
         getSummary: async (id: string) =>
           id === AGENT_ID
-            ? { id: AGENT_ID, name: "Self-Hosted Agent", selfHosted: true }
+            ? {
+                id: AGENT_ID,
+                name: "Self-Hosted Agent",
+                selfHosted: true,
+                typeName: "coding",
+              }
             : null,
       },
     };
@@ -1957,8 +2220,12 @@ describe("admin API — selfHosted field", () => {
           name: input.name,
           slackId: input.slackId ?? null,
           selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };
@@ -1998,8 +2265,18 @@ describe("admin API — selfHosted field", () => {
       agentService: {
         ...base.agentService,
         list: async () => [
-          { id: AGENT_ID, name: "Existing Agent", selfHosted: false },
-          { id: "agent-other-id", name: "Other Agent", selfHosted: true },
+          {
+            id: AGENT_ID,
+            name: "Existing Agent",
+            selfHosted: false,
+            typeName: "coding",
+          },
+          {
+            id: "agent-other-id",
+            name: "Other Agent",
+            selfHosted: true,
+            typeName: "coding",
+          },
         ],
       },
     };
@@ -2092,11 +2369,17 @@ describe("admin API — selfHosted field", () => {
       agentService: {
         ...base.agentService,
         list: async () => [
-          { id: AGENT_ID, name: "Regular Agent", selfHosted: false },
+          {
+            id: AGENT_ID,
+            name: "Regular Agent",
+            selfHosted: false,
+            typeName: "coding",
+          },
           {
             id: "self-hosted-id",
             name: "Self-Hosted Agent",
             selfHosted: true,
+            typeName: "coding",
           },
         ],
       },
@@ -2115,6 +2398,141 @@ describe("admin API — selfHosted field", () => {
     expect(agentsPassed.map((a) => a.id)).not.toContain("self-hosted-id");
     // Regular agent IS passed
     expect(agentsPassed.map((a) => a.id)).toContain(AGENT_ID);
+  });
+});
+
+// ─── typeName field smoke tests ───────────────────────────────────────────────
+
+describe("admin API — typeName field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents includes typeName in each list entry", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body[0].typeName).toBe("coding");
+  });
+
+  it("GET /agents/:id includes typeName in the full record", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.typeName).toBe("coding");
+  });
+});
+
+// ─── missingRequiredEnv field smoke tests (ATS-4.2) ────────────────────────────
+
+describe("admin API — missingRequiredEnv field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("GET /agents/:id includes an empty missingRequiredEnv array when nothing is missing", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.missingRequiredEnv)).toBe(true);
+    expect(body.missingRequiredEnv).toEqual([]);
+  });
+
+  it("GET /agents/:id surfaces missing required env keys by name only — no values in the raw response JSON", async () => {
+    const base = makeMockDeps();
+    const SECRET_VALUE = "sk-super-secret-decrypted-value";
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: ["CLAUDE_CODE_OAUTH_TOKEN"],
+              }
+            : null,
+      },
+      // Sanity: even if the env service were consulted, it must never leak a
+      // decrypted value into this route's response — it isn't consulted at
+      // all by GET /agents/:id, but assert the raw JSON is clean regardless.
+      agentEnvService: {
+        ...base.agentEnvService,
+        getByAgentId: async () => ({
+          env: { CLAUDE_CODE_OAUTH_TOKEN: SECRET_VALUE },
+          secretKeys: ["CLAUDE_CODE_OAUTH_TOKEN"],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const rawText = await res.text();
+    expect(rawText).not.toContain(SECRET_VALUE);
+    const body = JSON.parse(rawText);
+    expect(body.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
+  });
+
+  it("POST /agents includes missingRequiredEnv in the create response (201)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: ["CLAUDE_CODE_OAUTH_TOKEN"],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.missingRequiredEnv).toEqual(["CLAUDE_CODE_OAUTH_TOKEN"]);
   });
 });
 
@@ -2156,8 +2574,11 @@ describe("admin API — repos field", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: [],
+                authorAllowlist: [],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
         updateSelfHosted: async (
@@ -2169,8 +2590,11 @@ describe("admin API — repos field", () => {
           slackId: null,
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };
@@ -2202,8 +2626,11 @@ describe("admin API — repos field", () => {
                 slackId: null,
                 selfHosted: false,
                 repos: ["my-org/my-repo"],
+                authorAllowlist: [],
+                typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
               }
             : null,
         updateSelfHosted: async (
@@ -2215,8 +2642,11 @@ describe("admin API — repos field", () => {
           slackId: null,
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
+          authorAllowlist: [],
+          typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
         }),
       },
     };
@@ -2243,6 +2673,211 @@ describe("admin API — repos field", () => {
     const body = await res.json();
     expect(Array.isArray(body.repos)).toBe(true);
     expect(body.repos).toEqual([]);
+  });
+});
+
+// ─── authorAllowlist field smoke tests ────────────────────────────────────────
+
+describe("admin API — authorAllowlist field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents with authorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "New Agent",
+        authorAllowlist: ["not valid"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("POST /agents with authorAllowlist: ['octocat'] returns 201 and includes it", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          authorAllowlist?: string[];
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: input.authorAllowlist ?? [],
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "New Agent", authorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with authorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ authorAllowlist: ["not valid"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("PATCH /agents/:id with authorAllowlist: ['octocat'] returns 200", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            repos?: string[];
+            authorAllowlist?: string[];
+          },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          authorAllowlist: input.authorAllowlist ?? [],
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ authorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with authorAllowlist: [] clears it and returns 200 with authorAllowlist: []", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: ["octocat"],
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            repos?: string[];
+            authorAllowlist?: string[];
+          },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          authorAllowlist: input.authorAllowlist ?? [],
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ authorAllowlist: [] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual([]);
+  });
+
+  it("GET /agents/:id returns authorAllowlist field (empty array for existing agents)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(Array.isArray(body.authorAllowlist)).toBe(true);
+    expect(body.authorAllowlist).toEqual([]);
   });
 });
 

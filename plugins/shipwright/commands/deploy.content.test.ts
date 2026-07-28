@@ -346,14 +346,178 @@ describe("deploy.md — chained in-Bash polling for Step 5b (AEW-1.1)", () => {
   });
 });
 
-describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
-  it("Step 5a's polling implementation uses an inline chained-Bash sleep loop (shell for-loop + sleep 30)", () => {
+describe("deploy.md — validate workflow names before Step 5b watch (DWV-1.1)", () => {
+  it("Step 5b performs a one-time validation of resolved stage names against live repo workflows via gh api actions/workflows", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain("actions/workflows");
+    expect(step5bSection).toContain("gh api repos/{org}/{repo}/actions/workflows");
+  });
+
+  it("positions the workflow-name validation after the Stage-names resolution/table and before the progress-print line", () => {
+    const step5bSection = extractStep5bSection(content);
+    const stageNamesIdx = step5bSection.indexOf(
+      "**Stage names: check the Deploy model section again.**",
+    );
+    const tableIdx = step5bSection.indexOf('| `"Promote to Prod"` | Promote |');
+    const validationIdx = step5bSection.indexOf("actions/workflows");
+    const printProgressIdx = step5bSection.indexOf(
+      "Print progress on each poll (each loop iteration):",
+    );
+    expect(stageNamesIdx).toBeGreaterThan(-1);
+    expect(tableIdx).toBeGreaterThan(-1);
+    expect(validationIdx).toBeGreaterThan(-1);
+    expect(printProgressIdx).toBeGreaterThan(-1);
+    expect(validationIdx).toBeGreaterThan(stageNamesIdx);
+    expect(validationIdx).toBeGreaterThan(tableIdx);
+    expect(validationIdx).toBeLessThan(printProgressIdx);
+  });
+
+  it("on a mismatch, warns naming the missing stage(s) and lists the actual available workflow names", () => {
+    const step5bSection = extractStep5bSection(content);
+    const lower = step5bSection.toLowerCase();
+    expect(lower).toContain("mismatch");
+    const mentionsMissing = lower.includes("missing");
+    const mentionsNotFound = lower.includes("not found");
+    expect(mentionsMissing || mentionsNotFound).toBe(true);
+    const mentionsAvailableWorkflows =
+      lower.includes("live workflows") || lower.includes("available workflow");
+    expect(mentionsAvailableWorkflows).toBe(true);
+  });
+
+  it("on a mismatch, falls back to watching all workflow runs by SHA only (unnamed) for the remainder of the 30-minute budget", () => {
+    const step5bSection = extractStep5bSection(content);
+    const fallbackMatch = step5bSection.match(
+      /One or more resolved names are absent[\s\S]*?(?=\n\n\*\*|\n### |$)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("$SQUASH_SHA");
+    expect(fallbackSection.toLowerCase()).toContain("sha only");
+    expect(fallbackSection).toContain("30-minute budget");
+    expect(fallbackSection).not.toContain("10 minutes");
+  });
+
+  it("states a name mismatch alone never sets blocked by itself", () => {
+    const step5bSection = extractStep5bSection(content);
+    const fallbackMatch = step5bSection.match(
+      /One or more resolved names are absent[\s\S]*?(?=\n\n\*\*|\n### |$)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    const lower = fallbackSection.toLowerCase();
+    expect(lower).toContain("never");
+    expect(lower).toContain("blocked");
+    const explicitlyScoped =
+      lower.includes("alone never sets") || lower.includes("mismatch alone");
+    expect(explicitlyScoped).toBe(true);
+  });
+
+  it("on a full match, behavior is unchanged — the named three-stage table and print format remain intact", () => {
+    const step5bSection = extractStep5bSection(content);
+    expect(step5bSection).toContain('`"Deploy"`');
+    expect(step5bSection).toContain('`"Canary"`');
+    expect(step5bSection).toContain('`"Promote to Prod"`');
+    expect(step5bSection).toContain(
+      "[{elapsed}m] Deploy: {status}/{conclusion} | Canary: {status}/{conclusion} | Promote: {status}/{conclusion}",
+    );
+    expect(step5bSection.toLowerCase()).toContain("no behavior change");
+  });
+});
+
+describe("deploy.md — Terminal Conditions SHA_ONLY_FALLBACK branch coverage (DWV-1.1)", () => {
+  function extractTerminalConditionsSection(md: string): string {
+    const match = md.match(/### Terminal Conditions[\s\S]*?(?=\n## )/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("branches on SHA_ONLY_FALLBACK=true before the named-stage checks", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackIdx = section.indexOf("If `SHA_ONLY_FALLBACK=true`");
+    const namedModeIdx = section.indexOf(
+      "Otherwise (named-stage mode, the default)",
+    );
+    expect(fallbackIdx).toBeGreaterThan(-1);
+    expect(namedModeIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeLessThan(namedModeIdx);
+  });
+
+  it("SHA_ONLY_FALLBACK branch covers all-success, any-failure, and budget-exhausted outcomes", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackMatch = section.match(
+      /If `SHA_ONLY_FALLBACK=true`[\s\S]*?(?=\*\*Otherwise)/,
+    );
+    expect(fallbackMatch).not.toBeNull();
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("All runs completed successfully");
+    expect(fallbackSection).toContain("Any run fails");
+    expect(fallbackSection).toContain("Budget exhausted (30 minutes)");
+  });
+
+  it("SHA_ONLY_FALLBACK all-success case marks the task deployed and prints the SHA-only handoff line", () => {
+    const section = extractTerminalConditionsSection(content);
+    const successMatch = section.match(
+      /All runs completed successfully[\s\S]*?(?=- \*\*Any run fails)/,
+    );
+    expect(successMatch).not.toBeNull();
+    const successSection = successMatch?.[0] ?? "";
+    expect(successSection).toContain('`status: "deployed"` task-store');
+    expect(successSection).toContain(
+      "Pipeline: SHA-only fallback ({elapsed}m)",
+    );
+  });
+
+  it("SHA_ONLY_FALLBACK any-failure case sets blocked/hitl status, mirroring Step 5c", () => {
+    const section = extractTerminalConditionsSection(content);
+    const failureMatch = section.match(
+      /Any run fails[\s\S]*?(?=- \*\*Budget exhausted)/,
+    );
+    expect(failureMatch).not.toBeNull();
+    const failureSection = failureMatch?.[0] ?? "";
+    expect(failureSection.toLowerCase()).toContain("blocked");
+    expect(failureSection).toContain("hitl");
+  });
+
+  it("SHA_ONLY_FALLBACK budget-exhausted case marks deployed for manual check and prints the pending-at-timeout handoff", () => {
+    const section = extractTerminalConditionsSection(content);
+    const timeoutMatch = section.match(
+      /Budget exhausted \(30 minutes\)\*\* with runs still pending[\s\S]*?(?=Skip the named-stage bullets)/,
+    );
+    expect(timeoutMatch).not.toBeNull();
+    const timeoutSection = timeoutMatch?.[0] ?? "";
+    expect(timeoutSection).toContain('`status: "deployed"` (task');
+    expect(timeoutSection).toContain(
+      "Pipeline: SHA-only fallback (pending at timeout)",
+    );
+  });
+
+  it("explicitly skips the named-stage bullets in SHA_ONLY_FALLBACK mode", () => {
+    const section = extractTerminalConditionsSection(content);
+    expect(section).toContain(
+      "Skip the named-stage bullets below entirely in this mode",
+    );
+  });
+
+  it("scopes the SHA_ONLY_FALLBACK budget to this step's own 30 minutes rather than Step 5c's window", () => {
+    const section = extractTerminalConditionsSection(content);
+    const fallbackMatch = section.match(
+      /If `SHA_ONLY_FALLBACK=true`[\s\S]*?(?=\*\*Otherwise)/,
+    );
+    const fallbackSection = fallbackMatch?.[0] ?? "";
+    expect(fallbackSection).toContain("30-minute budget");
+    expect(fallbackSection.replace(/\s+/g, " ")).toContain(
+      "Step 5c's separate 10-minute window",
+    );
+  });
+});
+
+describe("deploy.md — Monitor-tool polling for Step 5a (MTP-1.1)", () => {
+  it("Step 5a's polling implementation names the Monitor tool and drops the old chained-Bash-loop framing", () => {
     const step5aSection = extractStep5aSection(content);
-    expect(step5aSection).toContain("sleep 30");
-    const hasForLoop =
-      /for\s+\w+\s+in\s+\$\(seq/.test(step5aSection) ||
-      step5aSection.includes("for i in");
-    expect(hasForLoop).toBe(true);
+    expect(step5aSection).toContain("Monitor");
+    const lower = step5aSection.toLowerCase();
+    expect(lower).not.toContain("inline in-bash sleep loop");
+    expect(lower).not.toContain("scheduled wakeup mechanism");
   });
 
   it("Step 5a's polling section does NOT instruct a per-poll ScheduleWakeup call or equivalent backgrounding language", () => {
@@ -364,12 +528,11 @@ describe("deploy.md — chained in-Bash polling for Step 5a (TCR-1.3)", () => {
     expect(lower).not.toContain("run it in the background");
   });
 
-  it("Step 5a explicitly states the implementation is chained in-Bash sleep loops, ruling out a scheduled wakeup mechanism", () => {
+  it("Step 5a explicitly states the implementation is the Monitor tool", () => {
     const step5aSection = extractStep5aSection(content);
     const lower = step5aSection.toLowerCase();
     expect(lower).toContain("implementation");
-    expect(lower).toContain("in-bash sleep loop");
-    expect(lower).toContain("scheduled wakeup mechanism");
+    expect(lower).toContain("monitor tool");
   });
 
   it("preserves the 5-minute budget and 30-second poll interval wording in Step 5a", () => {
@@ -563,5 +726,53 @@ describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (P
     expect(handoffIdx).toBeGreaterThan(-1);
     const handoffSection = content.slice(handoffIdx, handoffIdx + 400);
     expect(handoffSection).not.toContain('"hitl"');
+  });
+});
+
+describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () => {
+  function extractStep2bSection(md: string): string {
+    const match = md.match(
+      /### 2b\. Bundle Completeness Gate[\s\S]*?(?=\n---)/,
+    );
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Step 2b's bundle-gate-block text includes [silent] and a [skip-reason:deploy:bundle-incomplete: marker", () => {
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).toContain("[silent]");
+    expect(step2bSection).toContain("[skip-reason:deploy:bundle-incomplete:");
+  });
+
+  it("Step 2b's skip-reason marker interpolates {HEAD_BRANCH}, matching the placeholder style used elsewhere in this file", () => {
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).toContain(
+      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+    );
+  });
+
+  it("emits the skip-reason marker alongside [silent] in the same 'Stop here' instruction", () => {
+    const step2bSection = extractStep2bSection(content);
+    const stopHereIdx = step2bSection.indexOf("Stop here");
+    expect(stopHereIdx).toBeGreaterThan(-1);
+    const silentIdx = step2bSection.indexOf("[silent]", stopHereIdx);
+    const skipReasonIdx = step2bSection.indexOf(
+      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+      stopHereIdx,
+    );
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeGreaterThan(-1);
+  });
+
+  it("does not require a specific ordering between [skip-reason:...] and [silent] — markers.ts parses both regardless of position", () => {
+    // parseMarkers() strips [skip-reason:...] before checking [silent]'s
+    // end-anchor, so the two markers can appear in either order in the raw
+    // text without breaking [silent] detection (see markers.unit.test.ts's
+    // order-independence cases).
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).not.toContain(
+      "must come first",
+    );
+    expect(step2bSection).toContain("does not matter");
   });
 });

@@ -781,3 +781,261 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(section).toContain("model: PATCH_MODEL");
   });
 });
+
+describe("patch.md — [C.5] Add test coverage in fix subagent prompts (PTR-1.1)", () => {
+  function getStep5bSection() {
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    expect(step5bIdx).toBeGreaterThan(-1);
+    expect(step5cIdx).toBeGreaterThan(-1);
+    return content.slice(step5bIdx, step5cIdx);
+  }
+
+  function getStep6cSection() {
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    expect(step6cIdx).toBeGreaterThan(-1);
+    expect(step6dIdx).toBeGreaterThan(-1);
+    return content.slice(step6cIdx, step6dIdx);
+  }
+
+  it("Step 5b prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
+    const section = getStep5bSection();
+    const cIdx = section.indexOf("[C] Validate");
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    expect(cIdx).toBeGreaterThan(-1);
+    expect(c5Idx).toBeGreaterThan(cIdx);
+    expect(dIdx).toBeGreaterThan(c5Idx);
+  });
+
+  it("Step 6c prompt has [C.5] Add test coverage positioned between [C] Validate and [D] Commit", () => {
+    const section = getStep6cSection();
+    const cIdx = section.indexOf("[C] Validate");
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    expect(cIdx).toBeGreaterThan(-1);
+    expect(c5Idx).toBeGreaterThan(cIdx);
+    expect(dIdx).toBeGreaterThan(c5Idx);
+  });
+
+  it("Step 5b's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
+    const section = getStep5bSection();
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    const c5Section = section.slice(c5Idx, dIdx);
+    expect(c5Section.toLowerCase()).toContain("test framework");
+    expect(c5Section.toLowerCase()).toContain("existing tests");
+    expect(c5Section.toLowerCase()).toContain("no test is needed");
+  });
+
+  it("Step 6c's [C.5] instructs detecting test framework/conventions from nearby existing tests and re-running validate commands", () => {
+    const section = getStep6cSection();
+    const c5Idx = section.indexOf("[C.5] Add test coverage");
+    const dIdx = section.indexOf("[D] Commit");
+    const c5Section = section.slice(c5Idx, dIdx);
+    expect(c5Section.toLowerCase()).toContain("test framework");
+    expect(c5Section.toLowerCase()).toContain("existing tests");
+    expect(c5Section.toLowerCase()).toContain("no test is needed");
+  });
+
+  it("neither [C.5] block hardcodes a repo-specific test-suffix convention", () => {
+    const step5bSection = getStep5bSection();
+    const step6cSection = getStep6cSection();
+    const c5In5b = step5bSection.slice(
+      step5bSection.indexOf("[C.5] Add test coverage"),
+      step5bSection.indexOf("[D] Commit"),
+    );
+    const c5In6c = step6cSection.slice(
+      step6cSection.indexOf("[C.5] Add test coverage"),
+      step6cSection.indexOf("[D] Commit"),
+    );
+    for (const c5Section of [c5In5b, c5In6c]) {
+      expect(c5Section).not.toContain("*.unit.test.ts");
+      expect(c5Section).not.toContain("*.integration.test.ts");
+      expect(c5Section).not.toContain("*.smoke.test.ts");
+      expect(c5Section).not.toContain("*.content.test.ts");
+    }
+  });
+
+  it("Step 5b's [F] Report back block includes a TESTS_ADDED: field", () => {
+    const section = getStep5bSection();
+    const fIdx = section.indexOf("[F] Report back");
+    expect(fIdx).toBeGreaterThan(-1);
+    const fSection = section.slice(fIdx);
+    expect(fSection).toContain("TESTS_ADDED:");
+  });
+
+  it("Step 6c's [E] Report back block includes a TESTS_ADDED: field", () => {
+    const section = getStep6cSection();
+    const eIdx = section.indexOf("[E] Report back");
+    expect(eIdx).toBeGreaterThan(-1);
+    const eSection = section.slice(eIdx);
+    expect(eSection).toContain("TESTS_ADDED:");
+  });
+});
+
+describe("patch.md — escalate first-time BLOCKED status to HITL before releasing the claim (BHE-1.1)", () => {
+  function getStep4cSection() {
+    const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
+    const step4c5Idx = content.indexOf("### Step 4c.5:");
+    expect(step4cIdx).toBeGreaterThan(-1);
+    expect(step4c5Idx).toBeGreaterThan(-1);
+    return content.slice(step4cIdx, step4c5Idx);
+  }
+
+  function getStep5cSection() {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    expect(step5cIdx).toBeGreaterThan(-1);
+    expect(step5c5Idx).toBeGreaterThan(-1);
+    return content.slice(step5cIdx, step5c5Idx);
+  }
+
+  function getStep6dSection() {
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    const step6d5Idx = content.indexOf("### Step 6d.5:");
+    expect(step6dIdx).toBeGreaterThan(-1);
+    expect(step6d5Idx).toBeGreaterThan(-1);
+    return content.slice(step6dIdx, step6d5Idx);
+  }
+
+  function getBlockedBranch(section: string) {
+    const blockedIdx = section.indexOf("**BLOCKED**");
+    expect(blockedIdx).toBeGreaterThan(-1);
+    return section.slice(blockedIdx);
+  }
+
+  function assertEscalationBeforeRelease(
+    section: string,
+    opts: { taskPatchSnippet: string; prPatchSnippet: string; commentTmpPath: string },
+  ) {
+    const blocked = getBlockedBranch(section);
+
+    // hitl PATCH to the linked task
+    expect(blocked).toContain(opts.taskPatchSnippet);
+    expect(blocked).toContain('"hitl": true');
+
+    // hitl + blockedReason PATCH fallback to the PR record
+    expect(blocked).toContain(opts.prPatchSnippet);
+    expect(blocked).toContain("blockedReason");
+
+    // PR comment via temp file
+    expect(blocked).toContain(`gh pr comment {pr} --repo {org}/{repo} --body-file ${opts.commentTmpPath}`);
+    expect(blocked).toContain(`rm ${opts.commentTmpPath}`);
+
+    // Ordering: hitl PATCH + comment must occur BEFORE the release call
+    const taskPatchIdx = blocked.indexOf(opts.taskPatchSnippet);
+    const prPatchIdx = blocked.indexOf(opts.prPatchSnippet);
+    const commentIdx = blocked.indexOf(`--body-file ${opts.commentTmpPath}`);
+    const releaseIdx = blocked.indexOf("/prs/$PR_RECORD_ID/release");
+
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(taskPatchIdx).toBeGreaterThan(-1);
+    expect(taskPatchIdx).toBeLessThan(releaseIdx);
+    expect(prPatchIdx).toBeGreaterThan(-1);
+    expect(prPatchIdx).toBeLessThan(releaseIdx);
+    expect(commentIdx).toBeGreaterThan(-1);
+    expect(commentIdx).toBeLessThan(releaseIdx);
+  }
+
+  it("Step 4c BLOCKED branch escalates to HITL (task or PR record) and posts a PR comment before releasing the claim", () => {
+    const section = getStep4cSection();
+    assertEscalationBeforeRelease(section, {
+      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+      commentTmpPath: "/tmp/shipwright-patch-blocked-4c-{pr}.txt",
+    });
+    const blocked = getBlockedBranch(section);
+    expect(blocked.toLowerCase()).toContain("merge-conflict");
+  });
+
+  it("Step 5c BLOCKED branch (first-round, plain BLOCKED) escalates to HITL and posts a PR comment before releasing the claim", () => {
+    const section = getStep5cSection();
+    assertEscalationBeforeRelease(section, {
+      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+      commentTmpPath: "/tmp/shipwright-patch-blocked-5c-{pr}.txt",
+    });
+    const blocked = getBlockedBranch(section);
+    expect(blocked.toLowerCase()).toContain("review-finding fix");
+  });
+
+  it("Step 5c's BLOCKED escalation reuses PR_TASK_ID rather than re-fetching taskId", () => {
+    const section = getStep5cSection();
+    const blocked = getBlockedBranch(section);
+    expect(blocked).toContain("PR_TASK_ID");
+    expect(blocked).not.toMatch(
+      /GET[^\n]*\n[^\n]*"\$SHIPWRIGHT_TASK_STORE_URL\/prs\/\$PR_RECORD_ID"[^\n]*\n[^\n]*taskId/,
+    );
+  });
+
+  it("Step 6d BLOCKED branch escalates to HITL and posts a PR comment before releasing the claim", () => {
+    const section = getStep6dSection();
+    assertEscalationBeforeRelease(section, {
+      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+      commentTmpPath: "/tmp/shipwright-patch-blocked-6d-{pr}.txt",
+    });
+    const blocked = getBlockedBranch(section);
+    expect(blocked.toLowerCase()).toContain("ci-fix");
+  });
+
+  it("all three BLOCKED sites use distinct temp file names to avoid cross-worktree collisions", () => {
+    expect(content).toContain("/tmp/shipwright-patch-blocked-4c-{pr}.txt");
+    expect(content).toContain("/tmp/shipwright-patch-blocked-5c-{pr}.txt");
+    expect(content).toContain("/tmp/shipwright-patch-blocked-6d-{pr}.txt");
+  });
+
+  it("the existing Step 5a.7 second-round-disagreement escalation is unaffected by the new Step 5c BLOCKED escalation", () => {
+    const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");
+    const step5bIdx = content.indexOf("### Step 5b: Dispatch Fix Subagent");
+    expect(step5a7Idx).toBeGreaterThan(-1);
+    expect(step5bIdx).toBeGreaterThan(step5a7Idx);
+    const step5a7Section = content.slice(step5a7Idx, step5bIdx);
+    expect(step5a7Section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(step5a7Section).toContain("second-round disagreement");
+  });
+
+  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch hitl check (same PATCH targets)", () => {
+    const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6b6Section = content.slice(step6b6Idx, step6cIdx);
+    expect(step6b6Section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(step6b6Section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$');
+
+    const step6dSection = getStep6dSection();
+    const blocked = getBlockedBranch(step6dSection);
+    expect(blocked).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(blocked).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+  });
+});
+
+describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)", () => {
+  function checkSite(step: string, next: string) {
+    const stepIdx = content.indexOf(step);
+    expect(stepIdx).toBeGreaterThan(-1);
+    const nextIdx = content.indexOf(next, stepIdx);
+    expect(nextIdx).toBeGreaterThan(stepIdx);
+    const section = content.slice(stepIdx, nextIdx);
+    expect(section).toContain("state/toolchain-cache/{repo}.json");
+    expect(section).toMatch(/CLAUDE\.md.{0,60}docs\/\*\.md.{0,20}ai-docs\/\*\.md/is);
+    expect(section).toMatch(/authoritative if found/i);
+  }
+
+  it("Step 4a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
+  });
+
+  it("Step 5a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
+  });
+
+  it("Step 6a.5 checks the cache before fresh detection, then docs-first, then config-file fallback", () => {
+    checkSite("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
+  });
+
+  it("does not reference the old single shared cache file", () => {
+    expect(content).not.toContain("state/toolchain-cache.json");
+  });
+});

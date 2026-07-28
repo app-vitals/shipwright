@@ -28,7 +28,16 @@ Routes marked **admin-only** require `isAdmin=true`. Per-agent bearer tokens can
 POST /agents
 ```
 
-Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload. On successful agent creation, seeds the default tool allowlist (`["Bash", "WebSearch", "WebFetch", "Agent"]`) before provisioning — if provisioning fails, these seeded tools are cascade-deleted along with the rolled-back agent row.
+Admin-only. Creates an agent record and, for managed (non-self-hosted) agents, provisions the Kubernetes workload.
+
+The `type` field (optional, defaults to `"coding"`) selects an Agent Type manifest (`agent-types/<type>/manifest.yaml`) that drives seeding: an unknown `type` returns `400` **before any row is created** (zero agent/tool/plugin/member rows persist). On successful agent creation, the resolved manifest is used to seed:
+
+- **AgentTool** rows from the manifest's `tools[]`
+- **AgentPlugin** rows from the manifest's `plugins[]` (for the default "coding" type, this includes the `shipwright` plugin)
+- **AgentMember** rows from the manifest's `members[]`
+- **`repos`** — the manifest's `repos[]` merged (deduplicated) with any request-supplied `repos`
+
+All seeding happens inside the same rollback-guarded block as provisioning — if any seeding step or provisioning fails, every already-seeded child row (tools/plugins/members) is cascade-deleted along with the rolled-back agent row.
 
 Body:
 
@@ -37,9 +46,11 @@ Body:
 | `name` | yes | Agent slug — used as the K8s Deployment name |
 | `slackId` | no | Slack user ID for the agent's bot account |
 | `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
-| `repos` | no | Array of `org/repo` strings scoped to this agent |
+| `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
+| `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
+| `authorAllowlist` | no | Array of GitHub login strings — authors permitted to file pull requests scoped to this agent (default empty array = all authenticated users) |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, createdAt, updatedAt }`.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, typeName, createdAt, updatedAt, missingRequiredEnv }`. Returns `400` for an unknown `type`.
 
 ### List agents
 
@@ -47,7 +58,7 @@ Returns `201` with `{ id, name, slackId, selfHosted, repos, createdAt, updatedAt
 GET /agents
 ```
 
-Admin-only. Returns all agents with `id`, `name`, and `selfHosted` fields. Used for metrics name resolution.
+Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` fields. Used for metrics name resolution.
 
 ### Get agent
 
@@ -55,7 +66,11 @@ Admin-only. Returns all agents with `id`, `name`, and `selfHosted` fields. Used 
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted` and `repos`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `typeName`, and `missingRequiredEnv`.
+
+`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty, all authenticated users are allowed.
+
+`missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
 ### Update agent
 
@@ -63,7 +78,7 @@ Admin-only. Returns the full agent record including `selfHosted` and `repos`.
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format). Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
@@ -227,7 +242,7 @@ Returns `204`. System crons (flagged `isSystem=true`) cannot be deleted — retu
 POST /agents/:id/crons/reconcile
 ```
 
-Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harness. Called automatically on agent startup. Returns `200` with a summary:
+Reconciles the agent's system crons against the cron list declared by its agent type manifest (`agent-types/{typeName}/manifest.yaml`, resolved via the `AgentTypeRegistry`; an unknown `typeName` falls back to the `coding` manifest with a logged warning, so this boot-path call never fails). Called automatically on agent startup. Returns `200` with a summary:
 
 ```json
 {
@@ -241,9 +256,9 @@ Reconciles the agent's system crons against the `SYSTEM_CRONS` list in the harne
 
 The process runs in three passes within a single transaction for atomicity:
 
-- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from `SYSTEM_CRONS`, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Crons in `SYSTEM_CRONS` that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
-- **Pass 2 — Link parents:** For each `SYSTEM_CRONS` entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. If an entry does not declare a resolvable `parentCron`, any existing non-null `parentCronId` on that row is cleared back to `null`. This self-heals the parent/child link on every reconcile call in both directions — null→set (e.g., if it was previously null on a pre-existing row) and set→null (e.g., if a `parentCron` declaration is later removed from `SYSTEM_CRONS`). The order of entries in `SYSTEM_CRONS` does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
-- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in `SYSTEM_CRONS` are deleted.
+- **Pass 1 — Create or update:** For each system cron that already exists (matched by name), the endpoint updates it in place with the current definition from the manifest's `crons` array, preserving its ID and existing enabled state. Updating in place (rather than delete+recreate) keeps the cron's ID stable across agent restarts, so `AgentCronRun` history (linked by foreign key with cascade-delete) is never wiped out. Manifest crons that don't yet exist are created with their default enabled state. Each entry's resulting row ID is recorded in a name → id map as it proceeds.
+- **Pass 2 — Link parents:** For each manifest cron entry that declares a `parentCron`, the endpoint resolves the parent's row ID from the name → id map and sets `parentCronId` on the child. If an entry does not declare a resolvable `parentCron`, any existing non-null `parentCronId` on that row is cleared back to `null`. This self-heals the parent/child link on every reconcile call in both directions — null→set (e.g., if it was previously null on a pre-existing row) and set→null (e.g., if a `parentCron` declaration is later removed from the manifest). The order of entries in the manifest's `crons` array does not matter — both parent and child are guaranteed to have been recorded in the map by Pass 1.
+- **Pass 3 — Orphan cleanup:** System crons whose names are no longer in the manifest's `crons` array are deleted.
 
 ### Cron summary
 
@@ -271,7 +286,7 @@ Body:
 |-------|----------|-------------|
 | `startedAt` | yes | ISO timestamp when the run started |
 | `skipped` | no | `true` if the pre-check returned false |
-| `skipReason` | no | Reason the run was skipped |
+| `skipReason` | no | Reason the run was skipped. On a `[silent]`-marker dispatch, populated from the dispatched command's own `[skip-reason:text]` marker when present (DBV-1.1), falling back to the generic `"command:no-work"` literal when the command didn't tag a specific reason. See `agent/src/markers.ts` and `agent/src/loop-orchestrator.ts`. |
 | `outcome` | no | `"success"` or `"error"` |
 | `itemType` | no | Work item type this run was dispatched against (`"task"` or `"pr"`). Set by the unified `shipwright-loop` cron alongside `itemId`; null when the tick had no dispatch (skipped tick, empty queue). Write-once at creation — not accepted on the PATCH endpoint. |
 | `itemId` | no | Work item id this run was dispatched against (e.g. `"WLS-2.2"` for a task, `"acme/x#123"` for a PR). Null when the tick had no dispatch. Write-once at creation — not accepted on the PATCH endpoint. |
@@ -514,5 +529,6 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `allowedTools` — array of tool patterns
 - `plugins` — installed plugins with derived marketplace URLs
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
+- `authorAllowlist` — array of GitHub login strings (authors permitted to file pull requests scoped to this agent; empty array = all authenticated users allowed)
 
 Returns `404` if the agent doesn't exist.

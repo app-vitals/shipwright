@@ -60,6 +60,7 @@ interface MakeDepsOptions {
     repo: string,
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
+  isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
 function makeDeps({
@@ -72,6 +73,7 @@ function makeDeps({
   getScopedRepos = () => [...new Set(ownPrs.map((pr) => pr.repo))],
   hasScopeSynced = () => true,
   queryTaskStatus = async () => null,
+  isBundleComplete,
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
@@ -104,6 +106,7 @@ function makeDeps({
     listPrCommits,
     getCurrentUser,
     queryTaskStatus,
+    ...(isBundleComplete ? { isBundleComplete } : {}),
   };
 }
 
@@ -1519,6 +1522,39 @@ describe("getPatchCandidates", () => {
       }),
     );
     expect(result).toEqual([]);
+  });
+
+  test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
+    const pr = makeOwnPr({
+      headRefName: "feat/bundle-incomplete",
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        isBundleComplete: async (branch: string) =>
+          branch !== "feat/bundle-incomplete",
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("includes a PR when isBundleComplete resolves true for its branch", async () => {
+    const pr = makeOwnPr({
+      headRefName: "feat/bundle-complete",
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: true } },
+        isBundleComplete: async (branch: string) =>
+          branch === "feat/bundle-complete",
+      }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/example-repo#10");
   });
 });
 

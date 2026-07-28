@@ -8,9 +8,20 @@
  */
 
 import type { AgentCronJob, PrismaClient } from "../prisma/client/index.js";
+import {
+  type AgentTypeManifestResolver,
+  AgentTypeRegistry,
+} from "./agent-type-manifest-loader.ts";
+import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { NotFoundError, UnprocessableEntityError } from "./errors.ts";
-import { SYSTEM_CRONS } from "./system-crons.ts";
+
+/**
+ * The shape of a single cron template resolved from an agent type's manifest.
+ * Structurally identical to the former SYSTEM_CRONS SystemCron entries — the
+ * manifest is now the source of truth (see agent-type-manifest-loader.ts).
+ */
+type ManifestCron = AgentTypeManifest["crons"][number];
 
 export type { AgentCronJob };
 
@@ -72,6 +83,7 @@ export class AgentCronJobService {
   constructor(
     private prisma: PrismaClient,
     private clock: Clock = SystemClock(),
+    private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
   ) {}
 
   /**
@@ -356,17 +368,25 @@ export class AgentCronJobService {
   /**
    * Reconcile system crons for the given agent.
    *
-   * Two passes so parent/child links resolve regardless of SYSTEM_CRONS
-   * array order or whether this is the agent's very first reconcile (i.e.
+   * The cron list is resolved from the agent's type manifest — the agent's
+   * stored `typeName` is looked up via the injected AgentTypeRegistry, which
+   * returns the parsed `agent-types/{typeName}/manifest.yaml` (falling back to
+   * the "coding" manifest with a logged warning for an unknown type, so this
+   * boot-path call never 5xxes). This replaced the former hardcoded
+   * SYSTEM_CRONS array as the source of truth (ATS-3.2).
+   *
+   * Two passes so parent/child links resolve regardless of the manifest's
+   * cron order or whether this is the agent's very first reconcile (i.e.
    * the parent row may not exist yet when a child entry is processed):
    *
-   * Pass 1 — for each entry in SYSTEM_CRONS:
+   * Pass 1 — for each manifest cron entry:
    *   - If an existing system cron with matching name exists: update it in
-   *     place with the current SYSTEM_CRONS definition, preserving its id and
+   *     place with the current manifest definition, preserving its id and
    *     existing enabled state. Updating in place (rather than delete+create)
    *     keeps the row's id stable across restarts so AgentCronRun history
    *     (FK onDelete: Cascade) is never wiped out from under it.
-   *   - If no matching cron exists: create it with SYSTEM_CRONS default enabled.
+   *   - If no matching cron exists: create it with the manifest's default
+   *     enabled state.
    *   Records each entry's resulting row id in a name → id map as it goes.
    *
    * Pass 2 — for each entry that declares `parentCron`, resolves the
@@ -376,9 +396,10 @@ export class AgentCronJobService {
    * non-null parentCronId on that row is cleared back to null. Self-heals
    * the link on every reconcile call in both directions — null→set (e.g.
    * a pre-existing row from before parentCron was introduced) and set→null
-   * (e.g. a parentCron declaration removed from SYSTEM_CRONS).
+   * (e.g. a parentCron declaration removed from the manifest).
    *
-   * Orphan pass: delete any cron with system=true whose name is no longer in SYSTEM_CRONS.
+   * Orphan pass: delete any cron with system=true whose name is no longer in
+   * the resolved manifest cron list.
    *
    * All three passes run inside a single transaction for atomicity.
    *
@@ -387,6 +408,19 @@ export class AgentCronJobService {
   async reconcileSystemCrons(
     agentId: string,
   ): Promise<{ created: number; updated: number; deleted: number }> {
+    // Resolve the agent's type manifest → its declared cron list. The registry
+    // falls back to "coding" (with a warning) for an unknown typeName, so this
+    // never throws on the boot path.
+    const agent = await this.prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { typeName: true },
+    });
+    if (!agent) {
+      throw new NotFoundError(`agent ${agentId} not found`);
+    }
+    const manifestCrons: readonly ManifestCron[] =
+      this.agentTypeRegistry.getManifest(agent.typeName).crons;
+
     // Fetch all existing system crons for this agent
     const existingSystemCrons = await this.prisma.agentCronJob.findMany({
       where: { agentId, system: true },
@@ -400,8 +434,8 @@ export class AgentCronJobService {
       }
     }
 
-    // Build set of valid SYSTEM_CRONS names for orphan detection
-    const systemCronNames = new Set(SYSTEM_CRONS.map((c) => c.name));
+    // Build set of valid manifest cron names for orphan detection
+    const systemCronNames = new Set(manifestCrons.map((c) => c.name));
 
     let created = 0;
     let updated = 0;
@@ -410,9 +444,9 @@ export class AgentCronJobService {
     // Wrap all mutations in a transaction so a crash mid-loop cannot leave
     // the agent missing required system crons (e.g. shipwright-dev-task).
     await this.prisma.$transaction(async (tx) => {
-      // Pass 1: reconcile each SYSTEM_CRON entry, recording name → row id.
+      // Pass 1: reconcile each manifest cron entry, recording name → row id.
       const idByName = new Map<string, string>();
-      for (const systemCron of SYSTEM_CRONS) {
+      for (const systemCron of manifestCrons) {
         const existing = existingByName.get(systemCron.name);
 
         if (existing) {
@@ -455,7 +489,7 @@ export class AgentCronJobService {
       // Also clears parentCronId back to null when an entry no longer
       // declares a resolvable parentCron, so the link self-heals in both
       // directions rather than only null→set.
-      for (const systemCron of SYSTEM_CRONS) {
+      for (const systemCron of manifestCrons) {
         const childId = idByName.get(systemCron.name);
         if (!childId) continue;
         const parentId = systemCron.parentCron
@@ -478,7 +512,7 @@ export class AgentCronJobService {
         }
       }
 
-      // Orphan pass: delete any system cron whose name is not in SYSTEM_CRONS.
+      // Orphan pass: delete any system cron whose name is not in the manifest.
       for (const cron of existingSystemCrons) {
         if (!cron.name || !systemCronNames.has(cron.name)) {
           await tx.agentCronJob.delete({ where: { id: cron.id } });

@@ -1,6 +1,52 @@
 # Toolchain Detection Patterns
 
-Lookup table for auto-detecting project toolchains from config files. Used by all Shipwright commands at startup.
+Lookup table for auto-detecting project toolchains from config files. Used by all Shipwright commands at startup, after the docs-first discovery and cache check below.
+
+## Docs-First Discovery
+
+Before scanning config files, check whether the project's own docs already say how to build/test/lint it. Many projects wrap the raw tool commands — a custom script, a task runner (`Taskfile.yml`, `Makefile` targets that shell out further), a mise-managed runtime, a monorepo command that fans out per-package — and the config-file detection below can miss or misrepresent those wrappers entirely (e.g. detecting bare `jest` when the project actually requires `./scripts/test.sh` for DB setup first).
+
+1. Read `CLAUDE.md` (repo root, plus any nested `CLAUDE.md` the root one `@`-references) for an explicit commands section.
+2. Read `docs/*.md` and `ai-docs/*.md` — whichever directory exists — for a quickstart/setup/contributing doc naming build/test/lint/typecheck commands.
+3. Treat any explicit command, wrapper script, or "use X, not Y" rule found this way as authoritative — it overrides the config-file tables below for that command.
+4. Fall back to the config-file detection tables below only to fill gaps the docs didn't cover (e.g., docs document `test` but not `lint`).
+
+A project with no `CLAUDE.md`/`docs/`/`ai-docs/` just falls straight through to config-file detection — this step costs nothing extra in that case beyond checking those paths exist.
+
+## Caching Across Runs
+
+Toolchain detection (docs-first + config-file fallback) is redundant to redo on every single command invocation — most projects don't change their toolchain often. Cache the result **one level up from the repo checkout** (same tier as `state/error-patrol-ledger.json`), **one file per repo**, so `/dev-task` and `/patch` share one cache instead of each redetecting independently:
+
+```
+state/toolchain-cache/{repo}.json
+```
+
+```json
+{
+  "fingerprint": "<git commit sha>",
+  "detectedAt": "<ISO timestamp>",
+  "commands": {
+    "validate": "...", "test": "...", "lint": "...", "typecheck": "...", "build": "..."
+  }
+}
+```
+
+One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
+
+**Fingerprint** — a cheap staleness check scoped only to the paths that can change the toolchain, so unrelated commits elsewhere in the repo don't force a redundant re-detection:
+
+```bash
+git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json package-lock.json yarn.lock pnpm-lock.yaml bun.lock bun.lockb Cargo.toml go.mod pyproject.toml setup.py Gemfile Makefile Taskfile.yml justfile Justfile mise.toml .mise.toml pom.xml build.gradle build.gradle.kts
+```
+
+`{repo-dir}` is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
+
+1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above, reuse the cached `commands` and skip both Docs-First Discovery and config-file scanning entirely.
+2. Otherwise — file missing, or a fingerprint mismatch (first run, or a toolchain-relevant file changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data).
+
+A missing or stale cache never blocks progress — worst case is a cache miss, which costs exactly what a full detection would cost with no cache at all.
+
+**Known limitation, not addressed here:** the cache stores root-level commands only — the same granularity the config-file fallback already used before caching existed. A monorepo with genuinely different per-package toolchains (turborepo/nx/pnpm-workspaces) isn't newly broken by caching, but isn't specially handled either; per-package cache scoping is a candidate follow-up if it turns out to matter in practice.
 
 ## Detection Order
 
