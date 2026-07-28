@@ -20,6 +20,13 @@
 #   SHIPWRIGHT_AGENT_API_KEY       — bearer token for the config endpoint
 #   ANTHROPIC_API_KEY              — Anthropic API key (or CLAUDE_CODE_OAUTH_TOKEN)
 
+# ─── Node.js binary source ─────────────────────────────────────────────────
+# Copied into the base stage below instead of piping deb.nodesource.com's
+# setup script through bash — that endpoint intermittently 403s in CI,
+# blocking every build. node:22-trixie-slim matches oven/bun:1-slim's Debian
+# release (trixie) so the copied binary is glibc-compatible.
+FROM node:22-trixie-slim AS node-source
+
 # ─── Base: system tooling installed as root ───────────────────────────────────
 
 FROM oven/bun:1-slim AS base
@@ -63,10 +70,13 @@ RUN curl https://mise.run | MISE_INSTALL_PATH=/usr/local/bin/mise sh
 # NOT a mise shim, so its resolution never depends on the active mise/workspace
 # context (which is what broke the previous mise-reshim approach: "claude is not a
 # valid shim"). mise stays purely a runtime *workspace* tool-version manager.
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && npm install -g @anthropic-ai/claude-code@2.1.170 \
-    && rm -rf /var/lib/apt/lists/*
+# Node itself is copied from the node-source stage above rather than fetched via
+# deb.nodesource.com (see that stage's comment).
+COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-source /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && npm install -g @anthropic-ai/claude-code@2.1.170
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
