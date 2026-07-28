@@ -77,15 +77,15 @@ describe("reconcileStaleWorktrees", () => {
     // 20 days old, threshold 14 — stale.
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os-feat-foo"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-os-feat-foo": oldMtime },
+      dirs: ["example-repo-feat-foo"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repo-feat-foo": oldMtime },
     });
 
     await reconcileStaleWorktrees(deps);
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-foo" },
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
     ]);
   });
 
@@ -93,9 +93,9 @@ describe("reconcileStaleWorktrees", () => {
     // 2 days old, threshold 14 — not stale.
     const recentMtime = new Date("2026-07-26T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os-feat-foo"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-os-feat-foo": recentMtime },
+      dirs: ["example-repo-feat-foo"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repo-feat-foo": recentMtime },
     });
 
     await reconcileStaleWorktrees(deps);
@@ -108,9 +108,9 @@ describe("reconcileStaleWorktrees", () => {
     let statCalled = false;
     const { deps, removeCalls } = makeDeps({
       policyContent: "- **cleanup_merged_worktrees**: false\n",
-      dirs: ["vitals-os-feat-foo"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-os-feat-foo": new Date("2020-01-01T00:00:00.000Z") },
+      dirs: ["example-repo-feat-foo"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repo-feat-foo": new Date("2020-01-01T00:00:00.000Z") },
     });
     const wrappedDeps: WorktreeReaperDeps = {
       ...deps,
@@ -135,7 +135,7 @@ describe("reconcileStaleWorktrees", () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
       dirs: ["unknown-repo-feat-foo"],
-      scopedRepos: ["vitals-os", "shipwright"],
+      scopedRepos: ["example-repo", "shipwright"],
       mtimes: { "unknown-repo-feat-foo": oldMtime },
     });
 
@@ -146,21 +146,21 @@ describe("reconcileStaleWorktrees", () => {
   test("AC5: a single directory's removeWorktree failure is caught and logged; remaining directories still processed", async () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os-feat-broken", "shipwright-feat-fine"],
-      scopedRepos: ["vitals-os", "shipwright"],
+      dirs: ["example-repo-feat-broken", "shipwright-feat-fine"],
+      scopedRepos: ["example-repo", "shipwright"],
       mtimes: {
-        "vitals-os-feat-broken": oldMtime,
+        "example-repo-feat-broken": oldMtime,
         "shipwright-feat-fine": oldMtime,
       },
       removeErrors: {
-        "vitals-os-feat-broken": new Error("git worktree remove failed"),
+        "example-repo-feat-broken": new Error("git worktree remove failed"),
       },
     });
 
     await expect(reconcileStaleWorktrees(deps)).resolves.toBeUndefined();
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-broken" },
+      { repo: "example-repo", dirname: "example-repo-feat-broken" },
       { repo: "shipwright", dirname: "shipwright-feat-fine" },
     ]);
   });
@@ -168,40 +168,40 @@ describe("reconcileStaleWorktrees", () => {
   test("longest-prefix match: dashed repo names don't false-positive against a shorter prefix", async () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os-feat-foo"],
-      // "vitals" is a false-positive shorter prefix; "vitals-os" is the real, longer match.
-      scopedRepos: ["vitals", "vitals-os"],
-      mtimes: { "vitals-os-feat-foo": oldMtime },
+      dirs: ["example-repo-feat-foo"],
+      // "example" is a false-positive shorter prefix; "example-repo" is the real, longer match.
+      scopedRepos: ["example", "example-repo"],
+      mtimes: { "example-repo-feat-foo": oldMtime },
     });
 
     await reconcileStaleWorktrees(deps);
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-foo" },
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
     ]);
   });
 
   test("dirname exactly equal to a scoped repo name matches", async () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-os": oldMtime },
+      dirs: ["example-repo"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repo": oldMtime },
     });
 
     await reconcileStaleWorktrees(deps);
 
-    expect(removeCalls).toEqual([{ repo: "vitals-os", dirname: "vitals-os" }]);
+    expect(removeCalls).toEqual([{ repo: "example-repo", dirname: "example-repo" }]);
   });
 
   test("a dirname that merely starts with a repo name's characters but not at a '-' boundary does not match", async () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      // "vitals-osprey-feat-x" should NOT match scoped repo "vitals-os" —
+      // "example-repository-feat-x" should NOT match scoped repo "example-repo" —
       // the character after the prefix must be a "-" boundary (or nothing).
-      dirs: ["vitals-osprey-feat-x"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-osprey-feat-x": oldMtime },
+      dirs: ["example-repository-feat-x"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repository-feat-x": oldMtime },
     });
 
     await reconcileStaleWorktrees(deps);
@@ -214,36 +214,36 @@ describe("reconcileStaleWorktrees", () => {
     const staleUnderDefault = new Date("2026-07-13T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
       policyContent: "- **cleanup_merged_worktrees**: true\n",
-      dirs: ["vitals-os-feat-foo"],
-      scopedRepos: ["vitals-os"],
-      mtimes: { "vitals-os-feat-foo": staleUnderDefault },
+      dirs: ["example-repo-feat-foo"],
+      scopedRepos: ["example-repo"],
+      mtimes: { "example-repo-feat-foo": staleUnderDefault },
     });
 
     await reconcileStaleWorktrees(deps);
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-foo" },
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
     ]);
   });
 
   test("multiple stale directories across different repos are all removed", async () => {
     const oldMtime = new Date("2026-07-01T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
-      dirs: ["vitals-os-feat-a", "shipwright-feat-b", "vitals-os-fix-c"],
-      scopedRepos: ["vitals-os", "shipwright"],
+      dirs: ["example-repo-feat-a", "shipwright-feat-b", "example-repo-fix-c"],
+      scopedRepos: ["example-repo", "shipwright"],
       mtimes: {
-        "vitals-os-feat-a": oldMtime,
+        "example-repo-feat-a": oldMtime,
         "shipwright-feat-b": oldMtime,
-        "vitals-os-fix-c": oldMtime,
+        "example-repo-fix-c": oldMtime,
       },
     });
 
     await reconcileStaleWorktrees(deps);
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-a" },
+      { repo: "example-repo", dirname: "example-repo-feat-a" },
       { repo: "shipwright", dirname: "shipwright-feat-b" },
-      { repo: "vitals-os", dirname: "vitals-os-fix-c" },
+      { repo: "example-repo", dirname: "example-repo-fix-c" },
     ]);
   });
 
@@ -252,14 +252,14 @@ describe("reconcileStaleWorktrees", () => {
     const recentMtime = new Date("2026-07-27T00:00:00.000Z");
     const { deps, removeCalls } = makeDeps({
       dirs: [
-        "vitals-os-feat-stale",
-        "vitals-os-feat-fresh",
+        "example-repo-feat-stale",
+        "example-repo-feat-fresh",
         "ghost-repo-feat-x",
       ],
-      scopedRepos: ["vitals-os"],
+      scopedRepos: ["example-repo"],
       mtimes: {
-        "vitals-os-feat-stale": oldMtime,
-        "vitals-os-feat-fresh": recentMtime,
+        "example-repo-feat-stale": oldMtime,
+        "example-repo-feat-fresh": recentMtime,
         "ghost-repo-feat-x": oldMtime,
       },
     });
@@ -267,7 +267,7 @@ describe("reconcileStaleWorktrees", () => {
     await reconcileStaleWorktrees(deps);
 
     expect(removeCalls).toEqual([
-      { repo: "vitals-os", dirname: "vitals-os-feat-stale" },
+      { repo: "example-repo", dirname: "example-repo-feat-stale" },
     ]);
   });
 });

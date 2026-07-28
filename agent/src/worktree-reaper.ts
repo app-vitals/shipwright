@@ -69,12 +69,12 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Resolve the scoped repo that owns a worktree dirname via longest-prefix
- * match. Repo names can themselves contain dashes (e.g. "vitals-os"), so a
+ * match. Repo names can themselves contain dashes (e.g. "example-repo"), so a
  * naive first-dash split is unsafe — instead, every scoped repo is checked
  * as a candidate prefix (`dirname === repo` or `dirname.startsWith(repo +
  * "-")`, so a match only counts at a "-" boundary, never mid-word) and the
- * LONGEST matching repo name wins (so "vitals-os" wins over a hypothetical
- * shorter false-positive prefix like "vitals").
+ * LONGEST matching repo name wins (so "example-repo" wins over a hypothetical
+ * shorter false-positive prefix like "example").
  *
  * Returns null when no scoped repo's name is a prefix of dirname.
  */
