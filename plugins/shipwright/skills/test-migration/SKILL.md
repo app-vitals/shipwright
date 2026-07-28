@@ -93,9 +93,32 @@ For each existing test, read enough to determine:
 3. **Whether it matches its claimed layer** — a `.test.ts` next to a route handler that spins up a DB connection is doing integration work even if filed as unit
 4. **Whether it's the canonical owner of that functionality** — search for other tests that exercise the same property
 
-### Step 4 — measure speed (optional but recommended)
+### Step 4 — measure speed
 
-If the user opted in (or it's cheap to do so), actually run the test suite once and capture per-test timings. A unit test taking 3 seconds is doing integration work. Speed is a strong layer-mismatch signal — flag for rebuild.
+Speed measurement is aggregate-first, split into an always-on aggregate pull and a
+conditional per-layer breakdown. This mirrors `speed-budgets/SKILL.md`'s two-tier model —
+treat that skill's escalation formula as canonical.
+
+#### Step 4a — pull the aggregate (always)
+
+Pull the aggregate wall-clock and pass/fail/skip counts from the most recent green CI run of
+the `lint / typecheck / test` job, via `gh run list` / `gh run view --log`. No local Postgres
+or per-layer infra is needed for this step — it's always obtainable from CI history alone.
+Compare the aggregate wall-clock against speed-budgets' <15 min Full PR pipeline budget. This
+step is mandatory and runs on every `/test-migration` invocation.
+
+#### Step 4b — per-layer breakdown (conditional)
+
+Only run this step if Step 4a's aggregate wall-clock trips the Tier 2 escalation trigger
+defined in `speed-budgets/SKILL.md` (aggregate exceeds 50% of the <15 min budget, sustained
+across 2 consecutive measurements). When triggered, actually run the suite and capture
+per-test timings via the runner's reporter; a unit test taking 3 seconds is doing integration
+work — speed is a strong layer-mismatch signal, flag for rebuild.
+
+A suite that's comfortably in budget after Step 4a alone is a valid, complete outcome for this
+step — do not treat the absence of local per-layer infra (e.g. no Postgres in the sandbox) as
+a gap requiring escalation. The infra gap is not a speed problem unless Step 4a's aggregate
+actually breaches the Tier 2 trigger.
 
 ### Step 5 — assign buckets
 
@@ -142,4 +165,4 @@ Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-migration.md.tmpl`. Write to `
 - **Don't mark "passes locally" as reuse-grade.** It must pass locally AND assert behavior AND be at the canonical layer AND meet speed budget.
 - **Don't accept "we already have an E2E for that" as canary coverage.** Canary requires read-only or self-cleaning; most E2E tests are not.
 - **Don't skip the risk callout on `delete` verdicts.** A test currently flagged green being recommended for deletion is the single most reviewable judgment call in the report.
-- **Don't let a carried-forward measurement-only item hide behind a clean file-bucketing pass.** A repo can reach a "clean" steady state — zero rebuild/delete/net-new test files — for several consecutive `/test-migration` runs while a real, load-bearing measurement-only item (not a test file — e.g. a per-layer speed measurement) stays unaddressed, because it depends on infrastructure the audit sandbox itself doesn't have (live DB/service access). Track any measurement-only item across cycles; if it has been carried forward unactioned across 3 or more consecutive cycles, it must be surfaced explicitly in this artifact so `/test-roadmap` can act on it. Do not rely on the roadmap author noticing the streak in prose — when the threshold is hit, `/test-roadmap` must place the item as the first Milestone 1 (M1) task by construction, the same way the naming-convention task is guaranteed a Milestone 1 slot.
+- **Don't let a carried-forward measurement-only item hide behind a clean file-bucketing pass.** A repo can reach a "clean" steady state — zero rebuild/delete/net-new test files — for several consecutive `/test-migration` runs while a real, load-bearing measurement-only item (not a test file — e.g. a per-layer speed measurement gated behind Step 4b) stays carried forward unactioned, typically because Step 4a's aggregate has never actually breached speed-budgets' escalation formula and so Step 4b's per-layer infra (live DB/service access) was never exercised. That is not, by itself, a gap requiring escalation — Tier 2 infra being unavailable on a suite that's otherwise in budget is an expected, valid state, not a finding. Track any measurement-only item across cycles, but gate the mandatory-M1 trigger on an actual **Tier 1 budget breach**: only when Step 4a's aggregate has tripped speed-budgets' escalation formula (aggregate exceeds 50% of the <15 min budget, sustained across 2 consecutive measurements) AND the resulting Tier 2 item remains carried forward unactioned does it need to be surfaced explicitly in this artifact so `/test-roadmap` can act on it. Do not rely on the roadmap author noticing the streak in prose — when the Tier 1 budget breach gate is hit, `/test-roadmap` must place the item as the first Milestone 1 (M1) task by construction, the same way the naming-convention task is guaranteed a Milestone 1 slot.

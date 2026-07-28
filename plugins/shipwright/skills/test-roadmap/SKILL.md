@@ -27,7 +27,7 @@ Distilled from Phase 3:
 - Layer coverage map (counts: how many tests at each layer, how many ought to be there)
 - Local-runnable status: % of tests that run locally with no network
 - Canary status: size of current canary suite vs. target (from Phase 2 critical-path roster)
-- Speed status: current p95 per layer vs. budget
+- Speed status: Tier 1 aggregate wall-clock vs. budget; per-layer p95 only if Tier 2 was triggered
 - "Rebuild" debt: count by layer and effort
 - "Delete (redundant)" count and what it implies about false-confidence coverage
 
@@ -47,7 +47,12 @@ The concrete diff between sections 1 and 2:
 - Wrong-layer tests (count and severity)
 - External-only deps with no local substitute (blockers)
 - Canary suite size vs. target
-- **Speed delta** — current per-layer p95 vs. target, expressed as ratio or time-to-close
+- **Speed delta** — leads with the aggregate-vs-budget number: the Tier 1 aggregate wall-clock
+  pulled in test-migration Step 4a vs. the <15 min Full PR pipeline budget from
+  `speed-budgets/SKILL.md`, expressed as ratio or time-to-close. Per-layer p95 numbers are
+  included only when Tier 2 was actually triggered by a prior `/test-migration` pass (i.e. the
+  aggregate breached speed-budgets' escalation formula and a per-layer breakdown exists) — do
+  not fabricate per-layer numbers when only the Tier 1 aggregate is available.
 
 ### 4. Roadmap — five milestones
 
@@ -73,7 +78,7 @@ This task covers:
    - **bun test `--filter`** — use path-based filters that respect the naming convention
 3. **Verification** — run each entry point in isolation and confirm it picks up only its layer's files (e.g., `bun test --filter integration` finds zero unit files).
 
-**Mandatory M1 task — carried-forward measurement-only items:** if Phase 3's `test-migration.md` flags a measurement-only item (not a test file) as carried forward unactioned across 3 or more consecutive cycles, Milestone 1 must include it as the first task, by construction — do not rely on noticing the streak in prose when assembling the task list.
+**Mandatory M1 task — carried-forward measurement-only items:** if Phase 3's `test-migration.md` flags a measurement-only item (not a test file) as carried forward unactioned, gate the mandatory-M1 trigger on the same Tier-1-breach gate `test-migration/SKILL.md` uses — a Tier 1 budget breach, not a bare cycle count. Only when the aggregate wall-clock has tripped `speed-budgets/SKILL.md`'s escalation formula (aggregate exceeds 50% of the <15 min budget, sustained across 2 consecutive measurements) and the resulting item remains carried forward unactioned does Milestone 1 need to include it as the first task, by construction — do not rely on noticing the streak in prose when assembling the task list. A carried-forward item that exists only because Tier 2 infra was never exercised on an otherwise-in-budget suite is not, by itself, grounds for mandatory M1 escalation.
 
 #### Milestone 2: Critical-path coverage
 Write or rebuild every `critical` tier test across all layers.

@@ -78,13 +78,25 @@
 
 ## Speed measurement
 
-- **Measured:** {{SPEED_MEASURED}}  (yes/no)
-- **Current per-layer p95:**
-  - Unit: {{UNIT_P95}}
-  - Integration: {{INTEGRATION_P95}}
-  - Smoke: {{SMOKE_P95}}
-  - E2E: {{E2E_P95}}
-- **Tests over hard cap:** {{OVER_HARD_CAP_LIST}}
+### Tier 1 — aggregate (always measured)
+
+- **Aggregate wall-clock:** {{AGGREGATE_WALL_CLOCK}}  vs. <15 min Full PR pipeline budget
+- **Pass / fail / skip counts (from CI):** {{AGGREGATE_PASS_FAIL_SKIP}}
+
+### Tier 2 — per-layer breakdown (conditional)
+
+- **Tier 2 triggered:** {{TIER2_TRIGGERED}}  (yes/no — per speed-budgets' escalation formula)
+
+If yes:
+  - **Current per-layer p95:**
+    - Unit: {{UNIT_P95}}
+    - Integration: {{INTEGRATION_P95}}
+    - Smoke: {{SMOKE_P95}}
+    - E2E: {{E2E_P95}}
+  - **Tests over hard cap:** {{OVER_HARD_CAP_LIST}}
+
+If no: Tier 2 not triggered — suite is within the Tier 1 aggregate budget. Do not fabricate
+per-layer numbers.
 
 ## Next step
 

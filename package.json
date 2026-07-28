@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.94.2",
+  "version": "1.96.0",
   "private": true,
   "workspaces": [
     "lib",
@@ -13,7 +13,7 @@
     "mcp-server"
   ],
   "scripts": {
-    "test": "NODE_ENV=test bun test",
+    "test": "bun test",
     "lint": "bunx biome lint .",
     "format": "bunx biome format --write .",
     "typecheck": "bun run --filter='*' --sequential typecheck",
