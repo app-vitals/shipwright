@@ -37,13 +37,11 @@ function buildSpecApp() {
         return null;
       },
     },
-    prisma: {
-      agentPlugin: {
-        async findMany() {
-          return [];
-        },
+    agentPluginService: {
+      async listEnabled() {
+        return [];
       },
-    } as never,
+    },
     adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_API_KEY}:*`),
     agentTokenService: { validate: async () => null },
     sessionSecret: SESSION_SECRET,
