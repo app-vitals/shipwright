@@ -86,6 +86,20 @@ interface MakeDepsOptions {
    * with a >1-length array for the branch under test.
    */
   tasksForBranch?: Record<string, PrOpenTaskRecord[] | Error>;
+  /**
+   * WTR-1.3's injected worktree-cleanup policy boolean. Defaults to `false`
+   * so every pre-existing test — none of which configures this — never
+   * triggers the new removeWorktree side effect.
+   */
+  cleanupMergedWorktreesEnabled?: boolean;
+  /**
+   * WTR-1.3's removeWorktree fake. Defaults to a no-op resolve; tests
+   * exercising the failure path override this to reject.
+   */
+  removeWorktree?: (
+    shortRepo: string,
+    worktreeDirName: string,
+  ) => Promise<void>;
 }
 
 function makeDeps({
@@ -101,6 +115,8 @@ function makeDeps({
   orphanCandidateTasks = [],
   openBranchResults = {},
   tasksForBranch = {},
+  cleanupMergedWorktreesEnabled = false,
+  removeWorktree = async () => {},
 }: MakeDepsOptions = {}): {
   deps: PrStateReconcilerDeps;
   listCalls: ListPrsCall[];
@@ -110,6 +126,7 @@ function makeDeps({
   orphanCandidateUpdatedSinceCalls: string[];
   delayCalls: number[];
   listAllTasksForBranchCalls: string[];
+  removeWorktreeCalls: Array<{ shortRepo: string; worktreeDirName: string }>;
 } {
   const listCalls: ListPrsCall[] = [];
   const patchCalls: PatchCall[] = [];
@@ -118,6 +135,10 @@ function makeDeps({
   const orphanCandidateUpdatedSinceCalls: string[] = [];
   const delayCalls: number[] = [];
   const listAllTasksForBranchCalls: string[] = [];
+  const removeWorktreeCalls: Array<{
+    shortRepo: string;
+    worktreeDirName: string;
+  }> = [];
 
   const deps: PrStateReconcilerDeps = {
     repos,
@@ -188,6 +209,11 @@ function makeDeps({
     delay: async (ms: number) => {
       delayCalls.push(ms);
     },
+    isCleanupMergedWorktreesEnabled: cleanupMergedWorktreesEnabled,
+    removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
+      removeWorktreeCalls.push({ shortRepo, worktreeDirName });
+      await removeWorktree(shortRepo, worktreeDirName);
+    },
   };
 
   return {
@@ -199,6 +225,7 @@ function makeDeps({
     orphanCandidateUpdatedSinceCalls,
     delayCalls,
     listAllTasksForBranchCalls,
+    removeWorktreeCalls,
   };
 }
 
@@ -294,6 +321,124 @@ describe("reconcilePrState", () => {
     expect(patchCalls[0].fields.claimedAt).toBeNull();
     expect(patchCalls[0].fields.heartbeatAt).toBeNull();
     expect(patchCalls[0].fields.phase).toBeNull();
+  });
+
+  // ─── WTR-1.3: worktree removal side effect ───────────────────────────────
+
+  test("merged on GitHub + cleanup_merged_worktrees true — removeWorktree called with repo+branch-slug path, in addition to the state PATCH", async () => {
+    const record = makeRecord({ id: "pr-4", prNumber: 4 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#4": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/some-cool-thing",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(1);
+    expect(removeWorktreeCalls[0]).toEqual({
+      shortRepo: "example-repo",
+      worktreeDirName: "example-repo-feat-some-cool-thing",
+    });
+  });
+
+  test("closed on GitHub + cleanup_merged_worktrees true — removeWorktree called with repo+branch-slug path, in addition to the state PATCH", async () => {
+    const record = makeRecord({ id: "pr-5", prNumber: 5 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#5": {
+          state: "CLOSED",
+          mergedAt: null,
+          headRefName: "fix/another-thing",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("closed");
+    expect(removeWorktreeCalls).toHaveLength(1);
+    expect(removeWorktreeCalls[0]).toEqual({
+      shortRepo: "example-repo",
+      worktreeDirName: "example-repo-fix-another-thing",
+    });
+  });
+
+  test("still OPEN on GitHub — removeWorktree is never called, even with cleanup_merged_worktrees true", async () => {
+    const record = makeRecord({ id: "pr-6", prNumber: 6 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#6": {
+          state: "OPEN",
+          mergedAt: null,
+          headRefName: "feat/still-open",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(0);
+    expect(removeWorktreeCalls).toHaveLength(0);
+  });
+
+  test("cleanup_merged_worktrees false — state PATCH still happens, but removeWorktree is not called", async () => {
+    const record = makeRecord({ id: "pr-7", prNumber: 7 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#7": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/no-cleanup",
+        },
+      },
+      cleanupMergedWorktreesEnabled: false,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(0);
+  });
+
+  test("removeWorktree throwing is caught and logged — does not affect the already-succeeded state PATCH, and does not propagate", async () => {
+    const record = makeRecord({ id: "pr-8", prNumber: 8 });
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [record] },
+      ghResults: {
+        "acme/example-repo#8": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/removal-fails",
+        },
+      },
+      cleanupMergedWorktreesEnabled: true,
+      removeWorktree: async () => {
+        throw new Error("git worktree remove failed: directory not found");
+      },
+    });
+
+    // Must not throw — the failure is isolated to the worktree side effect.
+    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
+
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].fields.state).toBe("merged");
+    expect(removeWorktreeCalls).toHaveLength(1);
   });
 
   test("gh lookup failure for one PR does not abort reconciliation of the others in the same batch", async () => {

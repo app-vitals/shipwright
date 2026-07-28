@@ -255,6 +255,25 @@ export function readAllowSelfReview(workspacePath: string): boolean {
   }
 }
 
+/**
+ * Read and parse the `cleanup_merged_worktrees` policy field (WTR-1.1) from
+ * `state/agent-policy.md`, mirroring `readAllowSelfReview()` exactly:
+ * defaults `true` on any read failure (missing file, missing workspace,
+ * etc.) — `parseCleanupMergedWorktrees()` itself already defaults `true`
+ * when the field is present in the file but simply unset.
+ */
+export function readCleanupMergedWorktrees(workspacePath: string): boolean {
+  try {
+    const content = readFileSync(
+      join(workspacePath, "state", "agent-policy.md"),
+      "utf-8",
+    );
+    return parseCleanupMergedWorktrees(content);
+  } catch {
+    return true;
+  }
+}
+
 // ─── Workspace path ───────────────────────────────────────────────────────────
 
 /**
