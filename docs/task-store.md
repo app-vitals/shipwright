@@ -63,7 +63,7 @@ against `tasks.length` to detect truncation. A caller that queries without an ex
 `&limit=` and gets back 50 tasks with `total: 137` has only seen the first page; re-issue the
 query with `&limit=` raised (or page via `&offset=`, accumulating pages until the summed
 `tasks.length >= total`) rather than treating the 50-task response as the full result set.
-This matters most for any dedup-style check (e.g. `entropy-fix`/`error-fix`/`test-fix`/
+This matters most for any dedup-style check (e.g. `entropy-fix`/`error-fix`/`test-fix`/`security-fix`/
 `consolidation-fix`'s "Dedup Check" steps) that queries `?status=pending`/`?status=in_progress`
 before filing new tasks — an unbounded default-limit query on a repo with more than 50 active
 tasks will silently miss the tail of the list.
