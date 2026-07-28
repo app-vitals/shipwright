@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Shipwright metrics dashboard — stateless Hono service with task-store-backed endpoints",
   "scripts": {
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
