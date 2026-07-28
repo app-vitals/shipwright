@@ -157,7 +157,7 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
 
   it("Step 4's worktree-transition line notes state/reviews/ as an exception", () => {
     const transitionIdx = content.indexOf(
-      "All subsequent steps run from `worktrees/{repo}-{branch-slug}/`",
+      "All subsequent steps run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/`",
     );
     expect(transitionIdx).toBeGreaterThan(-1);
     const section = content.slice(transitionIdx, transitionIdx + 400);

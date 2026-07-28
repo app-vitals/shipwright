@@ -102,15 +102,15 @@ dedup check before checkout — see Step 14 for the full targeted flow.
 
 ```bash
 git -C repos/{repo} fetch origin
-git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
+git -C repos/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
 ```
 
 Branch slug = branch name with `/` replaced by `-`.
 
 If the worktree already exists (prior interrupted run):
 ```bash
-git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force
-git -C repos/{repo} worktree add worktrees/{repo}-{branch-slug} origin/{branch}
+git -C repos/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+git -C repos/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch}
 ```
 
 ### Claim using pre-captured commit SHA
@@ -138,10 +138,10 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
 - `409` (conflict): another agent holds the claim at this commit. Remove the worktree
-  (`git -C repos/{repo} worktree remove worktrees/{repo}-{branch-slug} --force 2>/dev/null`),
+  (`git -C repos/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force 2>/dev/null`),
   respond `[silent]`, and stop — there is no other PR to fall back to in explicit-target mode.
 
-All subsequent steps run from `worktrees/{repo}-{branch-slug}/` — except `state/reviews/`
+All subsequent steps run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/` — except `state/reviews/`
 file operations (Steps 9-11, Step 14's cross-reference), which use `$WORKSPACE_ROOT`
 captured in Step 1, since `state/reviews/` only ever exists at the workspace root.
 
