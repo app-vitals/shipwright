@@ -432,6 +432,11 @@ export const TaskListResponseSchema = z
   .object({
     tasks: z.array(TaskSchema),
     total: z.number().int().openapi({ example: 10 }),
+    scopeDegraded: z.boolean().openapi({
+      example: false,
+      description:
+        "True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.",
+    }),
   })
   .openapi("TaskListResponse");
 

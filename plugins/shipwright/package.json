@@ -1,10 +1,10 @@
 {
   "name": "@shipwright/plugin",
-  "version": "1.95.0",
+  "version": "1.96.0",
   "private": true,
   "description": "Shipwright Claude Code plugin — spec → plan → execute → review → deploy",
   "scripts": {
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

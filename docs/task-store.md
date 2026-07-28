@@ -29,6 +29,10 @@ Tokens are created via `POST /tokens` (admin only). The raw token is returned on
 
 On each authenticated request, the service resolves the request's caller — a shared `Caller` identity (from `lib/request-context.ts`) — and makes it available to handlers and error logging. Admin tokens resolve to `{name: 'admin', scope: '*'}` and agent tokens resolve to `{name: agentId, scope: agentId}`. Unhandled errors log the caller label for observability (e.g., `[task-store] unhandled error (caller: agent-42): ...`).
 
+**Scope resolver:**
+
+When the admin service is configured with a scope resolver (a remote service that looks up an agent's accessible repos by ID), the task-store invokes it on every agent-token request to populate the agent's `repos` array. If the resolver call fails (network error, timeout, non-2xx status, malformed JSON), the `repos` array is set to `[]` as a fail-safe to prevent accidental unrestricted access. To help callers detect and respond to resolver outages, the `scopeDegraded` signal is set to `true` only when a resolver failure occurs (see the `/tasks` response format above). Resolver failures are surfaced in error logs but do not block the request — writes within the restrictive empty scope are still permitted, and reads reflect the restricted visibility.
+
 ### Tasks
 
 #### List tasks
@@ -57,8 +61,9 @@ Query params:
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 | `updatedSince` | string | ISO timestamp. Only return tasks with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
 
-Returns `{ tasks: Task[], total: number, limit: number, offset: number }`. `total` is the
-count of *all* tasks matching the filters, independent of `limit`/`offset` — compare it
+Returns `{ tasks: Task[], total: number, limit: number, offset: number, scopeDegraded: boolean }`. 
+
+`total` is the count of *all* tasks matching the filters, independent of `limit`/`offset` — compare it
 against `tasks.length` to detect truncation. A caller that queries without an explicit
 `&limit=` and gets back 50 tasks with `total: 137` has only seen the first page; re-issue the
 query with `&limit=` raised (or page via `&offset=`, accumulating pages until the summed
@@ -67,6 +72,14 @@ This matters most for any dedup-style check (e.g. `entropy-fix`/`error-fix`/`tes
 `consolidation-fix`'s "Dedup Check" steps) that queries `?status=pending`/`?status=in_progress`
 before filing new tasks — an unbounded default-limit query on a repo with more than 50 active
 tasks will silently miss the tail of the list.
+
+`scopeDegraded` is `true` only when the agent token's repo-scope resolver call itself failed
+upstream (network error, timeout, non-2xx status, malformed JSON body) and `repos` was forced
+to `[]` as a fail-safe. It is always `false` for admin tokens and for any request where the
+resolver either was not invoked or succeeded (including when it legitimately returned `[]`).
+This field is purely observational — it does not change any authorization decision — but
+allows callers to distinguish "the lookup failed catastrophically" from "the lookup succeeded
+and this agent truly has zero accessible repos."
 
 `?ready=true` (or `?state=ready`) and `?state=blocked` are unpaginated convenience endpoints —
 they compute over the entire task graph (dependency resolution needs every task, not a

@@ -90,6 +90,22 @@ export function parseAllowSelfReview(content: string): boolean {
   return match?.[1] !== "false"; // default true if missing
 }
 
+export function parseCleanupMergedWorktrees(content: string): boolean {
+  const match = content.match(
+    /(?:`cleanup_merged_worktrees`\s*\|\s*|\*\*cleanup_merged_worktrees\*\*:\s*)(true|false)/,
+  );
+  return match?.[1] !== "false"; // default true if missing
+}
+
+export function parseCleanupAfterDays(content: string): number {
+  const match = content.match(
+    /(?:`cleanup_after_days`\s*\|\s*|\*\*cleanup_after_days\*\*:\s*)(\d+)/,
+  );
+  if (!match) return 14; // default 14 if missing
+  const parsed = Number.parseInt(match[1], 10);
+  return Number.isNaN(parsed) ? 14 : parsed;
+}
+
 // ─── Self-review body matching ────────────────────────────────────────────────
 
 /**
