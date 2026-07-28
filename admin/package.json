@@ -7,7 +7,7 @@
   "description": "Shipwright admin service — CRUD API + UI for agents, env vars, cron jobs, tokens, tools, and plugins",
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "test:e2e": "bunx playwright test",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",

@@ -7,7 +7,7 @@
   "description": "Shipwright task-store service — Postgres-backed Task queue + scoped tokens",
   "scripts": {
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "typecheck": "tsc --noEmit",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"

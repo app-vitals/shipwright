@@ -18,10 +18,13 @@
 # See docs/test-readiness/naming.md for the full naming + exclusion reference.
 #
 # preload runs scripts/test-env-preload.ts before any test file loads,
-# unconditionally forcing NODE_ENV=test for every `bun test` invocation path
-# in this repo (root suite, subpackage test scripts, single-file runs) —
-# centralizing the guard here instead of prefixing individual invocation
-# sites. See docs/observability.md for why this matters (Sentry test guard).
+# forcing NODE_ENV=test for every `bun test` invocation whose cwd is the
+# repo root (root suite, single-file runs from root). Bun does not apply a
+# root bunfig.toml's preload to a `bun test` run whose cwd is a subpackage
+# directory — those scripts (mcp-server, task-store, agent, metrics, admin,
+# plugins/shipwright, chat) carry their own explicit NODE_ENV=test prefix as
+# a second guard until Bun supports preload inheritance for nested/filtered
+# runs. See docs/observability.md for why this matters (Sentry test guard).
 [test]
 pathIgnorePatterns = ["**/site/**", "**/metrics/e2e/**", "**/admin/e2e/**", "**/*.canary.test.ts"]
 preload = ["./scripts/test-env-preload.ts"]
