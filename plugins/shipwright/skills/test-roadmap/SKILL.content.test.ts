@@ -75,3 +75,64 @@ describe("SKILL.md — E2E classification guardrail", () => {
     expect(hasNote).toBe(true);
   });
 });
+
+describe("SKILL.md — Speed delta leads with the aggregate-vs-budget number", () => {
+  it("has a Speed delta bullet in section 3 (The gap)", () => {
+    expect(content).toMatch(/\*\*Speed delta\*\*/);
+  });
+
+  it("leads with aggregate-vs-budget rather than per-layer p95 alone", () => {
+    const speedDeltaIdx = content.indexOf("**Speed delta**");
+    expect(speedDeltaIdx).toBeGreaterThan(-1);
+    const bulletEnd = content.indexOf("\n", speedDeltaIdx + 400);
+    const bullet = content.slice(
+      speedDeltaIdx,
+      bulletEnd === -1 ? content.length : bulletEnd,
+    );
+    expect(bullet).toMatch(/aggregate/i);
+    expect(bullet).toMatch(/budget/i);
+  });
+
+  it("includes per-layer p95 only when Tier 2 was actually triggered", () => {
+    const speedDeltaIdx = content.indexOf("**Speed delta**");
+    const bulletEnd = content.indexOf("\n\n", speedDeltaIdx);
+    const bullet = content.slice(
+      speedDeltaIdx,
+      bulletEnd === -1 ? content.length : bulletEnd,
+    );
+    expect(bullet).toMatch(/Tier 2|Tier-2/);
+    expect(bullet).toMatch(/triggered/i);
+  });
+});
+
+describe("SKILL.md — Mandatory M1 task rescoped to the Tier-1-breach gate", () => {
+  it("has a Mandatory M1 task bullet about carried-forward measurement-only items", () => {
+    const hasBullet =
+      /Mandatory M1 task/i.test(content) &&
+      /carried forward/i.test(content) &&
+      /measurement-only/i.test(content);
+    expect(hasBullet).toBe(true);
+  });
+
+  it("gates the mandatory M1 escalation on an actual Tier-1 budget breach via speed-budgets' escalation formula", () => {
+    const bulletIdx = content.indexOf(
+      "Mandatory M1 task — carried-forward measurement-only items",
+    );
+    expect(bulletIdx).toBeGreaterThan(-1);
+    const section = content.slice(bulletIdx, bulletIdx + 800);
+    expect(section).toMatch(/Tier[\s-]?1/i);
+    expect(section).toMatch(/budget breach/i);
+    expect(section).toContain("speed-budgets");
+    expect(section).toMatch(/escalation formula/i);
+  });
+
+  it("does not gate mandatory M1 escalation on a bare 3-or-more-cycles count", () => {
+    const bulletIdx = content.indexOf(
+      "Mandatory M1 task — carried-forward measurement-only items",
+    );
+    const section = content.slice(bulletIdx, bulletIdx + 800);
+    const hasBareCycleCountGate =
+      /\b3\b[^.]*consecutive|\bconsecutive\b[^.]*\b3\b/i.test(section);
+    expect(hasBareCycleCountGate).toBe(false);
+  });
+});
