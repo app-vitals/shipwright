@@ -97,27 +97,24 @@ describe("createScopeResolver (integration)", () => {
     expect(repos).toEqual(["org/repo-a", "org/repo-b"]);
   });
 
-  it("returns [] when the response is a non-ok status (e.g. 404)", async () => {
+  it("rejects when the response is a non-ok status (e.g. 404)", async () => {
     state.status = 404;
     state.responseBody = { error: "not found" };
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-missing");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-missing")).rejects.toThrow();
   });
 
-  it("returns [] when the response is a non-ok status (500)", async () => {
+  it("rejects when the response is a non-ok status (500)", async () => {
     state.status = 500;
     state.responseBody = { error: "server error" };
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
-  it("returns [] when the response body is malformed JSON", async () => {
+  it("rejects when the response body is malformed JSON", async () => {
     state.malformedJson = true;
     const resolver = createScopeResolver(BASE_URL, ADMIN_API_KEY);
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 
   it("returns [] when the repos field is missing from the body", async () => {
@@ -148,14 +145,13 @@ describe("createScopeResolver (integration)", () => {
     expect(repos).toEqual([]);
   });
 
-  it("returns [] when the network request throws (server unreachable)", async () => {
+  it("rejects when the network request throws (server unreachable)", async () => {
     // Point at a port with nothing listening — fetch will throw/reject.
     server.stop(true);
     const resolver = createScopeResolver(
       "http://localhost:19963",
       ADMIN_API_KEY,
     );
-    const repos = await resolver("agent-42");
-    expect(repos).toEqual([]);
+    await expect(resolver("agent-42")).rejects.toThrow();
   });
 });
