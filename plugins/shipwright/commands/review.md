@@ -702,7 +702,7 @@ can't see.
 Query GitHub directly for reviews at the current head commit:
 
 ```bash
-gh api graphql -f query='
+precheck=$(gh api graphql -f query='
 {
   repository(owner: "{org}", name: "{repo}") {
     pullRequest(number: {pr}) {
@@ -717,12 +717,15 @@ gh api graphql -f query='
       }
     }
   }
-}' --jq '.data.repository.pullRequest as $pr | [$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid) | .body] | any(test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i"))'
+}' --jq '.data.repository.pullRequest as $pr | {headRefOid: $pr.headRefOid, terminal: ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid) | .body] | any(test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")))}')
+headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
+terminal=$(echo "$precheck" | jq -r '.terminal')
 ```
 
 This filters reviews down to only those submitted at the current `headRefOid`, then tests
-whether ANY of their bodies matches a terminal verdict label. The jq program outputs `true`
-or `false`.
+whether ANY of their bodies matches a terminal verdict label. The jq program outputs a JSON
+object with the `headRefOid` string and a `terminal` boolean, captured into shell variables
+of the same names.
 
 This bash regex mirrors `agent/src/check-helpers.ts`'s exported `VERDICT_TERMINAL_LABEL` —
 a literal `Verdict:` label match rather than the fuller thread/finding-body analysis
@@ -731,13 +734,13 @@ a literal `Verdict:` label match rather than the fuller thread/finding-body anal
 label match is sufficient to detect "already reviewed, terminal" at this commit. There is
 no author filtering — a review from any identity counts, not just self-authored ones.
 
-**If the jq output is `true`** (a terminal review already exists at head on GitHub): print
+**If `$terminal` is `true`** (a terminal review already exists at head on GitHub): print
 ```
-Skipping #{pr} — a review already exists at this commit ({headRefOid[0..7]}) on GitHub (cross-task-store check), nothing to do.
+Skipping #{pr} — a review already exists at this commit (${headRefOid:0:7}) on GitHub (cross-task-store check), nothing to do.
 ```
 Stop. No claim, no checkout (no worktree checkout happens).
 
-**If the jq output is `false`**: continue to the Pre-Claim Fast Path subsection immediately
+**If `$terminal` is `false`**: continue to the Pre-Claim Fast Path subsection immediately
 below, unchanged.
 
 ### Pre-Claim Fast Path (CBD-1.4)
