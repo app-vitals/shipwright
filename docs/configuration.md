@@ -230,8 +230,8 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 | `allow_self_review` | `bool` | `true` | Read by `agent/src/check-review.ts`'s `getReviewCandidates()` (the `shipwright-loop` cron's in-process review candidate provider) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `number` | `75` | Minimum confidence score (0–100) for a finding to be included in a review. |
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
-| `cleanup_merged_worktrees` | `bool` | `true` | Automatically remove stale worktrees older than `cleanup_after_days`. |
-| `cleanup_after_days` | `number` | `14` | Age threshold (days) before a worktree is eligible for automatic cleanup via `reconcileStaleWorktrees()`. |
+| `cleanup_merged_worktrees` | `bool` | `true` | Read by the agent's background worktree reconciler to decide whether merged-PR worktrees are automatically removed (`agent/src/pr-state-reconciler.ts`'s `reconcileRecord()`). Not read by `/shipwright:review`. |
+| `cleanup_after_days` | `number` | `14` | Age threshold (days) before a worktree is eligible for automatic cleanup via `reconcileStaleWorktrees()` (`agent/src/worktree-reaper.ts`, run on the same background interval as `agent/src/pr-state-reconciler.ts`). Not read by `/shipwright:review`. |
 
 ### Example
 
