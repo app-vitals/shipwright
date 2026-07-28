@@ -225,12 +225,63 @@ For each flagged pair, print:
 
 ---
 
+## Step 4.5: Cross-Check test-readiness-decisions.md (Once More Before Filing Any Task)
+
+Even though a matching decision may already have shaped an earlier `test-inventory` pass's
+classification, the registry can change between when `test-readiness-plan.md` was generated
+and when this skill runs — a human may have reviewed a prior ambiguous item and added a new
+decision entry since. Never trust the plan's row as still current on this point; re-check live.
+This mirrors `consolidation-fix/SKILL.md`'s Step 3 ("Cross-Check consolidation-decisions.md
+(Once More Before Queueing)") exactly, applied to this skill's registry instead.
+
+This check runs against **every** row surviving Step 4 — not just rows headed toward a
+rule-(d)/HITL classification in Step 5.2. A registry decision can resolve a row that would
+otherwise be filed as a perfectly ordinary autonomous task just as easily as it can resolve an
+ambiguous one; the check is unconditional, upstream of the `hitl` computation.
+
+1. Check for `.claude/shipwright/test-readiness-decisions.md` in the project root.
+2. **If it does not exist**, treat this as "no decisions configured" — the same graceful no-op
+   `consolidation-fix`'s Step 3 uses for a missing `consolidation-decisions.md`. Print: "No
+   test-readiness-decisions.md found — no decisions configured." and continue to Step 5 with
+   every surviving row unaffected. This is expected and not an error.
+3. **If it exists**, load and parse it the same generic, defensive way described in
+   `test-inventory/SKILL.md`'s Step 0: read each `###` entry for its **Item**, **Decision**,
+   **Rationale**, and **Revisit** fields where present, without hardcoding assumptions about the
+   registry's exact heading/field layout beyond those four fields — skip any entry you can't
+   confidently interpret rather than failing the whole load.
+4. For each row surviving Step 4, compare its target file(s)/outcome against every decision
+   entry's **Item** field. This is a judgment-based match, not exact string equality — read
+   both descriptions and decide whether they describe the same ambiguous item, the same
+   comparison style `consolidation-fix`'s Step 3 uses for its own registry.
+   - If a decision entry clearly matches and its **Revisit** condition has **not** been met,
+     **skip filing this row** — do not build a task-store task for it in Step 5. Print:
+     `Skipping {T-NNN} — resolved per test-readiness-decisions.md ("{entry name}")`. Record the
+     row as **suppressed** for the Step 7.2 summary.
+   - If a decision entry matches but its **Revisit** condition has been met (a stated date has
+     passed, a stated occurrence/call-site threshold has now been exceeded, or a stated
+     triggering event has occurred), the row is no longer resolved by that entry — continue
+     filing it normally through Step 5.
+   - If no decision entry matches, continue filing the row normally through Step 5.
+5. If a registry entry's recorded layer/convention no longer applies to the current codebase
+   (e.g. the call sites it names have since diverged, or the test layer it names has been
+   removed from the repo's conventions), treat the match as if the revisit condition had been
+   met — do not apply a stale resolution; log this explicitly (`{T-NNN} — registry entry
+   "{entry name}" no longer applies, filing normally`) and continue filing the row normally.
+   This is prompt-content instruction, not executable logic: there is no crash path here, only
+   "fall through to filing normally and say why."
+6. Every row skipped in this step is excluded from Step 5's build list and from the Step 7.1
+   bulk POST — same effect as a Step 4 dedup skip, different reason (resolved, not
+   already-active).
+
+---
+
 ## Step 5: Build Task JSON
 
 Skip this entire step if `--dry-run` was passed — Step 6 performs the equivalent
 classification in-memory for the preview instead, without writing anything.
 
-For each remaining `T-NNN` row (not skipped in Step 4), build a task object. Reuse the `repo`
+For each remaining `T-NNN` row (not skipped in Step 4 or suppressed in Step 4.5), build a task
+object. Reuse the `repo`
 and `repo-slug` values detected in Step 3 — do not re-derive them:
 
 ```json
@@ -426,7 +477,11 @@ check: it reuses Step 4's same two task-store queries, and `--dry-run`'s whole c
 "no task-store queries made" (see Setup: Parse Arguments). Extending the fuzzy check into
 dry-run would require querying the task store, which would break that contract — so dry-run
 previews never surface fuzzy-duplicate flags; they only appear on a real (non-dry-run) run's
-Step 4/7.2 output. For each parsed row, compute `priority` (5.1), `hitl`
+Step 4/7.2 output. Step 4.5 (registry cross-check) is a local file read, not a task-store
+query, so it **does** still run in `--dry-run` mode — a preview should reflect suppressed rows
+the same way a real run would, printing `Would skip {T-NNN} — resolved per
+test-readiness-decisions.md ("{entry name}")` for each match instead of including it below. For
+each parsed row surviving Step 4.5, compute `priority` (5.1), `hitl`
 (5.2), and `dependencies` (5.4) in-memory, then print a preview:
 
 ```
@@ -478,9 +533,10 @@ Skip this step if `--dry-run` was passed (handled in Step 6).
 TEST FIX — QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
-  SKIPPED   {K} tasks (already active)
-  FLAGGED   {F} tasks (possible near-duplicate, not skipped)
+  QUEUED     {N} tasks   ({A} autonomous, {H} HITL)
+  SKIPPED    {K} tasks (already active)
+  FLAGGED    {F} tasks (possible near-duplicate, not skipped)
+  SUPPRESSED {S} - resolved per test-readiness-decisions.md
 
 Tasks queued:
   test-{t-nnn}-{repo-slug} — {outcome}  [layer: {test-layer}, priority: {priority}, hitl: {true|false}]
@@ -493,6 +549,10 @@ Skipped (already active):
 {If any flagged:}
 Flagged for review (possible near-duplicate, not skipped):
   {T-NNN} — {similarity}% title-similar to active task {other-id}: "{other-title}"
+
+{If any suppressed:}
+Suppressed (resolved per test-readiness-decisions.md):
+  {T-NNN} — {entry name}
 
 Run /shipwright:dev-task to execute autonomous tasks. HITL tasks are picked up via
 /shipwright:hitl.
@@ -513,6 +573,10 @@ Stop after printing — this is the sole final output for the regular flow.
 - **Bulk append fails** (`/tasks/bulk` non-2xx, Step 7.1): log the response body and
   stop. Do not retry blindly; re-running the regular flow is idempotent because the dedup
   check (Step 4) skips already-queued rows.
+- **`test-readiness-decisions.md` fails to parse** (Step 4.5): skip only the entries that can't
+  be confidently interpreted (same defensive-parse contract as `test-inventory/SKILL.md`'s Step
+  0) — never fail the whole run over one malformed entry. A missing file is not a failure at
+  all; it's the documented no-op path.
 
 ---
 
@@ -527,6 +591,10 @@ Stop after printing — this is the sole final output for the regular flow.
   skill's `--refresh` flag did; that mechanism is fully replaced, not duplicated.
 - **Dedup before queueing** — never skip Step 4 in the regular flow (outside `--dry-run`,
   which explicitly skips it by design and queues nothing for real).
+- **Cross-check test-readiness-decisions.md live, every run, for every row** — never trust
+  that a row's classification is still unresolved by the registry; a human may have added a
+  new decision entry since `test-readiness-plan.md` was generated (Step 4.5). This check is
+  unconditional across all rows, not scoped to rule-(d)/HITL rows only.
 - **Fuzzy near-duplicate check (Step 4.1) never skips** — it only ever flags for human review
   (printed in Step 4's output and again in Step 7.2's summary). Only the exact-ID check can
   remove a row from the Step 5 build list; a fuzzy title match is never, on its own, a reason

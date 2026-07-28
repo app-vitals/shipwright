@@ -16,6 +16,31 @@ By the `/test-inventory` command. The repo path arrives as `$ARGUMENTS` (default
 
 ## Process
 
+### Step 0 — load the decisions registry
+
+1. Check for `.claude/shipwright/test-readiness-decisions.md` in the target repo root.
+2. **If it does not exist**, treat this as "no decisions configured" — the same graceful
+   no-op `consolidation-scan` uses for a missing `.claude/shipwright/consolidation-decisions.md`
+   (see `consolidation-scan/SKILL.md`'s Step 1). Print: "No test-readiness-decisions.md found —
+   no decisions configured." and continue to Step 1 with an empty decisions list. This is
+   expected on a repo that hasn't recorded any resolved ambiguous items yet — it is not an
+   error.
+3. **If it exists**, load it and parse its entries the same generic, defensive way
+   `consolidation-scan`'s Step 1 parses `consolidation-decisions.md`: read each `###` entry for
+   its **Item**, **Decision**, **Rationale**, and **Revisit** fields where present, but do not
+   hardcode assumptions about the registry's exact heading/field layout beyond those four
+   fields — skip any entry you can't confidently interpret rather than failing the whole load.
+4. Build an in-memory decisions list: one entry per parsed record, holding at least its item
+   description, decision, and revisit condition (if any).
+5. Print the count of loaded entries, e.g. "Loaded 1 decision from test-readiness-decisions.md."
+
+This decisions list is consulted during classification (Step 3) — a file whose ambiguous-item
+fingerprint matches a registry entry recorded as "coverage satisfied indirectly" (or any
+similarly-worded acceptance of non-canonical coverage) is classified at the layer the registry
+entry actually resolved to, instead of falling through to the rubric's mechanical default,
+unless the entry's revisit condition has been met (in which case treat it as if no matching
+entry exists and classify normally).
+
 ### Step 1 — detect the stack
 
 Read these signals to determine language and frameworks:
@@ -51,6 +76,27 @@ A functional unit appears **exactly once** in the inventory at its canonical (lo
 4. **E2E** — only multi-step state across services. Never a single boundary or single rule.
 
 If a functional unit could be tested at multiple layers, list it once at the lowest-sufficient layer. Higher-layer test responsibilities are **delta-only** (what the lower layer cannot prove).
+
+**Registry check before applying the mechanical default.** Before assigning a file the
+hierarchy's mechanical default layer (e.g. "pure logic -> unit"), check the file against the
+decisions list loaded in Step 0. If a registry entry's **Item** matches this file (same
+judgment-based comparison used for any other fingerprint match in this pipeline — read both
+descriptions and decide whether they describe the same file/ambiguous item) and its
+**Decision** records that coverage is satisfied indirectly at a different layer (e.g. "accept
+indirect e2e coverage" instead of adding a unit file), classify the file at that
+registry-recorded layer instead of the rubric's mechanical default. Annotate the row's entry
+in the generated inventory with `(per test-readiness-decisions.md - see '<entry>')`, where
+`<entry>` is the matching entry's short `###` heading, so a reader can trace the classification
+back to its source decision instead of it looking like a hand-edited row a future full
+re-inventory could silently revert. If multiple registry entries could plausibly match the same
+file, use the first/most specific match (the entry whose **Item** field most precisely names
+this file, not a broad category it happens to fall under) and note in the annotation only the
+one entry actually applied. If a matching entry's **Revisit** condition has been met, or the
+entry points at a layer/convention that no longer applies to the current codebase (e.g. the
+call sites it names have since diverged, or the test layer it names has been removed from the
+repo's conventions), do not apply it — classify the file normally per the mechanical default
+and note in the row why the registry entry was not applied (its revisit condition was met, or
+its recorded layer no longer applies) rather than silently ignoring the stale entry.
 
 ### Step 4 — rank by criticality
 
