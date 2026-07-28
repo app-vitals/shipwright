@@ -190,16 +190,47 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 The `&repo=` filter scopes dedup to tasks for the repo currently being scanned — without it, a
 rule active for one repo would incorrectly block or interfere with dedup for a different repo.
 
-Parse both `.tasks` arrays. From the combined results, collect tasks where:
+Then run a third query for recently-closed `status=done` tasks, so a finding a human already
+triaged (e.g. a HITL task closed as a false positive, with no code change because there was
+nothing to fix) doesn't get silently re-filed the next time the same pattern is still
+detectable — this is a coarse, rule-level check, the same granularity as the pending/
+in_progress dedup above, not finding-level. Compute `updatedSince` as 14 days ago in ISO 8601
+(`date -u`), then run:
+```bash
+UPDATED_SINCE=$(date -u -d '14 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-14d +%Y-%m-%dT%H:%M:%SZ)
+curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?status=done&repo={url-encoded-repo}&updatedSince=$UPDATED_SINCE" | jq '.tasks'
+```
+The 14-day window is long enough to span the weekly security-patrol cadence at least twice, but
+short enough that a genuinely-regressed finding from months ago still gets re-filed rather than
+silently suppressed forever.
+
+Parse all three `.tasks` arrays. From the pending/in_progress results, collect tasks where:
 - `source == "shipwright"`, OR
 - `title` starts with `"Security fix:"`
 
-Extract the rule IDs from existing tasks by parsing the `id` field (format:
+Extract the rule IDs from these tasks by parsing the `id` field (format:
 `security-{rule}-{repo-slug}-{YYYY-Www}`) or from the `branch` field (format:
 `fix/security-{rule}-...`). Build a set of "already active" rule IDs.
 
-For each rule group: if its `rule` is in the "already active" set, skip it. Print:
-`Skipping {rule} — task already active`.
+From the `status=done` results (already filtered to the last 14 days by `updatedSince`), apply
+the same `source`/`title` filter and rule-ID extraction to build a separate "recently closed"
+set — keyed by rule ID, each entry keeping the done task's `completedAt` (or `updatedAt` if
+`completedAt` is absent) and an outcome string for use in the skip message below. Resolve the
+outcome as the first of these that is a non-empty string: the done task's `note` (the field
+`/shipwright:hitl` Step 6 optionally sets from the human's close-out summary — the primary
+path for the PR's motivating HITL-false-positive case), then its `blockedReason` (set by other
+close paths, even though it's not typically paired with `status: "done"`), then the literal
+`"resolved"` if neither is present.
+
+For each rule group:
+- If its `rule` is in the "already active" set, skip it. Print:
+  `Skipping {rule} — task already active`.
+- Else if its `rule` is in the "recently closed" set, skip it. Print:
+  `Skipping {rule} — closed {date} as {outcome}, still within 14-day dedup window`
+  (`{date}` is the done task's `completedAt`/`updatedAt`, `{outcome}` is the resolved outcome
+  string above) — distinctly worded from the "already active" message above so operators can
+  tell an active in-flight task from a recently-closed one at a glance in run output.
 
 ### 6q.2 Build Task JSON
 
@@ -366,7 +397,7 @@ SECURITY FIX — QUEUED
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   QUEUED    {N} tasks   ({A} autonomous, {H} HITL)
-  SKIPPED   {N} rule groups (already active)
+  SKIPPED   {N} rule groups (already active, or recently closed)
 
 Tasks queued:
   security-{rule}-{repo-slug}-{YYYY-Www} — {rule description}  [hitl: {true|false}]
@@ -375,6 +406,9 @@ Tasks queued:
 {If any skipped:}
 Skipped (already active):
   {rule} — task already in queue or in progress
+
+Skipped (recently closed, within 14-day dedup window):
+  {rule} — closed {date} as {outcome}
 
 Run /shipwright:dev-task to execute autonomous tasks. HITL tasks (credential rotation,
 per-finding authz calls marked hitl:true) are picked up via /shipwright:hitl.

@@ -142,7 +142,8 @@ When the human confirms the task is complete (e.g. says "done", "finished", "all
 "mark it done", or similar):
 
 1. First run **Step 6a** below if it applies to this task.
-2. Then mark the task done in the task store as described further down.
+2. Then mark the task done in the task store as described further down (**Step 6b**), which
+   also includes an optional outcome-note prompt.
 
 ### 6a. Offer Gitleaksignore Suppression
 
@@ -234,23 +235,38 @@ sub-step.
 
 ### 6b. Mark Task Done
 
-Mark the task done in the task store:
+Ask a brief optional follow-up: "Any outcome note for the record (e.g. 'fixed', 'false
+positive — no change needed')? Press enter to skip." If the human provides one, capture it
+as `OUTCOME_NOTE`; otherwise leave it empty.
+
+Mark the task done in the task store, including `note: OUTCOME_NOTE` only when one was
+given (omit the field entirely when skipped — do not send an empty string):
 
 ```bash
 COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-curl -sf -X PATCH \
-  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  -H "Content-Type: application/json" \
-  "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-  -d "{\"status\": \"done\", \"completedAt\": \"$COMPLETED_AT\"}" | jq .
+if [ -n "$OUTCOME_NOTE" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "$(jq -n --arg note "$OUTCOME_NOTE" --arg completedAt "$COMPLETED_AT" \
+      '{status: "done", completedAt: $completedAt, note: $note}')" | jq .
+else
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"done\", \"completedAt\": \"$COMPLETED_AT\"}" | jq .
+fi
 ```
 
-Print:
+Print (include the `Outcome:` line only when `OUTCOME_NOTE` was given):
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ✓ HITL TASK COMPLETE: {TASK_ID}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Task:        {TASK_TITLE}
 Completed:   {COMPLETED_AT}
+Outcome:     {OUTCOME_NOTE}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```

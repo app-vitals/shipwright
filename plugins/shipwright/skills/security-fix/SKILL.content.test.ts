@@ -95,6 +95,49 @@ describe("SKILL.md — dedup check", () => {
   });
 });
 
+describe("SKILL.md — dedup check widened to recently-closed done tasks", () => {
+  it("queries status=done scoped by repo", () => {
+    expect(content).toContain("status=done");
+  });
+
+  it("queries using the updatedSince param", () => {
+    expect(content).toContain("updatedSince");
+  });
+
+  it("documents a 14-day lookback window", () => {
+    expect(content).toContain("14-day");
+  });
+
+  it("has a distinct skip message for recently-closed done tasks", () => {
+    expect(content).toContain("still within 14-day dedup window");
+  });
+
+  it("keeps the existing 'task already active' skip message unchanged for pending/in_progress", () => {
+    expect(content).toContain("Skipping {rule} — task already active");
+  });
+
+  it("distinguishes recently-closed from already-active in the skip wording", () => {
+    const hasClosedWording =
+      content.toLowerCase().includes("closed {date}") ||
+      content.toLowerCase().includes("recently closed") ||
+      content.toLowerCase().includes("recently-closed");
+    expect(hasClosedWording).toBe(true);
+  });
+
+  it("resolves {outcome} from the done task's note field first", () => {
+    expect(content).toContain("the done task's `note`");
+  });
+
+  it("documents note as the field hitl.md Step 6 sets from the human's close-out summary", () => {
+    expect(content).toContain("/shipwright:hitl` Step 6 optionally sets");
+  });
+
+  it("falls back to blockedReason, then the literal 'resolved', when note is absent", () => {
+    expect(content).toContain('then its `blockedReason`');
+    expect(content).toContain('then the literal\n`"resolved"`');
+  });
+});
+
 describe("SKILL.md — embedded rule classification table", () => {
   const rules = [
     "gitleaks-secret",
