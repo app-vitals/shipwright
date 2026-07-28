@@ -1103,3 +1103,151 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
     expect(content).not.toContain("state/toolchain-cache.json");
   });
 });
+
+describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (PCG-1.1)", () => {
+  function getStep2_5Section() {
+    const step2_5Idx = content.indexOf("## Step 2.5: Handle DIRTY PRs (Auto-Rebase Attempt)");
+    const step3Idx = content.indexOf("## Step 3: Classify PRs into Three Lists");
+    expect(step2_5Idx).toBeGreaterThan(-1);
+    expect(step3Idx).toBeGreaterThan(-1);
+    return content.slice(step2_5Idx, step3Idx);
+  }
+
+  function getStep3OpeningSection() {
+    const step3Idx = content.indexOf("## Step 3: Classify PRs into Three Lists");
+    const step3aIdx = content.indexOf("### Step 3a: Check for Unaddressed Review Findings");
+    expect(step3Idx).toBeGreaterThan(-1);
+    expect(step3aIdx).toBeGreaterThan(-1);
+    return content.slice(step3Idx, step3aIdx);
+  }
+
+  it("Step 2.5's opening line no longer describes 'each PR discovered in Step 2'", () => {
+    const section = getStep2_5Section();
+    expect(section).not.toContain("For each PR discovered in Step 2");
+  });
+
+  it("Step 2.5's opening line reflects the single target PR resolved in Step 2", () => {
+    const section = getStep2_5Section();
+    const openingLine =
+      section
+        .split("\n")
+        .filter((line) => line.trim().length > 0)
+        .find((line) => !line.trim().startsWith("#")) ?? "";
+    expect(openingLine).toMatch(/the (target )?PR resolved in Step 2/i);
+  });
+
+  it("Step 3's opening prose no longer says 'each PR' or 'all PRs'", () => {
+    const section = getStep3OpeningSection();
+    expect(section).not.toContain("each PR");
+    expect(section).not.toContain("all PRs");
+    expect(section).not.toContain("Work through all PRs before continuing");
+  });
+
+  it("Step 3's opening prose reflects checking the single target PR against all three conditions", () => {
+    const section = getStep3OpeningSection();
+    expect(section).toMatch(/the (target )?PR against all three conditions/i);
+  });
+
+  it("Step 3's List A/C/D labels and multi-list membership note are unchanged", () => {
+    const section = getStep3OpeningSection();
+    expect(section).toContain("**List A** — PRs with unresolved review or PR comments");
+    expect(section).toContain("**List C** — PRs with merge conflicts (DIRTY)");
+    expect(section).toContain("**List D** — PRs with failing CI");
+    expect(section).toMatch(/appear in multiple lists/);
+    expect(section).toContain("processed in the order the steps execute (C → A → D)");
+  });
+
+  it("does not touch the 'move to the next PR in List X' fallback phrasing deeper in Steps 4-6", () => {
+    expect(content).toContain("Move to the next candidate PR in List C");
+    expect(content).toContain("Move to the next qualifying PR in List A");
+    expect(content).toContain("Move to the next PR in List D");
+  });
+
+  it("does not touch the List A/C/D classification labels used later in Steps 3a-3c", () => {
+    expect(content).toContain("add it to **List A**");
+    expect(content).toContain("add to **List C**");
+    expect(content).toContain("add the PR to **List D**");
+  });
+});
+
+describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
+  function getStep6_5Section() {
+    const step6_5Idx = content.indexOf("## Step 6.5: Verify CI After Patch");
+    const step7Idx = content.indexOf("## Step 7: Report");
+    expect(step6_5Idx).toBeGreaterThan(-1);
+    expect(step7Idx).toBeGreaterThan(-1);
+    return content.slice(step6_5Idx, step7Idx);
+  }
+
+  it("Step 6.5 exists between Step 6e (cleanup) and Step 7 (report)", () => {
+    const step6eIdx = content.indexOf("### Step 6e: Cleanup Worktree");
+    const step6_5Idx = content.indexOf("## Step 6.5: Verify CI After Patch");
+    const step7Idx = content.indexOf("## Step 7: Report");
+    expect(step6eIdx).toBeGreaterThan(-1);
+    expect(step6_5Idx).toBeGreaterThan(step6eIdx);
+    expect(step7Idx).toBeGreaterThan(step6_5Idx);
+  });
+
+  it("fires only when at least one of Steps 4/5/6 pushed a commit this cycle, and skips cleanly with a one-line message otherwise", () => {
+    const section = getStep6_5Section();
+    expect(section).toMatch(/Step 4.{0,20}Step 5.{0,20}Step 6|Steps 4[/,].{0,10}5[/,].{0,10}6/is);
+    expect(section.toLowerCase()).toContain("pushed");
+    expect(section).toMatch(/skip/i);
+    // The skip message is a one-liner, not a multi-paragraph explanation.
+    const skipLineMatch = section.match(/^.*no.*push.*$/im);
+    expect(skipLineMatch).not.toBeNull();
+  });
+
+  it("polls the GitHub Actions API for the final HEAD SHA at a bounded cadence (30s interval, ~5 min cap)", () => {
+    const section = getStep6_5Section();
+    expect(section).toContain("repos/$REPO/actions/runs?head_sha=$HEAD_SHA");
+    expect(section).toMatch(/30[\s-]?second|30s/i);
+    expect(section).toMatch(/5[\s-]?min/i);
+  });
+
+  it("renews the PR claim's heartbeat on every poll iteration", () => {
+    const section = getStep6_5Section();
+    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
+    expect(section).toMatch(/each (poll|iteration)|every (poll|iteration)/i);
+  });
+
+  it("skips cleanly if no CI runs are configured for the repo, mirroring the existing no-CI-configured skip pattern", () => {
+    const section = getStep6_5Section();
+    expect(section.toLowerCase()).toContain("no ci");
+    expect(section).toMatch(/skip/i);
+  });
+
+  it("on green (or no CI configured), proceeds to the existing Step 7 report unchanged", () => {
+    const section = getStep6_5Section();
+    expect(section).toContain("Step 7");
+  });
+
+  it("on still-red after the poll window, reuses Step 6c's prompt template verbatim instead of duplicating it", () => {
+    const section = getStep6_5Section();
+    expect(section).toContain("Step 6c");
+    expect(section.toLowerCase()).toMatch(/same prompt template|exact same prompt|reus\w* .{0,40}step 6c/i);
+    // Must not duplicate Step 6c's actual prompt body text in Step 6.5.
+    expect(section).not.toContain("You are fixing failing CI on a pull request");
+    expect(section).not.toContain("[A] Diagnose the failures");
+  });
+
+  it("dispatches exactly one bonus CI-fix subagent and pushes once, with no re-poll or retry", () => {
+    const section = getStep6_5Section();
+    expect(section).toMatch(/one|single/i);
+    expect(section).toMatch(/no.{0,20}(re-poll|retry|further)/i);
+  });
+
+  it("on BLOCKED from the bonus subagent, reuses Step 6d's existing HITL-escalation branch instead of a new escalation path", () => {
+    const section = getStep6_5Section();
+    expect(section).toContain("Step 6d");
+    expect(section.toLowerCase()).toMatch(/same (hitl|escalation)|reus\w* .{0,40}step 6d/i);
+    // Must not duplicate Step 6d's escalation procedure text in Step 6.5.
+    expect(section).not.toContain("PATCH the linked task to `hitl: true`");
+    expect(section).not.toContain("shipwright-patch-blocked-6d-{pr}.txt");
+  });
+
+  it("uses the same PATCH-hitl/PR-comment/release convention referenced from Step 6d, not a bespoke mechanism", () => {
+    const section = getStep6_5Section();
+    expect(section).toMatch(/hitl/i);
+  });
+});
