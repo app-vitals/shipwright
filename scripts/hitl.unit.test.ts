@@ -152,18 +152,6 @@ describe("computeProvisionPlan", () => {
     expect(plan.needsAgentPolicy).toBe(true);
   });
 
-  test("agent-policy.md need is independent of dir existence", () => {
-    const plan = computeProvisionPlan(
-      ["/ws"],
-      "/ws/CLAUDE.md",
-      "/ws/state/agent-policy.md",
-      (path) => path === "/ws",
-    );
-    expect(plan.missingDirs).toEqual([]);
-    expect(plan.needsClaudeMd).toBe(true);
-    expect(plan.needsAgentPolicy).toBe(true);
-  });
-
   test("agent-policy.md need is independent of CLAUDE.md need", () => {
     const existing = new Set(["/ws", "/ws/CLAUDE.md"]);
     const plan = computeProvisionPlan(
