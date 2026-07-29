@@ -7,7 +7,7 @@
 | Layer | Framework | Boundary rule | Suffix |
 |---|---|---|---|
 | **Unit** | `bun test` | Pure logic — no I/O of any kind (no filesystem, network, or subprocess). | `*.unit.test.ts` |
-| **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles, or real filesystem I/O on committed repo content — exercises the seam without a live external service. | `*.integration.test.ts` |
+| **Integration** | `bun test` + injected recorded doubles | Real dependency behavior via recorded fixtures / injected doubles, or real filesystem I/O on committed repo content — exercises the seam without a live external service. Exception: critical infrastructure like containerized browser launches where recorded fixtures would miss runtime-environment issues (e.g., securityContext sandbox compliance). | `*.integration.test.ts` |
 | **Smoke** | `bun test` + Hono `app.request()`, or `Bun.serve()` + `fetch()` | HTTP route contracts (status, shape, auth, errors). Prefer in-process `app.request()` (no real socket) for Hono apps; a real `Bun.serve()` boot with live `fetch()` is permitted when there's no in-process request seam (e.g. a bare-`Bun.serve()` server with no Hono app factory). | `*.smoke.test.ts` |
 | **E2E** | `@playwright/test` | Full browser-driven flows against a real running server. Marketing site home page (`site/*.spec.ts`); metrics dashboard (`metrics/e2e/*.e2e.ts`); admin UI (`admin/e2e/*.e2e.ts`). | `*.spec.ts` (in `site/`), `*.e2e.ts` (in `metrics/e2e/`, `admin/e2e/`) |
 | **Content** | `bun test` | Markdown/prompt-content-assertion tests — e.g. checking that a command's or skill's Markdown body contains expected sections/instructions/wording. Distinct from unit/integration/smoke: no real I/O boundary, just asserting on static content. | `*.content.test.ts` |
@@ -48,7 +48,7 @@ cd site && npm test                  # playwright (*.spec.ts)
 |---|---|---|
 | Plugin (`plugins/shipwright`) | unit, content | `bun test --filter plugins/shipwright` |
 | Metrics (`metrics`) | unit, integration, smoke, e2e | `bun test --filter metrics` (unit/integration/smoke); `task e2e` (e2e) |
-| Agent (`agent`) | unit, integration, smoke | `bun test --filter agent` |
+| Agent (`agent`) | unit, integration (real I/O), smoke | `bun test --filter agent` (Note: integration tests include real Playwright/Chromium browser launches to verify containerized execution under restricted securityContext, beyond recorded fixture coverage) |
 | Admin (`admin`) | unit, integration, smoke, e2e | `bun test --filter admin` (unit/integration/smoke); `cd admin && bunx playwright test` (e2e) |
 | Chat (`chat`) | unit, integration, smoke | `bun test --filter chat` |
 | Task Store (`task-store`) | unit, integration, smoke | `bun test --filter task-store` |
