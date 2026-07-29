@@ -522,7 +522,7 @@ Parse the subagent's STATUS:
      ```
      The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
      across all worktrees.
-  3. Release the pre-work claim from Step 4a.6 so a subsequent patch/review-patch run within
+  3. Release the pre-work claim from Step 4a.6 so a subsequent patch run within
      the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
      completed, so nothing is actually in flight:
      ```bash
@@ -1108,7 +1108,7 @@ Parse the subagent's STATUS:
      ```
      The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
      across all worktrees.
-  3. Release the pre-work claim from Step 5a.6 so a subsequent patch/review-patch run within
+  3. Release the pre-work claim from Step 5a.6 so a subsequent patch run within
      the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
      completed, so nothing is actually in flight:
      ```bash
@@ -1453,7 +1453,7 @@ Parse the subagent's STATUS:
      ```
      The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
      across all worktrees.
-  3. Release the pre-work claim from Step 6b.5 so a subsequent patch/review-patch run within
+  3. Release the pre-work claim from Step 6b.5 so a subsequent patch run within
      the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
      completed, so nothing is actually in flight:
      ```bash
