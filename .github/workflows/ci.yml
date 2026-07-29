@@ -161,6 +161,9 @@ jobs:
           bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
           bunx prisma migrate deploy --schema=chat/prisma/schema.prisma
 
+      - name: Install Playwright chromium-headless-shell
+        run: bunx playwright install --with-deps chromium-headless-shell
+
       - name: Test
         run: task test:coverage
 

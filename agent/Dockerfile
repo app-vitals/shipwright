@@ -175,7 +175,10 @@ RUN bun run scripts/sync-version.ts "${AGENT_VERSION}"
 # succeeding is not proof the image runs — this bundles the whole agent/src
 # tree (not just entrypoint-main.ts's reachable graph) so an import missed
 # by that one entry point, like the lib/ omission above, still gets caught.
-RUN find agent/src -name "*.ts" | xargs bun build --target=bun --outdir=/tmp/module-check
+# playwright/playwright-core are externalized: bun's bundler eagerly resolves
+# playwright-core's internal optional chromium-bidi requires, which aren't
+# actually installed or used by our CDP-based launch path.
+RUN find agent/src -name "*.ts" | xargs bun build --target=bun --external playwright --external playwright-core --outdir=/tmp/module-check
 
 # ─── Runtime stage (non-root) ─────────────────────────────────────────────────
 
