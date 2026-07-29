@@ -219,7 +219,8 @@ back to `'sonnet'`.
 7. **Test-readiness context** (optional): try to read `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
 
 `lastReviewedCommit` is the `LAST_REVIEWED_COMMIT` value saved from the pre-claim record in
-Step 14 (the record's `commitSha` before the claim overwrote it).
+Step 14 (the record's `reviewedCommitSha`, captured before the claim call — which only
+overwrites the separate `commitSha` lock field).
 
 #### Unresolved Comment Check
 
@@ -251,7 +252,7 @@ curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
-  -d '{"reviewState": "posted", "commitSha": "{headRefOid}"}' >/dev/null
+  -d '{"reviewState": "posted", "commitSha": "{headRefOid}", "reviewedCommitSha": "{headRefOid}"}' >/dev/null
 ```
 Note: `staged` is NOT set here, so this does not interact with `/shipwright:review-staged`'s
 staged-record flow — this is purely a commit-level dedup to prevent re-review at the same head
@@ -569,7 +570,7 @@ should be held; the inline comments convey the specific feedback to the author.
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-     -d '{"staged": true, "reviewState": "approved", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
+     -d '{"staged": true, "reviewState": "approved", "reviewedCommitSha": "{headRefOid}", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
    ```
 
    If `{verdict}` is `COMMENT`:
@@ -578,7 +579,7 @@ should be held; the inline comments convey the specific feedback to the author.
      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-     -d '{"staged": true, "reviewState": "posted", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
+     -d '{"staged": true, "reviewState": "posted", "reviewedCommitSha": "{headRefOid}", "claimedBy": null, "claimedAt": null, "heartbeatAt": null, "phase": null}' >/dev/null
    ```
 
    (`PR_RECORD_ID` is the claim response `.id` from Step 4.)
@@ -759,7 +760,7 @@ headRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefO
    curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0] // empty'
    ```
-   Capture the record's `id` as `PR_RECORD_ID` and `commitSha` as `lastReviewedCommit`.
+   Capture the record's `id` as `PR_RECORD_ID` and `reviewedCommitSha` as `lastReviewedCommit`.
 
 **This command never posts a staged review — posting a staged review is owned exclusively
 by `/shipwright:review-staged`.** `/shipwright:review` only ever produces or refreshes
@@ -768,12 +769,12 @@ is refresh it if it's gone stale — nothing more.
 
 **If a record exists with `staged: true`**:
 
-Fetch the current head commit and compare to `record.commitSha` (`lastReviewedCommit`):
+Fetch the current head commit and compare to `record.reviewedCommitSha` (`lastReviewedCommit`):
 ```bash
 gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
 ```
 
-- **`headRefOid == record.commitSha`** (no new commits — the staged review is still
+- **`headRefOid == record.reviewedCommitSha`** (no new commits — the staged review is still
   current, nothing to refresh). Translate `record.reviewState` to a verdict the same way
   `/shipwright:review-staged` does (`approved` → APPROVE, `posted`/`in_progress` → COMMENT),
   then print:
@@ -782,7 +783,7 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
   Run /shipwright:review-staged to post, skip, or discuss it.
   ```
   Stop.
-- **`headRefOid != record.commitSha`** (author pushed new commits since staging — the
+- **`headRefOid != record.reviewedCommitSha`** (author pushed new commits since staging — the
   staged review is stale and needs a refresh). Re-claim the record at the new head to
   flip it to `in_progress`:
   ```bash
@@ -794,7 +795,7 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
   ```
   Print:
   ```
-  Staged review is stale — {pr} has new commits since the review was written ({record.commitSha[0..7]} → {headRefOid[0..7]}).
+  Staged review is stale — {pr} has new commits since the review was written ({record.reviewedCommitSha[0..7]} → {headRefOid[0..7]}).
   Re-reviewing now.
   ```
   Continue from **Step 4** (checkout into worktree) with this PR as the target. The
@@ -814,7 +815,7 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
    ```bash
    gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
    ```
-   Compare to `record.commitSha` (`lastReviewedCommit`). If `headRefOid == record.commitSha`
+   Compare to `record.reviewedCommitSha` (`lastReviewedCommit`). If `headRefOid == record.reviewedCommitSha`
    (the commit has already been reviewed and there are no new commits):
    - Print:
      ```
@@ -824,7 +825,7 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
 
    If no record exists (first review), or `record.reviewState` is `pending` (claimed but
    never completed — never actually reviewed), or `headRefOid` differs from
-   `record.commitSha` (new commits exist), proceed to Step 4 below.
+   `record.reviewedCommitSha` (new commits exist), proceed to Step 4 below.
 
 4. Go directly to Step 4 (checkout) with this specific PR as the target.
 

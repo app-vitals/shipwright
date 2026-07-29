@@ -33,19 +33,22 @@ Applies to: **review**, **deploy**, **patch**, **dev-task**
 ### 2. Task Store PR Record Is the Dedup Source
 
 The task store `PullRequest` record (accessible via `GET /prs?repo=X`) is the source of
-truth for review deduplication. `commitSha` on the record is compared to the current
+truth for review deduplication. `reviewedCommitSha` on the record is compared to the current
 `headRefOid` from GitHub to detect "new commits since last review" without re-fetching
-history. Skills must not fail or behave incorrectly when no PR record exists — a missing
-record means the PR has not been reviewed yet and should be treated as eligible.
+history. `commitSha` is a separate claim-lock field — it is overwritten on every claim
+(including by later `patch`/`deploy` claims on the same PR) and is not safe to use for
+review dedup. Skills must not fail or behave incorrectly when no PR record exists — a
+missing record means the PR has not been reviewed yet and should be treated as eligible.
 
 Local files (`state/reviews/PR_REVIEW_{pr}.md`, `state/reviews/pr_review_{pr}.json`) hold
 the review narrative (findings, verdict, inline comments) for posting to GitHub. They are
 written by `/shipwright:review` and consumed by `/shipwright:review-staged`. They are not
 dedup state — the task store record owns that.
 
-Applies to: **review** (dedup by `commitSha`), **review-staged** (stale check via `commitSha`
-vs current `headRefOid`), **deploy** (falls back to `gh pr view --json reviewDecision`
-when no task store APPROVE record exists)
+Applies to: **review** (dedup by `reviewedCommitSha`), **review-staged** (stale check via
+`commitSha` vs current `headRefOid` — pending a follow-up to migrate to `reviewedCommitSha`),
+**deploy** (falls back to `gh pr view --json reviewDecision` when no task store APPROVE
+record exists)
 
 ### 3. A PR Created Outside Shipwright Is Fully Serviceable
 
