@@ -101,13 +101,13 @@ describe("review.md — WLS-3.2 explicit-target-only", () => {
     expect(content.includes("gh pr list --state open")).toBe(false);
   });
 
-  it("still contains the commitSha/headRefOid dedup check for the explicit target PR", () => {
+  it("still contains the reviewedCommitSha/headRefOid dedup check for the explicit target PR", () => {
     const dedupIdx = content.indexOf(
       "Check if the PR was already reviewed at the current commit",
     );
     expect(dedupIdx).toBeGreaterThan(-1);
     const dedupSection = content.slice(dedupIdx, dedupIdx + 1500);
-    expect(dedupSection.includes("record.commitSha")).toBe(true);
+    expect(dedupSection.includes("record.reviewedCommitSha")).toBe(true);
     expect(dedupSection.includes("headRefOid")).toBe(true);
   });
 
