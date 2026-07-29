@@ -367,15 +367,17 @@ introduce a reason to.
   (budget miss) is the trigger to revisit, not a fixed test-count threshold. This
   cycle's ~4-file net delta is not, on its own, that trigger.
 
-**Measured baseline (carried forward from T-067/T-002):** real per-layer numbers exist
-in [`speed-baseline.md`](./speed-baseline.md), measured across all five workspaces
-(plugin, metrics dashboard, agent, admin, site). Every measured layer falls comfortably
-within budget — unit 1.05s–2.50s per package, integration 0.15s–5.35s per package,
-smoke 3.24s–4.62s per package, E2E 4s–40s via CI, full suite 34.23s wall-clock (3842
-pass, 242 skip, 4084 tests across 198 files). This baseline predates this cycle's small
-source delta; the delta is not large enough to warrant a re-measurement before the next
-scheduled one. See `speed-baseline.md` for the full per-package breakdown and
-methodology.
+**Measured baseline (aggregate-first, per the two-tier model in `speed-budgets/SKILL.md`):**
+the primary, continuously-tracked number is the Tier 1 aggregate in
+[`speed-baseline.md`](./speed-baseline.md#aggregate-tier-1) — pulled fresh from the most
+recent green `lint / typecheck / test` CI run: [run 30415213982](https://github.com/app-vitals/shipwright/actions/runs/30415213982)
+(2026-07-29, commit `1a6a085d`), job wall-clock 2m01s against the <15 min Full-PR-pipeline
+budget (13% of budget, well within — no escalation triggered). `speed-baseline.md`'s
+Section 3 table is the Tier-2 per-package/per-layer breakdown (unit 1.05s–2.50s per
+package, integration 0.15s–5.35s per package, smoke 3.24s–4.62s per package, E2E 4s–40s
+via CI, across plugin/metrics/agent/admin/site) — last produced 2026-07-15, supplementary
+and on-demand: it refreshes only when the Tier 1 aggregate trips the escalation formula,
+not on a fixed cadence. See `speed-baseline.md` for the full breakdown and methodology.
 
 ## Shared helpers / utilities to build
 

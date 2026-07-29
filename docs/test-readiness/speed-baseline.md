@@ -13,6 +13,24 @@ speed-delta table") do not. This doc stands alone rather than filling in a table
 doesn't exist yet; once `test-readiness-plan.md` lands, its Section 3 can point here
 or copy these numbers in.
 
+## Aggregate (Tier 1)
+
+Per the two-tier measurement model in
+[`speed-budgets/SKILL.md`](../../plugins/shipwright/skills/speed-budgets/SKILL.md#two-tier-measurement-model),
+this is the primary, continuously-tracked number — pulled fresh from the most recent
+green run of the `lint / typecheck / test` CI job, the same way this doc's e2e/site
+rows below source their numbers from CI:
+
+- **Run:** [30415213982](https://github.com/app-vitals/shipwright/actions/runs/30415213982)
+  (2026-07-29T01:50:45Z), commit `1a6a085d0ccb91db5c29f0899b686c21dd060ece`
+- **Job wall-clock:** 2m01s (`lint / typecheck / test`, 01:50:59Z–01:53:00Z) — of which
+  the `Test` step (`task test:coverage`) itself ran 35.82s
+- **Tests:** 5762 pass / 1 skip / 0 fail — 5763 tests across 258 files
+- **vs. budget:** 2m01s against the <15 min Full-PR-pipeline budget — **13% of budget,
+  well within.** The escalation formula (aggregate wall-clock >7.5 min, sustained across
+  2 consecutive measurements) is nowhere near tripped, so no Tier 2 re-measurement is
+  warranted by this reading.
+
 ## Methodology
 
 - **unit / integration / smoke / content** — measured locally via
@@ -32,7 +50,16 @@ or copy these numbers in.
   Postgres in this sandbox) — skip counts are noted per row. This does not affect the
   measured wall-clock of the tests that did run.
 
-## Section 3: Speed-delta table
+## Section 3: Speed-delta table — Tier-2 breakdown
+
+**Last produced 2026-07-15.** This is the conditional per-package/per-layer breakdown
+from the two-tier model — it does not refresh on a fixed cadence. Per
+[`speed-budgets/SKILL.md`](../../plugins/shipwright/skills/speed-budgets/SKILL.md#two-tier-measurement-model)'s
+escalation formula, it is only re-produced when the Tier 1 aggregate above trips the
+escalation trigger (wall-clock >7.5 min, sustained across 2 consecutive measurements).
+The Tier 1 aggregate is currently at 13% of budget, nowhere near that trigger, so this
+table remains supplementary/on-demand context rather than something requiring
+perpetual refreshing.
 
 ### Plugin (`@shipwright/plugin`)
 
@@ -79,21 +106,10 @@ here for completeness since it carries real unit/integration/smoke/e2e layers to
 
 ## Full suite
 
-Verification command run at the repo root, exactly as specified in the T-002 task:
-
-```
-$ NODE_ENV=test bun test --coverage --coverage-reporter=lcov 2>&1 | tail -20
-
- 3842 pass
- 242 skip
- 0 fail
- 5 snapshots, 7873 expect() calls
-Ran 4084 tests across 198 files. [34.23s]
-```
-
-34.23s wall-clock, well within the `<2 min` full-suite budget documented in
-`test-system.md`. The 242 skips are the DB-gated agent/admin/task-store integration
-tests noted above — expected in a sandbox with no Postgres, not a regression.
+Superseded by the [Aggregate (Tier 1)](#aggregate-tier-1) section at the top of this
+doc, which now carries the continuously-tracked full-suite number (pulled from live CI
+against the current `<15 min` Full-PR-pipeline budget) in place of the one-off local
+`bun test` run this section previously cited.
 
 ## Summary
 
