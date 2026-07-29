@@ -28,6 +28,22 @@ name: Auto-Bump Chart Version
 # accepted tradeoff — release cadence here is a handful of tags a day, not a
 # continuous stream. If that changes, add a max-wait fallback.
 #
+# Collision retry: debounce collapses bursts down to one bump-chart run per
+# burst, but two *separate* bursts (triggered by different service release
+# tags landing close together but more than DEBOUNCE_SECONDS apart) can still
+# compute the same next chart version from the same starting Chart.yaml —
+# both are reading main before either has pushed its bump commit. The
+# "Resolve chart version bump" step detects this via a branch-name collision
+# (`chore/chart-v{version}` already exists on the remote) and, instead of
+# silently skipping and dropping its whole tag batch, fetches fresh main and
+# recomputes its batch/version/branch from that new state — collect_batch_tags
+# naturally excludes tags credited by the concurrent run that landed first,
+# since that run's own chart-bump commit becomes the new "since" cutoff. This
+# retries up to a fixed number of attempts with a brief backoff between each.
+# If every attempt still collides, the step fails the job outright, naming
+# the release tag(s) that could not be pinned — no more silent green runs
+# that quietly drop a batch of release tags.
+#
 # Flow:
 #   tag push (agent-v* / admin-v* / metrics-v* / task-store-v* / chat-v*)
 #     → debounce job: sleep DEBOUNCE_SECONDS
@@ -36,6 +52,9 @@ name: Auto-Bump Chart Version
 #     → bump-chart job
 #       → collect every release tag pushed since the last chart-bump commit
 #       → bump patch version in Chart.yaml once for the whole batch
+#       → on branch-name collision with a concurrent run: fetch fresh main,
+#         re-derive the batch/version, and retry (bounded attempts); fail
+#         loudly (naming the un-pinned tags) if every attempt collides
 #       → pin each batched tag's highest semver into its values.yaml
 #         image.tag path(s) (admin/metrics/agent+provisioning/taskStore/chat)
 #       → open PR (chore/chart-v{new_version}) crediting all batched tags and
@@ -62,6 +81,35 @@ name: Auto-Bump Chart Version
 #      exactly once.
 #   6. Delete the dummy tags to clean up:
 #        git push origin --delete agent-v9.9.8 admin-v9.9.9
+#
+# Manual test plan — collision retry (also cannot be fully exercised in CI
+# without real concurrent tag pushes + secrets):
+#   1. Note the current chart version in charts/shipwright/Chart.yaml, e.g.
+#      X.Y.Z, and manually pre-create + push the branch the *next* bump would
+#      use, simulating a concurrent run that already landed:
+#        git checkout -b chore/chart-vX.Y.(Z+1)
+#        git push origin chore/chart-vX.Y.(Z+1)
+#        git checkout main
+#   2. Push a dummy tag to trigger a real run:
+#        git tag agent-v9.9.7 && git push origin agent-v9.9.7
+#   3. In the "Resolve chart version bump (retry on branch collision)" step's
+#      logs, confirm it detects the collision on attempt 1 ("Branch ... already
+#      exists on remote"), fetches fresh main, and recomputes — since no
+#      matching chart-bump commit actually landed on main in this manual
+#      simulation, the *same* version will collide again; either delete the
+#      dummy pre-created branch partway through to let a later attempt
+#      succeed (confirming the retry recomputes and proceeds), or let all
+#      5 attempts exhaust to exercise the failure path below.
+#   4. If all attempts exhaust: confirm the job fails (non-zero exit) and the
+#      step's log contains a line starting with "ERROR: exhausted 5 attempts"
+#      that names the release tag(s) (e.g. agent-v9.9.7) that could not be
+#      pinned — this must surface as a real failed GitHub Actions run, not a
+#      silent success.
+#   5. If a later attempt succeeds (branch deleted mid-retry): confirm the PR
+#      that opens targets the *recomputed* version/branch (not the one that
+#      collided) and still credits agent-v9.9.7.
+#   6. Clean up the dummy tag and any leftover branches:
+#        git push origin --delete agent-v9.9.7 chore/chart-vX.Y.(Z+1)
 #
 # Logic tests live in .github/workflows/test-auto-bump-chart.sh.
 # Run locally: bash .github/workflows/test-auto-bump-chart.sh
@@ -130,101 +178,132 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # Credit every release tag that landed since the last chart-bump commit,
-      # not just the tag that happened to trigger this run — that's everything
-      # the debounce window batched together. Falls back to the triggering tag
-      # alone if no prior bump commit exists (e.g. first-ever bump).
-      - name: Collect release tags in this batch
-        id: batch
-        run: |
-          PATTERNS=("agent-v*" "admin-v*" "metrics-v*" "task-store-v*" "chat-v*")
-
-          LAST_BUMP_SHA=$(git log -1 --format=%H --grep='^chore(chart): bump chart version' -- charts/shipwright/Chart.yaml || true)
-
-          SINCE=""
-          if [ -n "$LAST_BUMP_SHA" ]; then
-            SINCE=$(git log -1 --format=%cI "$LAST_BUMP_SHA")
-          fi
-
-          TAGS=()
-          if [ -n "$SINCE" ]; then
-            for PATTERN in "${PATTERNS[@]}"; do
-              while IFS= read -r LINE; do
-                [ -z "$LINE" ] && continue
-                TAGS+=("$LINE")
-              done < <(git for-each-ref "refs/tags/${PATTERN}" \
-                --format='%(creatordate:iso-strict)|%(refname:short)' \
-                | awk -F'|' -v since="$SINCE" '$1 > since { print $2 }')
-            done
-          fi
-
-          # Always include the triggering tag even if it fell outside the
-          # window (clock skew, first-ever bump) — never silently drop the
-          # tag that fired this run.
-          TRIGGER="${GITHUB_REF_NAME}"
-          FOUND=false
-          for T in "${TAGS[@]:-}"; do
-            [ "$T" = "$TRIGGER" ] && FOUND=true
-          done
-          if [ "$FOUND" = "false" ]; then
-            TAGS+=("$TRIGGER")
-          fi
-
-          TAGS_CSV=$(printf '%s\n' "${TAGS[@]}" | sort -u | paste -sd, -)
-
-          echo "tags=${TAGS_CSV}" >> "$GITHUB_OUTPUT"
-          echo "Batched tags for this bump: ${TAGS_CSV}"
-
-      # Read the current chart version using grep+sed — avoids a yq dependency.
-      # The version line in Chart.yaml is always "version: X.Y.Z" (no spaces
-      # before the key, plain value — no quoting).
-      - name: Read current chart version
-        id: current
-        run: |
-          VERSION=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Current chart version: ${VERSION}"
-
-      # Increment the patch component only. Chart version bumps are always
-      # patch-level here — minor/major bumps remain a manual step. One bump
-      # covers the whole batch of tags collected above, however many landed.
-      - name: Compute new chart version
-        id: new
-        run: |
-          CURRENT="${{ steps.current.outputs.version }}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
-          PATCH=$(( PATCH + 1 ))
-          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
-          BRANCH="chore/chart-v${NEW_VERSION}"
-          echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "branch=${BRANCH}"       >> "$GITHUB_OUTPUT"
-          echo "New chart version: ${NEW_VERSION} (branch: ${BRANCH})"
-
-      # Idempotency guard: if the branch for this exact chart version already
-      # exists on the remote, a prior run already opened the bump PR — skip.
-      # With debounce collapsing bursts into a single bump-chart run, this is
-      # now only a safety net for the rare case of two debounce windows
-      # resolving close together, not the common path.
-      - name: Check for existing bump branch
-        id: idempotency
+      # Collect this run's tag batch, compute the next chart version/branch,
+      # and resolve any branch-name collision against a *fresh* main — all
+      # in one step, since a collision means re-deriving every one of these
+      # values from scratch (not just picking a new version number).
+      #
+      # Credit every release tag that landed since the last chart-bump
+      # commit, not just the tag that happened to trigger this run — that's
+      # everything the debounce window batched together. Falls back to the
+      # triggering tag alone if no prior bump commit exists (e.g. first-ever
+      # bump). Same tag-collection logic as
+      # .github/workflows/test-auto-bump-chart.sh's collect_batch_tags() —
+      # keep both copies in sync.
+      #
+      # Collision handling: two concurrent bump-chart runs (triggered by
+      # different service release tags landing close together but outside
+      # the debounce window) can compute the *same* next chart version from
+      # the same starting Chart.yaml. The loser used to just skip silently,
+      # dropping its entire tag batch (including values.yaml pins) with no
+      # error. Instead: on collision, fetch fresh main, re-derive the batch
+      # and version from that new state (collect_batch_tags naturally
+      # excludes tags that landed before the concurrent run's own chart-bump
+      # commit, since that commit's timestamp becomes the new `since`
+      # cutoff), and retry — bounded to MAX_ATTEMPTS with a brief backoff.
+      # If every attempt collides, fail loudly naming the tags that could
+      # not be pinned rather than exiting 0 having silently dropped them.
+      # Mirrors .github/workflows/test-auto-bump-chart.sh's
+      # compute_batch_and_version() / branch_exists_on_remote() /
+      # resolve_batch_with_retry() — keep both copies in sync.
+      - name: Resolve chart version bump (retry on branch collision)
+        id: resolve
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="${{ steps.new.outputs.branch }}"
-          if git ls-remote --heads origin "$BRANCH" | grep -q .; then
-            echo "Branch ${BRANCH} already exists on remote — skipping bump (burst-collapse)."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          MAX_ATTEMPTS=5
+          BACKOFF_SECONDS=15
+          TRIGGER="${GITHUB_REF_NAME}"
+
+          collect_batch_tags() {
+            local trigger_tag="$1"
+            local patterns=("agent-v*" "admin-v*" "metrics-v*" "task-store-v*" "chat-v*")
+
+            local last_bump_sha
+            last_bump_sha=$(git log -1 --format=%H --grep='^chore(chart): bump chart version' -- charts/shipwright/Chart.yaml || true)
+
+            local since=""
+            if [ -n "$last_bump_sha" ]; then
+              since=$(git log -1 --format=%cI "$last_bump_sha")
+            fi
+
+            local tags=()
+            if [ -n "$since" ]; then
+              for pattern in "${patterns[@]}"; do
+                while IFS= read -r line; do
+                  [ -z "$line" ] && continue
+                  tags+=("$line")
+                done < <(git for-each-ref "refs/tags/${pattern}" \
+                  --format='%(creatordate:iso-strict)|%(refname:short)' \
+                  | awk -F'|' -v since="$since" '$1 > since { print $2 }')
+              done
+            fi
+
+            local found=false
+            for t in "${tags[@]:-}"; do
+              [ "$t" = "$trigger_tag" ] && found=true
+            done
+            if [ "$found" = "false" ]; then
+              tags+=("$trigger_tag")
+            fi
+
+            printf '%s\n' "${tags[@]}" | sort -u | paste -sd, -
+          }
+
+          compute_batch_and_version() {
+            local trigger_tag="$1"
+            local tags_csv
+            tags_csv=$(collect_batch_tags "$trigger_tag")
+
+            local current_version new_version branch
+            current_version=$(grep '^version:' charts/shipwright/Chart.yaml | sed 's/^version: //')
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$current_version"
+            PATCH=$(( PATCH + 1 ))
+            new_version="${MAJOR}.${MINOR}.${PATCH}"
+            branch="chore/chart-v${new_version}"
+
+            printf '%s|%s|%s|%s\n' "$tags_csv" "$current_version" "$new_version" "$branch"
+          }
+
+          for (( attempt=1; attempt<=MAX_ATTEMPTS; attempt++ )); do
+            RESULT=$(compute_batch_and_version "$TRIGGER")
+            TAGS_CSV="${RESULT%%|*}"
+            REST="${RESULT#*|}"
+            CURRENT_VERSION="${REST%%|*}"
+            REST="${REST#*|}"
+            NEW_VERSION="${REST%%|*}"
+            BRANCH="${REST#*|}"
+
+            if ! git ls-remote --heads origin "$BRANCH" | grep -q .; then
+              echo "tags=${TAGS_CSV}" >> "$GITHUB_OUTPUT"
+              echo "current_version=${CURRENT_VERSION}" >> "$GITHUB_OUTPUT"
+              echo "version=${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+              echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+              echo "Resolved chart bump: ${CURRENT_VERSION} -> ${NEW_VERSION} (branch: ${BRANCH}), tags: ${TAGS_CSV}"
+              exit 0
+            fi
+
+            echo "Branch ${BRANCH} already exists on remote (attempt ${attempt}/${MAX_ATTEMPTS}) — someone else's batch landed first."
+
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Fetching fresh main and retrying in ${BACKOFF_SECONDS}s..."
+              sleep "$BACKOFF_SECONDS"
+              git fetch origin main
+              git checkout main
+              git reset --hard origin/main
+              git fetch origin --tags --force
+            fi
+          done
+
+          echo "ERROR: exhausted ${MAX_ATTEMPTS} attempts to bump the chart version — branch ${BRANCH} still collides after re-deriving from fresh main each time. Release tag(s) that could NOT be pinned: ${TAGS_CSV}" >&2
+          exit 1
 
       # Update the version field in Chart.yaml using python3 (available on all
       # GitHub-hosted runners). Regex substitution on the 'version:' line only
       # avoids inadvertently touching appVersion or dependency versions.
       - name: Update Chart.yaml version
-        if: steps.idempotency.outputs.skip != 'true'
         run: |
-          NEW_VERSION="${{ steps.new.outputs.version }}"
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
           python3 - charts/shipwright/Chart.yaml "$NEW_VERSION" <<'PYEOF'
           import sys, re
           path, new_ver = sys.argv[1], sys.argv[2]
@@ -239,10 +318,9 @@ jobs:
       # annotation — one "changed" entry per tag, so a burst-collapsed bump
       # still surfaces exactly which releases it contains.
       - name: Update artifacthub.io/changes annotation
-        if: steps.idempotency.outputs.skip != 'true'
         run: |
-          TAGS_CSV="${{ steps.batch.outputs.tags }}"
-          NEW_VERSION="${{ steps.new.outputs.version }}"
+          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
           python3 - charts/shipwright/Chart.yaml "$TAGS_CSV" "$NEW_VERSION" <<'PYEOF'
           import sys, re
           path, tags_csv, ver = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -267,10 +345,9 @@ jobs:
       # Prepend a new entry to CHANGELOG.md so it stays in sync with Chart.yaml.
       # Chart.yaml line 28-29 requires the two to mirror each other on every bump.
       - name: Update CHANGELOG.md
-        if: steps.idempotency.outputs.skip != 'true'
         run: |
-          NEW_VERSION="${{ steps.new.outputs.version }}"
-          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
           TAGS_LIST=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/`/; s/$/`/' | paste -sd, - | sed 's/,/, /g')
           DATE=$(date -u +%Y-%m-%d)
           ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n\n- auto-bump to chart v${NEW_VERSION} triggered by release tag(s): ${TAGS_LIST}\n"
@@ -300,7 +377,6 @@ jobs:
       # select_pinned_tags / update_values_tag — keep both copies in sync.
       - name: Pin released tags into values.yaml
         id: pin
-        if: steps.idempotency.outputs.skip != 'true'
         run: |
           # Maps a release tag prefix to its service key.
           service_for_tag() {
@@ -430,7 +506,7 @@ jobs:
           PYEOF
           }
 
-          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
           PINNED=$(select_pinned_tags "$TAGS_CSV")
 
           # Rendered alongside the values.yaml writes below (same
@@ -467,11 +543,10 @@ jobs:
       # values.yaml changes, and push.
       - name: Commit and push bump branch
         id: commit-push
-        if: steps.idempotency.outputs.skip != 'true'
         run: |
-          BRANCH="${{ steps.new.outputs.branch }}"
-          NEW_VERSION="${{ steps.new.outputs.version }}"
-          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          BRANCH="${{ steps.resolve.outputs.branch }}"
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/  - /')
 
           git checkout -b "$BRANCH"
@@ -483,20 +558,22 @@ jobs:
 
           After merge, chart-release.yml will publish chart v${NEW_VERSION}."
 
-          # Fault-tolerant push: if a concurrent run slips through the
-          # idempotency check (ls-remote and push are non-atomic), the second
-          # push will fail because the branch already exists. Treat that as a
-          # clean skip rather than a noisy workflow failure.
-          git push -u origin "$BRANCH" || {
-            echo "Branch ${BRANCH} already pushed by a concurrent run — skipping."
-            echo "push_skipped=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          }
+          # The "Resolve chart version bump" step above already retried
+          # against fresh main up to MAX_ATTEMPTS times to clear any branch
+          # collision, so a push failure here means an even narrower
+          # concurrent-push race slipped through in the moments between that
+          # step's final collision check and this push (ls-remote and push
+          # are non-atomic). That's still a batch of release tags
+          # (${TAGS_CSV}) that would go unpinned — fail loudly rather than
+          # silently skipping, per the same no-silent-drop rule as the
+          # retry loop above. A human/on-call sees a real failure and can
+          # re-run the workflow (which will re-derive against main as it
+          # then stands).
+          git push -u origin "$BRANCH"
 
       # Open the PR targeting main. The title triggers chart-testing CI (helm.yml)
       # and the merge will trigger chart-release.yml (which watches charts/**).
       - name: Open bump PR
-        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         id: pr
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -514,11 +591,11 @@ jobs:
           # expanded value for further substitution.
           PINNED_LINES: ${{ steps.pin.outputs.pinned_lines }}
         run: |
-          NEW_VERSION="${{ steps.new.outputs.version }}"
-          CURRENT_VERSION="${{ steps.current.outputs.version }}"
-          TAGS_CSV="${{ steps.batch.outputs.tags }}"
+          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+          CURRENT_VERSION="${{ steps.resolve.outputs.current_version }}"
+          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
-          BRANCH="${{ steps.new.outputs.branch }}"
+          BRANCH="${{ steps.resolve.outputs.branch }}"
 
           PR_URL=$(gh pr create \
             --base main \
@@ -577,7 +654,6 @@ jobs:
       # past all retries, the step still ultimately fails for the same
       # reason.
       - name: Wait for checks and merge
-        if: steps.idempotency.outputs.skip != 'true' && steps.commit-push.outputs.push_skipped != 'true'
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}

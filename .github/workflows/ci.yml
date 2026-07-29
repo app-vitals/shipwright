@@ -161,6 +161,9 @@ jobs:
           bunx prisma migrate deploy --schema=task-store/prisma/schema.prisma
           bunx prisma migrate deploy --schema=chat/prisma/schema.prisma
 
+      - name: Install Playwright chromium-headless-shell
+        run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
+
       - name: Test
         run: task test:coverage
 
@@ -226,6 +229,27 @@ jobs:
 
       - name: Build agent Docker image
         run: docker build -f agent/Dockerfile -t shipwright-agent:ci .
+
+      # Load-bearing check, not a build smoke test: a green `bun test` run in
+      # CI's normal (unrestricted) process does not prove Chromium can launch
+      # under the pod's actual restricted securityContext (runAsNonRoot,
+      # allowPrivilegeEscalation: false, no sudo) — only running the already
+      # -built image with matching restrictions does. --user 1000 mirrors the
+      # image's baked-in non-root runtime user; --security-opt=no-new-privileges
+      # mirrors allowPrivilegeEscalation: false. No new CI secrets — this runs
+      # the image already built above, entirely locally within this job.
+      #
+      # The image's ENTRYPOINT is exec-form (`bun run
+      # /app/agent/src/entrypoint-main.ts`), not CMD, so `docker run <image>
+      # <args>` would just append those args to the entrypoint's fixed command
+      # rather than replacing it. --entrypoint overrides it explicitly so the
+      # container runs the verify script instead of the full agent startup
+      # sequence.
+      - name: Verify browser launch under sandbox restrictions
+        run: |
+          docker run --rm --user 1000 --security-opt=no-new-privileges \
+            --entrypoint bun shipwright-agent:ci \
+            run agent/scripts/verify-browser-launch.ts
 
   metrics-docker-build:
     name: metrics docker build

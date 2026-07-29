@@ -1,0 +1,99 @@
+name: Chart Drift Check
+
+# Periodic drift-check: catches a future recurrence of chart-pin drift (from a
+# race condition in auto-bump-chart.yml's debounce/burst handling, or any
+# other cause) between the highest-semver release tag for each Shipwright
+# service and what's actually pinned in charts/shipwright/values.yaml, without
+# requiring manual git archaeology to discover it.
+#
+# For each service (admin, metrics, agent, task-store, chat) this workflow:
+#   1. Finds the highest-semver `{service}-v*` git tag.
+#   2. Reads the tag currently pinned at that service's values.yaml path(s).
+#   3. Compares them. Any mismatch fails the job — the job failure IS the
+#      alert (visible in the Actions tab / a red X on the default branch).
+#      No new notification infra, no new secrets: only the default
+#      GITHUB_TOKEN read scope (contents: read) already used elsewhere in
+#      this repo's workflows.
+#
+# Reuses the SAME service_for_tag / values_paths_for_service /
+# highest_semver_tag logic that auto-bump-chart.yml uses to pin tags in the
+# first place — extracted to .github/workflows/lib/chart-tag-utils.sh so both
+# workflows share one implementation instead of drifting apart themselves.
+#
+# Deliberately does NOT source .github/workflows/test-auto-bump-chart.sh
+# directly: that file has no `if [[ "${BASH_SOURCE[0]}" == "$0" ]]`
+# main-guard, so sourcing it would run its entire existing assertion suite as
+# a side effect and its trailing `exit 1` (on failure) would kill this step's
+# shell outright even on unrelated failures. lib/chart-tag-utils.sh instead
+# holds ONLY the function definitions, extracted verbatim, safe to source.
+#
+# Logic tests live in .github/workflows/test-check-chart-drift.sh.
+# Run locally: bash .github/workflows/test-check-chart-drift.sh
+
+on:
+  schedule:
+    # Daily at 09:00 UTC.
+    - cron: "0 9 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check-drift:
+    name: check chart pins against latest release tags
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Compare pinned tags against latest release tags
+        run: |
+          set -uo pipefail
+
+          source .github/workflows/lib/chart-tag-utils.sh
+          source .github/workflows/lib/chart-drift-check.sh
+
+          VALUES_YAML="charts/shipwright/values.yaml"
+          SERVICES=(admin metrics agent task-store chat)
+
+          # Resolve the highest-semver `{service}-v*` git tag for each
+          # service into "service=tag" lines, mirroring how
+          # auto-bump-chart.yml's select_pinned_tags() groups tags by
+          # service before picking the winner with highest_semver_tag().
+          LATEST_BY_SERVICE=""
+          MISSING_SERVICES=()
+          for service in "${SERVICES[@]}"; do
+            TAGS=$(git tag -l "${service}-v*")
+            if [ -z "$TAGS" ]; then
+              MISSING_SERVICES+=("$service")
+              continue
+            fi
+            LATEST=$(highest_semver_tag $TAGS)
+            LATEST_BY_SERVICE="${LATEST_BY_SERVICE}${service}=${LATEST}
+          "
+          done
+
+          if [ ${#MISSING_SERVICES[@]} -gt 0 ]; then
+            echo "No git tags found for: ${MISSING_SERVICES[*]} — skipping drift check for these services (nothing to compare against)."
+          fi
+
+          echo "Latest release tag per service:"
+          echo "$LATEST_BY_SERVICE"
+
+          MISMATCHES=$(compute_drift "$VALUES_YAML" "$LATEST_BY_SERVICE")
+
+          if [ -n "$MISMATCHES" ]; then
+            echo ""
+            echo "Chart drift detected — values.yaml is not pinned to the latest release tag(s):"
+            echo "$MISMATCHES"
+            echo ""
+            echo "Fix: update the listed path(s) in ${VALUES_YAML} to the expected tag(s) above (or investigate why auto-bump-chart.yml did not pin them)."
+            exit 1
+          fi
+
+          echo ""
+          echo "No chart drift detected — all pinned tags match their latest release tags."

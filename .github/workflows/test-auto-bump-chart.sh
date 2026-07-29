@@ -326,6 +326,118 @@ collect_batch_tags() {
 }
 
 # ---------------------------------------------------------------------------
+# Branch-collision retry logic (mirrors the consolidated "Collect release
+# tags in this batch" + "Read current chart version" + "Compute new chart
+# version" + "Check for existing bump branch" step)
+#
+# Two concurrent bump-chart runs (triggered by different service release
+# tags landing close together but outside the debounce window) can compute
+# the *same* next chart version from the same starting Chart.yaml — the
+# first run to push its branch wins, and the loser used to just set
+# skip=true and silently drop its entire tag batch (including values.yaml
+# pins) with no error, exiting success. That silently loses real release
+# tags from ever being pinned/credited.
+#
+# The fix: on branch collision, re-derive state from fresh main (a new
+# chart-bump commit may have just landed) and retry — bounded to a fixed
+# number of attempts with a brief backoff between attempts. If every
+# attempt collides, fail loudly naming the tags that could not be pinned,
+# instead of returning success having dropped them.
+# ---------------------------------------------------------------------------
+
+# Computes the {tags_csv, current_version, new_version, branch} quadruple
+# from the current working-directory repo state. Mirrors chaining the
+# "Collect release tags in this batch" + "Read current chart version" +
+# "Compute new chart version" steps into one reusable unit, so the retry
+# loop below can re-run it wholesale after re-syncing to fresh main. Emits
+# "tags_csv|current_version|new_version|branch" on stdout (single line — tag
+# values and versions never contain '|'). Matches the real workflow's
+# compute_batch_and_version() 4-field output shape exactly (auto-bump-chart.yml)
+# — steps.resolve.outputs.current_version is consumed downstream by the
+# "Open bump PR" step's PR body.
+compute_batch_and_version() {
+  local trigger_tag="$1"
+  local chart_yaml="${2:-charts/shipwright/Chart.yaml}"
+
+  local tags_csv
+  tags_csv=$(collect_batch_tags "$trigger_tag")
+
+  local current_version new_version branch
+  current_version=$(read_chart_version "$chart_yaml")
+  new_version=$(bump_patch "$current_version")
+  branch="chore/chart-v${new_version}"
+
+  printf '%s|%s|%s|%s\n' "$tags_csv" "$current_version" "$new_version" "$branch"
+}
+
+# Checks whether `branch` exists as a head ref in `remote_dir` (a bare or
+# non-bare git repo used as the "origin" fixture in tests). Mirrors the
+# "Check for existing bump branch" step's `git ls-remote --heads origin
+# "$BRANCH" | grep -q .` check.
+branch_exists_on_remote() {
+  local branch="$1"
+  local remote_dir="$2"
+  git ls-remote --heads "$remote_dir" "$branch" | grep -q .
+}
+
+# Bounded retry loop around branch-collision resolution. Mirrors what the
+# consolidated workflow step does: compute the batch/version/branch, check
+# for a remote collision, and if one exists, re-sync `work_dir` to fresh
+# main and recompute — up to `max_attempts` times, with `backoff_seconds`
+# between attempts. `resync_fn` is the name of a function (no args) that
+# re-syncs `work_dir` to fresh main (e.g. simulating `git fetch origin main
+# && git reset --hard origin/main`); it's injected so tests can drive
+# exactly when/how the "fresh main" state changes between attempts, without
+# this function needing to know about network/CI specifics.
+#
+# On success, prints "tags_csv|current_version|new_version|branch" on stdout
+# and returns 0. On exhaustion (every attempt collided), prints nothing on
+# stdout, prints an explicit, greppable error to stderr naming the release
+# tags that could not be pinned (from the final attempt's batch), and
+# returns 1 — the caller (the real workflow step) must let that failure
+# propagate as a non-zero exit, not swallow it. current_version isn't
+# needed by the retry/collision logic itself (only tags_csv appears in the
+# exhausted-error message) — it's threaded through solely so the 4-field
+# shape survives to the caller, matching the real workflow's
+# steps.resolve.outputs.current_version.
+resolve_batch_with_retry() {
+  local trigger_tag="$1"
+  local work_dir="$2"
+  local remote_dir="$3"
+  local resync_fn="$4"
+  local max_attempts="${5:-5}"
+  local backoff_seconds="${6:-10}"
+
+  local attempt result tags_csv current_version new_version branch
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    result=$(cd "$work_dir" && compute_batch_and_version "$trigger_tag")
+    tags_csv="${result%%|*}"
+    local rest="${result#*|}"
+    current_version="${rest%%|*}"
+    rest="${rest#*|}"
+    new_version="${rest%%|*}"
+    branch="${rest#*|}"
+
+    if ! branch_exists_on_remote "$branch" "$remote_dir"; then
+      printf '%s\n' "$result"
+      return 0
+    fi
+
+    echo "Branch ${branch} already exists on remote (attempt ${attempt}/${max_attempts}) — someone else's batch landed first." >&2
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      echo "Re-syncing to fresh main and retrying in ${backoff_seconds}s..." >&2
+      sleep "$backoff_seconds"
+      "$resync_fn"
+      continue
+    fi
+  done
+
+  echo "ERROR: exhausted ${max_attempts} attempts to bump the chart version — branch ${branch} still collides after re-deriving from fresh main each time. Release tag(s) that could NOT be pinned: ${tags_csv}" >&2
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Stale-base merge-retry logic (mirrors the "Wait for checks and merge" step)
 #
 # gh pr merge --admin can fail with a transient GraphQL error when a
@@ -756,6 +868,200 @@ mkdir -p "$GIT_TEST_DIR2"
 
 FALLBACK=$(cd "$GIT_TEST_DIR2" && collect_batch_tags "metrics-v1.0.0")
 assert_eq "falls back to triggering tag with no prior bump commit" "metrics-v1.0.0" "$FALLBACK"
+
+# ---------------------------------------------------------------------------
+# Tests: compute_batch_and_version
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== compute_batch_and_version tests ==="
+
+CBV_RESULT=$(cd "$GIT_TEST_DIR" && compute_batch_and_version "agent-v0.144.0")
+assert_eq "compute_batch_and_version: tags|current_version|new_version|branch shape" \
+  "admin-v0.156.0,agent-v0.144.0|1.6.284|1.6.285|chore/chart-v1.6.285" \
+  "$CBV_RESULT"
+
+# ---------------------------------------------------------------------------
+# Tests: branch_exists_on_remote / resolve_batch_with_retry
+#
+# Fixture: a bare "remote" repo (simulating `origin`) plus a "work_dir" repo
+# (simulating the runner's checkout of main) that pushes to it. The
+# `resync_fn` callback simulates the "fetch fresh main / reset --hard
+# origin/main" step the real workflow performs after a collision — in these
+# tests it's just `git -C work_dir fetch/reset` against the shared remote.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "=== branch_exists_on_remote / resolve_batch_with_retry tests ==="
+
+make_retry_fixture() {
+  local fixture_name="$1"
+  local remote_dir="$TMPDIR_TEST/remote-${fixture_name}.git"
+  local work_dir="$TMPDIR_TEST/work-${fixture_name}"
+
+  git init -q --bare "$remote_dir"
+
+  mkdir -p "$work_dir/charts/shipwright"
+  (
+    cd "$work_dir"
+    git init -q
+    git config user.email "test@test.com"
+    git config user.name "test"
+    git remote add origin "$remote_dir"
+
+    cat > charts/shipwright/Chart.yaml <<'EOF'
+apiVersion: v2
+name: shipwright
+version: 1.6.284
+EOF
+    git add -A
+    GIT_AUTHOR_DATE="2026-07-06T09:00:00-07:00" GIT_COMMITTER_DATE="2026-07-06T09:00:00-07:00" \
+      git commit -q -m "chore(chart): bump chart version to 1.6.284"
+    git branch -M main
+    git push -q -u origin main
+
+    GIT_COMMITTER_DATE="2026-07-06T09:50:00-07:00" git tag -a admin-v0.156.0 -m "x"
+    GIT_COMMITTER_DATE="2026-07-06T09:52:00-07:00" git tag -a agent-v0.144.0 -m "x"
+    git push -q origin --tags
+  )
+
+  echo "$work_dir|$remote_dir"
+}
+
+# --- branch_exists_on_remote basics ---
+
+RETRY_FIXTURE_1=$(make_retry_fixture "basics")
+WORK_DIR_1="${RETRY_FIXTURE_1%%|*}"
+REMOTE_DIR_1="${RETRY_FIXTURE_1#*|}"
+
+if branch_exists_on_remote "chore/chart-v1.6.285" "$REMOTE_DIR_1"; then
+  fail "branch_exists_on_remote: false on a branch that doesn't exist yet" "false (no match)" "true (match)"
+else
+  pass "branch_exists_on_remote: false on a branch that doesn't exist yet"
+fi
+
+(
+  cd "$WORK_DIR_1"
+  git checkout -q -b chore/chart-v1.6.285
+  git push -q -u origin chore/chart-v1.6.285
+)
+
+if branch_exists_on_remote "chore/chart-v1.6.285" "$REMOTE_DIR_1"; then
+  pass "branch_exists_on_remote: true once branch is pushed to remote"
+else
+  fail "branch_exists_on_remote: true once branch is pushed to remote" "true (match)" "false (no match)"
+fi
+
+# --- resolve_batch_with_retry: 3(a) retry recomputes a non-colliding
+# version from a fresh since-timestamp, excluding already-landed tags ---
+#
+# Simulates: this run wants chore/chart-v1.6.285, but a concurrent run's
+# batch (crediting admin-v0.156.0 and agent-v0.144.0) already landed on
+# main as chart-bump commit 1.6.285 and pushed branch chore/chart-v1.6.285
+# (collision on attempt 1). On retry, resync_fn re-syncs work_dir to fresh
+# main (which now contains the 1.6.285 bump commit with a newer
+# last-bump-commit timestamp), so collect_batch_tags naturally excludes
+# admin-v0.156.0/agent-v0.144.0 (they now predate the new since-timestamp)
+# and only the *new* triggering tag (task-store-v0.9.0, landed after the
+# concurrent bump) is picked up. The recomputed version is 1.6.286 with
+# branch chore/chart-v1.6.286 — no collision — and the retry succeeds.
+
+RETRY_FIXTURE_2=$(make_retry_fixture "retry-success")
+WORK_DIR_2="${RETRY_FIXTURE_2%%|*}"
+REMOTE_DIR_2="${RETRY_FIXTURE_2#*|}"
+
+# Simulate the concurrent winning run: bumps main to 1.6.285, crediting the
+# two tags already present, and pushes the colliding branch — all directly
+# against the shared remote, independent of work_dir's checkout.
+CONCURRENT_CLONE="$TMPDIR_TEST/concurrent-winner-clone"
+git clone -q -b main "$REMOTE_DIR_2" "$CONCURRENT_CLONE"
+(
+  cd "$CONCURRENT_CLONE"
+  git config user.email "test@test.com"
+  git config user.name "test"
+  python3 - charts/shipwright/Chart.yaml <<'PYEOF'
+import re
+path = "charts/shipwright/Chart.yaml"
+with open(path) as f:
+    content = f.read()
+content = re.sub(r'^version:.*$', 'version: 1.6.285', content, flags=re.MULTILINE)
+with open(path, 'w') as f:
+    f.write(content)
+PYEOF
+  git add -A
+  GIT_AUTHOR_DATE="2026-07-06T10:10:00-07:00" GIT_COMMITTER_DATE="2026-07-06T10:10:00-07:00" \
+    git commit -q -m "chore(chart): bump chart version to 1.6.285"
+  git push -q origin main
+  git checkout -q -b chore/chart-v1.6.285
+  git push -q -u origin chore/chart-v1.6.285
+)
+
+# The new triggering tag lands on main *after* the concurrent winner's bump
+# commit — it must survive re-derivation and be the one credited by the
+# eventual, non-colliding retry.
+(
+  cd "$CONCURRENT_CLONE"
+  GIT_COMMITTER_DATE="2026-07-06T10:20:00-07:00" git tag -a task-store-v0.9.0 -m "x"
+  git push -q origin --tags
+)
+
+resync_work_dir_2() {
+  (
+    cd "$WORK_DIR_2"
+    git fetch -q origin main
+    git checkout -q main
+    git reset -q --hard origin/main
+    git fetch -q origin --tags --force
+  )
+}
+
+RETRY_RESULT=$(resolve_batch_with_retry "task-store-v0.9.0" "$WORK_DIR_2" "$REMOTE_DIR_2" resync_work_dir_2 5 0)
+RETRY_STATUS=$?
+
+assert_eq "resolve_batch_with_retry: succeeds after one collision" "0" "$RETRY_STATUS"
+assert_eq "resolve_batch_with_retry: recomputes non-colliding version 1.6.286" \
+  "task-store-v0.9.0|1.6.285|1.6.286|chore/chart-v1.6.286" \
+  "$RETRY_RESULT"
+
+# --- resolve_batch_with_retry: 3(b) exhausted-retries path exits non-zero
+# with an identifiable error naming the un-pinned tags ---
+#
+# Every attempt collides because resync_fn is a no-op (the branch that
+# collides is never removed and no new bump commit ever lands) — the loop
+# must give up after max_attempts and fail loudly rather than silently
+# succeed having dropped the batch.
+
+RETRY_FIXTURE_3=$(make_retry_fixture "exhausted")
+WORK_DIR_3="${RETRY_FIXTURE_3%%|*}"
+REMOTE_DIR_3="${RETRY_FIXTURE_3#*|}"
+
+(
+  cd "$WORK_DIR_3"
+  git checkout -q -b chore/chart-v1.6.285
+  git push -q -u origin chore/chart-v1.6.285
+  git checkout -q main
+)
+
+noop_resync() { :; }
+
+set +e
+EXHAUSTED_OUTPUT=$(resolve_batch_with_retry "agent-v0.144.0" "$WORK_DIR_3" "$REMOTE_DIR_3" noop_resync 3 0 2>&1)
+EXHAUSTED_STATUS=$?
+set -e
+
+assert_eq "resolve_batch_with_retry: exhausted retries exits non-zero" "1" "$EXHAUSTED_STATUS"
+
+if echo "$EXHAUSTED_OUTPUT" | grep -qi "ERROR.*exhausted"; then
+  pass "resolve_batch_with_retry: exhaustion emits a greppable ERROR message"
+else
+  fail "resolve_batch_with_retry: exhaustion emits a greppable ERROR message" "ERROR...exhausted present" "$EXHAUSTED_OUTPUT"
+fi
+
+if echo "$EXHAUSTED_OUTPUT" | grep -q "admin-v0.156.0,agent-v0.144.0"; then
+  pass "resolve_batch_with_retry: exhaustion error names the un-pinned release tags"
+else
+  fail "resolve_batch_with_retry: exhaustion error names the un-pinned release tags" "admin-v0.156.0,agent-v0.144.0 named" "$EXHAUSTED_OUTPUT"
+fi
 
 # ---------------------------------------------------------------------------
 # Tests: full pipeline (read → bump → update → verify), batched tags

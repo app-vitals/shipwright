@@ -57,7 +57,7 @@ For example:
 - `/shipwright:investigate-cron deploy 6pm` → `MODE=name-time`, `CRON_NAME="deploy"`, `TIME_ARG="6pm"`
 - `/shipwright:investigate-cron --item acme/x#123` → `MODE=item`, `ITEM_ARG="acme/x#123"`
 
-`--item` mode skips time parsing entirely (Step 2 does not apply) — there is no
+`--item` mode skips time parsing entirely (3a does not apply) — there is no
 target time to convert, since the runs endpoint returns every dispatch for that
 item directly.
 
@@ -137,7 +137,7 @@ echo "Fetched $(jq 'length' "$ALL_RUNS_FILE") total runs for loopCronId=$LOOP_CR
 ```
 
 **Name+time mode** — filter client-side to `phaseId === <PHASE_ID>`, then pick
-the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in Step 2):
+the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in 3a):
 
 ```bash
 BEST_RUN=$(jq -r --arg phase "$PHASE_ID" --argjson target "$TARGET_EPOCH" '
@@ -151,9 +151,18 @@ if [ "$BEST_RUN" = "null" ] || [ -z "$BEST_RUN" ]; then
   echo "No runs found for phaseId=$PHASE_ID within the fetched page cap — fall back to the pre-admin-API path."
 else
   RUN_STARTED_AT=$(echo "$BEST_RUN" | jq -r '.startedAt')
-  echo "Matched run: $(echo "$BEST_RUN" | jq -r '.id') startedAt=$RUN_STARTED_AT"
+  # Populate ITEM_ARG from the resolved run's itemId so Step 2's ground-truth
+  # signals (2a's work-queue rank lookup, 2b's task-id fallback) work in
+  # name+time mode too, exactly as they do in item mode.
+  ITEM_ARG=$(echo "$BEST_RUN" | jq -r '.itemId // empty')
+  echo "Matched run: $(echo "$BEST_RUN" | jq -r '.id') startedAt=$RUN_STARTED_AT itemId=${ITEM_ARG:-<none>}"
 fi
 ```
+
+If `BEST_RUN` has no `itemId` (e.g. a loop-tick run not dispatched against a
+specific PR/task), `ITEM_ARG` stays empty and Step 2's item-scoped signals
+degrade gracefully — same behavior as when they're checked against an
+already-empty `ITEM_ARG` today.
 
 **Item mode** — filter client-side to `itemId === <ITEM_ARG>`, returning every
 matching run across all four phases, sorted chronologically:
@@ -177,13 +186,159 @@ otherwise report that no dispatch history exists.
 
 Once you have the run's exact `startedAt` (name+time mode: `RUN_STARTED_AT`;
 item mode: each entry in `ITEM_RUNS`), use it as a **tight window** — a few
-minutes, not ±90 — around the transcript directory's file mtimes in Step 3,
+minutes, not ±90 — around the transcript directory's file mtimes in 3b,
 since this is now a known exact event time rather than a guess. The transcript
-directory itself is still resolved the same way (see Step 3).
+directory itself is still resolved the same way (see 3b).
 
 ---
 
-## Step 2: Convert the time argument (name+time mode only)
+## Step 2: Ground-truth snapshot (both modes)
+
+Before extracting anything from a transcript, pull current live state. Often
+the answer to "why didn't this run/proceed" is fully explained by state that
+exists **right now** — the item simply isn't next in the queue yet, or it's
+blocked by a flag — without needing to read a single line of session output.
+This step runs for **both `name-time` mode and `item` mode**: in `item` mode
+the ground-truth signals apply directly to `ITEM_ARG`; in `name-time` mode
+Step 1b populates `ITEM_ARG` from the resolved run's `itemId` once a run is
+matched, so the same signals below work unmodified in both modes (or, if
+Step 1 found no run at all, `ITEM_ARG` stays empty and these signals degrade
+gracefully per-signal, same as an absent snapshot/record).
+
+Three independent signals, each degrading gracefully if unavailable — a
+missing snapshot, PR record, or task record is not an error, just a signal
+that's not yet available to reason from:
+
+### 2a. Work-queue snapshot
+
+`GET /agents/{id}/work-queue` returns the **last-pushed ranked snapshot** of
+this agent's pending work — not a live-computed view. The loop orchestrator
+POSTs a fresh ranked snapshot once per tick (capped at 50 items, oldest-first
+FIFO); this GET just returns whatever was pushed at the most recent tick, and
+returns `404` if the agent has never pushed one. Items are ranked oldest-first
+by age; there is no explicit `rank` field — the array index **is** the rank.
+Treat this as "latest known ranking as of the last tick," not real-time truth.
+
+```bash
+WORK_QUEUE_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/work-queue" 2>/dev/null)
+
+if [ -z "$WORK_QUEUE_JSON" ]; then
+  echo "No work-queue snapshot available (agent has never pushed one, or the admin API is unreachable) — skip this signal."
+else
+  echo "Snapshot computed at: $(echo "$WORK_QUEUE_JSON" | jq -r '.snapshot.computedAt')"
+  echo "$WORK_QUEUE_JSON" | jq -r '.snapshot.items | to_entries[] | "  rank=\(.key)  type=\(.value.type)  id=\(.value.id)  phase=\(.value.phase)  age=\(.value.age)"'
+
+  # Surface this item's rank/age relative to other ready candidates, if present.
+  echo "$WORK_QUEUE_JSON" | jq -r --arg id "$ITEM_ARG" \
+    '.snapshot.items | to_entries[] | select(.value.id == $id) | "This item: rank=\(.key) of \(($ENV.TOTAL // "?")) phase=\(.value.phase) age=\(.value.age)"'
+fi
+```
+
+If the item appears in the snapshot far down the ranking relative to other
+ready candidates, that alone can explain "hasn't run yet — not its turn" for a
+`dev-task`/`review`/`patch`/`deploy` cron. If it's absent from the snapshot
+entirely, either it wasn't a ready candidate at the last tick, or no snapshot
+exists yet — note which, and move on to 2b/2c rather than guessing.
+
+### 2b. Task-store PR/task record
+
+Fetch the task-store's cached view of the item — the PR record, the task
+record, or both, depending on what `ITEM_ARG` (or the item implied by
+`name-time` mode) resolves to:
+
+```bash
+# PR record (when the item is a PR, org/repo#N):
+PR_RECORD_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0] // empty')
+
+if [ -z "$PR_RECORD_JSON" ]; then
+  echo "No task-store PR record for {org}/{repo}#{pr} — not yet tracked, or never a PR. Skip this signal."
+else
+  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForDeployAt, taskId, patchCycles, commitSha}'
+fi
+
+# Task record (when the item is a bare taskId, or the PR record above has a taskId):
+TASK_ID_TO_FETCH="${ITEM_ARG:-$(echo "$PR_RECORD_JSON" | jq -r '.taskId // empty')}"
+if [ -n "$TASK_ID_TO_FETCH" ]; then
+  TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID_TO_FETCH" 2>/dev/null)
+  if [ -z "$TASK_JSON" ]; then
+    echo "No task-store task record for $TASK_ID_TO_FETCH — skip this signal."
+  else
+    echo "$TASK_JSON" | jq '{id, status, hitl, dependencies}'
+  fi
+fi
+```
+
+`hitl=true`, a `reviewState` that clearly blocks progress (e.g. stuck at
+`pending` with no recent activity), or an unmet `dependencies` entry on the
+task record are all direct, no-transcript-needed explanations for "why didn't
+this proceed."
+
+### 2c. Live GitHub state, diffed against the cached task-store view
+
+Fetch live state directly from GitHub — this is the source of truth GitHub
+holds right now, which may have moved since the task-store record was last
+written:
+
+```bash
+GH_LIVE_JSON=$(gh pr view {pr} --repo {org}/{repo} \
+  --json mergeStateStatus,state,headRefOid,author,createdAt 2>/dev/null)
+echo "$GH_LIVE_JSON" | jq .
+```
+
+`gh pr checks` may not reliably work here — agent PATs generally lack Checks
+API access. If a CI-status signal is needed, prefer the lightweight Actions-API
+pattern used elsewhere in this plugin (e.g. `deploy.md`, `patch.md`,
+`review.md`): `gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA&per_page=20"`
+filtered/deduped client-side. Keep it to a single snapshot fetch here — this
+step is a quick ground-truth check, not a full CI poll loop.
+
+**Explicitly diff the live GitHub state against the task-store's cached
+view** (`PR_RECORD_JSON` from 2b) — do not silently prefer one source over the
+other:
+
+```bash
+if [ -n "$PR_RECORD_JSON" ] && [ -n "$GH_LIVE_JSON" ]; then
+  LIVE_HEAD=$(echo "$GH_LIVE_JSON" | jq -r '.headRefOid')
+  CACHED_HEAD=$(echo "$PR_RECORD_JSON" | jq -r '.commitSha // empty')
+  LIVE_STATE=$(echo "$GH_LIVE_JSON" | jq -r '.state')
+
+  if [ -n "$CACHED_HEAD" ] && [ "$LIVE_HEAD" != "$CACHED_HEAD" ]; then
+    echo "DISCREPANCY: live headRefOid ($LIVE_HEAD) != task-store cached commitSha ($CACHED_HEAD) — new commits landed since the task-store record was last written."
+  fi
+  if [ "$LIVE_STATE" = "MERGED" ] && [ "$(echo "$PR_RECORD_JSON" | jq -r '.state // empty')" != "merged" ]; then
+    echo "DISCREPANCY: PR is merged on GitHub but the task-store record does not reflect it."
+  fi
+fi
+```
+
+Any drift found here (stale `commitSha`, a merge the task-store hasn't caught
+up to, a `mergeStateStatus` that's since cleared) is itself often the answer
+to "why didn't this run as expected" — call it out explicitly rather than
+picking a side.
+
+### Short-circuit
+
+If these three signals alone answer the investigation with high confidence —
+e.g. the work-queue snapshot shows the item is far from next, `hitl=true` is
+actively blocking, or the task-store/GitHub diff shows a state (merged,
+closed, `mergeStateStatus` blocked) that plainly explains "not its turn yet"
+or "blocked by a flag" — **report the conclusion now and stop; there is no
+need to proceed to session/transcript extraction.** This applies in both
+`name-time` mode and `item` mode. Otherwise, continue to Step 3.
+
+---
+
+## Step 3: Locate and extract the transcript
+
+This step covers converting the time argument, finding the matching
+session(s), and extracting what happened from the transcript — the three
+sub-steps below run in sequence whenever Step 2's ground-truth signals were
+inconclusive and transcript evidence is actually needed.
+
+### 3a. Convert the time argument (name+time mode only)
 
 Only applies when `MODE=name-time`. Item mode has no time argument and skips
 this step.
@@ -248,9 +403,7 @@ else:
 echo "Target epoch: $TARGET_EPOCH ($(date -d @$TARGET_EPOCH 2>/dev/null || date -r $TARGET_EPOCH))"
 ```
 
----
-
-## Step 3: Find matching sessions
+### 3b. Find matching sessions
 
 Derive the transcript directory from the current working directory (CWD), then
 locate the session(s) that correspond to the run(s) resolved in Step 1.
@@ -388,9 +541,7 @@ for m in matches:
 If multiple matches exist (e.g. cron fired twice), pick the one closest to the
 target time. If no matches are found, skip to the no-match handler at the end.
 
----
-
-## Step 4: Extract what happened
+### 3c. Extract what happened
 
 Parse the matching session JSONL to extract the narrative: initial prompt,
 assistant text outputs, key Bash commands, and whether the session ended silently.
@@ -469,6 +620,118 @@ the goal is a chronological narrative across all four phases, not a single run.
 
 ---
 
+## Step 4: Sentry cross-check
+
+Cross-check the transcript's account of "what happened" against what Sentry
+actually recorded for the same time window — an unhandled exception or a
+smoking-gun `console.log`/`console.warn`/`console.error` line often explains
+unexpected cron behavior more directly than anything in the transcript itself,
+and this dataset is easy to forget to check.
+
+### 4a. Preconditions
+
+Confirm `SENTRY_ORG` and `SENTRY_AUTH_TOKEN` are both set in the environment
+(`echo "org_set=$([ -n "$SENTRY_ORG" ] && echo yes || echo no)
+token_set=$([ -n "$SENTRY_AUTH_TOKEN" ] && echo yes || echo no)"`). If either is
+unset or empty, print:
+
+```
+investigate-cron's Sentry cross-check requires SENTRY_ORG and SENTRY_AUTH_TOKEN to be set in the environment. Skipping this step — continuing without Sentry data.
+```
+
+and skip straight to Step 5 — **never block the rest of the investigation** on
+missing Sentry credentials. This mirrors `error-scan`'s Step 0 gating pattern
+(see `plugins/shipwright/skills/error-scan/SKILL.md`).
+
+Never print, log, or persist the literal values of `$SENTRY_AUTH_TOKEN` or
+`$SENTRY_ORG` — reference them only as env var names, exactly like `error-scan`
+does, in any output this step produces.
+
+Determine the run's time window before calling either API below: the run's
+`startedAt` (from Step 1) plus a reasonable margin (e.g. ±30-60 minutes), or —
+for an investigation of something still in progress — the run-to-now window.
+
+### 4b. Issues API — unresolved exceptions and 5xx errors
+
+```bash
+curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+  "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/?query=is:unresolved"
+```
+
+This endpoint doesn't take a raw time-window query param — `query=is:unresolved`
+is the only filter applied server-side. Scope the result to the run's window
+**client-side**, by comparing each issue's `firstSeen`/`lastSeen` timestamps
+against `[RUN_STARTED_AT - margin, RUN_STARTED_AT + margin]` (or
+`now` if the window is open-ended) via `jq`, e.g.:
+
+```bash
+echo "$ISSUES_JSON" | jq -r --arg lower "$WINDOW_LOWER_ISO" --arg upper "$WINDOW_UPPER_ISO" '
+  .[] | select(.lastSeen >= $lower and .firstSeen <= $upper) |
+  "\(.shortId)  \(.title)  firstSeen=\(.firstSeen)  lastSeen=\(.lastSeen)  \(.permalink)"
+'
+```
+
+Be explicit in any output that this window filtering happened client-side, not
+via the API — a raw unfiltered `is:unresolved` result includes every
+currently-unresolved issue org-wide, most of which have nothing to do with
+this run.
+
+### 4c. ourlogs — structured console output for the same window
+
+The `ourlogs` dataset carries every `console.log`/`console.warn`/`console.error`
+call forwarded to Sentry as structured logs (see `docs/observability.md`'s
+"Read side" section) — **this is the dataset that resolved a near-identical
+prior "shipwright-loop stall" investigation, and the one this team keeps
+forgetting to check.** Query it via the Events API with the same
+`SENTRY_ORG`/`SENTRY_AUTH_TOKEN` credentials:
+
+```bash
+curl -s -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+  --data-urlencode "dataset=ourlogs" \
+  --data-urlencode "project=<numeric_project_id>" \
+  --data-urlencode "field=timestamp" --data-urlencode "field=message" \
+  --data-urlencode "query=<search text>" \
+  --data-urlencode "statsPeriod=24h" \
+  --data-urlencode "sort=-timestamp" --data-urlencode "per_page=100" \
+  -G "https://sentry.io/api/0/organizations/$SENTRY_ORG/events/"
+```
+
+Notes on adapting this query form to the investigated run rather than a fixed
+window:
+- `statsPeriod=24h` is a rough relative window (fine for an ad-hoc lookback);
+  prefer precise `start`/`end` ISO-8601 params instead when the run's exact
+  `startedAt` is known (from Step 1) — e.g. `--data-urlencode
+  "start=<RUN_STARTED_AT minus margin>" --data-urlencode "end=<RUN_STARTED_AT
+  plus margin, or now>"` in place of `statsPeriod`. Use whichever gives the
+  tightest accurate window for this investigation.
+- `<search text>` should target the cron/item under investigation (e.g. the
+  cron name, item id, or task id) so results aren't just every log line in the
+  window.
+- `<numeric_project_id>` must be resolved before this call — this skill doesn't
+  otherwise enumerate Sentry projects. If it isn't already known, resolve it
+  via the project list endpoint, mirroring `error-scan`'s Step 1:
+  ```bash
+  curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+    "https://sentry.io/api/0/organizations/$SENTRY_ORG/projects/"
+  ```
+  and pick the project whose `slug` matches the service under investigation
+  (e.g. `agent`).
+- `per_page=100` caps the page size — if the result looks truncated (exactly
+  100 rows returned, or the window is wide), narrow the query text/window or
+  page via the response's pagination cursor rather than trusting a single
+  page's results as complete.
+
+### Short-circuit
+
+If Sentry surfaces a clear unhandled exception or a smoking-gun log line
+inside the run's window, that alone can explain "why did this behave
+unexpectedly" — note it plainly in the findings carried into Step 5. Step 5's
+synthesis should cite Sentry-sourced findings as `[verified: Sentry]` once the
+citation-tagging convention is implemented (out of scope for this step — see
+the task that rewrites Step 5's synthesis content).
+
+---
+
 ## Step 5: Synthesize the explanation
 
 Produce a plain-language explanation covering:
@@ -544,14 +807,23 @@ grep -i "precheck\|pre-check\|cron" logs/bodhi.log | tail -50
 
 ## Notes
 
-- This skill reads only the admin API and transcript files — it does **not** require
-  container stdout or any external log system beyond `logs/bodhi.log` for the preCheck
-  fallback case. The Claude Code session JSONL is the authoritative record of what the
-  model concluded and why; the admin API's `AgentCronRun` records are the authoritative
-  record of exactly when and against what item a cron fired.
+- This skill reads the admin API, the task store, live GitHub state, transcript
+  files, and (optionally, Step 4) Sentry — it does **not** require container stdout or
+  any external log system beyond `logs/bodhi.log` for the preCheck fallback case. The
+  Claude Code session JSONL is the authoritative record of what the model concluded and
+  why; the admin API's `AgentCronRun` records are the authoritative record of exactly
+  when and against what item a cron fired; the task store and GitHub are the
+  authoritative record of an item's *current* state (Step 2); Sentry (Step 4) is the
+  authoritative record of unhandled exceptions and structured console output, when
+  `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` are configured.
 - Prefer the admin-API path (Step 1) over the fallback whenever the admin API is
   reachable and returns run records — it gives an exact `startedAt` instead of a guess,
   and item mode is only possible through it.
+- Prefer the ground-truth snapshot (Step 2) over transcript extraction whenever it alone
+  answers the question — it's cheaper and doesn't require a matching session to exist at
+  all. Fall through to Steps 3–5 only when live state is inconclusive.
+- Step 4 (Sentry cross-check) is best-effort and never blocking — a missing
+  `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` simply skips straight to Step 5 with a printed notice.
 - A `[silent]` response is **expected behavior** when the skill found nothing to do —
   look at the bash commands to understand what it checked.
 - Multiple sessions in a window: pick the one whose first entry timestamp (not mtime)
