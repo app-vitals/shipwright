@@ -185,10 +185,23 @@ back to `'sonnet'`.
 2. **Diff against the correct base branch** (not always main):
    ```bash
    base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
-   git diff "$base"...HEAD
+   git diff "origin/$base"...HEAD
    ```
 
+   **Always use `origin/$base`, not bare `$base`.** The worktree is created from a
+   remote-tracking ref (`origin/{branch}`) and Step 4 runs `fetch origin`, so
+   `origin/main` is always fresh. But the local `main` branch is never updated — it
+   can be hundreds of commits behind, producing a diff that includes unrelated changes
+   from other merged PRs.
+
 3. **Changed files**: extract from the diff
+
+   **Sanity check**: compare the number of files in the diff against the PR metadata's
+   `changedFiles` count. If the diff contains significantly more files (e.g. 2x+), the
+   merge-base is likely wrong — the diff is picking up commits from other merged PRs.
+   Stop and diagnose: verify `origin/$base` resolves to the expected commit, check
+   whether `git merge-base origin/$base HEAD` matches what GitHub shows, and re-run
+   `git fetch origin` if needed. Do not proceed with a review based on a wrong diff.
 
 4. **CI status** via Actions API (not `gh pr checks` -- broken with PATs):
    ```bash
@@ -298,7 +311,7 @@ falling back to `'sonnet'` when no task is linked or the lookup failed), and pas
 a single prompt block containing:
 
 - **PR metadata** — `number`, `title`, `author`, `headRefName`, `baseRefName`, `headRefOid`
-- **Full diff** — the `git diff "$base"...HEAD` output from Step 5.2
+- **Full diff** — the `git diff "origin/$base"...HEAD` output from Step 5.2
 - **Changed files** — the list extracted in Step 5.3
 - **CLAUDE.md contents** — root CLAUDE.md + any CLAUDE.md in directories containing
   changed files (from Step 5.6). Include each as a labeled block so the subagent knows
@@ -490,7 +503,7 @@ For a COMMENT verdict, the `body` follows the same convention, e.g.
 `"body": "Verdict: COMMENT — {one-line summary of the most important finding}"`.
 
 **Diff-line mapping**: for each finding with a `file:line` reference, check if the
-line is in the diff (`git diff {base}...HEAD -- {file}`). Only lines within diff
+line is in the diff (`git diff origin/{base}...HEAD -- {file}`). Only lines within diff
 hunks are valid for inline comments. Move others to the review body.
 
 **Event selection** (from policy `allowed_events`):
@@ -823,7 +836,7 @@ These rules are non-negotiable regardless of policy settings:
 
 - **Verify before flagging**: check actual code, not just the diff. Confirm library
   versions, check if both branches of a conditional do the same thing.
-- **Check scope**: `git show {base}:{file}` -- if the issue exists on the base branch,
+- **Check scope**: `git show origin/{base}:{file}` -- if the issue exists on the base branch,
   it's out of scope.
 - **Don't echo CI**: don't call out failing tests unless confident your findings are
   the cause.
