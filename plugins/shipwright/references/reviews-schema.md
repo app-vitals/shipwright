@@ -112,9 +112,9 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   during claim in Step 4). Comparing it to the current GitHub head detects "new commits since
   last review" without re-fetching history. Compare against `gh pr view --json headRefOid`.
 
-- **`staged` flag**: when `auto_post_reviews` is false (default), reviews are staged. Set `staged: true`
-  on Step 11 (before posting). Explicit `/shipwright:review {org}/{repo}#{pr}` invocation
-  posts a staged review (owner confirmation).
+- **`staged` flag**: when `auto_post_reviews` is false (opt-out from the default), reviews are staged.
+  Set `staged: true` on Step 11 (before posting). Explicit `/shipwright:review {org}/{repo}#{pr}`
+  invocation posts a staged review (owner confirmation).
 
 - **Workflow phases**: `review.md` is explicit-target-only — it always operates on the one
   PR named in `$ARGUMENTS`, not a self-scanned/ranked queue. `reviewState` still governs
