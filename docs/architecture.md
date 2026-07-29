@@ -24,7 +24,7 @@ Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.
 - **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `metrics`, `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, `test-debt`, `triage-dependabot-pr`, and `triage-dependabot-prs`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
-- **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `task-store.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, …).
+- **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
 `dev-task`, `review`, `patch`, and `deploy` are item-addressed executors, not self-discovering
 standalone crons: each requires an explicit target (a task id for `dev-task`; an
