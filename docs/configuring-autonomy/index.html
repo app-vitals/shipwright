@@ -93,7 +93,7 @@ You still control merging.</p>
 </tbody>
 </table>
 <p>At this stage, <code>auto_post_reviews</code> in <code>state/agent-policy.md</code> determines whether the agent
-posts reviews to GitHub immediately or holds them for your approval. See
+posts reviews to GitHub immediately (the default) or holds them for your approval. See
 <a href="#staged-reviews">Staged reviews</a> below.</p>
 <h3 id="stage-3--full-autonomous-loop">Stage 3 — Full autonomous loop</h3>
 <p>Enable <code>shipwright-deploy</code>. The agent now merges approved PRs and monitors post-merge CI.
@@ -135,12 +135,13 @@ fix CI failures while you review PRs yourself.</p>
 builds, opens PRs, and patches CI — but never posts a review comment.</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  patch  ✓  review  ✗  deploy  ✗</span></span></code></pre>
 <h3 id="staged-reviews">Staged reviews</h3>
-<p>You want the agent to review PRs but prefer to read and approve each review before it goes to
-GitHub. Set <code>auto_post_reviews: false</code> in <code>state/agent-policy.md</code>. Enable <code>shipwright-review</code>
-(and <code>shipwright-patch</code> if you also want findings addressed automatically).</p>
-<p>The agent runs its review pass and writes the findings to a local review file. Nothing is posted
-to GitHub until you approve it. Once you’ve confirmed the review looks right, post it manually
-or set <code>auto_post_reviews: true</code> to have the agent send it.</p>
+<p>By default, the agent posts reviews to GitHub immediately (<code>auto_post_reviews: true</code>). If you’d
+rather read and approve each review before it goes to GitHub, set <code>auto_post_reviews: false</code> in
+<code>state/agent-policy.md</code>. Enable <code>shipwright-review</code> (and <code>shipwright-patch</code> if you also want
+findings addressed automatically).</p>
+<p>With staging on, the agent runs its review pass and writes the findings to a local review file.
+Nothing is posted to GitHub until you approve it. Once you’ve confirmed the review looks right,
+post it manually, or set <code>auto_post_reviews: true</code> again to go back to automatic posting.</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="plaintext"><code><span class="line"><span>dev-task  ✓  review  ✓  patch  ✓  deploy  ✗   (auto_post_reviews: false)</span></span></code></pre>
 <h3 id="bring-your-own-pr">Bring your own PR</h3>
 <p>You don’t have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
@@ -161,7 +162,7 @@ anything beyond a quick fix, going through the task queue produces better outcom
 <span class="line"></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| Setting | Value | Notes |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">|</span><span style="color:var(--astro-code-token-punctuation)">---------</span><span style="color:var(--astro-code-foreground)">|</span><span style="color:var(--astro-code-token-punctuation)">-------</span><span style="color:var(--astro-code-foreground)">|</span><span style="color:var(--astro-code-token-punctuation)">-------</span><span style="color:var(--astro-code-foreground)">|</span></span>
-<span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`auto_post_reviews`</span><span style="color:var(--astro-code-foreground)"> | false | Stage reviews locally; do not post to GitHub automatically. |</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`auto_post_reviews`</span><span style="color:var(--astro-code-foreground)"> | true | Post reviews to GitHub automatically. Set to </span><span style="color:var(--astro-code-token-string)">`false`</span><span style="color:var(--astro-code-foreground)"> to stage reviews locally instead. |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`allowed_events`</span><span style="color:var(--astro-code-foreground)"> | [COMMENT, APPROVE] | Never REQUEST_CHANGES |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`review_external_prs`</span><span style="color:var(--astro-code-foreground)"> | true | Review externally-opened PRs |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`allow_self_review`</span><span style="color:var(--astro-code-foreground)"> | true | Review own PRs |</span></span>
@@ -185,7 +186,7 @@ anything beyond a quick fix, going through the task queue produces better outcom
 <tbody>
 <tr>
 <td><code>auto_post_reviews</code></td>
-<td><code>false</code></td>
+<td><code>true</code></td>
 <td>Post review comments to GitHub immediately. When <code>false</code>, reviews are staged locally.</td>
 </tr>
 <tr>
