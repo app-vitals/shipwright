@@ -75,6 +75,16 @@ export interface PrInfo {
 
 export interface PrRecord {
   commitSha?: string | null;
+  /**
+   * The review pipeline's exclusive commit-tracking field (RCS-1.2),
+   * written by review.md, separate from the shared commitSha field also
+   * advanced by PullRequestService.patch()/claim()/deploy for their own
+   * multi-phase bookkeeping. The staged-review guard below reads this field
+   * — not commitSha — so that patch()'s unrelated commitSha bumps (e.g.
+   * after a CI-fix cycle) can never masquerade as "already reviewed at this
+   * head" for a staged, never-re-reviewed review (RCS-1.3).
+   */
+  reviewedCommitSha?: string | null;
   reviewState: string;
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
@@ -259,14 +269,20 @@ export async function getReviewCandidates(
       continue;
     }
 
-    // commitSha matches and a review is already staged → skip regardless of
-    // reviewState. reviewState can read "pending" for a staged record due to
-    // a drift window (a race between staging and the reviewState write
-    // landing, reconciler lag, etc. — CHU-2.5, #1769) so this check must not
-    // depend on reviewState being trustworthy. A staged record at a
-    // DIFFERENT commitSha (author pushed since staging) stays eligible,
-    // matching review.md's stale-staged-review re-review path.
-    if (record.staged === true && record.commitSha === pr.headRefOid) {
+    // reviewedCommitSha matches and a review is already staged → skip
+    // regardless of reviewState. reviewState can read "pending" for a staged
+    // record due to a drift window (a race between staging and the
+    // reviewState write landing, reconciler lag, etc. — CHU-2.5, #1769) so
+    // this check must not depend on reviewState being trustworthy. A staged
+    // record at a DIFFERENT reviewedCommitSha (author pushed since staging)
+    // stays eligible, matching review.md's stale-staged-review re-review
+    // path. Deliberately reads reviewedCommitSha, NOT commitSha (RCS-1.3):
+    // commitSha is shared bookkeeping also advanced by
+    // PullRequestService.patch() (e.g. after a CI-fix cycle) independent of
+    // whether the PR was actually re-reviewed at that new head — keying this
+    // guard on commitSha let such a bump silently mask a stale, never-
+    // re-reviewed staged review as still current.
+    if (record.staged === true && record.reviewedCommitSha === pr.headRefOid) {
       continue;
     }
 
