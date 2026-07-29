@@ -29,6 +29,10 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
+      description: "auto-bump to chart v1.7.158 triggered by release tag admin-v1.51.0"
+    - kind: changed
+      description: "auto-bump to chart v1.7.158 triggered by release tag admin-v1.52.0"
+    - kind: changed
       description: "auto-bump to chart v1.7.158 triggered by release tag admin-v1.53.0"
     - kind: changed
       description: "auto-bump to chart v1.7.158 triggered by release tag admin-v1.54.0"
