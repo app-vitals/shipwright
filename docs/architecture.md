@@ -21,19 +21,19 @@ The plugin drives the delivery loop: **spec → plan → execute → review → 
 
 Key surfaces (see `plugins/shipwright/README.md` and `plugins/shipwright/CLAUDE.md` for the full command/skill catalog):
 
-- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `metrics`, `research`, `research-docs`, and more.
+- **Commands** (`commands/`) — `prd`, `plan-session`, `dev-task`, `review`, `patch`, `merge`, `deploy`, the five-phase test-readiness pipeline (`test-inventory` → `test-design` → `test-migration` → `test-roadmap` → `test-fix`), `metrics`, `research`, `research-docs`, and more.
 - **Skills** (`skills/`) — autonomous behaviors including `pull-requests`, `review-staged`, `consolidation-scan`, `consolidation-fix`, `entropy-scan`, `entropy-fix`, `security-scan`, `security-fix`, `agent-admin`, `investigate-cron`, `learning-capture`, `task-store`, `test-readiness`, `test-debt`, `triage-dependabot-pr`, and `triage-dependabot-prs`.
 - **Scripts** (`scripts/`) — the task-store adapters, precheck scripts for each cron (`check-docs-freshness.ts`, `check-learn-dream.ts`, etc.), and supporting tooling.
 - **References** (`references/`) — schemas and recipes (`metrics-schema.md`, `doc-refresh-recipe.md`, `reviews-schema.md`, `principles.md`, …).
 
-`dev-task`, `review`, `patch`, and `deploy` are item-addressed executors, not self-discovering
+`dev-task`, `review`, `patch`, `merge`, and `deploy` are item-addressed executors, not self-discovering
 standalone crons: each requires an explicit target (a task id for `dev-task`; an
-`org/repo#number` PR for the other three) and does no candidate scanning of its own.
-Candidate selection happens once, upstream, in the Shipwright agent's `shipwright-loop`
+`org/repo#number` PR for the other four) and does no candidate scanning of its own.
+Candidate selection for the four loop-driven phases happens once, upstream, in the Shipwright agent's `shipwright-loop`
 cron (artifact **C** — see [agent.md](./agent.md)), which is the sole supported driver for
 these four phases; it merges candidates from `agent/src`'s per-phase qualification
 functions and dispatches the winning item's command with its id/PR embedded directly in the
-prompt. A human can still invoke any of the four directly with an explicit target.
+prompt. `merge` is currently human-invoked only. A human can invoke any of the five directly with an explicit target.
 
 The plugin is pure TypeScript with **no server, no database, and no external HTTP in production code** — only `unit` and `integration` test layers apply.
 
