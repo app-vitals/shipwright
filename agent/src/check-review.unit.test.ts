@@ -540,12 +540,18 @@ describe("getReviewCandidates", () => {
   });
 
   // ─── staged-review exclusion, independent of reviewState (CHU-2.5) ──────────
+  // RCS-1.3: the staged guard compares record.reviewedCommitSha (the review
+  // pipeline's exclusive, review.md-written field) against pr.headRefOid, NOT
+  // record.commitSha — commitSha is shared bookkeeping also advanced by
+  // PullRequestService.patch() (e.g. after a CI-fix cycle), independent of
+  // whether the PR was actually re-reviewed at that new commit.
 
-  test("excludes a PR whose record has staged:true and matching commitSha, even when reviewState reads pending (the #1769 regression case)", async () => {
+  test("excludes a PR whose record has staged:true and matching reviewedCommitSha, even when reviewState reads pending (the #1769 regression case)", async () => {
     const pr = makePr({ headRefOid: "sha111" });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
         commitSha: "sha111",
+        reviewedCommitSha: "sha111",
         reviewState: "pending",
         staged: true,
       })),
@@ -553,11 +559,12 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("returns a candidate when record has staged:true but a different commitSha (author pushed since staging)", async () => {
+  test("returns a candidate when record has staged:true but a different reviewedCommitSha (author pushed since staging)", async () => {
     const pr = makePr({ headRefOid: "newsha999" });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
         commitSha: "oldsha111",
+        reviewedCommitSha: "oldsha111",
         reviewState: "pending",
         staged: true,
       })),
@@ -571,12 +578,46 @@ describe("getReviewCandidates", () => {
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
         commitSha: "sha111",
+        reviewedCommitSha: "sha111",
         reviewState: "pending",
         staged: false,
       })),
     );
     expect(result).toHaveLength(1);
     expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("returns a candidate (does NOT falsely hide) when a patch()-driven bump advanced commitSha to match headRefOid, but reviewedCommitSha still reflects the older, actually-reviewed commit", async () => {
+    // Regression guard for the original RCS-1.3 bug: PullRequestService.patch()
+    // advances the shared commitSha field for its own bookkeeping (e.g. after
+    // a CI-fix cycle) without the PR having actually been re-reviewed at that
+    // new head. A staged guard keyed on commitSha would misread this as
+    // "still current" and silently hide the PR from review forever.
+    const pr = makePr({ headRefOid: "newsha999" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "newsha999", // bumped by patch()'s unrelated bookkeeping
+        reviewedCommitSha: "oldsha111", // last commit actually reviewed
+        reviewState: "pending",
+        staged: true,
+      })),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("newsha999");
+  });
+
+  test("returns a candidate (re-queues for review) when reviewedCommitSha diverges from headRefOid due to a genuine new commit", async () => {
+    const pr = makePr({ headRefOid: "brandnewsha" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "brandnewsha",
+        reviewedCommitSha: "previously-reviewed-sha",
+        reviewState: "pending",
+        staged: true,
+      })),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("brandnewsha");
   });
 
   // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
