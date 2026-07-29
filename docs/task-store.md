@@ -304,7 +304,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
@@ -340,6 +340,8 @@ Writable fields: `staged`, `commitSha`, `taskId`, `agentId`, `state`, `mergedAt`
 `skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
 
 `lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
+
+`reviewedCommitSha`: optional string — the review pipeline's exclusive commit-tracking field, separate from the shared `commitSha` field written by claim()/patch()/deploy for their own multi-phase bookkeeping. Set via `PATCH /prs/:id`. Used by the review phase to independently track the commit at which a review was conducted, allowing review state to persist across pipeline transitions without interference from concurrent patch/deploy phase operations updating `commitSha`.
 
 #### PR timestamp fields
 

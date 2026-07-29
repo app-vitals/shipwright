@@ -276,6 +276,11 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "abc123def456" }),
+    reviewedCommitSha: z.string().nullable().optional().openapi({
+      example: "abc123def456",
+      description:
+        "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
+    }),
     patchCycles: z.number().int().default(0).openapi({ example: 1 }),
     reviewCycles: z.number().int().default(0).openapi({ example: 0 }),
     agentId: z

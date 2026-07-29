@@ -61,6 +61,7 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.staged).toBe(false);
     expect(read.taskId).toBeNull();
     expect(read.commitSha).toBeNull();
+    expect(read.reviewedCommitSha).toBeNull();
     expect(read.agentId).toBeNull();
     expect(read.reviewedAt).toBeNull();
     expect(read.patchedAt).toBeNull();
@@ -150,6 +151,27 @@ describeOrSkip("PullRequest model (integration)", () => {
     if (!read) return;
 
     expect(read.prCreatedAt).toBe(prCreatedAt);
+  });
+
+  it("round-trips reviewedCommitSha", async () => {
+    const reviewedCommitSha = "abc123def456";
+
+    const created = await prisma.pullRequest.create({
+      data: {
+        repo: "app-vitals/shipwright",
+        prNumber: 56,
+        reviewedCommitSha,
+      },
+    });
+
+    const read = await prisma.pullRequest.findUnique({
+      where: { id: created.id },
+    });
+
+    expect(read).not.toBeNull();
+    if (!read) return;
+
+    expect(read.reviewedCommitSha).toBe(reviewedCommitSha);
   });
 
   it("rejects duplicate (repo, prNumber)", async () => {

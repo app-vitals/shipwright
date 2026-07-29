@@ -49,6 +49,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     state: "open",
     reviewState: "pending",
     commitSha: null,
+    reviewedCommitSha: null,
     patchCycles: 0,
     reviewCycles: 0,
     agentId: null,
@@ -1126,6 +1127,21 @@ describe("/prs routes (smoke)", () => {
     expect(body.hitl).toBe(true);
     expect(body.hitlNotifiedAt).toBe(notifiedAt);
     expect(body.blockedReason).toBe("no linked task");
+  });
+
+  it("PATCH /prs/:id can set and read back reviewedCommitSha", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", reviewedCommitSha: null }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1", {
+      method: "PATCH",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ reviewedCommitSha: "abc123def456" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.reviewedCommitSha).toBe("abc123def456");
   });
 
   it("PATCH /prs/:id returns 400 for agent token with out-of-scope repo", async () => {

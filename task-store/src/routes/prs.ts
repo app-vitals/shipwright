@@ -495,6 +495,7 @@ export function createPrsRoutes(
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
+    "reviewedCommitSha",
     "taskId",
     "agentId",
     "state",

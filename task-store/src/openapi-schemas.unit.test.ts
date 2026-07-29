@@ -87,6 +87,7 @@ const validPullRequest = {
   state: "open",
   reviewState: "pending",
   commitSha: "abc123def456",
+  reviewedCommitSha: "abc123def456",
   patchCycles: 1,
   reviewCycles: 0,
   agentId: "agent-id-123",
@@ -303,6 +304,40 @@ describe("PullRequestSchema", () => {
     };
     const result = PullRequestSchema.safeParse(withNulls);
     expect(result.success).toBe(true);
+  });
+
+  test("parses pull request with reviewedCommitSha set", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      reviewedCommitSha: "def456abc123",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reviewedCommitSha).toBe("def456abc123");
+    }
+  });
+
+  test("parses pull request with null reviewedCommitSha", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      reviewedCommitSha: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reviewedCommitSha).toBeNull();
+    }
+  });
+
+  test("parses pull request without reviewedCommitSha (optional field)", () => {
+    const { reviewedCommitSha: _, ...withoutField } = {
+      ...validPullRequest,
+      reviewedCommitSha: "unused",
+    };
+    const result = PullRequestSchema.safeParse(withoutField);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.reviewedCommitSha).toBeUndefined();
+    }
   });
 
   test("accepts all valid PrState enum values", () => {
