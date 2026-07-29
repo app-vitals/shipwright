@@ -366,3 +366,15 @@ describe("SKILL.md — Step 4: Sentry cross-check (IC-1.3)", () => {
     expect(content).toContain("dataset=ourlogs");
   });
 });
+
+describe("SKILL.md — Step 1b populates ITEM_ARG in name+time mode (review fix)", () => {
+  it("assigns ITEM_ARG from BEST_RUN's itemId so Step 2's item-scoped signals resolve in name+time mode", () => {
+    expect(content).toContain(
+      'ITEM_ARG=$(echo "$BEST_RUN" | jq -r \'.itemId // empty\')',
+    );
+  });
+
+  it("documents that ITEM_ARG degrades gracefully to empty when the resolved run has no itemId", () => {
+    expect(content).toContain("If `BEST_RUN` has no `itemId`");
+  });
+});

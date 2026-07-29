@@ -398,3 +398,27 @@ describe("SKILL.md — Step 4: Sentry cross-check (IC-1.3)", () => {
     expect(content).toContain("dataset=ourlogs");
   });
 });
+
+describe("SKILL.md — Step 1b populates ITEM_ARG in name+time mode (review fix)", () => {
+  it("assigns ITEM_ARG from BEST_RUN's itemId in the name+time branch", () => {
+    // Must appear in the BEST_RUN resolution block, not just anywhere in the doc.
+    const bestRunBlock = content.slice(
+      content.indexOf("**Name+time mode** — filter client-side to `phaseId"),
+      content.indexOf("**Item mode** — filter client-side to `itemId"),
+    );
+    expect(bestRunBlock).toContain('ITEM_ARG=$(echo "$BEST_RUN" | jq -r \'.itemId // empty\')');
+  });
+
+  it("explains why: so Step 2's ground-truth signals work in name+time mode too", () => {
+    expect(content).toContain(
+      "Step 1b populates `ITEM_ARG` from the resolved run's `itemId`",
+    );
+  });
+
+  it("notes ITEM_ARG degrades gracefully to empty when the resolved run has no itemId", () => {
+    const hasGracefulNote =
+      content.includes("If `BEST_RUN` has no `itemId`") &&
+      content.includes("ITEM_ARG` stays empty");
+    expect(hasGracefulNote).toBe(true);
+  });
+});

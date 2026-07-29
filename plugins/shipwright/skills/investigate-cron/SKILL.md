@@ -151,9 +151,18 @@ if [ "$BEST_RUN" = "null" ] || [ -z "$BEST_RUN" ]; then
   echo "No runs found for phaseId=$PHASE_ID within the fetched page cap — fall back to the pre-admin-API path."
 else
   RUN_STARTED_AT=$(echo "$BEST_RUN" | jq -r '.startedAt')
-  echo "Matched run: $(echo "$BEST_RUN" | jq -r '.id') startedAt=$RUN_STARTED_AT"
+  # Populate ITEM_ARG from the resolved run's itemId so Step 2's ground-truth
+  # signals (2a's work-queue rank lookup, 2b's task-id fallback) work in
+  # name+time mode too, exactly as they do in item mode.
+  ITEM_ARG=$(echo "$BEST_RUN" | jq -r '.itemId // empty')
+  echo "Matched run: $(echo "$BEST_RUN" | jq -r '.id') startedAt=$RUN_STARTED_AT itemId=${ITEM_ARG:-<none>}"
 fi
 ```
+
+If `BEST_RUN` has no `itemId` (e.g. a loop-tick run not dispatched against a
+specific PR/task), `ITEM_ARG` stays empty and Step 2's item-scoped signals
+degrade gracefully — same behavior as when they're checked against an
+already-empty `ITEM_ARG` today.
 
 **Item mode** — filter client-side to `itemId === <ITEM_ARG>`, returning every
 matching run across all four phases, sorted chronologically:
@@ -191,9 +200,10 @@ exists **right now** — the item simply isn't next in the queue yet, or it's
 blocked by a flag — without needing to read a single line of session output.
 This step runs for **both `name-time` mode and `item` mode**: in `item` mode
 the ground-truth signals apply directly to `ITEM_ARG`; in `name-time` mode
-they apply once Step 1 has resolved a specific run/item (or, if Step 1 found
-no run at all, they can still be checked against whatever PR/task the
-invocation implies, when known).
+Step 1b populates `ITEM_ARG` from the resolved run's `itemId` once a run is
+matched, so the same signals below work unmodified in both modes (or, if
+Step 1 found no run at all, `ITEM_ARG` stays empty and these signals degrade
+gracefully per-signal, same as an absent snapshot/record).
 
 Three independent signals, each degrading gracefully if unavailable — a
 missing snapshot, PR record, or task record is not an error, just a signal
