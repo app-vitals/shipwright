@@ -422,3 +422,76 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section.toLowerCase()).toContain("stop");
   });
 });
+
+describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () => {
+  it("Step 5's Unresolved Comment Check PATCH call also sets reviewedCommitSha alongside commitSha", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+
+    const patchBlock = section.slice(patchIdx, patchIdx + 500);
+    expect(patchBlock).toContain("commitSha");
+    expect(patchBlock).toContain("reviewedCommitSha");
+  });
+
+  it("Step 11's APPROVE staging PATCH call sets reviewedCommitSha", () => {
+    const step11Idx = content.indexOf("## Step 11: Post or Stage");
+    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    expect(step11Idx).toBeGreaterThan(-1);
+    expect(step11bIdx).toBeGreaterThan(step11Idx);
+    const section = content.slice(step11Idx, step11bIdx);
+
+    const approveIdx = section.indexOf('"reviewState": "approved"');
+    expect(approveIdx).toBeGreaterThan(-1);
+    const approveBlock = section.slice(approveIdx - 200, approveIdx + 200);
+    expect(approveBlock).toContain("reviewedCommitSha");
+  });
+
+  it("Step 11's COMMENT staging PATCH call sets reviewedCommitSha", () => {
+    const step11Idx = content.indexOf("## Step 11: Post or Stage");
+    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const section = content.slice(step11Idx, step11bIdx);
+
+    const commentIdx = section.indexOf('"reviewState": "posted"');
+    expect(commentIdx).toBeGreaterThan(-1);
+    const commentBlock = section.slice(commentIdx - 200, commentIdx + 200);
+    expect(commentBlock).toContain("reviewedCommitSha");
+  });
+
+  it("Step 14's stale-staged-review detection captures reviewedCommitSha (not commitSha) as lastReviewedCommit", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    expect(section).toContain(
+      "Capture the record's `id` as `PR_RECORD_ID` and `reviewedCommitSha` as `lastReviewedCommit`.",
+    );
+  });
+
+  it("Step 14's stale-staged-review comparisons reference record.reviewedCommitSha, not record.commitSha", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    // The staged-record comparison and the defense-in-depth dedup comparison
+    // must both read the dedicated reviewedCommitSha field.
+    expect(section).toContain("record.reviewedCommitSha");
+    expect(section).not.toContain("record.commitSha");
+  });
+
+  it("the initial /prs/claim call's commitSha argument is unchanged (claim-lock field, not reviewedCommitSha)", () => {
+    const step4Idx = content.indexOf("## Step 4: Checkout into Worktree");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    expect(step4Idx).toBeGreaterThan(-1);
+    expect(step5Idx).toBeGreaterThan(step4Idx);
+    const section = content.slice(step4Idx, step5Idx);
+
+    expect(section).toContain(
+      '-d "{\\"repo\\": \\"{org}/{repo}\\", \\"prNumber\\": {pr}, \\"commitSha\\": \\"{headRefOid}\\"',
+    );
+  });
+});
