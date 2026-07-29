@@ -1251,3 +1251,14 @@ describe("patch.md — end-of-run CI verification gate (PCG-1.1)", () => {
     expect(section).toMatch(/hitl/i);
   });
 });
+
+describe("patch.md — drop stale review-patch reference from claim-release steps (DPF-2.2)", () => {
+  it("contains no reference to the removed review-patch command/cron anywhere", () => {
+    expect(content.toLowerCase()).not.toContain("review-patch");
+  });
+
+  it("all three claim-release steps (4c.3, 5c.3, 6d.3) use the corrected 'a subsequent patch run' phrasing", () => {
+    const matches = content.match(/a subsequent patch run/g) ?? [];
+    expect(matches.length).toBe(3);
+  });
+});
