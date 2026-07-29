@@ -182,20 +182,35 @@ const HITL_TEMPLATE = join(
   "CLAUDE-HITL.md.template",
 );
 
+const AGENT_POLICY_TEMPLATE = join(
+  REPO_ROOT,
+  "agent",
+  "workspace",
+  "state",
+  "agent-policy.md.template",
+);
+
 /**
  * Pure planning step for provisionWorkspace(): given the set of dirs the
  * workspace needs and an injectable existence check, report which dirs are
- * missing and whether CLAUDE.md still needs to be seeded. Kept side-effect
- * free so it's unit-testable without touching the real filesystem.
+ * missing and whether CLAUDE.md and agent-policy.md still need to be seeded.
+ * Kept side-effect free so it's unit-testable without touching the real
+ * filesystem.
  */
 export function computeProvisionPlan(
   dirs: string[],
   claudeMdPath: string,
+  agentPolicyPath: string,
   exists: (path: string) => boolean,
-): { missingDirs: string[]; needsClaudeMd: boolean } {
+): {
+  missingDirs: string[];
+  needsClaudeMd: boolean;
+  needsAgentPolicy: boolean;
+} {
   return {
     missingDirs: dirs.filter((dir) => !exists(dir)),
     needsClaudeMd: !exists(claudeMdPath),
+    needsAgentPolicy: !exists(agentPolicyPath),
   };
 }
 
@@ -208,8 +223,9 @@ function provisionWorkspace(): void {
     join(WORKSPACE, ".claude"),
   ];
   const claudeMd = join(WORKSPACE, "CLAUDE.md");
+  const agentPolicy = join(WORKSPACE, "state", "agent-policy.md");
 
-  const plan = computeProvisionPlan(dirs, claudeMd, existsSync);
+  const plan = computeProvisionPlan(dirs, claudeMd, agentPolicy, existsSync);
 
   for (const dir of plan.missingDirs) {
     mkdirSync(dir, { recursive: true });
@@ -219,6 +235,12 @@ function provisionWorkspace(): void {
     const template = readFileSync(HITL_TEMPLATE, "utf8");
     writeFileSync(claudeMd, template, { flag: "wx" });
     log("seeded CLAUDE.md");
+  }
+
+  if (plan.needsAgentPolicy) {
+    const template = readFileSync(AGENT_POLICY_TEMPLATE, "utf8");
+    writeFileSync(agentPolicy, template, { flag: "wx" });
+    log("seeded agent-policy.md");
   }
 
   if (plan.missingDirs.length > 0) {
