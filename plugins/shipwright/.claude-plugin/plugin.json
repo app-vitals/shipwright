@@ -21,6 +21,7 @@
     "test-readiness",
     "canary",
     "coverage",
-    "deploy"
+    "deploy",
+    "merge"
   ]
 }
