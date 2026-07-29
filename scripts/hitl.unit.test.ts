@@ -107,20 +107,24 @@ describe("computeProvisionPlan", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos", "/ws/worktrees"],
       "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
       () => false,
     );
     expect(plan.missingDirs).toEqual(["/ws", "/ws/repos", "/ws/worktrees"]);
     expect(plan.needsClaudeMd).toBe(true);
+    expect(plan.needsAgentPolicy).toBe(true);
   });
 
   test("reports nothing missing when everything already exists", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos"],
       "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
       () => true,
     );
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(false);
+    expect(plan.needsAgentPolicy).toBe(false);
   });
 
   test("reports only the dirs that don't yet exist", () => {
@@ -128,20 +132,54 @@ describe("computeProvisionPlan", () => {
     const plan = computeProvisionPlan(
       ["/ws", "/ws/repos", "/ws/worktrees"],
       "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
       (path) => existing.has(path),
     );
     expect(plan.missingDirs).toEqual(["/ws/repos", "/ws/worktrees"]);
     expect(plan.needsClaudeMd).toBe(true);
+    expect(plan.needsAgentPolicy).toBe(true);
   });
 
   test("CLAUDE.md need is independent of dir existence", () => {
     const plan = computeProvisionPlan(
       ["/ws"],
       "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
       (path) => path === "/ws",
     );
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(true);
+    expect(plan.needsAgentPolicy).toBe(true);
+  });
+
+  test("agent-policy.md need is independent of CLAUDE.md need", () => {
+    const existing = new Set(["/ws", "/ws/CLAUDE.md"]);
+    const plan = computeProvisionPlan(
+      ["/ws"],
+      "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
+      (path) => existing.has(path),
+    );
+    expect(plan.missingDirs).toEqual([]);
+    expect(plan.needsClaudeMd).toBe(false);
+    expect(plan.needsAgentPolicy).toBe(true);
+  });
+
+  test("agent-policy.md not needed when it already exists", () => {
+    const existing = new Set([
+      "/ws",
+      "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
+    ]);
+    const plan = computeProvisionPlan(
+      ["/ws"],
+      "/ws/CLAUDE.md",
+      "/ws/state/agent-policy.md",
+      (path) => existing.has(path),
+    );
+    expect(plan.missingDirs).toEqual([]);
+    expect(plan.needsClaudeMd).toBe(false);
+    expect(plan.needsAgentPolicy).toBe(false);
   });
 });
 
