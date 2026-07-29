@@ -2510,6 +2510,199 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     });
   });
 
+  // ─── RDG-1.1: bundle-mate + startedAt guard on the DIRECT path ───────────
+
+  test("RDG-1.1: a task.pr-set task on a 2-task bundle branch with startedAt null is skipped in the direct path despite GitHub confirming MERGED — no status PATCH, no taskId backfill, skip logged", async () => {
+    const sibling: PrOpenTaskRecord = {
+      id: "task-direct-bundle-sibling",
+      repo: "acme/example-repo",
+      pr: 601,
+      branch: "feat/rdg-bundle-branch",
+      startedAt: null,
+    };
+    const { deps, taskPatchCalls, patchCalls, listAllTasksForBranchCalls } =
+      makeDeps({
+        prOpenTasks: [sibling],
+        ghResults: {
+          "acme/example-repo#601": {
+            state: "MERGED",
+            mergedAt: "2026-07-10T00:00:00.000Z",
+          },
+        },
+        prRecords: {
+          "acme/example-repo#601": {
+            id: "pr-record-601",
+            repo: "acme/example-repo",
+            prNumber: 601,
+            state: "open",
+            taskId: null,
+          },
+        },
+        tasksForBranch: {
+          "acme/example-repo#feat/rdg-bundle-branch": [
+            { id: "task-direct-bundle-real-work", repo: "acme/example-repo" },
+            sibling,
+          ],
+        },
+      });
+
+    const errorSpy: unknown[][] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      errorSpy.push(args);
+    };
+
+    try {
+      await reconcilePrState(deps);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(listAllTasksForBranchCalls).toContain(
+      "acme/example-repo#feat/rdg-bundle-branch",
+    );
+    // No status:"merged" PATCH on the sibling task.
+    expect(taskPatchCalls).toHaveLength(0);
+    // No taskId backfill onto the PR record either — guarded before both effects.
+    expect(patchCalls).toHaveLength(0);
+    expect(
+      errorSpy.some((args) =>
+        args.some(
+          (a) =>
+            typeof a === "string" && a.includes("task-direct-bundle-sibling"),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  test("RDG-1.1: a task.pr-set task on a 2-task bundle branch with startedAt SET advances to merged as before (direct path)", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-direct-bundle-started",
+      repo: "acme/example-repo",
+      pr: 602,
+      branch: "feat/rdg-bundle-branch-started",
+      startedAt: "2026-07-01T00:00:00.000Z",
+    };
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
+      prOpenTasks: [task],
+      ghResults: {
+        "acme/example-repo#602": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
+      },
+      prRecords: {
+        "acme/example-repo#602": {
+          id: "pr-record-602",
+          repo: "acme/example-repo",
+          prNumber: 602,
+          state: "open",
+          taskId: null,
+        },
+      },
+      tasksForBranch: {
+        "acme/example-repo#feat/rdg-bundle-branch-started": [
+          { id: "task-direct-bundle-real-work-2", repo: "acme/example-repo" },
+          task,
+        ],
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-direct-bundle-started");
+    expect(taskPatchCalls[0].fields.status).toBe("merged");
+    expect(taskPatchCalls[0].fields.mergedAt).toBe(
+      "2026-07-10T00:00:00.000Z",
+    );
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-record-602");
+    expect(patchCalls[0].fields).toEqual({
+      taskId: "task-direct-bundle-started",
+    });
+  });
+
+  test("RDG-1.1 regression guard: a solo-branch task.pr-set task with startedAt null still advances to merged (direct path unchanged for the common case)", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-direct-solo-not-started",
+      repo: "acme/example-repo",
+      pr: 603,
+      branch: "feat/rdg-solo-branch",
+      startedAt: null,
+    };
+    // Deliberately NOT overriding tasksForBranch — makeDeps's default
+    // single-element stand-in means this branch has exactly one task-store
+    // record sharing it, so the new guard must not fire.
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
+      prOpenTasks: [task],
+      ghResults: {
+        "acme/example-repo#603": {
+          state: "MERGED",
+          mergedAt: "2026-07-10T00:00:00.000Z",
+        },
+      },
+      prRecords: {
+        "acme/example-repo#603": {
+          id: "pr-record-603",
+          repo: "acme/example-repo",
+          prNumber: 603,
+          state: "open",
+          taskId: null,
+        },
+      },
+    });
+
+    await reconcilePrState(deps);
+
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-direct-solo-not-started");
+    expect(taskPatchCalls[0].fields.status).toBe("merged");
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-record-603");
+    expect(patchCalls[0].fields).toEqual({
+      taskId: "task-direct-solo-not-started",
+    });
+  });
+
+  test("RDG-1.1 regression guard: a task.pr-set task with no branch set still advances to merged regardless of startedAt (direct path unchanged)", async () => {
+    const task: PrOpenTaskRecord = {
+      id: "task-direct-no-branch",
+      repo: "acme/example-repo",
+      pr: 604,
+      startedAt: null,
+    };
+    const { deps, taskPatchCalls, patchCalls, listAllTasksForBranchCalls } =
+      makeDeps({
+        prOpenTasks: [task],
+        ghResults: {
+          "acme/example-repo#604": {
+            state: "MERGED",
+            mergedAt: "2026-07-10T00:00:00.000Z",
+          },
+        },
+        prRecords: {
+          "acme/example-repo#604": {
+            id: "pr-record-604",
+            repo: "acme/example-repo",
+            prNumber: 604,
+            state: "open",
+            taskId: null,
+          },
+        },
+      });
+
+    await reconcilePrState(deps);
+
+    // No branch set — listAllTasksForBranch must never be called.
+    expect(listAllTasksForBranchCalls).toHaveLength(0);
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-direct-no-branch");
+    expect(taskPatchCalls[0].fields.status).toBe("merged");
+    expect(patchCalls).toHaveLength(1);
+    expect(patchCalls[0].id).toBe("pr-record-604");
+  });
+
   test("task with no pr AND no branch is skipped — no PATCH, no throw", async () => {
     const task: PrOpenTaskRecord = { id: "task-5", repo: "acme/example-repo" };
     const { deps, taskPatchCalls } = makeDeps({ prOpenTasks: [task] });

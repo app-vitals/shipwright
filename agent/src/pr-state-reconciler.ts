@@ -65,6 +65,18 @@
  * delayed tick (restart, deploy) still self-corrects on the next tick or two
  * without ever fully losing the ability to heal a stuck record. `computeUpdatedSinceCutoff`
  * centralizes the cutoff computation used by all four passes.
+ *
+ * RDG-1.1 extends `reconcilePrOpenTask()`'s DIRECT path (`task.pr` set) with
+ * the same bundle-mate headcount (BBR-1.1) + startedAt (RCP-1.1) precondition
+ * the branch-fallback path already enforced — a trailing sibling task on a
+ * multi-task branch could otherwise ride a bundle-mate's real merge to
+ * "merged" status via its own `task.pr` field alone, without its own
+ * startedAt ever having been set. Confirmed live: IC-1.2/1.3/1.4, DPF-2.2,
+ * PW-1.2, SBA-1.2 all false-completed this way (reset to pending as a
+ * separate data fix). The guard only applies when the task also has a
+ * `branch` set (the two fields can coexist); a `task.pr`-set task with no
+ * branch, or on a solo-task branch, is unaffected and still advances purely
+ * on GitHub's MERGED confirmation, as before.
  */
 
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
@@ -617,7 +629,12 @@ function logStartedAtSkip(task: PrOpenTaskRecord, taskRepo: string): void {
  * Direct path (task.pr set): reuse the same ghViewPr dep the PR-record pass
  * above already calls, so a real GitHub mergedAt is used when available
  * (falling back to the injected clock only when GitHub didn't report one —
- * unlike the legacy script, which always used `now`).
+ * unlike the legacy script, which always used `now`). RDG-1.1: when the task
+ * also has a `branch` set, applies the same bundle-mate headcount (BBR-1.1) +
+ * startedAt (RCP-1.1) precondition the branch-fallback path below already
+ * enforces, gating only the merge-advance (not the ghViewPr call itself,
+ * which must always run to learn GitHub's state) — see the module doc
+ * comment above for the full rationale.
  *
  * Branch-fallback path (no task.pr, task.branch set): `gh pr list --head
  * <branch> --state merged` only returns the PR number, never a mergedAt, so
@@ -641,6 +658,36 @@ async function reconcilePrOpenTask(
   if (task.pr) {
     const ghState = await deps.ghViewPr(taskRepo, task.pr);
     if (ghState.state !== "MERGED") return; // still open/closed on GitHub — no-op
+
+    // RDG-1.1: unlike the branch-fallback path below, task.pr is already
+    // known, so the ghViewPr call above must always run regardless of the
+    // bundle-mate guard — there's no gh call to save by checking first. This
+    // guard only applies when the task ALSO has a `branch` set (a task can
+    // carry both fields at once); a task.pr-set task with no branch is
+    // unaffected (see the `else` fallthrough below). Same BBR-1.1 headcount +
+    // RCP-1.1 startedAt precondition as the branch-fallback path — a trailing
+    // sibling task on a multi-task branch must not ride a bundle-mate's real
+    // merge to "merged" status purely because its own `pr` field happens to
+    // point at the same (or another) merged PR, without its own startedAt
+    // ever having been set. Confirmed live: IC-1.2/1.3/1.4, DPF-2.2, PW-1.2,
+    // SBA-1.2 all false-completed this way.
+    if (task.branch) {
+      const branchTasks = await deps.listAllTasksForBranch(
+        taskRepo,
+        task.branch,
+      );
+      if (branchTasks === SCOPE_DEGRADED) {
+        console.error(
+          `[pr-state-reconciler] skipping direct-path merge heal for task ${task.id} — degraded scope resolution for ${taskRepo}#${task.branch} (sibling task count unknown, not a confirmed single-task branch), cannot confirm PR #${task.pr} is this task's own work`,
+        );
+        return;
+      }
+      if (branchTasks.length > 1 && !hasStarted(task)) {
+        logStartedAtSkip(task, taskRepo);
+        return;
+      }
+    }
+
     prNumber = task.pr;
     mergedAt = ghState.mergedAt ?? deps.now();
   } else if (task.branch) {
