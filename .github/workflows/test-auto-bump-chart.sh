@@ -345,12 +345,16 @@ collect_batch_tags() {
 # instead of returning success having dropped them.
 # ---------------------------------------------------------------------------
 
-# Computes the {tags_csv, new_version, branch} triple from the current
-# working-directory repo state. Mirrors chaining the "Collect release tags
-# in this batch" + "Read current chart version" + "Compute new chart
-# version" steps into one reusable unit, so the retry loop below can re-run
-# it wholesale after re-syncing to fresh main. Emits "tags_csv|version|branch"
-# on stdout (single line — tag values and versions never contain '|').
+# Computes the {tags_csv, current_version, new_version, branch} quadruple
+# from the current working-directory repo state. Mirrors chaining the
+# "Collect release tags in this batch" + "Read current chart version" +
+# "Compute new chart version" steps into one reusable unit, so the retry
+# loop below can re-run it wholesale after re-syncing to fresh main. Emits
+# "tags_csv|current_version|new_version|branch" on stdout (single line — tag
+# values and versions never contain '|'). Matches the real workflow's
+# compute_batch_and_version() 4-field output shape exactly (auto-bump-chart.yml)
+# — steps.resolve.outputs.current_version is consumed downstream by the
+# "Open bump PR" step's PR body.
 compute_batch_and_version() {
   local trigger_tag="$1"
   local chart_yaml="${2:-charts/shipwright/Chart.yaml}"
@@ -363,7 +367,7 @@ compute_batch_and_version() {
   new_version=$(bump_patch "$current_version")
   branch="chore/chart-v${new_version}"
 
-  printf '%s|%s|%s\n' "$tags_csv" "$new_version" "$branch"
+  printf '%s|%s|%s|%s\n' "$tags_csv" "$current_version" "$new_version" "$branch"
 }
 
 # Checks whether `branch` exists as a head ref in `remote_dir` (a bare or
@@ -386,12 +390,16 @@ branch_exists_on_remote() {
 # exactly when/how the "fresh main" state changes between attempts, without
 # this function needing to know about network/CI specifics.
 #
-# On success, prints "tags_csv|version|branch" on stdout and returns 0.
-# On exhaustion (every attempt collided), prints nothing on stdout, prints
-# an explicit, greppable error to stderr naming the release tags that could
-# not be pinned (from the final attempt's batch), and returns 1 — the
-# caller (the real workflow step) must let that failure propagate as a
-# non-zero exit, not swallow it.
+# On success, prints "tags_csv|current_version|new_version|branch" on stdout
+# and returns 0. On exhaustion (every attempt collided), prints nothing on
+# stdout, prints an explicit, greppable error to stderr naming the release
+# tags that could not be pinned (from the final attempt's batch), and
+# returns 1 — the caller (the real workflow step) must let that failure
+# propagate as a non-zero exit, not swallow it. current_version isn't
+# needed by the retry/collision logic itself (only tags_csv appears in the
+# exhausted-error message) — it's threaded through solely so the 4-field
+# shape survives to the caller, matching the real workflow's
+# steps.resolve.outputs.current_version.
 resolve_batch_with_retry() {
   local trigger_tag="$1"
   local work_dir="$2"
@@ -400,11 +408,13 @@ resolve_batch_with_retry() {
   local max_attempts="${5:-5}"
   local backoff_seconds="${6:-10}"
 
-  local attempt result tags_csv new_version branch
+  local attempt result tags_csv current_version new_version branch
   for (( attempt=1; attempt<=max_attempts; attempt++ )); do
     result=$(cd "$work_dir" && compute_batch_and_version "$trigger_tag")
     tags_csv="${result%%|*}"
     local rest="${result#*|}"
+    current_version="${rest%%|*}"
+    rest="${rest#*|}"
     new_version="${rest%%|*}"
     branch="${rest#*|}"
 
@@ -867,8 +877,8 @@ echo ""
 echo "=== compute_batch_and_version tests ==="
 
 CBV_RESULT=$(cd "$GIT_TEST_DIR" && compute_batch_and_version "agent-v0.144.0")
-assert_eq "compute_batch_and_version: tags|version|branch shape" \
-  "admin-v0.156.0,agent-v0.144.0|1.6.285|chore/chart-v1.6.285" \
+assert_eq "compute_batch_and_version: tags|current_version|new_version|branch shape" \
+  "admin-v0.156.0,agent-v0.144.0|1.6.284|1.6.285|chore/chart-v1.6.285" \
   "$CBV_RESULT"
 
 # ---------------------------------------------------------------------------
@@ -1010,7 +1020,7 @@ RETRY_STATUS=$?
 
 assert_eq "resolve_batch_with_retry: succeeds after one collision" "0" "$RETRY_STATUS"
 assert_eq "resolve_batch_with_retry: recomputes non-colliding version 1.6.286" \
-  "task-store-v0.9.0|1.6.286|chore/chart-v1.6.286" \
+  "task-store-v0.9.0|1.6.285|1.6.286|chore/chart-v1.6.286" \
   "$RETRY_RESULT"
 
 # --- resolve_batch_with_retry: 3(b) exhausted-retries path exits non-zero
