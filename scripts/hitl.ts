@@ -21,7 +21,7 @@
  *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
  *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
  *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered). hitl.ts's local equivalent of the agent's authorAllowlist config field, kept in sync on the persisted hitl agent record via PATCH.
- *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 15)
+ *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 60)
  */
 
 import {
@@ -130,7 +130,7 @@ export function parseHitlAuthors(raw: string | undefined): string[] {
 
 const HITL_AUTHORS = parseHitlAuthors(process.env.SHIPWRIGHT_HITL_AUTHORS);
 const POLL_INTERVAL_S = Number(
-  process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "15",
+  process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "60",
 );
 
 const DEV_DB_USER = process.env.USER ?? "";
