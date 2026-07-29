@@ -1102,6 +1102,18 @@ describe("patch.md — docs-first toolchain discovery + per-repo cache (TDF-1.1)
   it("does not reference the old single shared cache file", () => {
     expect(content).not.toContain("state/toolchain-cache.json");
   });
+
+  it("stores a tests object for multi-layer test commands at each detection site", () => {
+    function checkTestsField(step: string, next: string) {
+      const stepIdx = content.indexOf(step);
+      const nextIdx = content.indexOf(next, stepIdx);
+      const section = content.slice(stepIdx, nextIdx);
+      expect(section).toMatch(/\{tests\}/i);
+    }
+    checkTestsField("### Step 4a.5: Detect Project Toolchain", "### Step 4a.6");
+    checkTestsField("### Step 5a.5: Detect Project Toolchain", "### Step 5a.6");
+    checkTestsField("### Step 6a.5: Detect Project Toolchain", "### Step 6b");
+  });
 });
 
 describe("patch.md — Step 2.5/Step 3 opening prose reflects single-PR scope (PCG-1.1)", () => {

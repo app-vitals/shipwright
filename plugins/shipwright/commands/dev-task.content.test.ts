@@ -269,6 +269,32 @@ describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TD
   it("does not reference the old single shared cache file", () => {
     expect(content).not.toContain("state/toolchain-cache.json");
   });
+
+  it("stores a tests object for multi-layer test commands alongside the single test command", () => {
+    const stepIdx = content.indexOf("### 0b. Detect Project Toolchain");
+    const section = content.slice(stepIdx, stepIdx + 2000);
+    expect(section).toMatch(/\*\*tests\*\*/i);
+    expect(section).toMatch(/optional.*object.*layer/i);
+  });
+});
+
+describe("toolchain-patterns.md — cache schema includes tests object for multi-layer test commands", () => {
+  it("defines a tests field in the cache schema", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+
+    const schemaIdx = referencesContent.indexOf('"commands"');
+    expect(schemaIdx).toBeGreaterThan(-1);
+    const schemaSection = referencesContent.slice(schemaIdx, schemaIdx + 500);
+    expect(schemaSection).toContain('"tests"');
+  });
+
+  it("documents multi-layer test detection", () => {
+    const referencesPath = join(import.meta.dir, "..", "references", "toolchain-patterns.md");
+    const referencesContent = readFileSync(referencesPath, "utf-8");
+    expect(referencesContent).toContain("### Multi-Layer Test Detection");
+    expect(referencesContent).toMatch(/keys are free-form/i);
+  });
 });
 
 describe("toolchain-patterns.md — fingerprint path list covers task-runner/version-manager config (CPF-review-2242)", () => {
