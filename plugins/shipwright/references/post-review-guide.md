@@ -7,11 +7,13 @@ How to build and submit a GitHub review with inline comments. Referenced by
 
 ## Diff Against the Correct Base Branch
 
-Always diff against the PR's actual base branch, not main:
+Always diff against the PR's actual base branch, not main. Use `origin/$base`
+(the remote-tracking ref) — the local branch may be stale since worktrees only
+`fetch origin`, never `pull`:
 
 ```bash
 base=$(gh pr view <number> --repo <org/repo> --json baseRefName -q '.baseRefName')
-git diff "$base"...HEAD
+git diff "origin/$base"...HEAD
 ```
 
 PRs targeting feature branches will show wrong diffs if compared to main.
@@ -24,7 +26,7 @@ GitHub's reviews API only accepts `line` numbers for lines that appear in the di
 
 For each finding with a `file:line` reference:
 
-1. Get the file-specific diff: `git diff <base>...HEAD -- <file>`
+1. Get the file-specific diff: `git diff origin/<base>...HEAD -- <file>`
 2. Check if the line number falls within a diff hunk
 3. If yes: include as an inline comment with `path`, `line`, `side: "RIGHT"`
 4. If no: move the comment to the review body instead

@@ -203,10 +203,10 @@ describe("review.md — state/reviews/ paths survive worktree checkout (RSP-1.1)
     const section = content.slice(step10Idx, step11Idx);
 
     expect(section).toContain("**Diff-line mapping**");
-    expect(section).toContain("git diff {base}...HEAD -- {file}");
+    expect(section).toContain("git diff origin/{base}...HEAD -- {file}");
     // This must NOT be qualified with WORKSPACE_ROOT -- it correctly runs from
     // inside the worktree, unlike the file-write paths above.
-    const diffLineIdx = section.indexOf("git diff {base}...HEAD -- {file}");
+    const diffLineIdx = section.indexOf("git diff origin/{base}...HEAD -- {file}");
     const surrounding = section.slice(Math.max(0, diffLineIdx - 100), diffLineIdx);
     expect(surrounding).not.toContain("WORKSPACE_ROOT");
   });

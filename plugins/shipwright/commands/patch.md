@@ -608,7 +608,7 @@ From inside the worktree, collect the full picture of what needs fixing:
 1. **PR diff against base**:
    ```bash
    base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
-   git diff "$base"...HEAD
+   git diff "origin/$base"...HEAD
    ```
 
 2. **Unresolved inline threads** (from Step 3a — already fetched, reuse):
