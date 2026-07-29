@@ -10,10 +10,11 @@ Conservative defaults are set for safety. Relax them as trust grows.
 ## Review Policy
 
 ### Posting
-- **auto_post_reviews**: false
-  When false, reviews are staged to `state/reviews/` and a Slack message is
-  sent to the owner. The owner must explicitly approve before the review is
-  posted to GitHub. When true, reviews are posted automatically.
+- **auto_post_reviews**: true
+  When true (the default), reviews are posted to GitHub automatically. When
+  false, reviews are staged to `state/reviews/` and a Slack message is sent
+  to the owner instead — the owner must explicitly approve before the review
+  is posted to GitHub.
 
 ### Event Type
 - **allowed_events**: [COMMENT, APPROVE]
@@ -26,8 +27,8 @@ Conservative defaults are set for safety. Relax them as trust grows.
   Review PRs created by this agent (from the task store with status pr_open).
 
 - **review_external_prs**: true
-  Review open PRs not created by this agent. Safe with auto_post_reviews off
-  since reviews are staged for owner confirmation before posting.
+  Review open PRs not created by this agent. Set `auto_post_reviews: false`
+  if you'd rather stage these reviews for owner confirmation before posting.
 
 - **allow_self_review**: false
   Review own open PRs. GitHub blocks self-APPROVE, so own PRs are always posted

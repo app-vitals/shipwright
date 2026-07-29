@@ -133,8 +133,8 @@ describe("review.md — RPF-1.4 verify review post before complete", () => {
   let autoPostSection: string;
 
   beforeAll(() => {
-    const startIdx = content.indexOf("### If `auto_post_reviews` is true (policy):");
-    const endIdx = content.indexOf("### If `auto_post_reviews` is false (default):");
+    const startIdx = content.indexOf("### If `auto_post_reviews` is true (default):");
+    const endIdx = content.indexOf("### If `auto_post_reviews` is false (staged):");
     expect(startIdx).toBeGreaterThan(-1);
     expect(endIdx).toBeGreaterThan(startIdx);
     autoPostSection = content.slice(startIdx, endIdx);

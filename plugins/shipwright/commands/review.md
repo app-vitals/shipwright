@@ -65,7 +65,7 @@ Read `state/agent-policy.md`. If the file doesn't exist, use these conservative 
 
 | Setting | Default |
 |---------|---------|
-| `auto_post_reviews` | false |
+| `auto_post_reviews` | true |
 | `allowed_events` | [COMMENT, APPROVE] |
 | `allow_self_review` | true |
 | `min_confidence` | 75 |
@@ -521,7 +521,7 @@ should be held; the inline comments convey the specific feedback to the author.
 
 ## Step 11: Post or Stage
 
-### If `auto_post_reviews` is true (policy):
+### If `auto_post_reviews` is true (default):
 
 1. Submit via GitHub API, writing the response to a temp file (NOT a shell variable —
    the response JSON contains embedded newlines that corrupt `echo "$var" | jq` parsing):
@@ -556,7 +556,7 @@ should be held; the inline comments convey the specific feedback to the author.
 5. Print: `Posted review for #{pr}: {REVIEW_URL}`
 6. Post Slack message (see below)
 
-### If `auto_post_reviews` is false (default):
+### If `auto_post_reviews` is false (staged):
 
 1. Mark the PR record staged, persisting the verdict so the APPROVE-first sort in
    `/shipwright:review-staged` works correctly. Both branches also release the claim
@@ -616,7 +616,7 @@ Use the Slack MCP tool if available. If no Slack integration is configured, prin
 
 ## Step 11b: Mark PullRequest Record Posted
 
-Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
+Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` (default) path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
 
 Use `{verdict}` and `PR_RECORD_ID` — from Step 10 and the claim in Step 4 respectively when called from this command; `record.reviewState == "approved" ? APPROVE : COMMENT` and `record.id` respectively when called from `/shipwright:review-staged`.
 

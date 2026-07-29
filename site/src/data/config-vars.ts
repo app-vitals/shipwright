@@ -115,7 +115,7 @@ export const agentProvisioningVars: ConfigVar[] = [
 ];
 
 export const policyFields: ConfigVar[] = [
-  { name: "auto_post_reviews", type: "bool", def: "false", desc: "Post review comments to GitHub automatically without manual approval." },
+  { name: "auto_post_reviews", type: "bool", def: "true", desc: "Post review comments to GitHub automatically without manual approval. Set to false to stage reviews locally for owner approval instead." },
   { name: "allowed_events", type: "string[]", def: '["COMMENT", "APPROVE"]', desc: "GitHub review event types the agent may emit." },
   { name: "review_external_prs", type: "bool", def: "true", desc: "Review PRs opened by users other than the agent." },
   { name: "allow_self_review", type: "bool", def: "true", desc: "Allow the agent to review its own PRs. Set to false to require a human reviewer on agent-authored PRs." },

@@ -225,7 +225,7 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `auto_post_reviews` | `bool` | `false` | Post review comments to GitHub automatically without manual approval. |
+| `auto_post_reviews` | `bool` | `true` | Post review comments to GitHub automatically without manual approval. Set to `false` to stage reviews locally for owner approval instead. |
 | `allowed_events` | `string[]` | `["COMMENT", "APPROVE"]` | GitHub review event types the agent may emit. |
 | `review_external_prs` | `bool` | `true` | Currently unused — `/shipwright:review` always targets a single explicit PR (no repo-wide scan to filter), and no other command reads this field. |
 | `allow_self_review` | `bool` | `true` | Read by `agent/src/check-review.ts`'s `getReviewCandidates()` (the `shipwright-loop` cron's in-process review candidate provider) to decide whether the agent's own open PRs are review candidates. Set to `false` to require a human reviewer on agent-authored PRs. |
@@ -238,7 +238,7 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 
 ```markdown
 ---
-auto_post_reviews: false
+auto_post_reviews: true
 allowed_events: [COMMENT, APPROVE]
 allow_self_review: true
 min_confidence: 75

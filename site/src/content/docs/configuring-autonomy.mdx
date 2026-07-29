@@ -51,7 +51,7 @@ You still control merging.
 | `shipwright-deploy` | off |
 
 At this stage, `auto_post_reviews` in `state/agent-policy.md` determines whether the agent
-posts reviews to GitHub immediately or holds them for your approval. See
+posts reviews to GitHub immediately (the default) or holds them for your approval. See
 [Staged reviews](#staged-reviews) below.
 
 ### Stage 3 — Full autonomous loop
@@ -87,13 +87,14 @@ dev-task  ✓  patch  ✓  review  ✗  deploy  ✗
 
 ### Staged reviews
 
-You want the agent to review PRs but prefer to read and approve each review before it goes to
-GitHub. Set `auto_post_reviews: false` in `state/agent-policy.md`. Enable `shipwright-review`
-(and `shipwright-patch` if you also want findings addressed automatically).
+By default, the agent posts reviews to GitHub immediately (`auto_post_reviews: true`). If you'd
+rather read and approve each review before it goes to GitHub, set `auto_post_reviews: false` in
+`state/agent-policy.md`. Enable `shipwright-review` (and `shipwright-patch` if you also want
+findings addressed automatically).
 
-The agent runs its review pass and writes the findings to a local review file. Nothing is posted
-to GitHub until you approve it. Once you've confirmed the review looks right, post it manually
-or set `auto_post_reviews: true` to have the agent send it.
+With staging on, the agent runs its review pass and writes the findings to a local review file.
+Nothing is posted to GitHub until you approve it. Once you've confirmed the review looks right,
+post it manually, or set `auto_post_reviews: true` again to go back to automatic posting.
 
 ```
 dev-task  ✓  review  ✓  patch  ✓  deploy  ✗   (auto_post_reviews: false)
@@ -128,7 +129,7 @@ Ask your agent to change the policy settings in `state/agent-policy.md` — no r
 
 | Setting | Value | Notes |
 |---------|-------|-------|
-| `auto_post_reviews` | false | Stage reviews locally; do not post to GitHub automatically. |
+| `auto_post_reviews` | true | Post reviews to GitHub automatically. Set to `false` to stage reviews locally instead. |
 | `allowed_events` | [COMMENT, APPROVE] | Never REQUEST_CHANGES |
 | `review_external_prs` | true | Review externally-opened PRs |
 | `allow_self_review` | true | Review own PRs |
@@ -145,7 +146,7 @@ Ask your agent to change the policy settings in `state/agent-policy.md` — no r
 
 | Field | Default | What it controls |
 |-------|---------|-----------------|
-| `auto_post_reviews` | `false` | Post review comments to GitHub immediately. When `false`, reviews are staged locally. |
+| `auto_post_reviews` | `true` | Post review comments to GitHub immediately. When `false`, reviews are staged locally. |
 | `allowed_events` | `[COMMENT, APPROVE]` | GitHub review event types the agent may emit. Remove `APPROVE` to prevent agent approvals. |
 | `review_external_prs` | `true` | Review PRs opened by users other than the agent. Set `false` to review only the agent's own PRs. |
 | `allow_self_review` | `true` | Allow the agent to review PRs it opened. Set `false` to require a human reviewer on agent-authored PRs. |
