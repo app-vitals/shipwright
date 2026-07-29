@@ -57,7 +57,7 @@ For example:
 - `/shipwright:investigate-cron deploy 6pm` → `MODE=name-time`, `CRON_NAME="deploy"`, `TIME_ARG="6pm"`
 - `/shipwright:investigate-cron --item acme/x#123` → `MODE=item`, `ITEM_ARG="acme/x#123"`
 
-`--item` mode skips time parsing entirely (Step 2 does not apply) — there is no
+`--item` mode skips time parsing entirely (Step 3 does not apply) — there is no
 target time to convert, since the runs endpoint returns every dispatch for that
 item directly.
 
@@ -137,7 +137,7 @@ echo "Fetched $(jq 'length' "$ALL_RUNS_FILE") total runs for loopCronId=$LOOP_CR
 ```
 
 **Name+time mode** — filter client-side to `phaseId === <PHASE_ID>`, then pick
-the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in Step 2):
+the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in Step 3):
 
 ```bash
 BEST_RUN=$(jq -r --arg phase "$PHASE_ID" --argjson target "$TARGET_EPOCH" '
@@ -177,13 +177,151 @@ otherwise report that no dispatch history exists.
 
 Once you have the run's exact `startedAt` (name+time mode: `RUN_STARTED_AT`;
 item mode: each entry in `ITEM_RUNS`), use it as a **tight window** — a few
-minutes, not ±90 — around the transcript directory's file mtimes in Step 3,
+minutes, not ±90 — around the transcript directory's file mtimes in Step 4,
 since this is now a known exact event time rather than a guess. The transcript
-directory itself is still resolved the same way (see Step 3).
+directory itself is still resolved the same way (see Step 4).
 
 ---
 
-## Step 2: Convert the time argument (name+time mode only)
+## Step 2: Ground-truth snapshot (both modes)
+
+Before extracting anything from a transcript, pull current live state. Often
+the answer to "why didn't this run/proceed" is fully explained by state that
+exists **right now** — the item simply isn't next in the queue yet, or it's
+blocked by a flag — without needing to read a single line of session output.
+This step runs for **both `name-time` mode and `item` mode**: in `item` mode
+the ground-truth signals apply directly to `ITEM_ARG`; in `name-time` mode
+they apply once Step 1 has resolved a specific run/item (or, if Step 1 found
+no run at all, they can still be checked against whatever PR/task the
+invocation implies, when known).
+
+Three independent signals, each degrading gracefully if unavailable — a
+missing snapshot, PR record, or task record is not an error, just a signal
+that's not yet available to reason from:
+
+### 2a. Work-queue snapshot
+
+`GET /agents/{id}/work-queue` returns the **last-pushed ranked snapshot** of
+this agent's pending work — not a live-computed view. The loop orchestrator
+POSTs a fresh ranked snapshot once per tick (capped at 50 items, oldest-first
+FIFO); this GET just returns whatever was pushed at the most recent tick, and
+returns `404` if the agent has never pushed one. Items are ranked oldest-first
+by age; there is no explicit `rank` field — the array index **is** the rank.
+Treat this as "latest known ranking as of the last tick," not real-time truth.
+
+```bash
+WORK_QUEUE_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/work-queue" 2>/dev/null)
+
+if [ -z "$WORK_QUEUE_JSON" ]; then
+  echo "No work-queue snapshot available (agent has never pushed one, or the admin API is unreachable) — skip this signal."
+else
+  echo "Snapshot computed at: $(echo "$WORK_QUEUE_JSON" | jq -r '.snapshot.computedAt')"
+  echo "$WORK_QUEUE_JSON" | jq -r '.snapshot.items | to_entries[] | "  rank=\(.key)  type=\(.value.type)  id=\(.value.id)  phase=\(.value.phase)  age=\(.value.age)"'
+
+  # Surface this item's rank/age relative to other ready candidates, if present.
+  echo "$WORK_QUEUE_JSON" | jq -r --arg id "$ITEM_ARG" \
+    '.snapshot.items | to_entries[] | select(.value.id == $id) | "This item: rank=\(.key) of \(($ENV.TOTAL // "?")) phase=\(.value.phase) age=\(.value.age)"'
+fi
+```
+
+If the item appears in the snapshot far down the ranking relative to other
+ready candidates, that alone can explain "hasn't run yet — not its turn" for a
+`dev-task`/`review`/`patch`/`deploy` cron. If it's absent from the snapshot
+entirely, either it wasn't a ready candidate at the last tick, or no snapshot
+exists yet — note which, and move on to 2b/2c rather than guessing.
+
+### 2b. Task-store PR/task record
+
+Fetch the task-store's cached view of the item — the PR record, the task
+record, or both, depending on what `ITEM_ARG` (or the item implied by
+`name-time` mode) resolves to:
+
+```bash
+# PR record (when the item is a PR, org/repo#N):
+PR_RECORD_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0] // empty')
+
+if [ -z "$PR_RECORD_JSON" ]; then
+  echo "No task-store PR record for {org}/{repo}#{pr} — not yet tracked, or never a PR. Skip this signal."
+else
+  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForDeployAt, taskId, patchCycles, commitSha}'
+fi
+
+# Task record (when the item is a bare taskId, or the PR record above has a taskId):
+TASK_ID_TO_FETCH="${ITEM_ARG:-$(echo "$PR_RECORD_JSON" | jq -r '.taskId // empty')}"
+if [ -n "$TASK_ID_TO_FETCH" ]; then
+  TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID_TO_FETCH" 2>/dev/null)
+  if [ -z "$TASK_JSON" ]; then
+    echo "No task-store task record for $TASK_ID_TO_FETCH — skip this signal."
+  else
+    echo "$TASK_JSON" | jq '{id, status, hitl, dependencies}'
+  fi
+fi
+```
+
+`hitl=true`, a `reviewState` that clearly blocks progress (e.g. stuck at
+`pending` with no recent activity), or an unmet `dependencies` entry on the
+task record are all direct, no-transcript-needed explanations for "why didn't
+this proceed."
+
+### 2c. Live GitHub state, diffed against the cached task-store view
+
+Fetch live state directly from GitHub — this is the source of truth GitHub
+holds right now, which may have moved since the task-store record was last
+written:
+
+```bash
+GH_LIVE_JSON=$(gh pr view {pr} --repo {org}/{repo} \
+  --json mergeStateStatus,state,headRefOid,author,createdAt 2>/dev/null)
+echo "$GH_LIVE_JSON" | jq .
+```
+
+`gh pr checks` may not reliably work here — agent PATs generally lack Checks
+API access. If a CI-status signal is needed, prefer the lightweight Actions-API
+pattern used elsewhere in this plugin (e.g. `deploy.md`, `patch.md`,
+`review.md`): `gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA&per_page=20"`
+filtered/deduped client-side. Keep it to a single snapshot fetch here — this
+step is a quick ground-truth check, not a full CI poll loop.
+
+**Explicitly diff the live GitHub state against the task-store's cached
+view** (`PR_RECORD_JSON` from 2b) — do not silently prefer one source over the
+other:
+
+```bash
+if [ -n "$PR_RECORD_JSON" ] && [ -n "$GH_LIVE_JSON" ]; then
+  LIVE_HEAD=$(echo "$GH_LIVE_JSON" | jq -r '.headRefOid')
+  CACHED_HEAD=$(echo "$PR_RECORD_JSON" | jq -r '.commitSha // empty')
+  LIVE_STATE=$(echo "$GH_LIVE_JSON" | jq -r '.state')
+
+  if [ -n "$CACHED_HEAD" ] && [ "$LIVE_HEAD" != "$CACHED_HEAD" ]; then
+    echo "DISCREPANCY: live headRefOid ($LIVE_HEAD) != task-store cached commitSha ($CACHED_HEAD) — new commits landed since the task-store record was last written."
+  fi
+  if [ "$LIVE_STATE" = "MERGED" ] && [ "$(echo "$PR_RECORD_JSON" | jq -r '.state // empty')" != "merged" ]; then
+    echo "DISCREPANCY: PR is merged on GitHub but the task-store record does not reflect it."
+  fi
+fi
+```
+
+Any drift found here (stale `commitSha`, a merge the task-store hasn't caught
+up to, a `mergeStateStatus` that's since cleared) is itself often the answer
+to "why didn't this run as expected" — call it out explicitly rather than
+picking a side.
+
+### Short-circuit
+
+If these three signals alone answer the investigation with high confidence —
+e.g. the work-queue snapshot shows the item is far from next, `hitl=true` is
+actively blocking, or the task-store/GitHub diff shows a state (merged,
+closed, `mergeStateStatus` blocked) that plainly explains "not its turn yet"
+or "blocked by a flag" — **report the conclusion now and stop; there is no
+need to proceed to session/transcript extraction.** This applies in both
+`name-time` mode and `item` mode. Otherwise, continue to Step 3.
+
+---
+
+## Step 3: Convert the time argument (name+time mode only)
 
 Only applies when `MODE=name-time`. Item mode has no time argument and skips
 this step.
@@ -250,7 +388,7 @@ echo "Target epoch: $TARGET_EPOCH ($(date -d @$TARGET_EPOCH 2>/dev/null || date 
 
 ---
 
-## Step 3: Find matching sessions
+## Step 4: Find matching sessions
 
 Derive the transcript directory from the current working directory (CWD), then
 locate the session(s) that correspond to the run(s) resolved in Step 1.
@@ -390,7 +528,7 @@ target time. If no matches are found, skip to the no-match handler at the end.
 
 ---
 
-## Step 4: Extract what happened
+## Step 5: Extract what happened
 
 Parse the matching session JSONL to extract the narrative: initial prompt,
 assistant text outputs, key Bash commands, and whether the session ended silently.
@@ -469,7 +607,7 @@ the goal is a chronological narrative across all four phases, not a single run.
 
 ---
 
-## Step 5: Synthesize the explanation
+## Step 6: Synthesize the explanation
 
 Produce a plain-language explanation covering:
 
@@ -544,14 +682,19 @@ grep -i "precheck\|pre-check\|cron" logs/bodhi.log | tail -50
 
 ## Notes
 
-- This skill reads only the admin API and transcript files — it does **not** require
-  container stdout or any external log system beyond `logs/bodhi.log` for the preCheck
-  fallback case. The Claude Code session JSONL is the authoritative record of what the
-  model concluded and why; the admin API's `AgentCronRun` records are the authoritative
-  record of exactly when and against what item a cron fired.
+- This skill reads the admin API, the task store, live GitHub state, and transcript
+  files — it does **not** require container stdout or any external log system beyond
+  `logs/bodhi.log` for the preCheck fallback case. The Claude Code session JSONL is the
+  authoritative record of what the model concluded and why; the admin API's
+  `AgentCronRun` records are the authoritative record of exactly when and against what
+  item a cron fired; the task store and GitHub are the authoritative record of an item's
+  *current* state (Step 2).
 - Prefer the admin-API path (Step 1) over the fallback whenever the admin API is
   reachable and returns run records — it gives an exact `startedAt` instead of a guess,
   and item mode is only possible through it.
+- Prefer the ground-truth snapshot (Step 2) over transcript extraction whenever it alone
+  answers the question — it's cheaper and doesn't require a matching session to exist at
+  all. Fall through to Steps 3–6 only when live state is inconclusive.
 - A `[silent]` response is **expected behavior** when the skill found nothing to do —
   look at the bash commands to understand what it checked.
 - Multiple sessions in a window: pick the one whose first entry timestamp (not mtime)

@@ -259,3 +259,115 @@ describe("SKILL.md — fallback: pre-admin-API history retained", () => {
     expect(content).toContain("[Cron job:");
   });
 });
+
+describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
+  it("has a Step 2 section about a ground-truth snapshot, run before transcript extraction", () => {
+    const hasGroundTruthStep =
+      content.includes("ground-truth") || content.includes("ground truth");
+    expect(hasGroundTruthStep).toBe(true);
+  });
+
+  it("queries GET /agents/{id}/work-queue", () => {
+    expect(content).toContain("/work-queue");
+  });
+
+  it("surfaces the item's rank/age relative to other ready candidates from the work-queue snapshot", () => {
+    const hasRankOrAge =
+      content.includes("rank") &&
+      content.includes("age") &&
+      content.includes("work-queue");
+    expect(hasRankOrAge).toBe(true);
+  });
+
+  it("notes the work-queue endpoint is a push/pull snapshot, not live-computed, and 404s if never pushed", () => {
+    const hasSnapshotCaveat =
+      content.includes("snapshot") &&
+      (content.includes("404") || content.includes("never pushed"));
+    expect(hasSnapshotCaveat).toBe(true);
+  });
+
+  it("queries the task-store /prs?repo=&prNumber= endpoint", () => {
+    expect(content).toContain("/prs?repo=");
+  });
+
+  it("queries the task-store /tasks/{id} endpoint", () => {
+    expect(content).toContain("/tasks/");
+  });
+
+  it("surfaces claimedBy, hitl, reviewState, patchCycles, and taskId from the task-store record", () => {
+    expect(content).toContain("claimedBy");
+    expect(content).toContain("hitl");
+    expect(content).toContain("reviewState");
+    expect(content).toContain("patchCycles");
+    expect(content).toContain("taskId");
+  });
+
+  it("surfaces the readyFor*At fields from the task-store record", () => {
+    const hasReadyForFields =
+      content.includes("readyForReviewAt") ||
+      content.includes("readyForPatchAt") ||
+      content.includes("readyForDeployAt") ||
+      content.includes("readyFor");
+    expect(hasReadyForFields).toBe(true);
+  });
+
+  it("queries live GitHub state via gh pr view with mergeStateStatus/state/headRefOid/author/createdAt", () => {
+    expect(content).toContain("gh pr view");
+    expect(content).toContain("mergeStateStatus");
+    expect(content).toContain("headRefOid");
+  });
+
+  it("explicitly diffs live GitHub state against the task-store's cached view, calling out drift", () => {
+    const hasDriftCheck =
+      (content.includes("drift") || content.includes("discrepancy")) &&
+      content.includes("cached");
+    expect(hasDriftCheck).toBe(true);
+  });
+
+  it("notes gh pr checks may not work with agent PATs (Checks API access caveat)", () => {
+    const hasChecksCaveat =
+      content.includes("gh pr checks") &&
+      (content.includes("PAT") || content.includes("Checks API"));
+    expect(hasChecksCaveat).toBe(true);
+  });
+
+  it("states the ground-truth step applies to both name+time and --item modes", () => {
+    const hasBothModes =
+      content.includes("both name") ||
+      (content.includes("name+time") && content.includes("--item"));
+    expect(hasBothModes).toBe(true);
+  });
+
+  it("states the skill may conclude without transcript extraction when ground-truth signals are decisive", () => {
+    const hasShortCircuit =
+      content.includes("without") &&
+      (content.includes("transcript extraction") || content.includes("extracting a transcript"));
+    expect(hasShortCircuit).toBe(true);
+  });
+
+  it("degrades gracefully when the work-queue snapshot or task-store record is unavailable", () => {
+    const hasGracefulDegradation =
+      content.includes("not yet tracked") ||
+      content.includes("never pushed") ||
+      content.includes("unavailable");
+    expect(hasGracefulDegradation).toBe(true);
+  });
+});
+
+describe("SKILL.md — renumbered steps after Step 2 insertion (IC-1.2)", () => {
+  it("has a Step 3 section about time conversion / Pacific timezone (renumbered from old Step 2)", () => {
+    expect(content).toContain("Step 3: Convert the time argument");
+  });
+
+  it("has a Step 4 section about finding matching sessions (renumbered from old Step 3)", () => {
+    expect(content).toContain("Step 4: Find matching sessions");
+  });
+
+  it("has a Step 5 section about extracting what happened (renumbered from old Step 4)", () => {
+    expect(content).toContain("Step 5: Extract what happened");
+  });
+
+  it("has a Step 6 section about synthesizing the explanation (renumbered from old Step 5)", () => {
+    expect(content).toContain("Step 6: Synthesize the explanation");
+  });
+});
