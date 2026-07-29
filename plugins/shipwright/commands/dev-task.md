@@ -183,7 +183,8 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
 
 4. **Store and cache.** Store the detected commands:
    - **validate**: Full validation command (e.g., `pnpm validate`, `cargo clippy && cargo test`, `make check`)
-   - **test**: Test command (e.g., `pnpm test`, `cargo test`, `go test ./...`, `pytest`)
+   - **test**: Fast default test command for TDD cycles (e.g., `pnpm test`, `cargo test`, `go test ./...`, `pytest`)
+   - **tests**: Optional object mapping layer names to commands when the project has distinct test layers (e.g., `{"unit": "pytest tests/unit", "integration": "pytest tests/integration", "e2e": "npx playwright test"}`). Keys are free-form — use whatever the project calls its layers. Omit when only one test command exists.
    - **lint**: Lint command (e.g., `pnpm lint`, `cargo clippy`, `golangci-lint run`, `ruff check`)
    - **typecheck**: Type check command if applicable (e.g., `pnpm -r check`, `tsc --noEmit`)
    - **build**: Build command (e.g., `pnpm build`, `cargo build`, `go build ./...`)
@@ -455,6 +456,7 @@ PROJECT CONVENTIONS (from CLAUDE.md):
 
 TOOLCHAIN:
   Test command:     {test command from Step 0}
+  Test layers:      {if tests from Step 0 is non-empty, list each as "layer: command"; otherwise "none — test command covers all layers"}
   Validate command: {validate command from Step 0}
   Typecheck:        {typecheck command from Step 0, or "none"}
 
@@ -663,7 +665,7 @@ Stop.
 
 ## Step 8: Pre-Ship Checks
 
-Run the detected validation commands from Step 0. For multi-ecosystem projects, run all applicable commands.
+Run the detected validation commands from Step 0. For multi-ecosystem projects, run all applicable commands. If `tests` was populated in Step 0 (multiple test layers), run each layer's command — not just the fast default `test` command.
 
 Examples based on detected toolchain:
 - Node.js: `{manager} validate` (or `{manager} lint && {manager} test && {manager} build`)
@@ -671,6 +673,7 @@ Examples based on detected toolchain:
 - Go: `go vet ./... && go test ./...`
 - Python: `pytest` (or `poetry run pytest`, `uv run pytest`)
 - Ruby: `bundle exec rspec` (or `bundle exec rake test`)
+- Multi-layer: run `{test command}`, then each additional entry in `{tests}` (e.g., `npx playwright test` for e2e alongside the default `pytest` for unit/integration)
 
 ### Coverage Gate
 

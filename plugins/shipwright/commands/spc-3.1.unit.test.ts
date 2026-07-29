@@ -69,6 +69,11 @@ describe("patch.md — Step 5b subagent prompt: no hardcoded bun commands", () =
     const section = extractSection(patch, "### Step 5b:", "### Step 5c:");
     expect(section).toContain("{test command}");
   });
+
+  it("includes Test layers in Step 5b TOOLCHAIN block", () => {
+    const section = extractSection(patch, "### Step 5b:", "### Step 5c:");
+    expect(section).toContain("Test layers:");
+  });
 });
 
 describe("patch.md — Step 6c subagent prompt: no hardcoded bun commands", () => {
@@ -95,5 +100,10 @@ describe("patch.md — Step 6c subagent prompt: no hardcoded bun commands", () =
   it("uses {test command} placeholder in Step 6c [C] Validate", () => {
     const section = extractSection(patch, "### Step 6c:", "### Step 6d:");
     expect(section).toContain("{test command}");
+  });
+
+  it("includes Test layers in Step 6c TOOLCHAIN block", () => {
+    const section = extractSection(patch, "### Step 6c:", "### Step 6d:");
+    expect(section).toContain("Test layers:");
   });
 });

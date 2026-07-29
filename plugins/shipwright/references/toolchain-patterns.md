@@ -13,6 +13,21 @@ Before scanning config files, check whether the project's own docs already say h
 
 A project with no `CLAUDE.md`/`docs/`/`ai-docs/` just falls straight through to config-file detection — this step costs nothing extra in that case beyond checking those paths exist.
 
+### Multi-Layer Test Detection
+
+Many projects have more than one test command — unit, integration, smoke, e2e, schema-conformance, contract, acceptance, etc. During detection, populate `tests` when distinct test layers are discovered:
+
+**Docs-first signals:** CLAUDE.md or docs mentioning multiple test commands, test suffixes, or separate test scripts (e.g., "run `pytest tests/unit` for unit tests, `pytest tests/integration` for integration tests").
+
+**Config-file signals:**
+- **Node.js:** `package.json` scripts prefixed with `test:` (e.g., `test:unit`, `test:integration`, `test:e2e`, `test:schema`). Each becomes a `tests` entry keyed by the suffix.
+- **Java/Gradle:** `sourceSets` blocks (`integrationTest`, `acceptanceTest`), or `src/integrationTest/`, `src/acceptanceTest/` directories. Maven profiles (`-Pintegration`, `-Pit`).
+- **Python:** multiple test directories (`tests/unit/`, `tests/integration/`), or tox environments.
+- **Rust:** `cargo test` vs `cargo test --test <name>` for specific test binaries.
+- **Mixed-ecosystem:** a project with both `cargo test` and `npm test` (e.g., Rust backend + JS e2e) — each is a separate layer.
+
+Set `test` to the fastest/default layer (usually unit or the project's main test runner). If only one test command exists, omit `tests` — `test` alone covers everything.
+
 ## Caching Across Runs
 
 Toolchain detection (docs-first + config-file fallback) is redundant to redo on every single command invocation — most projects don't change their toolchain often. Cache the result **one level up from the repo checkout** (same tier as `state/error-patrol-ledger.json`), **one file per repo**, so `/dev-task` and `/patch` share one cache instead of each redetecting independently:
@@ -26,10 +41,18 @@ state/toolchain-cache/{repo}.json
   "fingerprint": "<git commit sha>",
   "detectedAt": "<ISO timestamp>",
   "commands": {
-    "validate": "...", "test": "...", "lint": "...", "typecheck": "...", "build": "..."
+    "validate": "...",
+    "test": "...",
+    "tests": { "<layer>": "<command>", ... },
+    "lint": "...",
+    "typecheck": "...",
+    "build": "..."
   }
 }
 ```
+
+- **`test`** — the fast default test command for TDD cycles (unit tests, or the project's main test runner). Always populated.
+- **`tests`** — optional object mapping layer names to commands, populated when the project has distinct test commands per layer. Keys are free-form (e.g., `unit`, `integration`, `smoke`, `e2e`, `schema-conformance`, `contract` — whatever the project calls them). When present, `test` should match one of these entries (typically the fastest layer). When absent or empty, `test` alone covers everything.
 
 One file per repo (not one shared file keyed by repo) — a shared file read-modify-written from multiple concurrent processes is not atomic: two agents updating *different* repos' entries at the same time can each read the whole file and clobber the other's addition on write, even though they touched different keys. Splitting by repo removes that cross-repo collision entirely. A same-repo collision (two runs racing on the same repo) can still happen, but it's benign — both would compute the same commands from the same repo state, so a lost update just costs a redundant re-detection next time, not data loss.
 
@@ -41,7 +64,7 @@ git -C {repo-dir} log -1 --format=%H -- CLAUDE.md docs ai-docs package.json pack
 
 `{repo-dir}` is whichever checkout is live at the point detection runs — `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` for dev-task's pre-worktree detection (Step 1/0b runs before the worktree exists); the active `{worktree-path}` for patch, which always operates on an already-existing branch.
 
-1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above, reuse the cached `commands` and skip both Docs-First Discovery and config-file scanning entirely.
+1. Read `state/toolchain-cache/{repo}.json`. If it exists and its `fingerprint` matches the value above, reuse the cached `commands` (including `tests` if present) and skip both Docs-First Discovery and config-file scanning entirely.
 2. Otherwise — file missing, or a fingerprint mismatch (first run, or a toolchain-relevant file changed since the last detection) — run Docs-First Discovery above, then the config-file fallback tables below, and overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands (a whole-file write — no cross-repo merge needed, since this file only ever holds this one repo's data).
 
 A missing or stale cache never blocks progress — worst case is a cache miss, which costs exactly what a full detection would cost with no cache at all.
