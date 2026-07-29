@@ -67,6 +67,25 @@ so the batch stays fully traceable even though it's collapsed into a single
 version bump. The PR body lists exactly which `values.yaml` path(s) were
 pinned and to which tag(s).
 
+### Handling concurrent bumps (collision retry)
+
+Debounce collapses tags within a single burst, but two *separate* bursts
+(triggered by tags landing close together but outside the debounce window)
+can still compute the *same* next chart version from the same starting
+`Chart.yaml` — both runs read `main` before either has pushed its bump
+commit. When this happens, the workflow detects a branch-name collision
+(`chore/chart-v{version}` already exists on the remote) and, instead of
+silently skipping and dropping the losing run's entire tag batch, it fetches
+a fresh copy of `main`, re-derives the batch and version from that newer
+state (the winning run's chart-bump commit becomes the new baseline, so
+already-pinned tags are naturally excluded), and retries — up to 5 times
+with a 15-second backoff between attempts.
+
+If every retry attempt still collides, the workflow fails loudly, naming the
+release tag(s) that could not be pinned, rather than silently exiting
+success and dropping those tags. This ensures no release tags ever disappear
+from the chart version bump without surfacing the failure.
+
 ## How downstream consumers pick up new versions
 
 Consumption is **pull-based**, not push. `chart-release.yml` does not notify
