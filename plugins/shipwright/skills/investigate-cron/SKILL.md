@@ -57,7 +57,7 @@ For example:
 - `/shipwright:investigate-cron deploy 6pm` → `MODE=name-time`, `CRON_NAME="deploy"`, `TIME_ARG="6pm"`
 - `/shipwright:investigate-cron --item acme/x#123` → `MODE=item`, `ITEM_ARG="acme/x#123"`
 
-`--item` mode skips time parsing entirely (Step 3 does not apply) — there is no
+`--item` mode skips time parsing entirely (3a does not apply) — there is no
 target time to convert, since the runs endpoint returns every dispatch for that
 item directly.
 
@@ -137,7 +137,7 @@ echo "Fetched $(jq 'length' "$ALL_RUNS_FILE") total runs for loopCronId=$LOOP_CR
 ```
 
 **Name+time mode** — filter client-side to `phaseId === <PHASE_ID>`, then pick
-the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in Step 3):
+the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in 3a):
 
 ```bash
 BEST_RUN=$(jq -r --arg phase "$PHASE_ID" --argjson target "$TARGET_EPOCH" '
@@ -177,9 +177,9 @@ otherwise report that no dispatch history exists.
 
 Once you have the run's exact `startedAt` (name+time mode: `RUN_STARTED_AT`;
 item mode: each entry in `ITEM_RUNS`), use it as a **tight window** — a few
-minutes, not ±90 — around the transcript directory's file mtimes in Step 4,
+minutes, not ±90 — around the transcript directory's file mtimes in 3b,
 since this is now a known exact event time rather than a guess. The transcript
-directory itself is still resolved the same way (see Step 4).
+directory itself is still resolved the same way (see 3b).
 
 ---
 
@@ -321,7 +321,14 @@ need to proceed to session/transcript extraction.** This applies in both
 
 ---
 
-## Step 3: Convert the time argument (name+time mode only)
+## Step 3: Locate and extract the transcript
+
+This step covers converting the time argument, finding the matching
+session(s), and extracting what happened from the transcript — the three
+sub-steps below run in sequence whenever Step 2's ground-truth signals were
+inconclusive and transcript evidence is actually needed.
+
+### 3a. Convert the time argument (name+time mode only)
 
 Only applies when `MODE=name-time`. Item mode has no time argument and skips
 this step.
@@ -386,9 +393,7 @@ else:
 echo "Target epoch: $TARGET_EPOCH ($(date -d @$TARGET_EPOCH 2>/dev/null || date -r $TARGET_EPOCH))"
 ```
 
----
-
-## Step 4: Find matching sessions
+### 3b. Find matching sessions
 
 Derive the transcript directory from the current working directory (CWD), then
 locate the session(s) that correspond to the run(s) resolved in Step 1.
@@ -526,9 +531,7 @@ for m in matches:
 If multiple matches exist (e.g. cron fired twice), pick the one closest to the
 target time. If no matches are found, skip to the no-match handler at the end.
 
----
-
-## Step 5: Extract what happened
+### 3c. Extract what happened
 
 Parse the matching session JSONL to extract the narrative: initial prompt,
 assistant text outputs, key Bash commands, and whether the session ended silently.
@@ -607,7 +610,119 @@ the goal is a chronological narrative across all four phases, not a single run.
 
 ---
 
-## Step 6: Synthesize the explanation
+## Step 4: Sentry cross-check
+
+Cross-check the transcript's account of "what happened" against what Sentry
+actually recorded for the same time window — an unhandled exception or a
+smoking-gun `console.log`/`console.warn`/`console.error` line often explains
+unexpected cron behavior more directly than anything in the transcript itself,
+and this dataset is easy to forget to check.
+
+### 4a. Preconditions
+
+Confirm `SENTRY_ORG` and `SENTRY_AUTH_TOKEN` are both set in the environment
+(`echo "org_set=$([ -n "$SENTRY_ORG" ] && echo yes || echo no)
+token_set=$([ -n "$SENTRY_AUTH_TOKEN" ] && echo yes || echo no)"`). If either is
+unset or empty, print:
+
+```
+investigate-cron's Sentry cross-check requires SENTRY_ORG and SENTRY_AUTH_TOKEN to be set in the environment. Skipping this step — continuing without Sentry data.
+```
+
+and skip straight to Step 5 — **never block the rest of the investigation** on
+missing Sentry credentials. This mirrors `error-scan`'s Step 0 gating pattern
+(see `plugins/shipwright/skills/error-scan/SKILL.md`).
+
+Never print, log, or persist the literal values of `$SENTRY_AUTH_TOKEN` or
+`$SENTRY_ORG` — reference them only as env var names, exactly like `error-scan`
+does, in any output this step produces.
+
+Determine the run's time window before calling either API below: the run's
+`startedAt` (from Step 1) plus a reasonable margin (e.g. ±30-60 minutes), or —
+for an investigation of something still in progress — the run-to-now window.
+
+### 4b. Issues API — unresolved exceptions and 5xx errors
+
+```bash
+curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+  "https://sentry.io/api/0/organizations/$SENTRY_ORG/issues/?query=is:unresolved"
+```
+
+This endpoint doesn't take a raw time-window query param — `query=is:unresolved`
+is the only filter applied server-side. Scope the result to the run's window
+**client-side**, by comparing each issue's `firstSeen`/`lastSeen` timestamps
+against `[RUN_STARTED_AT - margin, RUN_STARTED_AT + margin]` (or
+`now` if the window is open-ended) via `jq`, e.g.:
+
+```bash
+echo "$ISSUES_JSON" | jq -r --arg lower "$WINDOW_LOWER_ISO" --arg upper "$WINDOW_UPPER_ISO" '
+  .[] | select(.lastSeen >= $lower and .firstSeen <= $upper) |
+  "\(.shortId)  \(.title)  firstSeen=\(.firstSeen)  lastSeen=\(.lastSeen)  \(.permalink)"
+'
+```
+
+Be explicit in any output that this window filtering happened client-side, not
+via the API — a raw unfiltered `is:unresolved` result includes every
+currently-unresolved issue org-wide, most of which have nothing to do with
+this run.
+
+### 4c. ourlogs — structured console output for the same window
+
+The `ourlogs` dataset carries every `console.log`/`console.warn`/`console.error`
+call forwarded to Sentry as structured logs (see `docs/observability.md`'s
+"Read side" section) — **this is the dataset that resolved a near-identical
+prior "shipwright-loop stall" investigation, and the one this team keeps
+forgetting to check.** Query it via the Events API with the same
+`SENTRY_ORG`/`SENTRY_AUTH_TOKEN` credentials:
+
+```bash
+curl -s -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+  --data-urlencode "dataset=ourlogs" \
+  --data-urlencode "project=<numeric_project_id>" \
+  --data-urlencode "field=timestamp" --data-urlencode "field=message" \
+  --data-urlencode "query=<search text>" \
+  --data-urlencode "statsPeriod=24h" \
+  --data-urlencode "sort=-timestamp" --data-urlencode "per_page=100" \
+  -G "https://sentry.io/api/0/organizations/$SENTRY_ORG/events/"
+```
+
+Notes on adapting this query form to the investigated run rather than a fixed
+window:
+- `statsPeriod=24h` is a rough relative window (fine for an ad-hoc lookback);
+  prefer precise `start`/`end` ISO-8601 params instead when the run's exact
+  `startedAt` is known (from Step 1) — e.g. `--data-urlencode
+  "start=<RUN_STARTED_AT minus margin>" --data-urlencode "end=<RUN_STARTED_AT
+  plus margin, or now>"` in place of `statsPeriod`. Use whichever gives the
+  tightest accurate window for this investigation.
+- `<search text>` should target the cron/item under investigation (e.g. the
+  cron name, item id, or task id) so results aren't just every log line in the
+  window.
+- `<numeric_project_id>` must be resolved before this call — this skill doesn't
+  otherwise enumerate Sentry projects. If it isn't already known, resolve it
+  via the project list endpoint, mirroring `error-scan`'s Step 1:
+  ```bash
+  curl -sS -H "Authorization: Bearer $SENTRY_AUTH_TOKEN" \
+    "https://sentry.io/api/0/organizations/$SENTRY_ORG/projects/"
+  ```
+  and pick the project whose `slug` matches the service under investigation
+  (e.g. `agent`).
+- `per_page=100` caps the page size — if the result looks truncated (exactly
+  100 rows returned, or the window is wide), narrow the query text/window or
+  page via the response's pagination cursor rather than trusting a single
+  page's results as complete.
+
+### Short-circuit
+
+If Sentry surfaces a clear unhandled exception or a smoking-gun log line
+inside the run's window, that alone can explain "why did this behave
+unexpectedly" — note it plainly in the findings carried into Step 5. Step 5's
+synthesis should cite Sentry-sourced findings as `[verified: Sentry]` once the
+citation-tagging convention is implemented (out of scope for this step — see
+the task that rewrites Step 5's synthesis content).
+
+---
+
+## Step 5: Synthesize the explanation
 
 Produce a plain-language explanation covering:
 
@@ -682,19 +797,23 @@ grep -i "precheck\|pre-check\|cron" logs/bodhi.log | tail -50
 
 ## Notes
 
-- This skill reads the admin API, the task store, live GitHub state, and transcript
-  files — it does **not** require container stdout or any external log system beyond
-  `logs/bodhi.log` for the preCheck fallback case. The Claude Code session JSONL is the
-  authoritative record of what the model concluded and why; the admin API's
-  `AgentCronRun` records are the authoritative record of exactly when and against what
-  item a cron fired; the task store and GitHub are the authoritative record of an item's
-  *current* state (Step 2).
+- This skill reads the admin API, the task store, live GitHub state, transcript
+  files, and (optionally, Step 4) Sentry — it does **not** require container stdout or
+  any external log system beyond `logs/bodhi.log` for the preCheck fallback case. The
+  Claude Code session JSONL is the authoritative record of what the model concluded and
+  why; the admin API's `AgentCronRun` records are the authoritative record of exactly
+  when and against what item a cron fired; the task store and GitHub are the
+  authoritative record of an item's *current* state (Step 2); Sentry (Step 4) is the
+  authoritative record of unhandled exceptions and structured console output, when
+  `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` are configured.
 - Prefer the admin-API path (Step 1) over the fallback whenever the admin API is
   reachable and returns run records — it gives an exact `startedAt` instead of a guess,
   and item mode is only possible through it.
 - Prefer the ground-truth snapshot (Step 2) over transcript extraction whenever it alone
   answers the question — it's cheaper and doesn't require a matching session to exist at
-  all. Fall through to Steps 3–6 only when live state is inconclusive.
+  all. Fall through to Steps 3–5 only when live state is inconclusive.
+- Step 4 (Sentry cross-check) is best-effort and never blocking — a missing
+  `SENTRY_ORG`/`SENTRY_AUTH_TOKEN` simply skips straight to Step 5 with a printed notice.
 - A `[silent]` response is **expected behavior** when the skill found nothing to do —
   look at the bash commands to understand what it checked.
 - Multiple sessions in a window: pick the one whose first entry timestamp (not mtime)

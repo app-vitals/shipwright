@@ -354,20 +354,47 @@ describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
   });
 });
 
-describe("SKILL.md — renumbered steps after Step 2 insertion (IC-1.2)", () => {
-  it("has a Step 3 section about time conversion / Pacific timezone (renumbered from old Step 2)", () => {
-    expect(content).toContain("Step 3: Convert the time argument");
+describe("SKILL.md — renumbered steps after Step 4 insertion (IC-1.3)", () => {
+  it("has a consolidated Step 3 section covering transcript location and extraction", () => {
+    expect(content).toContain("Step 3: Locate and extract the transcript");
   });
 
-  it("has a Step 4 section about finding matching sessions (renumbered from old Step 3)", () => {
-    expect(content).toContain("Step 4: Find matching sessions");
+  it("has a 3a subheading about converting the time argument (merged from old Step 3)", () => {
+    expect(content).toContain("3a. Convert the time argument");
   });
 
-  it("has a Step 5 section about extracting what happened (renumbered from old Step 4)", () => {
-    expect(content).toContain("Step 5: Extract what happened");
+  it("has a 3b subheading about finding matching sessions (merged from old Step 4)", () => {
+    expect(content).toContain("3b. Find matching sessions");
   });
 
-  it("has a Step 6 section about synthesizing the explanation (renumbered from old Step 5)", () => {
-    expect(content).toContain("Step 6: Synthesize the explanation");
+  it("has a 3c subheading about extracting what happened (merged from old Step 5)", () => {
+    expect(content).toContain("3c. Extract what happened");
+  });
+
+  it("has a Step 4 section about the Sentry cross-check (new, IC-1.3)", () => {
+    expect(content).toContain("Step 4: Sentry cross-check");
+  });
+
+  it("has a Step 5 section about synthesizing the explanation (renumbered from old Step 6)", () => {
+    expect(content).toContain("Step 5: Synthesize the explanation");
+  });
+});
+
+describe("SKILL.md — Step 4: Sentry cross-check (IC-1.3)", () => {
+  it("gates on SENTRY_ORG and SENTRY_AUTH_TOKEN being set", () => {
+    expect(content).toContain("SENTRY_ORG");
+    expect(content).toContain("SENTRY_AUTH_TOKEN");
+  });
+
+  it("skips cleanly with a printed notice when either credential is unset", () => {
+    expect(content).toContain("Skipping");
+  });
+
+  it("queries the Sentry Issues API scoped to is:unresolved", () => {
+    expect(content).toContain("is:unresolved");
+  });
+
+  it("queries the ourlogs structured-logs dataset via the Events API", () => {
+    expect(content).toContain("dataset=ourlogs");
   });
 });
