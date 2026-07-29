@@ -9,10 +9,11 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  type Task,
   HITL_ALLOWED_TOOLS,
+  type Task,
   buildClaudeSpawnEnv,
   buildTaskCommand,
+  computeMissingClones,
   computeProvisionPlan,
   ensureHitlAgent,
   parseHitlAuthors,
@@ -183,9 +184,58 @@ describe("computeProvisionPlan", () => {
   });
 });
 
+describe("computeMissingClones", () => {
+  test("returns [] for an empty repos list", () => {
+    expect(computeMissingClones([], "/ws/repos", () => false)).toEqual([]);
+  });
+
+  test("skips repos already cloned under reposDir", () => {
+    const existing = new Set(["/ws/repos/shipwright"]);
+    const missing = computeMissingClones(
+      ["app-vitals/shipwright"],
+      "/ws/repos",
+      (path) => existing.has(path),
+    );
+    expect(missing).toEqual([]);
+  });
+
+  test("includes missing repos with the correct dest path", () => {
+    const missing = computeMissingClones(
+      ["app-vitals/shipwright"],
+      "/ws/repos",
+      () => false,
+    );
+    expect(missing).toEqual([
+      { repo: "app-vitals/shipwright", dest: "/ws/repos/shipwright" },
+    ]);
+  });
+
+  test("mix of already-cloned and missing repos — only missing ones are returned", () => {
+    const existing = new Set(["/ws/repos/shipwright"]);
+    const missing = computeMissingClones(
+      ["app-vitals/shipwright", "some-org/other-repo"],
+      "/ws/repos",
+      (path) => existing.has(path),
+    );
+    expect(missing).toEqual([
+      { repo: "some-org/other-repo", dest: "/ws/repos/other-repo" },
+    ]);
+  });
+});
+
 describe("HITL_ALLOWED_TOOLS", () => {
   test("includes FLOOR_TOOLS and web access", () => {
-    for (const t of ["Read", "Write", "Edit", "Glob", "Grep", "TodoWrite", "Skill", "WebSearch", "WebFetch"]) {
+    for (const t of [
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Skill",
+      "WebSearch",
+      "WebFetch",
+    ]) {
       expect(HITL_ALLOWED_TOOLS).toContain(t);
     }
   });
