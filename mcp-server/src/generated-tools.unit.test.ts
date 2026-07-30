@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { generatedTools } from "./generated-tools.ts";
 
 describe("generatedTools", () => {
-  it("emits one tool per OpenAPI operation (25 total)", () => {
-    expect(generatedTools).toHaveLength(25);
+  it("emits one tool per OpenAPI operation (29 total)", () => {
+    expect(generatedTools).toHaveLength(29);
   });
 
   it("has unique tool names", () => {
