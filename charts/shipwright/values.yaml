@@ -374,7 +374,8 @@ agent:
     # -- Master switch. Default false → nothing voice-related renders.
     enabled: false
     # -- STT provider: "whisper" (self-hosted pod) or "groq" (Groq cloud STT).
-    # TTS is always ElevenLabs (with an in-agent Piper TTS fallback when no key).
+    # TTS defaults to the self-hosted in-agent Piper binary; setting
+    # elevenlabs.apiKey below switches TTS to ElevenLabs for both providers.
     provider: whisper
     # -- Self-hosted Whisper ASR pod (used ONLY when provider=whisper). Renders a
     # Deployment + Service running onerahmet/openai-whisper-asr-webservice, whose
