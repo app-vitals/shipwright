@@ -11,7 +11,10 @@
  * Workspace layout (mirrors ensureAgentHome):
  *   ~/.shipwright/
  *     workspace/          ← Claude Code's cwd
- *       repos/            ← SHIPWRIGHT_REPO_DIR (git clones, main branch)
+ *       repos/            ← SHIPWRIGHT_REPO_DIR (git clones, main branch;
+ *                            repos listed in SHIPWRIGHT_HITL_REPOS are
+ *                            auto-cloned via `gh repo clone` during preflight
+ *                            if not already present)
  *       worktrees/        ← SHIPWRIGHT_WORKTREE_DIR (feature branches)
  *       state/reviews/
  *       .claude/
@@ -215,6 +218,26 @@ export function computeProvisionPlan(
   };
 }
 
+/**
+ * Pure planning step for the auto-clone preflight step: given the configured
+ * "org/repo" list, the repos dir, and an injectable existence check, report
+ * which repos still need cloning (and their destination path). Repos already
+ * present under reposDir are left untouched. Kept side-effect free so it's
+ * unit-testable without touching the filesystem or network.
+ */
+export function computeMissingClones(
+  repos: string[],
+  reposDir: string,
+  exists: (path: string) => boolean,
+): { repo: string; dest: string }[] {
+  return repos
+    .map((repo) => ({
+      repo,
+      dest: join(reposDir, repo.slice(repo.lastIndexOf("/") + 1)),
+    }))
+    .filter(({ dest }) => !exists(dest));
+}
+
 function provisionWorkspace(): void {
   const dirs = [
     WORKSPACE,
@@ -255,6 +278,19 @@ function provisionWorkspace(): void {
 
 async function runPreflight(): Promise<void> {
   provisionWorkspace();
+
+  const missingClones = computeMissingClones(HITL_REPOS, REPOS_DIR, existsSync);
+  for (const { repo, dest } of missingClones) {
+    log(`cloning ${repo} into ${dest}...`);
+    const clone = Bun.spawnSync(["gh", "repo", "clone", repo, dest], {
+      cwd: REPO_ROOT,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if (clone.exitCode !== 0)
+      throw new Error(`gh repo clone failed for ${repo}`);
+    log(`cloned ${repo}`);
+  }
 
   log("installing shipwright plugin...");
   await installPlugins();
