@@ -16,11 +16,11 @@ import type { GeneratedTool } from "./generated-tools.ts";
  *
  * Excluded categories:
  * - Pipeline-internal lifecycle ops: tasks_claim, tasks_heartbeat, tasks_complete,
- *   tasks_fail, tasks_release
+ *   tasks_fail, tasks_release, tasks_skip, tasks_reset
  * - Destructive ops: tasks_delete
  * - Token-management routes: tokens_list, tokens_create, tokens_update, tokens_delete
  * - PR lifecycle ops: prs_claim, prs_claim_next, prs_heartbeat, prs_complete,
- *   prs_patch, prs_release
+ *   prs_patch, prs_release, prs_skip, prs_reset
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -29,6 +29,8 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "tasks_complete",
   "tasks_fail",
   "tasks_release",
+  "tasks_skip",
+  "tasks_reset",
   // tasks: destructive
   "tasks_delete",
   // tokens: all token-management
@@ -43,6 +45,8 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "prs_complete",
   "prs_patch",
   "prs_release",
+  "prs_skip",
+  "prs_reset",
 ] as const;
 
 /**

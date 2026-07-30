@@ -47,6 +47,10 @@ export const generatedTools: GeneratedTool[] = [
           enum: ["open", "closed", "in_progress", "ready", "blocked"],
           example: "open",
         },
+        source: {
+          type: "string",
+          example: "entropy-fix",
+        },
         session: {
           type: "string",
           example: "session-123",
@@ -84,6 +88,11 @@ export const generatedTools: GeneratedTool[] = [
           enum: ["true", "false"],
           example: "true",
         },
+        hitl: {
+          type: "string",
+          enum: ["true", "false"],
+          example: "true",
+        },
         sort: {
           type: "string",
           enum: ["asc", "desc"],
@@ -104,6 +113,7 @@ export const generatedTools: GeneratedTool[] = [
     queryParams: [
       "status",
       "state",
+      "source",
       "session",
       "repo",
       "assignee",
@@ -113,6 +123,7 @@ export const generatedTools: GeneratedTool[] = [
       "limit",
       "offset",
       "ready",
+      "hitl",
       "sort",
       "updatedSince",
     ],
@@ -419,6 +430,47 @@ export const generatedTools: GeneratedTool[] = [
     hasBody: false,
   },
   {
+    name: "tasks_skip",
+    description:
+      "Record a skip — increments skipCount, auto-blocks at threshold",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx1234567890",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/tasks/{id}/skip",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
+    name: "tasks_reset",
+    description: "Reset skip tracking — skipCount back to 0",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx1234567890",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/tasks/{id}/skip/reset",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
     name: "tokens_list",
     description: "List all tokens",
     inputSchema: {
@@ -557,6 +609,13 @@ export const generatedTools: GeneratedTool[] = [
             "When true, return only unclaimed PRs (claimedBy IS NULL) — mirrors /tasks?ready=true. Composable with other filters (repo, state, reviewState); does not itself apply state/reviewState eligibility rules the way claim-next does.",
           example: "true",
         },
+        blocked: {
+          type: "string",
+          enum: ["true", "false"],
+          description:
+            "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
+          example: "true",
+        },
         sort: {
           type: "string",
           enum: ["asc", "desc"],
@@ -586,6 +645,7 @@ export const generatedTools: GeneratedTool[] = [
       "limit",
       "offset",
       "ready",
+      "blocked",
       "sort",
       "updatedSince",
     ],
@@ -796,6 +856,47 @@ export const generatedTools: GeneratedTool[] = [
     },
     method: "POST",
     pathTemplate: "/prs/{id}/release",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
+    name: "prs_skip",
+    description:
+      "Record a skip — increments skipCount, auto-blocks at threshold",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx0987654321",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/prs/{id}/skip",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
+    name: "prs_reset",
+    description: "Reset skip tracking — skipCount back to 0",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx0987654321",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/prs/{id}/skip/reset",
     queryParams: [],
     pathParams: ["id"],
     hasBody: false,
