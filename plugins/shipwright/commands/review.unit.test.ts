@@ -65,11 +65,6 @@ describe("review.md — CPF-2.2 verdict phrase requirement", () => {
         jsonBlock.includes("Verdict: COMMENT"),
     ).toBe(true);
   });
-
-  it("Slack message template has a *Verdict:* placeholder line", () => {
-    const slackVerdictLine = content.includes("*Verdict:* {APPROVE|COMMENT}");
-    expect(slackVerdictLine).toBe(true);
-  });
 });
 
 describe("review.md — WLS-3.2 explicit-target-only", () => {

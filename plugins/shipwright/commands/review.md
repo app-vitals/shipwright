@@ -297,7 +297,7 @@ Before reading individual files, build a structural picture of what kind of work
 - **Breaking changes**: Any changes that break backwards compatibility — removed endpoints, changed request/response shapes, renamed fields, dropped columns, changed auth semantics, changed event contracts. Assume rolling deployments; clients and servers don't update atomically.
 - **Testing changes**: Classify whether the PR is "test-touching" (modifies or adds test files) or "untested logic" (adds production code with no corresponding test additions). Identify test files using the project's language and toolchain — look at the diff context, the CLAUDE.md stack description, and common conventions for that language rather than applying a fixed set of filename patterns. Note which test files were added, modified, or removed. If neither applies (pure refactor of existing tested code, docs-only, etc.), note "none".
 
-Note which categories are present (even if "none") — this drives review focus and the Slack summary.
+Note which categories are present (even if "none") — this drives review focus.
 
 ---
 
@@ -539,7 +539,7 @@ should be held; the inline comments convey the specific feedback to the author.
    REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{pr}.json")
    ```
 3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
-   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 4-6 below.
+   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 4-5 below.
    - **Failure**: the GitHub post did not land, so nothing was actually reviewed at HEAD.
      Do not run Step 11b — marking the record posted here would let
      `check-review.ts`'s `commitSha`/`reviewState` dedup permanently hide this PR from
@@ -551,10 +551,9 @@ should be held; the inline comments convey the specific feedback to the author.
           "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/release"
         ```
      2. Print a warning: `Warning: review post for #{pr} failed (exit {POST_EXIT}) — released claim, will retry next pass.`
-     3. Stop — do not proceed to Step 11b or the Slack message below.
+     3. Stop — do not proceed to Step 11b.
 4. Run Step 11b to mark the PR record posted.
 5. Print: `Posted review for #{pr}: {REVIEW_URL}`
-6. Post Slack message (see below)
 
 ### If `auto_post_reviews` is false (staged):
 
@@ -583,34 +582,7 @@ should be held; the inline comments convey the specific feedback to the author.
    ```
 
    (`PR_RECORD_ID` is the claim response `.id` from Step 4.)
-2. Post Slack message to the configured channel (see below)
-3. Print: `Review staged for #{pr}. Slack notification sent.`
-
-### Slack Message (both paths)
-
-Send to the configured engineering channel:
-
-```
-*PR #{pr}: {title}*
-{url}
-
-*Why:* {motivation from Change Summary}
-
-*What changed:*
-{high-level summary from Change Summary}
-
-*View changes:* {value or "none"}
-*API changes:* {value or "none"}
-*Database changes:* {value or "none"}
-*Architecture changes:* {value or "none"}
-*Breaking changes:* {value or "none"}
-*Testing changes:* {value or "none"}
-
-*Verdict:* {APPROVE|COMMENT} — {one-line reasoning}
-{if staged: Post with: /shipwright:review {org}/{repo}#{pr}}
-```
-
-Use the Slack MCP tool if available. If no Slack integration is configured, print the formatted message.
+2. Print: `Review staged for #{pr}.`
 
 ---
 
