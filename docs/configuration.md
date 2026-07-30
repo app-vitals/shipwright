@@ -219,7 +219,7 @@ This is the write side (services reporting into Sentry). For the read side — t
 
 ## Policy Config
 
-Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block, automatically seeded from a template when the workspace is provisioned. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. Conservative defaults (e.g., `auto_post_reviews: false`) are set for safety on initial provisioning.
+Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block, automatically seeded from a template when the workspace is provisioned. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. `auto_post_reviews` defaults to `true` (reviews post to GitHub automatically) on initial provisioning; set it to `false` to stage reviews locally for owner approval instead.
 
 ### Fields
 
