@@ -52,12 +52,13 @@ import {
   buildProductionDeps as buildReviewDeps,
   getReviewCandidates,
 } from "../agent/src/check-review.ts";
+import { FLOOR_TOOLS } from "../agent/src/claude.ts";
+import { installPlugins } from "../agent/src/setup.ts";
 import {
   type WorkPrCandidate,
   type WorkTaskCandidate,
   selectNextWorkItem,
 } from "../agent/src/work-selector.ts";
-import { FLOOR_TOOLS } from "../agent/src/claude.ts";
 
 // ---------------------------------------------------------------------------
 // Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can
@@ -254,6 +255,9 @@ function provisionWorkspace(): void {
 
 async function runPreflight(): Promise<void> {
   provisionWorkspace();
+
+  log("installing shipwright plugin...");
+  await installPlugins();
 
   log("running task-store prisma generate + migrate...");
   const tsGen = Bun.spawnSync(
