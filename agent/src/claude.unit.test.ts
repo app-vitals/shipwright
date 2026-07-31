@@ -29,6 +29,9 @@ const cleanMultiTurn = await import(
 const truncatedNoResult = await import(
   "./fixtures/stream-json/truncated-no-result.ts"
 );
+const cleanExitNoResult = await import(
+  "./fixtures/stream-json/clean-exit-no-result.ts"
+);
 
 // ─── Shared test session store ────────────────────────────────────────────────
 
@@ -1414,6 +1417,56 @@ describe("runClaude — stream-json parsing", () => {
     expect(output.result).toBe("");
   });
 
+  test("clean exit with no result event still surfaces the session id captured off the leading system/init line", async () => {
+    const mockSpawn = mock(
+      () =>
+        ndjsonProc(cleanExitNoResult.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const output = await runClaude("go");
+    expect(output.streamIncomplete).toBe(true);
+    expect(output.sessionId).toBe(cleanExitNoResult.expectedSessionId);
+    expect(output.modelUsage).toEqual(cleanExitNoResult.expectedAccumulated);
+  });
+
+  test("truncated non-zero exit with no result event falls back to the init line's session id on ClaudeRunError", async () => {
+    const mockSpawn = mock(
+      () =>
+        ndjsonProc(
+          truncatedNoResult.lines,
+          "",
+          1,
+        ) as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const { ClaudeRunError } = await import("./claude.ts");
+    try {
+      await runClaude("go");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ClaudeRunError);
+      const e = err as InstanceType<typeof ClaudeRunError>;
+      // No `result` event ever arrived — session id must fall back to the
+      // one captured off the leading system/init line, not result?.session_id.
+      expect(e.sessionId).toBe(truncatedNoResult.expectedSessionId);
+      expect(e.modelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+    }
+  });
+
   test("timeout mid-stream throws ClaudeTimeoutError carrying the accumulated partial usage", async () => {
     // A proc whose stdout emits two assistant turns then never closes / never
     // emits a result — forcing the timeout path.
@@ -1469,6 +1522,10 @@ describe("runClaude — stream-json parsing", () => {
       const e = err as InstanceType<typeof ClaudeTimeoutError>;
       expect(e.reason).toBe("idle");
       expect(e.partialModelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+      // The init line (first of the 3 emitted lines) carries a session id —
+      // it must survive onto the timeout error even though the process was
+      // killed before any terminal `result` event arrived.
+      expect(e.sessionId).toBe(truncatedNoResult.expectedSessionId);
     }
   });
 });
