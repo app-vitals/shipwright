@@ -829,7 +829,12 @@ describe("task-store API (smoke)", () => {
     });
     // No ?assignee= was supplied, so it should NOT be set alongside agentScope
     expect(capturedFilters[0]?.assignee).toBeUndefined();
-    expect(capturedFilters[0]?.repo).toBe("acme-inc/backend-api");
+    // Hono's c.req.queries() always returns an array, even for a single
+    // `?repo=` value — see ORF-1.4. Array-wrapped repo is functionally
+    // identical to the old exact-match string (buildRepoOrgWhere turns a
+    // 1-element array into `where.repo = { in: [x] }`, equivalent in results
+    // to `where.repo = x`).
+    expect(capturedFilters[0]?.repo).toEqual(["acme-inc/backend-api"]);
     expect(capturedFilters[0]?.pr).toBe(42);
   });
 

@@ -415,7 +415,22 @@ export const TaskListQuerySchema = z.object({
     .openapi({ example: "open" }),
   source: z.string().optional().openapi({ example: "entropy-fix" }),
   session: z.string().optional().openapi({ example: "session-123" }),
-  repo: z.string().optional().openapi({ example: "org/repo" }),
+  repo: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .openapi({
+      example: "org/repo",
+      description:
+        "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
+    }),
+  org: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .openapi({
+      example: "org",
+      description:
+        "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
+    }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),
   claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
