@@ -135,11 +135,11 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
-    hitlNotifiedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    requiresHumanApproval: z.boolean().default(false).openapi({
+      example: false,
+      description:
+        "Type B merge-approval-gate classification. Does not gate dispatch candidacy.",
+    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -335,12 +335,7 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
-    hitl: z.boolean().default(false).openapi({ example: false }),
-    hitlNotifiedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    blocked: z.boolean().default(false).openapi({ example: false }),
     blockedReason: z
       .string()
       .nullable()

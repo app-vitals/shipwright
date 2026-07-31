@@ -75,7 +75,12 @@ model Task {
   model              String? // "haiku" | "sonnet" | "opus"
   complexity         Int?
   hitl               Boolean?
-  hitlNotifiedAt     String?
+
+  // Type B merge-approval-gate classification. Distinct from the hitl signal:
+  // requiresHumanApproval marks a task that needs human sign-off at the
+  // merge gate, and does NOT gate dispatch candidacy (ready.ts /
+  // isTaskBlockedForDispatch never read it).
+  requiresHumanApproval Boolean @default(false)
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
   // skipCount increments each time the loop orchestrator dispatches this task
@@ -177,8 +182,7 @@ model PullRequest {
   readyForReviewAt  String?
   readyForPatchAt   String?
   readyForDeployAt  String?
-  hitl              Boolean       @default(false)
-  hitlNotifiedAt    String?
+  blocked           Boolean       @default(false)
   blockedReason     String?
 
   // ─── Skip tracking (auto-block after repeated no-op dispatches) ───
