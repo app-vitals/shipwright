@@ -26,6 +26,7 @@ export interface RunReportOpts {
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
   modelBreakdown?: ModelBreakdownEntry[];
+  sessionId?: string;
 }
 
 export interface CronRunReporter {
@@ -115,6 +116,7 @@ function applyRunReportOpts(
     body.cacheCreationTokens = opts.cacheCreationTokens;
   if (opts?.modelBreakdown !== undefined)
     body.modelBreakdown = opts.modelBreakdown;
+  if (opts?.sessionId !== undefined) body.sessionId = opts.sessionId;
 }
 
 export class HttpCronRunReporter implements CronRunReporter {

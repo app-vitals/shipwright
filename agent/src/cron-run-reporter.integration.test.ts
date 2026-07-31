@@ -299,6 +299,40 @@ describe("HttpCronRunReporter", () => {
     expect(breakdown[1].inputTokens).toBe(100);
   });
 
+  test("completeRun sends sessionId when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.completeRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "completed",
+      { sessionId: "session-abc-123" },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.sessionId).toBe("session-abc-123");
+  });
+
+  test("completeRun omits sessionId when not provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.completeRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "completed",
+      {
+        inputTokens: 100,
+      },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.sessionId).toBeUndefined();
+  });
+
   // ─── recordProgress ────────────────────────────────────────────────────────
 
   test("recordProgress PATCHes to correct URL with only modelBreakdown in body", async () => {
@@ -512,6 +546,38 @@ describe("HttpCronRunReporter", () => {
     const body = state.captured[0].body as Record<string, unknown>;
     expect(body.error).toBe("partial run before skip");
     expect(body.inputTokens).toBe(42);
+  });
+
+  test("skipRun sends sessionId when provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.skipRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "command:no-work",
+      { sessionId: "session-xyz-789" },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.sessionId).toBe("session-xyz-789");
+  });
+
+  test("skipRun omits sessionId when not provided", async () => {
+    const reporter = makeReporter();
+    const completedAt = new Date("2026-01-01T08:00:05.000Z");
+
+    await reporter.skipRun(
+      "cron-123",
+      "run-abc",
+      completedAt,
+      "command:no-work",
+      { inputTokens: 50 },
+    );
+
+    const body = state.captured[0].body as Record<string, unknown>;
+    expect(body.sessionId).toBeUndefined();
   });
 });
 
