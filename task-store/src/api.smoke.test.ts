@@ -212,7 +212,7 @@ function fakeTaskService(
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct(_agentId?) {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
@@ -707,7 +707,7 @@ describe("task-store API (smoke)", () => {
       ...fakeTaskService(),
       async distinct(agentId?: string) {
         capturedAgentIds.push(agentId);
-        return { sessions: [], repos: [] };
+        return { sessions: [], repos: [], orgs: [] };
       },
     };
 
@@ -999,7 +999,7 @@ describe("task-store API (smoke)", () => {
     // even though the task is assigned to a different agent.
     expect(res.status).toBe(200);
     // Acting agent (agent-1) must NOT steal the task — assignee stays agent-2.
-    expect((await res.json() as Task).assignee).toBe("agent-2");
+    expect(((await res.json()) as Task).assignee).toBe("agent-2");
   });
 
   it("PATCH /tasks/:id with repo-scoped token for wrong repo returns 403", async () => {

@@ -142,7 +142,7 @@ function fakeTaskService(
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }

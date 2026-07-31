@@ -184,8 +184,8 @@ function fakeTaskService(
     },
     async distinct(
       _agentId?: string,
-    ): Promise<{ sessions: string[]; repos: string[] }> {
-      return Promise.resolve({ sessions: [], repos: [] });
+    ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }> {
+      return Promise.resolve({ sessions: [], repos: [], orgs: [] });
     },
   };
 }

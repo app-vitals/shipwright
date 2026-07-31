@@ -1013,6 +1013,62 @@ describeOrSkip("Task store schema (integration)", () => {
     ]);
   });
 
+  // ─── TaskService.list() multi-repo + org filters ───────────────────────────
+
+  it("list({ repo: [...], org }) returns only rows intersecting both the repo list and the org", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Matches: in the repo list AND in the org.
+    const matchA = await prisma.task.create({
+      data: {
+        title: "app-vitals/shipwright, in repo list",
+        status: "pending",
+        repo: "app-vitals/shipwright",
+      },
+    });
+    // Matches: in the repo list AND in the org (different repo, same org).
+    const matchB = await prisma.task.create({
+      data: {
+        title: "app-vitals/second-repo, in repo list",
+        status: "pending",
+        repo: "app-vitals/second-repo",
+      },
+    });
+    // In the repo list, but NOT in the org — excluded by the org filter.
+    await prisma.task.create({
+      data: {
+        title: "acme-inc/backend-api, in repo list but wrong org",
+        status: "pending",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    // In the org, but NOT in the repo list — excluded by the repo filter.
+    await prisma.task.create({
+      data: {
+        title: "app-vitals/other-repo, in org but not in repo list",
+        status: "pending",
+        repo: "app-vitals/other-repo",
+      },
+    });
+    // Neither in the repo list nor the org.
+    await prisma.task.create({
+      data: {
+        title: "unrelated-org/unrelated-repo",
+        status: "pending",
+        repo: "unrelated-org/unrelated-repo",
+      },
+    });
+
+    const result = await taskService.list({
+      repo: ["app-vitals/shipwright", "app-vitals/second-repo"],
+      org: "app-vitals",
+    });
+
+    const ids = result.tasks.map((t) => t.id).sort();
+    expect(ids).toEqual([matchA.id, matchB.id].sort());
+    expect(result.total).toBe(2);
+  });
+
   it("resolves a same-page dependency between two tasks on the same page", async () => {
     const taskService = new TaskService(prisma);
 

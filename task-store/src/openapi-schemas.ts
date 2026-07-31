@@ -517,6 +517,7 @@ export const DistinctResponseSchema = z
   .object({
     sessions: z.array(z.string()).openapi({ example: ["session-1"] }),
     repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    orgs: z.array(z.string()).openapi({ example: ["org"] }),
   })
   .openapi("DistinctResponse");
 
