@@ -18,7 +18,7 @@
  *   PATCH  /prs/:id           update fields
  *   POST   /prs/:id/heartbeat touch heartbeatAt
  *   POST   /prs/:id/complete  reviewState=posted
- *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha)
+ *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha); optional ciFailureSignature tracks a CI-failure streak, auto-blocking at threshold
  *   POST   /prs/:id/release   unclaim → reviewState=pending
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0
@@ -235,7 +235,8 @@ const patchRoute = createRoute({
   method: "post",
   path: "/:id/patch",
   tags: ["PRs"],
-  summary: "Increment patchCycles and conditionally reset reviewState=pending",
+  summary:
+    "Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -562,7 +563,15 @@ export function createPrsRoutes(
       typeof body.commitSha === "string" && body.commitSha
         ? body.commitSha
         : undefined;
-    const pr = await prService.patch(c.req.param("id"), commitSha);
+    const ciFailureSignature =
+      typeof body.ciFailureSignature === "string" && body.ciFailureSignature
+        ? body.ciFailureSignature
+        : undefined;
+    const pr = await prService.patch(
+      c.req.param("id"),
+      commitSha,
+      ciFailureSignature,
+    );
     return c.json(pr, 200);
   });
 

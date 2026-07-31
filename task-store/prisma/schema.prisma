@@ -188,6 +188,17 @@ model PullRequest {
   skipCount     Int     @default(0)
   lastSkippedAt String?
 
+  // ─── CI-failure streak tracking (auto-block after repeated identical CI failures) ───
+  // Tracks consecutive patch() calls that report the same ciFailureSignature
+  // (e.g. a stable identifier for "which check + which test failed"). A
+  // differing (or first-seen) signature resets the streak to 1; crossing
+  // CI_FAILURE_BLOCK_THRESHOLD (3, matching SPIN_DETECTION_THRESHOLD /
+  // SKIP_BLOCK_THRESHOLD) auto-sets hitl + blockedReason so the loop
+  // orchestrator stops re-dispatching CI-fix cycles that keep hitting the
+  // same wall. Mirrors skipCount/lastSkippedAt's shape and rationale.
+  lastCiFailureSignature    String?
+  consecutiveCiFailureCount Int     @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
