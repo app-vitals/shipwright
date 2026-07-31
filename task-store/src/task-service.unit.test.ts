@@ -365,6 +365,131 @@ describe("listBlocked logic (unit)", () => {
   });
 });
 
+// ─── TaskService.listBlocked() sort ─────────────────────────────────────────
+
+describe("TaskService.listBlocked() sort (unit)", () => {
+  /**
+   * Prisma double for listBlocked(): captures the findMany args (in
+   * particular orderBy) passed by the service, mirroring the
+   * PullRequestService.list() sort unit test pattern
+   * (pull-request-service.unit.test.ts). Returns tasks in the order given
+   * regardless of orderBy — real ordering is Postgres's job; this double
+   * only lets us assert the service *requests* the right orderBy and that
+   * the array order it's fed survives listBlocked()'s .map()/.filter().
+   */
+  function makeListBlockedPrismaDouble(tasks: Task[]) {
+    const findManyCalls: Array<{ orderBy?: unknown }> = [];
+
+    const prisma = {
+      task: {
+        findMany(args: { orderBy?: unknown } = {}) {
+          findManyCalls.push(args);
+          return Promise.resolve(tasks);
+        },
+      },
+      _findManyCalls: findManyCalls,
+    };
+
+    return prisma as unknown as PrismaClient & {
+      _findManyCalls: Array<{ orderBy?: unknown }>;
+    };
+  }
+
+  function makeBlockedTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "blocked",
+      source: null,
+      session: null,
+      repo: null,
+      description: null,
+      acceptanceCriteria: [],
+      layer: null,
+      branch: null,
+      dependencies: [],
+      pr: null,
+      hours: null,
+      addedAt: null,
+      startedAt: null,
+      prCreatedAt: null,
+      mergedAt: null,
+      blockedAt: null,
+      blockedReason: null,
+      note: null,
+      type: null,
+      priority: null,
+      cancelledAt: null,
+      completedAt: null,
+      deployingAt: null,
+      ciFixAttempts: null,
+      mergeCommit: null,
+      prUrl: null,
+      assignee: null,
+      issue: null,
+      model: null,
+      complexity: null,
+      hitl: null,
+      hitlNotifiedAt: null,
+      claimedBy: null,
+      agentHint: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  it("listBlocked({ sort: 'desc' }) requests orderBy: { createdAt: 'desc' } from Prisma", async () => {
+    const prisma = makeListBlockedPrismaDouble([]);
+    const service = new TaskService(prisma);
+
+    await service.listBlocked(undefined, undefined, "desc");
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "desc" });
+  });
+
+  it("listBlocked() with no sort defaults to orderBy: { createdAt: 'asc' } (current behavior)", async () => {
+    const prisma = makeListBlockedPrismaDouble([]);
+    const service = new TaskService(prisma);
+
+    await service.listBlocked();
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].orderBy).toEqual({ createdAt: "asc" });
+  });
+
+  it("listBlocked({ sort: 'desc' }) returns tasks ordered by createdAt descending", async () => {
+    // Simulate Postgres honoring orderBy: desc — the double returns tasks
+    // pre-sorted newest-first, proving order survives listBlocked()'s
+    // subsequent .map()/.filter() calls (both preserve array order in JS).
+    const oldest = makeBlockedTask({
+      id: "t-oldest",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const middle = makeBlockedTask({
+      id: "t-middle",
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    const newest = makeBlockedTask({
+      id: "t-newest",
+      createdAt: new Date("2026-01-03T00:00:00.000Z"),
+    });
+    const prisma = makeListBlockedPrismaDouble([newest, middle, oldest]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, "desc");
+
+    expect(result.map((t) => t.id)).toEqual([
+      "t-newest",
+      "t-middle",
+      "t-oldest",
+    ]);
+  });
+});
+
 // ─── TaskService.bulk() ─────────────────────────────────────────────────────
 
 describe("TaskService.bulk (unit)", () => {

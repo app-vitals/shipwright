@@ -98,7 +98,11 @@ export interface TaskListResult {
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
   listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
-  listBlocked(agentId?: string, repos?: string[]): Promise<TaskWithBlockedBy[]>;
+  listBlocked(
+    agentId?: string,
+    repos?: string[],
+    sort?: "asc" | "desc",
+  ): Promise<TaskWithBlockedBy[]>;
   distinct(
     agentId?: string,
     scopeRepos?: string[],
@@ -254,8 +258,11 @@ export class TaskService implements TaskServiceLike {
   async listBlocked(
     agentId?: string,
     repos?: string[],
+    sort?: "asc" | "desc",
   ): Promise<TaskWithBlockedBy[]> {
-    const allTasks = await this.prisma.task.findMany();
+    const allTasks = await this.prisma.task.findMany({
+      orderBy: { createdAt: sort ?? "asc" },
+    });
     const useRepoScope =
       agentId !== undefined && repos !== undefined && repos.length > 0;
     const closedStatuses = new Set<string>(CLOSED_STATUSES);
