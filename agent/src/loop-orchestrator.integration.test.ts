@@ -382,6 +382,7 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       opts?: {
         error?: string;
         modelBreakdown?: ModelBreakdownEntry[];
+        sessionId?: string;
       };
     }>;
     progressCalls: Array<{
@@ -391,7 +392,11 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
   } {
     const completeCalls: Array<{
       outcome: "completed" | "failed";
-      opts?: { error?: string; modelBreakdown?: ModelBreakdownEntry[] };
+      opts?: {
+        error?: string;
+        modelBreakdown?: ModelBreakdownEntry[];
+        sessionId?: string;
+      };
     }> = [];
     const progressCalls: Array<{
       runId: string | null;
@@ -456,7 +461,11 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
       onProgress?: ProgressCallback,
     ): Promise<ClaudeRunResult> => {
       onProgress?.(makeUsage());
-      return { result: "done", modelUsage: makeUsage() };
+      return {
+        result: "done",
+        modelUsage: makeUsage(),
+        sessionId: "session-integration-completed",
+      };
     };
 
     let devTaskCalls = 0;
@@ -494,6 +503,10 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
     ]);
     expect(completeCalls).toHaveLength(1);
     expect(completeCalls[0]?.outcome).toBe("completed");
+    // CSI-2.3: runResult.sessionId reaches completeRun's opts on success.
+    expect(completeCalls[0]?.opts?.sessionId).toBe(
+      "session-integration-completed",
+    );
 
     // recordProgress fired before completeRun for this dispatch.
     expect(callOrder).toEqual(["recordProgress", "completeRun"]);
@@ -506,7 +519,12 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
 
     const partialUsage = makeUsage({ inputTokens: 10, outputTokens: 5 });
     const runner = async (): Promise<ClaudeRunResult> => {
-      throw new ClaudeTimeoutError(600_000, "ceiling", partialUsage);
+      throw new ClaudeTimeoutError(
+        600_000,
+        "ceiling",
+        partialUsage,
+        "session-integration-timeout",
+      );
     };
 
     // Only offer the candidate once — mirrors production, where a
@@ -554,5 +572,77 @@ describe("loop-orchestrator + progress push / partial-usage-on-failure (CSU-3.1)
         costUsd: 0.42,
       },
     ]);
+    // CSI-2.3: err.sessionId (ClaudeTimeoutError) reaches completeRun's opts
+    // on the failure path.
+    expect(completeCalls[0]?.opts?.sessionId).toBe(
+      "session-integration-timeout",
+    );
+  });
+
+  test("a [silent]-marker dispatch forwards runResult.sessionId to skipRun's opts (CSI-2.3)", async () => {
+    const devTaskCandidates = [task("SWC-2.3", "2026-01-01T00:00:00Z")];
+    const skipCalls: Array<{
+      skipReason: string;
+      opts?: { sessionId?: string };
+    }> = [];
+    const { reporter } = makeRecordingReporter();
+    const trackedReporter: CronRunReporter = {
+      ...reporter,
+      async skipRun(
+        cronId,
+        runId,
+        completedAt,
+        skipReason,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      ) {
+        skipCalls.push({ skipReason, opts });
+        await reporter.skipRun(
+          cronId,
+          runId,
+          completedAt,
+          skipReason,
+          opts,
+          phaseId,
+          itemType,
+          itemId,
+        );
+      },
+    };
+
+    let devTaskCalls = 0;
+    const runner = async (): Promise<ClaudeRunResult> => {
+      devTaskCalls += 1;
+      return {
+        result: "Nothing to do here.\n[silent]",
+        sessionId: "session-integration-skipped",
+      };
+    };
+
+    const loop = createLoopOrchestrator({
+      getDevTaskCandidates: async () =>
+        devTaskCalls === 0 ? devTaskCandidates : [],
+      getReviewCandidates: async () => [],
+      getPatchCandidates: async () => [],
+      getDeployCandidates: async () => [],
+      claimTask: async () => true,
+      claimPr: async (p) => ({ id: p.id, commitSha: p.commitSha }),
+      recordSkip: async () => {},
+      resetSkip: async () => {},
+      runner,
+      cronRunReporter: trackedReporter,
+      workQueueReporter: noopWorkQueueReporter,
+      loopCronId: "shipwright-loop",
+      clock: FixedClock(new Date("2026-07-20T00:00:00Z")),
+    });
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skipCalls).toHaveLength(1);
+    expect(skipCalls[0]?.opts?.sessionId).toBe(
+      "session-integration-skipped",
+    );
   });
 });
