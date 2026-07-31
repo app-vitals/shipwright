@@ -184,11 +184,36 @@ otherwise report that no dispatch history exists.
 
 ### 1c. From the resolved run to a transcript
 
-Once you have the run's exact `startedAt` (name+time mode: `RUN_STARTED_AT`;
-item mode: each entry in `ITEM_RUNS`), use it as a **tight window** — a few
-minutes, not ±90 — around the transcript directory's file mtimes in 3b,
-since this is now a known exact event time rather than a guess. The transcript
-directory itself is still resolved the same way (see 3b).
+Once you have the resolved run (name+time mode: `BEST_RUN`; item mode: each
+entry in `ITEM_RUNS`), check its `sessionId` field first — this is the exact
+Claude session id the run recorded, not a guess:
+
+```bash
+SESSION_ID=$(echo "$BEST_RUN" | jq -r '.sessionId // empty')  # or per-entry in ITEM_RUNS
+```
+
+**If `sessionId` is non-null**, skip the mtime-window search entirely and
+construct the transcript path directly — no scanning or matching required:
+
+```bash
+TRANSCRIPT_PATH="$TRANSCRIPT_DIR/$SESSION_ID.jsonl"
+if [ -f "$TRANSCRIPT_PATH" ]; then
+  echo "Transcript resolved directly via sessionId: $TRANSCRIPT_PATH"
+else
+  echo "Run has sessionId=$SESSION_ID but no matching .jsonl file exists at $TRANSCRIPT_PATH — the transcript may have been pruned. Fall back to the mtime-window search (3b) as a best-effort recovery."
+fi
+```
+
+`$TRANSCRIPT_DIR` is derived from the CWD exactly as described in 3b — that
+derivation is shared by both this direct path and the fallback below, so run
+it once regardless of which path you end up taking.
+
+**If `sessionId` is null** — the run predates CSI-3.1 (session-id recording),
+or the CLI produced no stdout at all for that invocation — fall back to Step
+3b's existing tight mtime-window search around the run's exact `startedAt`
+(name+time mode: `RUN_STARTED_AT`; item mode: the entry's own `startedAt`).
+That fallback logic is unchanged; see **"When sessionId is null: mtime-window
+fallback"** in 3b.
 
 ---
 
@@ -431,10 +456,15 @@ If the directory doesn't exist or contains no `.jsonl` files, it means this
 workspace has no Claude Code session history at this path. Verify the CWD is
 the agent workspace root.
 
-**With an admin-API run resolved (preferred path):** you have an exact
-`startedAt` for the run (Step 1c). Use a tight window (e.g. ±5 minutes) around
-that timestamp against the `.jsonl` file mtimes to find the matching transcript
-— this is a precision narrowing step now, not the primary matching mechanism.
+**When `sessionId` is null: mtime-window fallback.** Step 1c's direct
+`$TRANSCRIPT_DIR/$SESSION_ID.jsonl` lookup is the preferred path whenever the
+resolved run carries a non-null `sessionId` — this section only applies when
+it doesn't (runs that predate CSI-3.1, or a CLI invocation that produced no
+stdout). In that case you still have an exact `startedAt` for the run (Step
+1c). Use a tight window (e.g. ±5 minutes) around that timestamp against the
+`.jsonl` file mtimes to find the matching transcript — this is a precision
+narrowing step, not an exact match, which is why it's the fallback rather than
+the primary matching mechanism now that `sessionId` is available.
 `startedAt` is ISO 8601 (e.g. `2026-07-21T01:11:46.391Z`) — convert it to epoch
 seconds first (in item mode, repeat this per entry in `ITEM_RUNS`):
 
@@ -740,7 +770,10 @@ Produce a plain-language explanation covering:
    mode, list every phase that dispatched against the item
 2. **Time** — when the session fired (from the resolved run's `startedAt`, or the
    JSONL mtime/first entry timestamp when using the fallback path)
-3. **Session ID** — the JSONL filename (without `.jsonl`), for cross-referencing logs
+3. **Session ID** — the resolved run's `sessionId` field from the admin API record when
+   available (Step 1c's direct lookup), falling back to the JSONL filename (without
+   `.jsonl`) matched via the mtime window when `sessionId` is null — either way, this is
+   for cross-referencing logs
 4. **What it did** — summarize the bash commands and assistant reasoning in 2–5 sentences
 5. **Conclusion** — what the cron decided and why (approved, skipped, silenced, errored)
 6. **Why (if unexpected)** — if the behavior was surprising, explain the root cause
@@ -819,6 +852,11 @@ grep -i "precheck\|pre-check\|cron" logs/bodhi.log | tail -50
 - Prefer the admin-API path (Step 1) over the fallback whenever the admin API is
   reachable and returns run records — it gives an exact `startedAt` instead of a guess,
   and item mode is only possible through it.
+- The admin API is now the exact source for session id too, not just `startedAt`: a
+  resolved run's `sessionId` field (when non-null) points directly at
+  `$TRANSCRIPT_DIR/$SESSION_ID.jsonl` (Step 1c) — no mtime-window search needed. The
+  ±5 minute mtime-window match in 3b is now only a fallback for runs where `sessionId`
+  is null (pre-CSI-3.1 runs, or a CLI invocation with no stdout).
 - Prefer the ground-truth snapshot (Step 2) over transcript extraction whenever it alone
   answers the question — it's cheaper and doesn't require a matching session to exist at
   all. Fall through to Steps 3–5 only when live state is inconclusive.
