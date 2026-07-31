@@ -26,6 +26,7 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
+import type { PullRequest } from "../index.ts";
 import {
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
@@ -38,7 +39,6 @@ import {
   PullRequestSchema,
   UpdatePrBodySchema,
 } from "../openapi-schemas.ts";
-import type { PullRequest } from "../index.ts";
 import type { PullRequestServiceLike } from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -490,8 +490,8 @@ export function createPrsRoutes(
   //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
   //   the review/patch/deploy skills to record when a PR enters each phase
   //
-  // PR-level HITL (blocks automation on a PR with no linked Task):
-  //   hitl, hitlNotifiedAt, blockedReason
+  // PR-level block (blocks automation on a PR with no linked Task):
+  //   blocked, blockedReason
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -505,8 +505,7 @@ export function createPrsRoutes(
     "readyForReviewAt",
     "readyForPatchAt",
     "readyForDeployAt",
-    "hitl",
-    "hitlNotifiedAt",
+    "blocked",
     "blockedReason",
   ];
 

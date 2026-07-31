@@ -7,8 +7,8 @@
  * Tests written BEFORE the implementation to drive the conversion.
  */
 
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { ApiError, BadRequestError } from "../errors.ts";
 import type { Task } from "../index.ts";
@@ -50,7 +50,6 @@ function makeTask(overrides: Partial<Task> = {}): Task {
     model: null,
     complexity: null,
     hitl: null,
-    hitlNotifiedAt: null,
     claimedBy: null,
     agentHint: null,
     claimedAt: null,
@@ -84,6 +83,7 @@ function fakeTaskService(
     tasks?: Task[];
     onList?: (filters: unknown) => void;
     onBulk?: (tasks: unknown) => void;
+    onUpdate?: (id: string, data: unknown) => void;
   } = {},
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
@@ -111,6 +111,7 @@ function fakeTaskService(
       return makeTask({ ...(data as Partial<Task>), id: "created-1" });
     },
     async update(id, data) {
+      opts.onUpdate?.(id, data);
       return makeTask({ ...(data as Partial<Task>), id });
     },
     async remove() {
@@ -641,5 +642,78 @@ describe("PATCH /:id — lifecycle field guard (TPL-1.1)", () => {
       body: JSON.stringify({ claimedBy: "agent-2" }),
     });
     expect(res.status).toBe(200);
+  });
+});
+
+describe("PATCH /:id — blocked/requiresHumanApproval split (HSR-1.6)", () => {
+  it("accepts 'requiresHumanApproval' and passes it through to the service update", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onUpdate: (_id, data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requiresHumanApproval: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(received?.requiresHumanApproval).toBe(true);
+  });
+
+  it("does not 500 when 'hitlNotifiedAt' is sent, and never forwards it to the service update", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onUpdate: (_id, data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        note: "still writable",
+        hitlNotifiedAt: new Date().toISOString(),
+      }),
+    });
+    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(200);
+    expect(received).toBeDefined();
+    expect("hitlNotifiedAt" in (received ?? {})).toBe(false);
+  });
+
+  it("leaves 'hitl' writable (Task.hitl is unchanged)", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onUpdate: (_id, data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hitl: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(received?.hitl).toBe(true);
   });
 });

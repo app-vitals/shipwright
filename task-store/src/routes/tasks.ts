@@ -100,6 +100,21 @@ function assertNoLifecycleFieldWrite(
   }
 }
 
+// Fields that were removed from the Task model and must never reach
+// prisma.task.update() — Prisma throws an "unknown argument" validation error
+// for a column that no longer exists, which the app's onError surfaces as a raw
+// 500 instead of a clean response. Strip them from the incoming body so a client
+// still sending the old field gets the same silently-ignored outcome that the
+// prs.ts PATCH allowlist gives non-writable fields.
+//   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
+const REMOVED_TASK_FIELDS = ["hitlNotifiedAt"] as const;
+
+function stripRemovedFields(body: Record<string, unknown>): void {
+  for (const key of REMOVED_TASK_FIELDS) {
+    delete body[key];
+  }
+}
+
 // repos === null means admin token — bypass scope check; still enforce format.
 function validateRepo(repo: unknown, repos: string[] | null): void {
   if (repo === undefined || repo === null) return;
@@ -718,6 +733,7 @@ export function createTasksRoutes(
       repos ?? [],
     );
     const body = await readJson(c);
+    stripRemovedFields(body);
     assertNoLifecycleFieldWrite(body, agentId);
     validateRepo(body.repo, agentId !== null ? repos : null);
     // Prevent agent tokens from reassigning tasks outside their ownership scope.

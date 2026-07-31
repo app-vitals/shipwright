@@ -1107,25 +1107,22 @@ describe("/prs routes (smoke)", () => {
     expect(body.readyForDeployAt).toBe(readyAt);
   });
 
-  it("PATCH /prs/:id updates hitl, hitlNotifiedAt, and blockedReason", async () => {
+  it("PATCH /prs/:id updates blocked and blockedReason", async () => {
     const store = new Map<string, PullRequest>();
-    store.set("pr-1", makePr({ id: "pr-1", hitl: false }));
+    store.set("pr-1", makePr({ id: "pr-1", blocked: false }));
     const app = makeApp({ prService: fakePrService({ store }) });
 
-    const notifiedAt = "2026-07-20T00:00:00.000Z";
     const res = await app.request("/prs/pr-1", {
       method: "PATCH",
       headers: { ...adminAuth(), "content-type": "application/json" },
       body: JSON.stringify({
-        hitl: true,
-        hitlNotifiedAt: notifiedAt,
+        blocked: true,
         blockedReason: "no linked task",
       }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequest;
-    expect(body.hitl).toBe(true);
-    expect(body.hitlNotifiedAt).toBe(notifiedAt);
+    expect(body.blocked).toBe(true);
     expect(body.blockedReason).toBe("no linked task");
   });
 
@@ -1203,7 +1200,10 @@ describe("/prs routes (smoke)", () => {
 
   it("POST /prs/:id/skip increments skipCount and sets lastSkippedAt", async () => {
     const store = new Map<string, PullRequest>();
-    store.set("pr-1", makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }));
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }),
+    );
     const app = makeApp({ prService: fakePrService({ store }) });
 
     const res = await app.request("/prs/pr-1/skip", {
@@ -1220,7 +1220,11 @@ describe("/prs routes (smoke)", () => {
     const store = new Map<string, PullRequest>();
     store.set(
       "pr-1",
-      makePr({ id: "pr-1", skipCount: 2, lastSkippedAt: new Date().toISOString() }),
+      makePr({
+        id: "pr-1",
+        skipCount: 2,
+        lastSkippedAt: new Date().toISOString(),
+      }),
     );
     const app = makeApp({ prService: fakePrService({ store }) });
 
