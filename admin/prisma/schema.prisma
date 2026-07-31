@@ -176,6 +176,7 @@ model AgentCronRun {
                                 // null when the tick had no dispatch (skipped tick, empty queue)
   itemId             String?   // work item id this run was dispatched against (e.g. "WLS-2.2" or
                                 // "acme/x#123"); null when the tick had no dispatch
+  sessionId          String?   // Claude session id this cron run corresponds to
   createdAt          DateTime  @default(now())
 
   // Secondary/denormalized pointer to the phase cron (a child AgentCronJob)

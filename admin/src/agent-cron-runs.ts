@@ -67,6 +67,8 @@ export interface PatchAgentCronRunInput {
   outputTokens?: number | null;
   cacheReadTokens?: number | null;
   cacheCreationTokens?: number | null;
+  /** Agent session id this run was executed under. Null clears it. */
+  sessionId?: string | null;
   modelBreakdown?: ModelBreakdownEntry[];
 }
 
@@ -180,6 +182,7 @@ export class AgentCronRunService {
       ...(input.error !== undefined && { error: input.error }),
       ...(input.skipped !== undefined && { skipped: input.skipped }),
       ...(input.skipReason !== undefined && { skipReason: input.skipReason }),
+      ...(input.sessionId !== undefined && { sessionId: input.sessionId }),
     };
 
     if (input.modelBreakdown && input.modelBreakdown.length > 0) {

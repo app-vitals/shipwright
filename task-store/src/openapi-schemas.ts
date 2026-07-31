@@ -517,6 +517,7 @@ export const DistinctResponseSchema = z
   .object({
     sessions: z.array(z.string()).openapi({ example: ["session-1"] }),
     repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    orgs: z.array(z.string()).openapi({ example: ["org"] }),
   })
   .openapi("DistinctResponse");
 
@@ -544,7 +545,22 @@ export const PrIdParamSchema = z
 
 export const PrListQuerySchema = z
   .object({
-    repo: z.string().optional().openapi({ example: "org/repo" }),
+    repo: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org/repo",
+        description:
+          "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
+      }),
+    org: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org",
+        description:
+          "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
+      }),
     prNumber: z
       .string()
       .optional()

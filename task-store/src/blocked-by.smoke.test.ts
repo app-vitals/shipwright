@@ -175,7 +175,7 @@ function fakeTaskService(
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct(_agentId?) {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
