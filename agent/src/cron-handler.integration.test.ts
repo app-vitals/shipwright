@@ -11,6 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import type { WebClient } from "@slack/web-api";
 import {
+  ClaudeRunError,
   type ClaudeRunResult,
   ClaudeTimeoutError,
   type ModelUsage,
@@ -58,7 +59,11 @@ function makeRecordingReporter(): {
   reporter: CronRunReporter;
   completeCalls: Array<{
     outcome: "completed" | "failed";
-    opts?: { error?: string; modelBreakdown?: ModelBreakdownEntry[] };
+    opts?: {
+      error?: string;
+      modelBreakdown?: ModelBreakdownEntry[];
+      sessionId?: string;
+    };
   }>;
   progressCalls: Array<{
     runId: string | null;
@@ -67,7 +72,11 @@ function makeRecordingReporter(): {
 } {
   const completeCalls: Array<{
     outcome: "completed" | "failed";
-    opts?: { error?: string; modelBreakdown?: ModelBreakdownEntry[] };
+    opts?: {
+      error?: string;
+      modelBreakdown?: ModelBreakdownEntry[];
+      sessionId?: string;
+    };
   }> = [];
   const progressCalls: Array<{
     runId: string | null;
@@ -227,5 +236,195 @@ describe("handleCronRequest + progress push / partial-usage-on-failure (CSU-3.2)
 
     expect(progressCalls).toHaveLength(1);
     expect(progressCalls[0]?.modelBreakdown?.[0]?.inputTokens).toBe(10);
+  });
+});
+
+// ─── sessionId wired into completeRun (CSI-2.2) ─────────────────────────────
+
+describe("handleCronRequest + sessionId wiring into completeRun (CSI-2.2)", () => {
+  test("a completed non-silent channel-post run's completeRun opts include the runResult's sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      return {
+        result: "done",
+        sessionId: "session-channel-1",
+        modelUsage: makeUsage(),
+      };
+    };
+
+    await handleCronRequest(
+      { jobId: "channel-job", prompt: "hello", channel: "C-X" },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-channel-1");
+  });
+
+  test("a completed DM-post run's completeRun opts include the runResult's sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      return {
+        result: "done",
+        sessionId: "session-dm-1",
+        modelUsage: makeUsage(),
+      };
+    };
+
+    await handleCronRequest(
+      { jobId: "dm-job", prompt: "hello", user: "U-X" },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-dm-1");
+  });
+
+  test("a silent (req.silent) run's completeRun opts include the runResult's sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      return {
+        result: "done",
+        sessionId: "session-silent-1",
+        modelUsage: makeUsage(),
+      };
+    };
+
+    await handleCronRequest(
+      { jobId: "silent-job", prompt: "hello", silent: true },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-silent-1");
+  });
+
+  test("a run whose result carries a [silent] marker (isSilentMarker && !isDmOnly) has completeRun opts include the runResult's sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      return {
+        result: "done [silent]",
+        sessionId: "session-silent-marker-1",
+        modelUsage: makeUsage(),
+      };
+    };
+
+    await handleCronRequest(
+      { jobId: "silent-marker-job", prompt: "hello", channel: "C-X" },
+      {
+        slack: mockSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-silent-marker-1");
+  });
+
+  test("a thrown ClaudeTimeoutError carrying a sessionId results in completeRun's failed call carrying that sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeTimeoutError(
+        600_000,
+        "ceiling",
+        makeUsage(),
+        "session-timeout-1",
+      );
+    };
+
+    await expect(
+      handleCronRequest(
+        { jobId: "timeout-job", prompt: "hello", channel: "C-X" },
+        {
+          slack: mockSlack,
+          runner,
+          cronRunReporter: reporter,
+          clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+        },
+      ),
+    ).rejects.toThrow(ClaudeTimeoutError);
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("failed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-timeout-1");
+  });
+
+  test("a thrown ClaudeRunError carrying a sessionId results in completeRun's failed call carrying that sessionId", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new ClaudeRunError(
+        "boom",
+        undefined,
+        "resultMessage detail",
+        "session-run-error-1",
+      );
+    };
+
+    await expect(
+      handleCronRequest(
+        { jobId: "run-error-job", prompt: "hello", channel: "C-X" },
+        {
+          slack: mockSlack,
+          runner,
+          cronRunReporter: reporter,
+          clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+        },
+      ),
+    ).rejects.toThrow(ClaudeRunError);
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("failed");
+    expect(completeCalls[0]?.opts?.sessionId).toBe("session-run-error-1");
+  });
+
+  test("a thrown plain Error (no sessionId field) results in completeRun's failed call with sessionId undefined", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+
+    const runner = async (): Promise<ClaudeRunResult> => {
+      throw new Error("generic failure");
+    };
+
+    await expect(
+      handleCronRequest(
+        { jobId: "generic-error-job", prompt: "hello", channel: "C-X" },
+        {
+          slack: mockSlack,
+          runner,
+          cronRunReporter: reporter,
+          clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+        },
+      ),
+    ).rejects.toThrow("generic failure");
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("failed");
+    expect(completeCalls[0]?.opts?.sessionId).toBeUndefined();
   });
 });
