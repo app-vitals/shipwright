@@ -235,7 +235,7 @@ Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `l
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
 
-`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.hitl===true` OR its linked task (joined by `PullRequest.taskId`) has `hitl===true` or `status==='blocked'`. PRs with no taskId are evaluated on `pr.hitl` alone. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
+`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.blocked===true` OR its linked task (joined by `PullRequest.taskId`) has `status==='blocked'`. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
 
 `sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
@@ -304,7 +304,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
@@ -320,7 +320,7 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
 | `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
-| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
+| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
 | `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt` |
 
 #### PR state enums
@@ -331,13 +331,11 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
 
-`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
-
-`hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
+`blocked`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
 
 `blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
 
-`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
+`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
 
 `lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
 
