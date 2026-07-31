@@ -298,7 +298,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.112.0
+    tag: agent-v1.112.1
     pullPolicy: ""
   service:
     port: 3000
@@ -321,7 +321,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.112.0
+      tag: agent-v1.112.1
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -374,7 +374,8 @@ agent:
     # -- Master switch. Default false → nothing voice-related renders.
     enabled: false
     # -- STT provider: "whisper" (self-hosted pod) or "groq" (Groq cloud STT).
-    # TTS is always ElevenLabs (with an in-agent Piper TTS fallback when no key).
+    # TTS defaults to the self-hosted in-agent Piper binary; setting
+    # elevenlabs.apiKey below switches TTS to ElevenLabs for both providers.
     provider: whisper
     # -- Self-hosted Whisper ASR pod (used ONLY when provider=whisper). Renders a
     # Deployment + Service running onerahmet/openai-whisper-asr-webservice, whose

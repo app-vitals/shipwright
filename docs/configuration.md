@@ -187,7 +187,9 @@ Optional. When unset, voice transcription and synthesis are disabled.
 | `PIPER_VOICE` | `string` | `en_US-hfc_female-medium` | Piper voice to use for local (offline) speech synthesis. Validated at startup by discovery-based scan of the baked voices directory (`/app/agent/voices/`, hardcoded — not env-configurable); valid values depend entirely on what the image bakes. An unrecognized value logs loudly (naming the requested voice and every voice actually discovered) and falls back to the default rather than crashing. |
 | `WHISPER_SERVICE_URL` | `string` | — | URL of a Whisper transcription service for voice input. |
 
-On Kubernetes these env vars are a deploy-time option of the Helm chart rather than something you set by hand. Set `agent.voice.enabled=true` and `agent.voice.provider` (`whisper` | `groq`); the chart then injects the matching env into provisioned agent pods. With `provider=whisper` it renders a self-hosted Whisper ASR pod (`onerahmet/openai-whisper-asr-webservice`, reached at its `POST /asr` endpoint) and sets `WHISPER_SERVICE_URL` to its in-cluster Service. With `provider=groq` it flows `GROQ_API_KEY` from a chart-managed voice Secret. ElevenLabs TTS (`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`) applies to both providers. See the `agent.voice` block in `charts/shipwright/values.yaml`.
+TTS defaults to the self-hosted Piper binary baked into the agent image (no network call) — `synthesizeSpeech` in `agent/src/voice.ts` only calls ElevenLabs when `ELEVENLABS_API_KEY` is set, and falls back to Piper otherwise. So the zero-egress voice configuration is Whisper STT + no ElevenLabs key; setting `ELEVENLABS_API_KEY` (either provider) or `GROQ_API_KEY` (STT) each independently reintroduce network egress to that third party. See [`deploy-kubernetes.md`](./deploy-kubernetes.md#agent-voice-stttts) for the full egress matrix.
+
+On Kubernetes these env vars are a deploy-time option of the Helm chart rather than something you set by hand. Set `agent.voice.enabled=true` and `agent.voice.provider` (`whisper` | `groq`); the chart then injects the matching env into provisioned agent pods. With `provider=whisper` it renders a self-hosted Whisper ASR pod (`onerahmet/openai-whisper-asr-webservice`, reached at its `POST /asr` endpoint) and sets `WHISPER_SERVICE_URL` to its in-cluster Service. With `provider=groq` it flows `GROQ_API_KEY` from a chart-managed voice Secret. ElevenLabs TTS (`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID`) is opt-in and applies to both providers when set. See the `agent.voice` block in `charts/shipwright/values.yaml`.
 
 ### Dev-only
 
@@ -219,7 +221,7 @@ This is the write side (services reporting into Sentry). For the read side — t
 
 ## Policy Config
 
-Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block, automatically seeded from a template when the workspace is provisioned. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. Conservative defaults (e.g., `auto_post_reviews: false`) are set for safety on initial provisioning.
+Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file with a YAML front-matter block, automatically seeded from a template when the workspace is provisioned. Edit it directly to change review posting, merge permissions, and autonomy levels without reconfiguring crons or restarting the agent. `auto_post_reviews` defaults to `true` (reviews post to GitHub automatically) on initial provisioning; set it to `false` to stage reviews locally for owner approval instead.
 
 ### Fields
 

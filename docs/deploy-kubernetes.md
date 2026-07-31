@@ -488,11 +488,33 @@ Enable it with `agent.voice.enabled=true` and pick an STT provider:
   `GROQ_API_KEY` is stored in the chart-managed voice `Secret` and injected into
   the admin (and provisioned agents) via `secretKeyRef`.
 
-TTS is **ElevenLabs** for both providers (the agent falls back to the self-hosted
-**Piper TTS** binary baked into the image if no key is set). The ElevenLabs key +
+TTS defaults to **Piper** — a self-hosted binary baked into the agent image,
+invoked as a local subprocess (stdin in, WAV file out, no network call). Setting
+`agent.voice.elevenlabs.apiKey` opts into **ElevenLabs** cloud TTS instead, for
+both providers; the agent checks for that key at synthesis time and, if present,
+calls ElevenLabs over the network instead of spawning Piper. The ElevenLabs key +
 optional voice id and the Groq key live in the chart-managed voice `Secret`; Piper
-voice configuration (the voice name and optional voice ID) and non-secret values
-(the Whisper Service URL) are plain Deployment env.
+voice configuration (`PIPER_VOICE` — the voice name) and non-secret values (the
+Whisper Service URL) are plain Deployment env.
+
+### Zero-egress vs. opt-in egress
+
+Voice can run **fully self-hosted, with no third-party network calls**, or you
+can opt into cloud providers for either leg independently:
+
+| STT (speech-to-text) | TTS (text-to-speech) | Egress? |
+|---|---|---|
+| `provider: whisper` (self-hosted Whisper pod) | Piper (default — `agent.voice.elevenlabs.apiKey` unset) | **None.** Both legs stay in-cluster/in-pod. |
+| `provider: whisper` (self-hosted Whisper pod) | ElevenLabs (`agent.voice.elevenlabs.apiKey` set) | TTS only — every spoken reply is sent to `api.elevenlabs.io`. |
+| `provider: groq` (Groq cloud STT) | Piper (default) | STT only — every voice note is sent to Groq's API. |
+| `provider: groq` (Groq cloud STT) | ElevenLabs (`agent.voice.elevenlabs.apiKey` set) | Both legs — voice notes to Groq, replies to ElevenLabs. |
+
+So the zero-egress configuration is: `agent.voice.enabled=true`,
+`agent.voice.provider=whisper`, and `agent.voice.elevenlabs.apiKey` left empty
+(the default). Setting `agent.voice.provider=groq` or populating
+`agent.voice.elevenlabs.apiKey` each independently reintroduce egress to that
+respective third party — you can mix and match (e.g. self-hosted STT with cloud
+TTS) since the two legs are selected independently.
 
 > Voice env reaches provisioned agent pods through the admin provisioner:
 > `agent.voice.*` → admin Deployment env → `admin/src/main.ts` `buildProvisioner`

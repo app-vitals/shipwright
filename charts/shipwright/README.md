@@ -113,8 +113,8 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.provisioning.persistence.storageClass` | `""` | Agent PVC StorageClass (cluster default if empty). |
 | `agent.provisioning.homePath` | `/data/agent-home` | Mount path for the agent persistent home. |
 | `agent.voice.enabled` | `false` | Master switch for agent voice (STT/TTS). Off = no Whisper pod/Service/Secret and no voice env (provisioned agents keep the 3 base vars). |
-| `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is always ElevenLabs. |
-| `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:latest` | Whisper ASR image (exposes `POST /asr`). Pin a concrete tag in production. |
+| `agent.voice.provider` | `whisper` | STT provider: `whisper` (self-hosted ASR pod) \| `groq` (Groq cloud STT). TTS is Piper (self-hosted, in-image) unless `agent.voice.elevenlabs.apiKey` is set, in which case ElevenLabs is used instead for both providers. |
+| `agent.voice.whisper.image` | `onerahmet/openai-whisper-asr-webservice:v1.3.0` | Whisper ASR image (exposes `POST /asr`). Already pinned to a tested tag — do not float to `:latest`. |
 | `agent.voice.whisper.service.port` | `9000` | In-cluster Whisper Service port → `WHISPER_SERVICE_URL`. |
 | `agent.voice.whisper.model` | `""` | ASR model name → `ASR_MODEL` (e.g. `tiny`, `base`, `small`, `medium`, `large-v3`, `tiny.en`). Empty = no env var set, image default model is used. |
 | `agent.voice.whisper.resources` | `{}` | Whisper container resources (empty = no limits). |
