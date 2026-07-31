@@ -4052,6 +4052,7 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
     expect(html).toContain("<th>Item</th>");
+    expect(html).toContain("<th>Session</th>");
     expect(html).toContain("<th>Detail</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
@@ -4297,7 +4298,9 @@ describe("renderCronLogsPage", () => {
       }),
     ]);
     // The outcome badge (first title attribute in the row) should show skipReason.
-    const badgeMatch = html.match(/<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/);
+    const badgeMatch = html.match(
+      /<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/,
+    );
     expect(badgeMatch).not.toBeNull();
     expect(badgeMatch?.[1]).toBe("Rate limit exceeded");
   });
@@ -4451,9 +4454,73 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain(`<span title="${longError}">${longError}</span>`);
   });
 
-  test("empty-state colspan updates from 8 to 9 for the new Detail column", () => {
+  test("empty-state colspan updates from 9 to 10 for the new Session column", () => {
     const html = render([]);
-    expect(html).toContain('colspan="9"');
+    expect(html).toContain('colspan="10"');
+  });
+
+  // ─── Session column ────────────────────────────────────────────────────────────
+
+  test("renders the Session column header", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("<th>Session</th>");
+  });
+
+  test("renders a truncated sessionId (first 8 chars) with the full id in a title= tooltip", () => {
+    const html = render([makeRun({ sessionId: "session-123456789abcdef" })]);
+    // Should render first 8 chars: "session-"
+    expect(html).toContain('title="session-123456789abcdef"');
+    // Must have a monospace cell with truncated value
+    expect(html).toMatch(
+      /<span[^>]*class="[^"]*mono[^"]*"[^>]*title="session-123456789abcdef"[^>]*>session-<\/span>/,
+    );
+  });
+
+  test("renders an em-dash when sessionId is null", () => {
+    const html = render([makeRun({ sessionId: null })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash (should have 9 columns as per the new table)
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders an em-dash when sessionId is undefined", () => {
+    const html = render([makeRun({ sessionId: undefined })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders an em-dash when sessionId is an empty string", () => {
+    const html = render([makeRun({ sessionId: "" })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("table has a Session column header in the table header row", () => {
+    const html = render([makeRun()]);
+    // Extract the table header row
+    const theadMatch = html.match(/<thead>([\s\S]*?)<\/thead>/);
+    expect(theadMatch).not.toBeNull();
+    // Count <th> elements within the thead
+    const headers = theadMatch?.[1].match(/<th[^>]*>/g);
+    expect(headers?.length).toBe(10);
+  });
+
+  test("escapes XSS in sessionId within the title attribute", () => {
+    const html = render([
+      makeRun({
+        sessionId: '"><script>alert(99)</script>',
+      }),
+    ]);
+    expect(html).not.toContain("<script>alert(99)</script>");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 
