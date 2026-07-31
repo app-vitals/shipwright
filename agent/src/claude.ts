@@ -550,6 +550,27 @@ export function createRunClaude(
     }
   }
 
+  /**
+   * Persist whatever session id a FAILED attempt still managed to capture.
+   * ClaudeRunError/ClaudeTimeoutError can both carry a `sessionId` — the CLI
+   * may have already created a real session (and transcript file) before
+   * erroring or timing out. Without this, a first-message failure leaves
+   * `sessions` empty even though a resumable session exists, so the next
+   * reply on the same Slack thread starts a brand-new, context-free session
+   * instead of resuming. Purely a side effect — never affects control flow.
+   */
+  async function _saveSessionFromError(
+    sessionKey: string | undefined,
+    err: unknown,
+  ) {
+    if (!sessionKey) return;
+    if (!(err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError))
+      return;
+    if (err.sessionId) {
+      await sessions.set(sessionKey, err.sessionId);
+    }
+  }
+
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
@@ -566,6 +587,11 @@ export function createRunClaude(
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
+      // The initial attempt failed — save whatever session id it captured
+      // before deciding whether to retry, so even a non-retried (or
+      // retry-ineligible) failure still leaves a resumable mapping behind.
+      await _saveSessionFromError(sessionKey, err);
+
       // Retry the same resumed session once: transient blips (e.g. a socket
       // close) can self-heal on a second attempt without losing conversation
       // context. Do NOT catch ClaudeTimeoutError — that means the session
@@ -579,7 +605,10 @@ export function createRunClaude(
           const output = await _spawn(args, perCallOnProgress);
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
-        } catch {
+        } catch (retryErr) {
+          // The retry also failed — overwrite with its own most-recently-known
+          // session id (if any), then still rethrow the ORIGINAL error.
+          await _saveSessionFromError(sessionKey, retryErr);
           sentryClient?.captureException(err);
           throw err;
         }
