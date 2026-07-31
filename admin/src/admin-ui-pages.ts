@@ -2767,7 +2767,8 @@ export function renderSessionDetailPage(
 export function renderPrsPage(
   prs: PrListItem[],
   filters: {
-    repo?: string;
+    repo?: string | string[];
+    org?: string | string[];
     state?: string;
     reviewState?: string;
     taskId?: string;
@@ -2782,7 +2783,7 @@ export function renderPrsPage(
     page: 1,
   },
   timezone = "America/Los_Angeles",
-  suggestions?: { repos?: string[] },
+  suggestions?: { repos?: string[]; orgs?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -2857,7 +2858,8 @@ export function renderPrsPage(
   const makeTabParams = (tabState: string): string => {
     const p = new URLSearchParams();
     p.set("state", tabState);
-    if (filters.repo) p.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) p.append("repo", r);
+    for (const o of toFilterArray(filters.org)) p.append("org", o);
     if (filters.taskId) p.set("taskId", filters.taskId);
     if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
@@ -2867,7 +2869,8 @@ export function renderPrsPage(
     const p = new URLSearchParams();
     p.set("state", "open");
     p.set("blocked", "true");
-    if (filters.repo) p.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) p.append("repo", r);
+    for (const o of toFilterArray(filters.org)) p.append("org", o);
     if (filters.taskId) p.set("taskId", filters.taskId);
     if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
@@ -2904,7 +2907,8 @@ export function renderPrsPage(
     const params = new URLSearchParams();
     if (filters.state) params.set("state", filters.state);
     if (filters.reviewState) params.set("reviewState", filters.reviewState);
-    if (filters.repo) params.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) params.append("repo", r);
+    for (const o of toFilterArray(filters.org)) params.append("org", o);
     if (filters.taskId) params.set("taskId", filters.taskId);
     if (filters.blocked) params.set("blocked", filters.blocked);
     if (p > 1) params.set("page", String(p));
@@ -2949,11 +2953,10 @@ export function renderPrsPage(
     ${degradedHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" ${suggestions?.repos?.length ? 'list="prs-repos-list"' : ""} />
-          ${suggestions?.repos?.length ? `<datalist id="prs-repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}"></option>`).join("")}</datalist>` : ""}
-        </div>
+        ${renderRepoOrgFilterFields(
+          { org: filters.org, repo: filters.repo },
+          { orgs: suggestions?.orgs, repos: suggestions?.repos },
+        )}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">State</label>
           <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
