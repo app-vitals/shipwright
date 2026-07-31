@@ -182,12 +182,19 @@ export async function getReviewCandidates(
     if (pr.labels?.some((l) => l.name === "automated")) continue;
 
     // Requested-reviewer inclusion (RRR-1.1) — an additive path layered on
-    // top of the two identity-based exclusions below: when the agent's own
-    // GitHub identity is listed as a requested reviewer on this PR, it stays
-    // eligible even if it would otherwise be excluded as self-authored or as
-    // a not-allowlisted author. All other exclusions (draft, dependabot,
-    // automated label above; live-review dedup, task-store dedup, hitl/
-    // blocked, bundle-incomplete below) still apply unconditionally.
+    // top of the self-review exclusion only: when the agent's own GitHub
+    // identity is listed as a requested reviewer on this PR, it stays
+    // eligible even if it would otherwise be excluded as self-authored. This
+    // deliberately does NOT extend to the author-allowlist exclusion below:
+    // reviewRequests is populated via GitHub's "Request a reviewer" action,
+    // which any author with repo write access can trigger (including on
+    // their own PR) — since GitHub doesn't surface who added a given
+    // request, an excluded author could otherwise self-request the agent as
+    // reviewer to unilaterally defeat the allowlist. The allowlist is a
+    // real access boundary, so it applies unconditionally. All other
+    // exclusions (draft, dependabot, automated label above; live-review
+    // dedup, task-store dedup, hitl/blocked, bundle-incomplete below) also
+    // still apply unconditionally.
     const isRequestedReviewer =
       pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
 
@@ -197,11 +204,7 @@ export async function getReviewCandidates(
       !isRequestedReviewer
     )
       continue;
-    if (
-      deps.isAuthorAllowed &&
-      !deps.isAuthorAllowed(pr.author.login) &&
-      !isRequestedReviewer
-    )
+    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
       continue;
 
     let record: PrRecord | null = null;
