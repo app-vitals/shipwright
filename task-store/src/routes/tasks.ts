@@ -566,6 +566,7 @@ export function createTasksRoutes(
       const tasks = await taskService.listBlocked(
         agentId ?? undefined,
         repos !== null ? repos : undefined,
+        c.req.query("sort") === "desc" ? "desc" : undefined,
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
