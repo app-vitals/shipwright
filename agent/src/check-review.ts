@@ -71,6 +71,7 @@ export interface PrInfo {
   isDraft: boolean;
   labels?: { name: string }[];
   createdAt?: string;
+  reviewRequests?: { login?: string }[];
 }
 
 export interface PrRecord {
@@ -179,8 +180,28 @@ export async function getReviewCandidates(
     if (pr.isDraft) continue;
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
-    if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
-    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
+
+    // Requested-reviewer inclusion (RRR-1.1) — an additive path layered on
+    // top of the two identity-based exclusions below: when the agent's own
+    // GitHub identity is listed as a requested reviewer on this PR, it stays
+    // eligible even if it would otherwise be excluded as self-authored or as
+    // a not-allowlisted author. All other exclusions (draft, dependabot,
+    // automated label above; live-review dedup, task-store dedup, hitl/
+    // blocked, bundle-incomplete below) still apply unconditionally.
+    const isRequestedReviewer =
+      pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
+
+    if (
+      !deps.isSelfReviewAllowed &&
+      pr.author.login === currentUser &&
+      !isRequestedReviewer
+    )
+      continue;
+    if (
+      deps.isAuthorAllowed &&
+      !deps.isAuthorAllowed(pr.author.login) &&
+      !isRequestedReviewer
+    )
       continue;
 
     let record: PrRecord | null = null;
@@ -360,7 +381,7 @@ export async function buildProductionDeps(opts: {
           "--repo",
           repo,
           "--json",
-          "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt",
+          "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
         ]);
         return repoPrs.map((pr) => ({ ...pr, repo }));
       });

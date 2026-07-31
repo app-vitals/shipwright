@@ -715,6 +715,86 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // ─── requested-reviewer inclusion (RRR-1.1) ──────────────────────────────
+
+  test("a self-authored PR is included when isSelfReviewAllowed is false but currentUser is a requested reviewer", async () => {
+    const pr = makePr({
+      author: { login: "bodhi-agent" },
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => null, "bodhi-agent", false),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("an allowlist-excluded author's PR is included when currentUser is a requested reviewer", async () => {
+    const pr = makePr({
+      author: { login: "danmcaulay" },
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("requested-reviewer status does not override the unconditional draft exclusion", async () => {
+    const pr = makePr({
+      isDraft: true,
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toEqual([]);
+  });
+
+  test("requested-reviewer status does not override the unconditional dependabot exclusion", async () => {
+    const pr = makePr({
+      author: { login: "app/dependabot" },
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toEqual([]);
+  });
+
+  test("requested-reviewer status does not override the unconditional hitl-blocked exclusion", async () => {
+    const pr = makePr({
+      author: { login: "bodhi-agent" },
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "pr_open", hitl: true }),
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("a self-authored PR with no reviewRequests (and isSelfReviewAllowed false) is still excluded (regression guard)", async () => {
+    const pr = makePr({ author: { login: "bodhi-agent" } });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => null, "bodhi-agent", false),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("a self-authored PR whose reviewRequests does not include currentUser is still excluded (regression guard)", async () => {
+    const pr = makePr({
+      author: { login: "bodhi-agent" },
+      reviewRequests: [{ login: "someone-else" }],
+    });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => null, "bodhi-agent", false),
+    );
+    expect(result).toEqual([]);
+  });
+
   // ─── bundle completeness gate (RBG-1.1) ──────────────────────────────────
 
   test("excludes a PR when isBundleComplete resolves false for its branch", async () => {
