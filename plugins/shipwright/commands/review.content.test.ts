@@ -651,6 +651,27 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     // Should not introduce any new task-store PATCH/POST field for this gate.
     expect(gateBlock).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
   });
+
+  it("the review-body condition has no headRefOid restriction, matching patch.md's Step 3a exactly", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // Step 5.5's GraphQL query for `reviews` fetches no `commit { oid }` field (unlike
+    // Step 14's live-review precheck query), so there is no data to filter "at head"
+    // against. patch.md's actual Step 3a has no headRefOid restriction on reviews at
+    // all -- this gate must mirror that exactly, or it will silently miss real
+    // stale-but-unresolved findings from an earlier commit (RUC-1.1 review finding).
+    expect(gateBlock).not.toContain("at the current");
+    expect(gateBlock).not.toContain("current `headRefOid`");
+    expect(gateBlock).toContain(
+      'At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a\n  non-empty `body`, excluding:',
+    );
+  });
 });
 
 describe("review.md — Review Quality Rules reflect mechanical enforcement (RUC-1.1)", () => {

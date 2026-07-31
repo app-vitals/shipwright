@@ -525,8 +525,8 @@ fetched in Step 5.5:
 
 A PR has **unaddressed findings** when ANY of the following are true:
 - At least one review threads node has `isResolved == false` (any unresolved inline thread)
-- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` at the
-  current `headRefOid` has a non-empty `body`, excluding:
+- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
+  non-empty `body`, excluding:
   - a clean self-APPROVE (per `isCleanApproveBody`/CPF-2.1 — a review whose body starts with
     `APPROVE` or contains a `Verdict: APPROVE` label), and
   - a review addressed by a subsequent PR-author reply (per CPF-2.3 — the PR author posted a
