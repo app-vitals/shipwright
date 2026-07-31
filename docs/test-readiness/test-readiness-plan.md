@@ -53,7 +53,7 @@ pass, so there is nothing new for Phase 5 to queue at T-081 or beyond.
 | Integration | 60 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item | None — including this cycle's two new guard-condition cases (RCS-1.1/1.2/1.3, RDG-1.1), both landed with tests in the same commits as their fixes |
 | Smoke | 43 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None |
 | E2E | 20 `site/tests/*.spec.ts` + 3 `{admin,metrics}/e2e/*.e2e.ts` | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None at E2E; journey #5's integration-harness half is the one real gap (see below) |
-| Content | 35 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references}/*` | None — up from 28, tracking the `commands/` growth from 28→43 files |
+| Content | 35 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references}/*` | None — up from 28, tracking the `commands/` growth from 28→29 files |
 | Shell (unofficial 6th layer, new) | 2 `test-*.sh` bash assertion suites | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh` | None — coverage exists; only a documentation-completeness question is open (see Open risks) |
 
 **Total: 282 test files** (259 `bun test`-scanned + 20 `site/tests/*.spec.ts` + 3
@@ -279,13 +279,13 @@ T-079 (`generate-agent-type-schema.ts` coverage class-level decision — **deplo
   test couldn't be correctly authored without the design change. Flagging so whoever
   picks up T-080 checks this first rather than assuming either shape.
 - **Content-layer file count not independently re-verified this cycle beyond the new
-  `merge.content.test.ts`.** `plugins/shipwright/commands/` grew from 28 to 43 `.md`
-  files across recent cycles; Phase 1 batch-classifies these as content-covered by
-  established convention rather than confirming each new file individually. The
-  convention has held in every prior spot-check (including this cycle's explicit check of
-  `merge.md`/`merge.content.test.ts`), so this isn't scored as a gap, but a full
-  count-and-diff hasn't happened in several cycles — worth doing the next time Phase 1/3
-  has spare scope, before it compounds further.
+  `merge.content.test.ts`.** `plugins/shipwright/commands/` grew from 28 to 29 `.md`
+  files this cycle (one new file: `merge.md`); Phase 1 batch-classifies these as
+  content-covered by established convention rather than confirming each new file
+  individually. The convention has held in every prior spot-check (including this
+  cycle's explicit check of `merge.md`/`merge.content.test.ts`), so this isn't scored
+  as a gap, but a full count-and-diff hasn't happened in several cycles — worth doing
+  the next time Phase 1/3 has spare scope.
 - **The bash "shell" layer needs a formal documentation decision.** New this cycle:
   `.github/workflows/lib/chart-tag-utils.sh` / `chart-drift-check.sh` and their
   `test-*.sh` siblings are genuinely tested code units that fall entirely outside the
