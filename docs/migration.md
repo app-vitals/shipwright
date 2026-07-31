@@ -4,6 +4,22 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## New: `GET /tasks` `?org` filter and distinct `orgs` field
+
+**Version**: next (ORF-1.2)
+
+The task-store API now supports filtering tasks by organization prefix and returns distinct organizations in the distinct endpoint:
+
+- **`GET /tasks?org=<org>`** — filters tasks to only those whose `repo` field starts with `"<org>/"`. Combines with an existing `?repo=` filter as an AND condition (both narrow the result).
+- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`).
+- **`GET /tasks?ready=true`** and **`GET /tasks?state=blocked`** — support the same `?org` filter as the regular list endpoint.
+
+**For API callers**: The `?org` filter is purely additive. Existing queries without `?org` behave identically. The new `orgs` field in distinct responses is safe to ignore if your UI doesn't need it.
+
+**For TaskService implementations**: The `distinct()` method's return type has changed from `{ sessions: string[]; repos: string[] }` to `{ sessions: string[]; repos: string[]; orgs: string[] }`. If you override `distinct()`, update your implementation to compute and return the `orgs` array (extract unique organization prefixes from the `repos` array).
+
+---
+
 ## Breaking: `dev-task`/`review`/`patch`/`deploy` require `shipwright-loop` (or an explicit target)
 
 **Version**: next (WLS-6.1)
