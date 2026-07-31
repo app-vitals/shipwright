@@ -13,12 +13,10 @@ filter (repo prefix match, e.g. `"app-vitals"` matches any `repo` starting with 
 `TaskService.distinct()` now also returns a third field, `orgs: string[]` — the distinct
 organization prefixes extracted from the `repos` it already returns.
 
-- These filters are available today to in-process callers of `TaskService.list()`. The public
-  `GET /tasks` HTTP route is unchanged in this version — it still only wires through the
-  single-string `?repo=` query param; `?org=` is not yet an HTTP-exposed filter.
-- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`). This IS live over HTTP, since the route passes `TaskService.distinct()`'s result straight through.
+- **`GET /tasks` HTTP route** — now accepts repeatable `?repo=` and `?org=` query params. `?repo=` can be passed multiple times (e.g. `?repo=org/a&repo=org/b`) to match any repo in the list; a single `?repo=` behaves identically to before (exact match). `?org=` matches any repo whose `org/repo` string starts with the given org prefix (e.g. `?org=app-vitals`), and is also repeatable. Both filters combine via AND intersection when supplied together.
+- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`). This field is live over HTTP, since the route passes `TaskService.distinct()`'s result straight through.
 
-**For API callers**: `GET /tasks/distinct` responses gain a new `orgs` field — safe to ignore if your UI doesn't need it. No other HTTP-visible behavior changes.
+**For API callers**: `GET /tasks/distinct` responses gain a new `orgs` field — safe to ignore if your UI doesn't need it. `GET /tasks` now accepts repeatable `?repo=` and `?org=` query params, expanding filtering beyond single-repository queries.
 
 **For TaskService implementations**: The `distinct()` method's return type has changed from `{ sessions: string[]; repos: string[] }` to `{ sessions: string[]; repos: string[]; orgs: string[] }`. If you override `distinct()`, update your implementation to compute and return the `orgs` array (extract unique organization prefixes from the `repos` array). The `list()` filters type gained `repo?: string | string[]` (single string keeps the old exact-match shape) and `org?: string | string[]`.
 
