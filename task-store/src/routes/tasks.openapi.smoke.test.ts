@@ -84,6 +84,7 @@ function fakeTaskService(
     onList?: (filters: unknown) => void;
     onBulk?: (tasks: unknown) => void;
     onUpdate?: (id: string, data: unknown) => void;
+    onCreate?: (data: unknown) => void;
   } = {},
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
@@ -108,6 +109,7 @@ function fakeTaskService(
       return t ? withBlockedBy(t) : null;
     },
     async create(data) {
+      opts.onCreate?.(data);
       return makeTask({ ...(data as Partial<Task>), id: "created-1" });
     },
     async update(id, data) {
@@ -715,5 +717,64 @@ describe("PATCH /:id — blocked/requiresHumanApproval split (HSR-1.6)", () => {
     });
     expect(res.status).toBe(200);
     expect(received?.hitl).toBe(true);
+  });
+});
+
+describe("POST / and POST /bulk — strip removed 'hitlNotifiedAt' field (HSR-1.1 follow-up)", () => {
+  it("POST / does not 500 when 'hitlNotifiedAt' is sent, and never forwards it to the service create", async () => {
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onCreate: (data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "New task",
+        status: "pending",
+        repo: null,
+        hitlNotifiedAt: new Date().toISOString(),
+      }),
+    });
+    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(201);
+    expect(received).toBeDefined();
+    expect("hitlNotifiedAt" in (received ?? {})).toBe(false);
+  });
+
+  it("POST /bulk does not 500 when a task has 'hitlNotifiedAt', and never forwards it to the service bulk", async () => {
+    let received: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        onBulk: (tasks) => {
+          received = tasks;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([
+        {
+          title: "Task A",
+          status: "pending",
+          repo: null,
+          hitlNotifiedAt: new Date().toISOString(),
+        },
+      ]),
+    });
+    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(200);
+    const tasks = received as Record<string, unknown>[];
+    expect(tasks).toHaveLength(1);
+    expect("hitlNotifiedAt" in (tasks[0] ?? {})).toBe(false);
   });
 });

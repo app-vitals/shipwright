@@ -649,6 +649,7 @@ export function createTasksRoutes(
     const agentId = c.get("agentId");
     const repos = c.get("repos");
     const body = await readJson(c);
+    stripRemovedFields(body);
     if (typeof body.title !== "string" || !body.title) {
       throw new BadRequestError("title is required");
     }
@@ -681,6 +682,7 @@ export function createTasksRoutes(
     }
     // Validate repo presence and format on each task.
     for (const task of body as Record<string, unknown>[]) {
+      stripRemovedFields(task);
       if (!("repo" in task)) {
         throw new BadRequestError(
           "repo key is required (null is valid for unscoped tasks)",
