@@ -56,11 +56,42 @@
           },
           {
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
               "example": "org/repo"
             },
             "required": false,
             "name": "repo",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
+              "description": "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
+              "example": "org"
+            },
+            "required": false,
+            "name": "org",
             "in": "query"
           },
           {
@@ -2128,9 +2159,16 @@
               "type": "string"
             },
             "example": ["org/repo"]
+          },
+          "orgs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["org"]
           }
         },
-        "required": ["sessions", "repos"]
+        "required": ["sessions", "repos", "orgs"]
       },
       "UpdateTaskBody": {
         "type": "object",
@@ -2250,6 +2288,11 @@
           },
           "commitSha": {
             "type": ["string", "null"],
+            "example": "abc123def456"
+          },
+          "reviewedCommitSha": {
+            "type": ["string", "null"],
+            "description": "The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.",
             "example": "abc123def456"
           },
           "patchCycles": {
