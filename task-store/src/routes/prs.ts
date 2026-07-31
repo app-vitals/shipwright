@@ -10,7 +10,8 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
+ *   GET    /prs               list (?repo, ?org, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
+ *                              — ?repo and ?org accept repeated query params (e.g. ?repo=a&repo=b)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
  *   POST   /prs/claim-next    atomic find-and-claim oldest eligible PR (200+{pr,phase} or 204)
  *   GET    /prs/:id           fetch one (404 when missing)
@@ -26,6 +27,7 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
+import type { PullRequest } from "../index.ts";
 import {
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
@@ -38,7 +40,6 @@ import {
   PullRequestSchema,
   UpdatePrBodySchema,
 } from "../openapi-schemas.ts";
-import type { PullRequest } from "../index.ts";
 import type { PullRequestServiceLike } from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -336,7 +337,8 @@ export function createPrsRoutes(
     const sort = c.req.query("sort") === "desc" ? "desc" : undefined;
 
     const result = await prService.list({
-      repo: c.req.query("repo"),
+      repo: c.req.queries("repo"),
+      org: c.req.queries("org"),
       prNumber:
         prNumberRaw !== undefined
           ? Number.parseInt(prNumberRaw, 10)
