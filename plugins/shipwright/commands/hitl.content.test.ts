@@ -24,6 +24,12 @@ function extractSuppressionSubStep(md: string): string {
   return match?.[0] ?? "";
 }
 
+function extractMarkTaskDoneSubStep(md: string): string {
+  const match = md.match(/### 6b\. Mark Task Done[\s\S]*$/);
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("hitl.md — gitleaksignore suppression sub-step exists (GLB-2.2 AC1)", () => {
   it("contains a Step 6a suppression sub-step section", () => {
     expect(content).toContain("### 6a. Offer Gitleaksignore Suppression");
@@ -155,5 +161,73 @@ describe("hitl.md — suppression is additive, not required (GLB-2.2)", () => {
     const step6Section = extractStep6Section(content);
     expect(step6Section).toContain('\\"status\\": \\"done\\"');
     expect(step6Section).toContain("HITL TASK COMPLETE");
+  });
+});
+
+describe("hitl.md — clear hitl flag when marking done (HSR-2.1 AC1)", () => {
+  it("Step 6b PATCHes hitl:false alongside status:done in the code block", () => {
+    const section = extractMarkTaskDoneSubStep(content);
+    // Check that both status:done and hitl:false appear in the section
+    expect(section).toContain("hitl");
+    expect(section).toContain("false");
+    expect(section).toContain("status");
+    expect(section).toContain("done");
+    // Both should appear in the code block
+    const codeBlock = section.match(/```bash[\s\S]*?```/);
+    expect(codeBlock).not.toBeNull();
+    const code = codeBlock?.[0] ?? "";
+    expect(code).toContain("hitl");
+    expect(code).toContain("status");
+  });
+
+  it("Step 6b includes hitl:false in multiple branches (with and without OUTCOME_NOTE)", () => {
+    const section = extractMarkTaskDoneSubStep(content);
+    // Count occurrences of hitl to ensure both branches are covered
+    const hitlCount = (section.match(/hitl/g) || []).length;
+    expect(hitlCount).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("hitl.md — guard against silent PR in HITL session (HSR-2.1 AC2)", () => {
+  it("Step 6 documents a guard: if a PR is set, warn the human instead of marking done", () => {
+    const section = extractStep6Section(content);
+    const lower = section.toLowerCase();
+    // Should check for PR existence
+    const hasPrCheck =
+      lower.includes("task_pr") ||
+      lower.includes("task pr") ||
+      lower.includes("resulted") ||
+      lower.includes("pr was created");
+    expect(hasPrCheck).toBe(true);
+    // Should warn the human
+    expect(lower).toContain("warn");
+  });
+
+  it("Step 6 clarifies that when a PR exists, only hitl:false is cleared, status is left unchanged", () => {
+    const section = extractStep6Section(content);
+    const lower = section.toLowerCase();
+    // When PR exists, should mention not marking status done
+    const hasStatusGuard =
+      lower.includes("do not mark") ||
+      lower.includes("skip") ||
+      lower.includes("leave") ||
+      lower.includes("leave status");
+    expect(hasStatusGuard).toBe(true);
+    // Should mention only clearing hitl
+    expect(lower).toContain("hitl");
+    expect(lower).toContain("false");
+  });
+
+  it("Step 6 explains that leaving status unchanged allows the task to re-enter normal candidacy for review/patch/deploy", () => {
+    const section = extractStep6Section(content);
+    const lower = section.toLowerCase();
+    // Should explain that PR flows through the normal lifecycle
+    const hasNormalFlow =
+      lower.includes("review") ||
+      lower.includes("normal") ||
+      lower.includes("candidacy") ||
+      lower.includes("deploy") ||
+      lower.includes("lifecycle");
+    expect(hasNormalFlow).toBe(true);
   });
 });
