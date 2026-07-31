@@ -309,6 +309,11 @@ export const AgentCronRunSchema = z
     outputTokens: z.number().int().nullable().openapi({ example: 567 }),
     cacheReadTokens: z.number().int().nullable().openapi({ example: 89 }),
     cacheCreationTokens: z.number().int().nullable().openapi({ example: 10 }),
+    sessionId: z.string().nullable().openapi({
+      example: "session-abc-123",
+      description:
+        "Agent session id this run was executed under. Null for runs with no recorded session.",
+    }),
     createdAt: z
       .string()
       .datetime()
@@ -412,6 +417,10 @@ export const PatchAgentCronRunBodySchema = z
       .nullable()
       .optional()
       .openapi({ example: 10 }),
+    sessionId: z.string().nullable().optional().openapi({
+      example: "session-abc-123",
+      description: "Agent session id this run was executed under.",
+    }),
     modelBreakdown: z
       .array(ModelBreakdownEntrySchema)
       .optional()
