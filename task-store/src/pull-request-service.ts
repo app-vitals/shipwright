@@ -22,6 +22,7 @@ import {
   type PrPhase,
   type PullRequest,
 } from "./index.ts";
+import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -38,6 +39,12 @@ function parseUpdatedSince(value: string): Date {
     );
   }
   return date;
+}
+
+/** Normalizes a `string | string[] | undefined` filter value into an array, for buildRepoOrgWhere. */
+function toArray(value: string | string[] | undefined): string[] | undefined {
+  if (value === undefined) return undefined;
+  return Array.isArray(value) ? value : [value];
 }
 
 /** Minimal shape of a joined Task row needed to evaluate the blocked signal. */
@@ -80,7 +87,17 @@ const SKIP_BLOCK_THRESHOLD = 3;
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
-  repo?: string;
+  /**
+   * A single repo string preserves today's exact-match behavior
+   * (`where.repo = repo`). An array (or an `org` filter alongside it) is
+   * built via `buildRepoOrgWhere` into a `{ repo: { in: [...] } }` clause.
+   */
+  repo?: string | string[];
+  /**
+   * Org filter — matched via `repo: { startsWith: "<org>/" }` (there's no
+   * dedicated org column). Built via the shared `buildRepoOrgWhere` helper.
+   */
+  org?: string | string[];
   prNumber?: number;
   taskId?: string;
   state?: string;
@@ -178,7 +195,18 @@ export class PullRequestService implements PullRequestServiceLike {
     filters: PullRequestListFilters = {},
   ): Promise<PullRequestListResult> {
     const where: Prisma.PullRequestWhereInput = {};
-    if (filters.repo) where.repo = filters.repo;
+    if (typeof filters.repo === "string" && filters.org === undefined) {
+      // Preserves today's exact-match behavior for a single repo string.
+      where.repo = filters.repo;
+    } else if (filters.repo !== undefined || filters.org !== undefined) {
+      Object.assign(
+        where,
+        buildRepoOrgWhere({
+          repos: toArray(filters.repo),
+          orgs: toArray(filters.org),
+        }),
+      );
+    }
     if (filters.prNumber !== undefined) where.prNumber = filters.prNumber;
     if (filters.taskId) where.taskId = filters.taskId;
     if (filters.state) where.state = filters.state as PullRequest["state"];

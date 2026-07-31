@@ -235,6 +235,10 @@ GET /prs
 
 Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
 
+`repo=org/repo` (single string) — exact-match on a single repository. This is currently the only repo-scoping the `/prs` HTTP endpoint supports.
+
+**Note:** `PullRequestService.list()` (the service layer backing this route) also accepts a `repo` array and an `org` filter — `repo: string[]` matches any of the listed repos, and `org` matches any repo under that org prefix (`repo: { startsWith: "<org>/" }`), combined via **AND/intersection** when both are supplied (see `buildRepoOrgWhere` in `task-store/src/lib/repo-org-filter.ts`). These are not yet wired up as HTTP query params on `/prs` — `PrListQuerySchema` and the route handler still only read a single scalar `repo` string.
+
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
 
 `blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.hitl===true` OR its linked task (joined by `PullRequest.taskId`) has `hitl===true` or `status==='blocked'`. PRs with no taskId are evaluated on `pr.hitl` alone. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).

@@ -1006,6 +1006,36 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(byStaged.prs[0].prNumber).toBe(1010);
   });
 
+  it("list() filters by repo array, org, and combined repo-list + org", async () => {
+    await prisma.pullRequest.createMany({
+      data: [
+        { repo: "app-vitals/shipwright", prNumber: 2001 },
+        { repo: "app-vitals/other-repo", prNumber: 2002 },
+        { repo: "acme/widgets", prNumber: 2003 },
+        { repo: "other-org/thing", prNumber: 2004 },
+      ],
+    });
+
+    const byRepoList = await service.list({
+      repo: ["app-vitals/shipwright", "acme/widgets"],
+    });
+    expect(byRepoList.total).toBe(2);
+    expect(byRepoList.prs.map((pr) => pr.prNumber).sort()).toEqual([
+      2001, 2003,
+    ]);
+
+    const byOrg = await service.list({ org: "app-vitals" });
+    expect(byOrg.total).toBe(2);
+    expect(byOrg.prs.map((pr) => pr.prNumber).sort()).toEqual([2001, 2002]);
+
+    const combined = await service.list({
+      repo: ["app-vitals/shipwright", "acme/widgets"],
+      org: "app-vitals",
+    });
+    expect(combined.total).toBe(1);
+    expect(combined.prs[0].prNumber).toBe(2001);
+  });
+
   it("list() respects limit and offset for pagination", async () => {
     await prisma.pullRequest.createMany({
       data: [
