@@ -4,6 +4,26 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## New: `TaskService.list()` multi-repo/org filters and distinct `orgs` field
+
+**Version**: next (ORF-1.2)
+
+`TaskService.list()` now accepts `repo` as `string | string[]` and a new `org: string | string[]`
+filter (repo prefix match, e.g. `"app-vitals"` matches any `repo` starting with `"app-vitals/"`).
+`TaskService.distinct()` now also returns a third field, `orgs: string[]` — the distinct
+organization prefixes extracted from the `repos` it already returns.
+
+- These filters are available today to in-process callers of `TaskService.list()`. The public
+  `GET /tasks` HTTP route is unchanged in this version — it still only wires through the
+  single-string `?repo=` query param; `?org=` is not yet an HTTP-exposed filter.
+- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`). This IS live over HTTP, since the route passes `TaskService.distinct()`'s result straight through.
+
+**For API callers**: `GET /tasks/distinct` responses gain a new `orgs` field — safe to ignore if your UI doesn't need it. No other HTTP-visible behavior changes.
+
+**For TaskService implementations**: The `distinct()` method's return type has changed from `{ sessions: string[]; repos: string[] }` to `{ sessions: string[]; repos: string[]; orgs: string[] }`. If you override `distinct()`, update your implementation to compute and return the `orgs` array (extract unique organization prefixes from the `repos` array). The `list()` filters type gained `repo?: string | string[]` (single string keeps the old exact-match shape) and `org?: string | string[]`.
+
+---
+
 ## Breaking: `dev-task`/`review`/`patch`/`deploy` require `shipwright-loop` (or an explicit target)
 
 **Version**: next (WLS-6.1)

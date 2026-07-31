@@ -385,7 +385,7 @@ function fakeTaskService(): TaskServiceLike {
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
@@ -1203,7 +1203,10 @@ describe("/prs routes (smoke)", () => {
 
   it("POST /prs/:id/skip increments skipCount and sets lastSkippedAt", async () => {
     const store = new Map<string, PullRequest>();
-    store.set("pr-1", makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }));
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }),
+    );
     const app = makeApp({ prService: fakePrService({ store }) });
 
     const res = await app.request("/prs/pr-1/skip", {
@@ -1220,7 +1223,11 @@ describe("/prs routes (smoke)", () => {
     const store = new Map<string, PullRequest>();
     store.set(
       "pr-1",
-      makePr({ id: "pr-1", skipCount: 2, lastSkippedAt: new Date().toISOString() }),
+      makePr({
+        id: "pr-1",
+        skipCount: 2,
+        lastSkippedAt: new Date().toISOString(),
+      }),
     );
     const app = makeApp({ prService: fakePrService({ store }) });
 

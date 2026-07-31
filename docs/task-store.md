@@ -51,7 +51,7 @@ Query params:
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string | Filter by repo (`org/repo` format) |
-| `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
+| `assignee` | string | Filter by assignee (admin tokens only; agent tokens without repo scope see only their own tasks). When used with repo-scoped agent tokens under `agentScope`, acts as an additional AND filter narrowing the visible set. |
 | `claimedBy` | string | Filter by claiming agent |
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
@@ -60,6 +60,12 @@ Query params:
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 | `updatedSince` | string | ISO timestamp. Only return tasks with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
+
+The underlying `TaskService.list()` also accepts `repo` as a `string[]` (matches any repo in
+the list) and a separate `org`/`org[]` filter (matches any repo whose `org/repo` string starts
+with `"<org>/"`), available today to in-process callers. These are not yet exposed as query
+params on this HTTP route; only the single-string `?repo=` filter above is wired through
+`GET /tasks`.
 
 Returns `{ tasks: Task[], total: number, limit: number, offset: number, scopeDegraded: boolean }`. 
 
@@ -88,7 +94,12 @@ is simply `tasks.length`; `limit`/`offset` query params have no effect on these 
 `?sort` parameter applies to `?state=blocked` (sort by `createdAt`; default `asc`), but is not
 supported with `?ready=true`.
 
-Agent tokens with a repo scope return tasks where `assignee === agentId` OR `repo` is in the agent's scope (pool tasks). Agent tokens without a repo scope see only tasks where `assignee === agentId`.
+**Agent token visibility:**
+- **With repo scope** (repos configured): Return tasks where `assignee === agentId` OR (`assignee === null` AND `repo` is in the agent's scope). This union of explicitly-assigned and pool tasks enables the agent to claim unassigned work from its scoped repositories.
+- **Without repo scope** (repos empty or not configured): See only tasks where `assignee === agentId` — no pool tasks visible.
+- **Admin tokens** (agentId null) have unrestricted visibility and can see any task matching the query filters.
+
+An explicit `?assignee=` filter on a repo-scoped agent token further narrows the result (acts as an AND condition on the OR union) — safe, since it only restricts visibility within an already-permitted set.
 
 #### Create task
 
@@ -113,6 +124,11 @@ GET /tasks/distinct
 ```
 
 Returns distinct values of key fields across the visible task set. Useful for populating filter dropdowns.
+
+Response: `{ sessions: string[], repos: string[], orgs: string[] }`
+- `sessions` — distinct `session` values across visible tasks
+- `repos` — distinct `repo` values (in `org/repo` format) across visible tasks
+- `orgs` — distinct organization prefixes extracted from `repo` values (the `org` part of `org/repo`)
 
 #### Get task
 

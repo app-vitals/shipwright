@@ -112,7 +112,9 @@ function withBlockedBy(task: Task) {
   return { ...task, blockedBy: [] };
 }
 
-function fakeTaskService(storedTasks: Map<string, Task> = new Map()): TaskServiceLike {
+function fakeTaskService(
+  storedTasks: Map<string, Task> = new Map(),
+): TaskServiceLike {
   return {
     async list() {
       return { tasks: [], total: 0, limit: 50, offset: 0 };
@@ -146,7 +148,11 @@ function fakeTaskService(storedTasks: Map<string, Task> = new Map()): TaskServic
     async claim(id: string, claimedBy: string) {
       const existing = storedTasks.get(id);
       if (!existing) throw new Error("Task not found");
-      const updated = { ...existing, status: "in_progress" as const, claimedBy };
+      const updated = {
+        ...existing,
+        status: "in_progress" as const,
+        claimedBy,
+      };
       storedTasks.set(id, updated);
       return updated;
     },
@@ -198,8 +204,12 @@ function fakeTaskService(storedTasks: Map<string, Task> = new Map()): TaskServic
     async bulk(_tasks) {
       return { inserted: 0, updated: 0, skipped: [] };
     },
-    async distinct(): Promise<{ sessions: string[]; repos: string[] }> {
-      return Promise.resolve({ sessions: [], repos: [] });
+    async distinct(): Promise<{
+      sessions: string[];
+      repos: string[];
+      orgs: string[];
+    }> {
+      return Promise.resolve({ sessions: [], repos: [], orgs: [] });
     },
   };
 }

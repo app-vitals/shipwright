@@ -640,6 +640,70 @@ describe("TaskService.list() updatedSince/repo where clause", () => {
       | undefined;
     expect(where?.hitl).toBeUndefined();
   });
+
+  it("list({ repo: ['org/a', 'org/b'] }) sets where.repo = { in: [...] } matching both", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ repo: ["org/a", "org/b"] });
+
+    const where = prisma._findManyCalls[0].where as
+      | { repo?: { in: string[] } }
+      | undefined;
+    expect(where?.repo).toEqual({ in: ["org/a", "org/b"] });
+  });
+
+  it("list({ org: 'app-vitals' }) sets where.repo = { startsWith: 'app-vitals/' } via an OR clause", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ org: "app-vitals" });
+
+    const where = prisma._findManyCalls[0].where as
+      | { OR?: Array<{ repo: { startsWith: string } }> }
+      | undefined;
+    expect(where?.OR).toEqual([{ repo: { startsWith: "app-vitals/" } }]);
+  });
+
+  it("list({ org: ['app-vitals', 'acme'] }) sets where.repo OR startsWith clauses for both orgs", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({ org: ["app-vitals", "acme"] });
+
+    const where = prisma._findManyCalls[0].where as
+      | { OR?: Array<{ repo: { startsWith: string } }> }
+      | undefined;
+    expect(where?.OR).toEqual([
+      { repo: { startsWith: "app-vitals/" } },
+      { repo: { startsWith: "acme/" } },
+    ]);
+  });
+
+  it("list({ agentScope, org }) combines agentScope's OR and org's OR under AND instead of clobbering either", async () => {
+    const prisma = makeListPrismaDouble();
+    const service = new TaskService(prisma);
+
+    await service.list({
+      agentScope: { agentId: "agent-1", repos: ["acme/repo"] },
+      org: "app-vitals",
+    });
+
+    const where = prisma._findManyCalls[0].where as
+      | {
+          OR?: unknown;
+          AND?: Array<{ OR: unknown }>;
+        }
+      | undefined;
+    // agentScope's OR must not be silently dropped by the org filter's OR.
+    expect(where?.OR).toBeUndefined();
+    expect(where?.AND).toEqual([
+      {
+        OR: [{ assignee: "agent-1" }, { repo: { in: ["acme/repo"] } }],
+      },
+      { OR: [{ repo: { startsWith: "app-vitals/" } }] },
+    ]);
+  });
 });
 
 // ─── TaskService.list() blockedBy dependency lookup scoping ────────────────
@@ -802,5 +866,50 @@ describe("TaskService.list() blockedBy dependency lookup scoping", () => {
 
     const depCalls = prisma._findManyCalls.filter((call) => call.where?.id);
     expect(depCalls).toHaveLength(0);
+  });
+});
+
+// ─── TaskService.distinct() orgs derivation ────────────────────────────────
+
+describe("TaskService.distinct() orgs field (unit)", () => {
+  function makeDistinctPrismaDouble(
+    rows: Array<{ session: string | null; repo: string | null }>,
+  ) {
+    const prisma = {
+      task: {
+        findMany() {
+          return Promise.resolve(rows);
+        },
+      },
+    };
+    return prisma as unknown as PrismaClient;
+  }
+
+  it("derives orgs from the first segment of each distinct repo, deduped and sorted", async () => {
+    const prisma = makeDistinctPrismaDouble([
+      { session: "s1", repo: "app-vitals/shipwright" },
+      { session: "s2", repo: "app-vitals/other-repo" },
+      { session: "s3", repo: "acme-inc/backend-api" },
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.distinct();
+
+    expect(result.repos).toEqual([
+      "acme-inc/backend-api",
+      "app-vitals/other-repo",
+      "app-vitals/shipwright",
+    ]);
+    expect(result.orgs).toEqual(["acme-inc", "app-vitals"]);
+  });
+
+  it("returns an empty orgs array when there are no repos", async () => {
+    const prisma = makeDistinctPrismaDouble([{ session: "s1", repo: null }]);
+    const service = new TaskService(prisma);
+
+    const result = await service.distinct();
+
+    expect(result.repos).toEqual([]);
+    expect(result.orgs).toEqual([]);
   });
 });

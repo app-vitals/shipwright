@@ -16,6 +16,7 @@ import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { Prisma, PrismaClient, Task } from "./index.ts";
+import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 
@@ -59,7 +60,19 @@ export interface TaskListFilters {
   state?: "open" | "closed" | "in_progress";
   source?: string;
   session?: string;
-  repo?: string;
+  /**
+   * Repo filter. A single string preserves the original exact-match
+   * behavior (`where.repo = repo`, unchanged for back-compat); an array
+   * matches any repo in the list (`where.repo = { in: repos }` via
+   * buildRepoOrgWhere).
+   */
+  repo?: string | string[];
+  /**
+   * Org filter — matches any repo whose `org/repo` string starts with
+   * `"<org>/"`. Combines with `repo` (both narrow the same AND-scoped
+   * result) via buildRepoOrgWhere.
+   */
+  org?: string | string[];
   assignee?: string;
   claimedBy?: string;
   pr?: number;
@@ -106,7 +119,7 @@ export interface TaskServiceLike {
   distinct(
     agentId?: string,
     scopeRepos?: string[],
-  ): Promise<{ sessions: string[]; repos: string[] }>;
+  ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }>;
   get(id: string): Promise<TaskWithBlockedBy | null>;
   create(data: Prisma.TaskCreateInput): Promise<Task>;
   bulk(
@@ -166,7 +179,31 @@ export class TaskService implements TaskServiceLike {
     // condition on top of agentScope's OR — narrowing an already-visible set
     // is always safe, even though widening it (peeking at an unscoped
     // assignee) is not.
-    if (filters.repo) where.repo = filters.repo;
+    //
+    // A single-string `repo` preserves the original exact-match shape
+    // (`where.repo = "org/repo"`) for back-compat with existing callers/
+    // tests. Anything else (an array, or an `org` filter) is routed through
+    // buildRepoOrgWhere. That fragment can itself carry a top-level `OR` (org
+    // matching is `repo: { startsWith }` OR'd across orgs) — spreading it
+    // directly onto `where` would silently clobber agentScope's `where.OR`
+    // if both are present, so in that case the two OR clauses are combined
+    // under `where.AND` instead; otherwise the fragment is spread directly
+    // onto `where`, matching the plain `{ repo: { in: [...] } }` /
+    // `{ OR: [...] }` shape asserted by the unit tests.
+    if (typeof filters.repo === "string") {
+      where.repo = filters.repo;
+    } else if (filters.repo || filters.org) {
+      const repoOrgWhere = buildRepoOrgWhere({
+        repos: filters.repo,
+        orgs: typeof filters.org === "string" ? [filters.org] : filters.org,
+      });
+      if ("OR" in repoOrgWhere && where.OR) {
+        where.AND = [{ OR: where.OR }, repoOrgWhere];
+        where.OR = undefined;
+      } else {
+        Object.assign(where, repoOrgWhere);
+      }
+    }
     if (filters.assignee) where.assignee = filters.assignee;
 
     const limit = filters.limit ?? 50;
@@ -284,7 +321,7 @@ export class TaskService implements TaskServiceLike {
   async distinct(
     agentId?: string,
     scopeRepos?: string[],
-  ): Promise<{ sessions: string[]; repos: string[] }> {
+  ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }> {
     const useRepoScope =
       agentId !== undefined &&
       scopeRepos !== undefined &&
@@ -313,7 +350,17 @@ export class TaskService implements TaskServiceLike {
     ]
       .sort()
       .slice(0, 100);
-    return { sessions, repos };
+    // Derived from the same (already-capped) repos list — the "org" segment
+    // is whatever precedes the first `/` in each `org/repo` string. A repo
+    // string with no `/` has no org segment and is skipped.
+    const orgs = [
+      ...new Set(
+        repos
+          .filter((r) => r.includes("/"))
+          .map((r) => r.split("/", 1)[0] as string),
+      ),
+    ].sort();
+    return { sessions, repos, orgs };
   }
 
   async get(id: string): Promise<TaskWithBlockedBy | null> {
