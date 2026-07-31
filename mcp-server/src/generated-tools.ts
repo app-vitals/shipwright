@@ -56,8 +56,36 @@ export const generatedTools: GeneratedTool[] = [
           example: "session-123",
         },
         repo: {
-          type: "string",
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
           example: "org/repo",
+        },
+        org: {
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
+          example: "org",
         },
         assignee: {
           type: "string",
@@ -116,6 +144,7 @@ export const generatedTools: GeneratedTool[] = [
       "source",
       "session",
       "repo",
+      "org",
       "assignee",
       "claimedBy",
       "branch",

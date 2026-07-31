@@ -64,6 +64,10 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     readyForReviewAt: null,
     readyForPatchAt: null,
     readyForDeployAt: null,
+    skipCount: 0,
+    lastSkippedAt: null,
+    lastCiFailureSignature: null,
+    consecutiveCiFailureCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -174,7 +178,21 @@ function fakePrService(
       if (filters?.taskId) prs = prs.filter((p) => p.taskId === filters.taskId);
       if (filters?.reviewState)
         prs = prs.filter((p) => p.reviewState === filters.reviewState);
-      if (filters?.repo) prs = prs.filter((p) => p.repo === filters.repo);
+      // Mirrors pull-request-service.ts's list()/buildRepoOrgWhere semantics:
+      // repo array is OR-membership, org array is OR-prefix-match, and repo +
+      // org together combine via AND.
+      if (filters?.repo !== undefined) {
+        const repos = Array.isArray(filters.repo)
+          ? filters.repo
+          : [filters.repo];
+        prs = prs.filter((p) => repos.includes(p.repo));
+      }
+      if (filters?.org !== undefined) {
+        const orgs = Array.isArray(filters.org) ? filters.org : [filters.org];
+        prs = prs.filter((p) =>
+          orgs.some((org) => p.repo.startsWith(`${org}/`)),
+        );
+      }
       if (filters?.staged !== undefined)
         prs = prs.filter((p) => p.staged === filters.staged);
       return {
@@ -267,7 +285,11 @@ function fakePrService(
       return updated;
     },
 
-    async patch(id: string): Promise<PullRequest> {
+    async patch(
+      id: string,
+      _commitSha?: string,
+      ciFailureSignature?: string,
+    ): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
       const updated = {
@@ -276,6 +298,15 @@ function fakePrService(
         patchedAt: new Date().toISOString(),
         reviewState: "pending" as const,
         updatedAt: new Date(),
+        ...(ciFailureSignature !== undefined
+          ? {
+              lastCiFailureSignature: ciFailureSignature,
+              consecutiveCiFailureCount:
+                ciFailureSignature === existing.lastCiFailureSignature
+                  ? (existing.consecutiveCiFailureCount ?? 0) + 1
+                  : 1,
+            }
+          : {}),
       } as PullRequest;
       store.set(id, updated);
       return updated;
@@ -385,7 +416,7 @@ function fakeTaskService(): TaskServiceLike {
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
@@ -674,6 +705,55 @@ describe("/prs routes (smoke)", () => {
     expect(body.patchedAt).toBeTruthy();
   });
 
+  it("POST /prs/:id/patch accepts an optional ciFailureSignature body field and the response includes lastCiFailureSignature/consecutiveCiFailureCount", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        patchCycles: 1,
+        reviewState: "posted",
+        lastCiFailureSignature: "some-signature",
+        consecutiveCiFailureCount: 1,
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/patch", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ ciFailureSignature: "some-signature" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.lastCiFailureSignature).toBe("some-signature");
+    expect(body.consecutiveCiFailureCount).toBe(2);
+  });
+
+  it("POST /prs/:id/patch without ciFailureSignature leaves the CI-streak fields absent from the response's changed fields (untouched)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        patchCycles: 1,
+        reviewState: "posted",
+        lastCiFailureSignature: "pre-existing-signature",
+        consecutiveCiFailureCount: 2,
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/patch", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.lastCiFailureSignature).toBe("pre-existing-signature");
+    expect(body.consecutiveCiFailureCount).toBe(2);
+  });
+
   // ─── POST /prs/:id/heartbeat ──────────────────────────────────────────────
 
   it("POST /prs/:id/heartbeat returns 200 and updates heartbeatAt", async () => {
@@ -733,6 +813,91 @@ describe("/prs routes (smoke)", () => {
     const body = (await res.json()) as PullRequestListResult;
     expect(body.prs).toHaveLength(1);
     expect(body.prs[0].taskId).toBe("task-42");
+  });
+
+  it("GET /prs?repo=... (single) returns records matching that repo only", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: "org-a/a" }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "org-a/b" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?repo=org-a%2Fa", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs).toHaveLength(1);
+    expect(body.prs[0].repo).toBe("org-a/a");
+  });
+
+  it("GET /prs?repo=org/a&repo=org/b returns PRs matching either repo", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: "org/a" }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "org/b" }));
+    store.set("pr-3", makePr({ id: "pr-3", repo: "org/c" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?repo=org%2Fa&repo=org%2Fb", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.repo).sort()).toEqual(["org/a", "org/b"]);
+  });
+
+  it("GET /prs?org=app-vitals returns PRs whose repo starts with app-vitals/", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: "app-vitals/shipwright" }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "app-vitals/metrics" }));
+    store.set("pr-3", makePr({ id: "pr-3", repo: "acme-inc/backend-api" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?org=app-vitals", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.repo).sort()).toEqual([
+      "app-vitals/metrics",
+      "app-vitals/shipwright",
+    ]);
+  });
+
+  it("GET /prs?org=org-a&org=org-b returns PRs matching either org prefix", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1", repo: "org-a/x" }));
+    store.set("pr-2", makePr({ id: "pr-2", repo: "org-b/y" }));
+    store.set("pr-3", makePr({ id: "pr-3", repo: "org-c/z" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs?org=org-a&org=org-b", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequestListResult;
+    expect(body.prs.map((p) => p.repo).sort()).toEqual(["org-a/x", "org-b/y"]);
+  });
+
+  it("GET /prs without repo/org leaves both filters undefined (not empty arrays)", async () => {
+    let capturedFilters: PullRequestListFilters | undefined;
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const baseFake = fakePrService({ store });
+    const prServiceWithCapture: PullRequestServiceLike = {
+      ...baseFake,
+      async list(
+        filters?: PullRequestListFilters,
+      ): Promise<PullRequestListResult> {
+        capturedFilters = filters;
+        return baseFake.list(filters);
+      },
+    };
+    const app = makeApp({ prService: prServiceWithCapture });
+
+    const res = await app.request("/prs", { headers: adminAuth() });
+    expect(res.status).toBe(200);
+    expect(capturedFilters?.repo).toBeUndefined();
+    expect(capturedFilters?.org).toBeUndefined();
   });
 
   it("GET /prs?reviewState=posted returns filtered set", async () => {
@@ -1203,7 +1368,10 @@ describe("/prs routes (smoke)", () => {
 
   it("POST /prs/:id/skip increments skipCount and sets lastSkippedAt", async () => {
     const store = new Map<string, PullRequest>();
-    store.set("pr-1", makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }));
+    store.set(
+      "pr-1",
+      makePr({ id: "pr-1", skipCount: 0, lastSkippedAt: null }),
+    );
     const app = makeApp({ prService: fakePrService({ store }) });
 
     const res = await app.request("/prs/pr-1/skip", {
@@ -1220,7 +1388,11 @@ describe("/prs routes (smoke)", () => {
     const store = new Map<string, PullRequest>();
     store.set(
       "pr-1",
-      makePr({ id: "pr-1", skipCount: 2, lastSkippedAt: new Date().toISOString() }),
+      makePr({
+        id: "pr-1",
+        skipCount: 2,
+        lastSkippedAt: new Date().toISOString(),
+      }),
     );
     const app = makeApp({ prService: fakePrService({ store }) });
 

@@ -49,6 +49,15 @@ interface CompleteCall {
   cronId: string;
   runId: string | null;
   outcome: "completed" | "failed";
+  opts?: {
+    error?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+    modelBreakdown?: import("./cron-run-reporter.ts").ModelBreakdownEntry[];
+    sessionId?: string;
+  };
   phaseId?: string;
   itemType?: string;
   itemId?: string;
@@ -64,6 +73,7 @@ interface SkipCall {
     cacheReadTokens?: number;
     cacheCreationTokens?: number;
     modelBreakdown?: import("./cron-run-reporter.ts").ModelBreakdownEntry[];
+    sessionId?: string;
   };
   phaseId?: string;
   itemType?: string;
@@ -99,12 +109,12 @@ function makeRecordingReporter(): {
       runId,
       _completedAt,
       outcome,
-      _opts,
+      opts,
       phaseId,
       itemType,
       itemId,
     ) {
-      completes.push({ cronId, runId, outcome, phaseId, itemType, itemId });
+      completes.push({ cronId, runId, outcome, opts, phaseId, itemType, itemId });
     },
     async skipRun(
       cronId,
@@ -1180,6 +1190,176 @@ describe("createLoopOrchestrator", () => {
     expect(skips).toEqual([]);
   });
 
+  // ─── Session id wiring (CSI-2.3) ────────────────────────────────────────────
+  //
+  // Mirrors CSI-2.2's cron-handler.ts wiring, but for dispatch()'s own
+  // completeRun/skipRun call sites: runResult.sessionId on success (both the
+  // completed and [silent]-marker/skipped branches), err.sessionId on failure
+  // (ClaudeRunError/ClaudeTimeoutError only) — see the file's dispatch() catch
+  // block.
+
+  test("a completed dispatch forwards runResult.sessionId to completeRun's opts", async () => {
+    const consumed = new Set<string>();
+    const { reporter, completes } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-SID1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "done", sessionId: "session-completed-1" }],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("completed");
+    expect(completes[0]?.opts?.sessionId).toBe("session-completed-1");
+  });
+
+  test("a completed dispatch with no sessionId on runResult leaves opts.sessionId undefined", async () => {
+    const consumed = new Set<string>();
+    const { reporter, completes } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-SID2", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "done" }],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.opts?.sessionId).toBeUndefined();
+  });
+
+  test("a [silent]-marker dispatch forwards runResult.sessionId to skipRun's opts", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-SID3", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result: "Nothing to do here.\n[silent]",
+          sessionId: "session-skipped-1",
+        },
+      ],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0]?.opts?.sessionId).toBe("session-skipped-1");
+  });
+
+  test("a [silent]-marker dispatch with no sessionId on runResult leaves skipRun's opts.sessionId undefined", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const devTaskCandidates = [task("SWC-SID4", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }],
+    );
+    const deps = makeDeps({ devTaskCandidates, runner, reporter, consumed });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0]?.opts?.sessionId).toBeUndefined();
+  });
+
+  test("a failed dispatch throwing a ClaudeRunError forwards err.sessionId to completeRun's opts", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-SID5", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-SID5");
+      throw new ClaudeRunError(
+        "claude run failed",
+        500,
+        "boom",
+        "session-failed-run-error",
+      );
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    // Resolves cleanly — the throw is caught per-item in the drain loop
+    // (throw isolation), not propagated.
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.sessionId).toBe("session-failed-run-error");
+  });
+
+  test("a failed dispatch throwing a ClaudeTimeoutError forwards err.sessionId to completeRun's opts", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-SID6", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-SID6");
+      throw new ClaudeTimeoutError(
+        600_000,
+        "ceiling",
+        undefined,
+        "session-failed-timeout",
+      );
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.sessionId).toBe("session-failed-timeout");
+  });
+
+  test("a failed dispatch throwing an error with no sessionId leaves opts.sessionId undefined", async () => {
+    const consumed = new Set<string>();
+    const devTaskCandidates = [task("SWC-SID7", "2026-01-01T00:00:00Z")];
+    const { reporter, completes } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => {
+      consumed.add("SWC-SID7");
+      throw new Error("plain failure, no session id");
+    };
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      claimTask: consumingClaimTask(consumed),
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(completes).toHaveLength(1);
+    expect(completes[0]?.outcome).toBe("failed");
+    expect(completes[0]?.opts?.sessionId).toBeUndefined();
+  });
+
   // ─── Work queue reporter tests (AWQ-1.3) ────────────────────────────────────
 
   test("workQueueReporter.reportSnapshot is called exactly once on an idle tick, with an empty items array — no dispatch occurs", async () => {
@@ -1584,16 +1764,18 @@ describe("createLoopOrchestrator", () => {
     // The run was created and then completed with outcome "failed" — never
     // silently dropped, even though the error itself was swallowed.
     expect(creates.map((c) => c.phaseId)).toEqual(["shipwright-dev-task"]);
-    expect(completes).toEqual([
-      {
-        cronId: "shipwright-loop",
-        runId: "run-1",
-        outcome: "failed",
-        phaseId: "shipwright-dev-task",
-        itemType: "task",
-        itemId: "SWC-1.1",
-      },
-    ]);
+    expect(completes).toHaveLength(1);
+    expect(completes[0]).toMatchObject({
+      cronId: "shipwright-loop",
+      runId: "run-1",
+      outcome: "failed",
+      phaseId: "shipwright-dev-task",
+      itemType: "task",
+      itemId: "SWC-1.1",
+    });
+    expect(completes[0]?.opts?.error).toStartWith("claude run failed for ");
+    // No sessionId available (plain Error, not a ClaudeRunError/ClaudeTimeoutError).
+    expect(completes[0]?.opts?.sessionId).toBeUndefined();
     expect(skips).toEqual([]);
 
     // The SAME closure's busy flag is released — a subsequent tick on it is
@@ -1630,6 +1812,12 @@ describe("createLoopOrchestrator", () => {
         cronId: "shipwright-loop",
         runId: "run-1",
         outcome: "failed",
+        opts: {
+          error: "claude stream ended without a terminal result event",
+          // The synthesized ClaudeRunError carries runResult.sessionId, which
+          // is undefined here (the streamIncomplete result set none).
+          sessionId: undefined,
+        },
         phaseId: "shipwright-dev-task",
         itemType: "task",
         itemId: "SWC-1.1",
@@ -2581,6 +2769,7 @@ describe("createLoopOrchestrator", () => {
         cronId: "shipwright-loop",
         runId: "run-1",
         outcome: "failed",
+        opts: { error: "claude run timed out for SWC-BOOM" },
         phaseId: "shipwright-dev-task",
         itemType: "task",
         itemId: "SWC-BOOM",
@@ -2589,6 +2778,12 @@ describe("createLoopOrchestrator", () => {
         cronId: "shipwright-loop",
         runId: "run-2",
         outcome: "completed",
+        opts: {
+          cacheCreationTokens: undefined,
+          cacheReadTokens: undefined,
+          inputTokens: undefined,
+          outputTokens: undefined,
+        },
         phaseId: "shipwright-review",
         itemType: "pr",
         itemId: "acme/x#7",

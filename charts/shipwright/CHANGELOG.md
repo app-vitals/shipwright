@@ -10,6 +10,72 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.7.181] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.181 triggered by release tag(s): `admin-v1.60.0`, `chat-v1.25.0`, `metrics-v1.27.0`, `task-store-v1.41.0`
+
+## [1.7.180] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.180 triggered by release tag(s): `task-store-v1.40.0`
+
+## [1.7.179] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.179 triggered by release tag(s): `admin-v1.59.0`
+
+## [1.7.178] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.178 triggered by release tag(s): `admin-v1.58.0`, `agent-v1.116.0`, `chat-v1.24.0`, `metrics-v1.26.0`, `task-store-v1.39.0`
+
+## [1.7.177] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.177 triggered by release tag(s): `agent-v1.115.0`
+
+## [1.7.176] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.176 triggered by release tag(s): `admin-v1.57.0`
+
+## [1.7.175] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.175 triggered by release tag(s): `task-store-v1.38.0`
+
+## [1.7.174] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.174 triggered by release tag(s): `task-store-v1.37.0`
+
+## [1.7.173] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.173 triggered by release tag(s): `task-store-v1.36.0`
+
+## [1.7.172] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.172 triggered by release tag(s): `admin-v1.56.0`
+
+## [1.7.171] - 2026-07-31
+
+### Changed
+
+- auto-bump to chart v1.7.171 triggered by release tag(s): `agent-v1.114.0`
+
 ## [1.7.170] - 2026-07-31
 
 ### Changed

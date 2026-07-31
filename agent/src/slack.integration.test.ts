@@ -20,7 +20,11 @@ import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
-import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
+import {
+  ClaudeRunError,
+  ClaudeTimeoutError,
+  createRunClaude,
+} from "./claude.ts";
 import type { ModelUsage, TokenUsage } from "./claude.ts";
 import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
@@ -2872,5 +2876,196 @@ describe("dispatchMarkers — direct", () => {
       channel: "C1",
     });
     expect(client.reactions.add).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Thread resume after a first-message timeout (CSI-1.2) ────────────────────
+//
+// mockRunClaude above is a bare mock of the *runner* param — it can't exercise
+// the session-persistence-on-failure fix, since that logic lives inside
+// createRunClaude's own _runClaude. These tests wire the REAL createRunClaude
+// (with a fake spawner + a real in-memory session store) as the runner, so
+// they exercise the actual user-facing behavior: a first DM message that
+// times out must still let a later message in the same thread resume via
+// `-r <sessionId>`, instead of starting a brand-new context-free session.
+
+describe("thread resume after timeout — real createRunClaude wired as runner", () => {
+  interface FakeProc {
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    exited: Promise<number>;
+    kill: () => void;
+  }
+
+  function bodyStream(content: string): ReadableStream<Uint8Array> {
+    const enc = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(enc.encode(content));
+        controller.close();
+      },
+    });
+  }
+
+  /** A proc that emits a single `system`/`init` line (carrying a session id)
+   * then goes silent forever — never closes on its own, only `kill()` (fired
+   * by the idle timer) ends it. Simulates a first message that gets far
+   * enough to create a real CLI session before hanging. */
+  function hangingProcWithSessionId(sessionId: string): FakeProc {
+    const enc = new TextEncoder();
+    let resolveExited!: (code: number) => void;
+    const exited = new Promise<number>((r) => {
+      resolveExited = r;
+    });
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    const stdout = new ReadableStream<Uint8Array>({
+      start(controller) {
+        streamController = controller;
+        controller.enqueue(
+          enc.encode(
+            `${JSON.stringify({ type: "system", subtype: "init", session_id: sessionId })}\n`,
+          ),
+        );
+        // Deliberately never close — the idle timer's kill() is what ends it.
+      },
+    });
+    return {
+      stdout,
+      stderr: bodyStream(""),
+      exited,
+      kill: () => {
+        streamController.close();
+        resolveExited(143);
+      },
+    };
+  }
+
+  function jsonResultProc(result: string, sessionId: string): FakeProc {
+    const json = JSON.stringify({
+      type: "result",
+      subtype: "success",
+      result,
+      session_id: sessionId,
+      is_error: false,
+    });
+    return {
+      stdout: bodyStream(`${json}\n`),
+      stderr: bodyStream(""),
+      exited: Promise.resolve(0),
+      kill: () => {},
+    };
+  }
+
+  test("first DM message times out, second message in the same thread resumes with -r <sessionId>", async () => {
+    // Real in-memory session store, exactly like createFileSessionStore's
+    // contract (get/set/clear), so the runner's own _saveSession /
+    // _saveSessionFromError calls are exercised for real.
+    const store = new Map<string, string>();
+    const realSessions = {
+      get: (key: string) => store.get(key),
+      set: (key: string, id: string) => {
+        store.set(key, id);
+      },
+      clear: (key: string) => {
+        store.delete(key);
+      },
+    };
+
+    let callCount = 0;
+    const mockSpawn = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First message: the CLI creates a real session, then hangs.
+        return hangingProcWithSessionId(
+          "sess-first-msg",
+        ) as unknown as ReturnType<typeof Bun.spawn>;
+      }
+      // Second message (resumed): succeeds normally.
+      return jsonResultProc(
+        "Resumed reply",
+        "sess-first-msg",
+      ) as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const realRunClaude = createRunClaude(
+      mockSpawn as unknown as typeof Bun.spawn,
+      realSessions,
+      "claude-opus-4-6",
+      "/tmp",
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly since the hanging proc goes silent
+    );
+
+    capturedErrors = [];
+    const app = _createSlackApp(
+      realRunClaude,
+      mockMarkdownToSlack,
+      threadKey,
+      // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
+      (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
+      mockSlackConfig,
+      fakeSentryClient,
+      async () => null,
+      {},
+      async () => null,
+      async () => null,
+      mockResolveUserFn,
+      "UBOT123",
+      async () => ({ messages: [] }),
+      async (key: string) => realSessions.get(key),
+      undefined,
+      new NoopChatTokenReporter(),
+    );
+    expect(app).toBeInstanceOf(MockApp);
+
+    const client = makeMockClient();
+
+    // First message in a new DM thread — times out.
+    const firstSay = makeSay("first.reply.ts");
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D999",
+        ts: "100.001",
+        text: "Kick off a long task",
+        channel_type: "im",
+      },
+      say: firstSay,
+      client,
+    });
+
+    // The timeout error was surfaced to Slack, but the session id the CLI
+    // created before hanging must still have been persisted.
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
+    expect(store.get("D999:100.001")).toBe("sess-first-msg");
+
+    // Second message in the SAME thread (thread_ts pins it to the first
+    // message's ts) — must resume, not start a fresh context-free session.
+    const secondSay = makeSay("second.reply.ts");
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D999",
+        ts: "100.002",
+        thread_ts: "100.001",
+        text: "Are you still there?",
+        channel_type: "im",
+      },
+      say: secondSay,
+      client,
+    });
+
+    expect(mockSpawn).toHaveBeenCalledTimes(2);
+    const [secondCmd] = mockSpawn.mock.calls[1] as unknown as [string[]];
+    const rIdx = secondCmd.indexOf("-r");
+    expect(rIdx).toBeGreaterThan(-1);
+    expect(secondCmd[rIdx + 1]).toBe("sess-first-msg");
+    expect(secondSay).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("Resumed reply"),
+      }),
+    );
   });
 });

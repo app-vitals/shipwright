@@ -10,14 +10,15 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /prs               list (?repo, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
+ *   GET    /prs               list (?repo, ?org, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
+ *                              — ?repo and ?org accept repeated query params (e.g. ?repo=a&repo=b)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
  *   POST   /prs/claim-next    atomic find-and-claim oldest eligible PR (200+{pr,phase} or 204)
  *   GET    /prs/:id           fetch one (404 when missing)
  *   PATCH  /prs/:id           update fields
  *   POST   /prs/:id/heartbeat touch heartbeatAt
  *   POST   /prs/:id/complete  reviewState=posted
- *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha)
+ *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha); optional ciFailureSignature tracks a CI-failure streak, auto-blocking at threshold
  *   POST   /prs/:id/release   unclaim → reviewState=pending
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0
@@ -26,6 +27,7 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
+import type { PullRequest } from "../index.ts";
 import {
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
@@ -38,7 +40,6 @@ import {
   PullRequestSchema,
   UpdatePrBodySchema,
 } from "../openapi-schemas.ts";
-import type { PullRequest } from "../index.ts";
 import type { PullRequestServiceLike } from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
 
@@ -234,7 +235,8 @@ const patchRoute = createRoute({
   method: "post",
   path: "/:id/patch",
   tags: ["PRs"],
-  summary: "Increment patchCycles and conditionally reset reviewState=pending",
+  summary:
+    "Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature",
   request: {
     params: PrIdParamSchema,
     body: {
@@ -336,7 +338,8 @@ export function createPrsRoutes(
     const sort = c.req.query("sort") === "desc" ? "desc" : undefined;
 
     const result = await prService.list({
-      repo: c.req.query("repo"),
+      repo: c.req.queries("repo"),
+      org: c.req.queries("org"),
       prNumber:
         prNumberRaw !== undefined
           ? Number.parseInt(prNumberRaw, 10)
@@ -560,7 +563,15 @@ export function createPrsRoutes(
       typeof body.commitSha === "string" && body.commitSha
         ? body.commitSha
         : undefined;
-    const pr = await prService.patch(c.req.param("id"), commitSha);
+    const ciFailureSignature =
+      typeof body.ciFailureSignature === "string" && body.ciFailureSignature
+        ? body.ciFailureSignature
+        : undefined;
+    const pr = await prService.patch(
+      c.req.param("id"),
+      commitSha,
+      ciFailureSignature,
+    );
     return c.json(pr, 200);
   });
 

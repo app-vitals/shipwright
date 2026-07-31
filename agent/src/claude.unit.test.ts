@@ -452,14 +452,14 @@ describe("runClaude", () => {
     );
   });
 
-  test("does not save session when is_error=true", async () => {
+  test("saves the session id from a ClaudeRunError on is_error=true (CSI-1.2: a real session exists even when the run itself errored)", async () => {
     mockSpawn.mockReturnValue(
       fakeProc(jsonOutput("tool error", "sess-abc", true)) as ReturnType<
         typeof Bun.spawn
       >,
     );
     await expect(runClaude("hello", "chan:ts")).rejects.toThrow();
-    expect(mockSetSession).not.toHaveBeenCalled();
+    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "sess-abc");
   });
 
   test("throws ClaudeTimeoutError when process exceeds timeoutMs", async () => {
@@ -827,6 +827,268 @@ describe("resume retry", () => {
 
     expect(result.recoveredFromError).toBe(true);
     expect(capturedExceptions).toHaveLength(0);
+  });
+});
+
+// ─── Session persistence on failure (CSI-1.2) ─────────────────────────────────
+//
+// _saveSession only ran after a successful spawn, so a first-message timeout
+// or error never persisted the session id the CLI had already created —
+// leaving the Slack thread unable to resume. These tests assert the failure
+// path now saves whatever session id was captured, even though the run
+// itself still throws.
+
+describe("session persistence on failure", () => {
+  test("immediate timeout with no existing session still saves the captured session id", async () => {
+    // hangingProc never emits a line, so idle timeout fires with no
+    // earlySessionId captured off a `system`/`init` line either — this test
+    // uses a dripping proc that emits exactly one init line (carrying a
+    // session id) before going silent, so the idle timer still fires but a
+    // sessionId is available on the resulting ClaudeTimeoutError.
+    const proc = drippingProc(
+      JSON.stringify({
+        type: "system",
+        subtype: "init",
+        session_id: "fresh-sess-id",
+      }),
+      1000, // only fires once at start via the drip loop's initial enqueue+wait
+      1,
+    );
+    const mockSpawnTimeout = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+
+    const runClaudeWithTimeout = createRunClaude(
+      mockSpawnTimeout as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly since stdout only emits the one line
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).sessionId).toBe(
+      "fresh-sess-id",
+    );
+    // No existing session, so no retry happens — the outer catch must save
+    // the session id from the initial attempt's failure directly.
+    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "fresh-sess-id");
+  });
+
+  test("resumed-session retry that also times out saves the most-recently-known session id", async () => {
+    let callCount = 0;
+    const mockSpawnRetry = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call (resume) fails with a non-timeout error — enters the
+        // retry branch.
+        return fakeProc("", "socket closed", 1) as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      // Retry attempt hangs and times out, but still captures a session id
+      // off its own init line before the idle timer kills it.
+      return drippingProc(
+        JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "retry-sess-id",
+        }),
+        1000,
+        1,
+      ) as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockGetSession.mockReturnValue("stale-sess-id");
+
+    const runClaudeWithRetryTimeout = createRunClaude(
+      mockSpawnRetry as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly on the retry's silent stdout
+    );
+
+    const err = await runClaudeWithRetryTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    // The retry contract rethrows the ORIGINAL (first-attempt) error
+    // unchanged, even though the retry itself failed with a timeout — only
+    // the session-persistence side effect changes.
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("socket closed");
+    expect(mockSpawnRetry).toHaveBeenCalledTimes(2);
+    // The mapping must point at the retry's session id — the most recently
+    // known one — not the original stale session id.
+    expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "retry-sess-id");
+    expect(mockSetSession).toHaveBeenLastCalledWith(
+      "chan:ts",
+      "retry-sess-id",
+    );
+  });
+
+  test("does not save when no sessionId was ever captured (process crashes before any stdout)", async () => {
+    const mockSpawnCrash = mock(
+      () => fakeProc("", "segfault", 139) as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockSetSession.mockClear();
+    mockGetSession.mockReturnValue(undefined);
+
+    const runClaudeCrash = createRunClaude(
+      mockSpawnCrash as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await expect(
+      runClaudeCrash("hello", "chan:ts"),
+    ).rejects.toThrow("segfault");
+    expect(mockSetSession).not.toHaveBeenCalled();
+  });
+
+  test("a session store write failure on the initial-attempt catch does not mask the original error", async () => {
+    // No existing session, so no retry happens — this exercises the
+    // initial `catch (err)` call site's guard directly.
+    const proc = drippingProc(
+      JSON.stringify({
+        type: "system",
+        subtype: "init",
+        session_id: "fresh-sess-id",
+      }),
+      1000,
+      1,
+    );
+    const mockSpawnTimeout = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const throwingSetSession = mock((_key: string, _id: string) => {
+      throw new Error("disk full");
+    });
+    const throwingSessions = {
+      get: (_key: string): string | undefined => undefined,
+      set: throwingSetSession,
+      clear: (_key: string) => {},
+    };
+
+    const runClaudeWithTimeout = createRunClaude(
+      mockSpawnTimeout as typeof Bun.spawn,
+      throwingSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly since stdout only emits the one line
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    // The persistence failure must never replace the original timeout error.
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).sessionId).toBe(
+      "fresh-sess-id",
+    );
+    expect(throwingSetSession).toHaveBeenCalledWith(
+      "chan:ts",
+      "fresh-sess-id",
+    );
+  });
+
+  test("a session store write failure on the retry catch does not mask the original error or skip Sentry capture", async () => {
+    let callCount = 0;
+    const mockSpawnRetry = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call (resume) fails with a non-timeout error — enters the
+        // retry branch.
+        return fakeProc("", "socket closed", 1) as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      // Retry attempt hangs and times out, but still captures a session id
+      // off its own init line before the idle timer kills it.
+      return drippingProc(
+        JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "retry-sess-id",
+        }),
+        1000,
+        1,
+      ) as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const throwingSetSession = mock((_key: string, _id: string) => {
+      throw new Error("disk full");
+    });
+    const throwingSessions = {
+      get: (_key: string): string | undefined => "stale-sess-id",
+      set: throwingSetSession,
+      clear: (_key: string) => {},
+    };
+
+    capturedExceptions = [];
+    const runClaudeWithRetryTimeout = createRunClaude(
+      mockSpawnRetry as typeof Bun.spawn,
+      throwingSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly on the retry's silent stdout
+    );
+
+    const err = await runClaudeWithRetryTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    // The retry contract rethrows the ORIGINAL (first-attempt) error
+    // unchanged, even though the retry's own session-persistence write
+    // threw.
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("socket closed");
+    expect(mockSpawnRetry).toHaveBeenCalledTimes(2);
+    expect(throwingSetSession).toHaveBeenCalledWith(
+      "chan:ts",
+      "retry-sess-id",
+    );
+    // Sentry capture of the ORIGINAL error must still run despite the
+    // persistence failure.
+    expect(capturedExceptions).toHaveLength(1);
+    expect((capturedExceptions[0] as Error).message).toContain(
+      "socket closed",
+    );
   });
 });
 

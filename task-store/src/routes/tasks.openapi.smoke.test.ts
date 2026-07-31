@@ -142,7 +142,7 @@ function fakeTaskService(
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
@@ -459,6 +459,101 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     const body = (await res.json()) as { sessions: string[]; repos: string[] };
     expect(Array.isArray(body.sessions)).toBe(true);
     expect(Array.isArray(body.repos)).toBe(true);
+  });
+
+  it("GET /distinct returns 200 with an orgs array included alongside sessions/repos", async () => {
+    const app = createTasksRoutes(fakeTaskService());
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/distinct");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      sessions: string[];
+      repos: string[];
+      orgs: string[];
+    };
+    expect(Array.isArray(body.orgs)).toBe(true);
+  });
+
+  it("GET /?repo=org/a passes repo: ['org/a'] (single-value, array-wrapped) through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1", repo: "org/a" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?repo=org/a");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { repo?: unknown }).repo).toEqual(["org/a"]);
+  });
+
+  it("GET /?repo=org/a&repo=org/b passes repo: ['org/a', 'org/b'] through to taskService.list() (multi-value repo)", async () => {
+    const taskA = makeTask({ id: "t-1", repo: "org/a" });
+    const taskB = makeTask({ id: "t-2", repo: "org/b" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [taskA, taskB],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?repo=org/a&repo=org/b");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { repo?: unknown }).repo).toEqual([
+      "org/a",
+      "org/b",
+    ]);
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(body.tasks).toHaveLength(2);
+  });
+
+  it("GET /?org=app-vitals passes org: ['app-vitals'] through to taskService.list()", async () => {
+    const task = makeTask({ id: "t-1", repo: "app-vitals/shipwright" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/?org=app-vitals");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { org?: unknown }).org).toEqual(["app-vitals"]);
+    const body = (await res.json()) as { tasks: Task[]; total: number };
+    expect(body.tasks).toHaveLength(1);
+  });
+
+  it("GET / with no repo or org param passes repo: undefined, org: undefined through to taskService.list() (existing behavior)", async () => {
+    const task = makeTask({ id: "t-1" });
+    let receivedFilters: unknown;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onList: (filters) => {
+          receivedFilters = filters;
+        },
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/");
+    expect(res.status).toBe(200);
+    expect((receivedFilters as { repo?: unknown }).repo).toBeUndefined();
+    expect((receivedFilters as { org?: unknown }).org).toBeUndefined();
   });
 });
 

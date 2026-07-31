@@ -50,8 +50,9 @@ Query params:
 | `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
-| `repo` | string | Filter by repo (`org/repo` format) |
-| `assignee` | string | Filter by assignee (admin tokens only; agent tokens see only their own tasks) |
+| `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
+| `org` | string, repeatable | Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeat the param to match any of several orgs (e.g. `?org=org-a&org=org-b`). Combines with `repo` as an AND filter (both narrow the same result set). |
+| `assignee` | string | Filter by assignee (admin tokens only; agent tokens without repo scope see only their own tasks). When used with repo-scoped agent tokens under `agentScope`, acts as an additional AND filter narrowing the visible set. |
 | `claimedBy` | string | Filter by claiming agent |
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
@@ -60,6 +61,12 @@ Query params:
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 | `updatedSince` | string | ISO timestamp. Only return tasks with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
+
+The underlying `TaskService.list()` accepts `repo` as a `string[]` (matches any repo in the
+list) and a separate `org` filter (matches any repo whose `org/repo` string starts with
+`"<org>/"`) — both are wired through as repeatable HTTP query params (`?repo=` / `?org=`) via
+Hono's `c.req.queries()`, so `?repo=org/a&repo=org/b` and `?org=app-vitals` both work as
+documented in the table above.
 
 Returns `{ tasks: Task[], total: number, limit: number, offset: number, scopeDegraded: boolean }`. 
 
@@ -88,7 +95,12 @@ is simply `tasks.length`; `limit`/`offset` query params have no effect on these 
 `?sort` parameter applies to `?state=blocked` (sort by `createdAt`; default `asc`), but is not
 supported with `?ready=true`.
 
-Agent tokens with a repo scope return tasks where `assignee === agentId` OR `repo` is in the agent's scope (pool tasks). Agent tokens without a repo scope see only tasks where `assignee === agentId`.
+**Agent token visibility:**
+- **With repo scope** (repos configured): Return tasks where `assignee === agentId` OR (`assignee === null` AND `repo` is in the agent's scope). This union of explicitly-assigned and pool tasks enables the agent to claim unassigned work from its scoped repositories.
+- **Without repo scope** (repos empty or not configured): See only tasks where `assignee === agentId` — no pool tasks visible.
+- **Admin tokens** (agentId null) have unrestricted visibility and can see any task matching the query filters.
+
+An explicit `?assignee=` filter on a repo-scoped agent token further narrows the result (acts as an AND condition on the OR union) — safe, since it only restricts visibility within an already-permitted set.
 
 #### Create task
 
@@ -113,6 +125,11 @@ GET /tasks/distinct
 ```
 
 Returns distinct values of key fields across the visible task set. Useful for populating filter dropdowns.
+
+Response: `{ sessions: string[], repos: string[], orgs: string[] }`
+- `sessions` — distinct `session` values across visible tasks
+- `repos` — distinct `repo` values (in `org/repo` format) across visible tasks
+- `orgs` — distinct organization prefixes extracted from `repo` values (the `org` part of `org/repo`)
 
 #### Get task
 
@@ -233,7 +250,11 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params: `repo`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
+Query params: `repo`, `org`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
+
+`repo` — repeatable query param (`?repo=a&repo=b`). Matches PRs whose `repo` field equals any of the provided repos (string exact-match, OR logic). Omit to search across all repos in scope.
+
+`org` — repeatable query param (`?org=x&org=y`). Matches PRs whose `repo` field starts with any of the provided org prefixes (`repo.startsWith("<org>/")`), OR logic. Omit to search across all repos in scope. When both `repo` and `org` are supplied, they compose via AND — only PRs matching the repo set AND at least one org prefix are returned (see `buildRepoOrgWhere` in `task-store/src/lib/repo-org-filter.ts`).
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
 
@@ -320,7 +341,7 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 |----------|--------|
 | `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
-| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). |
+| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). Optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure: when it matches the stored `lastCiFailureSignature`, `consecutiveCiFailureCount` increments; when it differs (or none is stored), the count resets to 1. Crossing the threshold (3, matching `SPIN_DETECTION_THRESHOLD`) auto-sets `hitl=true` and a descriptive `blockedReason`. When omitted, CI-failure tracking fields are left untouched. |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
 | `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
 | `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt` |
@@ -342,6 +363,10 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 `skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
 
 `lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
+
+`lastCiFailureSignature`: optional string — signature of the most recent CI failure reported via `POST /prs/:id/patch`'s optional `ciFailureSignature` field (e.g. `"npm-test-failed-foo.unit.test.ts"` — a stable identifier capturing which check and which test failed). Used to detect consecutive patch cycles hitting the same CI failure, enabling auto-blocking when a patch loop keeps hitting the same wall rather than making progress. Mirrors `skipCount`/`lastSkippedAt`'s structure and purpose. Set via `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
+
+`consecutiveCiFailureCount`: integer (default `0`) — consecutive count of patch cycles whose `ciFailureSignature` matched the stored `lastCiFailureSignature`. When a new, differing signature arrives (or none was previously stored), the count resets to 1 and the new signature is stored. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD` and `SKIP_BLOCK_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {count} consecutive CI failures: {signature}"` to halt repeated dispatch cycles. Updated by `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
 
 `reviewedCommitSha`: optional string — the review pipeline's exclusive commit-tracking field, separate from the shared `commitSha` field written by claim()/patch()/deploy for their own multi-phase bookkeeping. Set via `PATCH /prs/:id`. Used by the review phase to independently track the commit at which a review was conducted, allowing review state to persist across pipeline transitions without interference from concurrent patch/deploy phase operations updating `commitSha`.
 

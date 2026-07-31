@@ -570,6 +570,7 @@ function makeMockDeps(): AdminDeps {
         error: null,
         itemType: null,
         itemId: null,
+        sessionId: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
@@ -591,6 +592,7 @@ function makeMockDeps(): AdminDeps {
         error: null,
         itemType: null,
         itemId: null,
+        sessionId: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
@@ -3231,6 +3233,34 @@ describe("admin API — cron runs", () => {
     expect(res.status).toBe(400);
   });
 
+  it("PATCH then GET /agents/:id/crons/:cronId/runs/:runId round trips sessionId", async () => {
+    const deps = makeMockDepsWithStatefulRunService();
+    const app = createAdminApp(deps);
+
+    const patchRes = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs/${RUN_ID}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ sessionId: "session-abc-123" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.run.sessionId).toBe("session-abc-123");
+
+    const listRes = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json();
+    expect(listBody.items[0].sessionId).toBe("session-abc-123");
+  });
+
   it("GET /agents/:id/crons/summary response includes lastRun and runCountToday", async () => {
     const deps = makeMockDepsWithRunSummary();
     const app = createAdminApp(deps);
@@ -3343,6 +3373,7 @@ function makeMockDepsWithRunService(opts?: {
     error: null,
     itemType: opts?.itemType ?? null,
     itemId: opts?.itemId ?? null,
+    sessionId: null,
     phaseId: opts?.phaseId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
@@ -3406,6 +3437,59 @@ function makeMockDepsWithRunService(opts?: {
                 },
               ],
             }),
+    },
+  };
+}
+
+/**
+ * Like makeMockDepsWithRunService, but patch()/list() share a mutable
+ * in-memory run record so a PATCH followed by a GET reflects the write —
+ * used to exercise round-trip behavior (e.g. sessionId persistence) that a
+ * fixed-return mock can't verify.
+ */
+function makeMockDepsWithStatefulRunService(): AdminDeps {
+  const state: { run: Record<string, unknown> } = {
+    run: {
+      id: RUN_ID,
+      cronId: CRON_ID,
+      agentId: AGENT_ID,
+      startedAt: new Date("2026-01-01T08:00:00.000Z"),
+      completedAt: null,
+      skipped: false,
+      skipReason: null,
+      outcome: "success",
+      error: null,
+      itemType: null,
+      itemId: null,
+      sessionId: null,
+      phaseId: null,
+      createdAt: new Date("2026-01-01T08:00:00.000Z"),
+      modelBreakdown: [],
+    },
+  };
+
+  const base = makeMockDeps();
+  return {
+    ...base,
+    agentCronRunService: {
+      create: async () => state.run as never,
+      list: async () => ({
+        items: [state.run as never],
+        total: 1,
+        limit: 20,
+        offset: 0,
+      }),
+      patch: async (
+        _runId: string,
+        _agentId: string,
+        _cronId: string,
+        input: { sessionId?: string | null },
+      ) => {
+        if (input.sessionId !== undefined) {
+          state.run = { ...state.run, sessionId: input.sessionId };
+        }
+        return state.run as never;
+      },
     },
   };
 }

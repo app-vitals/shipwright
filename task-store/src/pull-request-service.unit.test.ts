@@ -135,6 +135,157 @@ describe("PullRequestService.patch()", () => {
     expect(caught).toBeInstanceOf(NotFoundError);
     expect(prisma._updateCalls).toHaveLength(0);
   });
+
+  // ─── ciFailureSignature streak tracking ───────────────────────────────────
+
+  test("ciFailureSignature omitted — leaves lastCiFailureSignature/consecutiveCiFailureCount untouched", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      lastCiFailureSignature: "some-prior-signature",
+      consecutiveCiFailureCount: 2,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("lastCiFailureSignature" in data).toBe(false);
+    expect("consecutiveCiFailureCount" in data).toBe(false);
+    expect("hitl" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+  });
+
+  test("ciFailureSignature matches stored signature — increments consecutiveCiFailureCount, does not reset", async () => {
+    const signature = "npm-test-failed-foo.ts";
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: signature,
+      consecutiveCiFailureCount: 1,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "abc123", signature);
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.consecutiveCiFailureCount).toEqual({ increment: 1 });
+    expect("lastCiFailureSignature" in data).toBe(false);
+  });
+
+  test("ciFailureSignature differs from stored signature — resets consecutiveCiFailureCount to 1, stores new signature", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: "old-signature",
+      consecutiveCiFailureCount: 2,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "abc123", "new-signature");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.consecutiveCiFailureCount).toBe(1);
+    expect(data.lastCiFailureSignature).toBe("new-signature");
+  });
+
+  test("ciFailureSignature provided with no prior stored signature — resets (sets) consecutiveCiFailureCount to 1, stores signature", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: null,
+      consecutiveCiFailureCount: 0,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "abc123", "first-signature");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.consecutiveCiFailureCount).toBe(1);
+    expect(data.lastCiFailureSignature).toBe("first-signature");
+  });
+
+  test("ciFailureSignature crossing CI_FAILURE_BLOCK_THRESHOLD (3) sets hitl:true and a descriptive blockedReason in the same request", async () => {
+    const signature = "flaky-e2e-test";
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: signature,
+      consecutiveCiFailureCount: 2,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.patch("pr-1", "abc123", signature);
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.consecutiveCiFailureCount).toEqual({ increment: 1 });
+    expect(data.hitl).toBe(true);
+    expect(data.blockedReason).toBeTruthy();
+    expect(data.blockedReason).toContain("3");
+    expect(data.blockedReason).toContain(signature);
+    expect(result.hitl).toBe(true);
+  });
+
+  test("ciFailureSignature below threshold does NOT set hitl/blockedReason", async () => {
+    const signature = "some-signature";
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: signature,
+      consecutiveCiFailureCount: 0,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "abc123", signature);
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect("hitl" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+  });
+
+  test("ciFailureSignature reset case (differing signature) does NOT set hitl/blockedReason even if prior count was at/above threshold", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "abc123",
+      lastCiFailureSignature: "old-signature",
+      consecutiveCiFailureCount: 5,
+      hitl: true,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "abc123", "new-signature");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.consecutiveCiFailureCount).toBe(1);
+    expect("hitl" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+  });
+
+  test("ciFailureSignature combined with commitSha match (no-op review cycle) still tracks the CI streak independently", async () => {
+    const sameSha = "abc123";
+    const signature = "same-failure";
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: sameSha,
+      lastCiFailureSignature: signature,
+      consecutiveCiFailureCount: 1,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", sameSha, signature);
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    // reviewState untouched (no-op patch cycle), but the CI streak still increments
+    expect("reviewState" in data).toBe(false);
+    expect(data.consecutiveCiFailureCount).toEqual({ increment: 1 });
+  });
 });
 
 describe("PullRequestService.list() sort", () => {
@@ -296,6 +447,60 @@ describe("PullRequestService.list() updatedSince/repo where clause", () => {
     await expect(svc.list({ updatedSince: "not-a-date" })).rejects.toThrow(
       BadRequestError,
     );
+  });
+
+  test("list({ repo: ['org/a', 'org/b'] }) produces a where.repo.in clause", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: ["org/a", "org/b"] });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      repo?: { in: string[] };
+    };
+    expect(where.repo).toEqual({ in: ["org/a", "org/b"] });
+  });
+
+  test("list({ org: 'app-vitals' }) produces a where.repo.startsWith('app-vitals/') clause", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ org: "app-vitals" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      OR?: Array<{ repo: { startsWith: string } }>;
+    };
+    expect(where.OR).toEqual([{ repo: { startsWith: "app-vitals/" } }]);
+  });
+
+  test("list({ repo: ['org/a', 'org/b'], org: ['acme'] }) combines both via AND", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: ["org/a", "org/b"], org: ["acme"] });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      AND?: [{ repo: { in: string[] } }, { OR: unknown[] }];
+    };
+    expect(where.AND).toEqual([
+      { repo: { in: ["org/a", "org/b"] } },
+      { OR: [{ repo: { startsWith: "acme/" } }] },
+    ]);
+  });
+
+  test("list({ repo: 'org/repo' }) still applies exact-match (single string, no org)", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: "org/repo" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].where).toMatchObject({
+      repo: "org/repo",
+    });
   });
 });
 
