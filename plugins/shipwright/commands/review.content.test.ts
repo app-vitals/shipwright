@@ -495,3 +495,174 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
     );
   });
 });
+
+describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", () => {
+  it("Step 5's 'Existing reviews and comments' item uses a gh api graphql call, not the REST gh pr view --json comments,reviews call", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(-1);
+    const section = content.slice(step5Idx, step6Idx);
+
+    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = section.slice(itemIdx, itemIdx + 1500);
+
+    expect(itemBlock).toContain("gh api graphql -f query=");
+    expect(itemBlock).not.toContain("gh pr view {pr} --repo {org}/{repo} --json comments,reviews");
+  });
+
+  it("Step 5.5's GraphQL query fetches reviewThreads with isResolved and inline comment author/body/path/line", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+
+    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = section.slice(itemIdx, itemIdx + 1500);
+
+    expect(itemBlock).toContain("reviewThreads(first: 100)");
+    expect(itemBlock).toContain("isResolved");
+    expect(itemBlock).toContain("author { login }");
+    expect(itemBlock).toContain("body");
+    expect(itemBlock).toContain("path");
+    expect(itemBlock).toContain("line");
+  });
+
+  it("Step 5.5's GraphQL query also fetches reviews and comments in the same call", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+
+    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = section.slice(itemIdx, itemIdx + 1500);
+
+    expect(itemBlock).toContain("reviews(first:");
+    expect(itemBlock).toContain("comments(first:");
+  });
+});
+
+describe("review.md — Unresolved Comment Check includes unresolved inline threads (RUC-1.1)", () => {
+  it("the substantive unresolved feedback condition includes an unresolved inline review thread bullet", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+    const unresolvedSection = section.slice(unresolvedIdx);
+
+    expect(unresolvedSection).toContain("unresolved inline");
+    expect(unresolvedSection.toLowerCase()).toContain("thread");
+  });
+
+  it("the unresolved inline thread condition excludes bot authors and CURRENT_USER, matching existing filtering", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    const unresolvedSection = section.slice(unresolvedIdx);
+
+    const bulletIdx = unresolvedSection.indexOf("unresolved inline");
+    expect(bulletIdx).toBeGreaterThan(-1);
+    const bulletBlock = unresolvedSection.slice(Math.max(0, bulletIdx - 200), bulletIdx + 300);
+
+    expect(bulletBlock).toContain("CURRENT_USER");
+    expect(bulletBlock.toLowerCase()).toContain("bot");
+  });
+});
+
+describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)", () => {
+  it("a new gate section exists immediately before Step 10 referencing patch.md's Step 3a definition", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step9Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(-1);
+
+    // The gate lives either as its own section between Step 9 and Step 10, or
+    // as the first thing inside Step 10 before "Event selection".
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    expect(eventSelectionIdx).toBeGreaterThan(step10Idx);
+
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+    expect(searchWindow).toContain("Step 3a");
+    expect(searchWindow.toLowerCase()).toContain("unaddressed findings");
+  });
+
+  it("the gate forces event to COMMENT when unaddressed findings are present", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    expect(step9Idx).toBeGreaterThan(-1);
+    expect(eventSelectionIdx).toBeGreaterThan(-1);
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2000);
+
+    expect(gateBlock).toContain("COMMENT");
+    expect(gateBlock).toContain("event");
+  });
+
+  it("the gate overrides the code-reviewer subagent's recommendation and the self-review override, without being mutually exclusive", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    expect(gateBlock.toLowerCase()).toContain("self-review");
+    expect(gateBlock).toContain("override");
+  });
+
+  it("the gate computes the verdict once and feeds both the event field and the Verdict body label from that value", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    expect(gateBlock).toContain("Verdict: COMMENT");
+  });
+
+  it("the gate references the OR condition of any unresolved inline thread, matching patch.md's Step 3a", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    expect(gateBlock.toLowerCase()).toContain("unresolved inline thread");
+  });
+
+  it("the gate does not persist a new dedup state field -- it is computed live, consistent with the Design Constitution", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // Should not introduce any new task-store PATCH/POST field for this gate.
+    expect(gateBlock).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
+  });
+});
+
+describe("review.md — Review Quality Rules reflect mechanical enforcement (RUC-1.1)", () => {
+  it("the 'Check for unresolved feedback first' bullet describes mechanical enforcement, not just a guideline", () => {
+    const rulesIdx = content.indexOf("## Review Quality Rules");
+    expect(rulesIdx).toBeGreaterThan(-1);
+    const section = content.slice(rulesIdx);
+
+    const bulletIdx = section.indexOf("Check for unresolved feedback first");
+    expect(bulletIdx).toBeGreaterThan(-1);
+    const bulletBlock = section.slice(bulletIdx, bulletIdx + 400);
+
+    expect(bulletBlock.toLowerCase()).toContain("mechanically enforced");
+  });
+});
