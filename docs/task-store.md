@@ -84,7 +84,9 @@ and this agent truly has zero accessible repos."
 `?ready=true` (or `?state=ready`) and `?state=blocked` are unpaginated convenience endpoints —
 they compute over the entire task graph (dependency resolution needs every task, not a
 `limit`/`offset` slice) and always return every matching task in one response. Their `total`
-is simply `tasks.length`; `limit`/`offset` query params have no effect on these two branches.
+is simply `tasks.length`; `limit`/`offset` query params have no effect on these two branches. The
+`?sort` parameter applies to `?state=blocked` (sort by `createdAt`; default `asc`), but is not
+supported with `?ready=true`.
 
 Agent tokens with a repo scope return tasks where `assignee === agentId` OR `repo` is in the agent's scope (pool tasks). Agent tokens without a repo scope see only tasks where `assignee === agentId`.
 
