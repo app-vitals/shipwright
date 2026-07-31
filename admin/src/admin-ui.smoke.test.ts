@@ -752,6 +752,7 @@ describe("admin UI — authenticated pages", () => {
       error: null,
       itemType: null,
       itemId: null,
+      sessionId: null,
       phaseId: null,
       phaseCron: null,
       createdAt: new Date("2026-06-01T10:00:00Z"),

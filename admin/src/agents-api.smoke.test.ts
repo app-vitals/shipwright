@@ -570,6 +570,7 @@ function makeMockDeps(): AdminDeps {
         error: null,
         itemType: null,
         itemId: null,
+        sessionId: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
       }),
@@ -591,6 +592,7 @@ function makeMockDeps(): AdminDeps {
         error: null,
         itemType: null,
         itemId: null,
+        sessionId: null,
         phaseId: null,
         createdAt: new Date("2024-01-01T09:00:00.000Z"),
         modelBreakdown: [],
@@ -3343,6 +3345,7 @@ function makeMockDepsWithRunService(opts?: {
     error: null,
     itemType: opts?.itemType ?? null,
     itemId: opts?.itemId ?? null,
+    sessionId: null,
     phaseId: opts?.phaseId ?? null,
     createdAt: new Date("2026-01-01T08:00:00.000Z"),
   };
