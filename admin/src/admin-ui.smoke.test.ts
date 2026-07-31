@@ -4003,6 +4003,84 @@ describe("admin UI — tasks page", () => {
     expect(capturedParams[0].get("source")).toBe("entropy-fix");
   });
 
+  it("GET /admin/tasks?repo=a&repo=b&org=app-vitals forwards repeated repo and org params to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?repo=a&repo=b&org=app-vitals", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].getAll("repo")).toEqual(["a", "b"]);
+    expect(capturedParams[0].getAll("org")).toEqual(["app-vitals"]);
+  });
+
+  it("GET /admin/tasks?repo=org/repo (single value) still forwards a single repo param (backward compat)", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks?repo=org%2Frepo", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].getAll("repo")).toEqual(["org/repo"]);
+  });
+
+  it("GET /admin/tasks with no repo/org params forwards neither to the task store", async () => {
+    const capturedParams: URLSearchParams[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async (params) => {
+          capturedParams.push(params);
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(capturedParams.length).toBe(1);
+    expect(capturedParams[0].has("repo")).toBe(false);
+    expect(capturedParams[0].has("org")).toBe(false);
+  });
+
+  it("GET /admin/tasks?repo=a&repo=b renders both selected repo options in the multiselect", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchDistinctTaskValues: async () => ({
+          sessions: [],
+          repos: ["a", "b", "c"],
+          orgs: [],
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks?repo=a&repo=b", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    const html = await res.text();
+    expect(html).toContain('<option value="a" selected>a</option>');
+    expect(html).toContain('<option value="b" selected>b</option>');
+    expect(html).toContain('<option value="c">c</option>');
+  });
+
   it("GET /admin/tasks with no source param forwards no source to the task store", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createAdminUIApp(
@@ -4194,6 +4272,7 @@ describe("admin UI — tasks page", () => {
         fetchDistinctTaskValues: async () => ({
           sessions: [],
           repos: [],
+          orgs: [],
         }),
       }),
     );
