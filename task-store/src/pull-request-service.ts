@@ -71,8 +71,7 @@ function isPrBlocked(
 ): boolean {
   return (
     pr.hitl === true ||
-    (task !== undefined &&
-      (task.hitl === true || task.status === "blocked"))
+    (task !== undefined && (task.hitl === true || task.status === "blocked"))
   );
 }
 
@@ -84,6 +83,17 @@ function isPrBlocked(
  * agent/ and task-store/ are separate deployables.
  */
 const SKIP_BLOCK_THRESHOLD = 3;
+
+/**
+ * CI-failure streak auto-block threshold: once a PR's consecutiveCiFailureCount
+ * reaches this value (i.e. patch() has been called this many times in a row
+ * with the same ciFailureSignature), patch() also sets hitl:true +
+ * blockedReason in the same request so the loop orchestrator stops
+ * re-dispatching CI-fix cycles that keep hitting the same failure. Mirrors
+ * SKIP_BLOCK_THRESHOLD above / SPIN_DETECTION_THRESHOLD in
+ * agent/src/loop-orchestrator.ts:179.
+ */
+const CI_FAILURE_BLOCK_THRESHOLD = 3;
 
 /** Filters accepted by PullRequestService.list. */
 export interface PullRequestListFilters {
@@ -172,7 +182,11 @@ export interface PullRequestServiceLike {
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
   heartbeat(id: string): Promise<PullRequest>;
   complete(id: string): Promise<PullRequest>;
-  patch(id: string, commitSha?: string): Promise<PullRequest>;
+  patch(
+    id: string,
+    commitSha?: string,
+    ciFailureSignature?: string,
+  ): Promise<PullRequest>;
   release(id: string): Promise<PullRequest>;
   recordSkip(id: string): Promise<PullRequest>;
   resetSkip(id: string): Promise<PullRequest>;
@@ -536,8 +550,28 @@ export class PullRequestService implements PullRequestServiceLike {
    * Root-cause fix for PR app-vitals/shipwright#1321's review pile-up: patch()
    * was unconditionally resetting reviewState even on no-op cycles, causing
    * findings to be re-reviewed forever.
+   *
+   * CI-failure streak tracking is entirely independent of the reviewState
+   * logic above and self-contained (no linked-task lookup), mirroring
+   * recordSkip()'s auto-block pattern:
+   *   - ciFailureSignature omitted: lastCiFailureSignature/
+   *     consecutiveCiFailureCount are left untouched (absent from the update
+   *     payload) — covers merge-conflict/review-fix patch calls unrelated to
+   *     CI.
+   *   - ciFailureSignature provided and matches the record's stored
+   *     lastCiFailureSignature: increments consecutiveCiFailureCount.
+   *   - ciFailureSignature provided and differs (or none stored yet): resets
+   *     consecutiveCiFailureCount to 1 and stores the new signature.
+   *   - Crossing CI_FAILURE_BLOCK_THRESHOLD (3) on a matching-signature
+   *     increment also sets hitl:true + a descriptive blockedReason, in the
+   *     same request/update call. A reset never trips the threshold, even if
+   *     the prior count was at/above it.
    */
-  async patch(id: string, commitSha?: string): Promise<PullRequest> {
+  async patch(
+    id: string,
+    commitSha?: string,
+    ciFailureSignature?: string,
+  ): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
 
     const updateData: Prisma.PullRequestUpdateInput = {
@@ -549,19 +583,34 @@ export class PullRequestService implements PullRequestServiceLike {
       phase: null,
     };
 
+    // Not a Prisma error — thrown directly, must bypass translateNotFound.
+    const needsExisting =
+      commitSha !== undefined || ciFailureSignature !== undefined;
+    const existing = needsExisting
+      ? await this.prisma.pullRequest.findUnique({ where: { id } })
+      : null;
+    if (needsExisting && !existing) {
+      throw new NotFoundError("pr not found");
+    }
+
     if (commitSha === undefined) {
       updateData.reviewState = "pending";
-    } else {
-      // Not a Prisma error — thrown directly, must bypass translateNotFound.
-      const existing = await this.prisma.pullRequest.findUnique({
-        where: { id },
-      });
-      if (!existing) {
-        throw new NotFoundError("pr not found");
-      }
-      if (existing.commitSha !== commitSha) {
-        updateData.reviewState = "pending";
-        updateData.commitSha = commitSha;
+    } else if (existing && existing.commitSha !== commitSha) {
+      updateData.reviewState = "pending";
+      updateData.commitSha = commitSha;
+    }
+
+    if (ciFailureSignature !== undefined && existing) {
+      if (existing.lastCiFailureSignature === ciFailureSignature) {
+        updateData.consecutiveCiFailureCount = { increment: 1 };
+        const newCount = existing.consecutiveCiFailureCount + 1;
+        if (newCount >= CI_FAILURE_BLOCK_THRESHOLD) {
+          updateData.hitl = true;
+          updateData.blockedReason = `Auto-blocked after ${newCount} consecutive patch cycles hitting the same CI failure (${ciFailureSignature})`;
+        }
+      } else {
+        updateData.consecutiveCiFailureCount = 1;
+        updateData.lastCiFailureSignature = ciFailureSignature;
       }
     }
 

@@ -1549,6 +1549,93 @@ describeOrSkip(
       expect(caught).toBeInstanceOf(NotFoundError);
     });
 
+    it("patch() with ciFailureSignature matching 3x in a row auto-sets hitl:true (real-Postgres round trip)", async () => {
+      const t1 = new Date("2026-07-02T10:00:00.000Z");
+      const t2 = new Date("2026-07-02T10:05:00.000Z");
+      const t3 = new Date("2026-07-02T10:10:00.000Z");
+      const sha = "sha-ci-streak";
+      const signature = "npm-test-failed-foo.unit.test.ts";
+
+      const created = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 1130,
+          commitSha: sha,
+          reviewState: "posted",
+        },
+      });
+
+      const svc1 = new PullRequestService(prisma, FixedClock(t1));
+      const first = await svc1.patch(created.id, sha, signature);
+      expect(first.consecutiveCiFailureCount).toBe(1);
+      expect(first.lastCiFailureSignature).toBe(signature);
+      expect(first.hitl).toBe(false);
+
+      const svc2 = new PullRequestService(prisma, FixedClock(t2));
+      const second = await svc2.patch(created.id, sha, signature);
+      expect(second.consecutiveCiFailureCount).toBe(2);
+      expect(second.hitl).toBe(false);
+
+      const svc3 = new PullRequestService(prisma, FixedClock(t3));
+      const third = await svc3.patch(created.id, sha, signature);
+      expect(third.consecutiveCiFailureCount).toBe(3);
+      expect(third.hitl).toBe(true);
+      expect(third.blockedReason).toBeTruthy();
+      expect(third.blockedReason).toContain("3");
+      expect(third.blockedReason).toContain(signature);
+
+      // Confirm it persisted to the DB, not just returned in-memory.
+      const reloaded = await prisma.pullRequest.findUniqueOrThrow({
+        where: { id: created.id },
+      });
+      expect(reloaded.consecutiveCiFailureCount).toBe(3);
+      expect(reloaded.hitl).toBe(true);
+      expect(reloaded.lastCiFailureSignature).toBe(signature);
+    });
+
+    it("patch() with a differing ciFailureSignature resets consecutiveCiFailureCount to 1 instead of accumulating toward the threshold", async () => {
+      const sha = "sha-ci-reset";
+      const created = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 1131,
+          commitSha: sha,
+          reviewState: "posted",
+        },
+      });
+
+      await service.patch(created.id, sha, "signature-a");
+      await service.patch(created.id, sha, "signature-a");
+      const afterDifferentSignature = await service.patch(
+        created.id,
+        sha,
+        "signature-b",
+      );
+
+      expect(afterDifferentSignature.consecutiveCiFailureCount).toBe(1);
+      expect(afterDifferentSignature.lastCiFailureSignature).toBe(
+        "signature-b",
+      );
+      expect(afterDifferentSignature.hitl).toBe(false);
+    });
+
+    it("patch() without ciFailureSignature leaves lastCiFailureSignature/consecutiveCiFailureCount untouched (merge-conflict/review-fix patch calls)", async () => {
+      const created = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 1132,
+          reviewState: "posted",
+          lastCiFailureSignature: "pre-existing-signature",
+          consecutiveCiFailureCount: 2,
+        },
+      });
+
+      const patched = await service.patch(created.id);
+      expect(patched.lastCiFailureSignature).toBe("pre-existing-signature");
+      expect(patched.consecutiveCiFailureCount).toBe(2);
+      expect(patched.hitl).toBe(false);
+    });
+
     it("update() throws NotFoundError when the PR does not exist", async () => {
       let caught: unknown;
       try {

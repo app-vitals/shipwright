@@ -64,6 +64,10 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     readyForReviewAt: null,
     readyForPatchAt: null,
     readyForDeployAt: null,
+    skipCount: 0,
+    lastSkippedAt: null,
+    lastCiFailureSignature: null,
+    consecutiveCiFailureCount: 0,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -281,7 +285,11 @@ function fakePrService(
       return updated;
     },
 
-    async patch(id: string): Promise<PullRequest> {
+    async patch(
+      id: string,
+      _commitSha?: string,
+      ciFailureSignature?: string,
+    ): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
       const updated = {
@@ -290,6 +298,15 @@ function fakePrService(
         patchedAt: new Date().toISOString(),
         reviewState: "pending" as const,
         updatedAt: new Date(),
+        ...(ciFailureSignature !== undefined
+          ? {
+              lastCiFailureSignature: ciFailureSignature,
+              consecutiveCiFailureCount:
+                ciFailureSignature === existing.lastCiFailureSignature
+                  ? (existing.consecutiveCiFailureCount ?? 0) + 1
+                  : 1,
+            }
+          : {}),
       } as PullRequest;
       store.set(id, updated);
       return updated;
@@ -686,6 +703,55 @@ describe("/prs routes (smoke)", () => {
     expect(body.patchCycles).toBe(3);
     expect(body.reviewState).toBe("pending");
     expect(body.patchedAt).toBeTruthy();
+  });
+
+  it("POST /prs/:id/patch accepts an optional ciFailureSignature body field and the response includes lastCiFailureSignature/consecutiveCiFailureCount", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        patchCycles: 1,
+        reviewState: "posted",
+        lastCiFailureSignature: "some-signature",
+        consecutiveCiFailureCount: 1,
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/patch", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({ ciFailureSignature: "some-signature" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.lastCiFailureSignature).toBe("some-signature");
+    expect(body.consecutiveCiFailureCount).toBe(2);
+  });
+
+  it("POST /prs/:id/patch without ciFailureSignature leaves the CI-streak fields absent from the response's changed fields (untouched)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        patchCycles: 1,
+        reviewState: "posted",
+        lastCiFailureSignature: "pre-existing-signature",
+        consecutiveCiFailureCount: 2,
+      }),
+    );
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/patch", {
+      method: "POST",
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.lastCiFailureSignature).toBe("pre-existing-signature");
+    expect(body.consecutiveCiFailureCount).toBe(2);
   });
 
   // ─── POST /prs/:id/heartbeat ──────────────────────────────────────────────

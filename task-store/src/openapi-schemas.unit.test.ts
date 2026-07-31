@@ -14,6 +14,7 @@ import {
   TaskTokenSchema,
   ErrorSchema,
   OkSchema,
+  PatchPrBodySchema,
 } from "./openapi-schemas.ts";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -104,6 +105,10 @@ const validPullRequest = {
   hitl: false,
   hitlNotifiedAt: null,
   blockedReason: null,
+  skipCount: 0,
+  lastSkippedAt: null,
+  lastCiFailureSignature: null,
+  consecutiveCiFailureCount: 0,
   createdAt: yesterday,
   updatedAt: now,
 };
@@ -463,6 +468,95 @@ describe("PullRequestSchema", () => {
     const result = PullRequestSchema.safeParse({
       ...validPullRequest,
       hitl: "yes",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("parses pull request with lastCiFailureSignature and consecutiveCiFailureCount set", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      lastCiFailureSignature: "npm-test-failed-foo.ts",
+      consecutiveCiFailureCount: 2,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.lastCiFailureSignature).toBe("npm-test-failed-foo.ts");
+      expect(result.data.consecutiveCiFailureCount).toBe(2);
+    }
+  });
+
+  test("parses pull request with null lastCiFailureSignature and default consecutiveCiFailureCount", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      lastCiFailureSignature: null,
+      consecutiveCiFailureCount: 0,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.lastCiFailureSignature).toBeNull();
+      expect(result.data.consecutiveCiFailureCount).toBe(0);
+    }
+  });
+
+  test("consecutiveCiFailureCount defaults to 0 when omitted", () => {
+    const { consecutiveCiFailureCount: _, ...withoutField } = {
+      ...validPullRequest,
+      consecutiveCiFailureCount: 99,
+    };
+    const result = PullRequestSchema.safeParse(withoutField);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.consecutiveCiFailureCount).toBe(0);
+    }
+  });
+
+  test("rejects non-integer consecutiveCiFailureCount", () => {
+    const result = PullRequestSchema.safeParse({
+      ...validPullRequest,
+      consecutiveCiFailureCount: "3",
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+// ─── PatchPrBodySchema ────────────────────────────────────────────────────────
+
+describe("PatchPrBodySchema", () => {
+  test("parses body with commitSha and ciFailureSignature both set", () => {
+    const result = PatchPrBodySchema.safeParse({
+      commitSha: "abc123def456",
+      ciFailureSignature: "npm-test-failed-foo.ts",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.commitSha).toBe("abc123def456");
+      expect(result.data.ciFailureSignature).toBe("npm-test-failed-foo.ts");
+    }
+  });
+
+  test("parses body with only ciFailureSignature set (commitSha omitted)", () => {
+    const result = PatchPrBodySchema.safeParse({
+      ciFailureSignature: "npm-test-failed-foo.ts",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ciFailureSignature).toBe("npm-test-failed-foo.ts");
+      expect(result.data.commitSha).toBeUndefined();
+    }
+  });
+
+  test("parses empty body — both fields optional", () => {
+    const result = PatchPrBodySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.commitSha).toBeUndefined();
+      expect(result.data.ciFailureSignature).toBeUndefined();
+    }
+  });
+
+  test("rejects non-string ciFailureSignature", () => {
+    const result = PatchPrBodySchema.safeParse({
+      ciFailureSignature: 12345,
     });
     expect(result.success).toBe(false);
   });
