@@ -969,6 +969,127 @@ describe("session persistence on failure", () => {
     ).rejects.toThrow("segfault");
     expect(mockSetSession).not.toHaveBeenCalled();
   });
+
+  test("a session store write failure on the initial-attempt catch does not mask the original error", async () => {
+    // No existing session, so no retry happens — this exercises the
+    // initial `catch (err)` call site's guard directly.
+    const proc = drippingProc(
+      JSON.stringify({
+        type: "system",
+        subtype: "init",
+        session_id: "fresh-sess-id",
+      }),
+      1000,
+      1,
+    );
+    const mockSpawnTimeout = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    const throwingSetSession = mock((_key: string, _id: string) => {
+      throw new Error("disk full");
+    });
+    const throwingSessions = {
+      get: (_key: string): string | undefined => undefined,
+      set: throwingSetSession,
+      clear: (_key: string) => {},
+    };
+
+    const runClaudeWithTimeout = createRunClaude(
+      mockSpawnTimeout as typeof Bun.spawn,
+      throwingSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly since stdout only emits the one line
+    );
+
+    const { ClaudeTimeoutError } = await import("./claude.ts");
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    // The persistence failure must never replace the original timeout error.
+    expect(err).toBeInstanceOf(ClaudeTimeoutError);
+    expect((err as InstanceType<typeof ClaudeTimeoutError>).sessionId).toBe(
+      "fresh-sess-id",
+    );
+    expect(throwingSetSession).toHaveBeenCalledWith(
+      "chan:ts",
+      "fresh-sess-id",
+    );
+  });
+
+  test("a session store write failure on the retry catch does not mask the original error or skip Sentry capture", async () => {
+    let callCount = 0;
+    const mockSpawnRetry = mock(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First call (resume) fails with a non-timeout error — enters the
+        // retry branch.
+        return fakeProc("", "socket closed", 1) as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      // Retry attempt hangs and times out, but still captures a session id
+      // off its own init line before the idle timer kills it.
+      return drippingProc(
+        JSON.stringify({
+          type: "system",
+          subtype: "init",
+          session_id: "retry-sess-id",
+        }),
+        1000,
+        1,
+      ) as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    const throwingSetSession = mock((_key: string, _id: string) => {
+      throw new Error("disk full");
+    });
+    const throwingSessions = {
+      get: (_key: string): string | undefined => "stale-sess-id",
+      set: throwingSetSession,
+      clear: (_key: string) => {},
+    };
+
+    capturedExceptions = [];
+    const runClaudeWithRetryTimeout = createRunClaude(
+      mockSpawnRetry as typeof Bun.spawn,
+      throwingSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling — nowhere near firing
+      15, // idle timeout — fires quickly on the retry's silent stdout
+    );
+
+    const err = await runClaudeWithRetryTimeout("hello", "chan:ts").catch(
+      (e) => e,
+    );
+    // The retry contract rethrows the ORIGINAL (first-attempt) error
+    // unchanged, even though the retry's own session-persistence write
+    // threw.
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain("socket closed");
+    expect(mockSpawnRetry).toHaveBeenCalledTimes(2);
+    expect(throwingSetSession).toHaveBeenCalledWith(
+      "chan:ts",
+      "retry-sess-id",
+    );
+    // Sentry capture of the ORIGINAL error must still run despite the
+    // persistence failure.
+    expect(capturedExceptions).toHaveLength(1);
+    expect((capturedExceptions[0] as Error).message).toContain(
+      "socket closed",
+    );
+  });
 });
 
 // ─── _enqueue serialization tests ────────────────────────────────────────────

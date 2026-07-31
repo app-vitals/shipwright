@@ -590,7 +590,12 @@ export function createRunClaude(
       // The initial attempt failed — save whatever session id it captured
       // before deciding whether to retry, so even a non-retried (or
       // retry-ineligible) failure still leaves a resumable mapping behind.
-      await _saveSessionFromError(sessionKey, err);
+      try {
+        await _saveSessionFromError(sessionKey, err);
+      } catch {
+        // Best-effort persistence — a failed write here must never mask or
+        // replace the original Claude error being handled in this catch block.
+      }
 
       // Retry the same resumed session once: transient blips (e.g. a socket
       // close) can self-heal on a second attempt without losing conversation
@@ -608,7 +613,12 @@ export function createRunClaude(
         } catch (retryErr) {
           // The retry also failed — overwrite with its own most-recently-known
           // session id (if any), then still rethrow the ORIGINAL error.
-          await _saveSessionFromError(sessionKey, retryErr);
+          try {
+            await _saveSessionFromError(sessionKey, retryErr);
+          } catch {
+            // Best-effort persistence — a failed write here must never mask
+            // the original error or prevent the Sentry capture/rethrow below.
+          }
           sentryClient?.captureException(err);
           throw err;
         }
