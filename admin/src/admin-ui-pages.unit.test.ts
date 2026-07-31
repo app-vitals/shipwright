@@ -2098,22 +2098,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
     expect(html).toContain('list="sessions-list"');
   });
 
-  test("renderTasksPage with repos suggestions renders repo datalist", () => {
-    const html = renderTasksPage(
-      [],
-      {},
-      false,
-      "user@test.com",
-      {},
-      pagination,
-      undefined,
-      { repos: ["org/repo-a", "org/repo-b"] },
-    );
-    expect(html).toContain('<datalist id="repos-list">');
-    expect(html).toContain('<option value="org/repo-a">');
-    expect(html).toContain('list="repos-list"');
-  });
-
   test("renderTasksPage with agents suggestions renders agent datalist", () => {
     const html = renderTasksPage(
       [],
@@ -2130,7 +2114,7 @@ describe("renderTasksPage — datalist autocomplete", () => {
     expect(html).toContain('list="agents-list"');
   });
 
-  test("renderTasksPage without suggestions renders plain text inputs (no datalists)", () => {
+  test("renderTasksPage without suggestions renders plain text session input (no datalist)", () => {
     const html = renderTasksPage(
       [],
       {},
@@ -2141,9 +2125,7 @@ describe("renderTasksPage — datalist autocomplete", () => {
       undefined,
       undefined,
     );
-    expect(html).not.toContain("<datalist");
     expect(html).not.toContain('list="sessions-list"');
-    expect(html).not.toContain('list="repos-list"');
     expect(html).not.toContain('list="agents-list"');
   });
 
@@ -2157,6 +2139,178 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { sessions: ['<script>alert("xss")</script>'] },
+    );
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — org/repo multiselect filters (ORF-2.1) ────────────────
+
+describe("renderTasksPage — org/repo multiselect filters", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renders both an Org and a Repo select-multiple element", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
+  test("populates Org options from suggestions.orgs", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain('<option value="app-vitals">');
+    expect(html).toContain('<option value="other-org">');
+  });
+
+  test("populates Repo options from suggestions.repos", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+    );
+    expect(html).toContain('<option value="app-vitals/repo-a">');
+    expect(html).toContain('<option value="app-vitals/repo-b">');
+  });
+
+  test("marks currently-active repo filter values as selected (array)", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      {
+        repos: ["app-vitals/repo-a", "app-vitals/repo-b", "app-vitals/repo-c"],
+      },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-a" selected>app-vitals/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-b" selected>app-vitals/repo-b</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-c">app-vitals/repo-c</option>',
+    );
+  });
+
+  test("marks currently-active org filter values as selected (array)", () => {
+    const html = renderTasksPage(
+      [],
+      { org: ["app-vitals"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals" selected>app-vitals</option>',
+    );
+    expect(html).toContain('<option value="other-org">other-org</option>');
+  });
+
+  test("backward compat: a single-value repo filter (string, not array) is still marked selected", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: "app-vitals/repo-a" },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-a" selected>app-vitals/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-b">app-vitals/repo-b</option>',
+    );
+  });
+
+  test("an active filter value not present in suggestions still renders as a selected option", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: ["app-vitals/stale-repo"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/stale-repo" selected>app-vitals/stale-repo</option>',
+    );
+  });
+
+  test("no repo/org filter active renders no selected options", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).not.toContain("selected>");
+  });
+
+  test("removes the legacy single-value repo <input>+<datalist> markup", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).not.toContain('name="repo" type="text"');
+    expect(html).not.toContain('<datalist id="repos-list">');
+    expect(html).not.toContain('list="repos-list"');
+  });
+
+  test("escapes org/repo suggestion and filter values to prevent XSS", () => {
+    const html = renderTasksPage(
+      [],
+      { org: ['<script>alert("xss")</script>'] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ['<script>alert("xss")</script>'] },
     );
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
@@ -2495,6 +2649,87 @@ describe("renderTasksPage — source filter", () => {
     );
     expect(html).toContain(
       `href="/admin/tasks?state=in_progress&source=entropy-fix"`,
+    );
+  });
+
+  test("makePageUrl carries multi-value filters.repo as repeated repo= params into pagination links, not comma-joined", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&page=2"',
+    );
+    expect(html).not.toContain("app-vitals/repo-a,app-vitals/repo-b");
+  });
+
+  test("makePageUrl carries multi-value filters.org as repeated org= params into pagination links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?org=app-vitals&org=other-org&page=2"',
+    );
+  });
+
+  test("makeStateParams carries multi-value filters.repo as repeated repo= params into state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "ready", repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=in_progress&repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b"',
+    );
+  });
+
+  test("makeStateParams carries multi-value filters.org as repeated org= params into state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "ready", org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=in_progress&org=app-vitals&org=other-org"',
+    );
+  });
+
+  test("makePageUrl backward-compat: a single-value (string) filters.repo still round-trips as one repo= param", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { repo: "app-vitals/repo-a" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&page=2"',
     );
   });
 });
