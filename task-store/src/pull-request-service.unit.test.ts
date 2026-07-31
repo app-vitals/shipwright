@@ -297,6 +297,60 @@ describe("PullRequestService.list() updatedSince/repo where clause", () => {
       BadRequestError,
     );
   });
+
+  test("list({ repo: ['org/a', 'org/b'] }) produces a where.repo.in clause", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: ["org/a", "org/b"] });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      repo?: { in: string[] };
+    };
+    expect(where.repo).toEqual({ in: ["org/a", "org/b"] });
+  });
+
+  test("list({ org: 'app-vitals' }) produces a where.repo.startsWith('app-vitals/') clause", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ org: "app-vitals" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      OR?: Array<{ repo: { startsWith: string } }>;
+    };
+    expect(where.OR).toEqual([{ repo: { startsWith: "app-vitals/" } }]);
+  });
+
+  test("list({ repo: ['org/a', 'org/b'], org: ['acme'] }) combines both via AND", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: ["org/a", "org/b"], org: ["acme"] });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const where = prisma._findManyCalls[0].where as {
+      AND?: [{ repo: { in: string[] } }, { OR: unknown[] }];
+    };
+    expect(where.AND).toEqual([
+      { repo: { in: ["org/a", "org/b"] } },
+      { OR: [{ repo: { startsWith: "acme/" } }] },
+    ]);
+  });
+
+  test("list({ repo: 'org/repo' }) still applies exact-match (single string, no org)", async () => {
+    const prisma = makeListPrismaDouble();
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.list({ repo: "org/repo" });
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    expect(prisma._findManyCalls[0].where).toMatchObject({
+      repo: "org/repo",
+    });
+  });
 });
 
 describe("PullRequestService.update() merge completion", () => {
