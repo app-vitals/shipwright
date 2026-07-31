@@ -50,8 +50,7 @@ Query params:
 | `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
-| `repo` | string | Filter by repo (`org/repo` format) or list of repos (when combined with org filter). A single string preserves exact-match behavior; multiple repos via array notation in internal calls |
-| `org` | string | Filter by organization — matches any repo whose `org/repo` string starts with `"<org>/"`. Combines with `repo` filter as an AND condition (both narrow the result). Multiple orgs supported in internal calls. |
+| `repo` | string | Filter by repo (`org/repo` format) |
 | `assignee` | string | Filter by assignee (admin tokens only; agent tokens without repo scope see only their own tasks). When used with repo-scoped agent tokens under `agentScope`, acts as an additional AND filter narrowing the visible set. |
 | `claimedBy` | string | Filter by claiming agent |
 | `pr` | number | Filter by PR number |
@@ -61,6 +60,12 @@ Query params:
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
 | `updatedSince` | string | ISO timestamp. Only return tasks with `updatedAt >= this value`. A conservative pre-filter (not a precise sync anchor). Omitting it preserves current (unfiltered) behavior. |
+
+The underlying `TaskService.list()` also accepts `repo` as a `string[]` (matches any repo in
+the list) and a separate `org`/`org[]` filter (matches any repo whose `org/repo` string starts
+with `"<org>/"`), available today to in-process callers. These are not yet exposed as query
+params on this HTTP route; only the single-string `?repo=` filter above is wired through
+`GET /tasks`.
 
 Returns `{ tasks: Task[], total: number, limit: number, offset: number, scopeDegraded: boolean }`. 
 

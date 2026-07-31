@@ -4,19 +4,23 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
-## New: `GET /tasks` `?org` filter and distinct `orgs` field
+## New: `TaskService.list()` multi-repo/org filters and distinct `orgs` field
 
 **Version**: next (ORF-1.2)
 
-The task-store API now supports filtering tasks by organization prefix and returns distinct organizations in the distinct endpoint:
+`TaskService.list()` now accepts `repo` as `string | string[]` and a new `org: string | string[]`
+filter (repo prefix match, e.g. `"app-vitals"` matches any `repo` starting with `"app-vitals/"`).
+`TaskService.distinct()` now also returns a third field, `orgs: string[]` — the distinct
+organization prefixes extracted from the `repos` it already returns.
 
-- **`GET /tasks?org=<org>`** — filters tasks to only those whose `repo` field starts with `"<org>/"`. Combines with an existing `?repo=` filter as an AND condition (both narrow the result).
-- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`).
-- **`GET /tasks?ready=true`** and **`GET /tasks?state=blocked`** — support the same `?org` filter as the regular list endpoint.
+- These filters are available today to in-process callers of `TaskService.list()`. The public
+  `GET /tasks` HTTP route is unchanged in this version — it still only wires through the
+  single-string `?repo=` query param; `?org=` is not yet an HTTP-exposed filter.
+- **`GET /tasks/distinct`** — now returns a third field `orgs: string[]`, containing the distinct organization prefixes extracted from all visible `repo` values (the `org` part of each `org/repo`). This IS live over HTTP, since the route passes `TaskService.distinct()`'s result straight through.
 
-**For API callers**: The `?org` filter is purely additive. Existing queries without `?org` behave identically. The new `orgs` field in distinct responses is safe to ignore if your UI doesn't need it.
+**For API callers**: `GET /tasks/distinct` responses gain a new `orgs` field — safe to ignore if your UI doesn't need it. No other HTTP-visible behavior changes.
 
-**For TaskService implementations**: The `distinct()` method's return type has changed from `{ sessions: string[]; repos: string[] }` to `{ sessions: string[]; repos: string[]; orgs: string[] }`. If you override `distinct()`, update your implementation to compute and return the `orgs` array (extract unique organization prefixes from the `repos` array).
+**For TaskService implementations**: The `distinct()` method's return type has changed from `{ sessions: string[]; repos: string[] }` to `{ sessions: string[]; repos: string[]; orgs: string[] }`. If you override `distinct()`, update your implementation to compute and return the `orgs` array (extract unique organization prefixes from the `repos` array). The `list()` filters type gained `repo?: string | string[]` (single string keeps the old exact-match shape) and `org?: string | string[]`.
 
 ---
 
