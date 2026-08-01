@@ -581,6 +581,7 @@ export function createTasksRoutes(
       const tasks = await taskService.listBlocked(
         agentId ?? undefined,
         repos !== null ? repos : undefined,
+        c.req.query("sort") === "desc" ? "desc" : undefined,
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }
@@ -604,7 +605,8 @@ export function createTasksRoutes(
       state,
       source: c.req.query("source"),
       session: c.req.query("session"),
-      repo: c.req.query("repo"),
+      repo: c.req.queries("repo"),
+      org: c.req.queries("org"),
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),

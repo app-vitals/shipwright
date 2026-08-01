@@ -151,7 +151,7 @@ function fakeTaskService(): TaskServiceLike {
       return [];
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
     async get() {
       return null;

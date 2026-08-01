@@ -4,12 +4,12 @@ import { BOOKING_URL } from "../src/consts";
 // The marketing pages and the docs pages render from two *different* layouts
 // (BaseLayout and DocsLayout) that each carry their own header and footer. A CTA
 // added to one does not appear in the other, so every page below is checked:
-// /, /compare and /architecture come from BaseLayout; /docs and /docs/* from
+// /, /compare and /agent-model come from BaseLayout; /docs and /docs/* from
 // DocsLayout. Losing the docs half is the regression this guards against.
 const PAGES = [
   "/",
   "/compare",
-  "/architecture",
+  "/agent-model",
   "/docs",
   "/docs/introduction",
 ];

@@ -521,6 +521,14 @@ export function createLoopOrchestrator(
           ? buildTokenPayload(undefined, err.partialModelUsage)
           : undefined;
 
+      // CSI-2.3: mirror cron-handler.ts's (CSI-2.2) session-id extraction —
+      // only ClaudeRunError/ClaudeTimeoutError carry a sessionId field; any
+      // other thrown error has none.
+      const errSessionId =
+        err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError
+          ? err.sessionId
+          : undefined;
+
       await cronRunReporter.completeRun(
         loopCronId,
         runId,
@@ -529,6 +537,7 @@ export function createLoopOrchestrator(
         {
           error: err instanceof Error ? err.message : String(err),
           ...tokenPayload,
+          sessionId: errSessionId,
         },
         phaseId ?? undefined,
         itemType,
@@ -566,7 +575,10 @@ export function createLoopOrchestrator(
         runId,
         clock.now(),
         skipReason,
-        buildTokenPayload(runResult.usage, runResult.modelUsage),
+        {
+          ...buildTokenPayload(runResult.usage, runResult.modelUsage),
+          sessionId: runResult.sessionId,
+        },
         phaseId ?? undefined,
         itemType,
         itemId,
@@ -581,7 +593,10 @@ export function createLoopOrchestrator(
       runId,
       clock.now(),
       "completed",
-      buildTokenPayload(runResult.usage, runResult.modelUsage),
+      {
+        ...buildTokenPayload(runResult.usage, runResult.modelUsage),
+        sessionId: runResult.sessionId,
+      },
       phaseId ?? undefined,
       itemType,
       itemId,

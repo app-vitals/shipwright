@@ -75,3 +75,10 @@ export const expectedAccumulated = {
     costUSD: 0,
   },
 };
+
+/**
+ * The `session_id` carried on the leading `system`/`init` line — the only
+ * place a session id is available in this fixture, since the stream never
+ * reaches a terminal `result` event.
+ */
+export const expectedSessionId = SESSION_ID;

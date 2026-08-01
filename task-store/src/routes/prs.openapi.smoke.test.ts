@@ -131,7 +131,11 @@ function fakePrService(
       return updated;
     },
 
-    async patch(id: string): Promise<PullRequest> {
+    async patch(
+      id: string,
+      _commitSha?: string,
+      ciFailureSignature?: string,
+    ): Promise<PullRequest> {
       const existing = store.get(id);
       if (!existing) throw new NotFoundError("pr not found");
       const updated = {
@@ -139,6 +143,15 @@ function fakePrService(
         patchCycles: existing.patchCycles + 1,
         reviewState: "pending" as const,
         updatedAt: new Date(),
+        ...(ciFailureSignature !== undefined
+          ? {
+              lastCiFailureSignature: ciFailureSignature,
+              consecutiveCiFailureCount:
+                ciFailureSignature === existing.lastCiFailureSignature
+                  ? (existing.consecutiveCiFailureCount ?? 0) + 1
+                  : 1,
+            }
+          : {}),
       } as PullRequest;
       store.set(id, updated);
       return updated;
@@ -409,6 +422,28 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     const app = createPrsRoutes(fakePrService({ store }));
     const res = await app.request("/pr-1/patch", { method: "POST" });
     expect(res.status).not.toBe(404);
+  });
+
+  it("POST /:id/patch accepts a ciFailureSignature body field and returns it plus consecutiveCiFailureCount", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set(
+      "pr-1",
+      makePr({
+        id: "pr-1",
+        lastCiFailureSignature: "sig-a",
+        consecutiveCiFailureCount: 1,
+      }),
+    );
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/patch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ciFailureSignature: "sig-a" }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest;
+    expect(body.lastCiFailureSignature).toBe("sig-a");
+    expect(body.consecutiveCiFailureCount).toBe(2);
   });
 
   it("POST /:id/release route is registered", async () => {

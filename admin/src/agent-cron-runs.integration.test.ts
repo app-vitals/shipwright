@@ -465,6 +465,61 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     ).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("patch() round-trips a sessionId field", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+    expect(run.sessionId).toBeNull();
+
+    const updated = await runService.patch(run.id, agentId, cronId, {
+      sessionId: "session-abc-123",
+    });
+
+    expect(updated.sessionId).toBe("session-abc-123");
+  });
+
+  it("patch() clears sessionId when explicitly set to null", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      sessionId: "session-to-be-cleared",
+    });
+    const cleared = await runService.patch(run.id, agentId, cronId, {
+      sessionId: null,
+    });
+
+    expect(cleared.sessionId).toBeNull();
+  });
+
+  it("patch() leaves sessionId untouched when omitted from the input", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    const run = await runService.create(cronId, agentId, {
+      startedAt: new Date(),
+      skipped: false,
+    });
+
+    await runService.patch(run.id, agentId, cronId, {
+      sessionId: "session-should-persist",
+    });
+    const updated = await runService.patch(run.id, agentId, cronId, {
+      outcome: "success",
+    });
+
+    expect(updated.sessionId).toBe("session-should-persist");
+  });
+
   // ─── listWithRunSummary ─────────────────────────────────────────────────────
 
   it("listWithRunSummary() returns lastRun null when no runs exist", async () => {

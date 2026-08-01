@@ -107,6 +107,7 @@ function fakeTaskService(opts: {
   capturedListReadyArgs?: Array<string | undefined>;
   capturedListBlockedCalls?: number[];
   capturedListBlockedArgs?: Array<string | undefined>;
+  capturedListBlockedSortArgs?: Array<"asc" | "desc" | undefined>;
 }): TaskServiceLike {
   return {
     async list(filters?: TaskListFilters) {
@@ -125,10 +126,16 @@ function fakeTaskService(opts: {
       if (opts.capturedListReadyArgs) opts.capturedListReadyArgs.push(agentId);
       return opts.listReadyResult ?? [];
     },
-    async listBlocked(agentId?: string) {
+    async listBlocked(
+      agentId?: string,
+      _repos?: string[],
+      sort?: "asc" | "desc",
+    ) {
       if (opts.capturedListBlockedCalls) opts.capturedListBlockedCalls.push(1);
       if (opts.capturedListBlockedArgs)
         opts.capturedListBlockedArgs.push(agentId);
+      if (opts.capturedListBlockedSortArgs)
+        opts.capturedListBlockedSortArgs.push(sort);
       return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t));
     },
     async get(id: string) {
@@ -168,7 +175,7 @@ function fakeTaskService(opts: {
       return { inserted: 0, updated: 0, skipped: [] };
     },
     async distinct() {
-      return { sessions: [], repos: [] };
+      return { sessions: [], repos: [], orgs: [] };
     },
   };
 }
@@ -353,7 +360,10 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [blockedTask] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+    };
     expect(Array.isArray(body.tasks)).toBe(true);
     expect(typeof body.total).toBe("number");
   });
@@ -372,7 +382,10 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [b1, b2] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+    };
     expect(body.tasks).toHaveLength(2);
     expect(body.tasks.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(body.total).toBe(2);
@@ -382,7 +395,10 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+    };
     expect(Array.isArray(body.tasks)).toBe(true);
     expect(body.tasks).toHaveLength(0);
     expect(body.total).toBe(0);
@@ -393,7 +409,10 @@ describe("GET /tasks state filter (smoke)", () => {
     const taskService = fakeTaskService({ listBlockedResult: [blockedTask] });
     const app = makeApp(taskService);
     const res = await app.request("/tasks?state=blocked", { headers: auth() });
-    const body = (await res.json()) as { tasks: TaskWithBlockedBy[]; total: number };
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+    };
     expect(Array.isArray(body.tasks[0].blockedBy)).toBe(true);
   });
 
@@ -415,5 +434,81 @@ describe("GET /tasks state filter (smoke)", () => {
     await app.request("/tasks?state=blocked", { headers: auth() });
     expect(capturedListBlockedArgs).toHaveLength(1);
     expect(capturedListBlockedArgs[0]).toBeUndefined();
+  });
+
+  // ─── sort param for state=blocked ──────────────────────────────────────────
+
+  it("GET /tasks?state=blocked&sort=desc forwards sort='desc' to listBlocked()", async () => {
+    const capturedListBlockedSortArgs: Array<"asc" | "desc" | undefined> = [];
+    const taskService = fakeTaskService({ capturedListBlockedSortArgs });
+    const app = makeApp(taskService);
+    await app.request("/tasks?state=blocked&sort=desc", { headers: auth() });
+    expect(capturedListBlockedSortArgs).toHaveLength(1);
+    expect(capturedListBlockedSortArgs[0]).toBe("desc");
+  });
+
+  it("GET /tasks?state=blocked without ?sort forwards undefined to listBlocked() (default asc)", async () => {
+    const capturedListBlockedSortArgs: Array<"asc" | "desc" | undefined> = [];
+    const taskService = fakeTaskService({ capturedListBlockedSortArgs });
+    const app = makeApp(taskService);
+    await app.request("/tasks?state=blocked", { headers: auth() });
+    expect(capturedListBlockedSortArgs).toHaveLength(1);
+    expect(capturedListBlockedSortArgs[0]).toBeUndefined();
+  });
+
+  it("GET /tasks?state=blocked&sort=desc returns tasks newest-first", async () => {
+    // fakeTaskService's listBlocked() doesn't itself sort — apply the
+    // route's sort filter here to model what the real Prisma-backed
+    // service does, so this test exercises the query-param → service →
+    // response round trip (mirrors the GET /prs?sort=desc round-trip test
+    // in prs.smoke.test.ts).
+    const oldest = makeTask({
+      id: "t-oldest",
+      status: "blocked",
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const middle = makeTask({
+      id: "t-middle",
+      status: "blocked",
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    const newest = makeTask({
+      id: "t-newest",
+      status: "blocked",
+      createdAt: new Date("2026-01-03T00:00:00.000Z"),
+    });
+    const baseFake = fakeTaskService({
+      listBlockedResult: [oldest, middle, newest],
+    });
+    const taskServiceWithSort: TaskServiceLike = {
+      ...baseFake,
+      async listBlocked(
+        agentId?: string,
+        repos?: string[],
+        sort?: "asc" | "desc",
+      ) {
+        const tasks = await baseFake.listBlocked(agentId, repos, sort);
+        const sorted = [...tasks].sort((a, b) => {
+          const diff = a.createdAt.getTime() - b.createdAt.getTime();
+          return sort === "desc" ? -diff : diff;
+        });
+        return sorted;
+      },
+    };
+    const app = makeApp(taskServiceWithSort);
+
+    const res = await app.request("/tasks?state=blocked&sort=desc", {
+      headers: auth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      tasks: TaskWithBlockedBy[];
+      total: number;
+    };
+    expect(body.tasks.map((t) => t.id)).toEqual([
+      "t-newest",
+      "t-middle",
+      "t-oldest",
+    ]);
   });
 });

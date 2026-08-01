@@ -71,6 +71,7 @@ export interface PrInfo {
   isDraft: boolean;
   labels?: { name: string }[];
   createdAt?: string;
+  reviewRequests?: { login?: string }[];
 }
 
 export interface PrRecord {
@@ -179,7 +180,30 @@ export async function getReviewCandidates(
     if (pr.isDraft) continue;
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
-    if (!deps.isSelfReviewAllowed && pr.author.login === currentUser) continue;
+
+    // Requested-reviewer inclusion (RRR-1.1) — an additive path layered on
+    // top of the self-review exclusion only: when the agent's own GitHub
+    // identity is listed as a requested reviewer on this PR, it stays
+    // eligible even if it would otherwise be excluded as self-authored. This
+    // deliberately does NOT extend to the author-allowlist exclusion below:
+    // reviewRequests is populated via GitHub's "Request a reviewer" action,
+    // which any author with repo write access can trigger (including on
+    // their own PR) — since GitHub doesn't surface who added a given
+    // request, an excluded author could otherwise self-request the agent as
+    // reviewer to unilaterally defeat the allowlist. The allowlist is a
+    // real access boundary, so it applies unconditionally. All other
+    // exclusions (draft, dependabot, automated label above; live-review
+    // dedup, task-store dedup, hitl/blocked, bundle-incomplete below) also
+    // still apply unconditionally.
+    const isRequestedReviewer =
+      pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
+
+    if (
+      !deps.isSelfReviewAllowed &&
+      pr.author.login === currentUser &&
+      !isRequestedReviewer
+    )
+      continue;
     if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
       continue;
 
@@ -360,7 +384,7 @@ export async function buildProductionDeps(opts: {
           "--repo",
           repo,
           "--json",
-          "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt",
+          "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
         ]);
         return repoPrs.map((pr) => ({ ...pr, repo }));
       });

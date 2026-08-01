@@ -179,6 +179,13 @@ export class ClaudeTimeoutError extends Error {
      * Always partial by definition — a clean finish never reaches this path.
      */
     readonly partialModelUsage?: ModelUsage,
+    /**
+     * The session id captured off the leading `system`/`init` stream-json
+     * line, if one arrived before the timeout fired. A timed-out run never
+     * reaches a terminal `result` event (the only other source of a session
+     * id), so this is the only way a timeout can still carry one.
+     */
+    readonly sessionId?: string,
   ) {
     super(`Claude session timed out after ${timeoutMs / 1000}s (${reason})`);
     this.name = "ClaudeTimeoutError";
@@ -302,6 +309,7 @@ export function createRunClaude(
     result?: ClaudeResultEvent;
     modelUsage: ModelUsage;
     raw: string;
+    sessionId?: string;
   }> {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -310,6 +318,11 @@ export function createRunClaude(
     let result: ClaudeResultEvent | undefined;
     let buffer = "";
     let raw = "";
+    // Captured off the very first `system`/`init` line, if one arrives — the
+    // earliest point in the stream a session id is ever available. Populated
+    // once and never overwritten, so a stray later system line (there's never
+    // more than one `init` per run in practice) can't clobber it.
+    let earlySessionId: string | undefined;
 
     const handleLine = (raw: string) => {
       const line = raw.trim();
@@ -328,7 +341,21 @@ export function createRunClaude(
         result = parsed as ClaudeResultEvent;
         return;
       }
-      if (event.type !== "assistant") return; // ignore system/user/etc.
+      if (event.type === "system") {
+        const system = parsed as {
+          subtype?: string;
+          session_id?: string;
+        };
+        if (
+          earlySessionId === undefined &&
+          system.subtype === "init" &&
+          system.session_id
+        ) {
+          earlySessionId = system.session_id;
+        }
+        return;
+      }
+      if (event.type !== "assistant") return; // ignore user/etc.
 
       const { message } = parsed as ClaudeAssistantEvent;
       if (!message?.id || !message.usage) return;
@@ -387,7 +414,7 @@ export function createRunClaude(
       reader.releaseLock();
     }
 
-    return { result, modelUsage: accumulated, raw };
+    return { result, modelUsage: accumulated, raw, sessionId: earlySessionId };
   }
 
   async function _spawn(
@@ -435,7 +462,11 @@ export function createRunClaude(
     };
     resetIdleTimer();
 
-    const [{ result, modelUsage, raw }, stderr, exitCode] = await Promise.all([
+    const [
+      { result, modelUsage, raw, sessionId: earlySessionId },
+      stderr,
+      exitCode,
+    ] = await Promise.all([
       _consumeStream(proc.stdout, resetIdleTimer, perCallOnProgress),
       new Response(proc.stderr).text(),
       proc.exited,
@@ -445,7 +476,12 @@ export function createRunClaude(
     });
 
     if (timedOut) {
-      throw new ClaudeTimeoutError(firedTimeoutMs, timeoutReason, modelUsage);
+      throw new ClaudeTimeoutError(
+        firedTimeoutMs,
+        timeoutReason,
+        modelUsage,
+        earlySessionId,
+      );
     }
 
     if (exitCode !== 0) {
@@ -466,7 +502,7 @@ export function createRunClaude(
           `claude exited ${exitCode}: ${diagnostic}`,
           undefined,
           diagnostic,
-          result?.session_id,
+          result?.session_id ?? earlySessionId,
           modelUsage,
         );
       }
@@ -481,6 +517,7 @@ export function createRunClaude(
       // instead of throwing everything away.
       return {
         result: "",
+        sessionId: earlySessionId,
         modelUsage,
         streamIncomplete: true,
       };
@@ -513,6 +550,27 @@ export function createRunClaude(
     }
   }
 
+  /**
+   * Persist whatever session id a FAILED attempt still managed to capture.
+   * ClaudeRunError/ClaudeTimeoutError can both carry a `sessionId` — the CLI
+   * may have already created a real session (and transcript file) before
+   * erroring or timing out. Without this, a first-message failure leaves
+   * `sessions` empty even though a resumable session exists, so the next
+   * reply on the same Slack thread starts a brand-new, context-free session
+   * instead of resuming. Purely a side effect — never affects control flow.
+   */
+  async function _saveSessionFromError(
+    sessionKey: string | undefined,
+    err: unknown,
+  ) {
+    if (!sessionKey) return;
+    if (!(err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError))
+      return;
+    if (err.sessionId) {
+      await sessions.set(sessionKey, err.sessionId);
+    }
+  }
+
   async function _runClaude(
     message: string,
     sessionKey: string | undefined,
@@ -529,6 +587,16 @@ export function createRunClaude(
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
+      // The initial attempt failed — save whatever session id it captured
+      // before deciding whether to retry, so even a non-retried (or
+      // retry-ineligible) failure still leaves a resumable mapping behind.
+      try {
+        await _saveSessionFromError(sessionKey, err);
+      } catch {
+        // Best-effort persistence — a failed write here must never mask or
+        // replace the original Claude error being handled in this catch block.
+      }
+
       // Retry the same resumed session once: transient blips (e.g. a socket
       // close) can self-heal on a second attempt without losing conversation
       // context. Do NOT catch ClaudeTimeoutError — that means the session
@@ -542,7 +610,15 @@ export function createRunClaude(
           const output = await _spawn(args, perCallOnProgress);
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
-        } catch {
+        } catch (retryErr) {
+          // The retry also failed — overwrite with its own most-recently-known
+          // session id (if any), then still rethrow the ORIGINAL error.
+          try {
+            await _saveSessionFromError(sessionKey, retryErr);
+          } catch {
+            // Best-effort persistence — a failed write here must never mask
+            // the original error or prevent the Sentry capture/rethrow below.
+          }
           sentryClient?.captureException(err);
           throw err;
         }

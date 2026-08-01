@@ -501,6 +501,7 @@ async function startServer(): Promise<void> {
             return res.json() as Promise<{
               sessions: string[];
               repos: string[];
+              orgs: string[];
             }>;
           },
           fetchTaskStorePr: async (taskId: string) => {

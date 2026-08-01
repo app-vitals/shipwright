@@ -1,0 +1,260 @@
+---
+// Service Architecture page (UGD-3.1) — a static, no-client-JS diagram of the
+// four Shipwright service clusters (Agent, Admin, Task Store, Metrics), their
+// databases (if any), and their third-party integrations. Pure CSS grid/card
+// layout — no canvas/SVG animation, no hover-only interactivity, no
+// resize-driven redraw. Grounded in the actual repo dependencies (see the
+// per-cluster `integrations` below): agent/package.json (@octokit/auth-app,
+// @slack/bolt + @slack/web-api, @sentry/bun, plus the Claude Code CLI itself),
+// admin/package.json + admin/src/kubernetes-client.ts +
+// admin/src/google-auth-client.ts (@prisma/client, KubernetesClient, Google
+// OAuth, @sentry/bun), task-store/package.json (@prisma/client, @sentry/bun),
+// and metrics/package.json (no @prisma/client — stateless, reads Task Store
+// over HTTP, @sentry/bun for error reporting).
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+interface ServiceCluster {
+  name: string;
+  dir: string;
+  summary: string;
+  db: string | null;
+  integrations: string[];
+}
+
+const clusters: ServiceCluster[] = [
+  {
+    name: "Agent",
+    dir: "agent/",
+    summary:
+      "Hono service running the autonomous execution loop — pick up a ready task, run Claude Code, ship a PR, forward metrics.",
+    db: null,
+    integrations: ["GitHub", "Claude API", "Slack", "Sentry"],
+  },
+  {
+    name: "Admin",
+    dir: "admin/",
+    summary:
+      "CRUD API + UI for agents, envs, crons, tools, and tokens. Owns agent provisioning and reconcile against the cluster.",
+    db: "Postgres (DATABASE_URL_SHIPWRIGHT_ADMIN)",
+    integrations: ["Kubernetes", "Google OAuth", "Sentry"],
+  },
+  {
+    name: "Task Store",
+    dir: "task-store/",
+    summary:
+      "The coordination layer — owns Task, PullRequest, and TaskToken state. Deduplicates work and tracks cross-agent ownership.",
+    db: "Postgres (DATABASE_URL_SHIPWRIGHT_TASK_STORE)",
+    integrations: ["Sentry"],
+  },
+  {
+    name: "Metrics",
+    dir: "metrics/",
+    summary:
+      "Stateless Hono dashboard — task-store-backed JSON endpoints plus a server-rendered UI. Holds no data of its own.",
+    db: null,
+    integrations: ["Task Store (HTTP)", "Sentry"],
+  },
+];
+---
+
+<BaseLayout title="Service Architecture — Shipwright Harness" description="The four Shipwright service clusters — Agent, Admin, Task Store, and Metrics — their databases and third-party integrations.">
+  <section class="svc-page">
+
+    <!-- Page header -->
+    <div class="svc-header">
+      <p class="svc-meta">Shipwright Harness</p>
+      <h1>Service Architecture</h1>
+      <p class="svc-subtitle">
+        Four service clusters, each with its own database (or none) and its
+        own set of third-party integrations. This is the deployment-level
+        view — for the planning/execution workflow model, see
+        <a href="/agent-model">Agent Model →</a>.
+      </p>
+    </div>
+
+    <!-- ── Service clusters ── -->
+    <div class="svc-grid">
+      {clusters.map((c) => (
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <span class="svc-card-name">{c.name}</span>
+            <span class="svc-card-dir">{c.dir}</span>
+          </div>
+          <p class="svc-card-summary">{c.summary}</p>
+
+          <div class="svc-card-row">
+            <span class="svc-card-label">Database</span>
+            {c.db ? (
+              <span class="svc-badge svc-badge-db">{c.db}</span>
+            ) : (
+              <span class="svc-badge svc-badge-none">None — stateless</span>
+            )}
+          </div>
+
+          <div class="svc-card-row">
+            <span class="svc-card-label">Integrations</span>
+            <div class="svc-badges">
+              {c.integrations.map((i) => (
+                <span class="svc-badge svc-badge-integration">{i}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <p class="svc-crosslink">
+      Want the request-flow / workflow view instead? See <a href="/agent-model">Agent Model →</a>
+    </p>
+
+  </section>
+</BaseLayout>
+
+<style>
+  .svc-page {
+    padding: 3rem 0 5rem;
+    max-width: 64rem;
+  }
+
+  /* ── Header ── */
+  .svc-header {
+    margin-bottom: 2.5rem;
+  }
+
+  .svc-meta {
+    font-family: var(--sw-font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sw-color-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  .svc-page h1 {
+    font-family: var(--sw-font-display);
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--sw-color-text-heading);
+    line-height: 1.1;
+    margin-bottom: 0.75rem;
+  }
+
+  .svc-subtitle {
+    font-size: 0.9375rem;
+    color: var(--sw-color-text-muted);
+    line-height: 1.65;
+    max-width: 44rem;
+  }
+
+  .svc-subtitle a {
+    color: var(--sw-color-support-patriot-bright);
+  }
+
+  /* ── Cluster grid ── */
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.25rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .svc-card {
+    background: var(--sw-color-bg-raised);
+    border: 1.5px solid var(--sw-color-border-muted);
+    border-radius: var(--sw-radius-lg);
+    padding: 1.5rem;
+  }
+
+  .svc-card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.625rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--sw-color-border-subtle);
+  }
+
+  .svc-card-name {
+    font-family: var(--sw-font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sw-color-text-heading);
+  }
+
+  .svc-card-dir {
+    font-family: var(--sw-font-mono);
+    font-size: 0.75rem;
+    color: var(--sw-color-brand-default);
+  }
+
+  .svc-card-summary {
+    font-size: 0.8125rem;
+    color: var(--sw-color-text-body);
+    line-height: 1.6;
+    margin-bottom: 1.125rem;
+  }
+
+  .svc-card-row {
+    margin-bottom: 0.875rem;
+  }
+
+  .svc-card-row:last-child {
+    margin-bottom: 0;
+  }
+
+  .svc-card-label {
+    display: block;
+    font-family: var(--sw-font-mono);
+    font-size: 0.625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sw-color-text-muted);
+    margin-bottom: 0.4375rem;
+  }
+
+  .svc-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4375rem;
+  }
+
+  .svc-badge {
+    display: inline-block;
+    font-family: var(--sw-font-mono);
+    font-size: 0.6875rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: var(--sw-radius-pill);
+    border: 1px solid var(--sw-color-border-muted);
+  }
+
+  .svc-badge-db {
+    color: var(--sw-color-support-patriot-bright);
+    background: var(--sw-color-support-patriot);
+    border-color: var(--sw-color-support-patriot-bright);
+  }
+
+  .svc-badge-none {
+    color: var(--sw-color-text-muted);
+    background: var(--sw-color-bg-overlay);
+  }
+
+  .svc-badge-integration {
+    color: var(--sw-color-brand-default);
+    background: var(--sw-color-brand-soft);
+    border-color: var(--sw-color-brand-default);
+  }
+
+  /* ── Cross-link ── */
+  .svc-crosslink {
+    font-size: 0.875rem;
+    color: var(--sw-color-text-muted);
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .svc-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

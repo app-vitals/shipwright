@@ -299,6 +299,7 @@ export interface AdminUIDeps {
   fetchDistinctTaskValues?: () => Promise<{
     sessions: string[];
     repos: string[];
+    orgs: string[];
   }>;
   /**
    * IANA timezone name for date/time display in the admin UI.
@@ -2085,7 +2086,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           ? stateRaw
           : undefined;
     const session = c.req.query("session") ?? undefined;
-    const repo = c.req.query("repo") ?? undefined;
+    // c.req.query("repo") only returns the first value when the query string
+    // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
+    // both a bookmarked single-value URL and a multiselect submission with
+    // several selections round-trip correctly.
+    const repo = c.req.queries("repo");
+    const org = c.req.queries("org");
     const source = c.req.query("source") ?? undefined;
     const agent = c.req.query("agent") ?? undefined;
     const hitlRaw = c.req.query("hitl");
@@ -2108,7 +2114,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let tasks: TaskItem[] = [];
     let total = 0;
     let degraded = false;
-    let distinctValues: { sessions: string[]; repos: string[] } | null = null;
+    let distinctValues: {
+      sessions: string[];
+      repos: string[];
+      orgs: string[];
+    } | null = null;
 
     if (!fetchTaskStoreTasks) {
       degraded = true;
@@ -2117,7 +2127,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (status) params.set("status", status);
       if (state) params.set("state", state);
       if (session) params.set("session", session);
-      if (repo) params.set("repo", repo);
+      for (const r of repo ?? []) params.append("repo", r);
+      for (const o of org ?? []) params.append("org", o);
       if (source) params.set("source", source);
       if (hitl) params.set("hitl", hitl);
       // Agent-name filtering is done client-side, so we fetch a larger slice
@@ -2171,6 +2182,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         ? {
             sessions: distinctValues.sessions,
             repos: distinctValues.repos,
+            orgs: distinctValues.orgs,
             agents: (await agentService.listOptions()).map((a) => a.name),
           }
         : undefined;
@@ -2178,7 +2190,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return html(
       renderTasksPage(
         tasks,
-        { status, state, session, repo, source, agent, hitl },
+        { status, state, session, repo, org, source, agent, hitl },
         degraded,
         c.var.userEmail,
         agentNames,
@@ -2302,7 +2314,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const stateParam = c.req.query("state") ?? undefined;
     const reviewState = c.req.query("reviewState") ?? undefined;
-    const repo = c.req.query("repo") ?? undefined;
+    // c.req.query("repo") only returns the first value when the query string
+    // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
+    // both a bookmarked single-value URL and a multiselect submission with
+    // several selections round-trip correctly.
+    const repo = c.req.queries("repo");
+    const org = c.req.queries("org");
     const taskId = c.req.query("taskId") ?? undefined;
     const blockedParam = c.req.query("blocked") ?? undefined;
     const pageRaw = c.req.query("page");
@@ -2320,7 +2337,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const params = new URLSearchParams();
       if (stateParam) params.set("state", stateParam);
       if (reviewState) params.set("reviewState", reviewState);
-      if (repo) params.set("repo", repo);
+      for (const r of repo ?? []) params.append("repo", r);
+      for (const o of org ?? []) params.append("org", o);
       if (taskId) params.set("taskId", taskId);
       if (blockedParam === "true") params.set("blocked", "true");
       params.set("limit", String(limit));
@@ -2350,14 +2368,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const suggestions = fetchDistinctTaskValues
       ? await fetchDistinctTaskValues()
-          .then((v) => ({ repos: v.repos }))
+          .then((v) => ({ repos: v.repos, orgs: v.orgs }))
           .catch(() => ({}))
       : {};
 
     return html(
       renderPrsPage(
         prs,
-        { state: stateParam, reviewState, repo, taskId, blocked: blockedParam },
+        {
+          state: stateParam,
+          reviewState,
+          repo,
+          org,
+          taskId,
+          blocked: blockedParam,
+        },
         degraded,
         c.var.userEmail,
         agentNames,

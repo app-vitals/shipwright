@@ -11,15 +11,16 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-// /architecture smoke tests — static Astro page with no logic.
+// /agent-model smoke tests — static Astro page with no logic. Formerly
+// /architecture (UGD-3.1 renamed it to make room for /service-architecture).
 
-test("architecture route responds 200", async ({ page }) => {
-  const response = await page.goto("/architecture");
+test("agent-model route responds 200", async ({ page }) => {
+  const response = await page.goto("/agent-model");
   expect(response?.status()).toBe(200);
 });
 
-test("architecture page has the correct heading", async ({ page }) => {
-  await page.goto("/architecture");
+test("agent-model page has the correct heading", async ({ page }) => {
+  await page.goto("/agent-model");
   await expect(
     page
       .getByRole("heading", { name: /Shipwright.*Agent Model|Architecture/i })
@@ -27,8 +28,8 @@ test("architecture page has the correct heading", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("architecture diagram shows all 5 sections", async ({ page }) => {
-  await page.goto("/architecture");
+test("agent-model diagram shows all 5 sections", async ({ page }) => {
+  await page.goto("/agent-model");
   const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
   expect(text).toContain("human input");
   // Maintenance Crons or "Background hygiene" (the subtitle)
@@ -41,7 +42,7 @@ test("architecture diagram shows all 5 sections", async ({ page }) => {
 });
 
 test("component reference lists all 12 components", async ({ page }) => {
-  await page.goto("/architecture");
+  await page.goto("/agent-model");
   const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
   for (const component of [
     "plan-session",
@@ -63,17 +64,17 @@ test("component reference lists all 12 components", async ({ page }) => {
   }
 });
 
-test("architecture page ships no runtime JS beyond the analytics tag", async ({
+test("agent-model page ships no runtime JS beyond the analytics tag", async ({
   page,
 }) => {
-  await page.goto("/architecture");
+  await page.goto("/agent-model");
   await expectNoRuntimeJsBeyondAnalytics(page);
 });
 
-test("architecture page links to the new operator docs pages", async ({
+test("agent-model page links to the new operator docs pages", async ({
   page,
 }) => {
-  await page.goto("/architecture");
+  await page.goto("/agent-model");
   // Core Loop section -> the-shipwright-loop
   await expect(
     page.locator('a[href="/docs/the-shipwright-loop"]'),
@@ -89,4 +90,13 @@ test("architecture page links to the new operator docs pages", async ({
   ).toHaveCount(4);
   // Task Store row reuses the existing task-store-api link target
   await expect(page.locator('a[href="/docs/task-store-api"]')).toHaveCount(1);
+});
+
+test("agent-model page cross-links to service-architecture", async ({
+  page,
+}) => {
+  await page.goto("/agent-model");
+  await expect(
+    page.locator('a[href="/service-architecture"]'),
+  ).toHaveCount(1);
 });

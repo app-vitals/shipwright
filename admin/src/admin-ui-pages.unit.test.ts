@@ -2098,22 +2098,6 @@ describe("renderTasksPage — datalist autocomplete", () => {
     expect(html).toContain('list="sessions-list"');
   });
 
-  test("renderTasksPage with repos suggestions renders repo datalist", () => {
-    const html = renderTasksPage(
-      [],
-      {},
-      false,
-      "user@test.com",
-      {},
-      pagination,
-      undefined,
-      { repos: ["org/repo-a", "org/repo-b"] },
-    );
-    expect(html).toContain('<datalist id="repos-list">');
-    expect(html).toContain('<option value="org/repo-a">');
-    expect(html).toContain('list="repos-list"');
-  });
-
   test("renderTasksPage with agents suggestions renders agent datalist", () => {
     const html = renderTasksPage(
       [],
@@ -2130,7 +2114,7 @@ describe("renderTasksPage — datalist autocomplete", () => {
     expect(html).toContain('list="agents-list"');
   });
 
-  test("renderTasksPage without suggestions renders plain text inputs (no datalists)", () => {
+  test("renderTasksPage without suggestions renders plain text session input (no datalist)", () => {
     const html = renderTasksPage(
       [],
       {},
@@ -2141,9 +2125,7 @@ describe("renderTasksPage — datalist autocomplete", () => {
       undefined,
       undefined,
     );
-    expect(html).not.toContain("<datalist");
     expect(html).not.toContain('list="sessions-list"');
-    expect(html).not.toContain('list="repos-list"');
     expect(html).not.toContain('list="agents-list"');
   });
 
@@ -2157,6 +2139,178 @@ describe("renderTasksPage — datalist autocomplete", () => {
       pagination,
       undefined,
       { sessions: ['<script>alert("xss")</script>'] },
+    );
+    expect(html).not.toContain('<script>alert("xss")</script>');
+    expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderTasksPage — org/repo multiselect filters (ORF-2.1) ────────────────
+
+describe("renderTasksPage — org/repo multiselect filters", () => {
+  const pagination = { total: 0, limit: 50, page: 1 };
+
+  test("renders both an Org and a Repo select-multiple element", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
+  test("populates Org options from suggestions.orgs", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain('<option value="app-vitals">');
+    expect(html).toContain('<option value="other-org">');
+  });
+
+  test("populates Repo options from suggestions.repos", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+    );
+    expect(html).toContain('<option value="app-vitals/repo-a">');
+    expect(html).toContain('<option value="app-vitals/repo-b">');
+  });
+
+  test("marks currently-active repo filter values as selected (array)", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      {
+        repos: ["app-vitals/repo-a", "app-vitals/repo-b", "app-vitals/repo-c"],
+      },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-a" selected>app-vitals/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-b" selected>app-vitals/repo-b</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-c">app-vitals/repo-c</option>',
+    );
+  });
+
+  test("marks currently-active org filter values as selected (array)", () => {
+    const html = renderTasksPage(
+      [],
+      { org: ["app-vitals"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals" selected>app-vitals</option>',
+    );
+    expect(html).toContain('<option value="other-org">other-org</option>');
+  });
+
+  test("backward compat: a single-value repo filter (string, not array) is still marked selected", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: "app-vitals/repo-a" },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-a" selected>app-vitals/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/repo-b">app-vitals/repo-b</option>',
+    );
+  });
+
+  test("an active filter value not present in suggestions still renders as a selected option", () => {
+    const html = renderTasksPage(
+      [],
+      { repo: ["app-vitals/stale-repo"] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals/stale-repo" selected>app-vitals/stale-repo</option>',
+    );
+  });
+
+  test("no repo/org filter active renders no selected options", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).not.toContain("selected>");
+  });
+
+  test("removes the legacy single-value repo <input>+<datalist> markup", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).not.toContain('name="repo" type="text"');
+    expect(html).not.toContain('<datalist id="repos-list">');
+    expect(html).not.toContain('list="repos-list"');
+  });
+
+  test("escapes org/repo suggestion and filter values to prevent XSS", () => {
+    const html = renderTasksPage(
+      [],
+      { org: ['<script>alert("xss")</script>'] },
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ['<script>alert("xss")</script>'] },
     );
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
@@ -2495,6 +2649,87 @@ describe("renderTasksPage — source filter", () => {
     );
     expect(html).toContain(
       `href="/admin/tasks?state=in_progress&source=entropy-fix"`,
+    );
+  });
+
+  test("makePageUrl carries multi-value filters.repo as repeated repo= params into pagination links, not comma-joined", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&page=2"',
+    );
+    expect(html).not.toContain("app-vitals/repo-a,app-vitals/repo-b");
+  });
+
+  test("makePageUrl carries multi-value filters.org as repeated org= params into pagination links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?org=app-vitals&org=other-org&page=2"',
+    );
+  });
+
+  test("makeStateParams carries multi-value filters.repo as repeated repo= params into state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "ready", repo: ["app-vitals/repo-a", "app-vitals/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=in_progress&repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b"',
+    );
+  });
+
+  test("makeStateParams carries multi-value filters.org as repeated org= params into state-tab links", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { state: "ready", org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 1, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=in_progress&org=app-vitals&org=other-org"',
+    );
+  });
+
+  test("makePageUrl backward-compat: a single-value (string) filters.repo still round-trips as one repo= param", () => {
+    const html = renderTasksPage(
+      [TASK_ITEM],
+      { repo: "app-vitals/repo-a" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+      undefined,
+      undefined,
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&page=2"',
     );
   });
 });
@@ -3529,9 +3764,14 @@ describe("renderPrsPage", () => {
     expect(html).toContain("state=merged");
   });
 
-  test("filter form includes repo input", () => {
+  test("filter form includes repo multiselect", () => {
     const html = render();
-    expect(html).toContain('name="repo"');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
+  test("filter form includes org multiselect", () => {
+    const html = render();
+    expect(html).toContain('<select name="org" multiple');
   });
 
   test("filter form includes state input", () => {
@@ -3551,7 +3791,9 @@ describe("renderPrsPage", () => {
 
   test("filter values are pre-filled in form", () => {
     const html = render([], { repo: "org/my-repo", taskId: "TASK-42" });
-    expect(html).toContain("org/my-repo");
+    expect(html).toContain(
+      '<option value="org/my-repo" selected>org/my-repo</option>',
+    );
     expect(html).toContain("TASK-42");
   });
 
@@ -3676,12 +3918,42 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
   });
 });
 
-// ─── renderPrsPage — datalist autocomplete (AFP-1.2) ─────────────────────────
+// ─── renderPrsPage — org/repo multiselect filters (ORF-2.2) ──────────────────
 
-describe("renderPrsPage — datalist autocomplete", () => {
+describe("renderPrsPage — org/repo multiselect filters", () => {
   const pagination = { total: 0, limit: 50, page: 1 };
 
-  test("renderPrsPage with repos suggestions renders repo datalist", () => {
+  test("renders both an Org and a Repo select-multiple element", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
+  test("populates Org options from suggestions.orgs", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain('<option value="app-vitals">');
+    expect(html).toContain('<option value="other-org">');
+  });
+
+  test("populates Repo options from suggestions.repos", () => {
     const html = renderPrsPage(
       [],
       {},
@@ -3692,13 +3964,81 @@ describe("renderPrsPage — datalist autocomplete", () => {
       undefined,
       { repos: ["org/repo-a", "org/repo-b"] },
     );
-    expect(html).toContain('<datalist id="prs-repos-list">');
     expect(html).toContain('<option value="org/repo-a">');
     expect(html).toContain('<option value="org/repo-b">');
-    expect(html).toContain('list="prs-repos-list"');
   });
 
-  test("renderPrsPage without suggestions renders plain text input (no datalist)", () => {
+  test("marks currently-active repo filter values as selected (array)", () => {
+    const html = renderPrsPage(
+      [],
+      { repo: ["org/repo-a", "org/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a", "org/repo-b", "org/repo-c"] },
+    );
+    expect(html).toContain(
+      '<option value="org/repo-a" selected>org/repo-a</option>',
+    );
+    expect(html).toContain(
+      '<option value="org/repo-b" selected>org/repo-b</option>',
+    );
+    expect(html).toContain('<option value="org/repo-c">org/repo-c</option>');
+  });
+
+  test("marks currently-active org filter values as selected (array)", () => {
+    const html = renderPrsPage(
+      [],
+      { org: ["app-vitals"] },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals", "other-org"] },
+    );
+    expect(html).toContain(
+      '<option value="app-vitals" selected>app-vitals</option>',
+    );
+    expect(html).toContain('<option value="other-org">other-org</option>');
+  });
+
+  test("backward compat: a single-value repo filter (string, not array) is still marked selected", () => {
+    const html = renderPrsPage(
+      [],
+      { repo: "org/repo-a" },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a", "org/repo-b"] },
+    );
+    expect(html).toContain(
+      '<option value="org/repo-a" selected>org/repo-a</option>',
+    );
+    expect(html).toContain('<option value="org/repo-b">org/repo-b</option>');
+  });
+
+  test("an active filter value not present in suggestions still renders as a selected option", () => {
+    const html = renderPrsPage(
+      [],
+      { repo: ["org/stale-repo"] },
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a"] },
+    );
+    expect(html).toContain(
+      '<option value="org/stale-repo" selected>org/stale-repo</option>',
+    );
+  });
+
+  test("no repo/org filter active renders no selected options", () => {
     const html = renderPrsPage(
       [],
       {},
@@ -3707,25 +4047,128 @@ describe("renderPrsPage — datalist autocomplete", () => {
       {},
       pagination,
       undefined,
-      undefined,
+      { orgs: ["app-vitals"], repos: ["org/repo-a"] },
     );
-    expect(html).not.toContain("<datalist");
+    expect(html).not.toContain("selected>");
+  });
+
+  test("removes the legacy single-value repo <input>+<datalist> markup", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { repos: ["org/repo-a"] },
+    );
+    expect(html).not.toContain('name="repo" type="text"');
+    expect(html).not.toContain('<datalist id="prs-repos-list">');
     expect(html).not.toContain('list="prs-repos-list"');
   });
 
-  test("renderPrsPage escapes repo suggestion values to prevent XSS", () => {
+  test("escapes org/repo suggestion and filter values to prevent XSS", () => {
     const html = renderPrsPage(
       [],
-      {},
+      { org: ['<script>alert("xss")</script>'] },
       false,
       USER_NAME,
       {},
       pagination,
       undefined,
-      { repos: ['<script>alert("xss")</script>'] },
+      { orgs: ['<script>alert("xss")</script>'] },
     );
     expect(html).not.toContain('<script>alert("xss")</script>');
     expect(html).toContain("&lt;script&gt;");
+  });
+});
+
+// ─── renderPrsPage — org/repo multiselect pagination/tab round-trip (ORF-2.2) ─
+
+describe("renderPrsPage — org/repo multiselect pagination/tab round-trip", () => {
+  test("makePageUrl carries multi-value filters.repo as repeated repo= params into pagination links, not comma-joined", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1, PR_LIST_ITEM_2],
+      { repo: ["org/repo-a", "org/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+    );
+    expect(html).toContain(
+      'href="/admin/prs?repo=org%2Frepo-a&repo=org%2Frepo-b&page=2"',
+    );
+    expect(html).not.toContain("org/repo-a,org/repo-b");
+  });
+
+  test("makePageUrl carries multi-value filters.org as repeated org= params into pagination links", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1, PR_LIST_ITEM_2],
+      { org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+    );
+    expect(html).toContain(
+      'href="/admin/prs?org=app-vitals&org=other-org&page=2"',
+    );
+  });
+
+  test("makePageUrl backward-compat: a single-value (string) filters.repo still round-trips as one repo= param", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1, PR_LIST_ITEM_2],
+      { repo: "org/repo-a" },
+      false,
+      USER_NAME,
+      {},
+      { total: 100, limit: 50, page: 1 },
+    );
+    expect(html).toContain('href="/admin/prs?repo=org%2Frepo-a&page=2"');
+  });
+
+  test("state-tab links (Open/Merged) carry multi-value filters.repo as repeated repo= params", () => {
+    const html = renderPrsPage(
+      [],
+      { state: "open", repo: ["org/repo-a", "org/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PR_PAGINATION,
+    );
+    expect(html).toContain(
+      'href="/admin/prs?state=merged&repo=org%2Frepo-a&repo=org%2Frepo-b"',
+    );
+  });
+
+  test("state-tab links (Open/Merged) carry multi-value filters.org as repeated org= params", () => {
+    const html = renderPrsPage(
+      [],
+      { state: "open", org: ["app-vitals", "other-org"] },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PR_PAGINATION,
+    );
+    expect(html).toContain(
+      'href="/admin/prs?state=merged&org=app-vitals&org=other-org"',
+    );
+  });
+
+  test("Blocked tab link carries multi-value filters.repo as repeated repo= params", () => {
+    const html = renderPrsPage(
+      [],
+      { repo: ["org/repo-a", "org/repo-b"] },
+      false,
+      USER_NAME,
+      {},
+      EMPTY_PR_PAGINATION,
+    );
+    const blockedTabMatch = html.match(/href="[^"]*blocked=true[^"]*"/);
+    expect(blockedTabMatch).toBeTruthy();
+    expect(blockedTabMatch?.[0]).toContain("repo=org%2Frepo-a");
+    expect(blockedTabMatch?.[0]).toContain("repo=org%2Frepo-b");
   });
 });
 
@@ -4052,6 +4495,7 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain("Model");
     expect(html).toContain("<th>Phase</th>");
     expect(html).toContain("<th>Item</th>");
+    expect(html).toContain("<th>Session</th>");
     expect(html).toContain("<th>Detail</th>");
     // Cost is shown inline within the Model column's badges, not as its own column.
     expect(html).not.toContain("<th>Cost</th>");
@@ -4297,7 +4741,9 @@ describe("renderCronLogsPage", () => {
       }),
     ]);
     // The outcome badge (first title attribute in the row) should show skipReason.
-    const badgeMatch = html.match(/<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/);
+    const badgeMatch = html.match(
+      /<span class="badge"[^>]*title="([^"]*)"[^>]*>([^<]*)<\/span>/,
+    );
     expect(badgeMatch).not.toBeNull();
     expect(badgeMatch?.[1]).toBe("Rate limit exceeded");
   });
@@ -4451,9 +4897,73 @@ describe("renderCronLogsPage", () => {
     expect(html).toContain(`<span title="${longError}">${longError}</span>`);
   });
 
-  test("empty-state colspan updates from 8 to 9 for the new Detail column", () => {
+  test("empty-state colspan updates from 9 to 10 for the new Session column", () => {
     const html = render([]);
-    expect(html).toContain('colspan="9"');
+    expect(html).toContain('colspan="10"');
+  });
+
+  // ─── Session column ────────────────────────────────────────────────────────────
+
+  test("renders the Session column header", () => {
+    const html = render([makeRun()]);
+    expect(html).toContain("<th>Session</th>");
+  });
+
+  test("renders a truncated sessionId (first 8 chars) with the full id in a title= tooltip", () => {
+    const html = render([makeRun({ sessionId: "session-123456789abcdef" })]);
+    // Should render first 8 chars: "session-"
+    expect(html).toContain('title="session-123456789abcdef"');
+    // Must have a monospace cell with truncated value
+    expect(html).toMatch(
+      /<span[^>]*class="[^"]*mono[^"]*"[^>]*title="session-123456789abcdef"[^>]*>session-<\/span>/,
+    );
+  });
+
+  test("renders an em-dash when sessionId is null", () => {
+    const html = render([makeRun({ sessionId: null })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash (should have 9 columns as per the new table)
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders an em-dash when sessionId is undefined", () => {
+    const html = render([makeRun({ sessionId: undefined })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("renders an em-dash when sessionId is an empty string", () => {
+    const html = render([makeRun({ sessionId: "" })]);
+    // Extract the session cell from the tbody
+    const bodyRowMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(bodyRowMatch).not.toBeNull();
+    // Check that the row contains an em-dash
+    expect(bodyRowMatch?.[1]).toContain("—");
+  });
+
+  test("table has a Session column header in the table header row", () => {
+    const html = render([makeRun()]);
+    // Extract the table header row
+    const theadMatch = html.match(/<thead>([\s\S]*?)<\/thead>/);
+    expect(theadMatch).not.toBeNull();
+    // Count <th> elements within the thead
+    const headers = theadMatch?.[1].match(/<th[^>]*>/g);
+    expect(headers?.length).toBe(10);
+  });
+
+  test("escapes XSS in sessionId within the title attribute", () => {
+    const html = render([
+      makeRun({
+        sessionId: '"><script>alert(99)</script>',
+      }),
+    ]);
+    expect(html).not.toContain("<script>alert(99)</script>");
+    expect(html).toContain("&lt;script&gt;");
   });
 });
 

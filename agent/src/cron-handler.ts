@@ -392,9 +392,19 @@ export async function handleCronRequest(
         ? buildTokenPayload(undefined, err.partialModelUsage)
         : undefined;
 
+    // sessionId (CSI-2.2): only ClaudeRunError/ClaudeTimeoutError (CSI-1.1)
+    // carry a sessionId field — a timed-out or failed run may still have
+    // captured one off the leading system/init stream-json line before the
+    // failure. Any other error type has no such field, so this is undefined.
+    const failureSessionId =
+      err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError
+        ? err.sessionId
+        : undefined;
+
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "failed", {
       error: err instanceof Error ? err.message : String(err),
       ...tokenPayload,
+      sessionId: failureSessionId,
     });
     markCronRunFailureReported(err);
     throw err;
@@ -410,13 +420,10 @@ export async function handleCronRequest(
 
   if (silent) {
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-    await cronRunReporter?.completeRun(
-      jobId,
-      runId,
-      clock.now(),
-      "completed",
-      buildTokenPayload(usage, modelUsage),
-    );
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+      ...buildTokenPayload(usage, modelUsage),
+      sessionId,
+    });
     return;
   }
   const isDmOnly = !!user && !channel;
@@ -424,13 +431,10 @@ export async function handleCronRequest(
     // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
     // DMs always get a reply — [silent] is ignored when routing to a DM
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
-    await cronRunReporter?.completeRun(
-      jobId,
-      runId,
-      clock.now(),
-      "completed",
-      buildTokenPayload(usage, modelUsage),
-    );
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+      ...buildTokenPayload(usage, modelUsage),
+      sessionId,
+    });
     return;
   }
 
@@ -445,13 +449,10 @@ export async function handleCronRequest(
 
     // Record completion before Slack delivery — a Slack error must not
     // overwrite a successful run with outcome='failed'.
-    await cronRunReporter?.completeRun(
-      jobId,
-      runId,
-      clock.now(),
-      "completed",
-      buildTokenPayload(usage, modelUsage),
-    );
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+      ...buildTokenPayload(usage, modelUsage),
+      sessionId,
+    });
 
     // The run is already recorded as "completed" above — any error from here
     // on (postMessage, dispatchMarkers) must be tagged before rethrowing so
@@ -488,13 +489,10 @@ export async function handleCronRequest(
     // Record completion before any Slack calls — conversations.open can also
     // fail (network error or null channel), and we must not leave the
     // AgentCronRun row permanently open if it does.
-    await cronRunReporter?.completeRun(
-      jobId,
-      runId,
-      clock.now(),
-      "completed",
-      buildTokenPayload(usage, modelUsage),
-    );
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+      ...buildTokenPayload(usage, modelUsage),
+      sessionId,
+    });
 
     // The run is already recorded as "completed" above — any error from here
     // on (conversations.open, postMessage, dispatchMarkers) must be tagged

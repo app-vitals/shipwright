@@ -202,6 +202,11 @@ export interface CronRunItem {
   itemType?: string | null;
   itemId?: string | null;
   /**
+   * The Claude session id for this cron run. Present when the run was
+   * dispatched with a session context; null/absent for runs with no session.
+   */
+  sessionId?: string | null;
+  /**
    * The owning cron's id/name/schedule — present on cross-cron listings (e.g.
    * renderCronLogsPage's per-agent table) so the Cron column can be rendered
    * without an N+1 lookup. Absent on single-cron listings.
@@ -1636,6 +1641,62 @@ function statusBadgeClass(s: string): string {
   return "badge-gray";
 }
 
+/**
+ * Normalize a filter value that may be a single string (legacy/bookmarked
+ * URL, e.g. `?repo=org/repo`) or an array of strings (repeated query params,
+ * e.g. `?repo=a&repo=b`) into an array. Absent values normalize to `[]`.
+ */
+function toFilterArray(value: string | string[] | undefined): string[] {
+  if (value === undefined) return [];
+  return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Shared org/repo multiselect filter fields, used by the Tasks page filter
+ * form (and, eventually, the PRs page — ORF-2.2). Renders two native
+ * `<select multiple>` elements — Org and Repo — populated from
+ * `suggestions.orgs` / `suggestions.repos`, with `<option selected>` for any
+ * value present in the currently-active filters. A native multiselect
+ * submits repeated query params on GET with no client JS required.
+ *
+ * Any active filter value not present in the suggestions list is still
+ * rendered as a selected option, so a value from a stale/edited-by-hand URL
+ * isn't silently dropped from the visible selection.
+ */
+export function renderRepoOrgFilterFields(
+  filters: { org?: string | string[]; repo?: string | string[] },
+  suggestions?: { orgs?: string[]; repos?: string[] },
+): string {
+  const activeOrgs = new Set(toFilterArray(filters.org));
+  const activeRepos = new Set(toFilterArray(filters.repo));
+
+  const orgOptionValues = new Set([
+    ...(suggestions?.orgs ?? []),
+    ...activeOrgs,
+  ]);
+  const repoOptionValues = new Set([
+    ...(suggestions?.repos ?? []),
+    ...activeRepos,
+  ]);
+
+  const renderOptions = (values: Set<string>, active: Set<string>) =>
+    [...values]
+      .map((v) => {
+        const selected = active.has(v) ? " selected" : "";
+        return `<option value="${escapeHtml(v)}"${selected}>${escapeHtml(v)}</option>`;
+      })
+      .join("");
+
+  return `<div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Org</label>
+          <select name="org" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(orgOptionValues, activeOrgs)}</select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label" style="font-size:11px">Repo</label>
+          <select name="repo" multiple class="form-input" style="font-size:12px;padding:4px 8px">${renderOptions(repoOptionValues, activeRepos)}</select>
+        </div>`;
+}
+
 // ─── Tasks page ──────────────────────────────────────────────────────────────
 
 export function renderTasksPage(
@@ -1644,7 +1705,8 @@ export function renderTasksPage(
     status?: string;
     state?: "ready" | "in_progress" | "blocked" | "closed";
     session?: string;
-    repo?: string;
+    repo?: string | string[];
+    org?: string | string[];
     source?: string;
     agent?: string;
     hitl?: "true" | "false";
@@ -1658,7 +1720,12 @@ export function renderTasksPage(
     page: 1,
   },
   opts?: { error?: string; agentFilterActive?: boolean },
-  suggestions?: { sessions?: string[]; repos?: string[]; agents?: string[] },
+  suggestions?: {
+    sessions?: string[];
+    repos?: string[];
+    orgs?: string[];
+    agents?: string[];
+  },
   readOnly = false,
   timezone = "America/Los_Angeles",
 ): string {
@@ -1700,7 +1767,8 @@ export function renderTasksPage(
     if (filters.status) params.set("status", filters.status);
     else if (filters.state) params.set("state", filters.state);
     if (filters.session) params.set("session", filters.session);
-    if (filters.repo) params.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) params.append("repo", r);
+    for (const o of toFilterArray(filters.org)) params.append("org", o);
     if (filters.source) params.set("source", filters.source);
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
@@ -1789,7 +1857,8 @@ export function renderTasksPage(
     const p = new URLSearchParams();
     p.set("state", newState);
     if (filters.session) p.set("session", filters.session);
-    if (filters.repo) p.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) p.append("repo", r);
+    for (const o of toFilterArray(filters.org)) p.append("org", o);
     if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
@@ -1903,10 +1972,10 @@ export function renderTasksPage(
           <label class="form-label" style="font-size:11px">Session</label>
           <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
         </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo"${suggestions?.repos?.length ? ' list="repos-list"' : ""} />
-        </div>
+        ${renderRepoOrgFilterFields(
+          { org: filters.org, repo: filters.repo },
+          { orgs: suggestions?.orgs, repos: suggestions?.repos },
+        )}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Source</label>
           <input name="source" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.source ?? "")}" placeholder="source" />
@@ -1918,7 +1987,6 @@ export function renderTasksPage(
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
         <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
         ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
-        ${suggestions?.repos?.length ? `<datalist id="repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
     </div>`
@@ -2699,7 +2767,8 @@ export function renderSessionDetailPage(
 export function renderPrsPage(
   prs: PrListItem[],
   filters: {
-    repo?: string;
+    repo?: string | string[];
+    org?: string | string[];
     state?: string;
     reviewState?: string;
     taskId?: string;
@@ -2714,7 +2783,7 @@ export function renderPrsPage(
     page: 1,
   },
   timezone = "America/Los_Angeles",
-  suggestions?: { repos?: string[] },
+  suggestions?: { repos?: string[]; orgs?: string[] },
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -2789,7 +2858,8 @@ export function renderPrsPage(
   const makeTabParams = (tabState: string): string => {
     const p = new URLSearchParams();
     p.set("state", tabState);
-    if (filters.repo) p.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) p.append("repo", r);
+    for (const o of toFilterArray(filters.org)) p.append("org", o);
     if (filters.taskId) p.set("taskId", filters.taskId);
     if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
@@ -2799,7 +2869,8 @@ export function renderPrsPage(
     const p = new URLSearchParams();
     p.set("state", "open");
     p.set("blocked", "true");
-    if (filters.repo) p.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) p.append("repo", r);
+    for (const o of toFilterArray(filters.org)) p.append("org", o);
     if (filters.taskId) p.set("taskId", filters.taskId);
     if (filters.reviewState) p.set("reviewState", filters.reviewState);
     return `?${p.toString()}`;
@@ -2836,7 +2907,8 @@ export function renderPrsPage(
     const params = new URLSearchParams();
     if (filters.state) params.set("state", filters.state);
     if (filters.reviewState) params.set("reviewState", filters.reviewState);
-    if (filters.repo) params.set("repo", filters.repo);
+    for (const r of toFilterArray(filters.repo)) params.append("repo", r);
+    for (const o of toFilterArray(filters.org)) params.append("org", o);
     if (filters.taskId) params.set("taskId", filters.taskId);
     if (filters.blocked) params.set("blocked", filters.blocked);
     if (p > 1) params.set("page", String(p));
@@ -2881,11 +2953,10 @@ export function renderPrsPage(
     ${degradedHtml}
     <div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/prs" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-        <div class="form-group" style="margin-bottom:0">
-          <label class="form-label" style="font-size:11px">Repo</label>
-          <input name="repo" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.repo ?? "")}" placeholder="org/repo" ${suggestions?.repos?.length ? 'list="prs-repos-list"' : ""} />
-          ${suggestions?.repos?.length ? `<datalist id="prs-repos-list">${suggestions.repos.map((r) => `<option value="${escapeHtml(r)}"></option>`).join("")}</datalist>` : ""}
-        </div>
+        ${renderRepoOrgFilterFields(
+          { org: filters.org, repo: filters.repo },
+          { orgs: suggestions?.orgs, repos: suggestions?.repos },
+        )}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">State</label>
           <select name="state" class="form-input" style="font-size:12px;padding:4px 8px">
@@ -3194,6 +3265,13 @@ export function renderCronLogsPage(opts: {
           }</span>`
         : "—";
 
+    // Session cell: render truncated sessionId (first 8 chars) with full id
+    // in a title= tooltip, em-dash when null/undefined/empty string. Follows
+    // the same monospace styling convention as other id cells.
+    const sessionCell = r.sessionId?.trim()
+      ? `<span class="mono" style="font-size:12px" title="${escapeHtml(r.sessionId)}">${escapeHtml(r.sessionId.substring(0, 8))}</span>`
+      : "—";
+
     // Detail cell: mirrors badgeTitle's priority above — skipReason wins whenever
     // the run is skipped (even if error is also set), then falls back to error,
     // else renders an em-dash. Multi-line/long error text is truncated for
@@ -3220,13 +3298,14 @@ export function renderCronLogsPage(opts: {
       <td class="col-model" style="font-size:12px">${modelCell}</td>
       <td style="font-size:12px">${phaseCell}</td>
       <td style="font-size:12px">${itemCell}</td>
+      <td style="font-size:12px">${sessionCell}</td>
       <td style="font-size:12px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${detailCell}</td>
     </tr>`;
   }
 
   const bodyRows =
     runs.length === 0
-      ? `<tr><td colspan="9" class="empty-state">No runs match the selected filters.</td></tr>`
+      ? `<tr><td colspan="10" class="empty-state">No runs match the selected filters.</td></tr>`
       : runs.map(row).join("\n");
 
   // Filter form
@@ -3323,6 +3402,7 @@ export function renderCronLogsPage(opts: {
               <th class="col-model">Model</th>
               <th>Phase</th>
               <th>Item</th>
+              <th>Session</th>
               <th>Detail</th>
             </tr>
           </thead>

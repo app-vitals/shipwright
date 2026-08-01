@@ -15,6 +15,11 @@
       "has": [{ "type": "host", "value": "www.shipwright-harness.com" }],
       "destination": "https://shipwrightharness.com/:path*",
       "statusCode": 301
+    },
+    {
+      "source": "/architecture",
+      "destination": "/agent-model",
+      "statusCode": 301
     }
   ]
 }

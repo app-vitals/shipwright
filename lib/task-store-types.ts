@@ -17,8 +17,10 @@ export interface paths {
         query?: {
           status?: string;
           state?: "open" | "closed" | "in_progress" | "ready" | "blocked";
+          source?: string;
           session?: string;
-          repo?: string;
+          repo?: string | string[];
+          org?: string | string[];
           assignee?: string;
           claimedBy?: string;
           branch?: string;
@@ -26,6 +28,7 @@ export interface paths {
           limit?: string;
           offset?: string;
           ready?: "true" | "false";
+          hitl?: "true" | "false";
           sort?: "asc" | "desc";
           updatedSince?: string;
         };
@@ -733,6 +736,136 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/tasks/{id}/skip": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Record a skip — increments skipCount, auto-blocks at threshold */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/tasks/{id}/skip/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reset skip tracking — skipCount back to 0 */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated task */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Task"];
+          };
+        };
+        /** @description Unauthorized */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Forbidden */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/tokens": {
     parameters: {
       query?: never;
@@ -940,6 +1073,7 @@ export interface paths {
           limit?: string;
           offset?: string;
           ready?: "true" | "false";
+          blocked?: "true" | "false";
           sort?: "asc" | "desc";
           updatedSince?: string;
         };
@@ -1365,6 +1499,100 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/prs/{id}/skip": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Record a skip — increments skipCount, auto-blocks at threshold */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/prs/{id}/skip/reset": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reset skip tracking — skipCount back to 0 */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description Updated PR */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["PullRequest"];
+          };
+        };
+        /** @description Not found */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1461,6 +1689,14 @@ export interface components {
       hitl?: boolean | null;
       /** @example 2026-01-02T00:00:00.000Z */
       hitlNotifiedAt?: string | null;
+      /**
+       * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
+       * @default 0
+       * @example 0
+       */
+      skipCount: number;
+      /** @example 2026-01-02T00:00:00.000Z */
+      lastSkippedAt?: string | null;
       /** @example agent-id-123 */
       claimedBy?: string | null;
       /** @example prefer-sonnet */
@@ -1518,6 +1754,11 @@ export interface components {
       tasks: components["schemas"]["Task"][];
       /** @example 10 */
       total: number;
+      /**
+       * @description True only when the agent token's repo-scope resolver call itself failed upstream (network error, timeout, non-2xx, malformed JSON) — distinct from a legitimate empty repo scope. Always false for admin tokens.
+       * @example false
+       */
+      scopeDegraded: boolean;
     };
     Error: {
       /** @example not found */
@@ -1585,6 +1826,12 @@ export interface components {
        *     ]
        */
       repos: string[];
+      /**
+       * @example [
+       *       "org"
+       *     ]
+       */
+      orgs: string[];
     };
     UpdateTaskBody: {
       [key: string]: unknown;
@@ -1654,6 +1901,11 @@ export interface components {
       /** @example abc123def456 */
       commitSha?: string | null;
       /**
+       * @description The review pipeline's exclusive commit-tracking field, separate from the shared commitSha field written by claim()/patch()/deploy for their own multi-phase bookkeeping.
+       * @example abc123def456
+       */
+      reviewedCommitSha?: string | null;
+      /**
        * @default 0
        * @example 1
        */
@@ -1693,6 +1945,23 @@ export interface components {
       readyForPatchAt?: string | null;
       /** @example null */
       readyForDeployAt?: string | null;
+      /**
+       * @default false
+       * @example false
+       */
+      hitl: boolean;
+      /** @example 2026-01-02T00:00:00.000Z */
+      hitlNotifiedAt?: string | null;
+      /** @example no linked task */
+      blockedReason?: string | null;
+      /**
+       * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
+       * @default 0
+       * @example 0
+       */
+      skipCount: number;
+      /** @example 2026-01-02T00:00:00.000Z */
+      lastSkippedAt?: string | null;
       /**
        * Format: date-time
        * @example 2026-01-01T00:00:00.000Z

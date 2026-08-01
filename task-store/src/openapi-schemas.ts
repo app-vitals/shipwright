@@ -351,6 +351,16 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    lastCiFailureSignature: z.string().nullable().optional().openapi({
+      example: "npm-test-failed-foo.unit.test.ts",
+      description:
+        "Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.",
+    }),
+    consecutiveCiFailureCount: z.number().int().default(0).openapi({
+      example: 0,
+      description:
+        "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+    }),
     createdAt: z
       .string()
       .datetime()
@@ -410,7 +420,22 @@ export const TaskListQuerySchema = z.object({
     .openapi({ example: "open" }),
   source: z.string().optional().openapi({ example: "entropy-fix" }),
   session: z.string().optional().openapi({ example: "session-123" }),
-  repo: z.string().optional().openapi({ example: "org/repo" }),
+  repo: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .openapi({
+      example: "org/repo",
+      description:
+        "Filter by repo (`org/repo` format). Repeatable — pass `?repo=` multiple times to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match).",
+    }),
+  org: z
+    .union([z.string(), z.array(z.string())])
+    .optional()
+    .openapi({
+      example: "org",
+      description:
+        "Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeatable — pass `?org=` multiple times to match any of several orgs. Combines with `repo` as an AND filter.",
+    }),
   assignee: z.string().optional().openapi({ example: "user@example.com" }),
   claimedBy: z.string().optional().openapi({ example: "agent-id-123" }),
   branch: z.string().optional().openapi({ example: "feat/feature-x" }),
@@ -512,6 +537,7 @@ export const DistinctResponseSchema = z
   .object({
     sessions: z.array(z.string()).openapi({ example: ["session-1"] }),
     repos: z.array(z.string()).openapi({ example: ["org/repo"] }),
+    orgs: z.array(z.string()).openapi({ example: ["org"] }),
   })
   .openapi("DistinctResponse");
 
@@ -539,7 +565,22 @@ export const PrIdParamSchema = z
 
 export const PrListQuerySchema = z
   .object({
-    repo: z.string().optional().openapi({ example: "org/repo" }),
+    repo: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org/repo",
+        description:
+          "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
+      }),
+    org: z
+      .union([z.string(), z.array(z.string())])
+      .optional()
+      .openapi({
+        example: "org",
+        description:
+          "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
+      }),
     prNumber: z
       .string()
       .optional()
@@ -659,6 +700,11 @@ export const PatchPrBodySchema = z
       example: "abc123def456",
       description:
         "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
+    }),
+    ciFailureSignature: z.string().optional().openapi({
+      example: "npm-test-failed-foo.unit.test.ts",
+      description:
+        "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets hitl:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
     }),
   })
   .openapi("PatchPrBody");

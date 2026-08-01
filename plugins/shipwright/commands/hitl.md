@@ -56,6 +56,7 @@ TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.status // empty')
 TASK_HITL=$(echo "$TASK_JSON" | jq -r '.hitl // empty')
 TASK_LAYER=$(echo "$TASK_JSON" | jq -r '.layer // empty')
 TASK_AC=$(echo "$TASK_JSON" | jq -r '.acceptanceCriteria // empty | if type == "array" then .[] else . end')
+TASK_PR=$(echo "$TASK_JSON" | jq -r '.pr // empty')
 ```
 
 ---
@@ -140,6 +141,21 @@ If the human asks for help with a step, provide the relevant commands and contex
 
 When the human confirms the task is complete (e.g. says "done", "finished", "all good",
 "mark it done", or similar):
+
+**First, check if a PR resulted from this HITL session.** If `TASK_PR` is set (a non-empty
+PR number/URL), a PR was created during this session and needs the normal review/patch/deploy
+lifecycle — do not mark the task `done`. Instead, warn the human:
+
+```
+⚠ A PR resulted from this HITL task (pr: {TASK_PR}) — it needs the normal review/patch/deploy
+  lifecycle, not a direct "done" mark. We'll clear the hitl flag so the PR can flow through
+  candidacy, but we'll leave the task status as-is so it re-enters the queue.
+```
+
+Then proceed to Step 6b below, but **only PATCH `hitl: false`** (skip the status:"done"
+update — leave status as-is). The task will re-enter normal candidacy once hitl is cleared.
+
+If `TASK_PR` is empty (purely standalone infra work), proceed normally with both steps below.
 
 1. First run **Step 6a** below if it applies to this task.
 2. Then mark the task done in the task store as described further down (**Step 6b**), which
@@ -239,24 +255,44 @@ Ask a brief optional follow-up: "Any outcome note for the record (e.g. 'fixed', 
 positive — no change needed')? Press enter to skip." If the human provides one, capture it
 as `OUTCOME_NOTE`; otherwise leave it empty.
 
-Mark the task done in the task store, including `note: OUTCOME_NOTE` only when one was
-given (omit the field entirely when skipped — do not send an empty string):
+Mark the task done in the task store (or clear the hitl flag if a PR was created), including
+`note: OUTCOME_NOTE` only when one was given (omit the field entirely when skipped — do not
+send an empty string). Always include `hitl: false` to clear the hitl flag:
 
 ```bash
 COMPLETED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-if [ -n "$OUTCOME_NOTE" ]; then
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "$(jq -n --arg note "$OUTCOME_NOTE" --arg completedAt "$COMPLETED_AT" \
-      '{status: "done", completedAt: $completedAt, note: $note}')" | jq .
+if [ -n "$TASK_PR" ]; then
+  # PR exists: only clear hitl, leave status unchanged
+  if [ -n "$OUTCOME_NOTE" ]; then
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+      -d "$(jq -n --arg note "$OUTCOME_NOTE" \
+        '{hitl: false, note: $note}')" | jq .
+  else
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+      -d '{"hitl": false}' | jq .
+  fi
 else
-  curl -sf -X PATCH \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    -H "Content-Type: application/json" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"done\", \"completedAt\": \"$COMPLETED_AT\"}" | jq .
+  # No PR: mark done and clear hitl
+  if [ -n "$OUTCOME_NOTE" ]; then
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+      -d "$(jq -n --arg note "$OUTCOME_NOTE" --arg completedAt "$COMPLETED_AT" \
+        '{status: "done", completedAt: $completedAt, hitl: false, note: $note}')" | jq .
+  else
+    curl -sf -X PATCH \
+      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+      -H "Content-Type: application/json" \
+      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+      -d "{\"status\": \"done\", \"completedAt\": \"$COMPLETED_AT\", \"hitl\": false}" | jq .
+  fi
 fi
 ```
 

@@ -903,6 +903,14 @@
             ],
             "example": 10
           },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent session id this run was executed under. Null for runs with no recorded session.",
+            "example": "session-abc-123"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -932,6 +940,7 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens",
+          "sessionId",
           "createdAt"
         ]
       },
@@ -1119,6 +1128,14 @@
               "null"
             ],
             "example": 10
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent session id this run was executed under.",
+            "example": "session-abc-123"
           },
           "modelBreakdown": {
             "type": "array",

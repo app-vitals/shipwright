@@ -209,10 +209,56 @@ back to `'sonnet'`.
      -q '.workflow_runs[] | "\(.name): \(.status) \(.conclusion)"'
    ```
 
-5. **Existing reviews and comments**:
+5. **Existing reviews, comments, and inline review threads** — a single GraphQL call,
+   reusing the same query `/shipwright:patch`'s Step 3a issues (`### Step 3a: Check for
+   Unaddressed Review Findings` in `commands/patch.md`), so this command sees the same
+   inline-thread resolution state patch.md's unaddressed-findings check does, rather than
+   the REST `gh pr view --json comments,reviews` call (issue-level comments and top-level
+   review objects only — blind to inline diff-line review comments and their `isResolved`
+   state):
    ```bash
-   gh pr view {pr} --repo {org}/{repo} --json comments,reviews
+   gh api graphql -f query='
+   {
+     repository(owner: "{org}", name: "{repo}") {
+       pullRequest(number: {pr}) {
+         headRefOid
+         reviews(first: 50) {
+           nodes {
+             author { login }
+             state
+             submittedAt
+             body
+           }
+         }
+         reviewThreads(first: 100) {
+           nodes {
+             id
+             isResolved
+             comments(first: 1) {
+               nodes {
+                 author { login }
+                 body
+                 path
+                 line
+               }
+             }
+           }
+         }
+         comments(first: 50) {
+           nodes {
+             author { login }
+             body
+             createdAt
+           }
+         }
+       }
+     }
+   }'
    ```
+   Extract `reviews.nodes[]`, `reviewThreads.nodes[]` (with `isResolved` and the first
+   comment's `author.login`, `body`, `path`, `line`), and `comments.nodes[]` — the same
+   shape patch.md's Step 3a extracts. Used below by the Unresolved Comment Check and by
+   the unaddressed-findings gate before Step 10.
 
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
@@ -233,8 +279,8 @@ author unconditionally override all unresolved thread skip conditions. Only run 
 below for first reviews (no `lastReviewedCommit`) or when the head has not moved
 (`headRefOid == lastReviewedCommit`).
 
-Using the `reviews` and `comments` fetched above (no extra API call needed), a
-**substantive unresolved comment** is one where ALL of the following are true:
+Using the `reviews`, `comments`, and `reviewThreads` fetched above (no extra API call
+needed), a **substantive unresolved comment** is one where ALL of the following are true:
 - Author login does not contain `[bot]` and is not a known CI account
 - Body is not a trivial acknowledgement: not "LGTM", "+1", "thanks", "approved", or emoji-only
 - Posted after the most recent commit push date (the author has not pushed since)
@@ -242,6 +288,12 @@ Using the `reviews` and `comments` fetched above (no extra API call needed), a
 If **any** of the following are true, this PR has substantive unresolved feedback:
 - Any reviewer (not `CURRENT_USER`, not a bot) has a `CHANGES_REQUESTED` review with no commits since that review
 - Any reviewer has a substantive unresolved comment with no commits since that comment
+- Any unresolved inline review thread (`isResolved == false`) exists whose first comment's
+  author is not `CURRENT_USER` and not a bot (login does not contain `[bot]` and is not a
+  known CI account) — an unresolved inline thread counts the same as a substantive
+  unresolved top-level comment/review, regardless of when it was posted relative to the
+  most recent push, since `isResolved` (not recency) is the authoritative "still needs a
+  response" signal for inline threads
 
 If substantive unresolved feedback is found: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
@@ -461,9 +513,60 @@ local file is the authoritative signal that *this* agent has a prior review to a
 
 ---
 
+## Step 9.5: Unaddressed-Findings Hard Gate (RUC-1.1)
+
+Immediately before Step 10 finalizes the verdict, compute whether this PR has **unaddressed
+findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check for
+Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
+rather than re-deriving it in different language here (a fourth divergent copy of this logic
+is exactly the drift PRB-2.1 previously fixed between `check-deploy.ts` and
+`check-patch.ts`/`check-review.ts`). Using the `reviews`, `reviewThreads`, and `comments`
+fetched in Step 5.5:
+
+A PR has **unaddressed findings** when ANY of the following are true:
+- At least one review threads node has `isResolved == false` (any unresolved inline thread)
+- At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
+  non-empty `body`, excluding:
+  - a clean self-APPROVE (per `isCleanApproveBody`/CPF-2.1 — a review whose body starts with
+    `APPROVE` or contains a `Verdict: APPROVE` label), and
+  - a review addressed by a subsequent PR-author reply (per CPF-2.3 — the PR author posted a
+    PR-level comment with `createdAt` after that review's `submittedAt`, and all inline
+    threads are resolved)
+
+This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
+its List A — see that section for the full clean-APPROVE and author-reply exclusion rules
+(not restated here to avoid a fourth divergent copy).
+
+**If unaddressed findings are present, force the verdict to `COMMENT`** — compute the
+verdict once (`unaddressedFindings ? "COMMENT" : {code-reviewer subagent's recommended
+verdict}`) and feed that single value into both Step 10's `event` field (`COMMENT`) and the
+review body's `Verdict: ...` label (literal text `Verdict: COMMENT`), the same body-label
+convention Step 10 already documents. This gate:
+- **Overrides the code-reviewer subagent's severity-based recommendation** from Step 7 —
+  even if the subagent recommends APPROVE (e.g. only suggestion-level findings, or no
+  findings at all in the new diff), a genuinely unresolved inline thread or qualifying
+  review from a prior pass still forces `COMMENT`.
+- **Is not mutually exclusive with the Step 10 self-review COMMENT-forcing override** below
+  — a self-reviewed PR can independently trigger the self-review override (GitHub rejects
+  self-APPROVE via the API) AND this gate (real unaddressed feedback exists); either one on
+  its own is sufficient to force `COMMENT`, and this gate must not be skipped just because
+  the PR is a self-review. This holds even when the review narrative would otherwise
+  self-report `Verdict: APPROVE` — the computed verdict always wins over narrative wording.
+
+This gate is computed live from the GraphQL data fetched in Step 5.5 at review-post time —
+consistent with the "GitHub is the Source of Truth" principle in
+`plugins/shipwright/CLAUDE.md`, it is not persisted as a new dedup state field in the task
+store.
+
+---
+
 ## Step 10: Build Review JSON
 
 Follow `references/post-review-guide.md` for the full mechanics.
+
+**Unaddressed-findings gate takes priority**: apply Step 9.5's gate first. When it computes
+`COMMENT`, use that verdict for both `event` and the `Verdict: ...` body label below,
+regardless of what follows in this step.
 
 **Self-review event override**: If the PR's `author.login == CURRENT_USER`, set `event: "COMMENT"`
 regardless of the review outcome — GitHub rejects self-APPROVE via the API. The actual verdict
@@ -820,7 +923,10 @@ These rules are non-negotiable regardless of policy settings:
 - **Never REQUEST_CHANGES**: only APPROVE or COMMENT.
 - **APPROVE means clean**: any finding at important or critical severity means COMMENT —
   APPROVE is reserved for PRs with no blocking concerns (suggestions only, or none at all).
-- **Check for unresolved feedback first**: don't approve over substantive unresolved feedback from others.
+- **Check for unresolved feedback first**: this is mechanically enforced, not just a soft
+  guideline — Step 9.5's unaddressed-findings hard gate forces `event`/`Verdict: ...` to
+  `COMMENT` whenever a qualifying unresolved review or inline thread exists at head, even if
+  the code-reviewer subagent recommends APPROVE.
 - **Concise approvals**: if all items are addressed with no new issues, a brief APPROVE
   to unblock is more valuable than a detailed duplicate review.
 - **Breaking API changes**: assume rolling deployments. Flag removed endpoints, changed
