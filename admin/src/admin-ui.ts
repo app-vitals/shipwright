@@ -2314,7 +2314,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const stateParam = c.req.query("state") ?? undefined;
     const reviewState = c.req.query("reviewState") ?? undefined;
-    const repo = c.req.query("repo") ?? undefined;
+    // c.req.query("repo") only returns the first value when the query string
+    // repeats the key (?repo=a&repo=b) — use queries() to get all values, so
+    // both a bookmarked single-value URL and a multiselect submission with
+    // several selections round-trip correctly.
+    const repo = c.req.queries("repo");
+    const org = c.req.queries("org");
     const taskId = c.req.query("taskId") ?? undefined;
     const blockedParam = c.req.query("blocked") ?? undefined;
     const pageRaw = c.req.query("page");
@@ -2332,7 +2337,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const params = new URLSearchParams();
       if (stateParam) params.set("state", stateParam);
       if (reviewState) params.set("reviewState", reviewState);
-      if (repo) params.set("repo", repo);
+      for (const r of repo ?? []) params.append("repo", r);
+      for (const o of org ?? []) params.append("org", o);
       if (taskId) params.set("taskId", taskId);
       if (blockedParam === "true") params.set("blocked", "true");
       params.set("limit", String(limit));
@@ -2362,14 +2368,21 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const suggestions = fetchDistinctTaskValues
       ? await fetchDistinctTaskValues()
-          .then((v) => ({ repos: v.repos }))
+          .then((v) => ({ repos: v.repos, orgs: v.orgs }))
           .catch(() => ({}))
       : {};
 
     return html(
       renderPrsPage(
         prs,
-        { state: stateParam, reviewState, repo, taskId, blocked: blockedParam },
+        {
+          state: stateParam,
+          reviewState,
+          repo,
+          org,
+          taskId,
+          blocked: blockedParam,
+        },
         degraded,
         c.var.userEmail,
         agentNames,
