@@ -399,6 +399,34 @@ describe("SKILL.md — Step 4: Sentry cross-check (IC-1.3)", () => {
   });
 });
 
+describe("SKILL.md — Step 1c: direct sessionId-based transcript lookup (CSI-4.1)", () => {
+  it("documents the direct $TRANSCRIPT_DIR/$SESSION_ID.jsonl lookup path used when sessionId is non-null", () => {
+    expect(content).toContain("$TRANSCRIPT_DIR/$SESSION_ID.jsonl");
+  });
+
+  it("Step 1c gates the direct lookup on sessionId being non-null, falling back to 3b's mtime window when null", () => {
+    const step1cBlock = content.slice(
+      content.indexOf("### 1c. From the resolved run to a transcript"),
+      content.indexOf("## Step 2: Ground-truth snapshot"),
+    );
+    expect(step1cBlock).toContain("sessionId");
+    expect(step1cBlock).toContain("null");
+  });
+
+  it("Step 5's synthesis note says session id comes directly from the admin API record when available", () => {
+    const step5Block = content.slice(
+      content.indexOf("## Step 5: Synthesize the explanation"),
+      content.indexOf("**Output format (name+time mode):**"),
+    );
+    expect(step5Block).toContain("sessionId");
+  });
+
+  it("Notes section states the admin API is now the exact source for session id, not just startedAt", () => {
+    const notesBlock = content.slice(content.indexOf("## Notes"));
+    expect(notesBlock).toContain("sessionId");
+  });
+});
+
 describe("SKILL.md — Step 1b populates ITEM_ARG in name+time mode (review fix)", () => {
   it("assigns ITEM_ARG from BEST_RUN's itemId in the name+time branch", () => {
     // Must appear in the BEST_RUN resolution block, not just anywhere in the doc.
