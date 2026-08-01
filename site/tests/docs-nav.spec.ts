@@ -67,3 +67,22 @@ test("docs footer does not include Compare or Docs links", async ({
   );
   await expect(footer.getByRole("link", { name: /^Docs$/i })).toHaveCount(0);
 });
+
+test("docs sidebar includes links to Agent Model and Service Architecture in Reference section", async ({
+  page,
+}) => {
+  // UGD-3.2: /agent-model and /service-architecture are standalone BaseLayout
+  // pages outside the docs content collection. These hardcoded links should
+  // render in the docs sidebar's Reference section, allowing readers to
+  // navigate from docs content to the architecture pages (AC#1).
+  // Note: aria-current is explicitly out of scope for these links (AC#2) —
+  // they lead to BaseLayout pages that never render the sidebar.
+  await page.goto("/docs/getting-started");
+  const docsNav = page.getByRole("navigation", { name: "Docs navigation" });
+  await expect(
+    docsNav.getByRole("link", { name: /Agent Model/i }),
+  ).toHaveAttribute("href", "/agent-model");
+  await expect(
+    docsNav.getByRole("link", { name: /Service Architecture/i }),
+  ).toHaveAttribute("href", "/service-architecture");
+});

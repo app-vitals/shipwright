@@ -52,3 +52,17 @@ export const PRIMARY_NAV_LINKS: NavLink[] = [
   { href: "/agent-model", label: "Agent Model" },
   { href: "/story", label: "Story" },
 ];
+
+/**
+ * Hardcoded architecture page links for the DocsLayout sidebar.
+ *
+ * /agent-model and /service-architecture are standalone BaseLayout pages
+ * outside the docs content collection. These links render in the sidebar's
+ * Reference section, allowing readers to navigate from docs content to the
+ * architecture pages. Single source of truth ensures the sidebar links stay
+ * in sync with the actual routes.
+ */
+export const DOCS_SIDEBAR_SUPPLEMENTAL_LINKS: NavLink[] = [
+  { href: "/agent-model", label: "Agent Model" },
+  { href: "/service-architecture", label: "Service Architecture" },
+];
