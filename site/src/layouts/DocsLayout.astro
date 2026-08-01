@@ -10,7 +10,12 @@ import "../styles/brand.css";
 import Analytics from "../components/Analytics.astro";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
-import { BOOKING_URL, PRIMARY_NAV_LINKS, REPO_URL } from "../consts";
+import {
+  BOOKING_URL,
+  DOCS_SIDEBAR_SUPPLEMENTAL_LINKS,
+  PRIMARY_NAV_LINKS,
+  REPO_URL,
+} from "../consts";
 
 interface Heading {
   depth: number;
@@ -356,6 +361,14 @@ const tocHeadings = headings.filter((h) => h.depth === 2 || h.depth === 3);
                         </li>
                       );
                     })}
+                    {sectionName === "Reference" &&
+                      DOCS_SIDEBAR_SUPPLEMENTAL_LINKS.map((link) => (
+                        <li>
+                          <a href={link.href} class="docs-sidebar-link">
+                            {link.label}
+                          </a>
+                        </li>
+                      ))}
                   </ul>
                 </div>
               ))
