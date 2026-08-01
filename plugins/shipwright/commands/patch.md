@@ -1229,6 +1229,18 @@ gh run view "$RUN_ID" --log --failed --repo {org}/{repo} 2>&1 | tail -200
 
 Store the log output for use in the subagent prompt.
 
+Compute a stable failure signature from the failing job names — sorted and comma-joined so
+the same set of failing jobs always produces the same signature regardless of job-completion
+order, matching Step 6d.5's already-existing `ciFailureSignature` field on the task store's
+`POST /prs/:id/patch` (CSD-1.1):
+
+```bash
+CI_FAILURE_SIGNATURE=$(gh run view "$RUN_ID" --json jobs \
+  --jq '[.jobs[] | select(.conclusion=="failure") | .name] | sort | join(",")')
+```
+
+Store `CI_FAILURE_SIGNATURE` for use in Step 6d.5's PR record upsert.
+
 ### Step 6b.5: Claim PR Record (pre-work lock)
 
 The fix subagent dispatched next can run long enough to overlap with another patch run
@@ -1477,6 +1489,12 @@ The record was already claimed pre-work in Step 6b.5 — `PR_RECORD_ID` is alrea
 this renews the claim's heartbeat and increments `patchCycles` rather than re-claiming.
 Warn and continue on any failure — do not stop.
 
+This is the only site among Steps 4c.5/5c.5/6d.5 where a CI failure signature is available
+— Step 6b computed `CI_FAILURE_SIGNATURE` above, but Steps 4 (merge conflicts) and 5 (review
+findings) never run Step 6b, so they have no signature to report. Build the `patch` payload
+body conditionally so this step only sends `ciFailureSignature` when one was actually
+computed this cycle:
+
 ```bash
 if [ -n "$PR_RECORD_ID" ]; then
   curl -s -o /dev/null -X POST \
@@ -1484,11 +1502,16 @@ if [ -n "$PR_RECORD_ID" ]; then
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat" || \
     echo "⚠ heartbeat renewal failed — continuing"
   HEAD_SHA_POST_PATCH=$(git -C ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} rev-parse HEAD)
+  if [ -n "$CI_FAILURE_SIGNATURE" ]; then
+    PATCH_BODY="{\"commitSha\": \"$HEAD_SHA_POST_PATCH\", \"ciFailureSignature\": \"$CI_FAILURE_SIGNATURE\"}"
+  else
+    PATCH_BODY="{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}"
+  fi
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
-    -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
+    -d "$PATCH_BODY" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
