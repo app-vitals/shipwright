@@ -79,7 +79,7 @@ List tasks
 - **Method:** GET
 - **Path:** `/tasks`
 - **Has body:** No
-- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `hitl` (query), `sort` (query), `updatedSince` (query)
+- **Parameters:** `status` (query), `state` (query), `source` (query), `session` (query), `repo` (query), `org` (query), `assignee` (query), `claimedBy` (query), `branch` (query), `pr` (query), `limit` (query), `offset` (query), `ready` (query), `hitl` (query), `sort` (query), `updatedSince` (query)
 
 ## `tasks_update`
 
