@@ -247,8 +247,11 @@ waiting for a human to file it. They ship disabled by default (a new system cron
 `enabled: false` so it never fires unexpectedly on an agent that hasn't opted in) — turn them
 on per-agent from the Cron Jobs card once you're comfortable with what they'll do.
 
-Every cron — pipeline or maintenance — polls a `preCheck` script first and only spends a
-Claude turn if that script produces output; most ticks across most crons cost nothing.
+Most maintenance crons poll a `preCheck` script first and only spend a Claude turn if that
+script produces output; most ticks across those crons cost nothing. The pipeline crons
+(dev-task/review/patch/deploy/loop) don't carry a `preCheck` — they're instead gated by
+`shipwright-loop`'s own candidate providers, which decide per tick whether there's a
+winning item to dispatch.
 
 Full reference: [`cron-jobs.mdx`](../../../site/src/content/docs/cron-jobs.mdx).
 
