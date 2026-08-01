@@ -1274,3 +1274,70 @@ describe("patch.md — drop stale review-patch reference from claim-release step
     expect(matches.length).toBe(3);
   });
 });
+
+describe("patch.md — capture and report CI failure signature (CSD-1.2)", () => {
+  function getStep6bSection() {
+    const step6bIdx = content.indexOf("### Step 6b: Collect CI Failure Output");
+    const step6b5Idx = content.indexOf("### Step 6b.5:");
+    expect(step6bIdx).toBeGreaterThan(-1);
+    expect(step6b5Idx).toBeGreaterThan(step6bIdx);
+    return content.slice(step6bIdx, step6b5Idx);
+  }
+
+  function getStep6d5Section() {
+    const step6d5Idx = content.indexOf("### Step 6d.5: Upsert PR Record");
+    const step6eIdx = content.indexOf("### Step 6e:");
+    expect(step6d5Idx).toBeGreaterThan(-1);
+    expect(step6eIdx).toBeGreaterThan(step6d5Idx);
+    return content.slice(step6d5Idx, step6eIdx);
+  }
+
+  it("Step 6b computes the failing-job-name signature via gh run view --json jobs --jq, sorted and comma-joined", () => {
+    const section = getStep6bSection();
+    expect(section).toContain('gh run view "$RUN_ID" --json jobs');
+    expect(section).toContain("--jq");
+    expect(section).toContain('select(.conclusion=="failure")');
+    expect(section).toContain(".name");
+    expect(section).toContain("sort");
+    expect(section).toContain('join(",")');
+  });
+
+  it("Step 6b stores the computed signature in a CI_FAILURE_SIGNATURE variable", () => {
+    const section = getStep6bSection();
+    expect(section).toMatch(/CI_FAILURE_SIGNATURE=/);
+  });
+
+  it("Step 6b's signature computation runs after the existing RUN_ID/log-collection block", () => {
+    const section = getStep6bSection();
+    const runIdIdx = section.indexOf("RUN_ID=$(gh run list");
+    const logsIdx = section.indexOf("gh run view \"$RUN_ID\" --log --failed");
+    const signatureIdx = section.indexOf("CI_FAILURE_SIGNATURE=");
+    expect(runIdIdx).toBeGreaterThan(-1);
+    expect(logsIdx).toBeGreaterThan(runIdIdx);
+    expect(signatureIdx).toBeGreaterThan(logsIdx);
+  });
+
+  it("Step 6d.5's POST /prs/:id/patch payload conditionally includes ciFailureSignature when CI_FAILURE_SIGNATURE is set", () => {
+    const section = getStep6d5Section();
+    // Existing unconditional heartbeat + commitSha patch call remains.
+    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
+    expect(section).toContain("/prs/$PR_RECORD_ID/patch");
+    expect(section).toContain("commitSha");
+    // New conditional inclusion of ciFailureSignature.
+    expect(section).toContain("ciFailureSignature");
+    expect(section).toContain("CI_FAILURE_SIGNATURE");
+    // Must be gated by a condition (guarding Steps 4/5's reuse of this same block, which
+    // never populate CI_FAILURE_SIGNATURE), not unconditionally appended.
+    const codeBlockIdx = section.indexOf("```bash");
+    const sigIdx = section.indexOf("ciFailureSignature", codeBlockIdx);
+    expect(sigIdx).toBeGreaterThan(-1);
+    const before = section.slice(codeBlockIdx, sigIdx);
+    expect(before).toMatch(/if\s*\[\s*-n\s*"\$CI_FAILURE_SIGNATURE"/);
+  });
+
+  it("Step 6d.5's guard on CI_FAILURE_SIGNATURE mirrors the existing PR_RECORD_ID '-n' guard pattern", () => {
+    const section = getStep6d5Section();
+    expect(section).toMatch(/if\s*\[\s*-n\s*"\$PR_RECORD_ID"\s*\]/);
+    expect(section).toMatch(/if\s*\[\s*-n\s*"\$CI_FAILURE_SIGNATURE"\s*\]/);
+  });
+});
