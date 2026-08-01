@@ -12,10 +12,10 @@ test.beforeEach(async ({ page }) => {
 
 // SWD-1.2: DocsLayout's header nav, mobile sidebar nav, and footer had
 // drifted from BaseLayout's and were silently missing the "vs Devin" and
-// "Architecture" links. SiteHeader/SiteFooter now back both layouts, so
+// "Agent Model" links. SiteHeader/SiteFooter now back both layouts, so
 // these links can no longer drift out of docs pages unnoticed.
 
-test("docs desktop header nav includes vs Devin and Architecture links", async ({
+test("docs desktop header nav includes vs Devin and Agent Model links", async ({
   page,
 }) => {
   await page.goto("/docs/getting-started");
@@ -25,11 +25,11 @@ test("docs desktop header nav includes vs Devin and Architecture links", async (
     "/vs/devin",
   );
   await expect(
-    nav.getByRole("link", { name: /Architecture/i }),
-  ).toHaveAttribute("href", "/architecture");
+    nav.getByRole("link", { name: /Agent Model/i }),
+  ).toHaveAttribute("href", "/agent-model");
 });
 
-test("docs mobile sidebar nav includes vs Devin and Architecture links", async ({
+test("docs mobile sidebar nav includes vs Devin and Agent Model links", async ({
   page,
 }) => {
   // The sidebar's mobile nav is "md:hidden" — only in the a11y tree below
@@ -42,8 +42,8 @@ test("docs mobile sidebar nav includes vs Devin and Architecture links", async (
     "/vs/devin",
   );
   await expect(
-    nav.getByRole("link", { name: /Architecture/i }),
-  ).toHaveAttribute("href", "/architecture");
+    nav.getByRole("link", { name: /Agent Model/i }),
+  ).toHaveAttribute("href", "/agent-model");
 });
 
 test("docs footer includes a vs Devin link", async ({ page }) => {
