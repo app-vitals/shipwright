@@ -69,8 +69,8 @@ functional units (`task-store/src/lib/repo-org-filter.ts`'s `buildRepoOrgWhere`,
 `agent/src/claude.ts` → `cron-handler.ts` → `cron-run-reporter.ts` → the admin cron-run
 API) plus additive query-param/field wiring on already-tested boundaries
 (`task-store/src/routes/tasks.ts`/`prs.ts`'s org/repo filter,
-`task-store/prisma/schema.prisma`'s `ciFailureStreak`, `admin/prisma/schema.prisma`'s
-`AgentCronRun.sessionId`). Directly checked each for matching coverage rather than
+`task-store/prisma/schema.prisma`'s `lastCiFailureSignature`/`consecutiveCiFailureCount`,
+`admin/prisma/schema.prisma`'s `AgentCronRun.sessionId`). Directly checked each for matching coverage rather than
 inferring from file presence alone:
 
 - **`task-store/src/lib/repo-org-filter.ts`** — has a paired
@@ -94,10 +94,12 @@ inferring from file presence alone:
   `task-store/src/state-filter.smoke.test.ts` (+107 lines) in the same diff.
   Reuse-grade, correctly layered (route-level smoke test of a route-level parameter, not
   a duplicate of the unit-level `buildRepoOrgWhere` cases).
-- **`ciFailureStreak` field** — covered by `task-store/src/openapi-schemas.unit.test.ts`
-  (+94 lines), `task-store/src/pull-request-service.unit.test.ts` (+205 lines, new file),
-  and `task-store/src/pull-request.integration.test.ts` (+117 lines, new file).
-  Reuse-grade.
+- **`lastCiFailureSignature`/`consecutiveCiFailureCount` fields** — covered by
+  `task-store/src/openapi-schemas.unit.test.ts` (+94 lines),
+  `task-store/src/pull-request-service.unit.test.ts` (+205 lines, existing file predating
+  this cycle by weeks — created in #1369 — extended, not new), and
+  `task-store/src/pull-request.integration.test.ts` (+117 lines, existing file predating
+  this cycle by weeks — created in #711 — extended, not new). Reuse-grade.
 
 **No new gaps identified this cycle.** Every real functional addition in this cycle's
 Phase 1 delta already has matching, correctly-layered test coverage landed in the same
@@ -152,11 +154,12 @@ production fixes — none carry forward. One new, narrower net-new item remains 
 `task-store/src/lib/repo-org-filter.unit.test.ts` and new
 `site/tests/service-architecture.spec.ts`; `site/tests/architecture.spec.ts` was renamed
 to `agent-model.spec.ts` in the same diff, a wash on count). Growth this cycle is
-concentrated in `task-store/src/` (new `repo-org-filter.unit.test.ts` and
-`pull-request-service.unit.test.ts`/`pull-request.integration.test.ts`, plus expanded
+concentrated in `task-store/src/` (new `repo-org-filter.unit.test.ts`, plus expanded
+pre-existing `pull-request-service.unit.test.ts`/`pull-request.integration.test.ts` and
 `openapi-schemas.unit.test.ts`/`state-filter.smoke.test.ts`/`routes/
-tasks.openapi.smoke.test.ts` case counts for the org-filter and `ciFailureStreak`
-additions), `admin/src/` (new `admin-ui.smoke.test.ts` and `agents-api.smoke.test.ts`,
+tasks.openapi.smoke.test.ts` case counts for the org-filter and
+`lastCiFailureSignature`/`consecutiveCiFailureCount` additions), `admin/src/` (new
+`admin-ui.smoke.test.ts` and `agents-api.smoke.test.ts`,
 expanded `agent-cron-runs.integration.test.ts` for `sessionId` plumbing), and `site/`
 (new `service-architecture.spec.ts`, `architecture.spec.ts` → `agent-model.spec.ts`
 rename).
@@ -227,7 +230,7 @@ delta list, not re-read in full where unchanged.
 | `metrics/src/*` | ~9 top-level + ~7 `lib/` + 2 `providers/` + 1 `dashboard/` | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes, request coalescing | Unchanged this cycle. |
 | `agent/src/*` | ~49 files (incl. `browser.integration.test.ts`) | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, author-allowlist ref, headless-browser launcher | Carried forward: `check-review.ts`'s RCS-1.1/1.2/1.3 rework and `pr-state-reconciler.ts`'s RDG-1.1 both landed with **complete** test coverage in the same commits — see "This cycle's flagged gaps, verified" above (items #8, #9). `browser.ts` has 3 integration cases in `browser.integration.test.ts` — correctly integration-layered. New this cycle: `claude.ts`'s session-resume path (`-r <resumeSessionId>` append + silent-clear-and-retry on non-timeout resume error) has matching coverage in `claude.unit.test.ts`; `cron-handler.ts`/`cron-run-reporter.ts`'s `sessionId` forwarding covered in their respective `.integration.test.ts` files (both directly grepped for `sessionId` this cycle, not assumed). `agent/src/index.ts` (composition entrypoint) remains untested directly, consistent with every other composition/bootstrap file in this cluster — not a new gap. |
 | `admin/src/*` | ~58 files | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup, work-queue snapshots, server composition, agent-type manifest resolution | This cycle: `AgentCronRun.sessionId` plumbed through `agents-api.ts`/`agent-cron-runs.ts`/`main.ts` and the PRs page's new org/repo multiselect filter, both landed with matching coverage — new `admin-ui.smoke.test.ts` and `agents-api.smoke.test.ts` files, expanded `agent-cron-runs.integration.test.ts` (+55 lines). `admin/src/server.smoke.test.ts` re-confirmed to prove 3-sub-app composition (not re-read in full, no change indicated in this cycle's diff). |
-| `task-store/src/*` | ~26 files | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | This cycle absorbed two additions: (1) carried-forward `reviewedCommitSha` field coverage (`openapi-schemas.unit.test.ts`, `prs.smoke.test.ts`, `pull-request.integration.test.ts`, unchanged from prior cycles); (2) new this cycle — the org/repo filter (`repo-org-filter.unit.test.ts`, new file, pairs with the new `buildRepoOrgWhere` helper) plus its route-level wiring (`routes/tasks.openapi.smoke.test.ts` +97 lines, `state-filter.smoke.test.ts` +107 lines) and the new `ciFailureStreak` field (`pull-request-service.unit.test.ts` + `pull-request.integration.test.ts`, both new files). All additive, correctly non-duplicative per layer (see Delete analysis above). |
+| `task-store/src/*` | ~26 files | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | This cycle absorbed two additions: (1) carried-forward `reviewedCommitSha` field coverage (`openapi-schemas.unit.test.ts`, `prs.smoke.test.ts`, `pull-request.integration.test.ts`, unchanged from prior cycles); (2) new this cycle — the org/repo filter (`repo-org-filter.unit.test.ts`, new file, pairs with the new `buildRepoOrgWhere` helper) plus its route-level wiring (`routes/tasks.openapi.smoke.test.ts` +97 lines, `state-filter.smoke.test.ts` +107 lines) and the new `lastCiFailureSignature`/`consecutiveCiFailureCount` fields (`pull-request-service.unit.test.ts` + `pull-request.integration.test.ts`, both pre-existing files — created in #1369 and #711 respectively, weeks before this cycle — extended with new cases, not newly created). All additive, correctly non-duplicative per layer (see Delete analysis above). |
 | `chat/src/*` | 10 files | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator | Unchanged this cycle. |
 | `mcp-server/src/*` | 8 files | unit/integration/smoke | Tool allowlist, tool-caller proxy, MCP wire protocol, inbound bearer auth, Streamable HTTP transport + idle-session reaper, app-factory composition, fail-closed entrypoint guard | `generated-tools.ts` regenerated from `task-store/openapi.json` (25→29 tool entries: new `tasks_skip`/`tasks_reset`/`prs_skip`/`prs_reset`, plus additive `source`/`hitl` fields on existing tools) with matching `generated-tools.unit.test.ts` count-assertion bump (25→29) and `tool-allowlist.unit.test.ts`'s regeneration-stability invariant re-asserted (29 generated → still only 9 allowed, confirming the four new tools stay excluded). Both existing unit tests updated in the same commit as the regen — reuse-grade, no gap. |
 | `brand/*` | 2 files | unit | Hex-color lint, CSS token generation | Unchanged. |

@@ -41,7 +41,7 @@ There is nothing new for Phase 5 to queue at T-081 or beyond.
 | Layer | Existing tests | Inventory items | Coverage gap |
 |---|---|---|---|
 | Unit | 122 `.unit.test.ts` | Dominant category-1 surface (`lib/`, decision/classification logic, mutable-box refs, crypto helpers, parsing/validation, new `repo-org-filter.ts`) | None — every inventory item mapped to unit has a matching test file |
-| Integration | 60 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item | None — including this cycle's `sessionId` plumbing and `ciFailureStreak`/org-filter additions, all landed with tests in the same commits |
+| Integration | 60 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item | None — including this cycle's `sessionId` plumbing and `lastCiFailureSignature`/`consecutiveCiFailureCount`/org-filter additions, all landed with tests in the same commits |
 | Smoke | 43 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None |
 | E2E | 21 `site/tests/*.spec.ts` + 3 `{admin,metrics}/e2e/*.e2e.ts` | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None at E2E; journey #5's integration-harness half is the one real gap (see below) |
 | Content | 35 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references}/*` | None |
