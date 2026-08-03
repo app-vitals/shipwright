@@ -135,11 +135,11 @@ staleness never masquerades as a new/regressed finding:
   ```
 - **osv-scanner** has no `--exclude`/path-scoping flag. It does, however, respect git's
   ignore rules by default (no `--no-ignore` passed) — but only for paths git itself
-  considers ignored, and a target repo's own tracked `.gitignore` may not cover `worktrees/`
-  (confirmed: vitals-os's `.gitignore` only excludes `.claude/worktrees/`, not a top-level
-  `worktrees/`). Rather than depend on the target repo's own `.gitignore` contents, add
-  scan-local entries to `.git/info/exclude` — git's per-checkout, untracked ignore file —
-  before running osv-scanner:
+  considers ignored, and a target repo's own tracked `.gitignore` may not cover a top-level
+  `worktrees/` directory (a repo's `.gitignore` may only cover a nested worktree convention
+  path, missing the top-level one). Rather than depend on the target repo's own `.gitignore`
+  contents, add scan-local entries to `.git/info/exclude` — git's per-checkout, untracked
+  ignore file — before running osv-scanner:
   ```bash
   grep -qxF 'node_modules/' .git/info/exclude 2>/dev/null || echo 'node_modules/' >> .git/info/exclude
   grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .git/info/exclude
