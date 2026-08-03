@@ -49,6 +49,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Compare pinned tags against latest release tags
         run: |
