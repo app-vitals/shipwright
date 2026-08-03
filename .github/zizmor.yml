@@ -9,6 +9,7 @@ rules:
     ignore:
       - auto-bump-chart.yml:178 # "Checkout main" — pushed from by `git push -u origin "$BRANCH"`
       - chart-release.yml:71 # "Checkout gh-pages" — pushed from by "Commit and push to gh-pages"
+      - deploy-site.yml:39 # "Checkout" — pushed from by JamesIves/github-pages-deploy-action below
       - sync-plugin-version.yml:104 # "Checkout main" — pushed from by "Commit and push sync branch"
 
   # workflow_run always trips this audit (zizmor has no exception for it,
