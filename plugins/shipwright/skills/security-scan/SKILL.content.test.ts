@@ -189,6 +189,65 @@ describe("SKILL.md — Tier 3 posture checks", () => {
   });
 });
 
+describe("SKILL.md — environment-artifact noise filtering (Tier 1 scan targets)", () => {
+  it("excludes node_modules from grype's scan target via --exclude", () => {
+    const grypeSection = content.slice(
+      content.indexOf("### 3.3 grype"),
+      content.indexOf("### 3.4 syft"),
+    );
+    expect(grypeSection).toContain("--exclude");
+    expect(grypeSection).toContain("node_modules");
+  });
+
+  it("excludes worktrees from grype's scan target via --exclude", () => {
+    const grypeSection = content.slice(
+      content.indexOf("### 3.3 grype"),
+      content.indexOf("### 3.4 syft"),
+    );
+    expect(grypeSection).toContain("--exclude");
+    expect(grypeSection).toContain("worktrees");
+  });
+
+  it("excludes node_modules and worktrees from syft's scan target via --exclude", () => {
+    const syftSection = content.slice(
+      content.indexOf("### 3.4 syft"),
+      content.indexOf("### 3.5 zizmor"),
+    );
+    expect(syftSection).toContain("--exclude");
+    expect(syftSection).toContain("node_modules");
+    expect(syftSection).toContain("worktrees");
+  });
+
+  it("documents that osv-scanner has no --exclude flag and uses .git/info/exclude instead", () => {
+    const osvSection = content.slice(
+      content.indexOf("### 3.2 osv-scanner"),
+      content.indexOf("### 3.3 grype"),
+    );
+    expect(osvSection).toContain(".git/info/exclude");
+    expect(osvSection).toContain("worktrees");
+  });
+
+  it("clarifies .git/info/exclude writes are not tracked-file changes or git operations", () => {
+    expect(content).toContain(".git/info/exclude");
+    const text = content.toLowerCase();
+    const hasClarification =
+      text.includes("not a git operation") ||
+      text.includes("never the tracked .gitignore") ||
+      text.includes("not the tracked .gitignore");
+    expect(hasClarification).toBe(true);
+  });
+
+  it("explains the rationale: leftover worktree/node_modules artifacts causing false-positive noise", () => {
+    const text = content.toLowerCase();
+    const hasRationale =
+      text.includes("false-positive") || text.includes("false positive");
+    const mentionsArtifacts =
+      text.includes("environment artifact") || text.includes("scan-environment noise");
+    expect(hasRationale).toBe(true);
+    expect(mentionsArtifacts).toBe(true);
+  });
+});
+
 describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
   it("references the security-patrol ledger location", () => {
     expect(content).toContain("state/security-patrol-ledger.json");
