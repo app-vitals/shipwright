@@ -116,6 +116,41 @@ verified.
 > plausible-looking but unverified hash. If a tool's checksum cannot be verified, treat that
 > tool as unavailable and use its per-tool fallback rather than shipping a fake hash.
 
+### 3.0 Exclude Scan-Environment Noise (before running any tool below)
+
+Two non-codebase environment artifacts have repeatedly caused **false-positive** grype-cve /
+osv-cve noise across weekly scans: a stale `node_modules/` left over from a previously-fixed
+dependency pin, and a leftover `worktrees/` side-checkout nested inside the repo root (e.g.
+from a worktree created with a relative instead of absolute target path). Neither is
+codebase content — both must be excluded from every Tier 1 scan target so environment
+staleness never masquerades as a new/regressed finding:
+
+- **grype and syft** (`dir:` mode) do not respect `.gitignore` at all — they walk the full
+  filesystem tree under the given path. Both accept repeatable `--exclude <glob>` flags
+  (verified independently by running each tool against a fixture with a lockfile nested
+  under `node_modules/` and `worktrees/` — the flag suppresses matches from both without
+  affecting real source paths). Always pass:
+  ```
+  --exclude './node_modules/**' --exclude './worktrees/**'
+  ```
+- **osv-scanner** has no `--exclude`/path-scoping flag. It does, however, respect git's
+  ignore rules by default (no `--no-ignore` passed) — but only for paths git itself
+  considers ignored, and a target repo's own tracked `.gitignore` may not cover `worktrees/`
+  (confirmed: vitals-os's `.gitignore` only excludes `.claude/worktrees/`, not a top-level
+  `worktrees/`). Rather than depend on the target repo's own `.gitignore` contents, add
+  scan-local entries to `.git/info/exclude` — git's per-checkout, untracked ignore file —
+  before running osv-scanner:
+  ```bash
+  grep -qxF 'node_modules/' .git/info/exclude 2>/dev/null || echo 'node_modules/' >> .git/info/exclude
+  grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .git/info/exclude
+  ```
+  This is **not the tracked `.gitignore`** and **not a git operation** in the sense of this
+  skill's "no git operations" constraint below — it writes local, untracked git metadata,
+  not a commit, branch, or staged change, and never touches the working tree or history.
+- **gitleaks** is unaffected: its full-history scan (Step 3.1) walks committed git objects,
+  not the working tree, so untracked `node_modules/`/`worktrees/` directories never appear
+  in its results.
+
 ### 3.1 gitleaks — secret scan (full history)
 
 Unlike `ci.yml` (which runs `--no-git` on the working tree), this skill runs a **full-history**
@@ -144,6 +179,9 @@ osv-scanner ships a bare linux amd64 binary named `osv-scanner_linux_amd64` (no 
 the filename) plus a `osv-scanner_SHA256SUMS` manifest per release.
 
 ```bash
+grep -qxF 'node_modules/' .git/info/exclude 2>/dev/null || echo 'node_modules/' >> .git/info/exclude
+grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .git/info/exclude
+
 curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o osv-scanner
 echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  osv-scanner" | sha256sum -c
 chmod +x osv-scanner
@@ -159,7 +197,7 @@ Anchore projects publish `grype_{version}_linux_amd64.tar.gz` plus a
 curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o grype.tar.gz
 echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  grype.tar.gz" | sha256sum -c
 tar -xz -f grype.tar.gz grype
-./grype dir:. -o json --file grype-report.json
+./grype dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file grype-report.json
 ```
 
 ### 3.4 syft — SBOM generation
@@ -172,7 +210,7 @@ feeds Tier 3's SBOM-presence posture check.
 curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o syft.tar.gz
 echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  syft.tar.gz" | sha256sum -c
 tar -xz -f syft.tar.gz syft
-./syft dir:. -o cyclonedx-json=sbom.cyclonedx.json
+./syft dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json=sbom.cyclonedx.json
 ```
 
 The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for.
@@ -435,7 +473,9 @@ SECURITY SCAN COMPLETE
   checkouts) — plus transient tool report artifacts (`gitleaks-report.json`, `osv-report.json`,
   `grype-report.json`, `sbom.cyclonedx.json`, `zizmor-report.json`) which are scan byproducts,
   never committed. Neither the report nor the ledger is written in `--dry-run` mode.
-- **No git operations.** Do not commit, branch, or stage anything.
+- **No git operations.** Do not commit, branch, or stage anything. Writing scan-local
+  entries to `.git/info/exclude` (Step 3.0) is exempt — it is untracked, per-checkout git
+  metadata, not the tracked `.gitignore`, and involves no commit, branch, or staged change.
 - **No PR creation.** `security-scan` never creates PRs or tasks — queueing findings as
   task-store tasks belongs to `/security-fix`.
 - **No tool aborts the scan.** Every Tier 1 tool has a per-tool fallback: a failed download or
