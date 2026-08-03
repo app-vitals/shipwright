@@ -81,8 +81,10 @@ jobs:
       - name: Parse bare version from tag
         id: version
         run: |
-          TAG="${{ steps.tag.outputs.new_tag }}"
+          TAG="${STEPS_TAG_OUTPUTS_NEW_TAG}"
           echo "version=${TAG#agent-v}" >> "$GITHUB_OUTPUT"
+        env:
+          STEPS_TAG_OUTPUTS_NEW_TAG: ${{ steps.tag.outputs.new_tag }}
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0

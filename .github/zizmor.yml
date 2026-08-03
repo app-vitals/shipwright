@@ -1,0 +1,30 @@
+rules:
+  # These checkout steps intentionally leave persist-credentials at its
+  # default (true) because a later step in the same job pushes from that
+  # checkout's working directory and relies on the token persisted into its
+  # local git config to authenticate the push. Setting persist-credentials:
+  # false here would break the push. Each site also carries an inline
+  # comment explaining the same thing.
+  artipacked:
+    ignore:
+      - auto-bump-chart.yml:178 # "Checkout main" — pushed from by `git push -u origin "$BRANCH"`
+      - chart-release.yml:71 # "Checkout gh-pages" — pushed from by "Commit and push to gh-pages"
+      - sync-plugin-version.yml:104 # "Checkout main" — pushed from by "Commit and push sync branch"
+
+  # workflow_run always trips this audit (zizmor has no exception for it,
+  # unlike its labeler carve-out for pull_request_target — see
+  # dangerous_triggers.rs upstream). Each of these six build-*.yml workflows
+  # gates its jobs on `github.event.workflow_run.head_branch == 'main'`, so
+  # they only ever act on a completed CI run that itself ran on main —
+  # equivalent to a push-to-main trigger, not attacker-controlled PR state.
+  # A workflow_run-free redesign (e.g. driving builds from CI's own final
+  # step via workflow_dispatch) is a larger architectural change tracked as
+  # a follow-up, not a mechanical lint fix.
+  dangerous-triggers:
+    ignore:
+      - build-admin.yml:3
+      - build-agent.yml:3
+      - build-chat.yml:3
+      - build-mcp-server.yml:3
+      - build-metrics.yml:3
+      - build-task-store.yml:3
