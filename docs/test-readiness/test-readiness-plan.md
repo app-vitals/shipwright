@@ -37,7 +37,7 @@ one still-open item.
 existing `test-t-NNN-shipwright` record is `test-t-080-shipwright`, confirmed via direct
 task-store lookup — `test-t-081-shipwright` 404s). **No new tasks are minted this
 cycle** — Phase 3 (`test-migration.md`, this cycle's 2026-08-03 top-up over a 55-commit /
-94-file delta since the `dcec6196` baseline) found zero new gaps: the three items newly
+91-file delta since the `dcec6196` baseline) found zero new gaps: the three items newly
 flagged by this cycle's Phase 2 pass (`ciFailureSignature` streak auto-block, ORF-1.x/2.x
 combined-filter integration coverage, RRR-1.1 requested-reviewer inclusion) were all
 already resolved with test coverage landed in the same commits as their production
@@ -162,7 +162,7 @@ Zero false-confidence coverage identified.
   unit-tested, but the full clone → seed → boot → poll sequence has no integration-level
   test exercising it end-to-end with an injected `gh` exec fake. Narrower than Phase 2's
   original framing precisely because the hardest planning logic is already isolated and
-  proven. This cycle's 55-commit / 94-file delta (2026-08-03 top-up) introduced no new
+  proven. This cycle's 55-commit / 91-file delta (2026-08-03 top-up) introduced no new
   gap here — `scripts/hitl.ts` has had zero scope growth since 2026-07-31.
 - **3 newly-flagged real gaps from this cycle's own Phase 2 pass, confirmed already
   resolved before Phase 3 even ran:** `pull-request-service.ts`'s `ciFailureSignature`
@@ -263,7 +263,7 @@ generalizable learning surfaced this cycle warranting a `# Harness TODO`.
 
 Flat, ordered, agent-executable. **No genuinely new task this cycle** — T-080 (minted
 2026-07-30, still `pending`) carries forward unchanged as the only open item; Phase 3's
-2026-08-03 top-up found zero new gaps in the 55-commit / 94-file delta since the
+2026-08-03 top-up found zero new gaps in the 55-commit / 91-file delta since the
 `dcec6196` baseline, so there is nothing new to number starting at
 `test-t-081-shipwright`.
 
