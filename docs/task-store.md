@@ -208,7 +208,7 @@ Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, resets `status=pending`. Use
 POST /tasks/:id/skip
 ```
 
-Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
+Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `status=blocked` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
 
 #### Reset skip tracking
 
