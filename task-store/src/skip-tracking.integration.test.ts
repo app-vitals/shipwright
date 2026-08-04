@@ -76,7 +76,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
     expect(second.lastSkippedAt).toBe(t2.toISOString());
   });
 
-  it("recordSkip() crossing skipCount>=3 sets hitl:true and a descriptive blockedReason", async () => {
+  it("recordSkip() crossing skipCount>=3 sets status:'blocked' and a descriptive blockedReason", async () => {
     const service = new TaskService(prisma, FixedClock(new Date("2026-07-21T09:00:00.000Z")));
     const task = await prisma.task.create({
       data: { title: "Skip until blocked", status: "pending" },
@@ -87,7 +87,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
     const third = await service.recordSkip(task.id);
 
     expect(third.skipCount).toBe(3);
-    expect(third.hitl).toBe(true);
+    expect(third.status).toBe("blocked");
     expect(third.blockedReason).toBeTruthy();
     expect(third.blockedReason).toContain("3");
   });
@@ -104,7 +104,7 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
     const fourth = await service.recordSkip(task.id);
 
     expect(fourth.skipCount).toBe(4);
-    expect(fourth.hitl).toBe(true);
+    expect(fourth.status).toBe("blocked");
     expect(fourth.blockedReason).toBeTruthy();
   });
 
