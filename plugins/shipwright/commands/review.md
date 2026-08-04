@@ -585,6 +585,37 @@ treats it as an unaddressed finding forever. Always lead the body with the liter
 label, on both the initial-review and re-review paths (Steps 10/11 run identically for both;
 see Step 14's re-review flow).
 
+**Worked example — the two cases production actually confused.** This convention was not
+followed on two separate PRs in another repo in this deployment (one self-authored, one not):
+both produced review bodies reading `Verdict: COMMENT` even though the narrative was explicitly
+clean — e.g. "No blocking issues found... checks out clean." In both cases the underlying
+situation was actually Case 1 below (a clean review that should read `Verdict: APPROVE`), but it
+was written as if it were Case 2. Both cases resolve to the **same `event: "COMMENT"`** — that
+surface-level identity is exactly why they get conflated — but they MUST produce **different**
+`Verdict: ...` body labels:
+
+- **Case 1 — self-authored PR, all findings resolved via Step 9.5's exclusions.** The PR's
+  `author.login == CURRENT_USER` and Step 9.5's unaddressed-findings gate computes no
+  unaddressed findings (every review either is a clean self-APPROVE or was addressed by a
+  subsequent author reply, per the exclusions above). This is a genuinely clean approval.
+  Result: `event: "COMMENT"` (forced by the self-review override, since GitHub blocks
+  self-APPROVE via the API — not because there's anything wrong with the PR), body **must**
+  read `"Verdict: APPROVE — ..."`. Writing `Verdict: COMMENT` here is the exact bug observed
+  in production: it makes a clean PR invisible to `isSelfCleanApprove` and the patch cron
+  treats it as an unaddressed finding forever.
+- **Case 2 — any-author PR, a genuine unresolved finding still present at head.** Step 9.5's
+  gate computes real unaddressed findings (an unresolved inline thread, or a qualifying
+  `COMMENTED`/`CHANGES_REQUESTED` review body not excluded by the clean-APPROVE or
+  author-reply rules). Result: `event: "COMMENT"`, body correctly reads
+  `"Verdict: COMMENT — ..."`. This is the only case where `Verdict: COMMENT` is the right
+  label.
+
+Both cases select `event: "COMMENT"` for entirely different reasons (an API restriction on
+authorship vs. a real quality gate on content) — the `Verdict: ...` body label is the *only*
+signal that distinguishes them for downstream automation, so it must always reflect the actual
+computed verdict, never be copied from the `event` value or from generic "this went through
+COMMENT" boilerplate.
+
 Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 
 ```json

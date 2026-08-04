@@ -674,6 +674,69 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
   });
 });
 
+describe("review.md — Step 10 worked example distinguishes self-review-COMMENT-event from unresolved-finding-COMMENT-verdict (RVG-1.2)", () => {
+  let workedExampleSection: string;
+
+  beforeAll(() => {
+    const bodyMustContainIdx = content.indexOf(
+      "**The `body` field MUST contain the literal phrase",
+    );
+    const jsonBlockIdx = content.indexOf(
+      "Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:",
+    );
+    expect(bodyMustContainIdx).toBeGreaterThan(-1);
+    expect(jsonBlockIdx).toBeGreaterThan(bodyMustContainIdx);
+    workedExampleSection = content.slice(bodyMustContainIdx, jsonBlockIdx);
+  });
+
+  it("references that this failure mode was observed on real production PRs (one self-authored, one not)", () => {
+    expect(workedExampleSection.toLowerCase()).toContain("production");
+    expect(workedExampleSection.toLowerCase()).toContain("self-authored, one not");
+  });
+
+  it("references the literal observed failure mode -- body said Verdict: COMMENT despite a clean narrative", () => {
+    expect(workedExampleSection).toContain("Verdict: COMMENT");
+    expect(workedExampleSection.toLowerCase()).toContain("no blocking issues");
+    expect(workedExampleSection.toLowerCase()).toContain("checks out clean");
+  });
+
+  it("Case 1 describes a self-authored PR with all findings resolved via Step 9.5's exclusions", () => {
+    const case1Idx = workedExampleSection.indexOf("**Case 1");
+    expect(case1Idx).toBeGreaterThan(-1);
+    const case1Block = workedExampleSection.slice(case1Idx, case1Idx + 700);
+
+    expect(case1Block.toLowerCase()).toContain("self-authored");
+    expect(case1Block).toContain("Step 9.5");
+    expect(case1Block).toContain('event: "COMMENT"');
+    expect(case1Block).toContain("Verdict: APPROVE");
+  });
+
+  it("Case 1 attributes the forced COMMENT event to the GitHub API self-approve restriction", () => {
+    const case1Idx = workedExampleSection.indexOf("**Case 1");
+    expect(case1Idx).toBeGreaterThan(-1);
+    const case1Block = workedExampleSection.slice(case1Idx, case1Idx + 700);
+
+    expect(case1Block.toLowerCase()).toContain("api");
+    expect(case1Block.toLowerCase()).toContain("self-approve");
+  });
+
+  it("Case 2 describes any-author PR with a genuine unresolved finding still present at head", () => {
+    const case2Idx = workedExampleSection.indexOf("**Case 2");
+    expect(case2Idx).toBeGreaterThan(-1);
+    const case2Block = workedExampleSection.slice(case2Idx, case2Idx + 700);
+
+    expect(case2Block.toLowerCase()).toContain("any-author");
+    expect(case2Block.toLowerCase()).toContain("unresolved finding");
+    expect(case2Block).toContain('event: "COMMENT"');
+    expect(case2Block).toContain("Verdict: COMMENT");
+  });
+
+  it("makes explicit that Case 1 and Case 2 share the same event but require different body verdict labels", () => {
+    expect(workedExampleSection.toLowerCase()).toContain('same `event: "comment"`');
+    expect(workedExampleSection.toLowerCase()).toContain("different");
+  });
+});
+
 describe("review.md — Review Quality Rules reflect mechanical enforcement (RUC-1.1)", () => {
   it("the 'Check for unresolved feedback first' bullet describes mechanical enforcement, not just a guideline", () => {
     const rulesIdx = content.indexOf("## Review Quality Rules");
