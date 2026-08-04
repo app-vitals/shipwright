@@ -78,6 +78,21 @@ posted as `event: COMMENT`. Free-form approval prose without the literal phrase 
 the review as an unaddressed finding forever. Always lead with the `Verdict: ...` label
 -- don't paraphrase it away.
 
+**Two cases that get confused in practice** -- both select `event: COMMENT` for entirely
+different reasons, but must carry different `Verdict: ...` labels:
+
+- **Self-authored, clean.** All findings resolved (see `review.md` Step 9.5). `event:
+  COMMENT` only because GitHub blocks self-APPROVE via the API -- the body must still say
+  `Verdict: APPROVE`.
+- **Any author, genuine unresolved finding.** A real finding remains at head. `event:
+  COMMENT`, and the body correctly says `Verdict: COMMENT`.
+
+This is the exact mix-up observed in production on two separate PRs in another repo in
+this deployment (one self-authored, one not): both posted bodies reading `Verdict: COMMENT`
+despite clean narratives ("No blocking issues found... checks out clean"), which was
+actually the first case mislabeled as the second. See `review.md` Step 10 for the full
+worked example.
+
 ### Tone
 
 The `PR_REVIEW_<number>.md` file is a draft written for the agent's owner. The
