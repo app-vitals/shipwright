@@ -91,6 +91,17 @@ export interface PrRecord {
   claimedBy?: string | null;
   hitl?: boolean | null;
   staged?: boolean;
+  /**
+   * Timestamp of the last review pass written by review.md, used as the
+   * watermark for the author-reply retrigger check below (RVG-1.1) — a PR
+   * author comment with createdAt after this value is a fresh, not-yet-
+   * consumed confirmation reply. Already present on the task-store /prs
+   * record (see task-store/src/pull-request-service.ts and
+   * openapi-schemas.ts); only newly declared here so this file's local
+   * PrRecord interface carries it through createPrRecordQuery's generic JSON
+   * parse.
+   */
+  reviewedAt?: string | null;
 }
 
 export interface CheckReviewDeps {
@@ -224,9 +235,17 @@ export async function getReviewCandidates(
     // rather than includes. A fetch failure is caught and treated as "no
     // terminal review" — fail open, matching queryPrRecord's own permissive-
     // on-error handling above.
+    //
+    // reviewData is hoisted (rather than scoped to this try block) so the
+    // terminal-skip check further below (RVG-1.1) can reuse the same fetch
+    // result to look for a fresh author reply, instead of issuing a second
+    // fetchPrReviews call for the same PR. Stays undefined when the fetch
+    // above failed — the RVG-1.1 check treats that the same as "no eligible
+    // author comment found" (old skip behavior preserved).
+    let reviewData: PrReviewData | undefined;
     try {
       const [org, repoName] = splitOrgRepo(pr.repo ?? "");
-      const reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
+      reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
       if (classifyReviewState(reviewData) !== null) continue;
     } catch {
       // Fetch failed → treat as "no terminal review" (no dedup)
@@ -285,12 +304,36 @@ export async function getReviewCandidates(
     // linked task to flag).
     if (isPrRecordBlockedForDispatch(record)) continue;
 
-    // commitSha matches and reviewState is not pending → already reviewed at this HEAD, skip
+    // commitSha matches and reviewState is not pending → already reviewed at
+    // this HEAD, skip — UNLESS the PR author has posted a fresh PR-level
+    // comment since the last review (RVG-1.1). review.md's Step 9.5
+    // unaddressed-findings gate has a documented exclusion (CPF-2.3,
+    // mirrored from check-patch.ts's isAddressedByAuthorReply): a prior
+    // COMMENTED review stops counting as unaddressed once the PR author
+    // replies after it. That exclusion only ever runs inside a review pass
+    // — without this retrigger, a PR whose author has replied at an
+    // unchanged commit would never get a follow-up pass to apply it, so the
+    // PR is added back as a candidate instead of skipped. Reuses the
+    // already-fetched reviewData from the live-review dedup above (no
+    // second fetchPrReviews call); when that fetch failed (reviewData is
+    // undefined), the retrigger check simply cannot run and the PR stays
+    // skipped, preserving old behavior. Unlike check-patch.ts's
+    // isAddressedByAuthorReply (which checks currentUser, since that file
+    // operates on the agent's own PRs), this compares against pr.author.login
+    // — check-review.ts reviews PRs from arbitrary authors, so only the PR's
+    // own author's replies count, not the reviewing agent's or a third
+    // party's.
     if (
       record.commitSha === pr.headRefOid &&
       record.reviewState !== "pending"
     ) {
-      continue;
+      const reviewedAtMs = new Date(record.reviewedAt ?? 0).getTime();
+      const hasFreshAuthorReply = reviewData?.comments.nodes.some(
+        (c) =>
+          c.author.login === pr.author.login &&
+          new Date(c.createdAt).getTime() > reviewedAtMs,
+      );
+      if (!hasFreshAuthorReply) continue;
     }
 
     // reviewedCommitSha matches and a review is already staged → skip
