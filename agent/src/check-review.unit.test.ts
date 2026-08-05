@@ -970,6 +970,109 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("RFR-1.1: a clean/no-finding COMMENT review (classifyReviewState → 'approved') at head, plus a fresh author reply after reviewedAt, stays a candidate", async () => {
+    // Real-world trigger shape (PR #2456): unlike the RVG-1.1 fixtures below
+    // (which deliberately use an unresolved thread so classifyReviewState()
+    // returns null and never reaches RVD-1.1's short-circuit), this review
+    // is clean — no finding body, resolved/no thread — so classifyReviewState
+    // returns "approved" and RVD-1.1's `continue` fires FIRST unless the
+    // fresh-author-reply exception is also applied there.
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "fixed, please take another look",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RFR-1.1 regression: a clean/no-finding COMMENT review at head with NO fresh author reply is still skipped", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "an old reply, before the review",
+            createdAt: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
   // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
   // A PR that is already terminal (record.commitSha === pr.headRefOid &&
   // reviewState !== "pending") is normally skipped at the terminal-skip
