@@ -232,6 +232,21 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(section).toContain("[silent]");
   });
 
+  it("when a sibling is fresh: tags the defer with a namespaced skip-reason marker before [silent], exempting it from the HITL auto-block skip counter (BBE-1.2)", () => {
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(siblingCheckIdx, siblingCheckIdx + 3500);
+    expect(section).toContain(
+      "[skip-reason:dev-task:same-branch-sibling-busy:{branch}]",
+    );
+    const skipReasonIdx = section.indexOf(
+      "[skip-reason:dev-task:same-branch-sibling-busy:{branch}]",
+    );
+    const silentIdx = section.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
   it("when no sibling is fresh (none exist, or all stale): proceeds normally — no behavior change for genuinely orphaned/stale work", () => {
     const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
     expect(siblingCheckIdx).toBeGreaterThan(-1);
