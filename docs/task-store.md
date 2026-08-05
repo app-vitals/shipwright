@@ -47,7 +47,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
@@ -239,6 +239,18 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 3. **Cross-branch merged PR** — the dependency has `status = pr_open` AND its `pr` field is set (not null) AND the referenced GitHub PR number is merged in the repository. This indicates a dependency from another branch whose work has landed.
 
 4. **Any other status is not satisfied.** If a dependency does not match one of the three rules above (e.g., it has `status = pending`, `status = blocked`, or is `pr_open` on a different branch with no PR link), the task cannot run — the dependency is unsatisfied and the task is excluded from `?ready=true` results.
+
+### Same-branch exclusivity guard
+
+A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.
+
+**Freshness definition:** A claim is considered fresh if its `heartbeatAt` (or `claimedAt` if heartbeat is absent) is within `DEFAULT_CLAIM_TTL_MS` (default: 10 minutes) of now. This mirrors the stale-claim-reaper's exact freshness formula, ensuring a genuinely crashed or abandoned sibling task (one whose agent failed to heartbeat) does not permanently starve pending bundled tasks on the same branch.
+
+**Example:** If two tasks share `branch=feat/foo` and the first is `in_progress` with a fresh claim, the second remains excluded from `?ready=true` until either:
+- The first task completes, fails, or is released (no longer `in_progress`)
+- The first task's claim becomes stale (more than 10 minutes without heartbeat) and is reaped
+
+This rule only applies when `branch` is set. Tasks with `branch=null` or `branch=""` are not subject to the exclusivity check.
 
 ### PR tracking
 
@@ -444,9 +456,11 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. Clear the flag once the human action is complete.
 
-3. **Dependencies not satisfied** — query `?status=pending` to find pending tasks, then check each task's `dependencies` array against the [dependency satisfaction rules](#dependency-satisfaction-rules) (terminal status, same-branch `pr_open`/`approved`, or a merged cross-branch PR).
+3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 10 minutes old with no heartbeat), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
 
-4. **Queue empty** — no pending tasks exist at all. Confirm with `?status=pending`.
+4. **Dependencies not satisfied** — query `?status=pending` to find pending tasks, then check each task's `dependencies` array against the [dependency satisfaction rules](#dependency-satisfaction-rules) (terminal status, same-branch `pr_open`/`approved`, or a merged cross-branch PR).
+
+5. **Queue empty** — no pending tasks exist at all. Confirm with `?status=pending`.
 
 ### 401 Unauthorized
 
