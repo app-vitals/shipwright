@@ -138,7 +138,12 @@ Print:
 ```
 ⏭ Deferring to same-branch sibling {sibling-id} (in_progress, heartbeat fresh) — released own claim.
 ```
-Respond `[silent]` and stop.
+Emit `[skip-reason:dev-task:same-branch-sibling-busy:{branch}]` immediately before the
+`[silent]` marker (interpolating `{branch}` from the value checked above) — this defer is a
+legitimate backstop, not a genuine no-op, and without the tagged reason the loop
+orchestrator's generic `[silent]` handling would count it toward `SKIP_BLOCK_THRESHOLD`,
+risking a false HITL auto-block (see `agent/src/loop-orchestrator.ts`). Respond `[silent]`
+and stop.
 
 **If no sibling is fresh** (none exist, or all are stale): no legitimate concurrent work to
 defer to — proceeds normally. A stale sibling's abandoned branch/PR (if any) is exactly
