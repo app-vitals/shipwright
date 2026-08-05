@@ -23,7 +23,7 @@ claims without re-checking them:
    `metrics/e2e/`) = **284 test files total** — unchanged from the 2026-08-03 pass (no
    new or deleted test file this cycle, consistent with Phase 1's delta being confined to
    two already-existing files gaining new test cases, not new files).
-2. Cross-referenced Phase 1's delta list (12 commits / 19 files since the `b693b880`
+2. Cross-referenced Phase 1's delta list (10 commits / 20 files since the `b693b880`
    baseline, 2 non-doc/non-version-bump source files: `agent/src/check-review.ts`
    (RVG-1.1) and `agent/src/loop-orchestrator.ts` (BBE-1.2)) against the test-file glob
    to confirm each has matching coverage — reading actual test bodies (not just
@@ -304,13 +304,13 @@ prior pass in this repo's history.
 - **vs. budget:** 2m29s against the <15 min Full-PR-pipeline budget — **~17% of budget,
   well within.** A second data point from run
   [30974516095](https://github.com/app-vitals/shipwright/actions/runs/30974516095)
-  (commit `451da509`, 2026-08-04T20:13:20Z) shows 2m24s (04:13:45Z–04:16:09Z) for the same
+  (commit `451da509`, 2026-08-05T04:13:20Z) shows 2m24s (04:13:45Z–04:16:09Z) for the same
   job, 6,070 tests across 261 files in 38.86s — consistent, not trending toward the
   escalation trigger. The escalation formula (aggregate wall-clock >7.5 min, sustained
   across 2 consecutive measurements) is nowhere near tripped.
 
 Test-count growth trajectory: 5,762 (2026-07-28 `speed-baseline.md`) → 5,880 (2026-07-30)
-→ 6,041-6,042 (2026-08-01) → 6,070 (2026-08-04/05, this pass) — steady, expected growth,
+→ 6,041-6,042 (2026-08-01) → 6,070 (2026-08-05, this pass) — steady, expected growth,
 consistent with this cycle's minimal (2-file) source delta adding only a handful of new
 test cases rather than new files.
 

@@ -93,10 +93,10 @@ finding across every cycle to date. See Milestone 3.
 
 A second data point from run
 [30974516095](https://github.com/app-vitals/shipwright/actions/runs/30974516095)
-(2026-08-04, commit `451da509`) shows 2m24s for the same job, 6,070 tests across 261
+(2026-08-05, commit `451da509`) shows 2m24s for the same job, 6,070 tests across 261
 files in 38.86s — consistent, not trending toward the escalation trigger. Test-count
 growth trajectory: 5,762 (2026-07-28 `speed-baseline.md`) → 5,880 (2026-07-30) →
-6,041-6,042 (2026-08-01) → 6,070 (2026-08-04/05, this pass) — steady, expected growth,
+6,041-6,042 (2026-08-01) → 6,070 (2026-08-05, this pass) — steady, expected growth,
 consistent with this cycle's minimal (2-file) source delta.
 
 **Tier 2 triggered:** no — the escalation formula (aggregate wall-clock >7.5 min,

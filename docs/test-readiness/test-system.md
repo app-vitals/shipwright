@@ -130,7 +130,7 @@
   fields/filters → existing DB-integration + smoke rows, no new journey, no new
   ambiguous item.
 - **Delta since the 2026-08-03 design (this pass, against the 2026-08-05 inventory
-  covering 12 commits / 19 files since 2026-08-03, 2 non-doc source files):** no new
+  covering 10 commits / 20 files since 2026-08-03, 2 non-doc source files):** no new
   dependencies, frameworks, layer types, or user journeys. `deploy_model` re-verified as
   `direct` directly against `CLAUDE.md` at this commit (`bccb81f6`, unchanged); the
   canary-applicability finding below stands unmodified. Both source changes are
