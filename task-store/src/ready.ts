@@ -20,9 +20,12 @@
  * if another task shares its non-null/non-empty `branch` and is `in_progress`
  * with a fresh claim — a real dev-task session is likely mid-flight on that
  * shared git branch. "Fresh" mirrors stale-claim-reaper.ts's exact two-case
- * freshness formula (heartbeatAt, falling back to claimedAt) against
- * DEFAULT_CLAIM_TTL_MS, so a genuinely crashed/stale sibling does not
- * permanently starve the rest of the bundle.
+ * freshness formula (heartbeatAt, falling back to claimedAt) against the
+ * resolved claim TTL — `process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ??
+ * DEFAULT_CLAIM_TTL_MS`, the same operator-overridable formula used by
+ * stale-claim-reaper.ts and pull-request-service.ts's claimNext — so a
+ * genuinely crashed/stale sibling does not permanently starve the rest of
+ * the bundle.
  *
  * Operates on the Prisma `Task` shape (nullable fields) rather than the store.ts
  * interface — the dependency semantics are identical.
@@ -49,12 +52,18 @@ export interface ReadyTaskLike {
 /**
  * Mirrors stale-claim-reaper.ts's exact freshness formula: prefer
  * heartbeatAt when present, else fall back to claimedAt; a claim with
- * neither set is never fresh.
+ * neither set is never fresh. The TTL itself mirrors stale-claim-reaper.ts
+ * and pull-request-service.ts's claimNext: the operator-overridable
+ * SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS env var, falling back to
+ * DEFAULT_CLAIM_TTL_MS.
  */
 function hasFreshClaim(task: ReadyTaskLike, nowMs: number): boolean {
   const effectiveTimestamp = task.heartbeatAt ?? task.claimedAt;
   if (!effectiveTimestamp) return false;
-  return nowMs - new Date(effectiveTimestamp).getTime() < DEFAULT_CLAIM_TTL_MS;
+  const ttlMs = Number(
+    process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS ?? DEFAULT_CLAIM_TTL_MS,
+  );
+  return nowMs - new Date(effectiveTimestamp).getTime() < ttlMs;
 }
 
 export async function resolveReadyTasks<T extends ReadyTaskLike>(

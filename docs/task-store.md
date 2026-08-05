@@ -244,11 +244,11 @@ When `GET /tasks?ready=true` evaluates whether a task is eligible to run, it che
 
 A pending task is excluded from the ready set if another task shares its non-null/non-empty `branch` field and is `in_progress` with a fresh claim. This "same-branch exclusivity guard" prevents multiple agents from simultaneously executing tasks bound to the same feature branch — a real dev-task session is likely mid-flight on that shared git branch.
 
-**Freshness definition:** A claim is considered fresh if its `heartbeatAt` (or `claimedAt` if heartbeat is absent) is within `DEFAULT_CLAIM_TTL_MS` (default: 10 minutes) of now. This mirrors the stale-claim-reaper's exact freshness formula, ensuring a genuinely crashed or abandoned sibling task (one whose agent failed to heartbeat) does not permanently starve pending bundled tasks on the same branch.
+**Freshness definition:** A claim is considered fresh if its `heartbeatAt` (or `claimedAt` if heartbeat is absent) is within `DEFAULT_CLAIM_TTL_MS` (default: 65 minutes — `DEFAULT_CLAUDE_TIMEOUT_MS` + `CLAIM_TTL_BUFFER_MS`, overridable via `SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS`) of now. This mirrors the stale-claim-reaper's exact freshness formula, ensuring a genuinely crashed or abandoned sibling task (one whose agent failed to heartbeat) does not permanently starve pending bundled tasks on the same branch.
 
 **Example:** If two tasks share `branch=feat/foo` and the first is `in_progress` with a fresh claim, the second remains excluded from `?ready=true` until either:
 - The first task completes, fails, or is released (no longer `in_progress`)
-- The first task's claim becomes stale (more than 10 minutes without heartbeat) and is reaped
+- The first task's claim becomes stale (more than 65 minutes without heartbeat) and is reaped
 
 This rule only applies when `branch` is set. Tasks with `branch=null` or `branch=""` are not subject to the exclusivity check.
 
@@ -456,7 +456,7 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. Clear the flag once the human action is complete.
 
-3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 10 minutes old with no heartbeat), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
+3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 65 minutes old with no heartbeat, by default), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
 
 4. **Dependencies not satisfied** — query `?status=pending` to find pending tasks, then check each task's `dependencies` array against the [dependency satisfaction rules](#dependency-satisfaction-rules) (terminal status, same-branch `pr_open`/`approved`, or a merged cross-branch PR).
 
