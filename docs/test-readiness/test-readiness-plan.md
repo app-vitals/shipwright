@@ -29,12 +29,15 @@ pages of a 796-total-task response to confirm no higher ID exists beyond page 1'
 | `test-t-079-shipwright` | **deploying** | `scripts/generate-agent-type-schema.ts` test-coverage class-level decision |
 | `test-t-080-shipwright` | **pending** | HITL dev-loop bootstrap's full clone→seed→boot→poll sequence, injected `gh` exec fake |
 
-**T-073/T-074/T-075/T-076/T-077/T-078/T-079 are unchanged since the 2026-08-03 pass** —
-no status movement in the ~2 days since (T-076/T-077/T-078/T-079 remain parked at
-`deploying`, same as last cycle; not re-investigated here since Phase 4 doesn't own
-deploy-pipeline state). **T-080 is still `pending`**, unchanged since it was queued
-2026-07-30; it carries forward into this cycle's task list below, not as a new task
-(already minted) but as the one still-open item.
+**T-073/T-074/T-077/T-078/T-079 are unchanged since the 2026-08-03 pass** — no status
+movement in the ~2 days since (T-077/T-078/T-079 remain parked at `deploying`, same as
+last cycle; not re-investigated here since Phase 4 doesn't own deploy-pipeline state).
+**T-075/T-076 are new to this cycle's table** — they weren't present in the 2026-08-03
+pass at all, and both are already resolved as of this cycle (T-075 `deployed`, T-076
+`deploying`); see the "Resolved and removed from the active list this cycle" section
+below. **T-080 is still `pending`**, unchanged since it was queued 2026-07-30; it
+carries forward into this cycle's task list below, not as a new task (already minted)
+but as the one still-open item.
 
 **Next available ID for this cycle's genuinely new tasks would still be T-081** (highest
 existing `test-t-NNN-shipwright` record is `test-t-080-shipwright`, confirmed via direct
