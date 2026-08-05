@@ -150,7 +150,7 @@ BBE-1.2), plus new assertions in `plugins/shipwright/commands/dev-task.content.t
 and `review.content.test.ts` covering the companion marker-emission and worked-example
 doc changes.
 
-**Headline finding:** both source-level changes in this cycle's 12-commit / 19-file
+**Headline finding:** both source-level changes in this cycle's 10-commit / 20-file
 Phase 1 delta (RVG-1.1, BBE-1.2) already have matching test coverage at the correct
 layer, landed in the same commit series as their production fixes — continuing the
 pattern observed in every prior pass. No new isolation-contract regression, no new

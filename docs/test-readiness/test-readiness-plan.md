@@ -40,7 +40,7 @@ deploy-pipeline state). **T-080 is still `pending`**, unchanged since it was que
 existing `test-t-NNN-shipwright` record is `test-t-080-shipwright`, confirmed via direct
 paginated task-store lookup across the full 796-task set). **No new tasks are minted
 this cycle** — Phase 3 (`test-migration.md`, this cycle's 2026-08-05 top-up over a
-12-commit / 19-file delta since the `b693b880` baseline, 2 non-doc source files) found
+10-commit / 20-file delta since the `b693b880` baseline, 2 non-doc source files) found
 zero new gaps: this cycle's two real production fixes (`agent/src/check-review.ts`'s
 RVG-1.1 author-reply candidacy retrigger, `agent/src/loop-orchestrator.ts`'s BBE-1.2
 skip-counter exemption) both already have complete test coverage landed in the same
@@ -162,7 +162,7 @@ Zero false-confidence coverage identified.
   unit-tested, but the full clone → seed → boot → poll sequence has no integration-level
   test exercising it end-to-end with an injected `gh` exec fake. Narrower than Phase 2's
   original framing precisely because the hardest planning logic is already isolated and
-  proven. This cycle's 12-commit / 19-file delta (2026-08-05 top-up) introduced no new
+  proven. This cycle's 10-commit / 20-file delta (2026-08-05 top-up) introduced no new
   gap here — `scripts/hitl.ts` has had zero scope growth since 2026-08-03.
 - **2 real production fixes landed this cycle, both confirmed already resolved before
   Phase 3 even ran:** `agent/src/check-review.ts`'s RVG-1.1 (a fresh PR-author reply
@@ -264,7 +264,7 @@ generalizable learning surfaced this cycle warranting a `# Harness TODO`.
 
 Flat, ordered, agent-executable. **No genuinely new task this cycle** — T-080 (minted
 2026-07-30, still `pending`) carries forward unchanged as the only open item; Phase 3's
-2026-08-05 top-up found zero new gaps in the 12-commit / 19-file delta since the
+2026-08-05 top-up found zero new gaps in the 10-commit / 20-file delta since the
 `b693b880` baseline, so there is nothing new to number starting at
 `test-t-081-shipwright`.
 
