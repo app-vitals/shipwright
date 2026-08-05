@@ -111,6 +111,7 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: "1.x"
+          no-cache: true
 
       - name: Configure Git identity
         run: |
@@ -137,8 +138,9 @@ jobs:
         id: idempotency
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          STEPS_VERSION_OUTPUTS_BRANCH: ${{ steps.version.outputs.branch }}
         run: |
-          BRANCH="${{ steps.version.outputs.branch }}"
+          BRANCH="${STEPS_VERSION_OUTPUTS_BRANCH}"
           if git ls-remote --heads origin "$BRANCH" | grep -q .; then
             echo "Branch ${BRANCH} already exists on remote — skipping (burst-collapse)."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -148,7 +150,9 @@ jobs:
 
       - name: Sync version files
         if: steps.idempotency.outputs.skip != 'true'
-        run: bun run scripts/sync-version.ts "${{ steps.version.outputs.version }}"
+        run: bun run scripts/sync-version.ts "${STEPS_VERSION_OUTPUTS_VERSION}"
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
 
       # No-op guard: if the version files already matched (e.g. a prior sync
       # cycle already landed this exact version), there's nothing to commit.
@@ -157,11 +161,13 @@ jobs:
         if: steps.idempotency.outputs.skip != 'true'
         run: |
           if git diff --quiet; then
-            echo "No version drift — files already match ${{ steps.version.outputs.version }}."
+            echo "No version drift — files already match ${STEPS_VERSION_OUTPUTS_VERSION}."
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+        env:
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
 
       - name: Commit and push sync branch
         id: commit-push
@@ -259,9 +265,11 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          STEPS_PR_OUTPUTS_PR_URL: ${{ steps.pr.outputs.pr_url }}
+          STEPS_VERSION_OUTPUTS_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          PR_URL="${{ steps.pr.outputs.pr_url }}"
-          VERSION="${{ steps.version.outputs.version }}"
+          PR_URL="${STEPS_PR_OUTPUTS_PR_URL}"
+          VERSION="${STEPS_VERSION_OUTPUTS_VERSION}"
 
           # `gh pr checks --watch --required` fails fast with "no required
           # checks reported" if it runs before GitHub has registered any

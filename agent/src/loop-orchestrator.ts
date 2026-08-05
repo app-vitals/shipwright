@@ -583,8 +583,25 @@ export function createLoopOrchestrator(
         itemType,
         itemId,
       );
-      // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
-      await callSkipTracker("recordSkip", () => recordSkip(itemType, recordId));
+      // BBE-1.2: dev-task's Same-Branch Sibling Check (Step 1) is a legitimate
+      // defer, not a genuine no-op — it fires when a task is dispatched by
+      // explicit id (bypassing the ?ready=true queue, e.g. crash-recovery
+      // re-dispatch) and finds a fresh same-branch sibling already
+      // in_progress. Counting that toward SKIP_BLOCK_THRESHOLD risks the same
+      // false HITL auto-block this session fixed at the systemic level in
+      // BBE-1.1. The branch suffix varies per task, so match by prefix rather
+      // than exact string equality. skipRun above stays unconditional —
+      // observability must not change, only the skip-count side effect is
+      // exempted.
+      const isSameBranchSiblingBusy = skipReason.startsWith(
+        "dev-task:same-branch-sibling-busy:",
+      );
+      if (!isSameBranchSiblingBusy) {
+        // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
+        await callSkipTracker("recordSkip", () =>
+          recordSkip(itemType, recordId),
+        );
+      }
       return;
     }
 

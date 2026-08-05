@@ -123,9 +123,10 @@ on:
       - "task-store-v*"
       - "chat-v*"
 
+# Least privilege at the workflow level; the bump-chart job widens to
+# contents:write / pull-requests:write.
 permissions:
-  contents: write      # push branch + commit
-  pull-requests: write # open PR + enable auto-merge
+  contents: read
 
 jobs:
   # Absorbs bursts of near-simultaneous release tags into a single downstream
@@ -155,6 +156,9 @@ jobs:
     name: bump chart version
     needs: debounce
     runs-on: ubuntu-latest
+    permissions:
+      contents: write      # push branch + commit
+      pull-requests: write # open PR + enable auto-merge
     # Separate from the debounce group and still queued (not cancelled): once
     # we're doing real repo mutation, a run must always finish rather than be
     # cancelled mid-PR/mid-merge. This is only a safety net for the rare case
@@ -166,6 +170,11 @@ jobs:
     steps:
       # Check out main (not the tag's commit) so we always bump from the
       # latest chart version on main rather than whatever state the tag points at.
+      #
+      # persist-credentials left at its default (true) intentionally: the
+      # "git push -u origin $BRANCH" step further below pushes from this
+      # checkout's working directory and relies on the token persisted into
+      # its local git config to authenticate that push.
       - name: Checkout main
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -303,7 +312,7 @@ jobs:
       # avoids inadvertently touching appVersion or dependency versions.
       - name: Update Chart.yaml version
         run: |
-          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+          NEW_VERSION="${STEPS_RESOLVE_OUTPUTS_VERSION}"
           python3 - charts/shipwright/Chart.yaml "$NEW_VERSION" <<'PYEOF'
           import sys, re
           path, new_ver = sys.argv[1], sys.argv[2]
@@ -313,14 +322,16 @@ jobs:
           with open(path, 'w') as f:
               f.write(content)
           PYEOF
+        env:
+          STEPS_RESOLVE_OUTPUTS_VERSION: ${{ steps.resolve.outputs.version }}
 
       # Record every batched release tag in the Artifact Hub change log
       # annotation — one "changed" entry per tag, so a burst-collapsed bump
       # still surfaces exactly which releases it contains.
       - name: Update artifacthub.io/changes annotation
         run: |
-          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
-          NEW_VERSION="${{ steps.resolve.outputs.version }}"
+          TAGS_CSV="${STEPS_RESOLVE_OUTPUTS_TAGS}"
+          NEW_VERSION="${STEPS_RESOLVE_OUTPUTS_VERSION}"
           python3 - charts/shipwright/Chart.yaml "$TAGS_CSV" "$NEW_VERSION" <<'PYEOF'
           import sys, re
           path, tags_csv, ver = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -341,13 +352,16 @@ jobs:
           with open(path, 'w') as f:
               f.write(content)
           PYEOF
+        env:
+          STEPS_RESOLVE_OUTPUTS_TAGS: ${{ steps.resolve.outputs.tags }}
+          STEPS_RESOLVE_OUTPUTS_VERSION: ${{ steps.resolve.outputs.version }}
 
       # Prepend a new entry to CHANGELOG.md so it stays in sync with Chart.yaml.
       # Chart.yaml line 28-29 requires the two to mirror each other on every bump.
       - name: Update CHANGELOG.md
         run: |
-          NEW_VERSION="${{ steps.resolve.outputs.version }}"
-          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
+          NEW_VERSION="${STEPS_RESOLVE_OUTPUTS_VERSION}"
+          TAGS_CSV="${STEPS_RESOLVE_OUTPUTS_TAGS}"
           TAGS_LIST=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/`/; s/$/`/' | paste -sd, - | sed 's/,/, /g')
           DATE=$(date -u +%Y-%m-%d)
           ENTRY="## [${NEW_VERSION}] - ${DATE}\n\n### Changed\n\n- auto-bump to chart v${NEW_VERSION} triggered by release tag(s): ${TAGS_LIST}\n"
@@ -367,6 +381,9 @@ jobs:
           with open(path, 'w') as f:
               f.write(content)
           PYEOF
+        env:
+          STEPS_RESOLVE_OUTPUTS_VERSION: ${{ steps.resolve.outputs.version }}
+          STEPS_RESOLVE_OUTPUTS_TAGS: ${{ steps.resolve.outputs.tags }}
 
       # Pin every batched release tag into its values.yaml default(s) — the
       # chart's GHCR image defaults (values.yaml's admin/metrics/agent/
@@ -506,7 +523,7 @@ jobs:
           PYEOF
           }
 
-          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
+          TAGS_CSV="${STEPS_RESOLVE_OUTPUTS_TAGS}"
           PINNED=$(select_pinned_tags "$TAGS_CSV")
 
           # Rendered alongside the values.yaml writes below (same
@@ -538,15 +555,17 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Pinned tags for this bump:"
           echo "$PINNED"
+        env:
+          STEPS_RESOLVE_OUTPUTS_TAGS: ${{ steps.resolve.outputs.tags }}
 
       # Create a dedicated branch, commit the Chart.yaml + CHANGELOG.md +
       # values.yaml changes, and push.
       - name: Commit and push bump branch
         id: commit-push
         run: |
-          BRANCH="${{ steps.resolve.outputs.branch }}"
-          NEW_VERSION="${{ steps.resolve.outputs.version }}"
-          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
+          BRANCH="${STEPS_RESOLVE_OUTPUTS_BRANCH}"
+          NEW_VERSION="${STEPS_RESOLVE_OUTPUTS_VERSION}"
+          TAGS_CSV="${STEPS_RESOLVE_OUTPUTS_TAGS}"
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/  - /')
 
           git checkout -b "$BRANCH"
@@ -570,6 +589,10 @@ jobs:
           # re-run the workflow (which will re-derive against main as it
           # then stands).
           git push -u origin "$BRANCH"
+        env:
+          STEPS_RESOLVE_OUTPUTS_BRANCH: ${{ steps.resolve.outputs.branch }}
+          STEPS_RESOLVE_OUTPUTS_VERSION: ${{ steps.resolve.outputs.version }}
+          STEPS_RESOLVE_OUTPUTS_TAGS: ${{ steps.resolve.outputs.tags }}
 
       # Open the PR targeting main. The title triggers chart-testing CI (helm.yml)
       # and the merge will trigger chart-release.yml (which watches charts/**).
@@ -590,12 +613,16 @@ jobs:
           # is a single parameter expansion — bash does not re-scan an
           # expanded value for further substitution.
           PINNED_LINES: ${{ steps.pin.outputs.pinned_lines }}
+          STEPS_RESOLVE_OUTPUTS_VERSION: ${{ steps.resolve.outputs.version }}
+          STEPS_RESOLVE_OUTPUTS_CURRENT_VERSION: ${{ steps.resolve.outputs.current_version }}
+          STEPS_RESOLVE_OUTPUTS_TAGS: ${{ steps.resolve.outputs.tags }}
+          STEPS_RESOLVE_OUTPUTS_BRANCH: ${{ steps.resolve.outputs.branch }}
         run: |
-          NEW_VERSION="${{ steps.resolve.outputs.version }}"
-          CURRENT_VERSION="${{ steps.resolve.outputs.current_version }}"
-          TAGS_CSV="${{ steps.resolve.outputs.tags }}"
+          NEW_VERSION="${STEPS_RESOLVE_OUTPUTS_VERSION}"
+          CURRENT_VERSION="${STEPS_RESOLVE_OUTPUTS_CURRENT_VERSION}"
+          TAGS_CSV="${STEPS_RESOLVE_OUTPUTS_TAGS}"
           TAGS_LINES=$(echo "$TAGS_CSV" | tr ',' '\n' | sed 's/^/- `/; s/$/`/')
-          BRANCH="${{ steps.resolve.outputs.branch }}"
+          BRANCH="${STEPS_RESOLVE_OUTPUTS_BRANCH}"
 
           PR_URL=$(gh pr create \
             --base main \
@@ -657,8 +684,9 @@ jobs:
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+          STEPS_PR_OUTPUTS_PR_URL: ${{ steps.pr.outputs.pr_url }}
         run: |
-          PR_URL="${{ steps.pr.outputs.pr_url }}"
+          PR_URL="${STEPS_PR_OUTPUTS_PR_URL}"
 
           # `gh pr checks --watch --required` fails fast with "no required
           # checks reported" if it runs before GitHub has registered any

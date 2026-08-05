@@ -10,6 +10,7 @@ import {
   type AuthEnv,
   type AuthzPolicy,
   type Caller,
+  constantTimeEqual,
   enforceAuthz,
   parseApiKeys,
 } from "./api-auth.ts";
@@ -70,6 +71,32 @@ describe("parseApiKeys", () => {
   test("ignores blank comma-separated segments", () => {
     const m = parseApiKeys("bodhi:sk_x:*,,sully:sk_y:eng");
     expect(m.size).toBe(2);
+  });
+});
+
+// ─── constantTimeEqual ─────────────────────────────────────────────────────────
+
+describe("constantTimeEqual", () => {
+  test("returns true for matching strings", () => {
+    expect(constantTimeEqual("dt_secret_token", "dt_secret_token")).toBe(true);
+  });
+
+  test("returns false for a same-length mismatch", () => {
+    expect(constantTimeEqual("dt_secret_token", "dt_secret_tokeX")).toBe(
+      false,
+    );
+  });
+
+  test("returns false without throwing when lengths differ (shorter)", () => {
+    expect(constantTimeEqual("short", "dt_secret_token")).toBe(false);
+  });
+
+  test("returns false without throwing when lengths differ (longer)", () => {
+    expect(constantTimeEqual("dt_secret_token", "short")).toBe(false);
+  });
+
+  test("returns false for empty vs non-empty", () => {
+    expect(constantTimeEqual("", "dt_secret_token")).toBe(false);
   });
 });
 

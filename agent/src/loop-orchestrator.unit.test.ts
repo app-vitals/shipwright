@@ -1735,6 +1735,104 @@ describe("createLoopOrchestrator", () => {
     expect(skips[0].skipReason).toBe("command:no-work");
   });
 
+  // ─── skip-reason exemption for dev-task:same-branch-sibling-busy (BBE-1.2) ─
+
+  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Deferring to same-branch sibling.\n[skip-reason:dev-task:same-branch-sibling-busy:feat/x]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Observability is unchanged — skipRun still fires with the parsed reason.
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe(
+      "dev-task:same-branch-sibling-busy:feat/x",
+    );
+    // But recordSkip must NOT be called — this skip reason is exempt from the
+    // HITL auto-block counter (see BBE-1.1/BBE-1.2).
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch still calls recordSkip — exemption is scoped to same-branch-sibling-busy only", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Bundle gate blocked.\n[skip-reason:deploy:bundle-incomplete:feat/x]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
+    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+  });
+
+  test("a plain [silent] with no skip-reason marker (command:no-work fallback) still calls recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [{ result: "Nothing to do here.\n[silent]" }],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("command:no-work");
+    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+  });
+
   test("a runner throw during dispatch reports a failed run, is caught, and does not abort the tick", async () => {
     const consumed = new Set<string>();
     const { reporter, creates, completes, skips } = makeRecordingReporter();

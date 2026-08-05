@@ -969,6 +969,351 @@ describe("getReviewCandidates", () => {
     );
     expect(result).toEqual([]);
   });
+
+  // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
+  // A PR that is already terminal (record.commitSha === pr.headRefOid &&
+  // reviewState !== "pending") is normally skipped at the terminal-skip
+  // check. RVG-1.1 adds one exception: if the PR AUTHOR has posted a
+  // PR-level comment with createdAt after record.reviewedAt, the PR is
+  // re-added as a candidate so a follow-up review pass can consume the
+  // reply (review.md's CPF-2.3 exclusion never gets exercised otherwise).
+  //
+  // These fixtures use a qualifying COMMENTED review with an unresolved
+  // thread at head (mirrors the "still a genuine finding" shape from the
+  // RVD-1.1 block above) so classifyReviewState() returns null and the
+  // earlier live-review dedup does NOT short-circuit before reaching the
+  // terminal-skip branch under test.
+
+  test("regression: no new author comment since reviewedAt → still skipped", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "an old reply",
+            createdAt: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("becomes eligible again once the PR author posts a comment with createdAt after record.reviewedAt", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "fixed, please take another look",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("a comment from a non-author (another reviewer or bot) does not trigger re-candidacy", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "some-reviewer" },
+            body: "bumping this",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+          {
+            author: { login: "some-bot" },
+            body: "CI passed",
+            createdAt: "2026-07-21T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("does not keep re-triggering on the same author comment once a fresh review advances reviewedAt", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "fixed, please take another look",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    // A later review pass consumed the reply and advanced reviewedAt past
+    // the comment's createdAt — the same original comment must not keep
+    // re-triggering candidacy on subsequent ticks.
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-25T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("treats a missing/null record.reviewedAt as no watermark — any author comment counts", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "responding",
+            createdAt: "2020-01-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: null,
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("does not retrigger when fetchPrReviews fails (reviewData never populated) — old skip behavior preserved", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => {
+          throw new Error("GraphQL rate limited");
+        },
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("the staged-review skip check remains unaffected by an author reply", async () => {
+    // Guard: this task's retrigger logic must not interact with the
+    // separate staged-review skip (record.staged===true &&
+    // record.reviewedCommitSha===pr.headRefOid), which sits below the
+    // terminal-skip check and is unrelated to this task.
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "fixed, please take another look",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewedCommitSha: "sha111",
+          reviewState: "pending",
+          staged: true,
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
 });
 
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {

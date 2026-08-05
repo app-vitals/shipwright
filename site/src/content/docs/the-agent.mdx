@@ -122,6 +122,42 @@ spends a Claude turn when there is real work ready.
 See [configuration.md](https://github.com/app-vitals/shipwright/blob/main/docs/configuration.md)
 for the full environment variable reference.
 
+## Adding an MCP server
+
+Register an MCP server on a Shipwright agent the same way you would in any Claude Code session:
+
+```bash
+claude mcp add <name> <command> [args...]
+# or, for an HTTP/SSE server:
+claude mcp add --transport http <name> <url>
+```
+
+This writes the registration into `~/.claude.json`. On a Shipwright agent, `~/.claude.json`
+is not a real file — it's a symlink to `$AGENT_HOME/claude.json`, created by
+`ensureDotClaudeSymlink()` in `agent/src/setup.ts` at every agent startup. The same function
+also symlinks `~/.claude` → `$AGENT_HOME/dot-claude`. Both live on the agent's persistent
+volume (PVC), which survives pod restarts; the container's ephemeral filesystem does not.
+
+This matters because `~/.claude.json` is where MCP server registrations live — **outside**
+`~/.claude/` as a sibling file — so it needs its own symlink to persist across pod restarts.
+Without it, a server you register with `claude mcp add` would be written into the ephemeral
+image copy and silently vanish the next time the pod restarts. Claude Code would then read
+the fresh image copy instead of the PVC's persisted registration.
+
+### Troubleshooting: MCP server "disappeared"
+
+If a registered MCP server vanishes after a pod restart:
+
+1. Confirm that `~/.claude.json` is actually a symlink: `ls -la ~/.claude.json`
+2. Verify it points to `$AGENT_HOME/claude.json` and that the target file exists
+3. Check that the target file contains your MCP server registration: `cat $AGENT_HOME/claude.json`
+
+### Security note
+
+Avoid putting secrets directly in an MCP server registration command line if possible —
+prefer an environment variable reference instead. This prevents the secret from appearing
+in `claude mcp list` output or process listings.
+
 ## Kubernetes provisioning
 
 When `SHIPWRIGHT_K8S_PROVISIONING=enabled`, the admin service acts as a Kubernetes provisioner.

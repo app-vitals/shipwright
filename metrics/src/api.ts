@@ -22,7 +22,12 @@ import {
   wrapResponse,
 } from "./formatters.ts";
 import type { AccountsClient } from "./lib/accounts-client.ts";
-import type { AppHandler, AuthEnv, Caller } from "./lib/api-auth.ts";
+import {
+  type AppHandler,
+  type AuthEnv,
+  type Caller,
+  constantTimeEqual,
+} from "./lib/api-auth.ts";
 import { ErrorSchema } from "./lib/api-schemas.ts";
 import { registerWithAuthz } from "./lib/api-utils.ts";
 import { makeOnError } from "./lib/errors.ts";
@@ -1276,7 +1281,7 @@ function createCombinedAuthMiddleware(
     const header = c.req.header("Authorization")?.trim();
     const token = header?.startsWith("Bearer ") ? header.slice(7) : undefined;
     if (token) {
-      if (dashboardToken && token === dashboardToken) {
+      if (dashboardToken && constantTimeEqual(token, dashboardToken)) {
         c.set("caller", { name: "dashboard-token", scope: "*" });
         return next();
       }

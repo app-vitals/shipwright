@@ -15,6 +15,7 @@
  * that no route ships without a declared policy.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import type { RouteConfig, RouteHandler } from "@hono/zod-openapi";
 import type { Caller } from "@shipwright/lib/request-context";
 import type { Context } from "hono";
@@ -28,6 +29,17 @@ export type { Caller };
 
 // Hono env type for routes that use the auth middleware
 export type AuthEnv = { Variables: { caller: Caller } };
+
+/**
+ * Constant-time string comparison for secret tokens — avoids leaking secret
+ * content via response-time side channels (mirrors mcp-server/src/auth.ts).
+ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 /**
  * Handler type that gets input types from a route's Zod schemas.
