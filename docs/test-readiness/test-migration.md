@@ -12,7 +12,7 @@
 ## Method note
 
 This pass diffed the current file tree against the 2026-08-05 pass's findings (baseline
-doc committed at `bccb81f6`) and re-verified every open item directly against current
+doc committed at `5f28c63c`) and re-verified every open item directly against current
 repo state, per this cycle's standing instruction not to carry forward "missing"/"gap"
 claims without re-checking them:
 
@@ -23,7 +23,7 @@ claims without re-checking them:
    `metrics/e2e/`) = **284 test files total** — unchanged from the 2026-08-05 pass (no
    new or deleted test file this cycle, consistent with Phase 1's delta being confined to
    one already-existing file gaining new test cases, not new files).
-2. Cross-referenced Phase 1's delta list (4 commits / 17 files since the `bccb81f6`
+2. Cross-referenced Phase 1's delta list (3 commits / 13 files since the `5f28c63c`
    baseline, 1 non-doc/non-version-bump source file: `agent/src/check-review.ts`
    (RFR-1.1)) against the test-file glob to confirm it has matching coverage — reading
    the actual test body (not just the filename) for the touched file.
@@ -39,10 +39,10 @@ claims without re-checking them:
    matches as every prior pass.
 5. Confirmed `.github/PULL_REQUEST_TEMPLATE.md`, `bunfig.toml`'s `pathIgnorePatterns`,
    `admin/src/clock.ts` (still no dedicated test file, still a non-gap), and
-   `scripts/hitl.ts` (`git log bccb81f6..origin/main -- scripts/hitl.ts` empty — no scope
+   `scripts/hitl.ts` (`git log 5f28c63c..origin/main -- scripts/hitl.ts` empty — no scope
    growth since 2026-08-05) directly against current tree state rather than trusting the
    prior doc's snapshot. Also confirmed zero `.github/workflows/` changes since the
-   baseline (`git log bccb81f6..origin/main -- .github/workflows/` empty) — the shell
+   baseline (`git log 5f28c63c..origin/main -- .github/workflows/` empty) — the shell
    layer's open documentation-decision gap is unchanged, not newly relevant.
 6. Pulled a fresh live Tier 1 speed measurement from CI (`gh run view --log` against the
    two most recent green `lint / typecheck / test` runs on `main`, both at or after this
@@ -157,7 +157,7 @@ the 2026-08-05 pass (no new/deleted test file this cycle). Growth this cycle is 
 to new test *cases* within one already-existing file: `agent/src/check-review.unit.test.ts`
 (+2 cases for RFR-1.1's fresh-author-reply exception, now shared by RVD-1.1 and RVG-1.1).
 
-**Headline finding:** the source-level change in this cycle's 4-commit / 1-file
+**Headline finding:** the source-level change in this cycle's 3-commit / 1-file
 Phase 1 delta (RFR-1.1) already has matching test coverage at the correct
 layer, landed in the same commit as its production fix — continuing the
 pattern observed in every prior pass. No new isolation-contract regression, no new
