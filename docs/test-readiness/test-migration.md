@@ -99,7 +99,7 @@ since both rows were already fully integration-tested before this cycle's change
   `dev-task:same-branch-sibling-busy:*`) — `agent/src/loop-orchestrator.unit.test.ts:1738-1790`
   covers both the exemption itself (a matching skip-reason calls `skipRun` but not
   `recordSkip`) and the scoping guard (a differently-prefixed skip reason, e.g.
-  `deploy:deferred:bundle-incomplete:*`, still calls `recordSkip` — the exemption doesn't
+  `deploy:bundle-incomplete:*`, still calls `recordSkip` — the exemption doesn't
   over-broadly swallow unrelated skip reasons). The companion `dev-task.md` marker-emission
   change is covered by `plugins/shipwright/commands/dev-task.content.test.ts`'s new
   assertions.
