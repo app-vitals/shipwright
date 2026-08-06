@@ -593,10 +593,17 @@ export function createLoopOrchestrator(
       // than exact string equality. skipRun above stays unconditional —
       // observability must not change, only the skip-count side effect is
       // exempted.
-      const isSameBranchSiblingBusy = skipReason.startsWith(
-        "dev-task:same-branch-sibling-busy:",
-      );
-      if (!isSameBranchSiblingBusy) {
+      //
+      // STD-1.4: review.md's Unresolved Comment Check defers the same way —
+      // a PR with unresolved human feedback at the current commit is a
+      // legitimate backstop, not a genuine no-op spin. Without this
+      // exemption, a PR parked in an extended human review thread would hit
+      // SKIP_BLOCK_THRESHOLD purely from repeated legitimate defers and be
+      // falsely auto-blocked with hitl=true.
+      const isExemptSkipReason =
+        skipReason.startsWith("dev-task:same-branch-sibling-busy:") ||
+        skipReason.startsWith("review:deferred:unresolved-human-feedback:");
+      if (!isExemptSkipReason) {
         // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
         await callSkipTracker("recordSkip", () =>
           recordSkip(itemType, recordId),
