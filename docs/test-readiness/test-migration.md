@@ -11,8 +11,8 @@
 
 ## Method note
 
-This pass diffed the current file tree against the 2026-08-03 pass's findings (baseline
-doc committed at `b693b880`) and re-verified every open item directly against current
+This pass diffed the current file tree against the 2026-08-05 pass's findings (baseline
+doc committed at `bccb81f6`) and re-verified every open item directly against current
 repo state, per this cycle's standing instruction not to carry forward "missing"/"gap"
 claims without re-checking them:
 
@@ -20,19 +20,18 @@ claims without re-checking them:
    `*.unit.test.ts`, 60 `*.integration.test.ts`, 43 `*.smoke.test.ts`, 35
    `*.content.test.ts` (260 `bun test`-scanned files, matching the prior pass exactly),
    plus 21 `site/tests/*.spec.ts` and 3 Playwright `*.e2e.ts` (2 `admin/e2e/`, 1
-   `metrics/e2e/`) = **284 test files total** — unchanged from the 2026-08-03 pass (no
+   `metrics/e2e/`) = **284 test files total** — unchanged from the 2026-08-05 pass (no
    new or deleted test file this cycle, consistent with Phase 1's delta being confined to
-   two already-existing files gaining new test cases, not new files).
-2. Cross-referenced Phase 1's delta list (10 commits / 20 files since the `b693b880`
-   baseline, 2 non-doc/non-version-bump source files: `agent/src/check-review.ts`
-   (RVG-1.1) and `agent/src/loop-orchestrator.ts` (BBE-1.2)) against the test-file glob
-   to confirm each has matching coverage — reading actual test bodies (not just
-   filenames) for both touched files.
+   one already-existing file gaining new test cases, not new files).
+2. Cross-referenced Phase 1's delta list (4 commits / 17 files since the `bccb81f6`
+   baseline, 1 non-doc/non-version-bump source file: `agent/src/check-review.ts`
+   (RFR-1.1)) against the test-file glob to confirm it has matching coverage — reading
+   the actual test body (not just the filename) for the touched file.
 3. Directly investigated Phase 2's "Gaps and blockers summary" against current test file
    contents (not the design doc's framing) — see "This cycle's flagged gaps, verified"
    below. No new gap was flagged by this cycle's Phase 2 pass (the source delta was
-   confined to two already-integration-tested rows); both this cycle's real production
-   fixes already have matching test coverage landed in the same commit series.
+   confined to one already-integration-tested row); this cycle's real production fix
+   already has matching test coverage landed in the same commit.
 4. Re-ran the isolation-contract grep sweep (`mock.module(`, `global.fetch =`,
    `global.console =`, `DATABASE_URL` inside `*.unit.test.ts`) across the full current
    suite to catch any regression introduced by unrelated PRs since the last pass — zero
@@ -40,10 +39,10 @@ claims without re-checking them:
    matches as every prior pass.
 5. Confirmed `.github/PULL_REQUEST_TEMPLATE.md`, `bunfig.toml`'s `pathIgnorePatterns`,
    `admin/src/clock.ts` (still no dedicated test file, still a non-gap), and
-   `scripts/hitl.ts` (`git log b693b880..origin/main -- scripts/hitl.ts` empty — no scope
-   growth since 2026-08-03) directly against current tree state rather than trusting the
+   `scripts/hitl.ts` (`git log bccb81f6..origin/main -- scripts/hitl.ts` empty — no scope
+   growth since 2026-08-05) directly against current tree state rather than trusting the
    prior doc's snapshot. Also confirmed zero `.github/workflows/` changes since the
-   baseline (`git log b693b880..origin/main -- .github/workflows/` empty) — the shell
+   baseline (`git log bccb81f6..origin/main -- .github/workflows/` empty) — the shell
    layer's open documentation-decision gap is unchanged, not newly relevant.
 6. Pulled a fresh live Tier 1 speed measurement from CI (`gh run view --log` against the
    two most recent green `lint / typecheck / test` runs on `main`, both at or after this
@@ -58,8 +57,8 @@ test` job, which this sandbox does have. See Speed measurement section for the n
 ## This cycle's flagged gaps, verified
 
 Phase 2 (`test-system.md`, this cycle) carries the same 14 items in its "Gaps and
-blockers summary" as the 2026-08-03 pass — this cycle's source delta (RVG-1.1, BBE-1.2)
-was confined to two already-integration-tested rows and introduced no new gap. Each item
+blockers summary" as the 2026-08-05 pass — this cycle's source delta (RFR-1.1)
+was confined to one already-integration-tested row and introduced no new gap. Each item
 was re-checked directly against current test file contents rather than trusted from the
 prior pass's snapshot:
 
@@ -81,12 +80,14 @@ prior pass's snapshot:
 | 14 | **New this cycle** — `check-review.ts`'s requested-reviewer inclusion (RRR-1.1) needs two dedicated test cases (inclusion + allowlist-still-applies) | **Real gap — already resolved** | `agent/src/check-review.unit.test.ts:718-790` — both halves covered: inclusion case (self-authored PR *is* a candidate when currentUser is a requested reviewer) and 4 regression-guard cases proving the author-allowlist exclusion still applies unconditionally regardless of `reviewRequests` (including a self-authored PR with no `reviewRequests` at all, and one whose `reviewRequests` names someone else). |
 
 **Net effect on this cycle's Net-new list:** no new gap this cycle. Items #8-#14 (all
-carried forward from prior design passes) remain resolved and unchanged. The only
-genuinely open item is #11 (HITL bootstrap integration harness), unchanged in scope
-since 2026-07-31.
+carried forward from prior design passes, #12-#14 first flagged as new in the 2026-08-05
+pass) remain resolved and unchanged. The only genuinely open item is #11 (HITL bootstrap
+integration harness), unchanged in scope since 2026-07-31.
 
-Also directly verified this cycle's actual source delta (not flagged as a Phase 2 gap,
-since both rows were already fully integration-tested before this cycle's change):
+Also directly re-verified the source deltas from this and recent prior cycles (not
+flagged as a Phase 2 gap, since each row was already fully integration-tested before its
+respective change landed). Only RFR-1.1 below is new this cycle; the rest are carried
+forward, unchanged:
 
 - **RVG-1.1** (`agent/src/check-review.ts`'s author-reply candidacy retrigger at an
   unchanged commit) — `agent/src/check-review.unit.test.ts:973-1330` covers the full
@@ -152,16 +153,13 @@ since both rows were already fully integration-tested before this cycle's change
 **Total existing test files discovered:** 122 unit + 60 integration + 43 smoke + 35
 content = 260 `bun test`-scanned files, + 21 `site/tests/*.spec.ts` + 3 Playwright
 `*.e2e.ts` (2 `admin/e2e/`, 1 `metrics/e2e/`) = **284 test files total** — unchanged from
-the 2026-08-03 pass (no new/deleted test file this cycle). Growth this cycle is confined
-to new test *cases* within two already-existing files: `agent/src/check-review.unit.test.ts`
-(+4 cases for RVG-1.1) and `agent/src/loop-orchestrator.unit.test.ts` (+2 cases for
-BBE-1.2), plus new assertions in `plugins/shipwright/commands/dev-task.content.test.ts`
-and `review.content.test.ts` covering the companion marker-emission and worked-example
-doc changes.
+the 2026-08-05 pass (no new/deleted test file this cycle). Growth this cycle is confined
+to new test *cases* within one already-existing file: `agent/src/check-review.unit.test.ts`
+(+2 cases for RFR-1.1's fresh-author-reply exception, now shared by RVD-1.1 and RVG-1.1).
 
-**Headline finding:** both source-level changes in this cycle's 10-commit / 20-file
-Phase 1 delta (RVG-1.1, BBE-1.2) already have matching test coverage at the correct
-layer, landed in the same commit series as their production fixes — continuing the
+**Headline finding:** the source-level change in this cycle's 4-commit / 1-file
+Phase 1 delta (RFR-1.1) already has matching test coverage at the correct
+layer, landed in the same commit as its production fix — continuing the
 pattern observed in every prior pass. No new isolation-contract regression, no new
 redundant-coverage pattern, no rebuild candidates, no trim/delete candidates. The only
 open item remains the same one carried forward across the last several cycles: the HITL
@@ -210,9 +208,9 @@ delta list, not re-read in full where unchanged.
 |---|---|---|---|---|
 | `lib/` | `pricing`, `org-repo`, `request-context`, `sentry`, `web/toolbar`, `claim-ttl`, `github-login`, `task-store-types` (`.unit.test.ts`) | unit | Cross-service pure helpers | Unchanged this cycle. |
 | `metrics/src/*` | ~9 top-level + ~7 `lib/` + 2 `providers/` + 1 `dashboard/` | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes, request coalescing | Unchanged this cycle. |
-| `agent/src/*` | ~49 files | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, author-allowlist ref, headless-browser launcher | This cycle: `check-review.ts`'s RVG-1.1 (author-reply candidacy retrigger) and `loop-orchestrator.ts`'s BBE-1.2 (skip-counter exemption) both landed with complete coverage — see "verified this cycle's actual source delta" above. Prior cycles: RRR-1.1 (requested-reviewer inclusion, gaps table item #14) and CSI-1.1/1.2 session-id capture/threading, unchanged this cycle. |
-| `admin/src/*` | ~56 files | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup, work-queue snapshots, server composition, agent-type manifest resolution | Absorbed this cycle's ORF-2.x multiselect UI extension (`admin-ui-pages.unit.test.ts`, `admin-ui.smoke.test.ts`) and CSI sessionId passthrough (`agent-cron-runs.integration.test.ts`) — additive coverage on existing files, correctly layered. |
-| `task-store/src/*` | ~25 files (new: `lib/repo-org-filter.unit.test.ts`) | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | Absorbed this cycle's CSD-1.1 (`ciFailureSignature` streak) and ORF-1.x (multi-repo/org filter) additions across `pull-request-service.unit.test.ts`, `pull-request.integration.test.ts`, `tasks.integration.test.ts` — see gaps table items #12, #13. |
+| `agent/src/*` | ~49 files | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, author-allowlist ref, headless-browser launcher | This cycle: `check-review.ts`'s RFR-1.1 (fresh-author-reply exception hoist, shared by RVD-1.1 and RVG-1.1) landed with complete coverage — see "verified this cycle's actual source delta" above. Prior cycles: RVG-1.1 (author-reply candidacy retrigger), BBE-1.2 (skip-counter exemption), RRR-1.1 (requested-reviewer inclusion, gaps table item #14), and CSI-1.1/1.2 session-id capture/threading, unchanged this cycle. |
+| `admin/src/*` | ~56 files | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup, work-queue snapshots, server composition, agent-type manifest resolution | Prior cycle's ORF-2.x multiselect UI extension (`admin-ui-pages.unit.test.ts`, `admin-ui.smoke.test.ts`) and CSI sessionId passthrough (`agent-cron-runs.integration.test.ts`) — additive coverage on existing files, correctly layered, unchanged this cycle. |
+| `task-store/src/*` | ~25 files (incl. `lib/repo-org-filter.unit.test.ts`) | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | Prior cycle's CSD-1.1 (`ciFailureSignature` streak) and ORF-1.x (multi-repo/org filter) additions across `pull-request-service.unit.test.ts`, `pull-request.integration.test.ts`, `tasks.integration.test.ts` — see gaps table items #12, #13. Unchanged this cycle. |
 | `chat/src/*` | 10 files | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator | Unchanged this cycle. |
 | `mcp-server/src/*` | 8 files | unit/integration/smoke | Tool allowlist, tool-caller proxy, MCP wire protocol, inbound bearer auth, Streamable HTTP transport + idle-session reaper, app-factory composition, fail-closed entrypoint guard | Unchanged this cycle — no files in Phase 1's delta touch `mcp-server/`. |
 | `brand/*` | 2 files | unit | Hex-color lint, CSS token generation | Unchanged. |
@@ -320,9 +318,9 @@ prior pass in this repo's history.
   >7.5 min, sustained across 2 consecutive measurements) is nowhere near tripped.
 
 Test-count growth trajectory: 5,762 (2026-07-28 `speed-baseline.md`) → 5,880 (2026-07-30)
-→ 6,041-6,042 (2026-08-01) → 6,070 (2026-08-05, this pass) — steady, expected growth,
-consistent with this cycle's minimal (2-file) source delta adding only a handful of new
-test cases rather than new files.
+→ 6,041-6,042 (2026-08-01) → 6,070 (2026-08-05) → 6,071 (2026-08-06, this pass) — steady,
+expected growth, consistent with this cycle's minimal (1-file) source delta adding only a
+handful of new test cases rather than new files.
 
 ### Tier 2 — per-layer breakdown (conditional)
 
@@ -345,15 +343,17 @@ document:
    `computeProvisionPlan`) is already fully unit-tested.
 2. **1 low-priority/optional carried-forward item** (`admin/src/clock.ts` — still a
    non-gap by the repo's own convention).
-3. **2 real fixes landed this cycle, both confirmed already resolved** (RVG-1.1 author-
-   reply candidacy retrigger, BBE-1.2 skip-counter exemption) — both landed test coverage
-   in the same commits as their production fixes, continuing the fast gap-to-resolution
-   pattern observed in every prior pass.
-4. **6 carried-forward-from-prior-cycle gaps, all reconfirmed already resolved**
+3. **1 real fix landed this cycle, confirmed already resolved** (RFR-1.1 fresh-author-
+   reply exception, hoisted so it's shared by both the RVD-1.1 live-review dedup check
+   and the RVG-1.1 terminal-state check) — landed test coverage in the same commit as its
+   production fix, continuing the fast gap-to-resolution pattern observed in every prior
+   pass.
+4. **7 carried-forward-from-prior-cycle gaps, all reconfirmed already resolved**
    (`reviewedCommitSha` divergent-value case, RDG-1.1 bundle-mate regression,
    `browser.ts`/`verify-browser-launch.ts` coverage, `ciFailureSignature` streak
    auto-block, ORF-1.x/2.x combined-filter integration coverage, RRR-1.1
-   requested-reviewer inclusion) — unchanged since 2026-08-03.
+   requested-reviewer inclusion, RVG-1.1 author-reply candidacy retrigger and BBE-1.2
+   skip-counter exemption) — unchanged since 2026-08-05.
 5. **Speed measurement re-confirmed in budget** — Tier 1 aggregate ~17% of budget on two
    fresh data points this pass (both at or after this cycle's HEAD), consistent with the
    growth trajectory. No M1 task needed.
