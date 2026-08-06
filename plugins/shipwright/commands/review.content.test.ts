@@ -460,7 +460,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("login");
   });
 
-  it("the jq logic references fresh author reply or fresh comment behavior", () => {
+  it("the prose documents the fresh-author-reply exception and that it mirrors check-review.ts", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
     );
@@ -469,26 +469,9 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
-    // Check for language describing the fresh-reply exception
-    const hasFreshLanguage =
-      section.toLowerCase().includes("fresh") ||
-      section.toLowerCase().includes("author reply") ||
-      section.toLowerCase().includes("author comment");
-    expect(hasFreshLanguage).toBe(true);
-  });
-
-  it("the prose documents the fresh-author-reply exception that mirrors check-review.ts", () => {
-    const preCheckIdx = step14Section.indexOf(
-      "### Live-Review Pre-Check (RVD-1.2)",
-    );
-    const fastPathIdx = step14Section.indexOf(
-      "### Pre-Claim Fast Path (CBD-1.4)",
-    );
-    const section = step14Section.slice(preCheckIdx, fastPathIdx);
-
-    // The prose should mention the exception mirrors the fix
     expect(section).toContain("fresh");
     expect(section).toContain("reply");
+    expect(section).toContain("check-review.ts");
   });
 });
 
