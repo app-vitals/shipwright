@@ -805,7 +805,7 @@ precheck=$(gh api graphql -f query='
         login
       }
       headRefOid
-      comments(first: 50) {
+      comments(last: 50) {
         nodes {
           author {
             login

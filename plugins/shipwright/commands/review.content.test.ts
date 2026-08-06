@@ -447,6 +447,19 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("createdAt");
   });
 
+  it("the graphql query paginates comments with last: 50, not first: 50, matching check-review.ts's fetchPrReviews", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments(last: 50)");
+    expect(section).not.toContain("comments(first: 50)");
+  });
+
   it("the graphql query includes the PR author login", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
