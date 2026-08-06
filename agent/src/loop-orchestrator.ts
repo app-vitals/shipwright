@@ -594,7 +594,7 @@ export function createLoopOrchestrator(
       // observability must not change, only the skip-count side effect is
       // exempted.
       const isSameBranchSiblingBusy = skipReason.startsWith(
-        "dev-task:same-branch-sibling-busy:",
+        "dev-task:deferred:same-branch-sibling-busy:",
       );
       if (!isSameBranchSiblingBusy) {
         // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.

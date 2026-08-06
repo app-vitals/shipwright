@@ -1735,9 +1735,9 @@ describe("createLoopOrchestrator", () => {
     expect(skips[0].skipReason).toBe("command:no-work");
   });
 
-  // ─── skip-reason exemption for dev-task:same-branch-sibling-busy (BBE-1.2) ─
+  // ─── skip-reason exemption for dev-task:deferred:same-branch-sibling-busy (BBE-1.2) ─
 
-  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
+  test("a [skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -1748,7 +1748,7 @@ describe("createLoopOrchestrator", () => {
       [
         {
           result:
-            "Deferring to same-branch sibling.\n[skip-reason:dev-task:same-branch-sibling-busy:feat/x]\n[silent]",
+            "Deferring to same-branch sibling.\n[skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x]\n[silent]",
         },
       ],
     );
@@ -1767,7 +1767,7 @@ describe("createLoopOrchestrator", () => {
     // Observability is unchanged — skipRun still fires with the parsed reason.
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe(
-      "dev-task:same-branch-sibling-busy:feat/x",
+      "dev-task:deferred:same-branch-sibling-busy:feat/x",
     );
     // But recordSkip must NOT be called — this skip reason is exempt from the
     // HITL auto-block counter (see BBE-1.1/BBE-1.2).
