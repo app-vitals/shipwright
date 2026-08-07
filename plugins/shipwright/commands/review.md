@@ -873,7 +873,13 @@ Then print:
 Skipping #{pr} — a review already exists at this commit (${headRefOid:0:7}) on GitHub (cross-task-store check), nothing to do.
 ```
 
-Stop. No claim, no checkout (no worktree checkout happens).
+Emit `[skip-reason:review:deferred:already-reviewed-at-head:{pr}]` immediately before the
+following `[silent]` marker (interpolating `{pr}` from the value above) — this defer is a
+legitimate backstop, not a genuine no-op, and without the tagged reason the loop
+orchestrator's generic `[silent]` handling would count it toward `SKIP_BLOCK_THRESHOLD`,
+risking a false HITL auto-block (see `agent/src/loop-orchestrator.ts`).
+
+Respond `[silent]`. Stop. No claim, no checkout (no worktree checkout happens).
 
 **If `$terminal` is `false`**: continue to the Pre-Claim Fast Path subsection immediately
 below, unchanged.
@@ -967,7 +973,13 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
      ```
      Skipping #{pr} — already reviewed at this commit ({headRefOid[0..7]}), nothing to do.
      ```
-   - Stop.
+   - Emit `[skip-reason:review:deferred:already-reviewed-at-head:{pr}]` immediately before
+     the following `[silent]` marker (interpolating `{pr}` from the value above) — this
+     defer is a legitimate backstop, not a genuine no-op, and without the tagged reason the
+     loop orchestrator's generic `[silent]` handling would count it toward
+     `SKIP_BLOCK_THRESHOLD`, risking a false HITL auto-block (see
+     `agent/src/loop-orchestrator.ts`).
+   - Respond `[silent]`. Stop.
 
    If no record exists (first review), or `record.reviewState` is `pending` (claimed but
    never completed — never actually reviewed), or `headRefOid` differs from
