@@ -441,6 +441,71 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section.toLowerCase()).toContain("stop");
   });
 
+  it("the graphql query includes submittedAt on review nodes", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("submittedAt");
+  });
+
+  it("the graphql query includes comments with author and createdAt fields", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments");
+    expect(section).toContain("createdAt");
+  });
+
+  it("the graphql query paginates comments with last: 50, not first: 50, matching check-review.ts's fetchPrReviews", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments(last: 50)");
+    expect(section).not.toContain("comments(first: 50)");
+  });
+
+  it("the graphql query includes the PR author login", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("author {");
+    expect(section).toContain("login");
+  });
+
+  it("the prose documents the fresh-author-reply exception and that it mirrors check-review.ts", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("fresh");
+    expect(section).toContain("reply");
+    expect(section).toContain("check-review.ts");
+  });
+
   it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
