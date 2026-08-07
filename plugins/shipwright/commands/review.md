@@ -322,6 +322,13 @@ dedup set here does not persist for that case. This is not a regression vs. the 
 `release`-based skip (which produced the same eventual `pending` state, just immediately instead
 of after a reconcile delay); it just means the delay before the same re-review-at-this-commit
 churn resumes is longer, not zero, for the plain-comment trigger.
+
+Emit `[skip-reason:review:deferred:unresolved-human-feedback:{pr}]` immediately before the
+following `[silent]` marker (interpolating `{pr}` from the value above) — this defer is a
+legitimate backstop, not a genuine no-op, and without the tagged reason the loop
+orchestrator's generic `[silent]` handling would count it toward `SKIP_BLOCK_THRESHOLD`,
+risking a false HITL auto-block (see `agent/src/loop-orchestrator.ts`).
+
 Respond `[silent]`, and stop.
 
 8. **Renew the claim heartbeat**: context-gathering plus the deep review that follows can
@@ -849,10 +856,23 @@ the fresh-author-reply exception is the only place author identity matters: it c
 whether the PR's _own_ author has replied after the review, mirroring the RFR-1.1 fix
 in `agent/src/check-review.ts`.
 
-**If `$terminal` is `true`** (a terminal review already exists at head on GitHub): print
+**If `$terminal` is `true`** (a terminal review already exists at head on GitHub):
+
+If a pre-claim marker was present (`PRECLAIM_RECORD_ID` is non-empty), release the
+inherited claim first so the PR re-enters the candidate pool:
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  curl -s -o /dev/null -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/${PRECLAIM_RECORD_ID}/release"
+fi
+```
+
+Then print:
 ```
 Skipping #{pr} — a review already exists at this commit (${headRefOid:0:7}) on GitHub (cross-task-store check), nothing to do.
 ```
+
 Stop. No claim, no checkout (no worktree checkout happens).
 
 **If `$terminal` is `false`**: continue to the Pre-Claim Fast Path subsection immediately
