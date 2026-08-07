@@ -1,0 +1,108 @@
+{{- if and .Values.postgresql.enabled .Values.dbBootstrap.enabled }}
+{{- /*
+  Post-install / post-upgrade hook Job that ensures every per-service database
+  exists on the bundled PostgreSQL.
+
+  WHY THIS EXISTS: postgres-initdb-configmap.yaml is mounted at
+  /docker-entrypoint-initdb.d, and PostgreSQL runs those scripts ONLY on the very
+  first boot of an empty data volume. On any release whose PVC is already
+  initialized — every existing bundled-Postgres install, and every upgrade — the
+  init scripts are ignored entirely. Without this Job, enabling task-store or chat
+  on such a release would leave their databases uncreated and both services would
+  crash-loop at boot ("database ... does not exist") when `prisma migrate deploy`
+  runs as their boot preflight.
+
+  The Job executes the SAME SQL files from the SAME ConfigMap the initdb path
+  uses, mounted here at /initdb — one source of truth, so a database can never be
+  created under one name by initdb and connected to under another. Every script
+  is guarded by `WHERE NOT EXISTS ... \gexec`, so re-running on every upgrade is
+  a no-op once the databases exist.
+
+  CONNECTS AS THE SUPERUSER: CREATE DATABASE requires it; the application user
+  (postgresql.auth.username) has no CREATEDB grant from the Bitnami subchart.
+
+  HOOK WEIGHT -5 runs this before any default-weight (0) hook, and post-install
+  hooks run after the main resources are applied — so the ConfigMap and the
+  PostgreSQL StatefulSet both exist by the time this fires. The container still
+  polls with pg_isready first, because "created" is not "accepting connections".
+*/}}
+{{- $pgFullname := include "shipwright.postgresql.fullname" . }}
+{{- $secretName := .Values.postgresql.auth.existingSecret | default $pgFullname }}
+{{- /* dig is nil-safe: postgresql.auth.secretKeys may be absent from the parent's
+       merged values view depending on how the subchart's defaults coalesce. */}}
+{{- $secretKey := dig "secretKeys" "adminPasswordKey" "postgres-password" .Values.postgresql.auth }}
+{{- $secretKey = $secretKey | default "postgres-password" }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-db-bootstrap" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: db-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.dbBootstrap.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: db-bootstrap
+    spec:
+      restartPolicy: Never
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        - name: db-bootstrap
+          # Reuse the PostgreSQL subchart's own image so this Job never triggers
+          # an extra image pull — it is already on the node for the database pod.
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" (printf "%s/%s" .Values.postgresql.image.registry .Values.postgresql.image.repository) "tag" .Values.postgresql.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.postgresql.image.pullPolicy | default .Values.imagePullPolicy }}
+          env:
+            - name: PGHOST
+              value: {{ $pgFullname | quote }}
+            - name: PGPORT
+              value: "5432"
+            - name: PGUSER
+              value: postgres
+            - name: PGDATABASE
+              value: postgres
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $secretKey }}
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              echo "[db-bootstrap] waiting for postgresql at $PGHOST:$PGPORT ..."
+              until pg_isready -q; do sleep 2; done
+              echo "[db-bootstrap] connected; ensuring per-service databases exist"
+              for f in /initdb/*.sql; do
+                echo "[db-bootstrap] applying $(basename "$f")"
+                psql -v ON_ERROR_STOP=1 --no-psqlrc -f "$f"
+              done
+              echo "[db-bootstrap] done"
+          volumeMounts:
+            - name: initdb
+              mountPath: /initdb
+              readOnly: true
+          {{- with .Values.dbBootstrap.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: initdb
+          configMap:
+            name: {{ include "shipwright.postgresql.initdbConfigMapName" . }}
+{{- end }}

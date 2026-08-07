@@ -173,3 +173,90 @@ tests:
               secretKeyRef:
                 name: my-chat-tokens
                 key: CHAT_ADMIN_RAW
+
+  # ── bundled-PostgreSQL database path ──────────────────────────────────────
+  # Selected by an explicit `chat.database.existingSecret: ""`. The default is
+  # the non-empty "shipwright-secrets", so every install that predates this path
+  # keeps its bring-your-own Secret — the assertions above are the
+  # backward-compatibility regression guard for that.
+
+  - it: sources DATABASE_URL from the CHART-MANAGED Secret on the bundled path
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.database.existingSecret: ""
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_CHAT
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-chat
+                key: DATABASE_URL_SHIPWRIGHT_CHAT
+      # Must NOT still point at the bring-your-own default.
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DATABASE_URL_SHIPWRIGHT_CHAT
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: DATABASE_URL_SHIPWRIGHT_CHAT
+
+  - it: adds a wait-for-postgres initContainer ONLY on the bundled path
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.database.existingSecret: ""
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: wait-for-postgres
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].command[2]
+          pattern: "nc -z r-postgresql 5432"
+
+  - it: adds NO initContainer on the external-Secret path
+    # An external database is the operator's to make reachable; blocking the pod
+    # on the in-cluster PostgreSQL Service would be wrong (and would hang).
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.initContainers
+
+  - it: fails fast when existingSecret is empty but postgres is external
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.database.existingSecret: ""
+      postgresql.enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "chat.database.existingSecret is required when postgresql.enabled=false"
+
+  - it: keeps extraEnv rendering LAST so caller overrides still win
+    # Kubernetes resolves duplicate env names to the LAST occurrence. Production
+    # hand-wires this service through extraEnv, so that ordering is load-bearing.
+    template: templates/chat-deployment.yaml
+    set:
+      chat.enabled: true
+      chat.database.existingSecret: ""
+      chat.extraEnv:
+        - name: DATABASE_URL_SHIPWRIGHT_CHAT
+          value: "postgresql://override@elsewhere:5432/db"
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].name
+          value: DATABASE_URL_SHIPWRIGHT_CHAT
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].value
+          value: "postgresql://override@elsewhere:5432/db"

@@ -2,13 +2,14 @@ apiVersion: v2
 name: shipwright
 description: >-
   Shipwright Harness — the open-source autonomous delivery agent for Claude Code.
-  This chart packages the three Shipwright services (admin, metrics, agent) and an
-  optional PostgreSQL dependency for Kubernetes (Minikube-friendly defaults).
+  This chart packages the Shipwright services (admin, metrics, task-store, chat)
+  plus runtime agent provisioning and an optional bundled PostgreSQL, for
+  Kubernetes (Minikube-friendly defaults).
 type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.7.192
+version: 1.8.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -28,8 +29,12 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.7.192 triggered by release tag agent-v1.124.1"
+    - kind: added
+      description: "task-store and chat can now use the bundled PostgreSQL — set their database.existingSecret to \"\" and the chart creates the database and assembles the DSN"
+    - kind: added
+      description: "post-install/post-upgrade hook Job ensures the per-service databases exist (initdb scripts only run on a first boot)"
+    - kind: fixed
+      description: "bundled-PostgreSQL password lookup used a `postgresql-password` Secret key Bitnami never emits; corrected to `password`, so an auto-generated password now resolves"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

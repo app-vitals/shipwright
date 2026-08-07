@@ -1,0 +1,143 @@
+suite: postgres initdb ConfigMap — per-service databases, templated names, override-safe
+# The PostgreSQL first-boot init scripts that create the SEPARATE per-service
+# databases (metrics, task-store, chat) live in a parent-chart ConfigMap. Each
+# CREATE DATABASE name is rendered from the SAME helper that assembles that
+# service's connection string, so overriding e.g. chat.database.name updates the
+# created database and the DSN in lockstep. Gated on postgresql.enabled alone.
+templates:
+  - templates/postgres-initdb-configmap.yaml
+release:
+  name: r
+  namespace: shipwright
+tests:
+  # ── name regression guard ─────────────────────────────────────────────────
+  # DO NOT "fix" this name to something like r-postgres-initdb. values.yaml
+  # statically references it as postgresql.primary.initdb.scriptsConfigMap, and
+  # any operator who pinned that key would get a dangling volume reference and a
+  # PostgreSQL pod that never starts. The legacy "metrics" name is deliberate.
+  - it: renders a ConfigMap under the LEGACY name "<release>-metrics-initdb"
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: r-metrics-initdb
+
+  - it: creates all three per-service databases, each with an idempotent guard
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE shipwright_metrics OWNER shipwright"
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "WHERE NOT EXISTS \\(SELECT FROM pg_database WHERE datname = 'shipwright_metrics'\\)"
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "CREATE DATABASE shipwright_task_store OWNER shipwright"
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "WHERE NOT EXISTS \\(SELECT FROM pg_database WHERE datname = 'shipwright_task_store'\\)"
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "CREATE DATABASE shipwright_chat OWNER shipwright"
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "WHERE NOT EXISTS \\(SELECT FROM pg_database WHERE datname = 'shipwright_chat'\\)"
+
+  - it: every script ends in \gexec so the guarded SELECT actually executes
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "\\\\gexec"
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "\\\\gexec"
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "\\\\gexec"
+
+  # ── each database name tracks its own values override ─────────────────────
+
+  - it: tracks a custom metrics.database.name in BOTH the CREATE and the guard
+    set:
+      metrics.database.name: custom_metrics_db
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE custom_metrics_db OWNER shipwright"
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "datname = 'custom_metrics_db'"
+      # The old hardcoded default must NOT appear once overridden.
+      - notMatchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "shipwright_metrics"
+
+  - it: tracks a custom taskStore.database.name in BOTH the CREATE and the guard
+    set:
+      taskStore.database.name: custom_ts_db
+    asserts:
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "CREATE DATABASE custom_ts_db OWNER shipwright"
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "datname = 'custom_ts_db'"
+      - notMatchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "shipwright_task_store"
+
+  - it: tracks a custom chat.database.name in BOTH the CREATE and the guard
+    set:
+      chat.database.name: custom_chat_db
+    asserts:
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "CREATE DATABASE custom_chat_db OWNER shipwright"
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "datname = 'custom_chat_db'"
+      - notMatchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "shipwright_chat"
+
+  - it: honors a custom postgresql.auth.username as the OWNER of every database
+    set:
+      postgresql.auth.username: appowner
+    asserts:
+      - matchRegex:
+          path: data["00-create-metrics-db.sql"]
+          pattern: "CREATE DATABASE shipwright_metrics OWNER appowner"
+      - matchRegex:
+          path: data["01-create-task-store-db.sql"]
+          pattern: "CREATE DATABASE shipwright_task_store OWNER appowner"
+      - matchRegex:
+          path: data["02-create-chat-db.sql"]
+          pattern: "CREATE DATABASE shipwright_chat OWNER appowner"
+
+  # ── gating ────────────────────────────────────────────────────────────────
+
+  - it: still creates every database when the consuming services are disabled
+    # Deliberate: the Bitnami subchart's tpl context is the SUBCHART root, so the
+    # scriptsConfigMap reference in values.yaml cannot be conditionally cleared.
+    # Pre-creating an unused empty database is cheaper than a dangling mount.
+    set:
+      metrics.enabled: false
+      taskStore.enabled: false
+      chat.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+      - exists:
+          path: data["00-create-metrics-db.sql"]
+      - exists:
+          path: data["01-create-task-store-db.sql"]
+      - exists:
+          path: data["02-create-chat-db.sql"]
+
+  - it: renders no initdb ConfigMap when the bundled PostgreSQL is disabled
+    set:
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

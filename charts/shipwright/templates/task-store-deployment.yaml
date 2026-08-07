@@ -22,6 +22,14 @@ spec:
         - name: {{ . }}
         {{- end }}
       {{- end }}
+      {{- if include "shipwright.taskStore.useBundledDatabase" . }}
+      # Only on the bundled-PostgreSQL path — an external database is the
+      # operator's to make reachable, and blocking on it here would be wrong.
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "shipwright.postgresql.fullname" . }} 5432; do echo "waiting for postgresql..."; sleep 2; done']
+      {{- end }}
       containers:
         - name: task-store
           image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.taskStore.image.repository "tag" (.Values.taskStore.image.tag | default .Chart.AppVersion)) | quote }}
@@ -47,14 +55,25 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           env:
-            # DATABASE_URL_SHIPWRIGHT_TASK_STORE sourced from an existing Secret.
-            # Defaults to "shipwright-secrets" (the canonical cluster secret name)
-            # but can be overridden via taskStore.database.existingSecret.
+            {{- if .Values.taskStore.database.existingSecret }}
+            # Bring-your-own Secret (the default, "shipwright-secrets"). The chart
+            # neither creates nor owns it — create it before deploying.
             - name: DATABASE_URL_SHIPWRIGHT_TASK_STORE
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.taskStore.database.existingSecret | default "shipwright-secrets" }}
+                  name: {{ .Values.taskStore.database.existingSecret }}
                   key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            {{- else if .Values.postgresql.enabled }}
+            # Chart-managed bundled-PostgreSQL path: the DSN is assembled in
+            # task-store-secret.yaml so the password stays out of plaintext env.
+            - name: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.taskStore.secretName" . }}
+                  key: DATABASE_URL_SHIPWRIGHT_TASK_STORE
+            {{- else }}
+            {{- fail "taskStore.database.existingSecret is required when postgresql.enabled=false" }}
+            {{- end }}
             {{- if .Values.taskStore.sentry.dsn.existingSecret }}
             - name: SENTRY_DSN
               valueFrom:
