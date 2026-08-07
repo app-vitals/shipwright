@@ -313,6 +313,40 @@ export function resolvePublicRepo(
   return env.SHIPWRIGHT_ADMIN_PUBLIC_REPO?.trim() || undefined;
 }
 
+/**
+ * Deployment-wide default env handed to EVERY agent's config bundle, merged
+ * underneath that agent's own env rows (per-agent values always win).
+ *
+ * This is what lets a Helm install supply one set of Claude credentials for the
+ * whole deployment instead of an operator pasting a token into each agent
+ * through the admin UI. Agents pick these up on their next config sync — no pod
+ * restart and no re-provision, so it also reaches already-running agents.
+ *
+ * Deliberately read from SHIPWRIGHT_AGENT_DEFAULT_-prefixed vars rather than
+ * bare ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN: the admin process must never
+ * hand out a credential it happens to hold for its own use. Opting in is
+ * explicit.
+ *
+ * Blank/whitespace values are treated as unset so an empty Helm value (the
+ * default) doesn't inject an empty credential that would mask a working
+ * per-agent one.
+ */
+export function resolveDefaultAgentEnv(
+  env: Record<string, string | undefined>,
+): Record<string, string> {
+  const mapping: Record<string, string> = {
+    SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY: "ANTHROPIC_API_KEY",
+    SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN: "CLAUDE_CODE_OAUTH_TOKEN",
+  };
+
+  const defaults: Record<string, string> = {};
+  for (const [source, target] of Object.entries(mapping)) {
+    const value = env[source]?.trim();
+    if (value) defaults[target] = value;
+  }
+  return defaults;
+}
+
 // startServer() is the process entrypoint: it runs the real migration
 // preflight, constructs a real PrismaClient (live DB connection), calls
 // Bun.serve to bind an actual socket, and mounts every sub-app. This is
@@ -427,6 +461,7 @@ async function startServer(): Promise<void> {
     sessionSecret,
     adminApiKeys,
     agentTokenService,
+    defaultAgentEnv: resolveDefaultAgentEnv(process.env),
   });
 
   root.route("/agents", runtimeApp);

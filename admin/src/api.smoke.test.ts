@@ -824,3 +824,101 @@ describe("combined server — regression guard: runtime middleware must not bloc
     expect(body.repos).toEqual([]);
   });
 });
+
+// ─── Deployment-wide default agent env ────────────────────────────────────────
+//
+// A Helm install supplies one set of Claude credentials for the whole deployment
+// (agent.credentials.*) instead of an operator pasting a token into every agent.
+// Admin merges those defaults UNDERNEATH each agent's own env rows when serving
+// the config bundle, so a per-agent value always wins. These tests pin that
+// precedence — getting it backwards would let a deployment-wide credential
+// silently override a deliberately-scoped per-agent one.
+
+describe("defaultAgentEnv merging in GET /:id/config", () => {
+  const AGENT_ID = "11111111-1111-1111-1111-111111111111";
+  const ADMIN_KEY = "sk_default_env_admin";
+
+  function buildApp(opts: {
+    bundleEnv?: Record<string, string>;
+    defaultAgentEnv?: Record<string, string>;
+  }) {
+    return createAgentRuntimeApp({
+      agentEnvService: {
+        async getConfigBundle() {
+          return {
+            agentId: AGENT_ID,
+            env: opts.bundleEnv ?? {},
+            allowedTools: [],
+          };
+        },
+      },
+      agentCronJobService: {
+        async list() {
+          return [];
+        },
+        async listWithRunSummary() {
+          return [];
+        },
+      },
+      agentService: {
+        async getById() {
+          return {
+            id: AGENT_ID,
+            name: "Test Agent",
+            repos: [],
+            authorAllowlist: [],
+          };
+        },
+      },
+      agentPluginService: {
+        async listEnabled() {
+          return [];
+        },
+      },
+      adminApiKeys: parseAdminApiKeys(`admin:${ADMIN_KEY}:*`),
+      agentTokenService: { validate: async () => null },
+      sessionSecret: SESSION_SECRET,
+      defaultAgentEnv: opts.defaultAgentEnv,
+    });
+  }
+
+  async function fetchEnv(app: ReturnType<typeof buildApp>) {
+    const res = await app.request(`/${AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${ADMIN_KEY}` },
+    });
+    expect(res.status).toBe(200);
+    return (await res.json()).env as Record<string, string>;
+  }
+
+  test("an agent with no env rows inherits the deployment-wide default", async () => {
+    const env = await fetchEnv(
+      buildApp({ defaultAgentEnv: { ANTHROPIC_API_KEY: "deployment-wide" } }),
+    );
+    expect(env.ANTHROPIC_API_KEY).toBe("deployment-wide");
+  });
+
+  test("a per-agent value OVERRIDES the deployment-wide default", async () => {
+    const env = await fetchEnv(
+      buildApp({
+        bundleEnv: { ANTHROPIC_API_KEY: "per-agent" },
+        defaultAgentEnv: { ANTHROPIC_API_KEY: "deployment-wide" },
+      }),
+    );
+    expect(env.ANTHROPIC_API_KEY).toBe("per-agent");
+  });
+
+  test("defaults and per-agent rows for different keys are unioned", async () => {
+    const env = await fetchEnv(
+      buildApp({
+        bundleEnv: { AGENT_ONLY: "a" },
+        defaultAgentEnv: { CLAUDE_CODE_OAUTH_TOKEN: "d" },
+      }),
+    );
+    expect(env).toEqual({ AGENT_ONLY: "a", CLAUDE_CODE_OAUTH_TOKEN: "d" });
+  });
+
+  test("omitting defaultAgentEnv leaves the bundle env untouched", async () => {
+    const env = await fetchEnv(buildApp({ bundleEnv: { ONLY: "x" } }));
+    expect(env).toEqual({ ONLY: "x" });
+  });
+});

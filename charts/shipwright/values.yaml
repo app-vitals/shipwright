@@ -320,6 +320,39 @@ agent:
   service:
     port: 3000
   replicas: 1
+  # -- Deployment-wide Claude credentials handed to EVERY provisioned agent.
+  #
+  # Agents fetch credentials from the admin service on each config sync. The
+  # admin merges these defaults UNDERNEATH each agent's own env rows, so a
+  # per-agent value set through the admin UI always wins — this is a floor, not
+  # an override. Changes reach already-running agents on their next sync, with no
+  # pod restart and no re-provision.
+  #
+  # Without this, every agent needs its Claude token pasted in by hand through
+  # the admin UI before it can do any work.
+  #
+  # Supply exactly one of anthropicApiKey / claudeCodeOauthToken (an OAuth token
+  # from `claude /oauth-token` is the usual choice for personal use). Leave both
+  # empty to keep credentials strictly per-agent.
+  #
+  # SECURITY: inline values land in a chart-managed Secret, which means they sit
+  # in your values file and in Helm release history. Prefer existingSecret for
+  # anything beyond local development.
+  credentials:
+    # -- Whether to wire deployment-wide agent credentials at all.
+    enabled: true
+    # -- Source the credentials from a caller-managed Secret instead of the
+    # inline values below. Must supply the keys named by anthropicApiKeyRef /
+    # claudeCodeOauthTokenRef.
+    existingSecret: ""
+    # -- Key in existingSecret holding the Anthropic API key.
+    anthropicApiKeyRef: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
+    # -- Key in existingSecret holding the Claude Code OAuth token.
+    claudeCodeOauthTokenRef: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
+    # -- Inline Anthropic API key (chart-managed Secret). Local dev only.
+    anthropicApiKey: ""
+    # -- Inline Claude Code OAuth token (chart-managed Secret). Local dev only.
+    claudeCodeOauthToken: ""
   # -- Provisioning controls for the agent's persistent home / workspace.
   provisioning:
     # -- Whether the admin service provisions agent workloads at runtime. OFF by
@@ -360,9 +393,9 @@ agent:
     # When empty (the default), PVCs are named `{sanitizedAgentId}-home`.
     pvcNameTemplate: ""
     # -- Provisioned workspace PVCs: created per-agent when the provisioner spins
-    # up a new agent pod. These settings are surfaced for the agent manifest
-    # builder's future use. NOTE: buildProvisioner does not read these as env
-    # today, so they are NOT injected into the admin Deployment.
+    # up a new agent pod. `size` is injected into the admin Deployment as
+    # SHIPWRIGHT_AGENT_PVC_STORAGE_GI; leaving it unset makes the provisioner fall
+    # back to its own 40Gi default. Must be a whole number of Gi.
     pvc:
       size: 2Gi
       # -- StorageClass for provisioned agent PVCs. Empty uses the cluster default.

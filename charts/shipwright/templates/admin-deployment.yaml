@@ -219,12 +219,53 @@ spec:
             # agent.provisioning.apiUrl for an external gateway.
             - name: SHIPWRIGHT_API_URL
               value: {{ .Values.agent.provisioning.apiUrl | default (printf "http://%s:%v" (include "shipwright.admin.fullname" .) .Values.admin.service.port) | quote }}
+            # Size of the workspace PVC the provisioner creates per agent. Without
+            # this the provisioner falls back to its own 40Gi default, which is far
+            # too large for a laptop cluster and silently over-requests everywhere.
+            - name: SHIPWRIGHT_AGENT_PVC_STORAGE_GI
+              value: {{ .Values.agent.provisioning.pvc.size | trimSuffix "Gi" | quote }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
             # PVC name template: when set, the provisioner substitutes {name} with
             # the agent's human-readable name (slug) to derive the PVC name. Used
             # when migrating from static agents with fixed naming conventions.
             - name: SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE
               value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.agent.credentials.enabled }}
+            {{- /* Deployment-wide agent credentials. Admin merges these under each
+                   agent's own env rows when serving GET /agents/:id/config, so a
+                   per-agent value always wins. Prefixed so admin never hands out
+                   a credential it holds for its own use — see
+                   resolveDefaultAgentEnv in admin/src/main.ts. */}}
+            {{- if .Values.agent.credentials.existingSecret }}
+            - name: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.credentials.existingSecret }}
+                  key: {{ .Values.agent.credentials.anthropicApiKeyRef }}
+                  optional: true
+            - name: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.agent.credentials.existingSecret }}
+                  key: {{ .Values.agent.credentials.claudeCodeOauthTokenRef }}
+                  optional: true
+            {{- else }}
+            {{- with .Values.agent.credentials.anthropicApiKey }}
+            - name: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.agent.credentialsSecretName" $ }}
+                  key: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
+            {{- end }}
+            {{- with .Values.agent.credentials.claudeCodeOauthToken }}
+            - name: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.agent.credentialsSecretName" $ }}
+                  key: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- if .Values.agent.voice.enabled }}
