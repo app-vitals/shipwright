@@ -237,10 +237,10 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(siblingCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 3500);
     expect(section).toContain(
-      "[skip-reason:dev-task:same-branch-sibling-busy:{branch}]",
+      "[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]",
     );
     const skipReasonIdx = section.indexOf(
-      "[skip-reason:dev-task:same-branch-sibling-busy:{branch}]",
+      "[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]",
     );
     const silentIdx = section.indexOf("[silent]");
     expect(silentIdx).toBeGreaterThan(-1);
@@ -261,6 +261,32 @@ describe("Step 1 — same-branch sibling ordering check (bundled-task deferral)"
     expect(siblingCheckIdx).toBeGreaterThan(-1);
     const section = content.slice(siblingCheckIdx, siblingCheckIdx + 1000);
     expect(section).toMatch(/regardless of this task's own status/i);
+  });
+});
+
+describe("dev-task.md Step 1 — Dependency Check (pending tasks only)", () => {
+  it("tags an unsatisfied dependency defer with [skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}] before [silent]", () => {
+    const depCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    expect(depCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(depCheckIdx, depCheckIdx + 2500);
+    expect(section).toContain(
+      "[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]",
+    );
+    const skipReasonIdx = section.indexOf(
+      "[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]",
+    );
+    const silentIdx = section.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("names the specific unsatisfied dependency id in the skip-reason tag", () => {
+    const depCheckIdx = content.indexOf("### Dependency Check (pending tasks only)");
+    expect(depCheckIdx).toBeGreaterThan(-1);
+    const section = content.slice(depCheckIdx, depCheckIdx + 2500);
+    // Verify the prose mentions interpolating the dep-id
+    expect(section).toMatch(/interpolating.{0,60}(first )?unsatisf/is);
+    expect(section).toMatch(/dependency.{0,40}id|dep-id/is);
   });
 });
 

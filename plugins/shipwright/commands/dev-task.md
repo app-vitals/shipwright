@@ -69,8 +69,12 @@ same rules as the task store's `?ready=true` filter (see the `task-store` skill)
 4. Anything else → **not satisfied**
 
 Fetch each dependency (`GET /tasks/{dep-id}`) and evaluate the rules above. If any
-dependency is not satisfied, respond `[silent]` and stop — do not claim the task. (No
-empty-`dependencies` array means there is nothing to check — proceed.)
+dependency is not satisfied, emit `[skip-reason:dev-task:deferred:dependency-unsatisfied:{dep-id}]`
+(interpolating the first unsatisfied dependency's task id) immediately before the `[silent]` marker
+— this defer is a legitimate backstop blocking on another prerequisite, not a genuine no-op,
+and without the tagged reason the loop orchestrator's generic `[silent]` handling would count
+it toward `SKIP_BLOCK_THRESHOLD`, risking a false HITL auto-block. Then respond `[silent]` and
+stop — do not claim the task. (No empty-`dependencies` array means there is nothing to check — proceed.)
 
 **Validate required fields.** If the selected task has no `branch` field (null, undefined, or empty string), do not proceed. Post:
 
@@ -138,7 +142,7 @@ Print:
 ```
 ⏭ Deferring to same-branch sibling {sibling-id} (in_progress, heartbeat fresh) — released own claim.
 ```
-Emit `[skip-reason:dev-task:same-branch-sibling-busy:{branch}]` immediately before the
+Emit `[skip-reason:dev-task:deferred:same-branch-sibling-busy:{branch}]` immediately before the
 `[silent]` marker (interpolating `{branch}` from the value checked above) — this defer is a
 legitimate backstop, not a genuine no-op, and without the tagged reason the loop
 orchestrator's generic `[silent]` handling would count it toward `SKIP_BLOCK_THRESHOLD`,

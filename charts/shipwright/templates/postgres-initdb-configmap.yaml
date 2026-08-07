@@ -1,0 +1,66 @@
+{{- if .Values.postgresql.enabled }}
+{{- /*
+  Parent-chart ConfigMap holding the PostgreSQL first-boot init scripts that
+  create the SEPARATE per-service databases (metrics, task-store, chat). The
+  Bitnami subchart mounts it at /docker-entrypoint-initdb.d via
+  postgresql.primary.initdb.scriptsConfigMap (see values.yaml), so the scripts
+  run once at initdb time as the postgres superuser over the local socket.
+
+  Each Prisma/event-store service owns its OWN database. Sharing one would leave
+  a non-empty schema and break `prisma migrate deploy`'s baseline (Prisma P3005),
+  which is why admin keeps postgresql.auth.database to itself and the other three
+  are created here.
+
+  FIRST BOOT ONLY: initdb scripts run exclusively when the data volume is empty.
+  They do nothing for an already-initialized PVC — so enabling task-store or chat
+  on an existing release would otherwise fail at boot with "database does not
+  exist". templates/postgres-db-bootstrap-job.yaml runs the same guarded SQL as a
+  post-install/post-upgrade hook and is the path that actually covers that case;
+  this ConfigMap is the zero-extra-pod fast path for fresh installs.
+
+  GATING: rendered whenever the bundled PostgreSQL subchart is enabled — NOT
+  additionally on metrics.enabled / taskStore.enabled / chat.enabled. values.yaml
+  statically references this ConfigMap via
+  postgresql.primary.initdb.scriptsConfigMap, and the Bitnami subchart's tpl `$`
+  context is the SUBCHART root (no `.Values.metrics`), so that reference cannot be
+  conditionally cleared when a service is disabled. Gating on postgresql.enabled
+  alone keeps the subchart's volume reference valid in every case. Pre-creating an
+  unused empty database is cheap, idempotent, and avoids a dangling mount.
+  When postgresql.enabled=false, neither the subchart nor this ConfigMap renders.
+
+  Why a templated ConfigMap instead of a static postgresql.primary.initdb.scripts
+  block: each created database name is rendered from the SAME helper that
+  assembles that service's connection string (shipwright.metrics.databaseName,
+  shipwright.taskStore.databaseName, shipwright.chat.databaseName). Overriding
+  e.g. chat.database.name keeps the created database and the URL the service
+  connects to in sync automatically, with no manual edit here.
+
+  NAME: "<release>-metrics-initdb" — a LEGACY name deliberately preserved now
+  that this ConfigMap covers three databases rather than just metrics. See
+  shipwright.postgresql.initdbConfigMapName for why renaming it would break
+  operators who pinned scriptsConfigMap in their own values.
+
+  Idempotent via the WHERE NOT EXISTS guard (templated in BOTH the CREATE and the
+  guard); OWNER is the application user from postgresql.auth.username.
+*/}}
+{{- $owner := .Values.postgresql.auth.username }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "shipwright.postgresql.initdbConfigMapName" . }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+data:
+  00-create-metrics-db.sql: |
+    {{- $db := include "shipwright.metrics.databaseName" . }}
+    SELECT 'CREATE DATABASE {{ $db }} OWNER {{ $owner }}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ $db }}')\gexec
+  01-create-task-store-db.sql: |
+    {{- $db := include "shipwright.taskStore.databaseName" . }}
+    SELECT 'CREATE DATABASE {{ $db }} OWNER {{ $owner }}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ $db }}')\gexec
+  02-create-chat-db.sql: |
+    {{- $db := include "shipwright.chat.databaseName" . }}
+    SELECT 'CREATE DATABASE {{ $db }} OWNER {{ $owner }}'
+    WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ $db }}')\gexec
+{{- end }}
