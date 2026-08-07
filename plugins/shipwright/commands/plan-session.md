@@ -215,6 +215,8 @@ Tasks that are tightly coupled — where splitting into separate PRs would produ
 
 **⚠ `allow_auto_merge` bypasses the bundle gate.** GitHub's `allow_auto_merge` causes a PR to merge automatically as soon as checks pass — before the deploy cron runs its bundle-completeness check. Repos that use bundles **must keep `allow_auto_merge` disabled** (the repository default). If you need auto-merge for a specific flow (e.g., automated changelog PRs driven by a dedicated workflow), use a PAT-driven merge step scoped to that workflow only, not a repo-wide setting. On 2026-06-16 a bundle shipped with an incomplete sibling because `allow_auto_merge` was temporarily enabled on the repo; the bundle gate never fired.
 
+**Same-branch scheduling exclusivity is automatic — no dependency edge needed.** Bundle-mate tasks that share a `branch` but have no `dependencies` edge between them still never dispatch concurrently: `task-store/src/ready.ts`'s ready-filter excludes a pending task from the ready set whenever another task on the same branch is `in_progress` with a fresh claim, serializing same-branch siblings automatically. This means the Dependency Map (Step 5's summary table) can legitimately show no edge between two bundle-mates even though they still execute one at a time — don't read a missing edge as a scheduling bug. The complementary backstop for the explicit-task-id dispatch path (which bypasses the ready-filter entirely, since it targets a task id directly rather than pulling from the ready set) is `dev-task.md`'s Same-Branch Sibling Check — the two mechanisms cover different dispatch paths and are not redundant with each other.
+
 ### Dependency Map
 
 Present the map in two forms:
