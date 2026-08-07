@@ -321,6 +321,25 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(unresolvedSection).toContain("hasAnyReviewAtHead");
     expect(unresolvedSection).toContain("issue-level PR comments");
   });
+
+  it("Step 5's Unresolved Comment Check tags the defer with a namespaced skip-reason marker before [silent], exempting it from the HITL auto-block skip counter (STD-1.4)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+
+    const unresolvedSection = section.slice(unresolvedIdx);
+    expect(unresolvedSection).toContain(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const skipReasonIdx = unresolvedSection.indexOf(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const silentIdx = unresolvedSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
 });
 
 describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
@@ -420,6 +439,54 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
 
     expect(section).toContain("cross-task-store");
     expect(section.toLowerCase()).toContain("stop");
+  });
+
+  it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // The section must contain a conditional release call referencing PRECLAIM_RECORD_ID
+    expect(section).toContain("/prs/");
+    expect(section).toContain("/release");
+    expect(section).toContain("PRECLAIM_RECORD_ID");
+  });
+
+  it("the pre-claim release call appears before the 'Skipping' message", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const releaseIdx = section.indexOf("/release");
+    const skippingIdx = section.indexOf("Skipping #{pr}");
+
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(skippingIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeLessThan(skippingIdx);
+  });
+
+  it("the release call is conditional on PRECLAIM_RECORD_ID being non-empty", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // Should reference checking if PRECLAIM_RECORD_ID is set
+    const releaseIdx = section.indexOf("/release");
+    const releaseBlock = section.slice(Math.max(0, releaseIdx - 300), releaseIdx + 100);
+
+    expect(releaseBlock).toMatch(/if.*PRECLAIM_RECORD_ID|PRECLAIM_RECORD_ID.*if|-z.*PRECLAIM_RECORD_ID|-n.*PRECLAIM_RECORD_ID/i);
   });
 });
 
