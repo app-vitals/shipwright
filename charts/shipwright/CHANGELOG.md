@@ -63,10 +63,13 @@ independent of `appVersion`. CI enforces this with
   receive their seed tokens and their `*_AGENTS_URL` / `*_AGENTS_API_KEY`
   scope-resolver pairs. None of these were previously rendered at all.
 - **Metrics URL auto-defaulting.** `METRICS_ADMIN_URL` and `METRICS_TASK_STORE_URL`
-  now fall back to the in-cluster Service DNS names. This is load-bearing: without
-  `METRICS_TASK_STORE_URL` the provider selector falls through to SQLite, which has
-  no writable path in the published image and crashes on boot (`SQLITE_CANTOPEN`).
-  An explicit `metrics.provider.*Url` still wins.
+  now fall back to the in-cluster Service DNS names whenever the token mesh is
+  wired (`internal.enabled=true`, the default) — mirroring the gate on their
+  paired tokens, so `internal.enabled=false` doesn't leave metrics with a URL but
+  no credential. This is load-bearing: without `METRICS_TASK_STORE_URL` the
+  provider selector falls through to SQLite, which has no writable path in the
+  published image and crashes on boot (`SQLITE_CANTOPEN`). An explicit
+  `metrics.provider.*Url` still wins regardless of `internal.enabled`.
 - `admin.apiKeys.extra` — additional `name:token:scope` entries merged into
   `SHIPWRIGHT_ADMIN_API_KEYS`.
 - `internal.enabled` / `internal.existingSecret` — disable the mesh entirely, or

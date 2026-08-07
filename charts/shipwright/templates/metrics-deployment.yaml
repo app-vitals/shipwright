@@ -91,7 +91,7 @@ spec:
                    full-stack install needs no hand-written URLs. An explicit
                    metrics.provider.adminUrl still wins (external admin). */}}
             {{- $adminUrl := .Values.metrics.provider.adminUrl }}
-            {{- if and (not $adminUrl) .Values.admin.enabled }}
+            {{- if and (not $adminUrl) .Values.admin.enabled (include "shipwright.internal.wired" .) }}
             {{- $adminUrl = include "shipwright.admin.serviceUrl" . }}
             {{- end }}
             {{- if $adminUrl }}
@@ -110,7 +110,7 @@ spec:
                    through to SQLite, which has no writable path in the published
                    image and crashes on boot with SQLITE_CANTOPEN. */}}
             {{- $taskStoreUrl := .Values.metrics.provider.taskStoreUrl }}
-            {{- if and (not $taskStoreUrl) .Values.taskStore.enabled }}
+            {{- if and (not $taskStoreUrl) .Values.taskStore.enabled (include "shipwright.internal.wired" .) }}
             {{- $taskStoreUrl = include "shipwright.taskStore.serviceUrl" . }}
             {{- end }}
             {{- if $taskStoreUrl }}

@@ -510,6 +510,30 @@ tests:
                 name: r-shipwright-internal
                 key: INTERNAL_API_KEY
 
+  - it: internal.enabled=false also omits the metrics URL auto-defaults (no half-wired pod)
+    # The URL auto-default is paired with the token above — both must be gated
+    # on the same condition, otherwise internal.enabled=false leaves metrics with
+    # METRICS_TASK_STORE_URL set but no METRICS_TASK_STORE_TOKEN, which flips the
+    # provider selector into TASKSTORE mode with no credential instead of the
+    # documented pre-1.9 no-op.
+    template: templates/metrics-deployment.yaml
+    set:
+      internal.enabled: false
+      metrics.enabled: true
+      admin.enabled: true
+      taskStore.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: "http://r-shipwright-admin:3001"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: "http://r-shipwright-task-store:3000"
+
   - it: extraEnv still renders LAST so hand-wired overrides beat the mesh
     # Kubernetes resolves duplicate env names to the LAST occurrence. Production
     # hand-wires these vars, so this ordering is what keeps it working.
