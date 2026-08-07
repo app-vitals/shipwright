@@ -64,6 +64,24 @@ independent of `appVersion`. CI enforces this with
 - `taskStore.extraEnv` / `chat.extraEnv` still render **last**, so hand-wired
   overrides continue to win over anything the chart emits.
 
+## [1.7.195] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.195 triggered by release tag(s): `agent-v1.125.0`
+
+## [1.7.194] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.194 triggered by release tag(s): `agent-v1.124.3`
+
+## [1.7.193] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.193 triggered by release tag(s): `agent-v1.124.2`
+
 ## [1.7.192] - 2026-08-05
 
 ### Changed

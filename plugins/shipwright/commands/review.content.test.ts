@@ -321,6 +321,25 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(unresolvedSection).toContain("hasAnyReviewAtHead");
     expect(unresolvedSection).toContain("issue-level PR comments");
   });
+
+  it("Step 5's Unresolved Comment Check tags the defer with a namespaced skip-reason marker before [silent], exempting it from the HITL auto-block skip counter (STD-1.4)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+
+    const unresolvedSection = section.slice(unresolvedIdx);
+    expect(unresolvedSection).toContain(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const skipReasonIdx = unresolvedSection.indexOf(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const silentIdx = unresolvedSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
 });
 
 describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
@@ -420,6 +439,188 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
 
     expect(section).toContain("cross-task-store");
     expect(section.toLowerCase()).toContain("stop");
+  });
+
+  it("the graphql query includes submittedAt on review nodes", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("submittedAt");
+  });
+
+  it("the graphql query includes comments with author and createdAt fields", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments");
+    expect(section).toContain("createdAt");
+  });
+
+  it("the graphql query paginates comments with last: 50, not first: 50, matching check-review.ts's fetchPrReviews", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments(last: 50)");
+    expect(section).not.toContain("comments(first: 50)");
+  });
+
+  it("the graphql query includes the PR author login", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("author {");
+    expect(section).toContain("login");
+  });
+
+  it("the prose documents the fresh-author-reply exception and that it mirrors check-review.ts", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("fresh");
+    expect(section).toContain("reply");
+    expect(section).toContain("check-review.ts");
+  });
+
+  it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // The section must contain a conditional release call referencing PRECLAIM_RECORD_ID
+    expect(section).toContain("/prs/");
+    expect(section).toContain("/release");
+    expect(section).toContain("PRECLAIM_RECORD_ID");
+  });
+
+  it("the pre-claim release call appears before the 'Skipping' message", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const releaseIdx = section.indexOf("/release");
+    const skippingIdx = section.indexOf("Skipping #{pr}");
+
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(skippingIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeLessThan(skippingIdx);
+  });
+
+  it("the release call is conditional on PRECLAIM_RECORD_ID being non-empty", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // Should reference checking if PRECLAIM_RECORD_ID is set
+    const releaseIdx = section.indexOf("/release");
+    const releaseBlock = section.slice(Math.max(0, releaseIdx - 300), releaseIdx + 100);
+
+    expect(releaseBlock).toMatch(/if.*PRECLAIM_RECORD_ID|PRECLAIM_RECORD_ID.*if|-z.*PRECLAIM_RECORD_ID|-n.*PRECLAIM_RECORD_ID/i);
+  });
+});
+
+describe("review.md — RVD-1.2 terminal-review skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the terminal-review skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = section.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = section.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops with no claim, no checkout after emitting the markers", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("Stop.");
+    expect(section).toContain("No claim, no checkout");
+  });
+});
+
+describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the already-reviewed-at-commit skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = dedupSection.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = dedupSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops after emitting the markers", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain("Stop.");
   });
 });
 
