@@ -441,6 +441,71 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section.toLowerCase()).toContain("stop");
   });
 
+  it("the graphql query includes submittedAt on review nodes", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("submittedAt");
+  });
+
+  it("the graphql query includes comments with author and createdAt fields", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments");
+    expect(section).toContain("createdAt");
+  });
+
+  it("the graphql query paginates comments with last: 50, not first: 50, matching check-review.ts's fetchPrReviews", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("comments(last: 50)");
+    expect(section).not.toContain("comments(first: 50)");
+  });
+
+  it("the graphql query includes the PR author login", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("author {");
+    expect(section).toContain("login");
+  });
+
+  it("the prose documents the fresh-author-reply exception and that it mirrors check-review.ts", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("fresh");
+    expect(section).toContain("reply");
+    expect(section).toContain("check-review.ts");
+  });
+
   it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
@@ -487,6 +552,75 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     const releaseBlock = section.slice(Math.max(0, releaseIdx - 300), releaseIdx + 100);
 
     expect(releaseBlock).toMatch(/if.*PRECLAIM_RECORD_ID|PRECLAIM_RECORD_ID.*if|-z.*PRECLAIM_RECORD_ID|-n.*PRECLAIM_RECORD_ID/i);
+  });
+});
+
+describe("review.md — RVD-1.2 terminal-review skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the terminal-review skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = section.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = section.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops with no claim, no checkout after emitting the markers", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("Stop.");
+    expect(section).toContain("No claim, no checkout");
+  });
+});
+
+describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the already-reviewed-at-commit skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = dedupSection.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = dedupSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops after emitting the markers", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain("Stop.");
   });
 });
 
