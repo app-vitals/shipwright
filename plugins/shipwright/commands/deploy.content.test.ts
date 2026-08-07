@@ -10,6 +10,12 @@ beforeAll(() => {
   content = readFileSync(DEPLOY_MD_PATH, "utf-8");
 });
 
+function extractStep2aSection(md: string): string {
+  const match = md.match(/### 2a\. Own-PRs-Only Check[\s\S]*?(?=\n### 2b)/);
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 function extractStep5aSection(md: string): string {
   const match = md.match(
     /### 5a\. No-Pipeline Detection[\s\S]*?(?=\n#{2,3} |\n---)/,
@@ -41,6 +47,16 @@ describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
     const hasSkipSilently =
       content.includes("skip it silently") || content.includes("skip silently");
     expect(hasSkipSilently).toBe(true);
+  });
+
+  it("Step 2a emits the explicit [silent] marker for the own-PRs-only check, matching the file's convention", () => {
+    const step2aSection = extractStep2aSection(content);
+    expect(step2aSection).toContain("[silent]");
+  });
+
+  it("Step 2a's own-PRs-only check does not add a [skip-reason:...] tag — a genuine not-applicable case, not a defer", () => {
+    const step2aSection = extractStep2aSection(content);
+    expect(step2aSection).not.toContain("[skip-reason:");
   });
 });
 
@@ -738,16 +754,25 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
     return match?.[0] ?? "";
   }
 
-  it("Step 2b's bundle-gate-block text includes [silent] and a [skip-reason:deploy:bundle-incomplete: marker", () => {
+  it("Step 2b's bundle-gate-block text includes [silent] and a [skip-reason:deploy:deferred:bundle-incomplete: marker", () => {
     const step2bSection = extractStep2bSection(content);
     expect(step2bSection).toContain("[silent]");
-    expect(step2bSection).toContain("[skip-reason:deploy:bundle-incomplete:");
+    expect(step2bSection).toContain(
+      "[skip-reason:deploy:deferred:bundle-incomplete:",
+    );
   });
 
   it("Step 2b's skip-reason marker interpolates {HEAD_BRANCH}, matching the placeholder style used elsewhere in this file", () => {
     const step2bSection = extractStep2bSection(content);
     expect(step2bSection).toContain(
-      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+      "[skip-reason:deploy:deferred:bundle-incomplete:{HEAD_BRANCH}]",
+    );
+  });
+
+  it("does not use the old pre-taxonomy skip-reason tag (deploy:bundle-incomplete without the deferred segment)", () => {
+    const step2bSection = extractStep2bSection(content);
+    expect(step2bSection).not.toContain(
+      "[skip-reason:deploy:bundle-incomplete:",
     );
   });
 
@@ -757,7 +782,7 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
     expect(stopHereIdx).toBeGreaterThan(-1);
     const silentIdx = step2bSection.indexOf("[silent]", stopHereIdx);
     const skipReasonIdx = step2bSection.indexOf(
-      "[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]",
+      "[skip-reason:deploy:deferred:bundle-incomplete:{HEAD_BRANCH}]",
       stopHereIdx,
     );
     expect(silentIdx).toBeGreaterThan(-1);

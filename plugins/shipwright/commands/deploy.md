@@ -65,7 +65,7 @@ AGENT_LOGIN=$(gh api user --jq '.login')
 PR_AUTHOR=$(gh pr view {pr} --repo {org}/{repo} --json author --jq '.author.login')
 ```
 
-If `PR_AUTHOR != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this deploy pipeline.
+If `PR_AUTHOR != AGENT_LOGIN`, this PR was not authored by the current agent — skip it silently and stop. Only PRs we authored go through this deploy pipeline. Respond `[silent]`.
 
 Print:
 ```
@@ -96,7 +96,7 @@ INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
   {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
   Waiting for bundle-mates to reach pr_open before deploying.
 ```
-Stop here. There is no other candidate to fall back to. Emit `[skip-reason:deploy:bundle-incomplete:{HEAD_BRANCH}]`
+Stop here. There is no other candidate to fall back to. Emit `[skip-reason:deploy:deferred:bundle-incomplete:{HEAD_BRANCH}]`
 alongside `[silent]` (interpolating `{HEAD_BRANCH}` from the value fetched above) — order
 relative to `[silent]` does not matter, both are recognized regardless of position. The
 skip-reason marker records exactly which branch's bundle gate blocked this dispatch in the
