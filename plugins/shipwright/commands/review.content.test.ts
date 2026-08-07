@@ -555,6 +555,75 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
   });
 });
 
+describe("review.md — RVD-1.2 terminal-review skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the terminal-review skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = section.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = section.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops with no claim, no checkout after emitting the markers", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("Stop.");
+    expect(section).toContain("No claim, no checkout");
+  });
+});
+
+describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
+  it("the already-reviewed-at-commit skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const skipReasonIdx = dedupSection.indexOf(
+      "[skip-reason:review:deferred:already-reviewed-at-head:{pr}]",
+    );
+    const silentIdx = dedupSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
+
+  it("still stops after emitting the markers", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain("Stop.");
+  });
+});
+
 describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () => {
   it("Step 5's Unresolved Comment Check PATCH call also sets reviewedCommitSha alongside commitSha", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
