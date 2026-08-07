@@ -1,0 +1,551 @@
+suite: inter-service token mesh — both sides of every producer/consumer pair
+# The load-bearing suite for a zero-hand-Secret install. A token is only useful
+# if the service that SEEDS it and the service that PRESENTS it resolve to the
+# same Secret name AND the same key. Each pair below asserts both sides against
+# the same literal, so a rename on one side fails here rather than silently
+# 401ing at runtime.
+#
+# Pairs:
+#   TASK_STORE_ADMIN_TOKEN  task-store seeds -> admin + metrics consume
+#   CHAT_ADMIN_TOKEN        chat seeds       -> admin consumes
+#   INTERNAL_API_KEY        admin accepts (via SHIPWRIGHT_ADMIN_API_KEYS)
+#                                            -> metrics + task-store + chat present
+release:
+  name: r
+  namespace: shipwright
+set:
+  taskStore.enabled: true
+  chat.enabled: true
+  taskStore.database.existingSecret: ""
+  chat.database.existingSecret: ""
+  postgresql.auth.password: testpw
+tests:
+  # ── pair 1: task-store admin token ────────────────────────────────────────
+
+  - it: task-store SEEDS the task-store admin token from the internal Secret
+    template: templates/task-store-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_STORE_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+
+  - it: admin CONSUMES the same task-store admin token
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+
+  - it: metrics CONSUMES the same task-store admin token
+    # One token serves both consumers — the seeded token is admin-scoped
+    # (agentId=null), so metrics does not need a separate credential.
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+
+  # ── pair 2: chat admin token ──────────────────────────────────────────────
+
+  - it: chat SEEDS the chat admin token from the internal Secret
+    template: templates/chat-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: CHAT_ADMIN_TOKEN
+
+  - it: admin CONSUMES the same chat admin token
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: CHAT_ADMIN_TOKEN
+
+  # ── pair 3: internal API key ──────────────────────────────────────────────
+
+  - it: admin ACCEPTS the internal key via the composed SHIPWRIGHT_ADMIN_API_KEYS
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+
+  - it: metrics PRESENTS the same internal key
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  - it: task-store PRESENTS the same internal key to the admin scope resolver
+    template: templates/task-store-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  - it: chat PRESENTS the same internal key to the admin scope resolver
+    template: templates/chat-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  # ── in-cluster service URLs ───────────────────────────────────────────────
+
+  - it: admin points at the in-cluster task-store Service
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_URL
+            value: "http://r-shipwright-task-store:3000"
+
+  - it: admin points at the in-cluster chat Service
+    template: templates/admin-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_URL
+            value: "http://r-shipwright-chat:3000"
+
+  - it: task-store points its scope resolver at the in-cluster admin Service
+    template: templates/task-store-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_URL
+            value: "http://r-shipwright-admin:3001"
+
+  - it: chat points its scope resolver at the in-cluster admin Service
+    template: templates/chat-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_AGENTS_URL
+            value: "http://r-shipwright-admin:3001"
+
+  - it: metrics auto-defaults its admin and task-store URLs to in-cluster Services
+    # Load-bearing: without METRICS_TASK_STORE_URL the provider selector falls
+    # through to SQLite, which has no writable path in the published image and
+    # crashes on boot with SQLITE_CANTOPEN.
+    template: templates/metrics-deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: "http://r-shipwright-admin:3001"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: "http://r-shipwright-task-store:3000"
+
+  - it: an explicit metrics.provider URL still wins over the auto-default
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.adminUrl: https://admin.example.com
+      metrics.provider.taskStoreUrl: https://ts.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: https://admin.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: https://ts.example.com
+
+  # ── gating: mesh is only wired where the peer exists ──────────────────────
+
+  - it: omits task-store wiring from admin when task-store is disabled
+    template: templates/admin-deployment.yaml
+    set:
+      taskStore.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_URL
+            value: "http://r-shipwright-task-store:3000"
+      # ...but admin still accepts the internal key for metrics/chat.
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+
+  - it: omits the metrics task-store token when task-store is disabled
+    template: templates/metrics-deployment.yaml
+    set:
+      taskStore.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+
+  - it: omits task-store scope-resolver wiring when admin is disabled
+    template: templates/task-store-deployment.yaml
+    set:
+      admin.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_URL
+            value: "http://r-shipwright-admin:3001"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  - it: omits chat scope-resolver wiring when admin is disabled
+    template: templates/chat-deployment.yaml
+    set:
+      admin.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_AGENTS_URL
+            value: "http://r-shipwright-admin:3001"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  # ── caller overrides always win ───────────────────────────────────────────
+
+  - it: internal.existingSecret redirects admin's mesh refs to the caller's Secret
+    template: templates/admin-deployment.yaml
+    set:
+      internal.existingSecret: my-mesh-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: TASK_STORE_ADMIN_TOKEN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+
+  - it: internal.existingSecret redirects the task-store seed and resolver key
+    template: templates/task-store-deployment.yaml
+    set:
+      internal.existingSecret: my-mesh-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_STORE_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: TASK_STORE_ADMIN_TOKEN
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: INTERNAL_API_KEY
+
+  - it: internal.existingSecret redirects the chat seed and resolver key
+    template: templates/chat-deployment.yaml
+    set:
+      internal.existingSecret: my-mesh-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: CHAT_ADMIN_TOKEN
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: INTERNAL_API_KEY
+
+  - it: internal.existingSecret redirects the metrics consumer keys
+    template: templates/metrics-deployment.yaml
+    set:
+      internal.existingSecret: my-mesh-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: TASK_STORE_ADMIN_TOKEN
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-mesh-secret
+                key: INTERNAL_API_KEY
+
+  - it: chat.adminToken.existingSecret wins on the chat seeding side
+    template: templates/chat-deployment.yaml
+    set:
+      chat.adminToken.existingSecret: my-chat-tokens
+      chat.adminToken.key: CHAT_ADMIN_RAW
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-chat-tokens
+                key: CHAT_ADMIN_RAW
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: CHAT_ADMIN_TOKEN
+
+  - it: chat.adminToken.existingSecret wins on the admin consuming side
+    template: templates/admin-deployment.yaml
+    set:
+      chat.adminToken.existingSecret: my-chat-tokens
+      chat.adminToken.key: CHAT_ADMIN_RAW
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-chat-tokens
+                key: CHAT_ADMIN_RAW
+
+  - it: metrics token existingSecrets win over the chart-generated ones
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.taskStoreToken.existingSecret: my-ts-token
+      metrics.provider.internalKey.existingSecret: my-internal-key
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-ts-token
+                key: METRICS_TASK_STORE_TOKEN
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: my-internal-key
+                key: METRICS_INTERNAL_API_KEY
+
+  - it: internal.enabled=false injects no mesh env into admin (pre-1.8 behaviour)
+    # The escape hatch for operators who hand-wire the mesh through extraEnv.
+    template: templates/admin-deployment.yaml
+    set:
+      internal.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_API_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: SHIPWRIGHT_ADMIN_API_KEYS
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+
+  - it: internal.enabled=false injects no mesh env into task-store
+    template: templates/task-store-deployment.yaml
+    set:
+      internal.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: TASK_STORE_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: TASK_STORE_ADMIN_TOKEN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  - it: internal.enabled=false injects no mesh env into chat or metrics
+    templates:
+      - templates/chat-deployment.yaml
+      - templates/metrics-deployment.yaml
+    set:
+      internal.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CHAT_SEED_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: CHAT_ADMIN_TOKEN
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_INTERNAL_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-internal
+                key: INTERNAL_API_KEY
+
+  - it: internal.enabled=false also omits the metrics URL auto-defaults (no half-wired pod)
+    # The URL auto-default is paired with the token above — both must be gated
+    # on the same condition, otherwise internal.enabled=false leaves metrics with
+    # METRICS_TASK_STORE_URL set but no METRICS_TASK_STORE_TOKEN, which flips the
+    # provider selector into TASKSTORE mode with no credential instead of the
+    # documented pre-1.9 no-op.
+    template: templates/metrics-deployment.yaml
+    set:
+      internal.enabled: false
+      metrics.enabled: true
+      admin.enabled: true
+      taskStore.enabled: true
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_ADMIN_URL
+            value: "http://r-shipwright-admin:3001"
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: METRICS_TASK_STORE_URL
+            value: "http://r-shipwright-task-store:3000"
+
+  - it: extraEnv still renders LAST so hand-wired overrides beat the mesh
+    # Kubernetes resolves duplicate env names to the LAST occurrence. Production
+    # hand-wires these vars, so this ordering is what keeps it working.
+    template: templates/admin-deployment.yaml
+    set:
+      admin.extraEnv:
+        - name: SHIPWRIGHT_TASK_STORE_URL
+          value: "http://external-task-store:9999"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].name
+          value: SHIPWRIGHT_TASK_STORE_URL
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].value
+          value: "http://external-task-store:9999"
