@@ -10,6 +10,61 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.9.0] - 2026-08-07
+
+### Added
+
+- **Inter-service token mesh.** The chart now generates the three tokens that let
+  the services authenticate to each other, so a fresh install needs **zero**
+  hand-created Secrets:
+
+  | Token | Produced by | Consumed by |
+  |---|---|---|
+  | `TASK_STORE_ADMIN_TOKEN` | task-store (`TASK_STORE_SEED_ADMIN_TOKEN`) | admin, metrics |
+  | `CHAT_ADMIN_TOKEN` | chat (`CHAT_SEED_ADMIN_TOKEN`) | admin |
+  | `INTERNAL_API_KEY` | admin (inside `SHIPWRIGHT_ADMIN_API_KEYS`) | metrics, task-store, chat |
+
+  Generated once in `templates/internal-secret.yaml` and referenced everywhere
+  else by `secretKeyRef` — Helm evaluates templates independently, so generating
+  in more than one place would produce mismatched values. Reused across
+  `helm upgrade` via the same `lookup` idiom as the admin session keys.
+- Admin now receives `SHIPWRIGHT_TASK_STORE_URL` / `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`
+  (when task-store is enabled) and `SHIPWRIGHT_ADMIN_API_KEYS`. Task-store and chat
+  receive their seed tokens and their `*_AGENTS_URL` / `*_AGENTS_API_KEY`
+  scope-resolver pairs. None of these were previously rendered at all.
+- **Metrics URL auto-defaulting.** `METRICS_ADMIN_URL` and `METRICS_TASK_STORE_URL`
+  now fall back to the in-cluster Service DNS names. This is load-bearing: without
+  `METRICS_TASK_STORE_URL` the provider selector falls through to SQLite, which has
+  no writable path in the published image and crashes on boot (`SQLITE_CANTOPEN`).
+  An explicit `metrics.provider.*Url` still wins.
+- `admin.apiKeys.extra` — additional `name:token:scope` entries merged into
+  `SHIPWRIGHT_ADMIN_API_KEYS`.
+- `internal.enabled` / `internal.existingSecret` — disable the mesh entirely, or
+  point every consumer at a caller-managed Secret.
+
+### Changed
+
+- **Enabling chat no longer requires `chat.adminToken.existingSecret`.** Previously
+  the admin console's Chat tab stayed unwired unless you pre-created a Secret; the
+  chart now generates the token. `chat.adminToken.existingSecret` still wins when set.
+
+### Compatibility
+
+- Every generated value is a **fallback**. A service-specific `existingSecret`
+  (`chat.adminToken`, `metrics.provider.taskStoreToken`,
+  `metrics.provider.internalKey`) always wins, and `extraEnv` — which still renders
+  **last** — wins over everything.
+- ⚠️ **If you hand-wire `SHIPWRIGHT_ADMIN_API_KEYS` through `admin.extraEnv`**, that
+  override shadows the composed value, leaving the chart-generated internal key out
+  of admin's accepted set — metrics, task-store and chat will then **401** whenever
+  they fall back to it. Move those entries to `admin.apiKeys.extra`, or set
+  `internal.enabled=false` to keep the pre-1.9 behaviour exactly.
+- ⚠️ `helm template | kubectl apply` does not execute `lookup`, so that flow would
+  **rotate all three tokens on every apply**. Use `internal.existingSecret` if you
+  deploy that way. Same hazard class as the admin session/encryption keys.
+- Token rotation does not revoke: the task-store and chat seeds are idempotent
+  upserts, so a rotated token leaves the previous hashed row behind.
+
 ## [1.8.3] - 2026-08-07
 
 ### Changed
@@ -27,6 +82,7 @@ independent of `appVersion`. CI enforces this with
 ### Changed
 
 - chart version bump to 1.8.1 — rebase past main's chart v1.8.0 (originally targeted 1.7.196, superseded by an intervening chart release)
+
 
 ## [1.8.0] - 2026-08-07
 

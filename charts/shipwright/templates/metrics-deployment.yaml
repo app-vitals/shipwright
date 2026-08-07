@@ -87,9 +87,16 @@ spec:
                   name: {{ include "shipwright.metrics.secretName" . }}
                   key: METRICS_DATABASE_URL
             {{- end }}
-            {{- if .Values.metrics.provider.adminUrl }}
+            {{- /* Falls back to the in-cluster admin Service DNS name so a
+                   full-stack install needs no hand-written URLs. An explicit
+                   metrics.provider.adminUrl still wins (external admin). */}}
+            {{- $adminUrl := .Values.metrics.provider.adminUrl }}
+            {{- if and (not $adminUrl) .Values.admin.enabled }}
+            {{- $adminUrl = include "shipwright.admin.serviceUrl" . }}
+            {{- end }}
+            {{- if $adminUrl }}
             - name: METRICS_ADMIN_URL
-              value: {{ .Values.metrics.provider.adminUrl | quote }}
+              value: {{ $adminUrl | quote }}
             {{- end }}
             # Task-store mode: when taskStoreUrl is set alongside adminUrl, the
             # metrics service selects TASKSTORE mode (TaskStoreProvider over the
@@ -97,9 +104,18 @@ spec:
             # the local SQLite store, which has no writable path in this image and
             # crashes on boot (SQLITE_CANTOPEN). The token authenticates the
             # task-store HTTP client (METRICS_TASK_STORE_TOKEN).
-            {{- if .Values.metrics.provider.taskStoreUrl }}
+            {{- /* Falls back to the in-cluster task-store Service DNS name when
+                   that service is part of this release. This is load-bearing:
+                   without METRICS_TASK_STORE_URL the provider selector falls
+                   through to SQLite, which has no writable path in the published
+                   image and crashes on boot with SQLITE_CANTOPEN. */}}
+            {{- $taskStoreUrl := .Values.metrics.provider.taskStoreUrl }}
+            {{- if and (not $taskStoreUrl) .Values.taskStore.enabled }}
+            {{- $taskStoreUrl = include "shipwright.taskStore.serviceUrl" . }}
+            {{- end }}
+            {{- if $taskStoreUrl }}
             - name: METRICS_TASK_STORE_URL
-              value: {{ .Values.metrics.provider.taskStoreUrl | quote }}
+              value: {{ $taskStoreUrl | quote }}
             {{- end }}
             {{- if .Values.metrics.provider.taskStoreToken.existingSecret }}
             - name: METRICS_TASK_STORE_TOKEN
@@ -107,6 +123,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.metrics.provider.taskStoreToken.existingSecret }}
                   key: {{ .Values.metrics.provider.taskStoreToken.key }}
+            {{- else if and (include "shipwright.internal.wired" .) .Values.taskStore.enabled }}
+            # Same raw value task-store seeds at boot (admin-scoped token).
+            - name: METRICS_TASK_STORE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
+                  key: TASK_STORE_ADMIN_TOKEN
             {{- end }}
             {{- if .Values.metrics.provider.basePath }}
             - name: METRICS_BASE_PATH
@@ -126,6 +149,14 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.metrics.provider.internalKey.existingSecret }}
                   key: {{ .Values.metrics.provider.internalKey.key }}
+            {{- else if and (include "shipwright.internal.wired" .) .Values.admin.enabled }}
+            # Bearer key metrics presents to admin. Accepted because the SAME raw
+            # value is embedded in admin's SHIPWRIGHT_ADMIN_API_KEYS with scope "*".
+            - name: METRICS_INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
+                  key: INTERNAL_API_KEY
             {{- end }}
             {{- if .Values.metrics.public.enabled }}
             # Public read-only proof surface: mount the unauthenticated, repo-scoped

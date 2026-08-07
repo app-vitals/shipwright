@@ -136,6 +136,63 @@ assembled DATABASE_URL when the bundled PostgreSQL subchart is used).
 {{- end }}
 
 {{/*
+Name of the chart-managed internal Secret holding the tokens that wire the
+Shipwright services to each other (task-store admin token, chat admin token,
+internal API key, and the composed SHIPWRIGHT_ADMIN_API_KEYS).
+
+Generation happens in exactly ONE template (internal-secret.yaml) and every
+consumer references these keys by secretKeyRef. That is forced, not a
+preference: Helm evaluates templates independently, so calling randAlphaNum in
+a producer template and again in a consumer template would yield two DIFFERENT
+values and the services would never authenticate to each other.
+*/}}
+{{- define "shipwright.internal.secretName" -}}
+{{- printf "%s-internal" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Secret name consumers should reference for the mesh tokens: the caller-managed
+internal.existingSecret when set, otherwise the chart-managed Secret.
+*/}}
+{{- define "shipwright.internal.effectiveSecretName" -}}
+{{- if .Values.internal.existingSecret }}
+{{- .Values.internal.existingSecret }}
+{{- else }}
+{{- include "shipwright.internal.secretName" . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Whether the chart-managed token mesh is available to wire into Deployments.
+False when internal.enabled=false, in which case no mesh env is injected at all
+and the operator is expected to hand-wire via extraEnv (the pre-1.8 behaviour).
+*/}}
+{{- define "shipwright.internal.wired" -}}
+{{- if .Values.internal.enabled }}true{{- end }}
+{{- end }}
+
+{{/*
+In-cluster base URL of the admin Service ("http://<fullname>-admin:<port>").
+*/}}
+{{- define "shipwright.admin.serviceUrl" -}}
+{{- printf "http://%s:%v" (include "shipwright.admin.fullname" .) .Values.admin.service.port }}
+{{- end }}
+
+{{/*
+In-cluster base URL of the task-store Service.
+*/}}
+{{- define "shipwright.taskStore.serviceUrl" -}}
+{{- printf "http://%s:%v" (include "shipwright.taskStore.fullname" .) .Values.taskStore.service.port }}
+{{- end }}
+
+{{/*
+In-cluster base URL of the chat Service.
+*/}}
+{{- define "shipwright.chat.serviceUrl" -}}
+{{- printf "http://%s:%v" (include "shipwright.chat.fullname" .) .Values.chat.service.port }}
+{{- end }}
+
+{{/*
 Agent component fullname: "<fullname>-agent".
 */}}
 {{- define "shipwright.agent.fullname" -}}

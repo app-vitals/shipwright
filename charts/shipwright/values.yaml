@@ -145,6 +145,23 @@ admin:
   # without this generates random keys that cannot decrypt existing agent env
   # (caused the 2026-06-16 prod outage). Leave empty to use the chart-managed
   # Secret (generate on first install, reuse on upgrade via lookup).
+  # -- Additional entries merged into SHIPWRIGHT_ADMIN_API_KEYS alongside the
+  # chart-generated internal key.
+  #
+  # Format per entry (admin/src/api-auth.ts parseAdminApiKeys): "name:token:scope".
+  # First segment is the name, LAST is the scope, everything between is the token
+  # (tokens may contain colons, never commas). Scope "*" grants full admin;
+  # a scope of "<agentId>" restricts the key to that agent.
+  #
+  # MIGRATION: if you currently hand-wire SHIPWRIGHT_ADMIN_API_KEYS through
+  # admin.extraEnv, move those entries here. extraEnv renders LAST and therefore
+  # SHADOWS the composed value — which would leave the chart-generated internal
+  # key out of admin's accepted set, so metrics / task-store / chat would get a
+  # 401 whenever they fall back to it.
+  #
+  # Example: ["ci:sk_ci_abc123:*", "scoped:sk_xyz:agent-7"]
+  apiKeys:
+    extra: []
   encryptionKeys:
     existingSecret: ""
     # -- Key in existingSecret that holds SHIPWRIGHT_ENCRYPTION_KEY.
@@ -517,6 +534,32 @@ postgresql:
 # create and rotate it), and the chart-managed admin Secret assembles NO DB URL on
 # this path, so there is no duplicate/conflicting env. When postgresql.enabled=true
 # this block is ignored — the bundled subchart path wins and is unchanged.
+# -- Chart-managed inter-service token mesh.
+#
+# Generates the three shared tokens that let the Shipwright services authenticate
+# to each other, so a fresh install needs no hand-created Secrets:
+#
+#   TASK_STORE_ADMIN_TOKEN  task-store seeds it; admin and metrics consume it
+#   CHAT_ADMIN_TOKEN        chat seeds it; admin consumes it
+#   INTERNAL_API_KEY        admin accepts it; metrics, task-store and chat present it
+#
+# Generated on first install and REUSED across upgrades via the same lookup idiom
+# as the admin session/encryption keys. Every value here is a FALLBACK: a
+# service-specific `existingSecret` (e.g. chat.adminToken.existingSecret,
+# metrics.provider.internalKey.existingSecret) always wins, and `extraEnv` —
+# which renders last — wins over everything.
+#
+# CAVEAT: `helm template | kubectl apply` does not execute `lookup`, so that flow
+# would rotate all three tokens on every apply. Set existingSecret if you deploy
+# that way.
+internal:
+  # -- Whether to render the chart-managed internal Secret.
+  enabled: true
+  # -- Source the mesh tokens from a caller-managed Secret instead of generating
+  # them. Must supply the keys TASK_STORE_ADMIN_TOKEN, CHAT_ADMIN_TOKEN,
+  # INTERNAL_API_KEY and SHIPWRIGHT_ADMIN_API_KEYS.
+  existingSecret: ""
+
 # -- Post-install/post-upgrade hook Job that ensures the per-service databases
 # (metrics, task-store, chat) exist on the bundled PostgreSQL.
 #
