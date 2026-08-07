@@ -44,5 +44,30 @@ spec:
             exit 1
           fi
           {{- end }}
+          {{- if .Values.taskStore.enabled }}
+          # Task-store /health MUST return 200. This is the check that actually
+          # proves the chart-managed database wiring worked: the service runs
+          # `prisma migrate deploy` as a boot preflight and refuses to serve if
+          # its database is missing or unmigrated.
+          TASK_STORE_URL="http://{{ include "shipwright.taskStore.fullname" . }}:{{ .Values.taskStore.service.port }}/health"
+          echo "GET ${TASK_STORE_URL} (expect 200)"
+          task_store_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused "${TASK_STORE_URL}")"
+          echo "task-store /health -> ${task_store_code}"
+          if [ "${task_store_code}" != "200" ]; then
+            echo "FAIL: task-store /health returned ${task_store_code}, expected 200" >&2
+            exit 1
+          fi
+          {{- end }}
+          {{- if .Values.chat.enabled }}
+          # Chat /health MUST return 200 — same migrate-on-boot reasoning.
+          CHAT_URL="http://{{ include "shipwright.chat.fullname" . }}:{{ .Values.chat.service.port }}/health"
+          echo "GET ${CHAT_URL} (expect 200)"
+          chat_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused "${CHAT_URL}")"
+          echo "chat /health -> ${chat_code}"
+          if [ "${chat_code}" != "200" ]; then
+            echo "FAIL: chat /health returned ${chat_code}, expected 200" >&2
+            exit 1
+          fi
+          {{- end }}
           echo "OK: connection checks passed"
 {{- end }}

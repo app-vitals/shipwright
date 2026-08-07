@@ -1,0 +1,120 @@
+# Full Shipwright stack on Minikube — Kubernetes-native, database included.
+#
+# Brings up admin + metrics + task-store + chat + bundled PostgreSQL + runtime
+# agent provisioning, with NO hand-created Secrets. The chart generates the
+# inter-service token mesh and assembles every database connection string.
+#
+#   minikube start --cpus=4 --memory=8192 --disk-size=40g
+#   minikube addons enable ingress
+#   helm dependency build charts/shipwright
+#   helm upgrade --install shipwright charts/shipwright \
+#     --namespace shipwright --create-namespace \
+#     -f charts/shipwright/examples/values-minikube.yaml --wait
+#   echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
+#
+# Or just: `task minikube:up` (handles the ordering traps above).
+#
+# SIZING — the agent pod dominates: 500m CPU / 2Gi memory requests with an 8Gi
+# limit (admin/src/agent-manifest.ts). Everything else is small.
+#   --cpus=4 --memory=8192   floor for the platform plus ONE agent
+#   --cpus=6 --memory=12288  comfortable for an agent doing real work
+# Below 4 CPU / 6Gi the agent pod schedules and then thrashes.
+#
+# NOT FOR PRODUCTION: auth.mode=open disables authentication entirely, and the
+# PostgreSQL password below is a known literal.
+
+networking:
+  type: ingress
+  ingress:
+    className: nginx
+    host: shipwright.local
+
+auth:
+  # ⚠️ ADMIN_DEV_AUTH=true — no authentication at all. Local only.
+  mode: open
+
+postgresql:
+  enabled: true
+  image:
+    registry: docker.io
+    # Bitnami's 2025 catalog change moved the public `bitnami/postgresql` tags
+    # behind Bitnami Secure. The `bitnamilegacy` mirror still serves them.
+    repository: bitnamilegacy/postgresql
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    # Set explicitly on purpose. An auto-generated password is only readable via
+    # `lookup`, which cannot resolve on the FIRST install (the Secret does not
+    # exist yet), so the assembled DSNs would carry an empty password. A known
+    # literal is correct for a throwaway local cluster; production should use
+    # postgresql.auth.existingSecret.
+    password: shipwright-local-dev
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 192Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+admin:
+  enabled: true
+  appBaseUrl: http://shipwright.local
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+metrics:
+  enabled: true
+  provider:
+    basePath: /dashboard
+    # adminUrl / taskStoreUrl deliberately omitted — the chart defaults them to
+    # the in-cluster Service DNS names. Leaving taskStoreUrl unset AND unresolved
+    # would drop metrics into SQLite mode, which crashes on boot
+    # (SQLITE_CANTOPEN); the auto-default is what prevents that here.
+
+taskStore:
+  enabled: true
+  database:
+    # Opt into the chart-managed bundled-PostgreSQL database. The default is the
+    # non-empty "shipwright-secrets", which would require a hand-created Secret.
+    existingSecret: ""
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+chat:
+  enabled: true
+  database:
+    existingSecret: ""
+
+agent:
+  # Deployment-wide Claude credentials handed to every provisioned agent.
+  # Fill ONE of these in (an OAuth token from `claude /oauth-token` is easiest),
+  # or leave both empty and set the credential per-agent in the admin UI.
+  # A per-agent value always overrides what you put here.
+  credentials:
+    enabled: true
+    anthropicApiKey: ""
+    claudeCodeOauthToken: ""
+  provisioning:
+    enabled: true
+    replicas: 1
+    pvc:
+      # Provisioned agent workspace. Without this the provisioner would fall back
+      # to its own 40Gi default — far too large for a laptop cluster.
+      size: 10Gi
+    persistence:
+      enabled: true
+      size: 5Gi
+  voice:
+    # The Whisper ASR pod is far too heavy for a laptop VM.
+    enabled: false

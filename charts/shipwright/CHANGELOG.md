@@ -10,6 +10,35 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.11.0] - 2026-08-07
+
+### Added
+
+- **`examples/values-minikube.yaml`** — the full local stack in one values file:
+  admin + metrics + task-store + chat + bundled PostgreSQL + runtime agent
+  provisioning, with **no hand-created Secrets**. Paired with `task minikube:up` /
+  `task minikube:down` in the repo root, which handle the four ordering traps
+  (VM sizing, ingress addon before install, `helm dependency build` before
+  install, `/etc/hosts` after the VM has an IP).
+- **`helm test` now covers task-store and chat `/health`.** These are the checks
+  that actually prove the chart-managed database wiring worked — both services run
+  `prisma migrate deploy` as a boot preflight and refuse to serve if their database
+  is missing or unmigrated, so a green `helm test` means the databases exist and
+  are reachable.
+
+### Changed
+
+- **NOTES.txt and README corrected.** Both claimed "the agent workload is added in
+  a later task and is NOT yet rendered", and NOTES advertised an agent service port
+  that nothing listens on. Agents are provisioned at runtime by the admin service
+  and are not a chart Deployment; NOTES now says so and points at
+  `/admin/agents/new`, warning when no deployment-wide Claude credential is set.
+- NOTES lists task-store and chat ports and access lines when those are enabled,
+  and no longer claims an unset `METRICS_DATABASE_URL` falls back to a working
+  local SQLite store (it crashes on boot with `SQLITE_CANTOPEN`).
+- `values.yaml` header no longer describes the chart as a skeleton whose workloads
+  "land in a later task".
+
 ## [1.10.0] - 2026-08-07
 
 ### Added
