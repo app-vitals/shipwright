@@ -246,3 +246,46 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: curls task-store and chat /health once those services are enabled
+    # These two are the checks that actually prove the chart-managed database
+    # wiring worked: both services run `prisma migrate deploy` as a boot
+    # preflight and refuse to serve if their database is missing or unmigrated.
+    # So a green `helm test` means the databases exist and are reachable.
+    template: templates/tests/test-connection.yaml
+    set:
+      taskStore.enabled: true
+      chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-task-store:3000/health"
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-chat:3000/health"
+
+  - it: omits task-store and chat checks when those services are disabled
+    template: templates/tests/test-connection.yaml
+    release:
+      name: r
+    asserts:
+      - notMatchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "task-store"
+      - notMatchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "shipwright-chat"
+
+  - it: fails the hook on a non-200 from task-store
+    # A health check that never exits non-zero is decorative.
+    template: templates/tests/test-connection.yaml
+    set:
+      taskStore.enabled: true
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: 'FAIL: task-store /health returned'

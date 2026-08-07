@@ -189,6 +189,16 @@ tasks:
     cmds:
       - ct install --config ct.yaml --charts charts/shipwright
 
+  minikube:up:
+    desc: "Bring the FULL Shipwright stack up on Minikube (admin + metrics + task-store + chat + PostgreSQL + agent provisioning). Requires minikube + helm + kubectl."
+    cmds:
+      - bun run scripts/minikube.ts
+
+  minikube:down:
+    desc: "Tear down the Minikube stack: helm uninstall, then minikube delete."
+    cmds:
+      - bun run scripts/minikube.ts --down
+
   pre-public:
     desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
     cmds:
