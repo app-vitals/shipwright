@@ -596,6 +596,11 @@ export function createLoopOrchestrator(
       // isn't exactly 'deferred', falls through to recordSkip exactly as
       // today — fail-safe default, no automatic exemption without an
       // explicit 'deferred' tag.
+      //
+      // STD-1.4: review.md's Unresolved Comment Check tags its defer as
+      // `review:deferred:unresolved-human-feedback:{pr}` — it's already
+      // covered by the generic isDeferredCategory check below (no separate
+      // prefix needed) since it follows the taxonomy from day one.
       const isDeferredCategory = skipReason.split(":")[1] === "deferred";
       // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check
       // predates the taxonomy and uses 'same-branch-sibling-busy' (not

@@ -321,6 +321,25 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(unresolvedSection).toContain("hasAnyReviewAtHead");
     expect(unresolvedSection).toContain("issue-level PR comments");
   });
+
+  it("Step 5's Unresolved Comment Check tags the defer with a namespaced skip-reason marker before [silent], exempting it from the HITL auto-block skip counter (STD-1.4)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+
+    const unresolvedSection = section.slice(unresolvedIdx);
+    expect(unresolvedSection).toContain(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const skipReasonIdx = unresolvedSection.indexOf(
+      "[skip-reason:review:deferred:unresolved-human-feedback:{pr}]",
+    );
+    const silentIdx = unresolvedSection.indexOf("[silent]");
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(skipReasonIdx).toBeLessThan(silentIdx);
+  });
 });
 
 describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
