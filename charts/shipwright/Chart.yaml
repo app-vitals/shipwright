@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.10.1
+version: 1.11.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,8 +29,12 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
+    - kind: added
+      description: "examples/values-minikube.yaml — full local stack (admin, metrics, task-store, chat, PostgreSQL, agent provisioning) with no hand-created Secrets"
+    - kind: added
+      description: "helm test now checks task-store and chat /health, proving the chart-managed database wiring actually works"
     - kind: changed
-      description: "auto-bump to chart v1.10.1 triggered by release tag admin-v1.65.0"
+      description: "NOTES/README corrected: agents are provisioned at runtime by admin, not rendered as a chart Deployment"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

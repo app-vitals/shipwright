@@ -16,7 +16,7 @@ is set.
 This guide covers three deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
 
-- [Minikube (local, HTTP + nginx ingress)](#minikube-local)
+- [Minikube (local, full stack, HTTP + nginx ingress)](#minikube-local) — `task minikube:up`
 - [GKE (Gateway API + cert-manager)](#gke-gateway-api--cert-manager)
 - [EKS (ALB ingress + cert-manager)](#eks-alb-ingress--cert-manager)
 - [Agent runtime provisioning model](#agent-runtime-provisioning-model)
@@ -147,79 +147,132 @@ for the full list of chat service env vars and their defaults.
 
 ## Minikube (local)
 
-A quick local deployment over plain HTTP using the Minikube nginx ingress addon.
-PostgreSQL is bundled, so no external database is required.
+The **full stack** — admin, metrics, task-store, chat, bundled PostgreSQL, and
+runtime agent provisioning — over plain HTTP, with **no hand-created Secrets**.
+The chart generates the inter-service token mesh and assembles every database
+connection string.
 
-### Prerequisites
+### One command
+
+From the repo root:
 
 ```bash
-minikube start
-minikube addons enable ingress      # installs the NGINX ingress controller
+task minikube:up
 ```
 
-### Install
+That handles the four ordering constraints that otherwise fail confusingly:
+VM sizing (only settable at `minikube start`), the ingress addon (must precede
+the install, or the Ingress has no controller), `helm dependency build` (the
+PostgreSQL subchart is OCI-pinned in `Chart.lock`), and the `/etc/hosts` entry
+(only possible once the VM has an IP). It then waits on each Deployment
+individually and runs `helm test`.
 
-From the chart source:
+Tear down with `task minikube:down` (helm uninstall, then minikube delete).
+
+### By hand
 
 ```bash
-helm dependency build charts/shipwright    # resolve the pinned PostgreSQL subchart
-helm install shipwright charts/shipwright \
+minikube start --cpus=4 --memory=8192 --disk-size=40g
+minikube addons enable ingress
+helm dependency build charts/shipwright
+helm upgrade --install shipwright charts/shipwright \
   --namespace shipwright --create-namespace \
-  --set networking.type=ingress \
-  --set networking.ingress.className=nginx \
-  --set networking.ingress.host=shipwright.local
-```
-
-### Key values
-
-```yaml
-networking:
-  type: ingress
-  ingress:
-    className: nginx
-    host: shipwright.local
-tls:
-  certManager:
-    enabled: false        # Minikube = plain HTTP, no cert-manager installed
-auth:
-  mode: open              # dev auth — see the security warning below
-postgresql:
-  enabled: true           # bundled PostgreSQL (default)
-```
-
-### Networking and reaching the services
-
-With `networking.type=ingress` the chart renders an `Ingress` that routes
-`/dashboard` to the metrics service and `/` (catch-all) to the admin service.
-Point the host at the Minikube IP:
-
-```bash
+  -f charts/shipwright/examples/values-minikube.yaml --wait
 echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
 ```
 
-Then:
+### Sizing
+
+The agent pod dominates: **500m CPU / 2Gi memory requests, 8Gi limit**
+(`admin/src/agent-manifest.ts`). Everything else is small.
+
+| VM size | Good for |
+|---|---|
+| `--cpus=4 --memory=8192` | Floor — the platform plus **one** agent |
+| `--cpus=6 --memory=12288` | Comfortable — an agent doing real work, or two idle agents |
+| Below 4 CPU / 6Gi | The agent pod schedules and then thrashes. Don't. |
+
+`--disk-size=40g` covers the agent image plus the PVCs, not RAM.
+
+### What the chart generates for you
+
+Everything in this table used to require a pre-created Secret or hand-wired
+`extraEnv`:
+
+| Generated | Where it lives | Notes |
+|---|---|---|
+| Admin + metrics DB connection strings | `<release>-admin`, `<release>-metrics` | Password never in plaintext env |
+| Task-store + chat DB connection strings | `<release>-task-store`, `<release>-chat` | Opt in with `database.existingSecret: ""` |
+| The `shipwright_metrics` / `_task_store` / `_chat` databases | initdb ConfigMap + bootstrap hook Job | Each service needs its own (Prisma P3005) |
+| Task-store admin token | `<release>-internal` | Seeded by task-store; consumed by admin + metrics |
+| Chat admin token | `<release>-internal` | Seeded by chat; consumed by admin |
+| Internal API key + `SHIPWRIGHT_ADMIN_API_KEYS` | `<release>-internal` | Presented by metrics, task-store, chat |
+| Session + encryption keys | `<release>-admin` | Preserved across `helm upgrade` |
+
+All of them are generated on first install and **reused** on upgrade via Helm's
+`lookup`. Two consequences worth knowing:
+
+- `helm template | kubectl apply` does **not** execute `lookup`, so that flow
+  would rotate every generated token on each apply. Use `internal.existingSecret`
+  (and `admin.encryptionKeys.existingSecret`) if you deploy that way.
+- Any service-specific `existingSecret` overrides the generated value, and
+  `extraEnv` — which renders last — overrides everything.
+
+### Reaching the services
+
+The Ingress routes `/dashboard` to metrics, `/task-store` to the task store, and
+`/` (catch-all) to admin:
 
 - Admin UI/API: `http://shipwright.local/`
 - Metrics dashboard: `http://shipwright.local/dashboard`
+- Task store: `http://shipwright.local/task-store/health`
 
-Or skip the ingress entirely and port-forward (works with the default
-`networking.type=ClusterIP` too):
+Or port-forward instead (works with the default `networking.type=ClusterIP`):
 
 ```bash
-kubectl port-forward svc/shipwright-admin   3001:3001 -n shipwright   # → http://localhost:3001
-kubectl port-forward svc/shipwright-metrics 3460:3460 -n shipwright   # → http://localhost:3460/dashboard
+kubectl port-forward svc/shipwright-admin      3001:3001 -n shipwright
+kubectl port-forward svc/shipwright-metrics    3460:3460 -n shipwright
+kubectl port-forward svc/shipwright-task-store 3000:3000 -n shipwright
+kubectl port-forward svc/shipwright-chat       3002:3000 -n shipwright
 ```
 
-### TLS
+### Creating your first agent
+
+**The chart creates no agents.** Agents are provisioned at runtime by the admin
+service, so make one at `http://shipwright.local/admin/agents/new`.
+
+Give every agent a Claude credential deployment-wide:
+
+```yaml
+agent:
+  credentials:
+    claudeCodeOauthToken: ""   # from `claude /oauth-token`
+    # ...or anthropicApiKey, or existingSecret
+```
+
+Admin merges this **underneath** each agent's own env rows, so a per-agent value
+set in the admin UI always wins, and changes reach already-running agents on
+their next config sync (no restart, no re-provision). Leave both empty to keep
+credentials strictly per-agent — but then a fresh agent can do no work until you
+paste one in.
+
+Inline credentials land in a chart-managed Secret, so they sit in your values
+file and Helm release history. Use `existingSecret` for anything beyond local dev.
+
+### TLS and security
 
 None — Minikube runs plain HTTP (`tls.certManager.enabled=false`, the default).
 
-The bundled PostgreSQL ships **no** default password: the Bitnami subchart
-auto-generates a random one on install. Retrieve it per the NOTES printed after `helm install`. A
-generated password is **not** stable across `helm upgrade` — fine for a
-throwaway Minikube, but for anything persistent set
-`postgresql.auth.existingSecret`. See
-[the chart README](../charts/shipwright/README.md#quick-start-minikube).
+> ⚠️ The Minikube profile sets `auth.mode=open`, which sets `ADMIN_DEV_AUTH=true`:
+> **anyone who can reach the admin service is treated as authenticated.** It also
+> sets a known literal PostgreSQL password. Never expose this install publicly.
+> For real access control use `auth.mode=google` (see the GKE section).
+
+The profile sets `postgresql.auth.password` explicitly rather than letting Bitnami
+generate one. That is deliberate: a generated password is only readable via
+`lookup`, which cannot resolve on the **first** install (the Secret does not exist
+yet), so the assembled connection strings would carry an empty password. For
+anything persistent, use `postgresql.auth.existingSecret` instead.
 
 ---
 
