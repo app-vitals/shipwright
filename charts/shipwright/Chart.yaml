@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.10.0
+version: 1.10.1
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,10 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: added
-      description: "agent.credentials.* supplies deployment-wide Claude credentials to every provisioned agent, merged under each agent's own env rows"
-    - kind: fixed
-      description: "agent.provisioning.pvc.size is now injected as SHIPWRIGHT_AGENT_PVC_STORAGE_GI; it was never rendered, so every provisioned agent silently requested the provisioner's 40Gi default"
+    - kind: changed
+      description: "auto-bump to chart v1.10.1 triggered by release tag admin-v1.65.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
