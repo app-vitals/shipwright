@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.8.0
+version: 1.8.1
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,12 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: added
-      description: "task-store and chat can now use the bundled PostgreSQL — set their database.existingSecret to \"\" and the chart creates the database and assembles the DSN"
-    - kind: added
-      description: "post-install/post-upgrade hook Job ensures the per-service databases exist (initdb scripts only run on a first boot)"
-    - kind: fixed
-      description: "bundled-PostgreSQL password lookup used a `postgresql-password` Secret key Bitnami never emits; corrected to `password`, so an auto-generated password now resolves"
+    - kind: changed
+      description: "chart version bump to 1.8.1 — rebase past main's chart v1.8.0 (originally targeted 1.7.196, superseded by an intervening chart release)"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
