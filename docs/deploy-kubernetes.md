@@ -233,7 +233,7 @@ Or port-forward instead (works with the default `networking.type=ClusterIP`):
 kubectl port-forward svc/shipwright-admin      3001:3001 -n shipwright
 kubectl port-forward svc/shipwright-metrics    3460:3460 -n shipwright
 kubectl port-forward svc/shipwright-task-store 3000:3000 -n shipwright
-kubectl port-forward svc/shipwright-chat       3001:3000 -n shipwright
+kubectl port-forward svc/shipwright-chat       3002:3000 -n shipwright
 ```
 
 ### Creating your first agent
