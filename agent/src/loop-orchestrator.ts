@@ -602,13 +602,18 @@ export function createLoopOrchestrator(
       // covered by the generic isDeferredCategory check below (no separate
       // prefix needed) since it follows the taxonomy from day one.
       const isDeferredCategory = skipReason.split(":")[1] === "deferred";
-      // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check
-      // predates the taxonomy and uses 'same-branch-sibling-busy' (not
-      // 'deferred') as its second segment, so it does NOT match the generic
-      // check above — kept as an explicit exact-prefix OR so this PR doesn't
-      // regress it before its sibling task (STD-1.2) retags it to the new
-      // convention. The branch suffix varies per task, so match by prefix
-      // rather than exact string equality.
+      // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check has
+      // been retagged (STD-1.2) to the taxonomy-conformant
+      // `dev-task:deferred:same-branch-sibling-busy:{branch}` marker, which
+      // is already covered by the generic isDeferredCategory check above
+      // (its second segment is literally 'deferred') — no separate handling
+      // needed for it. This explicit exact-prefix OR instead matches the OLD
+      // pre-rename marker (no 'deferred' segment), kept purely for backward
+      // compat with an agent whose plugin install lags the deployed
+      // `agent/` binary (plugin version is tracked per-agent in
+      // `AgentPlugin`, decoupled from `agent/`'s own deploy) and may still
+      // emit the old-format string. The branch suffix varies per task, so
+      // match by prefix rather than exact string equality.
       const isSameBranchSiblingBusy = skipReason.startsWith(
         "dev-task:same-branch-sibling-busy:",
       );
