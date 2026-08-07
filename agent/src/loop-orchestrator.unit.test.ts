@@ -1774,6 +1774,45 @@ describe("createLoopOrchestrator", () => {
     expect(recordCalls).toEqual([]);
   });
 
+  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] (old pre-rename marker) dispatch calls skipRun but NOT recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Deferring to same-branch sibling.\n[skip-reason:dev-task:same-branch-sibling-busy:feat/x]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Observability is unchanged — skipRun still fires with the parsed reason.
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe(
+      "dev-task:same-branch-sibling-busy:feat/x",
+    );
+    // But recordSkip must NOT be called — this old pre-rename marker (no
+    // 'deferred' segment, so isDeferredCategory is false for it) is still
+    // exempt via the explicit backward-compat prefix check, protecting an
+    // agent whose plugin install lags the deployed agent/ binary.
+    expect(recordCalls).toEqual([]);
+  });
+
   test("a [skip-reason:review:deferred:unresolved-human-feedback:123] dispatch calls skipRun but NOT recordSkip (STD-1.4)", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
