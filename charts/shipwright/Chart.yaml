@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.9.0
+version: 1.10.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,11 +30,9 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "inter-service token mesh: the chart now generates the task-store, chat and internal API tokens so a fresh install needs zero hand-created Secrets"
-    - kind: added
-      description: "metrics auto-defaults METRICS_ADMIN_URL and METRICS_TASK_STORE_URL to the in-cluster Services, avoiding the SQLITE_CANTOPEN crash-on-boot"
-    - kind: added
-      description: "admin.apiKeys.extra merges caller-supplied entries into SHIPWRIGHT_ADMIN_API_KEYS (migration path off hand-wiring it via extraEnv)"
+      description: "agent.credentials.* supplies deployment-wide Claude credentials to every provisioned agent, merged under each agent's own env rows"
+    - kind: fixed
+      description: "agent.provisioning.pvc.size is now injected as SHIPWRIGHT_AGENT_PVC_STORAGE_GI; it was never rendered, so every provisioned agent silently requested the provisioner's 40Gi default"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

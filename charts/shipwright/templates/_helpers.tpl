@@ -208,6 +208,27 @@ app.kubernetes.io/component: agent
 {{- end }}
 
 {{/*
+Name of the chart-managed Secret holding the deployment-wide Claude credentials
+handed to every provisioned agent.
+*/}}
+{{- define "shipwright.agent.credentialsSecretName" -}}
+{{- printf "%s-agent-credentials" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Secret name the admin Deployment should reference for agent credentials: the
+caller-managed agent.credentials.existingSecret when set, otherwise the
+chart-managed Secret.
+*/}}
+{{- define "shipwright.agent.effectiveCredentialsSecretName" -}}
+{{- if .Values.agent.credentials.existingSecret }}
+{{- .Values.agent.credentials.existingSecret }}
+{{- else }}
+{{- include "shipwright.agent.credentialsSecretName" . }}
+{{- end }}
+{{- end }}
+
+{{/*
 Name of the ServiceAccount provisioned agent pods run as (SEPARATE from the admin
 SA). Defaults to "<fullname>-agent" when create=true and no name override.
 */}}

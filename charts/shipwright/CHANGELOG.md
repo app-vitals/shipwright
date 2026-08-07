@@ -10,6 +10,36 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.10.0] - 2026-08-07
+
+### Added
+
+- **`agent.credentials.*` — deployment-wide Claude credentials for every agent.**
+  There is no agent Deployment in this chart; agents are provisioned at runtime by
+  the admin service and fetch their credentials from `GET /agents/:id/config` on
+  each config sync. Previously the only way to give an agent a Claude token was to
+  paste one into every agent through the admin UI, so a `helm install` could never
+  produce a working agent on its own.
+
+  Supply `agent.credentials.anthropicApiKey` or `.claudeCodeOauthToken` (or point
+  `.existingSecret` at your own Secret) and admin merges them **underneath** each
+  agent's own env rows — a per-agent value always wins. Changes reach
+  already-running agents on their next sync, with no restart or re-provision.
+
+  Credentials are injected into admin under `SHIPWRIGHT_AGENT_DEFAULT_`-prefixed
+  names, never as a bare `ANTHROPIC_API_KEY`. That prefix is a security boundary:
+  admin must not hand out a credential it happens to hold for its own use.
+
+### Fixed
+
+- **Provisioned agents silently requested 40Gi PVCs.** `agent.provisioning.pvc.size`
+  was documented as "not injected", and indeed nothing ever rendered
+  `SHIPWRIGHT_AGENT_PVC_STORAGE_GI` — so `agent-provisioner.ts` fell back to its own
+  40Gi default for every agent, regardless of the configured value. Now injected
+  (with the `Gi` suffix stripped), and the stale `values.yaml` comment corrected.
+  **Upgrade note:** existing agents keep their current PVCs; the new size applies to
+  agents provisioned from here on.
+
 ## [1.9.0] - 2026-08-07
 
 ### Added
