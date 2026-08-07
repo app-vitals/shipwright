@@ -424,8 +424,22 @@ export async function buildProductionDeps(opts: {
    * pattern used elsewhere in this file (e.g. createPrRecordQuery).
    */
   authorAllowlistRef?: AgentAuthorAllowlistRef;
+  /**
+   * Optional override for the resolved workspace root, normally derived from
+   * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests that
+   * only care about other deps (e.g. the isAuthorAllowed default, AAL-2.2 /
+   * T-078) don't need AGENT_HOME/WORKSPACE_PATH set in the ambient
+   * process.env — avoiding a shared-process test-isolation hazard where
+   * another suite's temporary env mutation (e.g.
+   * check-helpers.unit.test.ts's resolveWorkspacePath tests deleting
+   * AGENT_HOME around their own assertions) could otherwise leak into these
+   * tests since Bun runs all test files in one process. Defaults to
+   * resolveWorkspacePath() when omitted, so production callers are
+   * unaffected.
+   */
+  workspacePath?: string;
 }): Promise<CheckReviewDeps> {
-  const workspacePath = resolveWorkspacePath();
+  const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;

@@ -1429,17 +1429,30 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+  // These tests only care about the isAuthorAllowed default — pass an
+  // explicit workspacePath stub so buildProductionDeps doesn't fall through
+  // to resolveWorkspacePath() and depend on ambient AGENT_HOME/WORKSPACE_PATH
+  // process.env state, which check-helpers.unit.test.ts's resolveWorkspacePath
+  // suite temporarily deletes/restores around its own tests in this same
+  // shared Bun test process.
+  const stubWorkspacePath = "/tmp/aal-2.2-stub-workspace";
 
   test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
     agentAuthorAllowlistRef.set([]);
-    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
+    });
     expect(deps.isAuthorAllowed).toBeDefined();
     expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
   });
 
   test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
     agentAuthorAllowlistRef.set(["allowed-user"]);
-    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
+    });
     expect(deps.isAuthorAllowed?.("allowed-user")).toBe(true);
     expect(deps.isAuthorAllowed?.("someone-else")).toBe(false);
   });
@@ -1448,6 +1461,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
     agentAuthorAllowlistRef.set(["ref-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       isAuthorAllowed: (login) => login === "explicit-user",
     });
     expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
@@ -1464,6 +1478,9 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+  // See stubWorkspacePath comment in the AAL-2.2 describe block above — same
+  // rationale applies here.
+  const stubWorkspacePath = "/tmp/t-078-stub-workspace";
 
   test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
     const neverSyncedRef = createAgentAuthorAllowlistRef();
@@ -1472,6 +1489,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
 
@@ -1488,6 +1506,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: syncedEmptyRef,
     });
 
@@ -1503,10 +1522,12 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const neverSyncedDeps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
     const syncedEmptyDeps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: syncedEmptyRef,
     });
 
@@ -1526,6 +1547,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
 
