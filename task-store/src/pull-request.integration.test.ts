@@ -1548,7 +1548,7 @@ describeOrSkip(
       expect(caught).toBeInstanceOf(NotFoundError);
     });
 
-    it("patch() with ciFailureSignature matching 3x in a row auto-sets hitl:true (real-Postgres round trip)", async () => {
+    it("patch() with ciFailureSignature matching 3x in a row auto-sets blocked:true (real-Postgres round trip)", async () => {
       const t1 = new Date("2026-07-02T10:00:00.000Z");
       const t2 = new Date("2026-07-02T10:05:00.000Z");
       const t3 = new Date("2026-07-02T10:10:00.000Z");
@@ -1568,17 +1568,17 @@ describeOrSkip(
       const first = await svc1.patch(created.id, sha, signature);
       expect(first.consecutiveCiFailureCount).toBe(1);
       expect(first.lastCiFailureSignature).toBe(signature);
-      expect(first.hitl).toBe(false);
+      expect(first.blocked).toBe(false);
 
       const svc2 = new PullRequestService(prisma, FixedClock(t2));
       const second = await svc2.patch(created.id, sha, signature);
       expect(second.consecutiveCiFailureCount).toBe(2);
-      expect(second.hitl).toBe(false);
+      expect(second.blocked).toBe(false);
 
       const svc3 = new PullRequestService(prisma, FixedClock(t3));
       const third = await svc3.patch(created.id, sha, signature);
       expect(third.consecutiveCiFailureCount).toBe(3);
-      expect(third.hitl).toBe(true);
+      expect(third.blocked).toBe(true);
       expect(third.blockedReason).toBeTruthy();
       expect(third.blockedReason).toContain("3");
       expect(third.blockedReason).toContain(signature);
@@ -1588,7 +1588,7 @@ describeOrSkip(
         where: { id: created.id },
       });
       expect(reloaded.consecutiveCiFailureCount).toBe(3);
-      expect(reloaded.hitl).toBe(true);
+      expect(reloaded.blocked).toBe(true);
       expect(reloaded.lastCiFailureSignature).toBe(signature);
     });
 
@@ -1615,7 +1615,7 @@ describeOrSkip(
       expect(afterDifferentSignature.lastCiFailureSignature).toBe(
         "signature-b",
       );
-      expect(afterDifferentSignature.hitl).toBe(false);
+      expect(afterDifferentSignature.blocked).toBe(false);
     });
 
     it("patch() without ciFailureSignature leaves lastCiFailureSignature/consecutiveCiFailureCount untouched (merge-conflict/review-fix patch calls)", async () => {
@@ -1632,7 +1632,7 @@ describeOrSkip(
       const patched = await service.patch(created.id);
       expect(patched.lastCiFailureSignature).toBe("pre-existing-signature");
       expect(patched.consecutiveCiFailureCount).toBe(2);
-      expect(patched.hitl).toBe(false);
+      expect(patched.blocked).toBe(false);
     });
 
     it("update() throws NotFoundError when the PR does not exist", async () => {

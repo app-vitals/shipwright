@@ -152,7 +152,7 @@ describe("PullRequestService.patch()", () => {
     const { data } = prisma._updateCalls[0];
     expect("lastCiFailureSignature" in data).toBe(false);
     expect("consecutiveCiFailureCount" in data).toBe(false);
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
@@ -208,7 +208,7 @@ describe("PullRequestService.patch()", () => {
     expect(data.lastCiFailureSignature).toBe("first-signature");
   });
 
-  test("ciFailureSignature crossing CI_FAILURE_BLOCK_THRESHOLD (3) sets hitl:true and a descriptive blockedReason in the same request", async () => {
+  test("ciFailureSignature crossing CI_FAILURE_BLOCK_THRESHOLD (3) sets blocked:true and a descriptive blockedReason in the same request", async () => {
     const signature = "flaky-e2e-test";
     const prisma = makePrismaDouble({
       id: "pr-1",
@@ -223,14 +223,14 @@ describe("PullRequestService.patch()", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.consecutiveCiFailureCount).toEqual({ increment: 1 });
-    expect(data.hitl).toBe(true);
+    expect(data.blocked).toBe(true);
     expect(data.blockedReason).toBeTruthy();
     expect(data.blockedReason).toContain("3");
     expect(data.blockedReason).toContain(signature);
-    expect(result.hitl).toBe(true);
+    expect(result.blocked).toBe(true);
   });
 
-  test("ciFailureSignature below threshold does NOT set hitl/blockedReason", async () => {
+  test("ciFailureSignature below threshold does NOT set blocked/blockedReason", async () => {
     const signature = "some-signature";
     const prisma = makePrismaDouble({
       id: "pr-1",
@@ -244,17 +244,17 @@ describe("PullRequestService.patch()", () => {
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
-  test("ciFailureSignature reset case (differing signature) does NOT set hitl/blockedReason even if prior count was at/above threshold", async () => {
+  test("ciFailureSignature reset case (differing signature) does NOT set blocked/blockedReason even if prior count was at/above threshold", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
       commitSha: "abc123",
       lastCiFailureSignature: "old-signature",
       consecutiveCiFailureCount: 5,
-      hitl: true,
+      blocked: true,
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -263,7 +263,7 @@ describe("PullRequestService.patch()", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.consecutiveCiFailureCount).toBe(1);
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
@@ -1000,31 +1000,28 @@ describe("PullRequestService.release()", () => {
   });
 });
 
-describe("PullRequestService.update() hitl/hitlNotifiedAt/blockedReason pass-through", () => {
+describe("PullRequestService.update() blocked/blockedReason pass-through", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);
 
-  test("update() persists hitl/hitlNotifiedAt/blockedReason and returns them", async () => {
+  test("update() persists blocked/blockedReason and returns them", async () => {
     const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
     const result = await svc.update("pr-1", {
-      hitl: true,
-      hitlNotifiedAt: NOW.toISOString(),
+      blocked: true,
       blockedReason: "no linked task",
     });
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect(data.hitl).toBe(true);
-    expect(data.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(data.blocked).toBe(true);
     expect(data.blockedReason).toBe("no linked task");
-    expect(result.hitl).toBe(true);
-    expect(result.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(result.blocked).toBe(true);
     expect(result.blockedReason).toBe("no linked task");
   });
 
-  test("update() omitting hitl/hitlNotifiedAt/blockedReason does not touch them", async () => {
+  test("update() omitting blocked/blockedReason does not touch them", async () => {
     const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -1032,8 +1029,7 @@ describe("PullRequestService.update() hitl/hitlNotifiedAt/blockedReason pass-thr
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect("hitl" in data).toBe(false);
-    expect("hitlNotifiedAt" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 });

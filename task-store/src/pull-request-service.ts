@@ -89,7 +89,7 @@ const SKIP_BLOCK_THRESHOLD = 3;
 /**
  * CI-failure streak auto-block threshold: once a PR's consecutiveCiFailureCount
  * reaches this value (i.e. patch() has been called this many times in a row
- * with the same ciFailureSignature), patch() also sets hitl:true +
+ * with the same ciFailureSignature), patch() also sets blocked:true +
  * blockedReason in the same request so the loop orchestrator stops
  * re-dispatching CI-fix cycles that keep hitting the same failure. Mirrors
  * SKIP_BLOCK_THRESHOLD above / SPIN_DETECTION_THRESHOLD in
@@ -565,7 +565,7 @@ export class PullRequestService implements PullRequestServiceLike {
    *   - ciFailureSignature provided and differs (or none stored yet): resets
    *     consecutiveCiFailureCount to 1 and stores the new signature.
    *   - Crossing CI_FAILURE_BLOCK_THRESHOLD (3) on a matching-signature
-   *     increment also sets hitl:true + a descriptive blockedReason, in the
+   *     increment also sets blocked:true + a descriptive blockedReason, in the
    *     same request/update call. A reset never trips the threshold, even if
    *     the prior count was at/above it.
    */
@@ -607,7 +607,7 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.consecutiveCiFailureCount = { increment: 1 };
         const newCount = existing.consecutiveCiFailureCount + 1;
         if (newCount >= CI_FAILURE_BLOCK_THRESHOLD) {
-          updateData.hitl = true;
+          updateData.blocked = true;
           updateData.blockedReason = `Auto-blocked after ${newCount} consecutive patch cycles hitting the same CI failure (${ciFailureSignature})`;
         }
       } else {
