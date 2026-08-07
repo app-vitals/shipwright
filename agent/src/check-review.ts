@@ -242,11 +242,37 @@ export async function getReviewCandidates(
     // fetchPrReviews call for the same PR. Stays undefined when the fetch
     // above failed — the RVG-1.1 check treats that the same as "no eligible
     // author comment found" (old skip behavior preserved).
+    //
+    // hasFreshAuthorReply (RFR-1.1) is computed once here, right after
+    // reviewData is fetched, and reused by BOTH this check and the RVG-1.1
+    // check below. It must be available here, not just at RVG-1.1: a clean/
+    // no-finding review (classifyReviewState() returns "approved" or
+    // "posted", not null — e.g. "no new issues found, posting as COMMENT
+    // only") makes THIS check `continue` unconditionally, before control
+    // ever reaches RVG-1.1's terminal-skip block further down — so without
+    // the exception here too, RVG-1.1's own fresh-reply exception is
+    // unreachable for exactly the case it exists to handle (confirmed live
+    // on PR #2456). Uses pr.author.login (the PR's own author), NOT the
+    // reviewing agent's identity — matches RVG-1.1's existing convention,
+    // since this file reviews PRs from arbitrary authors. Uses
+    // record?.reviewedAt as the watermark (record is already in scope from
+    // the queryPrRecord call above); record may be null here (no task-store
+    // record yet), in which case the `?? 0` epoch fallback makes any author
+    // comment count, mirroring RVG-1.1's existing null-safety.
+    const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
     let reviewData: PrReviewData | undefined;
+    let hasFreshAuthorReply = false;
     try {
       const [org, repoName] = splitOrgRepo(pr.repo ?? "");
       reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
-      if (classifyReviewState(reviewData) !== null) continue;
+      hasFreshAuthorReply =
+        reviewData?.comments.nodes.some(
+          (c) =>
+            c.author.login === pr.author.login &&
+            new Date(c.createdAt).getTime() > reviewedAtMs,
+        ) ?? false;
+      if (classifyReviewState(reviewData) !== null && !hasFreshAuthorReply)
+        continue;
     } catch {
       // Fetch failed → treat as "no terminal review" (no dedup)
     }
@@ -323,16 +349,14 @@ export async function getReviewCandidates(
     // — check-review.ts reviews PRs from arbitrary authors, so only the PR's
     // own author's replies count, not the reviewing agent's or a third
     // party's.
+    //
+    // hasFreshAuthorReply is hoisted above (RFR-1.1), computed once right
+    // after reviewData is fetched, and shared with the RVD-1.1 live-review
+    // dedup check above — not recomputed here.
     if (
       record.commitSha === pr.headRefOid &&
       record.reviewState !== "pending"
     ) {
-      const reviewedAtMs = new Date(record.reviewedAt ?? 0).getTime();
-      const hasFreshAuthorReply = reviewData?.comments.nodes.some(
-        (c) =>
-          c.author.login === pr.author.login &&
-          new Date(c.createdAt).getTime() > reviewedAtMs,
-      );
       if (!hasFreshAuthorReply) continue;
     }
 
@@ -400,8 +424,22 @@ export async function buildProductionDeps(opts: {
    * pattern used elsewhere in this file (e.g. createPrRecordQuery).
    */
   authorAllowlistRef?: AgentAuthorAllowlistRef;
+  /**
+   * Optional override for the resolved workspace root, normally derived from
+   * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests that
+   * only care about other deps (e.g. the isAuthorAllowed default, AAL-2.2 /
+   * T-078) don't need AGENT_HOME/WORKSPACE_PATH set in the ambient
+   * process.env — avoiding a shared-process test-isolation hazard where
+   * another suite's temporary env mutation (e.g.
+   * check-helpers.unit.test.ts's resolveWorkspacePath tests deleting
+   * AGENT_HOME around their own assertions) could otherwise leak into these
+   * tests since Bun runs all test files in one process. Defaults to
+   * resolveWorkspacePath() when omitted, so production callers are
+   * unaffected.
+   */
+  workspacePath?: string;
 }): Promise<CheckReviewDeps> {
-  const workspacePath = resolveWorkspacePath();
+  const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;

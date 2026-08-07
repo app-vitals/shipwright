@@ -970,6 +970,109 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("RFR-1.1: a clean/no-finding COMMENT review (classifyReviewState → 'approved') at head, plus a fresh author reply after reviewedAt, stays a candidate", async () => {
+    // Real-world trigger shape (PR #2456): unlike the RVG-1.1 fixtures below
+    // (which deliberately use an unresolved thread so classifyReviewState()
+    // returns null and never reaches RVD-1.1's short-circuit), this review
+    // is clean — no finding body, resolved/no thread — so classifyReviewState
+    // returns "approved" and RVD-1.1's `continue` fires FIRST unless the
+    // fresh-author-reply exception is also applied there.
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "fixed, please take another look",
+            createdAt: "2026-07-20T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RFR-1.1 regression: a clean/no-finding COMMENT review at head with NO fresh author reply is still skipped", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: { nodes: [{ isResolved: true, comments: { nodes: [] } }] },
+      comments: {
+        nodes: [
+          {
+            author: { login: "danmcaulay" },
+            body: "an old reply, before the review",
+            createdAt: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
   // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
   // A PR that is already terminal (record.commitSha === pr.headRefOid &&
   // reviewState !== "pending") is normally skipped at the terminal-skip
@@ -1326,17 +1429,30 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+  // These tests only care about the isAuthorAllowed default — pass an
+  // explicit workspacePath stub so buildProductionDeps doesn't fall through
+  // to resolveWorkspacePath() and depend on ambient AGENT_HOME/WORKSPACE_PATH
+  // process.env state, which check-helpers.unit.test.ts's resolveWorkspacePath
+  // suite temporarily deletes/restores around its own tests in this same
+  // shared Bun test process.
+  const stubWorkspacePath = "/tmp/aal-2.2-stub-workspace";
 
   test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
     agentAuthorAllowlistRef.set([]);
-    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
+    });
     expect(deps.isAuthorAllowed).toBeDefined();
     expect(deps.isAuthorAllowed?.("anyone-at-all")).toBe(true);
   });
 
   test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
     agentAuthorAllowlistRef.set(["allowed-user"]);
-    const deps = await buildProductionDeps({ ghJson: noopGhJson });
+    const deps = await buildProductionDeps({
+      ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
+    });
     expect(deps.isAuthorAllowed?.("allowed-user")).toBe(true);
     expect(deps.isAuthorAllowed?.("someone-else")).toBe(false);
   });
@@ -1345,6 +1461,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
     agentAuthorAllowlistRef.set(["ref-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       isAuthorAllowed: (login) => login === "explicit-user",
     });
     expect(deps.isAuthorAllowed?.("ref-user")).toBe(false);
@@ -1361,6 +1478,9 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
+  // See stubWorkspacePath comment in the AAL-2.2 describe block above — same
+  // rationale applies here.
+  const stubWorkspacePath = "/tmp/t-078-stub-workspace";
 
   test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
     const neverSyncedRef = createAgentAuthorAllowlistRef();
@@ -1369,6 +1489,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
 
@@ -1385,6 +1506,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: syncedEmptyRef,
     });
 
@@ -1400,10 +1522,12 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const neverSyncedDeps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
     const syncedEmptyDeps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: syncedEmptyRef,
     });
 
@@ -1423,6 +1547,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
+      workspacePath: stubWorkspacePath,
       authorAllowlistRef: neverSyncedRef,
     });
 

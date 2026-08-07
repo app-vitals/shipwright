@@ -262,7 +262,11 @@ export class TaskService implements TaskServiceLike {
     const tasks = await this.prisma.task.findMany({
       orderBy: { createdAt: "asc" },
     });
-    const ready = await resolveReadyTasks(tasks, async () => false);
+    const ready = await resolveReadyTasks(
+      tasks,
+      async () => false,
+      () => this.clock.now(),
+    );
     if (agentId) {
       return ready.filter(
         (t) =>

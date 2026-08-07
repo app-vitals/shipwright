@@ -583,20 +583,41 @@ export function createLoopOrchestrator(
         itemType,
         itemId,
       );
-      // BBE-1.2: dev-task's Same-Branch Sibling Check (Step 1) is a legitimate
-      // defer, not a genuine no-op — it fires when a task is dispatched by
-      // explicit id (bypassing the ?ready=true queue, e.g. crash-recovery
-      // re-dispatch) and finds a fresh same-branch sibling already
-      // in_progress. Counting that toward SKIP_BLOCK_THRESHOLD risks the same
-      // false HITL auto-block this session fixed at the systemic level in
-      // BBE-1.1. The branch suffix varies per task, so match by prefix rather
-      // than exact string equality. skipRun above stays unconditional —
-      // observability must not change, only the skip-count side effect is
-      // exempted.
+      // STD-1.1: skip-reasons follow (or are moving toward) a
+      // `{command}:{category}:{reason}[:{detail}]` taxonomy — a legitimate
+      // defer, not a genuine no-op, is tagged with a `deferred` category
+      // segment (the second colon-delimited field) and is exempt from
+      // SKIP_BLOCK_THRESHOLD counting, same rationale as BBE-1.2's original
+      // fix: counting a legitimate defer toward the HITL auto-block streak
+      // risks the same false auto-block BBE-1.1 fixed at the systemic level.
+      // skipRun above stays unconditional — observability must not change,
+      // only the skip-count side effect is exempted. Any skip-reason that
+      // doesn't parse into at least 2 segments, or whose category segment
+      // isn't exactly 'deferred', falls through to recordSkip exactly as
+      // today — fail-safe default, no automatic exemption without an
+      // explicit 'deferred' tag.
+      //
+      // STD-1.4: review.md's Unresolved Comment Check tags its defer as
+      // `review:deferred:unresolved-human-feedback:{pr}` — it's already
+      // covered by the generic isDeferredCategory check below (no separate
+      // prefix needed) since it follows the taxonomy from day one.
+      const isDeferredCategory = skipReason.split(":")[1] === "deferred";
+      // BBE-1.2 backward-compat: dev-task's Same-Branch Sibling Check has
+      // been retagged (STD-1.2) to the taxonomy-conformant
+      // `dev-task:deferred:same-branch-sibling-busy:{branch}` marker, which
+      // is already covered by the generic isDeferredCategory check above
+      // (its second segment is literally 'deferred') — no separate handling
+      // needed for it. This explicit exact-prefix OR instead matches the OLD
+      // pre-rename marker (no 'deferred' segment), kept purely for backward
+      // compat with an agent whose plugin install lags the deployed
+      // `agent/` binary (plugin version is tracked per-agent in
+      // `AgentPlugin`, decoupled from `agent/`'s own deploy) and may still
+      // emit the old-format string. The branch suffix varies per task, so
+      // match by prefix rather than exact string equality.
       const isSameBranchSiblingBusy = skipReason.startsWith(
         "dev-task:same-branch-sibling-busy:",
       );
-      if (!isSameBranchSiblingBusy) {
+      if (!isDeferredCategory && !isSameBranchSiblingBusy) {
         // SKT-2.1: fire-and-forget — see callSkipTracker's doc comment.
         await callSkipTracker("recordSkip", () =>
           recordSkip(itemType, recordId),

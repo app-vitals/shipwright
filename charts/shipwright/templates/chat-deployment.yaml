@@ -22,6 +22,14 @@ spec:
         - name: {{ . }}
         {{- end }}
       {{- end }}
+      {{- if include "shipwright.chat.useBundledDatabase" . }}
+      # Only on the bundled-PostgreSQL path — an external database is the
+      # operator's to make reachable, and blocking on it here would be wrong.
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "shipwright.postgresql.fullname" . }} 5432; do echo "waiting for postgresql..."; sleep 2; done']
+      {{- end }}
       containers:
         - name: chat
           image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.chat.image.repository "tag" (.Values.chat.image.tag | default .Chart.AppVersion)) | quote }}
@@ -47,14 +55,25 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           env:
-            # DATABASE_URL_SHIPWRIGHT_CHAT sourced from an existing Secret.
-            # Defaults to "shipwright-secrets" (the canonical cluster secret name)
-            # but can be overridden via chat.database.existingSecret.
+            {{- if .Values.chat.database.existingSecret }}
+            # Bring-your-own Secret (the default, "shipwright-secrets"). The chart
+            # neither creates nor owns it — create it before deploying.
             - name: DATABASE_URL_SHIPWRIGHT_CHAT
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.chat.database.existingSecret | default "shipwright-secrets" }}
+                  name: {{ .Values.chat.database.existingSecret }}
                   key: DATABASE_URL_SHIPWRIGHT_CHAT
+            {{- else if .Values.postgresql.enabled }}
+            # Chart-managed bundled-PostgreSQL path: the DSN is assembled in
+            # chat-secret.yaml so the password stays out of plaintext env.
+            - name: DATABASE_URL_SHIPWRIGHT_CHAT
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.chat.secretName" . }}
+                  key: DATABASE_URL_SHIPWRIGHT_CHAT
+            {{- else }}
+            {{- fail "chat.database.existingSecret is required when postgresql.enabled=false" }}
+            {{- end }}
             {{- if .Values.chat.adminToken.existingSecret }}
             # Seed the admin token (stored hashed) at boot so the admin console
             # can authenticate without manual token minting. Idempotent upsert —

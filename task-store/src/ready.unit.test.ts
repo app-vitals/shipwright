@@ -6,7 +6,8 @@
  * (dependency injection, not a global/module mock).
  */
 
-import { describe, expect, it } from "bun:test";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
+import { afterEach, describe, expect, it } from "bun:test";
 import { type ReadyTaskLike, resolveReadyTasks } from "./ready.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -20,9 +21,14 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     pr: null,
     hitl: null,
     hitlNotifiedAt: null,
+    claimedAt: null,
+    heartbeatAt: null,
     ...overrides,
   };
 }
+
+const FIXED_NOW = new Date("2026-08-05T00:00:00.000Z");
+const fixedNow = () => FIXED_NOW;
 
 /** isPrMerged stub that always throws — use when the test asserts it must
  * never be called (e.g. dep.pr is null so the check should short-circuit). */
@@ -192,5 +198,165 @@ describe("resolveReadyTasks", () => {
       isPrMergedShouldNotBeCalled,
     );
     expect(result).toEqual([task]);
+  });
+
+  describe("same-branch exclusivity", () => {
+    it("excludes a pending task when a fresh in_progress sibling shares its branch (heartbeatAt)", async () => {
+      const sibling = makeTask({
+        id: "sibling",
+        status: "in_progress",
+        branch: "feat/shared",
+        heartbeatAt: new Date(FIXED_NOW.getTime() - 1_000).toISOString(),
+      });
+      const task = makeTask({ id: "t1", branch: "feat/shared" });
+      const result = await resolveReadyTasks(
+        [task, sibling],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([]);
+    });
+
+    it("excludes a pending task when a fresh in_progress sibling shares its branch (claimedAt, no heartbeatAt)", async () => {
+      const sibling = makeTask({
+        id: "sibling",
+        status: "in_progress",
+        branch: "feat/shared",
+        claimedAt: new Date(FIXED_NOW.getTime() - 1_000).toISOString(),
+        heartbeatAt: null,
+      });
+      const task = makeTask({ id: "t1", branch: "feat/shared" });
+      const result = await resolveReadyTasks(
+        [task, sibling],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([]);
+    });
+
+    it("does not exclude a pending task when the in_progress sibling's claim is stale (older than DEFAULT_CLAIM_TTL_MS)", async () => {
+      const sibling = makeTask({
+        id: "sibling",
+        status: "in_progress",
+        branch: "feat/shared",
+        heartbeatAt: new Date(
+          FIXED_NOW.getTime() - DEFAULT_CLAIM_TTL_MS - 1_000,
+        ).toISOString(),
+      });
+      const task = makeTask({ id: "t1", branch: "feat/shared" });
+      const result = await resolveReadyTasks(
+        [task, sibling],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([task]);
+    });
+
+    it("does not exclude a pending task when the in_progress sibling is on a different branch", async () => {
+      const sibling = makeTask({
+        id: "sibling",
+        status: "in_progress",
+        branch: "feat/other",
+        heartbeatAt: new Date(FIXED_NOW.getTime() - 1_000).toISOString(),
+      });
+      const task = makeTask({ id: "t1", branch: "feat/shared" });
+      const result = await resolveReadyTasks(
+        [task, sibling],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([task]);
+    });
+
+    it("does not exclude a pending task with no branch set", async () => {
+      const sibling = makeTask({
+        id: "sibling",
+        status: "in_progress",
+        branch: null,
+        heartbeatAt: new Date(FIXED_NOW.getTime() - 1_000).toISOString(),
+      });
+      const task = makeTask({ id: "t1", branch: null });
+      const result = await resolveReadyTasks(
+        [task, sibling],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([task]);
+    });
+
+    it("does not exclude a task from being blocked by itself when it happens to be in_progress-like in the list (self is skipped as a sibling)", async () => {
+      // Only the task itself is present with a shared branch — since a task
+      // can never be its own sibling, and this record is 'pending' (not
+      // in_progress) anyway, it must be included.
+      const task = makeTask({ id: "t1", branch: "feat/solo" });
+      const result = await resolveReadyTasks(
+        [task],
+        isPrMergedShouldNotBeCalled,
+        fixedNow,
+      );
+      expect(result).toEqual([task]);
+    });
+
+    it("uses the default now() when no now function is injected (production default, real time)", async () => {
+      // No in_progress siblings at all — this exercises the default
+      // `now: () => new Date()` parameter path without needing determinism.
+      const task = makeTask({ id: "t1", branch: "feat/shared" });
+      const result = await resolveReadyTasks([task], isPrMergedShouldNotBeCalled);
+      expect(result).toEqual([task]);
+    });
+
+    describe("SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS override", () => {
+      const ENV_KEY = "SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS";
+      const originalValue = process.env[ENV_KEY];
+
+      afterEach(() => {
+        if (originalValue === undefined) {
+          delete process.env[ENV_KEY];
+        } else {
+          process.env[ENV_KEY] = originalValue;
+        }
+      });
+
+      it("excludes a sibling that is fresh under a custom (longer) TTL but would be stale under the default", async () => {
+        process.env[ENV_KEY] = String(DEFAULT_CLAIM_TTL_MS * 2);
+        const sibling = makeTask({
+          id: "sibling",
+          status: "in_progress",
+          branch: "feat/shared",
+          heartbeatAt: new Date(
+            FIXED_NOW.getTime() - DEFAULT_CLAIM_TTL_MS - 1_000,
+          ).toISOString(),
+        });
+        const task = makeTask({ id: "t1", branch: "feat/shared" });
+        const result = await resolveReadyTasks(
+          [task, sibling],
+          isPrMergedShouldNotBeCalled,
+          fixedNow,
+        );
+        // Under the default TTL this sibling's claim is stale (excluded from
+        // the guard); under the custom, longer TTL it's still fresh, so t1
+        // stays blocked.
+        expect(result).toEqual([]);
+      });
+
+      it("does not exclude a sibling that is stale under a custom (shorter) TTL even though it would be fresh under the default", async () => {
+        process.env[ENV_KEY] = String(30_000);
+        const sibling = makeTask({
+          id: "sibling",
+          status: "in_progress",
+          branch: "feat/shared",
+          heartbeatAt: new Date(FIXED_NOW.getTime() - 60_000).toISOString(),
+        });
+        const task = makeTask({ id: "t1", branch: "feat/shared" });
+        const result = await resolveReadyTasks(
+          [task, sibling],
+          isPrMergedShouldNotBeCalled,
+          fixedNow,
+        );
+        // Under the default TTL (65min) this sibling would still be fresh;
+        // under the custom, shorter 30s TTL, it's stale, so t1 is unblocked.
+        expect(result).toEqual([task]);
+      });
+    });
   });
 });

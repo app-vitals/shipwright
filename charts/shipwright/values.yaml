@@ -114,7 +114,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.62.0
+    tag: admin-v1.63.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -182,7 +182,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.27.0
+    tag: metrics-v1.29.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -298,7 +298,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.124.0
+    tag: agent-v1.129.0
     pullPolicy: ""
   service:
     port: 3000
@@ -321,7 +321,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.124.0
+      tag: agent-v1.129.0
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -491,7 +491,7 @@ postgresql:
         memory: 512Mi
     # -- First-boot init scripts (Bitnami subchart). The SEPARATE metrics database
     # (default "shipwright_metrics") is created by a parent-chart ConfigMap
-    # (templates/metrics-postgres-initdb-configmap.yaml), referenced here via
+    # (templates/postgres-initdb-configmap.yaml), referenced here via
     # scriptsConfigMap below and mounted at /docker-entrypoint-initdb.d. Keeping
     # the metrics event store in its own database (never the admin database) is
     # REQUIRED — sharing it would leave the admin schema non-empty and break
@@ -505,7 +505,7 @@ postgresql:
     initdb:
       # The Bitnami subchart tpl-renders scriptsConfigMap, so this resolves to
       # "<release>-metrics-initdb" — the name the parent-chart ConfigMap renders
-      # (templates/metrics-postgres-initdb-configmap.yaml). That ConfigMap is gated
+      # (templates/postgres-initdb-configmap.yaml). That ConfigMap is gated
       # on postgresql.enabled, matching this reference: whenever the bundled
       # Postgres renders, the ConfigMap it mounts renders too (no dangling mount).
       scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}'
@@ -517,6 +517,32 @@ postgresql:
 # create and rotate it), and the chart-managed admin Secret assembles NO DB URL on
 # this path, so there is no duplicate/conflicting env. When postgresql.enabled=true
 # this block is ignored — the bundled subchart path wins and is unchanged.
+# -- Post-install/post-upgrade hook Job that ensures the per-service databases
+# (metrics, task-store, chat) exist on the bundled PostgreSQL.
+#
+# The initdb ConfigMap only runs on the FIRST boot of an empty data volume, so on
+# any already-initialized release — every upgrade, and any install where you turn
+# on task-store or chat later — it is a no-op. This Job runs the same guarded SQL
+# against a live database, which is what actually makes those services deployable
+# on an existing release. It is a no-op once the databases exist.
+#
+# Only rendered when postgresql.enabled=true. Disable it if you provision the
+# databases yourself and want no hook Job in the release.
+dbBootstrap:
+  # -- Whether to render the database bootstrap hook Job.
+  enabled: true
+  # -- Job backoffLimit. The container polls with pg_isready before connecting,
+  # so retries here only cover a PostgreSQL that is slow to become healthy.
+  backoffLimit: 6
+  # -- Compute resources for the bootstrap Job pod.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
 externalDatabase:
   # -- Name of a pre-existing Secret holding the admin DB connection string. Empty
   # (default) → no external DB wiring. Set this together with postgresql.enabled=false
@@ -534,7 +560,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.41.0
+    tag: task-store-v1.44.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -562,12 +588,28 @@ taskStore:
     limits:
       cpu: 250m
       memory: 256Mi
-  # -- Database wiring for the task-store service.
+  # -- Database wiring for the task-store service. Two mutually exclusive paths,
+  # selected by whether existingSecret is set:
+  #
+  #   existingSecret non-empty (THE DEFAULT) — bring-your-own Secret. The chart
+  #     neither creates nor owns it; create it before deploying. Unchanged
+  #     behaviour for every install that predates the bundled-database path.
+  #
+  #   existingSecret: "" + postgresql.enabled — chart-managed. The bundled
+  #     PostgreSQL gets a separate `name` database (created by the initdb
+  #     ConfigMap on a fresh volume, or by the post-install/upgrade bootstrap Job
+  #     otherwise) and the chart assembles DATABASE_URL_SHIPWRIGHT_TASK_STORE into
+  #     its own Secret. This is what examples/values-minikube.yaml opts into.
+  #
+  #   existingSecret: "" + postgresql.enabled=false — rejected at render time.
   database:
     # -- Name of a pre-existing Secret holding DATABASE_URL_SHIPWRIGHT_TASK_STORE.
-    # Defaults to "shipwright-secrets" (the canonical cluster secret name).
-    # The chart does NOT manage this Secret — create it before deploying.
+    # Set to "" to use the chart-managed bundled-PostgreSQL database instead.
     existingSecret: "shipwright-secrets"
+    # -- Database name on the bundled PostgreSQL (chart-managed path only).
+    # MUST be its own database — sharing one with admin/metrics/chat breaks
+    # `prisma migrate deploy` with Prisma P3005. Empty → "shipwright_task_store".
+    name: ""
   # -- Extra env vars to inject into the task-store container. Use for service
   # wiring (e.g. SHIPWRIGHT_TASK_STORE_AGENTS_URL + AGENTS_API_KEY for the
   # scope resolver) without baking those into the chart template.
@@ -607,7 +649,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.25.0
+    tag: chat-v1.26.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.
@@ -622,12 +664,15 @@ chat:
     limits:
       cpu: 250m
       memory: 256Mi
-  # -- Database wiring for the chat service.
+  # -- Database wiring for the chat service. Same two paths as
+  # taskStore.database — see there for the full explanation.
   database:
     # -- Name of a pre-existing Secret holding DATABASE_URL_SHIPWRIGHT_CHAT.
-    # Defaults to "shipwright-secrets" (the canonical cluster secret name).
-    # The chart does NOT manage this Secret — create it before deploying.
+    # Set to "" to use the chart-managed bundled-PostgreSQL database instead.
     existingSecret: "shipwright-secrets"
+    # -- Database name on the bundled PostgreSQL (chart-managed path only).
+    # Empty → "shipwright_chat".
+    name: ""
   # -- Admin-token wiring for the admin console's Chat tab (/admin/chat).
   # When existingSecret is set (and chat.enabled), the chart injects the SAME
   # raw token into both sides so the pair works out of the box:

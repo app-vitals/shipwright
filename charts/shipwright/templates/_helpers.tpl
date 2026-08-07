@@ -253,7 +253,7 @@ Metrics database name: a SEPARATE database from the admin service (default
 boot; sharing the admin database would leave the admin schema non-empty and
 break the admin service's `prisma migrate deploy` baseline (Prisma P3005). When
 the bundled PostgreSQL subchart is enabled, this database is provisioned via
-the parent-chart ConfigMap in metrics-postgres-initdb-configmap.yaml, which
+the parent-chart ConfigMap in postgres-initdb-configmap.yaml, which
 renders the CREATE DATABASE SQL with this helper. The ConfigMap name tracks the
 release (values.yaml sets postgresql.primary.initdb.scriptsConfigMap to a
 tpl-evaluable string the Bitnami subchart resolves at render time). Overriding
@@ -271,6 +271,80 @@ The Bitnami subchart derives these from its own fullname (release name +
 */}}
 {{- define "shipwright.postgresql.fullname" -}}
 {{- printf "%s-postgresql" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Name of the ConfigMap holding the PostgreSQL first-boot initdb scripts.
+
+LEGACY NAME — DO NOT CHANGE. This renders "<release>-metrics-initdb" even though
+the ConfigMap now creates the metrics, task-store AND chat databases. values.yaml
+statically references this name via
+`postgresql.primary.initdb.scriptsConfigMap: '{{ printf "%s-metrics-initdb" .Release.Name }}'`,
+and any operator who pinned that key in their own values would get a dangling
+volume reference and a PostgreSQL pod that never starts if the name changed.
+tests/metrics_initdb_configmap_test.yaml asserts this name as a regression guard.
+*/}}
+{{- define "shipwright.postgresql.initdbConfigMapName" -}}
+{{- printf "%s-metrics-initdb" .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Resolve the bundled PostgreSQL APPLICATION user's password (the account named by
+postgresql.auth.username — NOT the postgres superuser). Resolution order:
+
+  1. .Values.postgresql.auth.password when set explicitly, else
+  2. postgresql.auth.existingSecret's "password" key, else
+  3. the live "<release>-postgresql" Secret's "password" key (Bitnami
+     auto-generated on first install), else
+  4. "" — the case on `helm template` / helm-unittest, which do NOT execute
+     `lookup`. A live install/upgrade resolves the real value.
+
+KEY NAME: Bitnami postgresql 16.7.27 templates/secrets.yaml emits exactly
+`postgres-password` (superuser), `password` (application user),
+`replication-password` and `ldap-password`. It has NEVER emitted
+`postgresql-password` — the key this chart previously looked up, which meant
+branch 3 could never fire and a bundled-Postgres install rendered an
+empty-password DSN unless postgresql.auth.password was set by hand.
+
+CAVEAT (branch 3 on first install): the "<release>-postgresql" Secret does not
+exist yet during `helm install`, so an auto-generated password still resolves to
+"" on the very first render. Set postgresql.auth.password (or
+auth.existingSecret) for a single-shot install — examples/values-minikube.yaml
+does exactly that.
+*/}}
+{{- define "shipwright.postgresql.password" -}}
+{{- $password := .Values.postgresql.auth.password }}
+{{- if not $password }}
+{{- if .Values.postgresql.auth.existingSecret }}
+{{- $secret := (lookup "v1" "Secret" .Release.Namespace .Values.postgresql.auth.existingSecret) }}
+{{- if and $secret $secret.data (index $secret.data "password") }}
+{{- $password = (index $secret.data "password" | b64dec) }}
+{{- end }}
+{{- else }}
+{{- $secret := (lookup "v1" "Secret" .Release.Namespace (include "shipwright.postgresql.fullname" .)) }}
+{{- if and $secret $secret.data (index $secret.data "password") }}
+{{- $password = (index $secret.data "password" | b64dec) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $password }}
+{{- end }}
+
+{{/*
+Assemble a bundled-PostgreSQL connection string for one database.
+
+Usage: include "shipwright.postgresql.dsn" (dict "context" . "database" "shipwright_chat")
+
+Always rendered into a chart-managed Secret — never into plaintext Deployment
+env — so the password does not appear in `kubectl get deploy -o yaml`.
+*/}}
+{{- define "shipwright.postgresql.dsn" -}}
+{{- $ctx := .context }}
+{{- printf "postgresql://%s:%s@%s:5432/%s"
+      $ctx.Values.postgresql.auth.username
+      (include "shipwright.postgresql.password" $ctx)
+      (include "shipwright.postgresql.fullname" $ctx)
+      .database }}
 {{- end }}
 
 {{/*
@@ -307,6 +381,39 @@ Task-store ServiceAccount name.
 {{- end }}
 
 {{/*
+Name of the chart-managed task-store Secret (holds the assembled
+DATABASE_URL_SHIPWRIGHT_TASK_STORE on the bundled-PostgreSQL path).
+*/}}
+{{- define "shipwright.taskStore.secretName" -}}
+{{- printf "%s-task-store" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Task-store database name: a SEPARATE database from admin, metrics and chat
+(default "shipwright_task_store"). Each Prisma service owns its own database —
+sharing one would leave a non-empty schema and break `prisma migrate deploy`
+with Prisma P3005. Provisioned by the initdb ConfigMap + bootstrap Job, both of
+which render the CREATE DATABASE SQL from THIS helper, so overriding
+taskStore.database.name keeps the created database and the connection string in
+sync automatically.
+*/}}
+{{- define "shipwright.taskStore.databaseName" -}}
+{{- default "shipwright_task_store" .Values.taskStore.database.name }}
+{{- end }}
+
+{{/*
+Whether the task-store uses the chart-managed bundled-PostgreSQL database.
+
+True only when taskStore.database.existingSecret is EMPTY and the bundled
+subchart is enabled. The value defaults to the non-empty "shipwright-secrets",
+so every existing install keeps its caller-managed external Secret untouched —
+opting in is an explicit `existingSecret: ""`.
+*/}}
+{{- define "shipwright.taskStore.useBundledDatabase" -}}
+{{- if and (not .Values.taskStore.database.existingSecret) .Values.postgresql.enabled }}true{{- end }}
+{{- end }}
+
+{{/*
 Chat component fullname: "<fullname>-chat".
 */}}
 {{- define "shipwright.chat.fullname" -}}
@@ -338,4 +445,29 @@ Chat ServiceAccount name.
 {{- else }}
 {{- default "default" .Values.chat.serviceAccount.name }}
 {{- end }}
+{{- end }}
+
+{{/*
+Name of the chart-managed chat Secret (holds the assembled
+DATABASE_URL_SHIPWRIGHT_CHAT on the bundled-PostgreSQL path).
+*/}}
+{{- define "shipwright.chat.secretName" -}}
+{{- printf "%s-chat" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Chat database name: a SEPARATE database from admin, metrics and task-store
+(default "shipwright_chat"). See shipwright.taskStore.databaseName for why each
+Prisma service must own its own database.
+*/}}
+{{- define "shipwright.chat.databaseName" -}}
+{{- default "shipwright_chat" .Values.chat.database.name }}
+{{- end }}
+
+{{/*
+Whether chat uses the chart-managed bundled-PostgreSQL database. Mirrors
+shipwright.taskStore.useBundledDatabase — see there for the opt-in rationale.
+*/}}
+{{- define "shipwright.chat.useBundledDatabase" -}}
+{{- if and (not .Values.chat.database.existingSecret) .Values.postgresql.enabled }}true{{- end }}
 {{- end }}

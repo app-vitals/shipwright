@@ -10,6 +10,102 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.8.3] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.8.3 triggered by release tag(s): `agent-v1.129.0`
+
+## [1.8.2] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.8.2 triggered by release tag(s): `task-store-v1.44.0`
+
+## [1.8.1] - 2026-08-07
+
+### Changed
+
+- chart version bump to 1.8.1 — rebase past main's chart v1.8.0 (originally targeted 1.7.196, superseded by an intervening chart release)
+
+## [1.8.0] - 2026-08-07
+
+### Added
+
+- **task-store and chat can use the bundled PostgreSQL.** Both previously required
+  a hand-created Secret (default `shipwright-secrets`) holding their
+  `DATABASE_URL_*`. Set `taskStore.database.existingSecret: ""` (or
+  `chat.database.existingSecret: ""`) with `postgresql.enabled=true` and the chart
+  now creates a dedicated database and assembles the connection string into its
+  own Secret, matching how admin and metrics already worked.
+- `taskStore.database.name` / `chat.database.name` — override the bundled database
+  names (default `shipwright_task_store` / `shipwright_chat`). Each service keeps
+  its **own** database; sharing one breaks `prisma migrate deploy` (Prisma P3005).
+- `dbBootstrap` — a `post-install,post-upgrade` hook Job that ensures every
+  per-service database exists. PostgreSQL runs `/docker-entrypoint-initdb.d`
+  scripts **only** on the first boot of an empty volume, so the init path alone
+  could never provision databases on an existing release. Disable with
+  `dbBootstrap.enabled=false`.
+- `wait-for-postgres` initContainer for task-store and chat, on the bundled path
+  only (an external database is the operator's to make reachable).
+
+### Fixed
+
+- **Bundled-PostgreSQL password resolution.** `admin-secret.yaml` and
+  `metrics-secret.yaml` looked the password up under a `postgresql-password` key.
+  Bitnami postgresql 16.7.27 emits `postgres-password`, `password`,
+  `replication-password` and `ldap-password` — never `postgresql-password` — so
+  that branch could never fire and an install relying on an auto-generated
+  password rendered an **empty-password DSN**. Corrected to `password`.
+  **Upgrade note:** on any release that was relying on the broken fallback, the
+  rendered DSN changes from empty-password to the real password, so the admin and
+  metrics pods restart once on upgrade. This is the fix taking effect.
+
+### Changed
+
+- `templates/metrics-postgres-initdb-configmap.yaml` renamed to
+  `templates/postgres-initdb-configmap.yaml` and now creates all three
+  per-service databases. **The rendered ConfigMap name is unchanged**
+  (`<release>-metrics-initdb`) — `values.yaml` references it statically via
+  `postgresql.primary.initdb.scriptsConfigMap`, and renaming it would leave a
+  dangling volume reference and a PostgreSQL pod that never starts. Its labels
+  drop the `component: metrics` label, as it is no longer metrics-specific.
+- Password/DSN assembly consolidated into shared `shipwright.postgresql.password`
+  and `shipwright.postgresql.dsn` helpers.
+
+### Compatibility
+
+- **No defaults changed.** `taskStore.database.existingSecret` and
+  `chat.database.existingSecret` still default to `"shipwright-secrets"`, so every
+  existing install keeps its bring-your-own Secret path byte-for-byte. The
+  bundled-database path is strictly opt-in.
+- `taskStore.extraEnv` / `chat.extraEnv` still render **last**, so hand-wired
+  overrides continue to win over anything the chart emits.
+
+## [1.7.195] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.195 triggered by release tag(s): `agent-v1.125.0`
+
+## [1.7.194] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.194 triggered by release tag(s): `agent-v1.124.3`
+
+## [1.7.193] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.7.193 triggered by release tag(s): `agent-v1.124.2`
+
+## [1.7.192] - 2026-08-05
+
+### Changed
+
+- auto-bump to chart v1.7.192 triggered by release tag(s): `agent-v1.124.1`
+
 ## [1.7.191] - 2026-08-05
 
 ### Changed

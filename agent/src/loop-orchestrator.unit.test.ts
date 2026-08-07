@@ -1735,9 +1735,46 @@ describe("createLoopOrchestrator", () => {
     expect(skips[0].skipReason).toBe("command:no-work");
   });
 
-  // ─── skip-reason exemption for dev-task:same-branch-sibling-busy (BBE-1.2) ─
+  // ─── skip-reason exemption for dev-task:deferred:same-branch-sibling-busy (BBE-1.2) ─
 
-  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
+  test("a [skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x] dispatch calls skipRun but NOT recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Deferring to same-branch sibling.\n[skip-reason:dev-task:deferred:same-branch-sibling-busy:feat/x]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Observability is unchanged — skipRun still fires with the parsed reason.
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe(
+      "dev-task:deferred:same-branch-sibling-busy:feat/x",
+    );
+    // But recordSkip must NOT be called — this skip reason is exempt from the
+    // HITL auto-block counter (see BBE-1.1/BBE-1.2).
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("a [skip-reason:dev-task:same-branch-sibling-busy:feat/x] (old pre-rename marker) dispatch calls skipRun but NOT recordSkip", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -1769,12 +1806,51 @@ describe("createLoopOrchestrator", () => {
     expect(skips[0].skipReason).toBe(
       "dev-task:same-branch-sibling-busy:feat/x",
     );
-    // But recordSkip must NOT be called — this skip reason is exempt from the
-    // HITL auto-block counter (see BBE-1.1/BBE-1.2).
+    // But recordSkip must NOT be called — this old pre-rename marker (no
+    // 'deferred' segment, so isDeferredCategory is false for it) is still
+    // exempt via the explicit backward-compat prefix check, protecting an
+    // agent whose plugin install lags the deployed agent/ binary.
     expect(recordCalls).toEqual([]);
   });
 
-  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch still calls recordSkip — exemption is scoped to same-branch-sibling-busy only", async () => {
+  test("a [skip-reason:review:deferred:unresolved-human-feedback:123] dispatch calls skipRun but NOT recordSkip (STD-1.4)", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Unresolved human feedback on PR.\n[skip-reason:review:deferred:unresolved-human-feedback:123]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Observability is unchanged — skipRun still fires with the parsed reason.
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe(
+      "review:deferred:unresolved-human-feedback:123",
+    );
+    // But recordSkip must NOT be called — this skip reason is exempt from the
+    // HITL auto-block counter (see BBE-1.2/STD-1.4).
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("a [skip-reason:deploy:bundle-incomplete:feat/x] dispatch still calls recordSkip — exemption is scoped to the two defer prefixes only", async () => {
     const consumed = new Set<string>();
     const { reporter, skips } = makeRecordingReporter();
     const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
@@ -1803,6 +1879,75 @@ describe("createLoopOrchestrator", () => {
 
     expect(skips).toHaveLength(1);
     expect(skips[0].skipReason).toBe("deploy:bundle-incomplete:feat/x");
+    expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
+  });
+
+  // ─── category-segment allowlist generalization (STD-1.1) ──────────────────
+
+  test("a [skip-reason:command:deferred:some-reason] dispatch calls skipRun but NOT recordSkip", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Deferring for now.\n[skip-reason:command:deferred:some-reason]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    // Observability is unchanged — skipRun still fires with the parsed reason.
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("command:deferred:some-reason");
+    // But recordSkip must NOT be called — the 'deferred' category segment is
+    // exempt from the HITL auto-block counter.
+    expect(recordCalls).toEqual([]);
+  });
+
+  test("a [skip-reason:command:not-deferred:some-reason] dispatch still calls recordSkip — category segment must be exactly 'deferred'", async () => {
+    const consumed = new Set<string>();
+    const { reporter, skips } = makeRecordingReporter();
+    const { recordSkip, resetSkip, recordCalls } = makeRecordingSkipTracker();
+    const devTaskCandidates = [task("SWC-1.1", "2026-01-01T00:00:00Z")];
+    const { runner } = makeDrainingRunner(
+      { devTask: devTaskCandidates },
+      consumed,
+      [
+        {
+          result:
+            "Not a real defer.\n[skip-reason:command:not-deferred:some-reason]\n[silent]",
+        },
+      ],
+    );
+    const deps = makeDeps({
+      devTaskCandidates,
+      runner,
+      reporter,
+      consumed,
+      recordSkip,
+      resetSkip,
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(skips).toHaveLength(1);
+    expect(skips[0].skipReason).toBe("command:not-deferred:some-reason");
     expect(recordCalls).toEqual([{ itemType: "task", recordId: "SWC-1.1" }]);
   });
 

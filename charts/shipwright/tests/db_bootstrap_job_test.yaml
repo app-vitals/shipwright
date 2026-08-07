@@ -1,0 +1,161 @@
+suite: postgres database bootstrap hook Job
+# The initdb ConfigMap only runs on the FIRST boot of an empty data volume, so it
+# is a no-op on every upgrade and on any install that enables task-store or chat
+# later. This post-install/post-upgrade hook Job runs the SAME guarded SQL from
+# the SAME ConfigMap against a live database, which is what actually makes those
+# services deployable on an existing release.
+templates:
+  - templates/postgres-db-bootstrap-job.yaml
+release:
+  name: r
+  namespace: shipwright
+tests:
+  - it: renders a Job by default when the bundled PostgreSQL is enabled
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: r-shipwright-db-bootstrap
+
+  - it: is a post-install AND post-upgrade hook
+    # post-upgrade is the load-bearing half: without it, an existing release that
+    # turns on task-store/chat never gets their databases created.
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+
+  - it: runs at a negative hook weight so it precedes default-weight hooks
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-5"
+
+  - it: cleans up before re-creation and on success
+    # before-hook-creation is required for repeat upgrades — a Job of the same
+    # name left behind by the previous run would make the next upgrade fail.
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+
+  - it: connects as the postgres SUPERUSER, not the application user
+    # CREATE DATABASE requires it; the Bitnami subchart grants the app user no
+    # CREATEDB privilege.
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGUSER
+            value: postgres
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGHOST
+            value: "r-postgresql"
+
+  - it: sources the superuser password from the subchart Secret under key postgres-password
+    # Bitnami postgresql 16.7.27 emits `postgres-password` (superuser) and
+    # `password` (app user). It has never emitted `postgresql-password`.
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: r-postgresql
+                key: postgres-password
+
+  - it: sources the superuser password from postgresql.auth.existingSecret when set
+    set:
+      postgresql.auth.existingSecret: my-pg-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGPASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: my-pg-secret
+                key: postgres-password
+
+  - it: mounts the initdb ConfigMap as the single source of the SQL
+    # Sharing the ConfigMap with the initdb path guarantees a database can never
+    # be created under one name here and connected to under another there.
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: initdb
+            configMap:
+              name: r-metrics-initdb
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: initdb
+            mountPath: /initdb
+            readOnly: true
+
+  - it: waits for PostgreSQL to accept connections before applying the SQL
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "until pg_isready -q; do sleep 2; done"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "psql -v ON_ERROR_STOP=1"
+
+  - it: reuses the PostgreSQL subchart image so it triggers no extra pull
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^docker\\.io/bitnami/postgresql:"
+
+  - it: follows a global postgresql image override to a mirror
+    set:
+      postgresql.image.registry: docker.io
+      postgresql.image.repository: bitnamilegacy/postgresql
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
+
+  - it: runs as a non-root user
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+
+  - it: applies the configured backoffLimit and resources
+    set:
+      dbBootstrap.backoffLimit: 3
+      dbBootstrap.resources:
+        requests:
+          cpu: 11m
+          memory: 22Mi
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 3
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 11m
+
+  - it: renders no Job when the bundled PostgreSQL is disabled
+    set:
+      postgresql.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no Job when dbBootstrap is explicitly disabled
+    set:
+      dbBootstrap.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
