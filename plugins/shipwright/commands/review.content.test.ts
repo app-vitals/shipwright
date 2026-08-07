@@ -421,6 +421,54 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("cross-task-store");
     expect(section.toLowerCase()).toContain("stop");
   });
+
+  it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // The section must contain a conditional release call referencing PRECLAIM_RECORD_ID
+    expect(section).toContain("/prs/");
+    expect(section).toContain("/release");
+    expect(section).toContain("PRECLAIM_RECORD_ID");
+  });
+
+  it("the pre-claim release call appears before the 'Skipping' message", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const releaseIdx = section.indexOf("/release");
+    const skippingIdx = section.indexOf("Skipping #{pr}");
+
+    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(skippingIdx).toBeGreaterThan(-1);
+    expect(releaseIdx).toBeLessThan(skippingIdx);
+  });
+
+  it("the release call is conditional on PRECLAIM_RECORD_ID being non-empty", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    // Should reference checking if PRECLAIM_RECORD_ID is set
+    const releaseIdx = section.indexOf("/release");
+    const releaseBlock = section.slice(Math.max(0, releaseIdx - 300), releaseIdx + 100);
+
+    expect(releaseBlock).toMatch(/if.*PRECLAIM_RECORD_ID|PRECLAIM_RECORD_ID.*if|-z.*PRECLAIM_RECORD_ID|-n.*PRECLAIM_RECORD_ID/i);
+  });
 });
 
 describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () => {
