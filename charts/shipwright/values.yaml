@@ -1,10 +1,13 @@
 # Default values for the shipwright chart.
 # This is a YAML-formatted file. Minikube-friendly defaults throughout.
 #
-# NOTE: The shipwright workload templates (Deployments/Services for admin, metrics,
-# and agent) land in a later task (HD-3.x). This release is the chart skeleton:
-# the values surface, helpers, NOTES, and the PostgreSQL dependency. With defaults,
-# `helm template` renders the PostgreSQL subchart + NOTES only.
+# With defaults, `helm template` renders admin + metrics + the bundled PostgreSQL.
+# task-store, chat and agent provisioning are opt-in (see their `enabled` flags);
+# examples/values-minikube.yaml turns the whole stack on.
+#
+# NOTE: agents are NOT a Deployment in this chart. The admin service provisions
+# agent workloads at runtime via the Kubernetes API when
+# agent.provisioning.enabled=true, so agents are created from the admin console.
 
 # -- Global values shared with subcharts (including Bitnami PostgreSQL).
 global:

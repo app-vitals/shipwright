@@ -1,17 +1,52 @@
 # shipwright Helm chart
 
 Deploys **Shipwright Harness** — the open-source autonomous delivery agent for
-Claude Code — onto Kubernetes. The chart packages the three Shipwright services
-(admin, metrics, agent) and an optional bundled PostgreSQL dependency, with
-Minikube-friendly defaults.
+Claude Code — onto Kubernetes. The chart packages the Shipwright services
+(admin, metrics, task-store, chat), runtime agent provisioning, and an optional
+bundled PostgreSQL, with Minikube-friendly defaults.
 
-> **Scope note (HD-2.1):** this is the chart *skeleton* — the values surface,
-> helpers, NOTES, and the PostgreSQL dependency. The shipwright service workload
-> templates (Deployments/Services for admin/metrics/agent) land in a later task
-> (HD-3.x). With default values, `helm template` renders the PostgreSQL subchart
-> and NOTES only; no shipwright workloads yet.
+> **Agents are not a Deployment in this chart.** The admin service provisions
+> agent workloads at runtime via the Kubernetes API (`agent.provisioning.enabled`),
+> so you create agents from the admin console rather than from values.
 
 License: **MIT**.
+
+## Full local stack on Minikube
+
+Brings up admin + metrics + task-store + chat + PostgreSQL + agent provisioning
+with **no hand-created Secrets** — the chart assembles every database
+connection string itself.
+
+From the repo root:
+
+```bash
+task minikube:up      # handles VM sizing, ingress addon, dependency build, rollout waits
+task minikube:down    # helm uninstall, then minikube delete
+```
+
+Or by hand:
+
+```bash
+minikube start --cpus=4 --memory=8192 --disk-size=40g
+minikube addons enable ingress
+helm dependency build charts/shipwright
+helm upgrade --install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/examples/values-minikube.yaml --wait
+echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
+```
+
+**Sizing.** The agent pod dominates: 500m CPU / 2Gi memory requests, 8Gi limit.
+`--cpus=4 --memory=8192` is the floor for the platform plus one agent;
+`--cpus=6 --memory=12288` is comfortable for an agent doing real work. Below
+4 CPU / 6Gi the agent pod schedules and then thrashes.
+
+Then create your first agent at `http://shipwright.local/admin/agents/new` and
+set its Claude credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`)
+there — the chart does not provision a deployment-wide credential.
+
+> ⚠️ The Minikube profile sets `auth.mode=open` (no authentication at all) and a
+> known literal PostgreSQL password. Local use only.
 
 ## Helm Repository
 

@@ -12,14 +12,41 @@ tests:
       - matchRegexRaw:
           pattern: "chart version \\d+\\.\\d+\\.\\d+, app version \\d+\\.\\d+\\.\\d+"
 
-  - it: surfaces the three configured service ports in NOTES
+  - it: surfaces the enabled service ports in NOTES
+    # The agent port is deliberately absent: agents are not a Deployment in this
+    # chart, so advertising a port for them was misleading.
     asserts:
       - matchRegexRaw:
-          pattern: "admin:   3001"
+          pattern: "admin:      3001"
       - matchRegexRaw:
-          pattern: "metrics: 3460"
+          pattern: "metrics:    3460"
+
+  - it: omits task-store and chat ports when those services are disabled
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "task-store: 3000"
+      - notMatchRegexRaw:
+          pattern: "chat:       3000"
+
+  - it: surfaces task-store and chat ports once they are enabled
+    set:
+      taskStore.enabled: true
+      chat.enabled: true
+    asserts:
       - matchRegexRaw:
-          pattern: "agent:   3000"
+          pattern: "task-store: 3000"
+      - matchRegexRaw:
+          pattern: "chat:       3000"
+
+  - it: tells the operator no agent exists yet when provisioning is on
+    # The single most common "what now?" after a successful install.
+    set:
+      agent.provisioning.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "/admin/agents/new"
+      - matchRegexRaw:
+          pattern: "Set its Claude"
 
   - it: reports the default networking exposure and auth mode
     asserts:

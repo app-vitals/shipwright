@@ -1,8 +1,11 @@
 Thank you for installing {{ .Chart.Name }} (Shipwright Harness) — chart version {{ .Chart.Version }}, app version {{ .Chart.AppVersion }}.
 
-NOTE: The admin and metrics service workloads (Deployment/Service/ServiceAccount,
-plus a Secret each) are now rendered. The agent workload is added in a later task
-and is NOT yet rendered. What this release currently provisions:
+What this release provisions:
+
+  Agents are NOT a Deployment in this chart — the admin service provisions them
+  at runtime (enable with agent.provisioning.enabled). Create your first agent
+  from the admin console once the pods are up.
+
 
 {{- if .Values.postgresql.enabled }}
   • PostgreSQL (Bitnami subchart) — database "{{ .Values.postgresql.auth.database }}", user "{{ .Values.postgresql.auth.username }}".
@@ -19,10 +22,15 @@ and is NOT yet rendered. What this release currently provisions:
     DATABASE_URL_SHIPWRIGHT_ADMIN connection string.
 {{- end }}
 
-Configured service ports (exposed once HD-3.x workloads land):
-  • admin:   {{ .Values.admin.service.port }}
-  • metrics: {{ .Values.metrics.service.port }}
-  • agent:   {{ .Values.agent.service.port }}
+Configured service ports:
+  • admin:      {{ .Values.admin.service.port }}
+  • metrics:    {{ .Values.metrics.service.port }}
+{{- if .Values.taskStore.enabled }}
+  • task-store: {{ .Values.taskStore.service.port }}
+{{- end }}
+{{- if .Values.chat.enabled }}
+  • chat:       {{ .Values.chat.service.port }}
+{{- end }}
 
 Networking exposure type: {{ .Values.networking.type }}
 Auth mode:                {{ .Values.auth.mode }}
@@ -60,9 +68,45 @@ Metrics dashboard access:
   database password never appears in the Deployment's plaintext env.
 {{- else }}
   PostgreSQL subchart is disabled — set METRICS_DATABASE_URL yourself (e.g. via a
-  pre-created Secret) so the metrics service can reach your event store, or leave
-  it unset to run in local SQLite mode.
+  pre-created Secret) so the metrics service can reach your event store. Leaving
+  it unset does NOT fall back to a working local store: the published image has
+  no writable SQLite path and the pod crashes on boot with SQLITE_CANTOPEN.
 {{- end }}
+{{- end }}
+
+{{- if .Values.taskStore.enabled }}
+
+Task-store access:
+  kubectl port-forward svc/{{ include "shipwright.taskStore.fullname" . }} 3000:{{ .Values.taskStore.service.port }} -n {{ .Release.Namespace }}
+  then: curl http://localhost:3000/health
+{{- if include "shipwright.taskStore.useBundledDatabase" . }}
+  Using the bundled PostgreSQL, database "{{ include "shipwright.taskStore.databaseName" . }}".
+{{- else }}
+  Using the pre-existing Secret "{{ .Values.taskStore.database.existingSecret }}" for
+  DATABASE_URL_SHIPWRIGHT_TASK_STORE — the chart does not manage it.
+{{- end }}
+{{- end }}
+
+{{- if .Values.chat.enabled }}
+
+Chat service access:
+  kubectl port-forward svc/{{ include "shipwright.chat.fullname" . }} 3000:{{ .Values.chat.service.port }} -n {{ .Release.Namespace }}
+  then: curl http://localhost:3000/health
+{{- if include "shipwright.chat.useBundledDatabase" . }}
+  Using the bundled PostgreSQL, database "{{ include "shipwright.chat.databaseName" . }}".
+{{- else }}
+  Using the pre-existing Secret "{{ .Values.chat.database.existingSecret }}" for
+  DATABASE_URL_SHIPWRIGHT_CHAT — the chart does not manage it.
+{{- end }}
+{{- end }}
+
+{{- if .Values.agent.provisioning.enabled }}
+
+Provision your first agent:
+  No agent exists yet — agents are created at runtime, not by this chart.
+  Open the admin console and create one at /admin/agents/new. Set its Claude
+  credential (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN) there — this chart
+  does not provision deployment-wide Claude credentials.
 {{- end }}
 
 {{- if and .Values.admin.enabled (eq .Values.auth.mode "open") }}
