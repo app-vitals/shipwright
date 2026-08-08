@@ -1381,14 +1381,14 @@ describe("getPatchCandidates", () => {
     expect(result.map((c) => c.id)).toEqual(["acme/example-repo#11"]);
   });
 
-  test("a PR whose task-store PR record has hitl:true is excluded, even when there is no linked task at all (isPrRecordBlockedForDispatch)", async () => {
+  test("a PR whose task-store PR record has blocked:true is excluded, even when there is no linked task at all (isPrRecordBlockedForDispatch)", async () => {
     const pr = makeOwnPr({ number: 10, createdAt: "2026-06-01T00:00:00.000Z" });
     const deps = makeDeps({
       ownPrs: [pr],
       reviewDataByPr: {},
       ciStatusByPr: { 10: { hasFailing: true } },
     });
-    deps.queryPrRecord = async () => ({ hitl: true });
+    deps.queryPrRecord = async () => ({ blocked: true });
     deps.queryTaskStatus = async () => null;
     const result = await getPatchCandidates(deps);
     expect(result).toEqual([]);

@@ -2019,20 +2019,20 @@ describe("isTaskBlockedForDispatch", () => {
 // ---------------------------------------------------------------------------
 
 describe("isPrRecordBlockedForDispatch", () => {
-  test("returns true when hitl is true", () => {
-    expect(isPrRecordBlockedForDispatch({ hitl: true })).toBe(true);
+  test("returns true when blocked is true", () => {
+    expect(isPrRecordBlockedForDispatch({ blocked: true })).toBe(true);
   });
 
-  test("returns false when hitl is false", () => {
-    expect(isPrRecordBlockedForDispatch({ hitl: false })).toBe(false);
+  test("returns false when blocked is false", () => {
+    expect(isPrRecordBlockedForDispatch({ blocked: false })).toBe(false);
   });
 
-  test("returns false when hitl is undefined", () => {
+  test("returns false when blocked is undefined", () => {
     expect(isPrRecordBlockedForDispatch({})).toBe(false);
   });
 
-  test("returns false when hitl is null", () => {
-    expect(isPrRecordBlockedForDispatch({ hitl: null })).toBe(false);
+  test("returns false when blocked is null", () => {
+    expect(isPrRecordBlockedForDispatch({ blocked: null })).toBe(false);
   });
 
   test("returns false for a null record", () => {
