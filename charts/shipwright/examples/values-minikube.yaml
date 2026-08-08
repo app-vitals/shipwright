@@ -103,8 +103,11 @@ agent:
     enabled: true
     replicas: 1
     pvc:
-      # Provisioned agent workspace. Without this the provisioner would fall back
-      # to its own 40Gi default — far too large for a laptop cluster.
+      # Provisioned agent workspace size. NOTE: this is not currently wired into
+      # the provisioned agent Deployment (see values.yaml's NOTE on this block —
+      # buildProvisioner does not read it as an env var today), so every agent
+      # actually gets the hardcoded 40Gi default regardless of this setting. Set
+      # here for when this is wired through; has no effect yet.
       size: 10Gi
     persistence:
       enabled: true

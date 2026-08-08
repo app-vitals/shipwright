@@ -110,7 +110,7 @@ export const agentProvisioningVars: ConfigVar[] = [
   { name: "SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME", type: "string", def: "—", desc: "Name of the admin Deployment, used as the ownerReference target so per-agent resources are garbage-collected with the admin Deployment. Only read when provisioning is enabled." },
   { name: "SHIPWRIGHT_ADMIN_DEPLOYMENT_UID", type: "string", def: "—", desc: "UID of the admin Deployment, paired with SHIPWRIGHT_ADMIN_DEPLOYMENT_NAME for the ownerReference. Only read when provisioning is enabled." },
   { name: "SHIPWRIGHT_AGENT_REPLICAS", type: "number", def: "1", desc: "Replica count for the provisioned agent Deployment. Only read when provisioning is enabled." },
-  { name: "SHIPWRIGHT_AGENT_PVC_STORAGE_GI", type: "number", def: "40", desc: "Storage size in Gi for the per-agent persistent home directory (PVC). Only read when provisioning is enabled. Must be large enough to hold mise caches and workspace files across pod restarts. The Helm chart sets this from agent.provisioning.pvc.size; before chart 1.10.0 it was never injected, so every provisioned agent silently fell back to the 40 default." },
+  { name: "SHIPWRIGHT_AGENT_PVC_STORAGE_GI", type: "number", def: "40", desc: "Storage size in Gi for the per-agent persistent home directory (PVC). Only read when provisioning is enabled. Must be large enough to hold mise caches and workspace files across pod restarts." },
   { name: "SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE", type: "string", def: "—", desc: "Template for deriving the PVC name from the agent's human-readable name. Use {name} as the placeholder. When unset, PVCs are named {sanitizedAgentId}-home. Only read when provisioning is enabled." },
 ];
 
