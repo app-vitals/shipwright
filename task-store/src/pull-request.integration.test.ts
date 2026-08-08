@@ -515,6 +515,44 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
     }
     expect(threw).toBe(true);
   });
+
+  it("claim(phase=review) at unchanged commitSha with reviewState=posted and claimedBy=null succeeds (idle re-claim / fresh-author-reply case)", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 706;
+    const commitSha = "sha-idle-reclaim";
+
+    // First claim creates the record and reviews it.
+    const first = await service.claim(repo, prNumber, commitSha, "agent-a");
+    expect(first.status).toBe(201);
+
+    // Simulate the review flow completing: reviewState -> posted, claim
+    // released (mirrors complete()/release()'s real behavior — claimedBy,
+    // claimedAt, heartbeatAt, and phase are all cleared).
+    await service.complete(first.record.id);
+
+    const idle = await prisma.pullRequest.findUnique({
+      where: { id: first.record.id },
+    });
+    expect(idle?.reviewState).toBe("posted");
+    expect(idle?.claimedBy).toBeNull();
+    expect(idle?.phase).toBeNull();
+
+    // A fresh-author-reply re-candidacy claim attempt at the SAME commitSha
+    // for phase=review must succeed (200), not 409 — nobody actually holds
+    // the claim, so the legacy guard must not block it.
+    const result = await service.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-b",
+      undefined,
+      "review",
+    );
+    expect(result.status).toBe(200);
+    expect(result.record.claimedBy).toBe("agent-b");
+    expect(result.record.reviewState).toBe("in_progress");
+    expect(result.record.phase).toBe("review");
+  });
 });
 
 // ─── claim() prCreatedAt wiring ────────────────────────────────────────────────
