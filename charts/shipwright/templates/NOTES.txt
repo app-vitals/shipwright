@@ -104,17 +104,9 @@ Chat service access:
 
 Provision your first agent:
   No agent exists yet — agents are created at runtime, not by this chart.
-  Open the admin console and create one at /admin/agents/new.
-{{- if not (or .Values.agent.credentials.anthropicApiKey .Values.agent.credentials.claudeCodeOauthToken .Values.agent.credentials.existingSecret) }}
-
-  ⚠️  No deployment-wide Claude credential is configured, so a new agent cannot
-      do any work until you set ANTHROPIC_API_KEY (or CLAUDE_CODE_OAUTH_TOKEN)
-      on it in the admin UI. To supply one for every agent instead, set
-      agent.credentials.claudeCodeOauthToken (or .existingSecret) and upgrade.
-{{- else }}
-  A deployment-wide Claude credential IS configured — new agents inherit it
-  automatically. A per-agent value set in the admin UI overrides it.
-{{- end }}
+  Open the admin console and create one at /admin/agents/new. Set its Claude
+  credential (ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN) there — this chart
+  does not provision deployment-wide Claude credentials.
 {{- end }}
 
 {{- if and .Values.admin.enabled (eq .Values.auth.mode "open") }}

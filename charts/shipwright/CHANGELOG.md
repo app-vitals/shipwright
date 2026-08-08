@@ -10,7 +10,7 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.11.0] - 2026-08-07
+## [1.11.2] - 2026-08-08
 
 ### Added
 
@@ -39,99 +39,35 @@ independent of `appVersion`. CI enforces this with
 - `values.yaml` header no longer describes the chart as a skeleton whose workloads
   "land in a later task".
 
+## [1.11.1] - 2026-08-08
+
+### Changed
+
+- auto-bump to chart v1.11.1 triggered by release tag(s): `admin-v1.65.1`
+
+## [1.11.0] - 2026-08-08
+
+### Removed
+
+- **Reverted the inter-service token mesh (#2484) and deployment-wide Claude
+  credentials (#2485).** Both broke the production Helm upgrade: `helm upgrade`
+  failed patching `shipwright-admin`'s Deployment with a `$setElementOrder`
+  conflict on its `env:` list, aborting the release mid-way and leaving
+  `task-store` and `shipwright-admin` on split config generations. Task-store's
+  scope-resolver calls to admin then failed against admin's stale credentials,
+  forcing every agent-scoped token into the `repos: []` fail-safe
+  (`scopeDegraded: true`) fleet-wide. Neither change had been validated against
+  a real cluster before merging — see #2494 for the full incident writeup.
+- All chart surface added by those two releases: `agent.credentials.*`,
+  `internal.*`, the `agent-credentials-secret.yaml` / `internal-secret.yaml`
+  templates, and the `*_AGENTS_URL` / `*_AGENTS_API_KEY` scope-resolver env
+  vars on task-store/chat.
+
 ## [1.10.1] - 2026-08-07
 
 ### Changed
 
 - auto-bump to chart v1.10.1 triggered by release tag(s): `admin-v1.65.0`
-
-## [1.10.0] - 2026-08-07
-
-### Added
-
-- **`agent.credentials.*` — deployment-wide Claude credentials for every agent.**
-  There is no agent Deployment in this chart; agents are provisioned at runtime by
-  the admin service and fetch their credentials from `GET /agents/:id/config` on
-  each config sync. Previously the only way to give an agent a Claude token was to
-  paste one into every agent through the admin UI, so a `helm install` could never
-  produce a working agent on its own.
-
-  Supply `agent.credentials.anthropicApiKey` or `.claudeCodeOauthToken` (or point
-  `.existingSecret` at your own Secret) and admin merges them **underneath** each
-  agent's own env rows — a per-agent value always wins. Changes reach
-  already-running agents on their next sync, with no restart or re-provision.
-
-  Credentials are injected into admin under `SHIPWRIGHT_AGENT_DEFAULT_`-prefixed
-  names, never as a bare `ANTHROPIC_API_KEY`. That prefix is a security boundary:
-  admin must not hand out a credential it happens to hold for its own use.
-
-### Fixed
-
-- **Provisioned agents silently requested 40Gi PVCs.** `agent.provisioning.pvc.size`
-  was documented as "not injected", and indeed nothing ever rendered
-  `SHIPWRIGHT_AGENT_PVC_STORAGE_GI` — so `agent-provisioner.ts` fell back to its own
-  40Gi default for every agent, regardless of the configured value. Now injected
-  (with the `Gi` suffix stripped), and the stale `values.yaml` comment corrected.
-  **Upgrade note:** existing agents keep their current PVCs; the new size applies to
-  agents provisioned from here on.
-
-## [1.9.0] - 2026-08-07
-
-### Added
-
-- **Inter-service token mesh.** The chart now generates the three tokens that let
-  the services authenticate to each other, so a fresh install needs **zero**
-  hand-created Secrets:
-
-  | Token | Produced by | Consumed by |
-  |---|---|---|
-  | `TASK_STORE_ADMIN_TOKEN` | task-store (`TASK_STORE_SEED_ADMIN_TOKEN`) | admin, metrics |
-  | `CHAT_ADMIN_TOKEN` | chat (`CHAT_SEED_ADMIN_TOKEN`) | admin |
-  | `INTERNAL_API_KEY` | admin (inside `SHIPWRIGHT_ADMIN_API_KEYS`) | metrics, task-store, chat |
-
-  Generated once in `templates/internal-secret.yaml` and referenced everywhere
-  else by `secretKeyRef` — Helm evaluates templates independently, so generating
-  in more than one place would produce mismatched values. Reused across
-  `helm upgrade` via the same `lookup` idiom as the admin session keys.
-- Admin now receives `SHIPWRIGHT_TASK_STORE_URL` / `SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN`
-  (when task-store is enabled) and `SHIPWRIGHT_ADMIN_API_KEYS`. Task-store and chat
-  receive their seed tokens and their `*_AGENTS_URL` / `*_AGENTS_API_KEY`
-  scope-resolver pairs. None of these were previously rendered at all.
-- **Metrics URL auto-defaulting.** `METRICS_ADMIN_URL` and `METRICS_TASK_STORE_URL`
-  now fall back to the in-cluster Service DNS names whenever the token mesh is
-  wired (`internal.enabled=true`, the default) — mirroring the gate on their
-  paired tokens, so `internal.enabled=false` doesn't leave metrics with a URL but
-  no credential. This is load-bearing: without `METRICS_TASK_STORE_URL` the
-  provider selector falls through to SQLite, which has no writable path in the
-  published image and crashes on boot (`SQLITE_CANTOPEN`). An explicit
-  `metrics.provider.*Url` still wins regardless of `internal.enabled`.
-- `admin.apiKeys.extra` — additional `name:token:scope` entries merged into
-  `SHIPWRIGHT_ADMIN_API_KEYS`.
-- `internal.enabled` / `internal.existingSecret` — disable the mesh entirely, or
-  point every consumer at a caller-managed Secret.
-
-### Changed
-
-- **Enabling chat no longer requires `chat.adminToken.existingSecret`.** Previously
-  the admin console's Chat tab stayed unwired unless you pre-created a Secret; the
-  chart now generates the token. `chat.adminToken.existingSecret` still wins when set.
-
-### Compatibility
-
-- Every generated value is a **fallback**. A service-specific `existingSecret`
-  (`chat.adminToken`, `metrics.provider.taskStoreToken`,
-  `metrics.provider.internalKey`) always wins, and `extraEnv` — which still renders
-  **last** — wins over everything.
-- ⚠️ **If you hand-wire `SHIPWRIGHT_ADMIN_API_KEYS` through `admin.extraEnv`**, that
-  override shadows the composed value, leaving the chart-generated internal key out
-  of admin's accepted set — metrics, task-store and chat will then **401** whenever
-  they fall back to it. Move those entries to `admin.apiKeys.extra`, or set
-  `internal.enabled=false` to keep the pre-1.9 behaviour exactly.
-- ⚠️ `helm template | kubectl apply` does not execute `lookup`, so that flow would
-  **rotate all three tokens on every apply**. Use `internal.existingSecret` if you
-  deploy that way. Same hazard class as the admin session/encryption keys.
-- Token rotation does not revoke: the task-store and chat seeds are idempotent
-  upserts, so a rotated token leaves the previous hashed row behind.
 
 ## [1.8.3] - 2026-08-07
 
@@ -150,7 +86,6 @@ independent of `appVersion`. CI enforces this with
 ### Changed
 
 - chart version bump to 1.8.1 — rebase past main's chart v1.8.0 (originally targeted 1.7.196, superseded by an intervening chart release)
-
 
 ## [1.8.0] - 2026-08-07
 

@@ -1,8 +1,8 @@
 # Full Shipwright stack on Minikube — Kubernetes-native, database included.
 #
 # Brings up admin + metrics + task-store + chat + bundled PostgreSQL + runtime
-# agent provisioning, with NO hand-created Secrets. The chart generates the
-# inter-service token mesh and assembles every database connection string.
+# agent provisioning, with NO hand-created Secrets — the chart assembles every
+# database connection string itself.
 #
 #   minikube start --cpus=4 --memory=8192 --disk-size=40g
 #   minikube addons enable ingress
@@ -97,14 +97,8 @@ chat:
     existingSecret: ""
 
 agent:
-  # Deployment-wide Claude credentials handed to every provisioned agent.
-  # Fill ONE of these in (an OAuth token from `claude /oauth-token` is easiest),
-  # or leave both empty and set the credential per-agent in the admin UI.
-  # A per-agent value always overrides what you put here.
-  credentials:
-    enabled: true
-    anthropicApiKey: ""
-    claudeCodeOauthToken: ""
+  # No deployment-wide Claude credential is set here — set ANTHROPIC_API_KEY (or
+  # CLAUDE_CODE_OAUTH_TOKEN) per-agent in the admin console after it's created.
   provisioning:
     enabled: true
     replicas: 1

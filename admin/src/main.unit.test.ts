@@ -11,7 +11,6 @@ import type { AgentTokenService } from "./agent-tokens.ts";
 import {
   buildProvisioner,
   checkDbReady,
-  resolveDefaultAgentEnv,
   resolvePublicRepo,
   resolveTaskStoreBaseUrl,
   runMigrations,
@@ -297,68 +296,5 @@ describe("checkDbReady", () => {
       },
     };
     await expect(checkDbReady(prisma)).resolves.toBe(false);
-  });
-});
-
-// resolveDefaultAgentEnv is the pure env rule behind the chart's
-// agent.credentials.* values: it turns SHIPWRIGHT_AGENT_DEFAULT_-prefixed vars
-// into the deployment-wide default env admin merges underneath each agent's own
-// rows when serving GET /agents/:id/config.
-//
-// The prefix is the security boundary — admin must never hand out a bare
-// ANTHROPIC_API_KEY it happens to hold for its own use.
-describe("resolveDefaultAgentEnv", () => {
-  it("maps the prefixed vars to the names the agent actually reads", () => {
-    expect(
-      resolveDefaultAgentEnv({
-        SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY: "sk-ant-xxx",
-        SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN: "oauth-yyy",
-      }),
-    ).toEqual({
-      ANTHROPIC_API_KEY: "sk-ant-xxx",
-      CLAUDE_CODE_OAUTH_TOKEN: "oauth-yyy",
-    });
-  });
-
-  it("returns an empty object when nothing is set", () => {
-    expect(resolveDefaultAgentEnv({})).toEqual({});
-  });
-
-  it("ignores blank and whitespace-only values", () => {
-    // An unset Helm value renders as "". Injecting an empty credential would
-    // mask a working per-agent one, so blank must behave exactly like unset.
-    expect(
-      resolveDefaultAgentEnv({
-        SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY: "",
-        SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN: "   ",
-      }),
-    ).toEqual({});
-  });
-
-  it("trims surrounding whitespace from a real value", () => {
-    expect(
-      resolveDefaultAgentEnv({
-        SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY: "  sk-ant-xxx\n",
-      }),
-    ).toEqual({ ANTHROPIC_API_KEY: "sk-ant-xxx" });
-  });
-
-  it("supports supplying only one of the two credentials", () => {
-    expect(
-      resolveDefaultAgentEnv({
-        SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN: "oauth-yyy",
-      }),
-    ).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "oauth-yyy" });
-  });
-
-  it("does NOT pick up bare ANTHROPIC_API_KEY from the admin process env", () => {
-    // The security boundary: admin holding a credential for its own use must
-    // never cause that credential to be handed to every agent.
-    expect(
-      resolveDefaultAgentEnv({
-        ANTHROPIC_API_KEY: "admins-own-key",
-        CLAUDE_CODE_OAUTH_TOKEN: "admins-own-token",
-      }),
-    ).toEqual({});
   });
 });

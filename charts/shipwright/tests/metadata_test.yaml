@@ -45,23 +45,8 @@ tests:
     asserts:
       - matchRegexRaw:
           pattern: "/admin/agents/new"
-
-  - it: warns when no deployment-wide Claude credential is configured
-    set:
-      agent.provisioning.enabled: true
-    asserts:
       - matchRegexRaw:
-          pattern: "No deployment-wide Claude credential is configured"
-
-  - it: confirms inheritance when a deployment-wide credential IS configured
-    set:
-      agent.provisioning.enabled: true
-      agent.credentials.claudeCodeOauthToken: oauth-abc
-    asserts:
-      - matchRegexRaw:
-          pattern: "new agents inherit it"
-      - notMatchRegexRaw:
-          pattern: "No deployment-wide Claude credential is configured"
+          pattern: "Set its Claude"
 
   - it: reports the default networking exposure and auth mode
     asserts:

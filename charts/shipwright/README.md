@@ -14,8 +14,8 @@ License: **MIT**.
 ## Full local stack on Minikube
 
 Brings up admin + metrics + task-store + chat + PostgreSQL + agent provisioning
-with **no hand-created Secrets** — the chart generates the inter-service token
-mesh and every database connection string.
+with **no hand-created Secrets** — the chart assembles every database
+connection string itself.
 
 From the repo root:
 
@@ -41,10 +41,9 @@ echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
 `--cpus=6 --memory=12288` is comfortable for an agent doing real work. Below
 4 CPU / 6Gi the agent pod schedules and then thrashes.
 
-Then create your first agent at `http://shipwright.local/admin/agents/new`. Set
-`agent.credentials.claudeCodeOauthToken` (or `.anthropicApiKey`, or
-`.existingSecret`) to give every agent a Claude credential; otherwise set one
-per-agent in the admin UI. A per-agent value always wins.
+Then create your first agent at `http://shipwright.local/admin/agents/new` and
+set its Claude credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`)
+there — the chart does not provision a deployment-wide credential.
 
 > ⚠️ The Minikube profile sets `auth.mode=open` (no authentication at all) and a
 > known literal PostgreSQL password. Local use only.

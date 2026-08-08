@@ -88,15 +88,6 @@ export interface AgentRuntimeDeps {
   adminApiKeys?: Map<string, AdminApiKey>;
   /** Token service for per-agent bearer token validation. */
   agentTokenService: Pick<AgentTokenService, "validate">;
-  /**
-   * Deployment-wide default env merged UNDERNEATH each agent's own env rows, so
-   * every agent inherits shared credentials (e.g. ANTHROPIC_API_KEY) without an
-   * operator pasting them per agent.
-   *
-   * Per-agent rows always win — this is a floor, never an override. Agents pick
-   * defaults up on their next config sync, with no pod restart or re-provision.
-   */
-  defaultAgentEnv?: Record<string, string>;
 }
 
 // ─── Route definitions ────────────────────────────────────────────────────────
@@ -166,7 +157,6 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     agentCronJobService,
     agentService,
     agentPluginService,
-    defaultAgentEnv,
   } = deps;
 
   const app = new OpenAPIHono();
@@ -200,8 +190,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
     ]);
 
     const response: AgentConfigResponse = {
-      // Deployment-wide defaults first so per-agent rows override them.
-      env: { ...(defaultAgentEnv ?? {}), ...(bundle?.env ?? {}) },
+      env: bundle?.env ?? {},
       allowedTools: bundle?.allowedTools ?? [],
       plugins: plugins.map((p) => {
         // The stored name is the canonical Claude plugin spec — exactly what
