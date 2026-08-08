@@ -10,6 +10,36 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.11.1] - 2026-08-08
+
+### Changed
+
+- auto-bump to chart v1.11.1 triggered by release tag(s): `admin-v1.65.1`
+
+## [1.11.0] - 2026-08-08
+
+### Removed
+
+- **Reverted the inter-service token mesh (#2484) and deployment-wide Claude
+  credentials (#2485).** Both broke the production Helm upgrade: `helm upgrade`
+  failed patching `shipwright-admin`'s Deployment with a `$setElementOrder`
+  conflict on its `env:` list, aborting the release mid-way and leaving
+  `task-store` and `shipwright-admin` on split config generations. Task-store's
+  scope-resolver calls to admin then failed against admin's stale credentials,
+  forcing every agent-scoped token into the `repos: []` fail-safe
+  (`scopeDegraded: true`) fleet-wide. Neither change had been validated against
+  a real cluster before merging — see #2494 for the full incident writeup.
+- All chart surface added by those two releases: `agent.credentials.*`,
+  `internal.*`, the `agent-credentials-secret.yaml` / `internal-secret.yaml`
+  templates, and the `*_AGENTS_URL` / `*_AGENTS_API_KEY` scope-resolver env
+  vars on task-store/chat.
+
+## [1.10.1] - 2026-08-07
+
+### Changed
+
+- auto-bump to chart v1.10.1 triggered by release tag(s): `admin-v1.65.0`
+
 ## [1.8.3] - 2026-08-07
 
 ### Changed
