@@ -2956,6 +2956,70 @@ describe("createLoopOrchestrator", () => {
     expect(getCandidatesCalls).toBe(2);
   });
 
+  // ─── Pre-claim clean-409 exclusion (RCG-1.2) ───────────────────────────────
+
+  test("repeated claimTask clean 409s (resolves false, not throws) for the same item do not spin-loop it within one tick", async () => {
+    // Twin of the CBD-2.1 "repeated claimTask throws" test above, but via the
+    // expected-outcome 409 path (claimTask resolves false) instead of a
+    // thrown error. Without adding the item to failedPreClaimTaskIds on this
+    // path too, the drain would re-select and re-409 on it forever within
+    // the tick (getDevTaskCandidates keeps returning it since it was never
+    // actually claimed by us) — this test bounds that: the loop must
+    // terminate after exactly one claim attempt.
+    const devTaskCandidates = [task("SWC-CONTENDED", "2026-01-01T00:00:00Z")];
+    let claimAttempts = 0;
+    let getCandidatesCalls = 0;
+    const deps = makeDeps({
+      getDevTaskCandidates: async () => {
+        getCandidatesCalls += 1;
+        return devTaskCandidates;
+      },
+      claimTask: async () => {
+        claimAttempts += 1;
+        return false;
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-dev-task", true)]);
+
+    expect(claimAttempts).toBe(1);
+    // Candidates are re-collected once more after the 409'd claim (to
+    // confirm the drain is dry) but the same item is never re-claimed.
+    expect(getCandidatesCalls).toBe(2);
+  });
+
+  test("repeated claimPr clean 409s (resolves null, not throws) for the same item do not spin-loop it within one tick", async () => {
+    // Twin of the CBD-2.1 "repeated claimPr throws" test above, but via the
+    // expected-outcome 409 path (claimPr resolves null) instead of a thrown
+    // error. Without adding the item to failedPreClaimPrIds on this path
+    // too, the drain would re-select and re-409 on it forever within the
+    // tick (getReviewCandidates keeps returning it since it was never
+    // actually claimed by us) — this test bounds that: the loop must
+    // terminate after exactly one claim attempt.
+    const reviewCandidates = [pr("acme/x#9", "2026-01-01T00:00:00Z", "review")];
+    let claimAttempts = 0;
+    let getCandidatesCalls = 0;
+    const deps = makeDeps({
+      reviewCandidates: async () => {
+        getCandidatesCalls += 1;
+        return reviewCandidates;
+      },
+      claimPr: async () => {
+        claimAttempts += 1;
+        return null;
+      },
+    });
+    const loop = createLoopOrchestrator(deps);
+
+    await loop([job("shipwright-review", true)]);
+
+    expect(claimAttempts).toBe(1);
+    // Candidates are re-collected once more after the 409'd claim (to
+    // confirm the drain is dry) but the same item is never re-claimed.
+    expect(getCandidatesCalls).toBe(2);
+  });
+
   test("a thrown dispatch (e.g. runner timeout) is caught per-item, skips only the offending item, and the drain still dispatches a younger candidate of a different type/phase in the same tick (CBD-2.3)", async () => {
     // SWC-BOOM (older dev-task) claims successfully but its runner() call
     // always throws — unlike a pre-claim throw (CBD-2.1, isolated at the
