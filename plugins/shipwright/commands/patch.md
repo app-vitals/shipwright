@@ -493,13 +493,13 @@ Parse the subagent's STATUS:
   5a.7's (RPF-1.3) escalation pattern, before releasing the claim:
 
   1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
-     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
      ```bash
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"hitl": true}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+       -d '{"status": "blocked", "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
      ```
      If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
      instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
@@ -750,14 +750,14 @@ entirely — do not dispatch the fix subagent, do not post another rebuttal, and
    fetched `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right
    after Step 2 resolved this same PR, independent of any claim, so it's already available
    by the time this check runs.)
-2. If `PR_TASK_ID` is non-empty, PATCH it to `hitl: true` so the task is flagged for a human
+2. If `PR_TASK_ID` is non-empty, PATCH it to `status: 'blocked'` so the task is flagged for a human
    decision:
    ```bash
    curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-     -d '{"hitl": true}' > /dev/null 2>&1 || \
-     echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+     -d '{"status": "blocked", "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
+     echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
    ```
    If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
    instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
@@ -1081,13 +1081,13 @@ Parse the subagent's STATUS:
   HITL first, mirroring Step 5a.7's escalation pattern, before releasing the claim:
 
   1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
-     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
      ```bash
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"hitl": true}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+       -d '{"status": "blocked", "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
      ```
      If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
      instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
@@ -1312,16 +1312,17 @@ already has an unresolved HITL escalation.
    PR_BLOCKED=$(echo "$PR_RECORD" | jq -r '.blocked // false')
    PR_TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
    ```
-2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `hitl` field:
+2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `status` field:
    ```bash
-   TASK_HITL=false
+   TASK_BLOCKED=false
    if [ -n "$PR_TASK_ID" ]; then
-     TASK_HITL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.hitl // false')
+     TASK_STATUS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.status // empty')
+     [ "$TASK_STATUS" = "blocked" ] && TASK_BLOCKED=true
    fi
    ```
 
-**If `PR_BLOCKED` is `true` OR `TASK_HITL` is `true`** (an unresolved HITL escalation already
+**If `PR_BLOCKED` is `true` OR `TASK_BLOCKED` is `true`** (an unresolved HITL escalation already
 exists — most likely from Step 5a.7 on this same PR, this cycle or a prior one): skip —
 do not dispatch the fix subagent, since doing so would silently contradict the escalation
 decision already recorded on the PR.
@@ -1340,7 +1341,7 @@ decision already recorded on the PR.
 3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
 
 **Otherwise** (neither the PR record has `blocked: true` nor its linked task has
-`hitl: true`): no escalation
+`status: 'blocked'`): no escalation
 is on record for this PR — proceed normally to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
@@ -1441,13 +1442,13 @@ Parse the subagent's STATUS:
   dispatch, this runs after a BLOCKED report; they compose without conflict):
 
   1. Reuse `PR_TASK_ID`, already resolved in Step 6b.6 — no second fetch here. If
-     non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
+     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
      ```bash
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"hitl": true}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID hitl flag failed — continuing"
+       -d '{"status": "blocked", "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
      ```
      If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
      instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
@@ -1629,9 +1630,9 @@ outcome. This is a single bonus attempt, not a new fix loop.
 pattern as Step 6e), and proceed to the existing Step 7 report unchanged.
 
 **On BLOCKED:** reuse the exact same HITL-escalation branch as Step 6d's BLOCKED handling —
-same `hitl` PATCH to the linked task (or the PR record when no task is linked), same PR
-comment convention, same claim release — rather than adding a new escalation path here. Log
-the blocker and proceed to the existing Step 7 report unchanged.
+same `status: 'blocked'` PATCH to the linked task (or the PR record when no task is linked),
+same PR comment convention, same claim release — rather than adding a new escalation path
+here. Log the blocker and proceed to the existing Step 7 report unchanged.
 
 ---
 
