@@ -76,10 +76,13 @@ metrics:
   enabled: true
   provider:
     basePath: /dashboard
-    # adminUrl / taskStoreUrl deliberately omitted — the chart defaults them to
-    # the in-cluster Service DNS names. Leaving taskStoreUrl unset AND unresolved
-    # would drop metrics into SQLite mode, which crashes on boot
-    # (SQLITE_CANTOPEN); the auto-default is what prevents that here.
+    # adminUrl / taskStoreUrl have NO chart default — both default to "" in
+    # values.yaml, and leaving them empty drops metrics into local SQLite mode,
+    # which has no writable path in the published image and crashes on boot
+    # (SQLITE_CANTOPEN). Set explicitly here to the in-cluster Service DNS names
+    # for the "shipwright" release name that `task minikube:up` installs under.
+    adminUrl: http://shipwright-admin:3001
+    taskStoreUrl: http://shipwright-task-store:3000
 
 taskStore:
   enabled: true
