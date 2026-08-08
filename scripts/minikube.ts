@@ -282,9 +282,9 @@ function printNextSteps(): void {
   console.log("No agent exists yet — create one at:");
   console.log(`  http://${INGRESS_HOST}/admin/agents/new\n`);
   console.log(
-    "If you left agent.credentials empty, set that agent's ANTHROPIC_API_KEY",
+    "Set that agent's ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in the",
   );
-  console.log("or CLAUDE_CODE_OAUTH_TOKEN in the admin UI before it can work.");
+  console.log("admin UI before it can work.");
   console.log("Tear down with: task minikube:down");
   console.log("────────────────────────────────────────────────────────────");
 }

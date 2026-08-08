@@ -35,8 +35,6 @@ annotations:
       description: "helm test now checks task-store and chat /health, proving the chart-managed database wiring actually works"
     - kind: changed
       description: "NOTES/README corrected: agents are provisioned at runtime by admin, not rendered as a chart Deployment"
-    - kind: removed
-      description: "Reverted the inter-service token mesh and deployment-wide Claude credentials (broke a production Helm upgrade) — see CHANGELOG for details"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

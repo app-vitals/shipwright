@@ -149,8 +149,7 @@ for the full list of chat service env vars and their defaults.
 
 The **full stack** — admin, metrics, task-store, chat, bundled PostgreSQL, and
 runtime agent provisioning — over plain HTTP, with **no hand-created Secrets**.
-The chart generates the inter-service token mesh and assembles every database
-connection string.
+The chart assembles every database connection string for you.
 
 ### One command
 
@@ -239,25 +238,9 @@ kubectl port-forward svc/shipwright-chat       3002:3000 -n shipwright
 ### Creating your first agent
 
 **The chart creates no agents.** Agents are provisioned at runtime by the admin
-service, so make one at `http://shipwright.local/admin/agents/new`.
-
-Give every agent a Claude credential deployment-wide:
-
-```yaml
-agent:
-  credentials:
-    claudeCodeOauthToken: ""   # from `claude /oauth-token`
-    # ...or anthropicApiKey, or existingSecret
-```
-
-Admin merges this **underneath** each agent's own env rows, so a per-agent value
-set in the admin UI always wins, and changes reach already-running agents on
-their next config sync (no restart, no re-provision). Leave both empty to keep
-credentials strictly per-agent — but then a fresh agent can do no work until you
-paste one in.
-
-Inline credentials land in a chart-managed Secret, so they sit in your values
-file and Helm release history. Use `existingSecret` for anything beyond local dev.
+service, so make one at `http://shipwright.local/admin/agents/new`, and set its
+Claude credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) there — this
+chart does not provision deployment-wide Claude credentials.
 
 ### TLS and security
 
