@@ -93,7 +93,7 @@ export interface MergeStatusInfo {
 export interface PrRecord {
   readyForPatchAt?: string | null;
   claimedBy?: string | null;
-  hitl?: boolean | null;
+  blocked?: boolean | null;
 }
 
 export interface CheckPatchDeps {
@@ -434,11 +434,11 @@ export async function getPatchCandidates(
       // mirroring check-review.ts.
       if (record?.claimedBy != null) continue;
 
-      // Skip PRs whose task-store PR record is hitl:true — a human has
+      // Skip PRs whose task-store PR record is blocked:true — a human has
       // already been escalated to at the PR-record level (independent of
       // any linked task) and needs to act before patch tries again (PRB-2.2,
       // PRB-3.1: patch.md Step 5a.7's second-round-disagreement escalation
-      // writes hitl:true directly on the PR record when there's no linked
+      // writes blocked:true directly on the PR record when there's no linked
       // task to flag — via the shared isPrRecordBlockedForDispatch helper).
       // Uses the same fetched `record` above — no new network call.
       if (isPrRecordBlockedForDispatch(record)) continue;

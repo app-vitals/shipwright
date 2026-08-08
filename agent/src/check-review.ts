@@ -89,7 +89,7 @@ export interface PrRecord {
   reviewState: string;
   readyForReviewAt?: string | null;
   claimedBy?: string | null;
-  hitl?: boolean | null;
+  blocked?: boolean | null;
   staged?: boolean;
   /**
    * Timestamp of the last review pass written by review.md, used as the
@@ -323,11 +323,11 @@ export async function getReviewCandidates(
     // missing record here must stay distinguishable from "no record yet").
     if (record.claimedBy != null) continue;
 
-    // A PR-record with hitl:true means a human has already been escalated to
-    // on this PR — applies independently of whether a task is linked
+    // A PR-record with blocked:true means a human has already been escalated
+    // to on this PR — applies independently of whether a task is linked
     // (PRB-2.3, PRB-3.1: patch.md Step 5a.7's second-round-disagreement
-    // escalation writes hitl:true directly on the PR record when there's no
-    // linked task to flag).
+    // escalation writes blocked:true directly on the PR record when there's
+    // no linked task to flag).
     if (isPrRecordBlockedForDispatch(record)) continue;
 
     // commitSha matches and reviewState is not pending → already reviewed at

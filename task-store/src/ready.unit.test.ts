@@ -20,7 +20,6 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
-    hitlNotifiedAt: null,
     claimedAt: null,
     heartbeatAt: null,
     ...overrides,

@@ -72,7 +72,6 @@ describeOrSkip("Task store schema (integration)", () => {
         model: "sonnet",
         complexity: 3,
         hitl: false,
-        hitlNotifiedAt: "2026-06-22T16:00:00.000Z",
         claimedBy: "agent-alpha",
         agentHint: "agent-beta",
         claimedAt: "2026-06-22T16:30:00.000Z",
@@ -131,7 +130,6 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(read.model).toBe("sonnet");
     expect(read.complexity).toBe(3);
     expect(read.hitl).toBe(false);
-    expect(read.hitlNotifiedAt).toBe("2026-06-22T16:00:00.000Z");
 
     // New claim/liveness fields
     expect(read.claimedBy).toBe("agent-alpha");
@@ -403,7 +401,6 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "In-progress hitl-gated task",
         status: "in_progress",
         hitl: true,
-        hitlNotifiedAt: null,
       },
     });
     const notGated = await prisma.task.create({
@@ -429,7 +426,6 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "PR-open hitl-gated task",
         status: "pr_open",
         hitl: true,
-        hitlNotifiedAt: null,
       },
     });
 
@@ -463,7 +459,6 @@ describeOrSkip("Task store schema (integration)", () => {
         title: "Merged hitl task",
         status: "merged",
         hitl: true,
-        hitlNotifiedAt: null,
       },
     });
 

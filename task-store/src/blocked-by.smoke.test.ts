@@ -203,7 +203,6 @@ describe("blockedBy field on API responses (smoke)", () => {
       id: "t1",
       status: "pending",
       hitl: true,
-      hitlNotifiedAt: null,
     });
     const app = makeApp(fakeTaskService({ getResult: task }));
     const res = await app.request("/tasks/t1", { headers: auth() });
@@ -218,7 +217,6 @@ describe("blockedBy field on API responses (smoke)", () => {
       id: "t1",
       status: "pending",
       hitl: true,
-      hitlNotifiedAt: null,
     });
     const app = makeApp(fakeTaskService({ listResult: [task] }));
     const res = await app.request("/tasks", { headers: auth() });

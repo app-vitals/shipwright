@@ -51,15 +51,18 @@ function toArray(value: string | string[] | undefined): string[] | undefined {
 /** Minimal shape of a joined Task row needed to evaluate the blocked signal. */
 interface LinkedTaskBlockedInfo {
   status: string;
-  hitl: boolean | null;
 }
 
 /**
  * True when a PR should be surfaced by `list({ blocked: true })`:
- * `pr.hitl === true` OR (a linked task exists AND (`task.hitl === true` OR
- * `task.status === "blocked"`)). `task` is `undefined` for PRs with no
- * taskId (or whose taskId didn't resolve to a Task row) — in that case only
- * `pr.hitl` is consulted, so a missing join never crashes or false-positives.
+ * `pr.blocked === true` OR (a linked task exists AND `task.status ===
+ * "blocked"`). `task` is `undefined` for PRs with no taskId (or whose taskId
+ * didn't resolve to a Task row) — in that case only `pr.blocked` is
+ * consulted, so a missing join never crashes or false-positives.
+ *
+ * Task.hitl is deliberately not consulted here: post-redesign, Type A tasks
+ * (the only ones that keep hitl:true) never have a linked PR, so that branch
+ * was dead code.
  *
  * Mirrors the combined signal agent/src/check-helpers.ts already uses for
  * dispatch gating — `isTaskBlockedForDispatch(linkedTask) ||
@@ -67,19 +70,18 @@ interface LinkedTaskBlockedInfo {
  * imported, since task-store must not depend on the agent package.
  */
 function isPrBlocked(
-  pr: Pick<PullRequest, "hitl">,
+  pr: Pick<PullRequest, "blocked">,
   task: LinkedTaskBlockedInfo | undefined,
 ): boolean {
   return (
-    pr.hitl === true ||
-    (task !== undefined && (task.hitl === true || task.status === "blocked"))
+    pr.blocked === true || (task !== undefined && task.status === "blocked")
   );
 }
 
 /**
  * Skip-count auto-block threshold: once a PR's skipCount reaches this value,
- * recordSkip() also sets hitl:true + blockedReason so the loop orchestrator
- * stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
+ * recordSkip() also sets blocked:true + blockedReason so the loop
+ * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
  * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
  * agent/ and task-store/ are separate deployables.
  */
@@ -88,7 +90,7 @@ const SKIP_BLOCK_THRESHOLD = 3;
 /**
  * CI-failure streak auto-block threshold: once a PR's consecutiveCiFailureCount
  * reaches this value (i.e. patch() has been called this many times in a row
- * with the same ciFailureSignature), patch() also sets hitl:true +
+ * with the same ciFailureSignature), patch() also sets blocked:true +
  * blockedReason in the same request so the loop orchestrator stops
  * re-dispatching CI-fix cycles that keep hitting the same failure. Mirrors
  * SKIP_BLOCK_THRESHOLD above / SPIN_DETECTION_THRESHOLD in
@@ -134,12 +136,12 @@ export interface PullRequestListFilters {
    * dispatch-gating signal agent/src/check-helpers.ts uses (
    * isTaskBlockedForDispatch(linkedTask) || isPrRecordBlockedForDispatch(pr)),
    * reimplemented natively here since task-store must not import from the
-   * agent package. A PR is blocked when pr.hitl===true OR its linked task
+   * agent package. A PR is blocked when pr.blocked===true OR its linked task
    * (joined by PullRequest.taskId, a plain String — not a Prisma relation)
-   * has hitl===true or status==='blocked'. PRs with no taskId are evaluated
-   * on pr.hitl alone. PR-level hitl is almost never set by any code path on
-   * main today (see PRB-1.1/PRB-2.1 history), so this filter is meaningful
-   * mostly via the task join.
+   * has status==='blocked'. PRs with no taskId are evaluated on pr.blocked
+   * alone. Task.hitl is deliberately not consulted: post-redesign, Type A
+   * tasks (the only ones that keep hitl:true) never have a linked PR, so
+   * that branch would be dead code.
    */
   blocked?: boolean;
   /**
@@ -260,7 +262,7 @@ export class PullRequestService implements PullRequestServiceLike {
       const tasks = taskIds.length
         ? await this.prisma.task.findMany({
             where: { id: { in: taskIds } },
-            select: { id: true, status: true, hitl: true },
+            select: { id: true, status: true },
           })
         : [];
       const taskById = new Map(tasks.map((task) => [task.id, task]));
@@ -570,7 +572,7 @@ export class PullRequestService implements PullRequestServiceLike {
    *   - ciFailureSignature provided and differs (or none stored yet): resets
    *     consecutiveCiFailureCount to 1 and stores the new signature.
    *   - Crossing CI_FAILURE_BLOCK_THRESHOLD (3) on a matching-signature
-   *     increment also sets hitl:true + a descriptive blockedReason, in the
+   *     increment also sets blocked:true + a descriptive blockedReason, in the
    *     same request/update call. A reset never trips the threshold, even if
    *     the prior count was at/above it.
    */
@@ -612,7 +614,7 @@ export class PullRequestService implements PullRequestServiceLike {
         updateData.consecutiveCiFailureCount = { increment: 1 };
         const newCount = existing.consecutiveCiFailureCount + 1;
         if (newCount >= CI_FAILURE_BLOCK_THRESHOLD) {
-          updateData.hitl = true;
+          updateData.blocked = true;
           updateData.blockedReason = `Auto-blocked after ${newCount} consecutive patch cycles hitting the same CI failure (${ciFailureSignature})`;
         }
       } else {
@@ -795,7 +797,7 @@ export class PullRequestService implements PullRequestServiceLike {
   /**
    * Record a skip: atomically increments skipCount and sets lastSkippedAt.
    * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
-   * hitl:true + a descriptive blockedReason in the same request — self
+   * blocked:true + a descriptive blockedReason in the same request — self
    * contained, no linked-task lookup needed. Every call increments
    * regardless of current count (not a guard), and re-checks the threshold
    * each time in case a prior resetSkip() brought the count back down.
@@ -811,7 +813,7 @@ export class PullRequestService implements PullRequestServiceLike {
         return await this.prisma.pullRequest.update({
           where: { id },
           data: {
-            hitl: true,
+            blocked: true,
             blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
           },
         });

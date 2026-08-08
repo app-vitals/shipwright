@@ -453,7 +453,7 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(0);
   });
 
-  test("a PR whose PR-record has hitl:true is excluded from review candidacy, even with no linked task at all", async () => {
+  test("a PR whose PR-record has blocked:true is excluded from review candidacy, even with no linked task at all", async () => {
     const pr = makePr();
     const result = await getReviewCandidates(
       makeDeps(
@@ -461,7 +461,7 @@ describe("getReviewCandidates", () => {
         async () => ({
           commitSha: null,
           reviewState: "pending",
-          hitl: true,
+          blocked: true,
         }),
         "bodhi-agent",
         false,

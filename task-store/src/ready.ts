@@ -41,8 +41,8 @@ export interface ReadyTaskLike {
   dependencies?: string[];
   pr?: number | null;
   hitl?: boolean | null;
-  /** ISO timestamp set when HITL notification was sent; null while awaiting. */
-  hitlNotifiedAt?: string | null;
+  /** Reason recorded when status is 'blocked'. */
+  blockedReason?: string | null;
   /** ISO timestamp when claimed. */
   claimedAt?: string | null;
   /** ISO timestamp of last heartbeat (liveness check). */

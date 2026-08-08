@@ -723,17 +723,17 @@ export function isTaskBlockedForDispatch(
 
 /**
  * True when a task-store PR record has already been escalated to a human
- * (`hitl === true`). Accepts a minimal `{ hitl }` shape so each collector's
- * own PrRecord interface satisfies this structurally without depending on a
- * shared PrRecord type.
+ * (`blocked === true`). Accepts a minimal `{ blocked }` shape so each
+ * collector's own PrRecord interface satisfies this structurally without
+ * depending on a shared PrRecord type.
  *
  * Companion to isTaskBlockedForDispatch — see its doc comment for the
  * drift this pair of helpers is meant to prevent (PRB-2.1).
  */
 export function isPrRecordBlockedForDispatch(
-  pr: { hitl?: boolean | null } | null | undefined,
+  pr: { blocked?: boolean | null } | null | undefined,
 ): boolean {
-  return pr?.hitl === true;
+  return pr?.blocked === true;
 }
 
 /**

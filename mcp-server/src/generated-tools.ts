@@ -593,8 +593,36 @@ export const generatedTools: GeneratedTool[] = [
       type: "object",
       properties: {
         repo: {
-          type: "string",
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Filter by repo. Repeatable (?repo=a&repo=b) to match any of several repos.",
           example: "org/repo",
+        },
+        org: {
+          anyOf: [
+            {
+              type: "string",
+            },
+            {
+              type: "array",
+              items: {
+                type: "string",
+              },
+            },
+          ],
+          description:
+            "Filter by org — matches repos whose 'org/repo' starts with '<org>/'. Repeatable (?org=a&org=b) to match any of several orgs. Composable with repo (AND).",
+          example: "org",
         },
         prNumber: {
           type: "string",
@@ -642,7 +670,7 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           enum: ["true", "false"],
           description:
-            "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
+            "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
           example: "true",
         },
         sort: {
@@ -666,6 +694,7 @@ export const generatedTools: GeneratedTool[] = [
     pathTemplate: "/prs",
     queryParams: [
       "repo",
+      "org",
       "prNumber",
       "taskId",
       "state",
@@ -845,7 +874,7 @@ export const generatedTools: GeneratedTool[] = [
   {
     name: "prs_patch",
     description:
-      "Increment patchCycles and conditionally reset reviewState=pending",
+      "Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature",
     inputSchema: {
       type: "object",
       properties: {
@@ -858,6 +887,12 @@ export const generatedTools: GeneratedTool[] = [
           description:
             "Current head commit SHA. When provided and it differs from the record's stored commitSha, reviewState resets to pending and commitSha is updated. When it matches, reviewState is left untouched (no-op patch cycle). When omitted, reviewState unconditionally resets to pending (legacy behavior).",
           example: "abc123def456",
+        },
+        ciFailureSignature: {
+          type: "string",
+          description:
+            "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
+          example: "npm-test-failed-foo.unit.test.ts",
         },
       },
       required: ["id"],

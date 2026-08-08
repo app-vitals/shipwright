@@ -121,8 +121,7 @@ export interface PrListItem {
   heartbeatAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
-  hitl?: boolean | null;
-  hitlNotifiedAt?: string | null;
+  blocked?: boolean | null;
   blockedReason?: string | null;
   skipCount?: number | null;
   lastSkippedAt?: string | null;
@@ -2801,12 +2800,12 @@ export function renderPrsPage(
     return "badge-gray";
   };
 
-  const renderHitlBadge = (pr: PrListItem): string => {
-    if (!pr.hitl) return "";
+  const renderBlockedBadge = (pr: PrListItem): string => {
+    if (!pr.blocked) return "";
     const title = pr.blockedReason
       ? ` title="${escapeHtml(pr.blockedReason)}"`
       : "";
-    return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px"${title}>Waiting: HITL</span>`;
+    return `<span class="badge badge-blocked" style="font-size:10px;margin-left:6px"${title}>Waiting: Blocked</span>`;
   };
 
   const rows =
@@ -2841,7 +2840,7 @@ export function renderPrsPage(
     <td style="font-size:12px"><a href="/admin/prs/${escapeHtml(pr.id)}" style="color:#6366f1;text-decoration:none;font-weight:500">#${escapeHtml(String(pr.prNumber))}</a></td>
     <td style="font-size:12px">${escapeHtml(pr.repo)}</td>
     <td style="font-size:12px">${taskCell}</td>
-    <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span>${renderHitlBadge(pr)}</td>
+    <td><span class="badge ${prStateBadgeClass(pr.state)}">${escapeHtml(pr.state)}</span>${renderBlockedBadge(pr)}</td>
     <td><span class="badge ${reviewStateBadgeClass(pr.reviewState)}">${escapeHtml(pr.reviewState)}</span></td>
     <td class="col-review-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.reviewCycles))}</td>
     <td class="col-patch-cycles" style="font-size:12px;text-align:center">${escapeHtml(String(pr.patchCycles))}</td>
@@ -2939,7 +2938,7 @@ export function renderPrsPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
   </style>
 </head>
@@ -3100,8 +3099,8 @@ export function renderPrDetailPage(
     field("Staged", pr.staged ? "yes" : "no"),
     agentField("Claimed By", pr.claimedBy),
     agentField("Agent ID", pr.agentId),
-    pr.hitl !== null && pr.hitl !== undefined
-      ? field("HITL", pr.hitl ? "yes" : "no")
+    pr.blocked !== null && pr.blocked !== undefined
+      ? field("Blocked", pr.blocked ? "yes" : "no")
       : "",
     pr.skipCount ? field("Skip Count", String(pr.skipCount)) : "",
     field("Blocked Reason", pr.blockedReason),
@@ -3132,7 +3131,7 @@ export function renderPrDetailPage(
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
-    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
   </style>
