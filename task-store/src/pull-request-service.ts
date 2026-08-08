@@ -5,8 +5,9 @@
  *
  * claim() is atomic via a Prisma $transaction:
  *   1. Find existing record by @@unique([repo, prNumber])
- *   2. Same commitSha AND reviewState !== 'pending' → ConflictError(409)
- *   3. Different commitSha OR reviewState === 'pending' → update (200)
+ *   2. Already claimed (claimedBy !== null) AND same commitSha AND
+ *      reviewState !== 'pending' → ConflictError(409)
+ *   3. Not claimed, OR different commitSha, OR reviewState === 'pending' → update (200)
  *   4. No record → create (201)
  *
  * Timestamp fields are stored as ISO strings to match the application contract;
@@ -374,7 +375,8 @@ export class PullRequestService implements PullRequestServiceLike {
    *     the existing claim's heartbeat is never checked inline here — a stale claim
    *     still blocks; only the reaper (a separate process) adjudicates staleness and
    *     clears stale claims asynchronously.
-   *   - Legacy review path: same commitSha AND reviewState !== 'pending' → 409
+   *   - Legacy review path: claimedBy IS NOT NULL AND same commitSha AND
+   *     reviewState !== 'pending' → 409
    */
   async claim(
     repo: string,
@@ -406,10 +408,15 @@ export class PullRequestService implements PullRequestServiceLike {
           );
         }
 
-        // Legacy review conflict: same commitSha and reviewState is not pending
-        // (covers the case where phase was not set yet)
+        // Legacy review conflict: already claimed, same commitSha, and
+        // reviewState is not pending (covers the case where phase was not
+        // set yet). The claimedBy check keeps this guard from firing while
+        // the PR is idle (claimedBy: null) — e.g. after release()/complete()
+        // clear the claim — so a legitimate re-claim (such as the
+        // fresh-author-reply re-candidacy case) is not permanently blocked.
         if (
           phase === "review" &&
+          existing.claimedBy !== null &&
           existing.commitSha === commitSha &&
           existing.reviewState !== "pending"
         ) {
