@@ -109,6 +109,12 @@ agent:
       # actually gets the hardcoded 40Gi default regardless of this setting. Set
       # here for when this is wired through; has no effect yet.
       size: 10Gi
+    # NOTE: same caveat as pvc above — there is no template in this chart that
+    # consumes agent.provisioning.persistence (or homePath/AGENT_HOME) for the
+    # admin service's own agent-provisioner deployment; the admin container's
+    # AGENT_HOME mount path and PVC size are set directly in code
+    # (admin/src/agent-manifest.ts), not sourced from this value. Set here for
+    # when this is wired through; has no effect yet.
     persistence:
       enabled: true
       size: 5Gi
