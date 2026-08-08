@@ -5372,6 +5372,26 @@ describe("admin UI — PRs page", () => {
     expect(html).toContain("#42");
   });
 
+  it("GET /admin/prs renders the 'Waiting: Blocked' badge for a blocked PR", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [{ ...MOCK_PR, blocked: true }],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Waiting: Blocked");
+    expect(html).not.toContain("Waiting: HITL");
+  });
+
   it("GET /admin/prs requests sort=desc from the task store", async () => {
     const capturedParams: URLSearchParams[] = [];
     const app = createAdminUIApp(
@@ -5536,6 +5556,22 @@ describe("admin UI — PRs page", () => {
     const html = await res.text();
     expect(html).toContain("app-vitals/shipwright");
     expect(html).toContain("42");
+  });
+
+  it("GET /admin/prs/:id renders 'Blocked' field, not 'HITL', when the PR is blocked", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? { ...MOCK_PR, blocked: true } : null,
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Blocked");
+    expect(html).not.toContain("HITL");
   });
 
   it("GET /admin/prs resolves claimedBy agent id to its name via AgentService", async () => {
