@@ -83,6 +83,15 @@ metrics:
     # for the "shipwright" release name that `task minikube:up` installs under.
     adminUrl: http://shipwright-admin:3001
     taskStoreUrl: http://shipwright-task-store:3000
+    # taskStoreToken.existingSecret is intentionally left unset. Unlike
+    # chat.adminToken, the chart has no template wiring that injects
+    # TASK_STORE_SEED_ADMIN_TOKEN into the task-store container, so there is
+    # no chart-managed way to mint a token for this profile without a manual
+    # step (create one via `POST /tokens` against a task-store you already
+    # hold an admin token for, or seed one out-of-band and set
+    # taskStoreToken.existingSecret yourself). Until that's wired, the
+    # task-store-backed views (queue funnel, tokens) will 401 and the
+    # dashboard falls back to admin-only data.
 
 taskStore:
   enabled: true

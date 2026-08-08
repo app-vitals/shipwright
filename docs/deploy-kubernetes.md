@@ -203,19 +203,27 @@ Everything in this table used to require a pre-created Secret or hand-wired
 | Admin + metrics DB connection strings | `<release>-admin`, `<release>-metrics` | Password never in plaintext env |
 | Task-store + chat DB connection strings | `<release>-task-store`, `<release>-chat` | Opt in with `database.existingSecret: ""` |
 | The `shipwright_metrics` / `_task_store` / `_chat` databases | initdb ConfigMap + bootstrap hook Job | Each service needs its own (Prisma P3005) |
-| Task-store admin token | `<release>-internal` | Seeded by task-store; consumed by admin + metrics |
-| Chat admin token | `<release>-internal` | Seeded by chat; consumed by admin |
-| Internal API key + `SHIPWRIGHT_ADMIN_API_KEYS` | `<release>-internal` | Presented by metrics, task-store, chat |
 | Session + encryption keys | `<release>-admin` | Preserved across `helm upgrade` |
 
 All of them are generated on first install and **reused** on upgrade via Helm's
 `lookup`. Two consequences worth knowing:
 
 - `helm template | kubectl apply` does **not** execute `lookup`, so that flow
-  would rotate every generated token on each apply. Use `internal.existingSecret`
-  (and `admin.encryptionKeys.existingSecret`) if you deploy that way.
+  would rotate every generated token on each apply. Use
+  `admin.encryptionKeys.existingSecret` if you deploy that way.
 - Any service-specific `existingSecret` overrides the generated value, and
   `extraEnv` — which renders last — overrides everything.
+
+Everything else — inter-service tokens included — is **manual, per-service
+`existingSecret` wiring**; the chart does not auto-generate or auto-mesh them.
+For example, the chat admin token that powers the admin console's Chat tab is
+wired via `chat.adminToken.existingSecret` (see
+[above](#chat-service-opt-in)), and the task-store bearer token consumed by
+the metrics dashboard is wired via `metrics.provider.taskStoreToken.existingSecret`.
+The Minikube example values file below leaves the task-store token unset (see
+its comments) since the chart has no equivalent seed-token wiring for
+task-store yet — the metrics dashboard falls back to admin-only data until
+that Secret is created and referenced by hand.
 
 ### Reaching the services
 
