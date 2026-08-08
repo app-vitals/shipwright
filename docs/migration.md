@@ -87,6 +87,40 @@ Agent tokens are scoped to their own assigned tasks; admin tokens see all. Retur
 
 ---
 
+## Breaking: `PullRequest.hitl`/`hitlNotifiedAt` and `Task.hitlNotifiedAt` columns dropped
+
+**Version**: next (HSR-1.1)
+
+The single overloaded `hitl` signal on `PullRequest` is split into two distinct signals, and
+the dead `hitlNotifiedAt` fields are removed:
+
+- **Removed**: `PullRequest.hitl`, `PullRequest.hitlNotifiedAt`, `Task.hitlNotifiedAt`.
+- **Added**: `PullRequest.blocked` (Boolean, default `false`) — replaces `PullRequest.hitl` as
+  the PR-level pipeline-block signal; `PullRequest.blockedReason` is unchanged. `Task.requiresHumanApproval`
+  (Boolean, default `false`) — a distinct Type-B merge-approval-gate classification. This is
+  **not** the same thing as `Task.hitl`, which still exists unchanged and continues to gate
+  dispatch candidacy the same way it always has.
+
+A data migration accompanying this change clears `Task.hitl` on records that were actually
+pipeline-escalation/spin-detection rather than genuine Type A infra tasks (moving still-open
+ones to `Task.status = 'blocked'`), and carries forward open PRs' `hitl: true` into
+`PullRequest.blocked: true` before dropping the old columns.
+
+**Silent-drop behavior on `PATCH /prs/:id`**: `hitl` and `hitlNotifiedAt` are removed from
+`PATCH_ALLOWED_FIELDS` and replaced with `blocked`. Because this repo assumes rolling
+deployments, a stale client still running pre-migration code that PATCHes `hitl` or
+`hitlNotifiedAt` in its request body will have those fields **silently stripped, not
+rejected** — no error surfaces, the write is just a no-op on those fields specifically (any
+other fields in the same PATCH still apply normally).
+
+**What to update:**
+- Any code/client PATCHing `PullRequest.hitl`/`hitlNotifiedAt` directly should migrate to
+  `PullRequest.blocked`.
+- Any code reading `Task.hitlNotifiedAt` should be removed — it was dead and has no
+  replacement.
+
+---
+
 ## `GET /tasks` and `GET /tasks/:id` response shape change
 
 **Version**: next (feat/task-filters, feat/ts-api-blocked-by)
