@@ -23,6 +23,7 @@ function makeMinimalTask(overrides: Partial<MinimalTask> = {}): MinimalTask {
     pr: null,
     hitl: null,
     hitlNotifiedAt: null,
+    blockedReason: null,
     assignee: null,
     ...overrides,
   };
@@ -175,7 +176,7 @@ describe("listBlocked logic (unit)", () => {
     ];
     const result = listBlockedLogic(tasks);
     expect(result.map((t) => t.id)).toEqual(["t1"]);
-    expect(result[0].blockedBy).toEqual([]);
+    expect(result[0].blockedBy).toEqual([{ type: "blocked", reason: null }]);
   });
 
   it("returns pending tasks with an HITL gate (hitl=true, hitlNotifiedAt=null)", () => {
@@ -193,7 +194,7 @@ describe("listBlocked logic (unit)", () => {
     expect(result[0].blockedBy).toContainEqual({ type: "hitl" });
   });
 
-  it("returns pending tasks blocked by HITL with notification already sent", () => {
+  it("hitl:true always yields a plain { type: 'hitl' } entry (hitlNotifiedAt ignored)", () => {
     const tasks = [
       makeMinimalTask({
         id: "t1",
@@ -205,10 +206,7 @@ describe("listBlocked logic (unit)", () => {
     ];
     const result = listBlockedLogic(tasks);
     expect(result.map((t) => t.id)).toEqual(["t1"]);
-    expect(result[0].blockedBy).toContainEqual({
-      type: "hitl",
-      notified: true,
-    });
+    expect(result[0].blockedBy).toContainEqual({ type: "hitl" });
   });
 
   it("returns pending tasks with unsatisfied dependencies", () => {
