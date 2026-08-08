@@ -26,7 +26,7 @@ export { CLOSED_STATUSES, OPEN_STATUSES };
 
 /**
  * Skip-count auto-block threshold: once a task's skipCount reaches this
- * value, recordSkip() also sets hitl:true + blockedReason so the loop
+ * value, recordSkip() also sets status:'blocked' + blockedReason so the loop
  * orchestrator stops re-selecting it. Mirrors SPIN_DETECTION_THRESHOLD in
  * agent/src/loop-orchestrator.ts:179 — duplicated here (not imported) since
  * agent/ and task-store/ are separate deployables.
@@ -524,10 +524,11 @@ export class TaskService implements TaskServiceLike {
   /**
    * Record a skip: atomically increments skipCount and sets lastSkippedAt.
    * When the new skipCount crosses SKIP_BLOCK_THRESHOLD (3), also sets
-   * hitl:true + a descriptive blockedReason in the same update — mirrors
-   * fail()'s status=blocked+reason pattern above. Every call increments
-   * regardless of current count (not a guard), and re-checks the threshold
-   * each time in case a prior resetSkip() brought the count back down.
+   * status:'blocked' + a descriptive blockedReason in the same update —
+   * mirrors fail()'s status=blocked+reason pattern above. Every call
+   * increments regardless of current count (not a guard), and re-checks the
+   * threshold each time in case a prior resetSkip() brought the count back
+   * down.
    */
   async recordSkip(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
@@ -540,7 +541,7 @@ export class TaskService implements TaskServiceLike {
         return await this.prisma.task.update({
           where: { id },
           data: {
-            hitl: true,
+            status: "blocked",
             blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
           },
         });

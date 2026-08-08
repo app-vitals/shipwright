@@ -1264,7 +1264,7 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
   });
 });
 
-// ─── list({ blocked: true }) — joins linked-task hitl/status (HBV-2.1) ───────
+// ─── list({ blocked: true }) — joins linked-task status (HBV-2.1 / HSR-1.4) ──
 
 describeOrSkip(
   "PullRequestService.list({ blocked: true }) (integration)",
@@ -1285,28 +1285,27 @@ describeOrSkip(
       await prisma.$disconnect();
     });
 
-    it("returns a PR with its own hitl:true, independent of reviewState/status", async () => {
-      const ownHitl = await prisma.pullRequest.create({
+    it("returns a PR with its own blocked:true, independent of reviewState/status", async () => {
+      const ownBlocked = await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2001,
-          hitl: true,
+          blocked: true,
           reviewState: "approved",
         },
       });
 
       const result = await service.list({ blocked: true });
 
-      expect(result.prs.map((p) => p.id)).toEqual([ownHitl.id]);
+      expect(result.prs.map((p) => p.id)).toEqual([ownBlocked.id]);
       expect(result.total).toBe(1);
     });
 
-    it("returns a PR with no own hitl but a linked task with hitl:true", async () => {
+    it("returns a PR with no own blocked but a linked task with status:'blocked'", async () => {
       const linkedTask = await prisma.task.create({
         data: {
-          title: "blocked-via-task-hitl",
-          status: "in_progress",
-          hitl: true,
+          title: "blocked-via-task-status",
+          status: "blocked",
         },
       });
       const pr = await prisma.pullRequest.create({
@@ -1314,7 +1313,7 @@ describeOrSkip(
           repo: "app-vitals/shipwright",
           prNumber: 2002,
           taskId: linkedTask.id,
-          hitl: false,
+          blocked: false,
           reviewState: "pending",
         },
       });
@@ -1325,35 +1324,35 @@ describeOrSkip(
       expect(result.total).toBe(1);
     });
 
-    it("returns a PR whose linked task has status:'blocked'", async () => {
+    it("excludes a PR whose linked task has hitl:true but status is not 'blocked' (task.hitl branch removed)", async () => {
       const linkedTask = await prisma.task.create({
         data: {
-          title: "blocked-via-task-status",
-          status: "blocked",
+          title: "hitl-only-not-blocked",
+          status: "in_progress",
+          hitl: true,
         },
       });
-      const pr = await prisma.pullRequest.create({
+      await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2003,
           taskId: linkedTask.id,
-          hitl: false,
+          blocked: false,
           reviewState: "posted",
         },
       });
 
       const result = await service.list({ blocked: true });
 
-      expect(result.prs.map((p) => p.id)).toEqual([pr.id]);
-      expect(result.total).toBe(1);
+      expect(result.prs).toHaveLength(0);
+      expect(result.total).toBe(0);
     });
 
-    it("excludes a PR with neither its own hitl nor a blocked/hitl linked task", async () => {
+    it("excludes a PR with neither its own blocked nor a blocked linked task", async () => {
       const linkedTask = await prisma.task.create({
         data: {
           title: "not-blocked",
           status: "pr_open",
-          hitl: false,
         },
       });
       await prisma.pullRequest.create({
@@ -1361,7 +1360,7 @@ describeOrSkip(
           repo: "app-vitals/shipwright",
           prNumber: 2004,
           taskId: linkedTask.id,
-          hitl: false,
+          blocked: false,
           reviewState: "approved",
         },
       });
@@ -1372,27 +1371,27 @@ describeOrSkip(
       expect(result.total).toBe(0);
     });
 
-    it("evaluates a PR with no taskId on pr.hitl alone (no crash/false-positive)", async () => {
+    it("evaluates a PR with no taskId on pr.blocked alone (no crash/false-positive)", async () => {
       await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2005,
           taskId: null,
-          hitl: false,
+          blocked: false,
         },
       });
-      const ownHitlNoTask = await prisma.pullRequest.create({
+      const ownBlockedNoTask = await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2006,
           taskId: null,
-          hitl: true,
+          blocked: true,
         },
       });
 
       const result = await service.list({ blocked: true });
 
-      expect(result.prs.map((p) => p.id)).toEqual([ownHitlNoTask.id]);
+      expect(result.prs.map((p) => p.id)).toEqual([ownBlockedNoTask.id]);
     });
 
     it("combines with state=open, only returning blocked PRs that are also open", async () => {
@@ -1420,7 +1419,7 @@ describeOrSkip(
           repo: "app-vitals/shipwright",
           prNumber: 2009,
           state: "open",
-          hitl: false,
+          blocked: false,
         },
       });
 
@@ -1430,7 +1429,7 @@ describeOrSkip(
       expect(result.total).toBe(1);
     });
 
-    it("list() without blocked param is unaffected by hitl/blocked task data (fully additive)", async () => {
+    it("list() without blocked param is unaffected by blocked/blocked-status task data (fully additive)", async () => {
       const blockedTask = await prisma.task.create({
         data: { title: "blocked-task-2", status: "blocked" },
       });
@@ -1549,7 +1548,7 @@ describeOrSkip(
       expect(caught).toBeInstanceOf(NotFoundError);
     });
 
-    it("patch() with ciFailureSignature matching 3x in a row auto-sets hitl:true (real-Postgres round trip)", async () => {
+    it("patch() with ciFailureSignature matching 3x in a row auto-sets blocked:true (real-Postgres round trip)", async () => {
       const t1 = new Date("2026-07-02T10:00:00.000Z");
       const t2 = new Date("2026-07-02T10:05:00.000Z");
       const t3 = new Date("2026-07-02T10:10:00.000Z");
@@ -1569,17 +1568,17 @@ describeOrSkip(
       const first = await svc1.patch(created.id, sha, signature);
       expect(first.consecutiveCiFailureCount).toBe(1);
       expect(first.lastCiFailureSignature).toBe(signature);
-      expect(first.hitl).toBe(false);
+      expect(first.blocked).toBe(false);
 
       const svc2 = new PullRequestService(prisma, FixedClock(t2));
       const second = await svc2.patch(created.id, sha, signature);
       expect(second.consecutiveCiFailureCount).toBe(2);
-      expect(second.hitl).toBe(false);
+      expect(second.blocked).toBe(false);
 
       const svc3 = new PullRequestService(prisma, FixedClock(t3));
       const third = await svc3.patch(created.id, sha, signature);
       expect(third.consecutiveCiFailureCount).toBe(3);
-      expect(third.hitl).toBe(true);
+      expect(third.blocked).toBe(true);
       expect(third.blockedReason).toBeTruthy();
       expect(third.blockedReason).toContain("3");
       expect(third.blockedReason).toContain(signature);
@@ -1589,7 +1588,7 @@ describeOrSkip(
         where: { id: created.id },
       });
       expect(reloaded.consecutiveCiFailureCount).toBe(3);
-      expect(reloaded.hitl).toBe(true);
+      expect(reloaded.blocked).toBe(true);
       expect(reloaded.lastCiFailureSignature).toBe(signature);
     });
 
@@ -1616,7 +1615,7 @@ describeOrSkip(
       expect(afterDifferentSignature.lastCiFailureSignature).toBe(
         "signature-b",
       );
-      expect(afterDifferentSignature.hitl).toBe(false);
+      expect(afterDifferentSignature.blocked).toBe(false);
     });
 
     it("patch() without ciFailureSignature leaves lastCiFailureSignature/consecutiveCiFailureCount untouched (merge-conflict/review-fix patch calls)", async () => {
@@ -1633,7 +1632,7 @@ describeOrSkip(
       const patched = await service.patch(created.id);
       expect(patched.lastCiFailureSignature).toBe("pre-existing-signature");
       expect(patched.consecutiveCiFailureCount).toBe(2);
-      expect(patched.hitl).toBe(false);
+      expect(patched.blocked).toBe(false);
     });
 
     it("update() throws NotFoundError when the PR does not exist", async () => {

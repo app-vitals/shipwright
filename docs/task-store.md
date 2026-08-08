@@ -208,7 +208,7 @@ Clears `claimedBy`, `claimedAt`, and `heartbeatAt`, resets `status=pending`. Use
 POST /tasks/:id/skip
 ```
 
-Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
+Increments `skipCount` by 1 and updates `lastSkippedAt` to now. When `skipCount` crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), automatically sets `status=blocked` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to halt further dispatches. Called by orchestrators that detect a task is being repeatedly re-selected but produces no visible outcome ([silent] dispatch). Returns `200` with the updated task.
 
 #### Reset skip tracking
 
@@ -270,7 +270,7 @@ Query params: `repo`, `org`, `prNumber`, `taskId`, `state`, `reviewState`, `stag
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
 
-`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.hitl===true` OR its linked task (joined by `PullRequest.taskId`) has `hitl===true` or `status==='blocked'`. PRs with no taskId are evaluated on `pr.hitl` alone. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
+`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.blocked===true` OR its linked task (joined by `PullRequest.taskId`) has `status==='blocked'`. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
 
 `sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
@@ -339,7 +339,7 @@ Returns `404` if not found.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `hitl`, `hitlNotifiedAt`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
@@ -353,9 +353,9 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 |----------|--------|
 | `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
 | `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
-| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). Optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure: when it matches the stored `lastCiFailureSignature`, `consecutiveCiFailureCount` increments; when it differs (or none is stored), the count resets to 1. Crossing the threshold (3, matching `SPIN_DETECTION_THRESHOLD`) auto-sets `hitl=true` and a descriptive `blockedReason`. When omitted, CI-failure tracking fields are left untouched. |
+| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). Optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure: when it matches the stored `lastCiFailureSignature`, `consecutiveCiFailureCount` increments; when it differs (or none is stored), the count resets to 1. Crossing the threshold (3, matching `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` and a descriptive `blockedReason`. When omitted, CI-failure tracking fields are left untouched. |
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
-| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
+| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
 | `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt` |
 
 #### PR state enums
@@ -366,19 +366,17 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 
 `phase`: `review` | `patch` | `deploy` — tracks which pipeline phase the PR is currently in. Set via `PATCH /prs/:id`. The `readyForReviewAt`, `readyForPatchAt`, and `readyForDeployAt` timestamps record when the PR became ready for each phase; COALESCE across them gives a unified queue-entry time.
 
-`hitl`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
-
-`hitlNotifiedAt`: optional ISO timestamp — records when a human was notified about this PR's blocked state. Set via `PATCH /prs/:id`.
+`blocked`: boolean (default `false`) — when `true`, blocks automation on this PR until a human intervenes. Used when a PR requires human decision-making or escalation (e.g., no linked task, second-round review disagreement). Set via `PATCH /prs/:id`.
 
 `blockedReason`: optional string — human-readable explanation for why this PR is blocked and requires human intervention (e.g., `"no linked task"`, `"second-round disagreement between reviewer and automated fix"`). Set via `PATCH /prs/:id`.
 
-`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
+`skipCount`: integer (default `0`) — consecutive count of times this PR has been dispatched but produced no visible outcome ([silent] dispatch). Incremented by `POST /prs/:id/skip`; reset by `POST /prs/:id/skip/reset`. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD`), the service auto-sets `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` to prevent infinite spin loops.
 
 `lastSkippedAt`: optional ISO timestamp — records when the most recent skip was recorded. Updated by `POST /prs/:id/skip`, cleared by `POST /prs/:id/skip/reset`.
 
 `lastCiFailureSignature`: optional string — signature of the most recent CI failure reported via `POST /prs/:id/patch`'s optional `ciFailureSignature` field (e.g. `"npm-test-failed-foo.unit.test.ts"` — a stable identifier capturing which check and which test failed). Used to detect consecutive patch cycles hitting the same CI failure, enabling auto-blocking when a patch loop keeps hitting the same wall rather than making progress. Mirrors `skipCount`/`lastSkippedAt`'s structure and purpose. Set via `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
 
-`consecutiveCiFailureCount`: integer (default `0`) — consecutive count of patch cycles whose `ciFailureSignature` matched the stored `lastCiFailureSignature`. When a new, differing signature arrives (or none was previously stored), the count resets to 1 and the new signature is stored. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD` and `SKIP_BLOCK_THRESHOLD`), the service auto-sets `hitl=true` and `blockedReason="Auto-blocked after {count} consecutive CI failures: {signature}"` to halt repeated dispatch cycles. Updated by `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
+`consecutiveCiFailureCount`: integer (default `0`) — consecutive count of patch cycles whose `ciFailureSignature` matched the stored `lastCiFailureSignature`. When a new, differing signature arrives (or none was previously stored), the count resets to 1 and the new signature is stored. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD` and `SKIP_BLOCK_THRESHOLD`), the service auto-sets `blocked=true` and `blockedReason="Auto-blocked after {count} consecutive CI failures: {signature}"` to halt repeated dispatch cycles. Updated by `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
 
 `reviewedCommitSha`: optional string — the review pipeline's exclusive commit-tracking field, separate from the shared `commitSha` field written by claim()/patch()/deploy for their own multi-phase bookkeeping. Set via `PATCH /prs/:id`. Used by the review phase to independently track the commit at which a review was conducted, allowing review state to persist across pipeline transitions without interference from concurrent patch/deploy phase operations updating `commitSha`.
 

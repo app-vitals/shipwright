@@ -508,8 +508,8 @@ Parse the subagent's STATUS:
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"hitl": true, "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+       -d '{"blocked": true, "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
      ```
      Still post the PR comment below either way.
   2. Post a single PR comment stating a human decision is needed. Write the body to a temp
@@ -766,8 +766,8 @@ entirely — do not dispatch the fix subagent, do not post another rebuttal, and
    curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      -H "Content-Type: application/json" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-     -d '{"hitl": true, "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
-     echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+     -d '{"blocked": true, "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
+     echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
    ```
    Still post the PR comment below either way.
 3. Post a single PR comment stating a human decision is needed. Write the body to a temp
@@ -1096,8 +1096,8 @@ Parse the subagent's STATUS:
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"hitl": true, "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+       -d '{"blocked": true, "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
      ```
      Still post the PR comment below either way.
   2. Post a single PR comment stating a human decision is needed. Write the body to a temp
@@ -1309,7 +1309,7 @@ already has an unresolved HITL escalation.
    ```bash
    PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID")
-   PR_HITL=$(echo "$PR_RECORD" | jq -r '.hitl // false')
+   PR_BLOCKED=$(echo "$PR_RECORD" | jq -r '.blocked // false')
    PR_TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
    ```
 2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `hitl` field:
@@ -1321,7 +1321,7 @@ already has an unresolved HITL escalation.
    fi
    ```
 
-**If `PR_HITL` is `true` OR `TASK_HITL` is `true`** (an unresolved HITL escalation already
+**If `PR_BLOCKED` is `true` OR `TASK_HITL` is `true`** (an unresolved HITL escalation already
 exists — most likely from Step 5a.7 on this same PR, this cycle or a prior one): skip —
 do not dispatch the fix subagent, since doing so would silently contradict the escalation
 decision already recorded on the PR.
@@ -1339,7 +1339,8 @@ decision already recorded on the PR.
    ```
 3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
 
-**Otherwise** (neither the PR record nor its linked task has `hitl: true`): no escalation
+**Otherwise** (neither the PR record has `blocked: true` nor its linked task has
+`hitl: true`): no escalation
 is on record for this PR — proceed normally to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
@@ -1433,11 +1434,11 @@ Parse the subagent's STATUS:
   final report and skip Step 6d.5.
 - **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
   re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
-  tick — and, absent the `hitl` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to
+  tick — and, absent the `blocked` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to
   have this same CI-fix subagent re-dispatched against it next cycle. Escalate to HITL
   first, mirroring Step 5a.7's (RPF-1.3) escalation pattern, before releasing the claim —
-  this is the same `hitl` flag Step 6b.6 already reads pre-dispatch (it runs before dispatch,
-  this runs after a BLOCKED report; they compose without conflict):
+  this is the same `blocked` flag Step 6b.6 already reads pre-dispatch (it runs before
+  dispatch, this runs after a BLOCKED report; they compose without conflict):
 
   1. Reuse `PR_TASK_ID`, already resolved in Step 6b.6 — no second fetch here. If
      non-empty, PATCH the linked task to `hitl: true` so it's flagged for a human decision:
@@ -1455,8 +1456,8 @@ Parse the subagent's STATUS:
      curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"hitl": true, "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID hitl flag failed — continuing"
+       -d '{"blocked": true, "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
+       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
      ```
      Still post the PR comment below either way.
   2. Post a single PR comment stating a human decision is needed. Write the body to a temp

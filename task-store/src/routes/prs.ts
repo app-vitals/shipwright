@@ -493,8 +493,8 @@ export function createPrsRoutes(
   //   phase, readyForReviewAt, readyForPatchAt, readyForDeployAt — set by
   //   the review/patch/deploy skills to record when a PR enters each phase
   //
-  // PR-level HITL (blocks automation on a PR with no linked Task):
-  //   hitl, hitlNotifiedAt, blockedReason
+  // PR-level block (blocks automation on a PR with no linked Task):
+  //   blocked, blockedReason
   const PATCH_ALLOWED_FIELDS: Array<keyof PullRequest> = [
     "staged",
     "commitSha",
@@ -508,8 +508,7 @@ export function createPrsRoutes(
     "readyForReviewAt",
     "readyForPatchAt",
     "readyForDeployAt",
-    "hitl",
-    "hitlNotifiedAt",
+    "blocked",
     "blockedReason",
   ];
 

@@ -3879,25 +3879,29 @@ describe("renderPrsPage — Blocked tab & HITL badge", () => {
     expect(openTabMatch?.[0]).not.toContain("background:#6366f1");
   });
 
-  test("PR with hitl:true renders the 'Waiting: HITL' badge in the list", () => {
-    const html = render([{ ...PR_LIST_ITEM_1, hitl: true }]);
-    expect(html).toContain("Waiting: HITL");
-    expect(html).toContain("badge-hitl");
+  test("PR with blocked:true renders the 'Waiting: Blocked' badge in the list", () => {
+    const html = render([{ ...PR_LIST_ITEM_1, blocked: true }]);
+    expect(html).toContain("Waiting: Blocked");
+    expect(html).toContain("badge-blocked");
   });
 
-  test("PR with hitl:false does not render the badge", () => {
-    const html = render([{ ...PR_LIST_ITEM_1, hitl: false }]);
-    expect(html).not.toContain("Waiting: HITL");
+  test("PR with blocked:false does not render the badge", () => {
+    const html = render([{ ...PR_LIST_ITEM_1, blocked: false }]);
+    expect(html).not.toContain("Waiting: Blocked");
   });
 
-  test("PR with hitl absent does not render the badge", () => {
+  test("PR with blocked absent does not render the badge", () => {
     const html = render([PR_LIST_ITEM_1]);
-    expect(html).not.toContain("Waiting: HITL");
+    expect(html).not.toContain("Waiting: Blocked");
   });
 
   test("badge title attribute reflects blockedReason when present", () => {
     const html = render([
-      { ...PR_LIST_ITEM_1, hitl: true, blockedReason: "Needs human sign-off" },
+      {
+        ...PR_LIST_ITEM_1,
+        blocked: true,
+        blockedReason: "Needs human sign-off",
+      },
     ]);
     expect(html).toContain('title="Needs human sign-off"');
   });
@@ -4355,20 +4359,20 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain('href="/admin/prs" class="vos-nav-link active"');
   });
 
-  test("renders HITL field as 'yes' when pr.hitl is true", () => {
-    const html = render({ ...PR_DETAIL, hitl: true });
-    expect(html).toContain("HITL");
-    expect(html).toMatch(/HITL<\/td>\s*<td[^>]*>yes<\/td>/);
+  test("renders Blocked field as 'yes' when pr.blocked is true", () => {
+    const html = render({ ...PR_DETAIL, blocked: true });
+    expect(html).toContain("Blocked");
+    expect(html).toMatch(/Blocked<\/td>\s*<td[^>]*>yes<\/td>/);
   });
 
-  test("renders HITL field as 'no' when pr.hitl is false", () => {
-    const html = render({ ...PR_DETAIL, hitl: false });
-    expect(html).toMatch(/HITL<\/td>\s*<td[^>]*>no<\/td>/);
+  test("renders Blocked field as 'no' when pr.blocked is false", () => {
+    const html = render({ ...PR_DETAIL, blocked: false });
+    expect(html).toMatch(/Blocked<\/td>\s*<td[^>]*>no<\/td>/);
   });
 
-  test("omits HITL field when pr.hitl is null/undefined", () => {
-    const html = render({ ...PR_DETAIL, hitl: null });
-    expect(html).not.toMatch(/>\s*HITL\s*<\/td>/);
+  test("omits Blocked field when pr.blocked is null/undefined", () => {
+    const html = render({ ...PR_DETAIL, blocked: null });
+    expect(html).not.toMatch(/>\s*Blocked\s*<\/td>/);
   });
 
   test("renders Blocked Reason field when present", () => {
