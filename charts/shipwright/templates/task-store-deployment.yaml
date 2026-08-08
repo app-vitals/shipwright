@@ -74,29 +74,6 @@ spec:
             {{- else }}
             {{- fail "taskStore.database.existingSecret is required when postgresql.enabled=false" }}
             {{- end }}
-            {{- if include "shipwright.internal.wired" . }}
-            # ── Inter-service token mesh ──────────────────────────────────────
-            # Seeded (hashed, idempotent upsert) at boot as the admin-scoped
-            # token, agentId=null. The SAME raw value is injected into admin as
-            # SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN and into metrics as
-            # METRICS_TASK_STORE_TOKEN — one token, three references.
-            - name: TASK_STORE_SEED_ADMIN_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
-                  key: TASK_STORE_ADMIN_TOKEN
-            {{- if .Values.admin.enabled }}
-            # Scope resolver: task-store calls admin to resolve an agent token's
-            # scope. Without this pair, agent-scoped tokens cannot be validated.
-            - name: SHIPWRIGHT_TASK_STORE_AGENTS_URL
-              value: {{ include "shipwright.admin.serviceUrl" . | quote }}
-            - name: SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
-                  key: INTERNAL_API_KEY
-            {{- end }}
-            {{- end }}
             {{- if .Values.taskStore.sentry.dsn.existingSecret }}
             - name: SENTRY_DSN
               valueFrom:

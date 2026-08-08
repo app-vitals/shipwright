@@ -114,29 +114,6 @@ spec:
             - name: SHIPWRIGHT_ADMIN_APP_BASE_URL
               value: {{ .Values.admin.appBaseUrl | quote }}
             {{- end }}
-            {{- if include "shipwright.internal.wired" . }}
-            # ── Inter-service token mesh ──────────────────────────────────────
-            # SHIPWRIGHT_ADMIN_API_KEYS is composed in the internal Secret (it
-            # embeds the raw internal key) and is what lets metrics, task-store
-            # and chat authenticate to this service. See internal-secret.yaml.
-            - name: SHIPWRIGHT_ADMIN_API_KEYS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
-                  key: SHIPWRIGHT_ADMIN_API_KEYS
-            {{- if .Values.taskStore.enabled }}
-            # Admin's own in-cluster task-store calls. The token is the same raw
-            # value task-store seeds at boot via TASK_STORE_SEED_ADMIN_TOKEN, so
-            # the pair works with no manual token minting.
-            - name: SHIPWRIGHT_TASK_STORE_URL
-              value: {{ include "shipwright.taskStore.serviceUrl" . | quote }}
-            - name: SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
-                  key: TASK_STORE_ADMIN_TOKEN
-            {{- end }}
-            {{- end }}
             {{- if .Values.admin.taskStorePublicUrl }}
             # admin.taskStorePublicUrl: externally-reachable task-store base URL
             # advertised in the mint-token env block (e.g. https://<host>/task-store
@@ -219,53 +196,12 @@ spec:
             # agent.provisioning.apiUrl for an external gateway.
             - name: SHIPWRIGHT_API_URL
               value: {{ .Values.agent.provisioning.apiUrl | default (printf "http://%s:%v" (include "shipwright.admin.fullname" .) .Values.admin.service.port) | quote }}
-            # Size of the workspace PVC the provisioner creates per agent. Without
-            # this the provisioner falls back to its own 40Gi default, which is far
-            # too large for a laptop cluster and silently over-requests everywhere.
-            - name: SHIPWRIGHT_AGENT_PVC_STORAGE_GI
-              value: {{ .Values.agent.provisioning.pvc.size | trimSuffix "Gi" | quote }}
             {{- with .Values.agent.provisioning.pvcNameTemplate }}
             # PVC name template: when set, the provisioner substitutes {name} with
             # the agent's human-readable name (slug) to derive the PVC name. Used
             # when migrating from static agents with fixed naming conventions.
             - name: SHIPWRIGHT_AGENT_PVC_NAME_TEMPLATE
               value: {{ . | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.agent.credentials.enabled }}
-            {{- /* Deployment-wide agent credentials. Admin merges these under each
-                   agent's own env rows when serving GET /agents/:id/config, so a
-                   per-agent value always wins. Prefixed so admin never hands out
-                   a credential it holds for its own use — see
-                   resolveDefaultAgentEnv in admin/src/main.ts. */}}
-            {{- if .Values.agent.credentials.existingSecret }}
-            - name: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.agent.credentials.existingSecret }}
-                  key: {{ .Values.agent.credentials.anthropicApiKeyRef }}
-                  optional: true
-            - name: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.agent.credentials.existingSecret }}
-                  key: {{ .Values.agent.credentials.claudeCodeOauthTokenRef }}
-                  optional: true
-            {{- else }}
-            {{- with .Values.agent.credentials.anthropicApiKey }}
-            - name: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.agent.credentialsSecretName" $ }}
-                  key: SHIPWRIGHT_AGENT_DEFAULT_ANTHROPIC_API_KEY
-            {{- end }}
-            {{- with .Values.agent.credentials.claudeCodeOauthToken }}
-            - name: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "shipwright.agent.credentialsSecretName" $ }}
-                  key: SHIPWRIGHT_AGENT_DEFAULT_CLAUDE_CODE_OAUTH_TOKEN
-            {{- end }}
             {{- end }}
             {{- end }}
             {{- if .Values.agent.voice.enabled }}
@@ -304,7 +240,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if and .Values.chat.enabled (or .Values.chat.adminToken.existingSecret (include "shipwright.internal.wired" .)) }}
+            {{- if and .Values.chat.enabled .Values.chat.adminToken.existingSecret }}
             # ── Chat-service wiring ───────────────────────────────────────────
             # Enables the admin console's Chat tab (/admin/chat) and per-agent
             # chat-token minting during provisioning. The URL is the in-cluster
@@ -313,18 +249,12 @@ spec:
             # the box. Override the URL via admin.extraEnv if needed (extraEnv
             # is appended last and wins).
             - name: SHIPWRIGHT_CHAT_SERVICE_URL
-              value: {{ include "shipwright.chat.serviceUrl" . | quote }}
+              value: {{ printf "http://%s:%v" (include "shipwright.chat.fullname" .) .Values.chat.service.port | quote }}
             - name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  {{- if .Values.chat.adminToken.existingSecret }}
-                  # Caller-managed Secret always wins over the chart-generated one.
                   name: {{ .Values.chat.adminToken.existingSecret }}
                   key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
-                  {{- else }}
-                  name: {{ include "shipwright.internal.effectiveSecretName" . }}
-                  key: CHAT_ADMIN_TOKEN
-                  {{- end }}
             {{- end }}
             {{- if .Values.admin.sentry.dsn.existingSecret }}
             - name: SENTRY_DSN
