@@ -19,7 +19,6 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
-    hitlNotifiedAt: null,
     blockedReason: null,
     ...overrides,
   };
@@ -40,18 +39,8 @@ describe("computeBlockedBy", () => {
     expect(result).toEqual([]);
   });
 
-  it("includes hitl block when hitl=true and hitlNotifiedAt is null", () => {
-    const task = makeTask({ id: "t1", hitl: true, hitlNotifiedAt: null });
-    const result = computeBlockedBy(task, [task]);
-    expect(result).toEqual([{ type: "hitl" }]);
-  });
-
-  it("includes plain { type: 'hitl' } regardless of hitlNotifiedAt value", () => {
-    const task = makeTask({
-      id: "t1",
-      hitl: true,
-      hitlNotifiedAt: "2026-06-24T10:00:00.000Z",
-    });
+  it("includes plain { type: 'hitl' } block when hitl=true", () => {
+    const task = makeTask({ id: "t1", hitl: true });
     const result = computeBlockedBy(task, [task]);
     expect(result).toEqual([{ type: "hitl" }]);
   });
@@ -243,7 +232,6 @@ describe("computeBlockedBy", () => {
     const task = makeTask({
       id: "t1",
       hitl: true,
-      hitlNotifiedAt: null,
       dependencies: ["dep-1", "dep-2"],
     });
     const result = computeBlockedBy(task, [task, dep1, dep2]);

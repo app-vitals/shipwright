@@ -22,7 +22,6 @@ function makeMinimalTask(overrides: Partial<MinimalTask> = {}): MinimalTask {
     dependencies: [],
     pr: null,
     hitl: null,
-    hitlNotifiedAt: null,
     blockedReason: null,
     assignee: null,
     ...overrides,
@@ -179,30 +178,14 @@ describe("listBlocked logic (unit)", () => {
     expect(result[0].blockedBy).toEqual([{ type: "blocked", reason: null }]);
   });
 
-  it("returns pending tasks with an HITL gate (hitl=true, hitlNotifiedAt=null)", () => {
+  it("returns pending tasks with an HITL gate (hitl=true)", () => {
     const tasks = [
       makeMinimalTask({
         id: "t1",
         status: "pending",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({ id: "t2", status: "pending", hitl: false }),
-    ];
-    const result = listBlockedLogic(tasks);
-    expect(result.map((t) => t.id)).toEqual(["t1"]);
-    expect(result[0].blockedBy).toContainEqual({ type: "hitl" });
-  });
-
-  it("hitl:true always yields a plain { type: 'hitl' } entry (hitlNotifiedAt ignored)", () => {
-    const tasks = [
-      makeMinimalTask({
-        id: "t1",
-        status: "pending",
-        hitl: true,
-        hitlNotifiedAt: "2026-06-25T10:00:00.000Z",
-      }),
-      makeMinimalTask({ id: "t2", status: "pending" }),
     ];
     const result = listBlockedLogic(tasks);
     expect(result.map((t) => t.id)).toEqual(["t1"]);
@@ -245,13 +228,11 @@ describe("listBlocked logic (unit)", () => {
         id: "t1",
         status: "in_progress",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t2",
         status: "pr_open",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t3",
@@ -284,31 +265,26 @@ describe("listBlocked logic (unit)", () => {
         id: "t1",
         status: "merged",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t2",
         status: "done",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t3",
         status: "deploying",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t4",
         status: "deployed",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
       makeMinimalTask({
         id: "t5",
         status: "cancelled",
         hitl: true,
-        hitlNotifiedAt: null,
       }),
     ];
     const result = listBlockedLogic(tasks);
@@ -428,7 +404,6 @@ describe("TaskService.listBlocked() sort (unit)", () => {
       model: null,
       complexity: null,
       hitl: null,
-      hitlNotifiedAt: null,
       claimedBy: null,
       agentHint: null,
       claimedAt: null,
@@ -785,7 +760,6 @@ describe("TaskService.list() blockedBy dependency lookup scoping", () => {
       model: null,
       complexity: null,
       hitl: null,
-      hitlNotifiedAt: null,
       claimedBy: null,
       agentHint: null,
       claimedAt: null,
