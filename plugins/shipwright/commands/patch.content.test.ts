@@ -575,10 +575,10 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain('"hitl": true');
   });
 
-  it("escalation case with no linked task PATCHes the PR record itself with hitl: true and a blockedReason, not just a warning", () => {
+  it("escalation case with no linked task PATCHes the PR record itself with blocked: true and a blockedReason, not just a warning", () => {
     const section = getStep5a7Section();
     const patchPrSnippet =
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"hitl": true, "blockedReason"';
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"blocked": true, "blockedReason"';
     expect(section).toContain("PR_TASK_ID` is empty");
     expect(section).not.toContain("log a warning and skip the");
     expect(section).toContain(

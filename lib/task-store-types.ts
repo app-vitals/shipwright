@@ -1064,7 +1064,8 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          repo?: string;
+          repo?: string | string[];
+          org?: string | string[];
           prNumber?: string;
           taskId?: string;
           state?: "open" | "merged" | "closed";
@@ -1410,7 +1411,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Increment patchCycles and conditionally reset reviewState=pending */
+    /** Increment patchCycles and conditionally reset reviewState=pending; optionally track a CI-failure streak via ciFailureSignature */
     post: {
       parameters: {
         query?: never;
@@ -1687,8 +1688,12 @@ export interface components {
       complexity?: number | null;
       /** @example true */
       hitl?: boolean | null;
-      /** @example 2026-01-02T00:00:00.000Z */
-      hitlNotifiedAt?: string | null;
+      /**
+       * @description Type B merge-approval-gate classification. Does not gate dispatch candidacy.
+       * @default false
+       * @example false
+       */
+      requiresHumanApproval: boolean;
       /**
        * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
        * @default 0
@@ -1949,19 +1954,28 @@ export interface components {
        * @default false
        * @example false
        */
-      hitl: boolean;
-      /** @example 2026-01-02T00:00:00.000Z */
-      hitlNotifiedAt?: string | null;
+      blocked: boolean;
       /** @example no linked task */
       blockedReason?: string | null;
       /**
-       * @description Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).
+       * @description Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).
        * @default 0
        * @example 0
        */
       skipCount: number;
       /** @example 2026-01-02T00:00:00.000Z */
       lastSkippedAt?: string | null;
+      /**
+       * @description Signature of the most recent CI failure reported via POST /prs/:id/patch's ciFailureSignature field. Used to detect consecutive patch cycles hitting the same CI failure.
+       * @example npm-test-failed-foo.unit.test.ts
+       */
+      lastCiFailureSignature?: string | null;
+      /**
+       * @description Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).
+       * @default 0
+       * @example 0
+       */
+      consecutiveCiFailureCount: number;
       /**
        * Format: date-time
        * @example 2026-01-01T00:00:00.000Z
@@ -2050,6 +2064,11 @@ export interface components {
        * @example abc123def456
        */
       commitSha?: string;
+      /**
+       * @description Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.
+       * @example npm-test-failed-foo.unit.test.ts
+       */
+      ciFailureSignature?: string;
     };
   };
   responses: never;
