@@ -114,7 +114,9 @@ subagent's own detail) after a fixed prefix.
 | **deploy** | `canary_blocked` |
 | **deploy** | `Pipeline timeout` |
 | **deploy** | `Canary failed after deploy` |
-| **spin-detection** (`recordSkip`) | starts with `Auto-blocked after` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` |
+| **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a) |
+| **spin-detection — task skip (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — task-only, tracked via `skipCount` |
+| **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately |
 
 If `blockedReason` doesn't match any pattern above (empty, or genuinely unrecognized text),
 present it as **unknown origin phase** — do not guess which phase set it. Never crash on an
@@ -132,7 +134,7 @@ BLOCKED: {task-id or org/repo#pr}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Title:         {title}
 Repo:          {repo}
-Origin phase:  {dev-task | patch | deploy | spin-detection | unknown origin phase}
+Origin phase:  {dev-task | patch | deploy | spin-detection — task skip | spin-detection — PR CI-failure streak | unknown origin phase}
 Blocked at:    {blockedAt}
 Blocked reason: {blockedReason}
 PR:            {task.pr or "(none)"}
@@ -201,9 +203,10 @@ curl -sf -X PATCH \
 
 ### 6d. Spin-detection skipCount reset
 
-In addition to whichever retry path (6a/6b/6c) applies, if `blockedReason` starts with
-`Auto-blocked after` (the `recordSkip()` spin-detection pattern), also reset `skipCount` via
-the purpose-built endpoint — prefer this over a raw PATCH of `skipCount`:
+In addition to whichever retry path (6a/6b/6c) applies, if `blockedReason` matches the
+**task skip** spin-detection variant (starts with `Auto-blocked after` and contains
+`consecutive skips` — the `recordSkip()` pattern), also reset `skipCount` via the
+purpose-built endpoint — prefer this over a raw PATCH of `skipCount`:
 
 ```bash
 curl -sf -X POST \
@@ -213,6 +216,15 @@ curl -sf -X POST \
 
 (`resetSkip()` sets `skipCount: 0, lastSkippedAt: null`.) This step is task-only — PR-only
 records don't carry `skipCount`.
+
+**Does not apply to the PR CI-failure-streak variant.** If `blockedReason` instead matches
+the **PR CI-failure streak** spin-detection variant (contains `consecutive patch cycles
+hitting the same CI failure` — the `consecutiveCiFailureCount` pattern), there is no
+reset endpoint for that counter today — `/tasks/:id/skip/reset` is task-only and resets the
+wrong field entirely. A 6c retry clears `blocked`/`blockedReason`, but `consecutiveCiFailureCount`
+stays elevated, so one more patch cycle hitting the same CI failure signature re-blocks the
+PR immediately. Tell the human this before retrying so they aren't surprised by an
+immediate re-block.
 
 ### 6e. Redirect
 

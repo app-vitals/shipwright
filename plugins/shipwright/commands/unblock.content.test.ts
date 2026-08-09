@@ -80,6 +80,7 @@ describe("unblock.md — phase inference (AC2)", () => {
     "canary_blocked",
     "Pipeline timeout",
     "Canary failed after deploy",
+    "Post-merge CI still pending after 10 minutes",
   ];
 
   it("mentions every dev-task.md blockedReason pattern", () => {
@@ -102,6 +103,18 @@ describe("unblock.md — phase inference (AC2)", () => {
 
   it("mentions the recordSkip auto-block pattern (Auto-blocked after)", () => {
     expect(content).toContain("Auto-blocked after");
+  });
+
+  it("distinguishes the task-side skip-count spin-detection variant from the PR-side CI-failure-streak variant", () => {
+    expect(content).toContain("consecutive skips");
+    expect(content).toContain("consecutive patch cycles hitting the same CI failure");
+    expect(content).toContain("consecutiveCiFailureCount");
+    expect(content).toContain("skipCount");
+  });
+
+  it("notes there is no dedicated reset endpoint for the PR-side consecutiveCiFailureCount streak", () => {
+    const lower = content.toLowerCase();
+    expect(lower).toContain("no dedicated reset");
   });
 
   it("attributes dev-task reasons to the dev-task phase, patch reasons to patch, deploy reasons to deploy", () => {
