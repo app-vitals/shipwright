@@ -561,7 +561,7 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("reply dated *before* the");
   });
 
-  it("escalation case reuses the shared PR_TASK_ID from Step 2.1 and PATCHes hitl: true (no fresh taskId fetch)", () => {
+  it("escalation case reuses the shared PR_TASK_ID from Step 2.1 and PATCHes status: blocked (no fresh taskId fetch)", () => {
     const section = getStep5a7Section();
     expect(section).toContain("PR_TASK_ID");
     // No independent GET .../prs/$PR_RECORD_ID fetch for taskId purposes anymore — that
@@ -572,7 +572,7 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toMatch(/Step 2\.1|reuse/i);
     expect(section).toContain("-X PATCH");
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
-    expect(section).toContain('"hitl": true');
+    expect(section).toContain('"status": "blocked"');
   });
 
   it("escalation case with no linked task PATCHes the PR record itself with blocked: true and a blockedReason, not just a warning", () => {
@@ -735,17 +735,19 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
     expect(section).toContain("5a.7");
   });
 
-  it("fetches the PR record fresh and checks its hitl field", () => {
+  it("fetches the PR record fresh and checks its blocked field", () => {
     const section = getStep6b6Section();
     expect(section).toContain("GET");
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(section).toContain("hitl");
+    expect(section).toContain("PR_BLOCKED");
   });
 
-  it("also checks the linked task's hitl field when taskId is present", () => {
+  it("also checks the linked task's status field when taskId is present", () => {
     const section = getStep6b6Section();
     expect(section).toContain("taskId");
     expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$');
+    expect(section).toContain("TASK_BLOCKED");
+    expect(section).toContain('.status');
   });
 
   it("true branch releases the claim, does not dispatch the fix subagent, and moves to the next PR in List D", () => {
@@ -976,11 +978,11 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
   ) {
     const blocked = getBlockedBranch(section);
 
-    // hitl PATCH to the linked task
+    // status: blocked PATCH to the linked task
     expect(blocked).toContain(opts.taskPatchSnippet);
-    expect(blocked).toContain('"hitl": true');
+    expect(blocked).toContain('"status": "blocked"');
 
-    // hitl + blockedReason PATCH fallback to the PR record
+    // blocked + blockedReason PATCH fallback to the PR record
     expect(blocked).toContain(opts.prPatchSnippet);
     expect(blocked).toContain("blockedReason");
 
@@ -988,7 +990,7 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(blocked).toContain(`gh pr comment {pr} --repo {org}/{repo} --body-file ${opts.commentTmpPath}`);
     expect(blocked).toContain(`rm ${opts.commentTmpPath}`);
 
-    // Ordering: hitl PATCH + comment must occur BEFORE the release call
+    // Ordering: status PATCH + comment must occur BEFORE the release call
     const taskPatchIdx = blocked.indexOf(opts.taskPatchSnippet);
     const prPatchIdx = blocked.indexOf(opts.prPatchSnippet);
     const commentIdx = blocked.indexOf(`--body-file ${opts.commentTmpPath}`);
@@ -1061,7 +1063,7 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(step5a7Section).toContain("second-round disagreement");
   });
 
-  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch hitl check (same PATCH targets)", () => {
+  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets)", () => {
     const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const step6b6Section = content.slice(step6b6Idx, step6cIdx);
