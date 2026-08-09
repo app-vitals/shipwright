@@ -592,7 +592,14 @@ by this point in the procedure:
 
 Invoke `compute-review-verdict.ts` to turn those three booleans into the `event` and
 `verdictLabel` to use — do not decide the event or the body's `Verdict: ...` label by
-narrative judgment:
+narrative judgment. Assign each computed value to a shell variable first (each must be the
+literal string `true` or `false`):
+
+```bash
+SELF_REVIEW={true or false, from selfReview above}
+UNADDRESSED_FINDINGS={true or false, from unaddressedFindings above}
+CURRENT_PASS_HAS_BLOCKING_FINDINGS={true or false, from currentPassHasBlockingFindings above}
+```
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
@@ -711,7 +718,13 @@ should be held; the inline comments convey the specific feedback to the author.
 
 Before Step 11 posts or stages anything, validate the constructed `body` against the same
 `selfReview`/`unaddressedFindings`/`currentPassHasBlockingFindings` inputs used above, via the
-script's validation mode:
+script's validation mode. `SELF_REVIEW`, `UNADDRESSED_FINDINGS`, and
+`CURRENT_PASS_HAS_BLOCKING_FINDINGS` carry over unchanged from Step 10; `BODY` is the `body`
+string built for `pr_review_{pr}.json` above:
+
+```bash
+BODY={the "body" string built for pr_review_{pr}.json above}
+```
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \

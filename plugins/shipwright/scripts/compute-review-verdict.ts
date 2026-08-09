@@ -89,8 +89,8 @@ export function computeVerdict(
 // plugins/shipwright is a separate, repo-agnostic package from agent/src —
 // see plugins/shipwright/CLAUDE.md.
 
-const VERDICT_APPROVE_LABEL = /verdict\**\s*:\**\s*\**approve\b/i;
-const VERDICT_COMMENT_LABEL = /verdict\**\s*:\**\s*\**comment\b/i;
+const VERDICT_APPROVE_LABEL = /verdict\**\s*:\s*\**approve\b/i;
+const VERDICT_COMMENT_LABEL = /verdict\**\s*:\s*\**comment\b/i;
 
 function extractVerdictLabel(body: string): Verdict | null {
   if (VERDICT_APPROVE_LABEL.test(body)) return "APPROVE";
