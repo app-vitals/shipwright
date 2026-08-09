@@ -543,14 +543,19 @@ A PR has **unaddressed findings** when ANY of the following are true:
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body`, excluding:
   - a clean self-APPROVE (per `isCleanApproveBody`/CPF-2.1 — a review whose body starts with
-    `APPROVE` or contains a `Verdict: APPROVE` label), and
+    `APPROVE` or contains a `Verdict: APPROVE` label),
   - a review addressed by a subsequent PR-author reply (per CPF-2.3 — the PR author posted a
     PR-level comment with `createdAt` after that review's `submittedAt`, and all inline
-    threads are resolved)
+    threads are resolved), and
+  - an earlier self-authored review superseded by a later, genuinely clean self-review from
+    the same author (per DRO-1.2 — this PR's own review history is the motivating case: a
+    self-authored PR reviewed via a fresh review object each round, rather than a body
+    rewrite, never triggers the clean-self-APPROVE exclusion above for its earlier rounds
+    even after every finding in them is fixed)
 
 This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
-its List A — see that section for the full clean-APPROVE and author-reply exclusion rules
-(not restated here to avoid a fourth divergent copy).
+its List A — see that section for the full clean-APPROVE, author-reply, and
+superseded-self-review exclusion rules (not restated here to avoid a fourth divergent copy).
 
 **If unaddressed findings are present, force the verdict to `COMMENT`** — this
 `unaddressedFindings` boolean is one of the three inputs Step 10's mechanical

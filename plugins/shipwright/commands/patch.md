@@ -216,13 +216,15 @@ A PR has **unaddressed findings** when ANY of the following are true:
 - At least one inline thread has `isResolved == false`
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body` (a review body without matching inline threads is itself a finding),
-  excluding clean-APPROVE reviews (see below) and reviews addressed via a subsequent author
-  reply (see below)
+  excluding clean-APPROVE reviews (see below), reviews addressed via a subsequent author
+  reply (see below), and self-authored reviews superseded by a later clean self-review
+  (see below)
 
 A PR has **no findings** (skip it) when ALL of the following are true:
 - All inline threads are resolved (`isResolved == true` for every thread)
 - No COMMENTED or CHANGES_REQUESTED review has a non-empty body, other than clean-APPROVE
-  reviews (see below) and reviews addressed via a subsequent author reply (see below)
+  reviews (see below), reviews addressed via a subsequent author reply (see below), and
+  self-authored reviews superseded by a later clean self-review (see below)
 
 **Clean-APPROVE exclusion**: A review is excluded from the body check above when its body is
 a clean APPROVE verdict, matched either by:
@@ -267,9 +269,32 @@ self-authored review. This exclusion still requires all inline threads to be res
 (`isResolved == true`) — an unresolved thread on the same review continues to count as a
 finding regardless of any reply.
 
+**Self-review superseded by a later clean self-review (DRO-1.2)**: review.md's own Step
+10/11 procedure always posts a *new* review object each pass rather than rewriting a prior
+one's body (see Step 10's "the initial-review and re-review paths run identically"), so a
+self-authored PR that goes through N review rounds — each finding and fixing one real issue
+— ends up with N-1 COMMENT-bodied self-reviews on the PR even after every finding has been
+fixed. None of those qualifies for the clean-APPROVE exclusion above (their bodies read
+`Verdict: COMMENT`, not `Verdict: APPROVE`), and the reply exclusion doesn't apply either
+(self-reviews aren't "third-party," and this PR's convention never posts a PR-level author
+reply) — so without this exclusion, `unaddressedFindings` computes `true` forever and a
+self-authored PR can never reach a clean verdict once it has had more than one review round.
+An earlier self-authored COMMENTED review's body is excluded from the finding check when a
+**later** review exists whose `author.login` is the same self-review identity AND that later
+review's own body is a clean verdict (matched by the clean-APPROVE exclusion's pattern above
+— i.e. the later self-review itself reads `Verdict: APPROVE` or leads with `APPROVE`, whether
+or not GitHub's API forced its `state` to `COMMENTED`). This mirrors what an
+`updatePullRequestReview` body rewrite would have signaled had review.md instead edited the
+prior review in place — a later clean self-review is functionally the same "this round found
+nothing new, prior issues are fixed" signal, just expressed as a new review object instead of
+an edit to an old one. It does **not** exclude a later self-review that is itself non-clean
+(e.g. `Verdict: COMMENT` because *this* round found a fresh issue) — only a prior self-review
+is superseded, and only when the later one is genuinely clean. All inline threads must still
+be resolved for the PR overall, same as the other two exclusions.
+
 If neither condition applies (e.g., no reviews at all, only approved reviews, or only an
-excluded clean-APPROVE or reply-addressed review), skip the PR — it does not belong in
-List A.
+excluded clean-APPROVE, reply-addressed, or superseded-self-review), skip the PR — it does
+not belong in List A.
 
 If a PR has unaddressed findings, add it to **List A**. Store the unresolved threads (with their
 `id` — needed for the `resolveReviewThread` mutation in Step 5) and review bodies for use in

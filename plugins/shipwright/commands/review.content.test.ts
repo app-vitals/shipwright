@@ -899,6 +899,25 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
       'At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a\n  non-empty `body`, excluding:',
     );
   });
+
+  it("the gate documents the superseded-self-review exclusion (DRO-1.2), so a self-authored PR with multiple COMMENT-only rounds can still reach a clean verdict once fixed", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // Without this exclusion, a self-authored PR reviewed via a fresh review object each
+    // round (rather than a body rewrite) would have unaddressedFindings compute true
+    // forever, even after every prior finding is fixed -- there is no combination of
+    // computeVerdict() inputs that reaches verdictLabel "APPROVE" while
+    // unaddressedFindings is true (DRO-1.1/DRO-1.2 review finding, observed on this PR's
+    // own review history).
+    expect(gateBlock).toContain("superseded by a later, genuinely clean self-review");
+    expect(gateBlock).toContain("DRO-1.2");
+  });
 });
 
 describe("review.md — Step 10 worked example distinguishes self-review-COMMENT-event from unresolved-finding-COMMENT-verdict (RVG-1.2)", () => {
