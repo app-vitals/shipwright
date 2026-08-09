@@ -51,6 +51,7 @@ TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$S
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
+TASK_REQUIRES_HUMAN_APPROVAL=$(echo "$TASK_JSON" | jq -r '.tasks[0].requiresHumanApproval // false')
 ```
 
 If `TASK_ID` is empty or `TASK_STATUS` is not `"pr_open"`, proceed in **deploy-only mode** — no
@@ -124,7 +125,19 @@ gh pr view {pr} --repo {org}/{repo} --json reviewDecision,reviews \
 
 **If `reviewDecision` is `"APPROVED"`**: Record `approval_source = "github"` and `approvers = [list]`. Proceed to Step 3b.
 
-**If `reviewDecision` is not `"APPROVED"`**: Read `allow_self_review` from
+**If `reviewDecision` is not `"APPROVED"`**: If the linked task has `requiresHumanApproval:
+true` (`TASK_REQUIRES_HUMAN_APPROVAL` from Step 2), the self-review-APPROVE fallback does
+not apply — a genuine GitHub human `reviewDecision: "APPROVED"` is required. Print and stop:
+```
+✗ Pre-flight failed: PR #{pr} requires human approval (requiresHumanApproval:true).
+  GitHub reviewDecision: {decision}
+  A self-review APPROVE does not satisfy this gate — a real human must approve on GitHub.
+  Options:
+    1. Have a human approve the PR on GitHub, or
+    2. Run /shipwright:review on the PR — once an APPROVE review is posted, re-run /shipwright:deploy.
+```
+
+**Otherwise** (`requiresHumanApproval` is false or unset): Read `allow_self_review` from
 `state/agent-policy.md` (default: true). If `allow_self_review` is true, fetch the PR's
 reviews from GitHub and check if any review has a clean APPROVE body — either a leading
 `APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
@@ -442,7 +455,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"hitl\": true, \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
+    -d "{\"blocked\": true, \"blockedReason\": \"Post-merge CI failed — run ID: {id}\"}" | jq .
 fi
 ```
 Stop.
@@ -467,7 +480,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"hitl\": true, \"blockedReason\": \"Post-merge CI still pending after 10 minutes — marking deployed, check manually\"}" | jq .
+    -d "{\"blocked\": true, \"blockedReason\": \"Post-merge CI still pending after 10 minutes — marking deployed, check manually\"}" | jq .
 fi
 ```
 Print the handoff block (Step 9) with `Pipeline: post-merge CI (pending at timeout)`. Stop.
@@ -608,7 +621,7 @@ window:
   Stop.
 - **Any run fails** (`conclusion == "failure"` on any run): print the same failure format
   as Step 5c ("Pipeline monitoring failed" in place of "Post-merge CI failed"), run the
-  same `status: "blocked"` / PR-record `hitl` update. Stop.
+  same `status: "blocked"` / PR-record `blocked` update. Stop.
 - **Budget exhausted (30 minutes)** with runs still pending: print the same pending-timeout
   format as Step 5c ("Pipeline monitoring still pending after 30 minutes" in place of
   "Post-merge CI still pending after 10 minutes"), run the same `status: "deployed"` (task
@@ -640,7 +653,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"hitl\": true, \"blockedReason\": \"Deploy stage failed — run ID: {id}\"}" | jq .
+    -d "{\"blocked\": true, \"blockedReason\": \"Deploy stage failed — run ID: {id}\"}" | jq .
 fi
 ```
 Stop.
@@ -669,7 +682,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d '{"hitl": true, "blockedReason": "canary_blocked: Promote skipped after canary success"}' | jq .
+    -d '{"blocked": true, "blockedReason": "canary_blocked: Promote skipped after canary success"}' | jq .
 fi
 ```
 Stop.
@@ -699,7 +712,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d '{"hitl": true, "blockedReason": "Pipeline timeout after 30 minutes"}' | jq .
+    -d '{"blocked": true, "blockedReason": "Pipeline timeout after 30 minutes"}' | jq .
 fi
 ```
 Stop.
@@ -774,7 +787,7 @@ elif [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"hitl\": true, \"blockedReason\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
+    -d "{\"blocked\": true, \"blockedReason\": \"Canary failed after deploy. Revert PR opened: {revert_pr_url}\"}" | jq .
 fi
 ```
 
