@@ -159,6 +159,15 @@ describe("unblock.md — retry logic (AC3)", () => {
     expect(content).toContain("Auto-blocked after");
   });
 
+  it("also resets skipCount via POST /prs/:id/skip/reset for a PR-only record hit by the skip-count spin-detection variant", () => {
+    expect(content).toMatch(/\/prs\/(\{|\$)[A-Za-z0-9_]*\}?\/skip\/reset/);
+    const lower = content.toLowerCase();
+    // The skip-count row/step must not be described as task-only, since PullRequest
+    // carries its own skipCount/lastSkippedAt and recordSkip() produces the identical
+    // blockedReason string on a PR-only record.
+    expect(lower).not.toContain("task-only, tracked via `skipcount`");
+  });
+
   it("retries PR-only records (no linked task) via PATCH /prs/:id with blocked:false", () => {
     expect(content).toMatch(/PATCH.{0,200}\/prs\/(\{|\$)/s);
     expect(content).toContain("blocked");

@@ -115,7 +115,7 @@ subagent's own detail) after a fixed prefix.
 | **deploy** | `Pipeline timeout` |
 | **deploy** | `Canary failed after deploy` |
 | **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a) |
-| **spin-detection — task skip (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — task-only, tracked via `skipCount` |
+| **spin-detection — skip-count (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — tracked via `skipCount`; **not task-only** — `Task` and `PullRequest` each carry their own `skipCount`/`lastSkippedAt` (`task-store/prisma/schema.prisma`) and `PullRequestService.recordSkip()` produces this identical blockedReason string on a PR-only record (no linked task), just like `TaskService.recordSkip()` does on a task — distinct from (though similarly named to) the PR CI-failure-streak variant below |
 | **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately |
 
 If `blockedReason` doesn't match any pattern above (empty, or genuinely unrecognized text),
@@ -134,7 +134,7 @@ BLOCKED: {task-id or org/repo#pr}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Title:         {title}
 Repo:          {repo}
-Origin phase:  {dev-task | patch | deploy | spin-detection — task skip | spin-detection — PR CI-failure streak | unknown origin phase}
+Origin phase:  {dev-task | patch | deploy | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
 Blocked at:    {blockedAt}
 Blocked reason: {blockedReason}
 PR:            {task.pr or "(none)"}
@@ -204,9 +204,13 @@ curl -sf -X PATCH \
 ### 6d. Spin-detection skipCount reset
 
 In addition to whichever retry path (6a/6b/6c) applies, if `blockedReason` matches the
-**task skip** spin-detection variant (starts with `Auto-blocked after` and contains
+**skip-count** spin-detection variant (starts with `Auto-blocked after` and contains
 `consecutive skips` — the `recordSkip()` pattern), also reset `skipCount` via the
-purpose-built endpoint — prefer this over a raw PATCH of `skipCount`:
+purpose-built endpoint — prefer this over a raw PATCH of `skipCount`. This applies to
+**both** tasks and PR-only records — `Task` and `PullRequest` each carry their own
+`skipCount`/`lastSkippedAt`, and each has its own reset endpoint:
+
+Task record:
 
 ```bash
 curl -sf -X POST \
@@ -214,17 +218,26 @@ curl -sf -X POST \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID/skip/reset" | jq .
 ```
 
-(`resetSkip()` sets `skipCount: 0, lastSkippedAt: null`.) This step is task-only — PR-only
-records don't carry `skipCount`.
+PR-only record (no linked task):
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_ID/skip/reset" | jq .
+```
+
+(Both `resetSkip()` implementations set `skipCount: 0, lastSkippedAt: null` on their
+respective record.) Without this step, a PR-only record blocked by this exact reason
+re-blocks on its very next skip — its elevated `skipCount` is untouched by a 6c retry.
 
 **Does not apply to the PR CI-failure-streak variant.** If `blockedReason` instead matches
 the **PR CI-failure streak** spin-detection variant (contains `consecutive patch cycles
 hitting the same CI failure` — the `consecutiveCiFailureCount` pattern), there is no
-reset endpoint for that counter today — `/tasks/:id/skip/reset` is task-only and resets the
-wrong field entirely. A 6c retry clears `blocked`/`blockedReason`, but `consecutiveCiFailureCount`
-stays elevated, so one more patch cycle hitting the same CI failure signature re-blocks the
-PR immediately. Tell the human this before retrying so they aren't surprised by an
-immediate re-block.
+reset endpoint for that counter today — neither `/tasks/:id/skip/reset` nor
+`/prs/:id/skip/reset` touches it, since both reset `skipCount`, a different field entirely.
+A 6c retry clears `blocked`/`blockedReason`, but `consecutiveCiFailureCount` stays elevated,
+so one more patch cycle hitting the same CI failure signature re-blocks the PR immediately.
+Tell the human this before retrying so they aren't surprised by an immediate re-block.
 
 ### 6e. Redirect
 
