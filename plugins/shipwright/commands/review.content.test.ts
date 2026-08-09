@@ -936,6 +936,83 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
     expect(workedExampleSection.toLowerCase()).toContain('same `event: "comment"`');
     expect(workedExampleSection.toLowerCase()).toContain("different");
   });
+
+  it("Case 3 describes any-author PR with no prior unaddressed findings but a fresh blocking finding this pass", () => {
+    const case3Idx = workedExampleSection.indexOf("**Case 3");
+    expect(case3Idx).toBeGreaterThan(-1);
+    const case3Block = workedExampleSection.slice(case3Idx, case3Idx + 700);
+
+    expect(case3Block.toLowerCase()).toContain("any-author");
+    expect(case3Block).toContain("`selfReview = false`");
+    expect(case3Block).toContain("`unaddressedFindings = false`");
+    expect(case3Block).toContain("`currentPassHasBlockingFindings =\n  true`");
+    expect(case3Block).toContain('event: "COMMENT"');
+    expect(case3Block).toContain("Verdict: COMMENT");
+  });
+
+  it("Case 3 explains that without the new input this case would silently compute as APPROVE, same failure mode as Case 1", () => {
+    const case3Idx = workedExampleSection.indexOf("**Case 3");
+    expect(case3Idx).toBeGreaterThan(-1);
+    const case3Block = workedExampleSection.slice(case3Idx, case3Idx + 700);
+
+    expect(case3Block.toLowerCase()).toContain("silently compute as a clean `approve`");
+    expect(case3Block.toLowerCase()).toContain("the same\n  failure mode as case 1");
+  });
+
+  it("references the currentPassHasBlockingFindings input computed by Step 8, distinct from Step 9.5's unaddressedFindings", () => {
+    expect(workedExampleSection).toContain("currentPassHasBlockingFindings");
+    expect(workedExampleSection).toContain("Step 8's threshold-filtered `findings[]`");
+  });
+
+  it("includes the 8-row truth table with its header row covering all three boolean inputs", () => {
+    expect(workedExampleSection).toContain(
+      "| selfReview | unaddressedFindings | currentPassHasBlockingFindings | event | verdictLabel |",
+    );
+    expect(workedExampleSection.toLowerCase()).toContain("8-row truth table");
+  });
+
+  it("the truth table encodes all 2^3 = 8 boolean combinations with the correct event/verdictLabel outputs", () => {
+    const tableRows = [
+      "| true | false | false | COMMENT (self-review override) | APPROVE |",
+      "| true | false | true | COMMENT (self-review override) | COMMENT |",
+      "| true | true | false | COMMENT (self-review override) | COMMENT |",
+      "| true | true | true | COMMENT (self-review override) | COMMENT |",
+      "| false | false | false | APPROVE | APPROVE |",
+      "| false | false | true | COMMENT | COMMENT |",
+      "| false | true | false | COMMENT | COMMENT |",
+      "| false | true | true | COMMENT | COMMENT |",
+    ];
+    for (const row of tableRows) {
+      expect(workedExampleSection).toContain(row);
+    }
+  });
+});
+
+describe("review.md — Step 8 computes CURRENT_PASS_HAS_BLOCKING_FINDINGS from threshold-filtered findings (DRO-1.1)", () => {
+  it("defines CURRENT_PASS_HAS_BLOCKING_FINDINGS as true when any remaining finding is important or critical severity", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("`true` if any remaining finding is `important` or `critical` severity, else `false`");
+  });
+
+  it("ties CURRENT_PASS_HAS_BLOCKING_FINDINGS to Step 10/10.5's compute-review-verdict.ts input and cross-references Case 3", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("compute-review-verdict.ts");
+    expect(computeBlock).toContain("Step 10's worked example, Case 3");
+  });
+
+  it("distinguishes CURRENT_PASS_HAS_BLOCKING_FINDINGS (this pass, fresh) from Step 9.5's unaddressedFindings (prior, posted state)", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("independent of Step\n9.5's `unaddressedFindings`");
+  });
 });
 
 describe("review.md — Review Quality Rules reflect mechanical enforcement (RUC-1.1)", () => {
