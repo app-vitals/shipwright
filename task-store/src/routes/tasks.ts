@@ -14,7 +14,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?requiresHumanApproval=true|false, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -614,6 +614,12 @@ export function createTasksRoutes(
         c.req.query("hitl") === "true"
           ? true
           : c.req.query("hitl") === "false"
+            ? false
+            : undefined,
+      requiresHumanApproval:
+        c.req.query("requiresHumanApproval") === "true"
+          ? true
+          : c.req.query("requiresHumanApproval") === "false"
             ? false
             : undefined,
       limit:
