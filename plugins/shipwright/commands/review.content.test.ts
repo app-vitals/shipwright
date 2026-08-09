@@ -782,7 +782,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     // The gate lives either as its own section between Step 9 and Step 10, or
     // as the first thing inside Step 10 before "Event selection".
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     expect(eventSelectionIdx).toBeGreaterThan(step10Idx);
 
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
@@ -792,7 +792,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate forces event to COMMENT when unaddressed findings are present", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     expect(step9Idx).toBeGreaterThan(-1);
     expect(eventSelectionIdx).toBeGreaterThan(-1);
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
@@ -807,7 +807,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate overrides the code-reviewer subagent's recommendation and the self-review override, without being mutually exclusive", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -820,7 +820,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate computes the verdict once and feeds both the event field and the Verdict body label from that value", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -832,7 +832,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate references the OR condition of any unresolved inline thread, matching patch.md's Step 3a", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -843,7 +843,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate does not persist a new dedup state field -- it is computed live, consistent with the Design Constitution", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -855,7 +855,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the review-body condition has no headRefOid restriction, matching patch.md's Step 3a exactly", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
