@@ -98,7 +98,57 @@ matching approach as `research-docs.md` Step A0.
 
 **For each repo in the resolved list, set up (or reuse) a worktree + branch
 and run Steps 2-4 there** — never edit `repos/{dirname}` directly (see this
-repo's own root `CLAUDE.md` for the worktree convention):
+repo's own root `CLAUDE.md` for the worktree convention).
+
+**Open-PR supersession check (run first, before any branch is created).**
+A prior day's docs-refresh PR touching the same `docs/test-readiness/*.md`
+files may still be open — e.g. stuck on review, CI, or awaiting a human.
+Branching fresh from `origin/main` every day regardless creates a second PR
+competing for the same files; if the new one merges first, the stuck PR
+becomes permanently unmergeable (confirmed: a same-pattern collision turned
+an older open docs-refresh PR CONFLICTING once a newer one merged). Before
+creating a new branch, query for an existing **open** PR on any
+`docs/test-readiness-refresh-*` branch (any date, not just today) for this
+repo:
+
+```bash
+gh pr list --repo {org}/{repo} --state open \
+  --json number,headRefName,createdAt
+```
+
+`gh` has no glob support for head-branch matching, so filter the JSON result
+client-side, keeping only entries whose `headRefName` starts with
+`docs/test-readiness-refresh-`. This check is distinct from, and runs
+**ahead of**, the same-day-reuse check below — it looks for *any* earlier-day
+open PR, not just today's.
+
+- **No matching open PR found:** fall through to the fresh-branch flow below,
+  unchanged.
+- **Exactly one earlier-day open PR found:** reuse that PR's branch instead
+  of branching fresh. Check out the existing branch into a worktree (or reuse
+  an existing worktree for it if one is already present) and merge current
+  `origin/main` into it:
+  ```bash
+  git -C repos/{dirname} pull
+  git -C repos/{dirname} worktree add \
+    $SHIPWRIGHT_WORKTREE_DIR/{dirname}-docs-test-readiness-refresh-{existing-date} \
+    {existing-branch-name}
+  cd $SHIPWRIGHT_WORKTREE_DIR/{dirname}-docs-test-readiness-refresh-{existing-date}
+  git merge origin/main
+  ```
+  - **Merge succeeds cleanly:** proceed to Steps 2-4 in this worktree as
+    normal — the branch and its open PR are now caught up with `main` and
+    will absorb this run's updates instead of being superseded by a
+    competing PR.
+  - **Merge conflict:** do not attempt to resolve it automatically. Abort the
+    merge (`git merge --abort`), **skip Steps 2-4 for that repo only**, and
+    report the conflict explicitly and distinctly in Step 4's aggregated
+    summary (see Step 4 below) — do not fold this into the "skipped — all
+    artifacts fresh" case, since the repo was not fresh, it was blocked.
+    Other repos in the resolved list are unaffected and continue processing
+    normally.
+
+**Fresh-branch flow (no earlier-day open PR found, or same-day rerun):**
 
 ```bash
 git -C repos/{dirname} pull
@@ -110,7 +160,11 @@ git -C repos/{dirname} worktree add \
 Branch naming: `docs/test-readiness-refresh-<YYYYMMDD>` (today's date). If a
 worktree/branch with that name already exists (e.g. a same-day rerun), reuse
 it rather than recreating — check `$SHIPWRIGHT_WORKTREE_DIR` for an existing
-`{dirname}-docs-test-readiness-refresh-{YYYYMMDD}` directory first.
+`{dirname}-docs-test-readiness-refresh-{YYYYMMDD}` directory first. This
+same-day-reuse check is separate from the open-PR supersession check above:
+this one matches on today's exact branch name only, regardless of PR state;
+the supersession check above matches on any earlier-day PR still open on
+GitHub.
 
 All relative paths in Steps 2-4 (`docs/test-readiness/*.md`, phase artifact
 mtimes, git history, etc.) resolve against that repo's worktree, not the bare
@@ -153,8 +207,13 @@ proceed to Step 4.
 After every repo in the resolved list has been processed, print one
 aggregated summary across all repos, with a per-repo section: which phases
 ran (or "skipped — all artifacts fresh" / "skipped — precheck did not flag
-this repo"), and the number of task-store tasks created or updated (from
-phase 5 output) for that repo.
+this repo" / "skipped — reuse-merge conflict, needs manual resolution" for
+the open-PR supersession case above), and the number of task-store tasks
+created or updated (from phase 5 output) for that repo. The reuse-merge
+conflict status is reported distinctly from "skipped — all artifacts
+fresh" — the two mean different things (blocked vs. nothing to do) and must
+not be folded together, so a human scanning the summary can immediately spot
+the repo that needs manual conflict resolution on its open PR.
 
 ## Failure handling
 
