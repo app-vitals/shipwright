@@ -32,6 +32,14 @@ function extractStep5bSection(md: string): string {
   return match?.[0] ?? "";
 }
 
+function extractStep3aSection(md: string): string {
+  const match = md.match(
+    /### 3a\. Verify PR Approval[\s\S]*?(?=\n#{2,3} |\n---)/,
+  );
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");
@@ -483,7 +491,7 @@ describe("deploy.md — Terminal Conditions SHA_ONLY_FALLBACK branch coverage (D
     );
   });
 
-  it("SHA_ONLY_FALLBACK any-failure case sets blocked/hitl status, mirroring Step 5c", () => {
+  it("SHA_ONLY_FALLBACK any-failure case sets blocked status, mirroring Step 5c", () => {
     const section = extractTerminalConditionsSection(content);
     const failureMatch = section.match(
       /Any run fails[\s\S]*?(?=- \*\*Budget exhausted)/,
@@ -491,7 +499,6 @@ describe("deploy.md — Terminal Conditions SHA_ONLY_FALLBACK branch coverage (D
     expect(failureMatch).not.toBeNull();
     const failureSection = failureMatch?.[0] ?? "";
     expect(failureSection.toLowerCase()).toContain("blocked");
-    expect(failureSection).toContain("hitl");
   });
 
   it("SHA_ONLY_FALLBACK budget-exhausted case marks deployed for manual check and prints the pending-at-timeout handoff", () => {
@@ -644,9 +651,9 @@ describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
   });
 });
 
-describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (PRB-3.2)", () => {
+describe("deploy.md — PR-level blocked escalation on deploy-only-mode failures (PRB-3.2)", () => {
   // The 6 escalation/failure sites that must now PATCH /prs/$PR_RECORD_ID with
-  // hitl:true + blockedReason when TASK_ID is empty (deploy-only mode), instead of
+  // blocked:true + blockedReason when TASK_ID is empty (deploy-only mode), instead of
   // silently skipping. Each is identified by a unique anchor string near its bash
   // block, and the original TASK_ID-non-empty PATCH body that must remain unchanged.
   const sites = [
@@ -693,10 +700,10 @@ describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (P
 
   for (const site of sites) {
     describe(site.name, () => {
-      it("PATCHes /prs/$PR_RECORD_ID with hitl:true + blockedReason when TASK_ID is empty", () => {
+      it("PATCHes /prs/$PR_RECORD_ID with blocked:true + blockedReason when TASK_ID is empty", () => {
         const section = extractSiteSection(site.anchor);
         expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID");
-        expect(section).toContain("hitl");
+        expect(section).toContain("blocked");
         expect(section).toContain("true");
         expect(section).toContain("blockedReason");
       });
@@ -724,24 +731,28 @@ describe("deploy.md — PR-level hitl escalation on deploy-only-mode failures (P
     const mergedSection = content.slice(mergedIdx, mergedIdx + 400);
     expect(mergedSection).not.toContain("/prs/$PR_RECORD_ID\"");
     expect(mergedSection).not.toContain('"hitl"');
+    expect(mergedSection).not.toContain('"blocked": true');
 
     // Task deploying (Step 5 intro)
     const deployingIdx = content.indexOf("is the deploy duration). Skip if in deploy-only mode:");
     expect(deployingIdx).toBeGreaterThan(-1);
     const deployingSection = content.slice(deployingIdx, deployingIdx + 400);
     expect(deployingSection).not.toContain('"hitl"');
+    expect(deployingSection).not.toContain('"blocked": true');
 
     // Post-merge CI passed -> deployed (Step 5c success)
     const ciPassedIdx = content.indexOf("Post-merge CI passed ({elapsed}m)");
     expect(ciPassedIdx).toBeGreaterThan(-1);
     const ciPassedSection = content.slice(ciPassedIdx, ciPassedIdx + 400);
     expect(ciPassedSection).not.toContain('"hitl"');
+    expect(ciPassedSection).not.toContain('"blocked": true');
 
     // Final handoff -> deployed (Step 8b)
     const handoffIdx = content.indexOf("Skip if no task was found (deploy-only mode):");
     expect(handoffIdx).toBeGreaterThan(-1);
     const handoffSection = content.slice(handoffIdx, handoffIdx + 400);
     expect(handoffSection).not.toContain('"hitl"');
+    expect(handoffSection).not.toContain('"blocked": true');
   });
 });
 
@@ -799,5 +810,65 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
       "must come first",
     );
     expect(step2bSection).toContain("does not matter");
+  });
+});
+
+describe("deploy.md — requiresHumanApproval merge-gate (HSR-2.4)", () => {
+  it("Step 2 extracts TASK_REQUIRES_HUMAN_APPROVAL from the task lookup", () => {
+    const step2Match = content.match(
+      /## Step 2: Resolve Target PR[\s\S]*?(?=\n---|\n## Step 3)/,
+    );
+    expect(step2Match).not.toBeNull();
+    const step2Section = step2Match?.[0] ?? "";
+    expect(step2Section).toContain("TASK_REQUIRES_HUMAN_APPROVAL");
+    expect(step2Section).toContain("requiresHumanApproval");
+  });
+
+  it("Step 3a section references requiresHumanApproval / TASK_REQUIRES_HUMAN_APPROVAL", () => {
+    const step3aSection = extractStep3aSection(content);
+    const hasReference =
+      step3aSection.includes("requiresHumanApproval") ||
+      step3aSection.includes("TASK_REQUIRES_HUMAN_APPROVAL");
+    expect(hasReference).toBe(true);
+  });
+
+  it("when requiresHumanApproval is true and reviewDecision is not APPROVED, the self-review fallback does not apply and a stop message is printed", () => {
+    const step3aSection = extractStep3aSection(content);
+    const gateMatch = step3aSection.match(
+      /requiresHumanApproval:?\s*\n?[\s\S]{0,600}/,
+    );
+    expect(gateMatch).not.toBeNull();
+    const gateSection = gateMatch?.[0] ?? "";
+    const normalized = gateSection.toLowerCase().replace(/\s+/g, " ");
+    expect(normalized).toContain("does not apply");
+    expect(normalized).toContain("self-review");
+    expect(step3aSection).toContain("requires human approval");
+  });
+
+  it("does not proceed past the gate unless reviewDecision is genuinely APPROVED from GitHub", () => {
+    const step3aSection = extractStep3aSection(content);
+    expect(step3aSection.toLowerCase()).toContain(
+      "a genuine github human",
+    );
+  });
+
+  it("leaves the existing self-review fallback text unconditionally present for requiresHumanApproval:false/unset tasks", () => {
+    const step3aSection = extractStep3aSection(content);
+    expect(step3aSection).toContain("allow_self_review");
+    expect(step3aSection).toContain('sub("^\\\\*+";"")');
+    expect(step3aSection).toContain('startsWith("APPROVE")');
+  });
+
+  it("Step 4b's merge command remains the single unconditional admin merge (no requiresHumanApproval branching)", () => {
+    const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
+    const occurrences = content.split(adminMergeCommand).length - 1;
+    expect(occurrences).toBe(1);
+    const step4bMatch = content.match(
+      /### 4b\. Squash Merge[\s\S]*?(?=\n### 4c)/,
+    );
+    expect(step4bMatch).not.toBeNull();
+    const step4bSection = step4bMatch?.[0] ?? "";
+    expect(step4bSection).not.toContain("requiresHumanApproval");
+    expect(step4bSection).not.toContain("TASK_REQUIRES_HUMAN_APPROVAL");
   });
 });
