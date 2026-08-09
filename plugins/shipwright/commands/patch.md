@@ -488,8 +488,8 @@ Parse the subagent's STATUS:
   final report and skip Step 4c.5.
 - **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
   re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
-  tick — `claimedBy`/`hitl` are the only exclusions it checks, and releasing the claim below
-  clears the former without setting the latter. Escalate to HITL first, mirroring Step
+  tick — `claimedBy`/`blocked` are the only exclusions it checks, and releasing the claim
+  below clears the former without setting the latter. Escalate to HITL first, mirroring Step
   5a.7's (RPF-1.3) escalation pattern, before releasing the claim:
 
   1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
