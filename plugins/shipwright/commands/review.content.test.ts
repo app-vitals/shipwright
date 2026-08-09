@@ -782,7 +782,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     // The gate lives either as its own section between Step 9 and Step 10, or
     // as the first thing inside Step 10 before "Event selection".
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     expect(eventSelectionIdx).toBeGreaterThan(step10Idx);
 
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
@@ -792,7 +792,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate forces event to COMMENT when unaddressed findings are present", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     expect(step9Idx).toBeGreaterThan(-1);
     expect(eventSelectionIdx).toBeGreaterThan(-1);
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
@@ -807,7 +807,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate overrides the code-reviewer subagent's recommendation and the self-review override, without being mutually exclusive", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -818,21 +818,47 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     expect(gateBlock).toContain("override");
   });
 
-  it("the gate computes the verdict once and feeds both the event field and the Verdict body label from that value", () => {
+  it("the gate feeds unaddressedFindings into Step 10's mechanical three-input verdict computation, not a standalone formula", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
     const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
 
-    expect(gateBlock).toContain("Verdict: COMMENT");
+    expect(gateBlock).toContain("compute-review-verdict.ts");
+    expect(gateBlock).toContain("three-input truth table");
+    // The stale two-input inline formula from before Step 10's mechanical gate must not
+    // reappear -- it contradicted the three-input truth table (RUC-1.1/DRO-1.1 review
+    // finding: Step 9.5 must not restate a freehand fallback to the subagent's own
+    // recommendation).
+    expect(gateBlock).not.toContain(
+      'unaddressedFindings ? "COMMENT" : {code-reviewer subagent\'s recommended',
+    );
+  });
+
+  it("the gate's cross-reference to the other two verdict inputs does not point at the deleted 'Self-review event override' subsection", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // This PR folds the old named "Self-review event override" subsection into Step 10's
+    // unnamed mechanical paragraph -- Step 9.5's cross-reference must point at the
+    // mechanical computation (the selfReview input), not at the now-deleted subsection name
+    // (RUC-1.1/DRO-1.1 review finding: a dangling cross-reference to removed prose).
+    expect(gateBlock).not.toContain("Step 10 self-review COMMENT-forcing override");
+    expect(gateBlock).toContain("`selfReview` input");
+    expect(gateBlock).toContain("Step 10's mechanical");
   });
 
   it("the gate references the OR condition of any unresolved inline thread, matching patch.md's Step 3a", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -843,7 +869,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the gate does not persist a new dedup state field -- it is computed live, consistent with the Design Constitution", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -855,7 +881,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
   it("the review-body condition has no headRefOid restriction, matching patch.md's Step 3a exactly", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
-    const eventSelectionIdx = content.indexOf("**Event selection**");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
@@ -872,6 +898,25 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     expect(gateBlock).toContain(
       'At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a\n  non-empty `body`, excluding:',
     );
+  });
+
+  it("the gate documents the superseded-self-review exclusion (DRO-1.2), so a self-authored PR with multiple COMMENT-only rounds can still reach a clean verdict once fixed", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // Without this exclusion, a self-authored PR reviewed via a fresh review object each
+    // round (rather than a body rewrite) would have unaddressedFindings compute true
+    // forever, even after every prior finding is fixed -- there is no combination of
+    // computeVerdict() inputs that reaches verdictLabel "APPROVE" while
+    // unaddressedFindings is true (DRO-1.1/DRO-1.2 review finding, observed on this PR's
+    // own review history).
+    expect(gateBlock).toContain("superseded by a later, genuinely clean self-review");
+    expect(gateBlock).toContain("DRO-1.2");
   });
 });
 
@@ -935,6 +980,83 @@ describe("review.md — Step 10 worked example distinguishes self-review-COMMENT
   it("makes explicit that Case 1 and Case 2 share the same event but require different body verdict labels", () => {
     expect(workedExampleSection.toLowerCase()).toContain('same `event: "comment"`');
     expect(workedExampleSection.toLowerCase()).toContain("different");
+  });
+
+  it("Case 3 describes any-author PR with no prior unaddressed findings but a fresh blocking finding this pass", () => {
+    const case3Idx = workedExampleSection.indexOf("**Case 3");
+    expect(case3Idx).toBeGreaterThan(-1);
+    const case3Block = workedExampleSection.slice(case3Idx, case3Idx + 700);
+
+    expect(case3Block.toLowerCase()).toContain("any-author");
+    expect(case3Block).toContain("`selfReview = false`");
+    expect(case3Block).toContain("`unaddressedFindings = false`");
+    expect(case3Block).toContain("`currentPassHasBlockingFindings =\n  true`");
+    expect(case3Block).toContain('event: "COMMENT"');
+    expect(case3Block).toContain("Verdict: COMMENT");
+  });
+
+  it("Case 3 explains that without the new input this case would silently compute as APPROVE, same failure mode as Case 1", () => {
+    const case3Idx = workedExampleSection.indexOf("**Case 3");
+    expect(case3Idx).toBeGreaterThan(-1);
+    const case3Block = workedExampleSection.slice(case3Idx, case3Idx + 700);
+
+    expect(case3Block.toLowerCase()).toContain("silently compute as a clean `approve`");
+    expect(case3Block.toLowerCase()).toContain("the same\n  failure mode as case 1");
+  });
+
+  it("references the currentPassHasBlockingFindings input computed by Step 8, distinct from Step 9.5's unaddressedFindings", () => {
+    expect(workedExampleSection).toContain("currentPassHasBlockingFindings");
+    expect(workedExampleSection).toContain("Step 8's threshold-filtered `findings[]`");
+  });
+
+  it("includes the 8-row truth table with its header row covering all three boolean inputs", () => {
+    expect(workedExampleSection).toContain(
+      "| selfReview | unaddressedFindings | currentPassHasBlockingFindings | event | verdictLabel |",
+    );
+    expect(workedExampleSection.toLowerCase()).toContain("8-row truth table");
+  });
+
+  it("the truth table encodes all 2^3 = 8 boolean combinations with the correct event/verdictLabel outputs", () => {
+    const tableRows = [
+      "| true | false | false | COMMENT (self-review override) | APPROVE |",
+      "| true | false | true | COMMENT (self-review override) | COMMENT |",
+      "| true | true | false | COMMENT (self-review override) | COMMENT |",
+      "| true | true | true | COMMENT (self-review override) | COMMENT |",
+      "| false | false | false | APPROVE | APPROVE |",
+      "| false | false | true | COMMENT | COMMENT |",
+      "| false | true | false | COMMENT | COMMENT |",
+      "| false | true | true | COMMENT | COMMENT |",
+    ];
+    for (const row of tableRows) {
+      expect(workedExampleSection).toContain(row);
+    }
+  });
+});
+
+describe("review.md — Step 8 computes CURRENT_PASS_HAS_BLOCKING_FINDINGS from threshold-filtered findings (DRO-1.1)", () => {
+  it("defines CURRENT_PASS_HAS_BLOCKING_FINDINGS as true when any remaining finding is important or critical severity", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("`true` if any remaining finding is `important` or `critical` severity, else `false`");
+  });
+
+  it("ties CURRENT_PASS_HAS_BLOCKING_FINDINGS to Step 10/10.5's compute-review-verdict.ts input and cross-references Case 3", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("compute-review-verdict.ts");
+    expect(computeBlock).toContain("Step 10's worked example, Case 3");
+  });
+
+  it("distinguishes CURRENT_PASS_HAS_BLOCKING_FINDINGS (this pass, fresh) from Step 9.5's unaddressedFindings (prior, posted state)", () => {
+    const computeIdx = content.indexOf("**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`**");
+    expect(computeIdx).toBeGreaterThan(-1);
+    const computeBlock = content.slice(computeIdx, computeIdx + 700);
+
+    expect(computeBlock).toContain("independent of Step\n9.5's `unaddressedFindings`");
   });
 });
 

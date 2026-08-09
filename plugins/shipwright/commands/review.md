@@ -415,6 +415,14 @@ Apply policy thresholds to the subagent's `findings[]`:
 **Keep it tight.** A good review has 2-5 actionable items. If the subagent returned
 more, trim to the highest-confidence few.
 
+**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`** from the threshold-filtered findings above:
+`true` if any remaining finding is `important` or `critical` severity, else `false`. This is
+Step 10/10.5's `currentPassHasBlockingFindings` input to `compute-review-verdict.ts` — it
+reflects what THIS review pass found (fresh, post-threshold-filtering), independent of Step
+9.5's `unaddressedFindings` (which only reflects prior, already-posted GitHub review state).
+Without this input, a fresh critical finding in an otherwise-clean review pass with zero prior
+unresolved threads would silently compute as `APPROVE` — see Step 10's worked example, Case 3.
+
 ---
 
 ## Step 9: Write Review File
@@ -535,29 +543,36 @@ A PR has **unaddressed findings** when ANY of the following are true:
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body`, excluding:
   - a clean self-APPROVE (per `isCleanApproveBody`/CPF-2.1 — a review whose body starts with
-    `APPROVE` or contains a `Verdict: APPROVE` label), and
+    `APPROVE` or contains a `Verdict: APPROVE` label),
   - a review addressed by a subsequent PR-author reply (per CPF-2.3 — the PR author posted a
     PR-level comment with `createdAt` after that review's `submittedAt`, and all inline
-    threads are resolved)
+    threads are resolved), and
+  - an earlier self-authored review superseded by a later, genuinely clean self-review from
+    the same author (per DRO-1.2 — this PR's own review history is the motivating case: a
+    self-authored PR reviewed via a fresh review object each round, rather than a body
+    rewrite, never triggers the clean-self-APPROVE exclusion above for its earlier rounds
+    even after every finding in them is fixed)
 
 This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
-its List A — see that section for the full clean-APPROVE and author-reply exclusion rules
-(not restated here to avoid a fourth divergent copy).
+its List A — see that section for the full clean-APPROVE, author-reply, and
+superseded-self-review exclusion rules (not restated here to avoid a fourth divergent copy).
 
-**If unaddressed findings are present, force the verdict to `COMMENT`** — compute the
-verdict once (`unaddressedFindings ? "COMMENT" : {code-reviewer subagent's recommended
-verdict}`) and feed that single value into both Step 10's `event` field (`COMMENT`) and the
-review body's `Verdict: ...` label (literal text `Verdict: COMMENT`), the same body-label
-convention Step 10 already documents. This gate:
+**If unaddressed findings are present, force the verdict to `COMMENT`** — this
+`unaddressedFindings` boolean is one of the three inputs Step 10's mechanical
+`compute-review-verdict.ts` call uses to compute the `event` and `verdictLabel`; it is not
+combined with the code-reviewer subagent's own top-line recommendation here (see Step 10 for
+the full three-input truth table, which also folds in `selfReview` and
+`currentPassHasBlockingFindings`). This gate:
 - **Overrides the code-reviewer subagent's severity-based recommendation** from Step 7 —
   even if the subagent recommends APPROVE (e.g. only suggestion-level findings, or no
   findings at all in the new diff), a genuinely unresolved inline thread or qualifying
   review from a prior pass still forces `COMMENT`.
-- **Is not mutually exclusive with the Step 10 self-review COMMENT-forcing override** below
-  — a self-reviewed PR can independently trigger the self-review override (GitHub rejects
-  self-APPROVE via the API) AND this gate (real unaddressed feedback exists); either one on
-  its own is sufficient to force `COMMENT`, and this gate must not be skipped just because
-  the PR is a self-review. This holds even when the review narrative would otherwise
+- **Is not mutually exclusive with the other two inputs to Step 10's mechanical
+  computation** — the `selfReview` input (a self-review override: GitHub rejects
+  self-APPROVE via the API) and the `currentPassHasBlockingFindings` input (Step 8's
+  threshold-filtered findings for this pass) can each independently force `COMMENT` too; any
+  one of the three is sufficient, and this gate must not be skipped just because another
+  input already forces `COMMENT`. This holds even when the review narrative would otherwise
   self-report `Verdict: APPROVE` — the computed verdict always wins over narrative wording.
 
 This gate is computed live from the GraphQL data fetched in Step 5.5 at review-post time —
@@ -571,20 +586,45 @@ store.
 
 Follow `references/post-review-guide.md` for the full mechanics.
 
-**Unaddressed-findings gate takes priority**: apply Step 9.5's gate first. When it computes
-`COMMENT`, use that verdict for both `event` and the `Verdict: ...` body label below,
-regardless of what follows in this step.
+**The event/verdict decision is mechanical, not freehand.** Three inputs are already computed
+by this point in the procedure:
+- `selfReview` = `true` if the PR's `author.login == CURRENT_USER`, else `false`.
+- `unaddressedFindings` = the boolean Step 9.5's hard gate computed (real unresolved findings
+  from BEFORE this review pass — unresolved prior GitHub review threads/comments — present at
+  head, per that step's exact definition).
+- `currentPassHasBlockingFindings` = `true` if Step 8's threshold-filtered `findings[]` for
+  THIS review pass contains at least one `important` or `critical` severity finding, else
+  `false`. This is distinct from `unaddressedFindings`: it reflects what the code-reviewer
+  subagent found fresh in Steps 7/8, not prior GitHub-posted review state.
 
-**Self-review event override**: If the PR's `author.login == CURRENT_USER`, set `event: "COMMENT"`
-regardless of the review outcome — GitHub rejects self-APPROVE via the API. The actual verdict
-(`APPROVE` or `COMMENT`) is still recorded faithfully in the review file so the deploy skill
-can read the verdict directly from the GitHub review body.
+Invoke `compute-review-verdict.ts` to turn those three booleans into the `event` and
+`verdictLabel` to use — do not decide the event or the body's `Verdict: ...` label by
+narrative judgment. Assign each computed value to a shell variable first (each must be the
+literal string `true` or `false`):
+
+```bash
+SELF_REVIEW={true or false, from selfReview above}
+UNADDRESSED_FINDINGS={true or false, from unaddressedFindings above}
+CURRENT_PASS_HAS_BLOCKING_FINDINGS={true or false, from currentPassHasBlockingFindings above}
+```
+
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
+  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}}"
+# -> {"event":"APPROVE"|"COMMENT","verdictLabel":"APPROVE"|"COMMENT"}
+```
+
+Use the returned `event` for the JSON's `event` field, and the returned `verdictLabel` to
+build the literal `Verdict: {verdictLabel}` phrase leading the `body`. This single script call
+replaces both the old "Self-review event override" prose and the old "Event selection" prose
+below — see the truth table and worked example that follow for *why* the gate exists, but the
+*procedure* is: call the script, use its output verbatim.
 
 **The `body` field MUST contain the literal phrase `Verdict: APPROVE` or `Verdict: COMMENT`**,
-matching whichever verdict was selected below in Event selection — not just implied wording or
-free-form approval prose. `agent/src/check-patch.ts`'s `isSelfCleanApprove` (`VERDICT_APPROVE_LABEL =
+matching the `verdictLabel` computed above — not just implied wording or free-form approval
+prose. `agent/src/check-patch.ts`'s `isSelfCleanApprove` (`VERDICT_APPROVE_LABEL =
 /verdict\**\s*:\s*\**approve\b/i`) scans the GitHub-posted review body for this exact phrase to
-recognize a clean self-approve on a self-authored PR (where `event` is forced to `COMMENT` above,
+recognize a clean self-approve on a self-authored PR (where `event` is forced to `COMMENT`,
 since GitHub blocks self-APPROVE via the API). A body like "Clean conversion, all routes
 verified, no blocking issues." reads as a genuine approval to a human but contains neither
 `APPROVE` nor `Verdict: APPROVE`, so `isSelfCleanApprove` never matches it — the patch cron then
@@ -593,35 +633,65 @@ label, on both the initial-review and re-review paths (Steps 10/11 run identical
 see Step 14's re-review flow).
 
 **Worked example — the two cases production actually confused.** This convention was not
-followed on two separate PRs in another repo in this deployment (one self-authored, one not):
-both produced review bodies reading `Verdict: COMMENT` even though the narrative was explicitly
-clean — e.g. "No blocking issues found... checks out clean." In both cases the underlying
-situation was actually Case 1 below (a clean review that should read `Verdict: APPROVE`), but it
-was written as if it were Case 2. Both cases resolve to the **same `event: "COMMENT"`** — that
-surface-level identity is exactly why they get conflated — but they MUST produce **different**
-`Verdict: ...` body labels:
+followed on two separate PRs in another repo in this deployment (one self-authored, one not),
+and recurred again two days after that guidance landed, on another PR review in the same
+deployment — proof that prose guidance alone was not sufficient enforcement, which is why the
+decision is now mechanical (`compute-review-verdict.ts`) rather than freehand. All of these
+mislabeled review bodies read `Verdict: COMMENT` even though the narrative was explicitly
+clean — e.g. "No blocking issues found... checks out clean." In each case the underlying
+situation was actually Case 1 below (a clean review that should read `Verdict: APPROVE`), but
+it was written as if it were Case 2. Both cases resolve to the
+**same `event: "COMMENT"`** — that surface-level identity is exactly why they get conflated —
+but they MUST produce **different** `Verdict: ...` body labels:
 
 - **Case 1 — self-authored PR, all findings resolved via Step 9.5's exclusions.** The PR's
-  `author.login == CURRENT_USER` and Step 9.5's unaddressed-findings gate computes no
-  unaddressed findings (every review either is a clean self-APPROVE or was addressed by a
-  subsequent author reply, per the exclusions above). This is a genuinely clean approval.
+  `author.login == CURRENT_USER` (`selfReview = true`), Step 9.5's unaddressed-findings gate
+  computes no unaddressed findings (`unaddressedFindings = false`) — every review either is a
+  clean self-APPROVE or was addressed by a subsequent author reply — and the current pass has
+  no blocking findings (`currentPassHasBlockingFindings = false`). A genuinely clean approval.
   Result: `event: "COMMENT"` (forced by the self-review override, since GitHub blocks
   self-APPROVE via the API — not because there's anything wrong with the PR), body **must**
   read `"Verdict: APPROVE — ..."`. Writing `Verdict: COMMENT` here is the exact bug observed
   in production: it makes a clean PR invisible to `isSelfCleanApprove` and the patch cron
   treats it as an unaddressed finding forever.
 - **Case 2 — any-author PR, a genuine unresolved finding still present at head.** Step 9.5's
-  gate computes real unaddressed findings (an unresolved inline thread, or a qualifying
-  `COMMENTED`/`CHANGES_REQUESTED` review body not excluded by the clean-APPROVE or
-  author-reply rules). Result: `event: "COMMENT"`, body correctly reads
-  `"Verdict: COMMENT — ..."`. This is the only case where `Verdict: COMMENT` is the right
-  label.
+  gate computes real unaddressed findings (`unaddressedFindings = true`) — an unresolved inline
+  thread, or a qualifying `COMMENTED`/`CHANGES_REQUESTED` review body not excluded by the
+  clean-APPROVE or author-reply rules. This holds regardless of `selfReview` or
+  `currentPassHasBlockingFindings`. Result: `event: "COMMENT"`, body correctly reads
+  `"Verdict: COMMENT — ..."`.
+- **Case 3 — any-author PR, no prior unaddressed findings, but a fresh blocking finding in
+  this pass.** `selfReview = false` and `unaddressedFindings = false` (zero prior unresolved
+  GitHub review threads/comments), but Step 8's threshold-filtered `findings[]` for THIS review
+  pass contains an important/critical severity finding (`currentPassHasBlockingFindings =
+  true`). Without this input, this case would silently compute as a clean `APPROVE` — the same
+  failure mode as Case 1 above, reintroduced by a different path. Result: `event: "COMMENT"`,
+  body correctly reads `"Verdict: COMMENT — ..."`. This restores the old "Event selection"
+  rule: "If any finding at important/critical severity remains after threshold filtering:
+  COMMENT — no exceptions."
+- **Normal clean approve — any-author PR, no unaddressed findings, no blocking findings this
+  pass.** `selfReview = false`, `unaddressedFindings = false`, and
+  `currentPassHasBlockingFindings = false`. Result: `event: "APPROVE"`, body reads
+  `"Verdict: APPROVE — ..."`. This is the ordinary non-self-review approve path.
 
-Both cases select `event: "COMMENT"` for entirely different reasons (an API restriction on
-authorship vs. a real quality gate on content) — the `Verdict: ...` body label is the *only*
-signal that distinguishes them for downstream automation, so it must always reflect the actual
-computed verdict, never be copied from the `event` value or from generic "this went through
-COMMENT" boilerplate.
+Both self-review-forced-COMMENT cases select `event: "COMMENT"` for entirely different reasons
+(an API restriction on authorship vs. a real quality gate on content) — the `Verdict: ...`
+body label is the *only* signal that distinguishes them for downstream automation, so it must
+always reflect the actual computed verdict, never be copied from the `event` value or from
+generic "this went through COMMENT" boilerplate. `compute-review-verdict.ts`'s `computeVerdict`
+implements this exact 8-row truth table (2^3 boolean combinations) so it can never drift into
+freehand narrative judgment again:
+
+| selfReview | unaddressedFindings | currentPassHasBlockingFindings | event | verdictLabel |
+|---|---|---|---|---|
+| true | false | false | COMMENT (self-review override) | APPROVE |
+| true | false | true | COMMENT (self-review override) | COMMENT |
+| true | true | false | COMMENT (self-review override) | COMMENT |
+| true | true | true | COMMENT (self-review override) | COMMENT |
+| false | false | false | APPROVE | APPROVE |
+| false | false | true | COMMENT | COMMENT |
+| false | true | false | COMMENT | COMMENT |
+| false | true | true | COMMENT | COMMENT |
 
 Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 
@@ -648,15 +718,33 @@ For a COMMENT verdict, the `body` follows the same convention, e.g.
 line is in the diff (`git diff origin/{base}...HEAD -- {file}`). Only lines within diff
 hunks are valid for inline comments. Move others to the review body.
 
-**Event selection** (from policy `allowed_events`):
-- If **any** finding at `important` (75-89) or `critical` (90-100) severity remains
-  after threshold filtering: `COMMENT` — no exceptions
-- If all remaining findings are `suggestion` level (50-74) or there are no findings:
-  `APPROVE`
-- Never `REQUEST_CHANGES`
-
 Inline comments are included regardless of verdict. The verdict signals whether the PR
 should be held; the inline comments convey the specific feedback to the author.
+
+### Step 10.5: Hard-Gate Validation (Before Posting)
+
+Before Step 11 posts or stages anything, validate the constructed `body` against the same
+`selfReview`/`unaddressedFindings`/`currentPassHasBlockingFindings` inputs used above, via the
+script's validation mode. `SELF_REVIEW`, `UNADDRESSED_FINDINGS`, and
+`CURRENT_PASS_HAS_BLOCKING_FINDINGS` carry over unchanged from Step 10; `BODY` is the `body`
+string built for `pr_review_{pr}.json` above:
+
+```bash
+BODY={the "body" string built for pr_review_{pr}.json above}
+```
+
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
+  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}, \"body\": $(jq -Rs . <<< "$BODY")}"
+```
+
+- If the result's `valid` field is `true`, proceed to Step 11.
+- If `valid` is `false` (mismatched label, or no `Verdict: ...` label found at all), **hard
+  abort** — do not post or stage the review. Print the script's `error` field, fix the `body`
+  in `pr_review_{pr}.json` to use the correct `Verdict: {verdictLabel}` phrase from Step 10,
+  and re-run this validation before proceeding. This is the enforcement gate that the recurring
+  mislabeling incidents above prove prose guidance alone did not provide — a mismatch must
+  never silently proceed to posting.
 
 ---
 
