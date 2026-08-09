@@ -882,7 +882,19 @@ export function createLoopOrchestrator(
             failedPreClaimTaskIds.add(itemId);
             continue;
           }
-          if (!claimed) continue;
+          if (!claimed) {
+            // RCG-1.2: a clean 409 (claimTask resolved false — another
+            // replica claimed it first, the expected "already claimed"
+            // outcome) must be excluded from re-selection for the rest of
+            // this tick just like a thrown pre-claim above. Without this,
+            // an item that always loses the claim race — e.g. because the
+            // record legitimately belongs to a sibling replica for the
+            // whole tick — gets re-collected and re-selected every
+            // iteration, starving every other candidate in every phase and
+            // repo for the tick's entire duration.
+            failedPreClaimTaskIds.add(itemId);
+            continue;
+          }
           recordId = itemId;
         } else {
           let claimResult: { id: string; commitSha: string } | null;
@@ -902,7 +914,14 @@ export function createLoopOrchestrator(
             failedPreClaimPrIds.add(itemId);
             continue;
           }
-          if (!claimResult) continue;
+          if (!claimResult) {
+            // RCG-1.2: PR-path analog of the clean-409 exclusion above — a
+            // clean 409 (claimPr resolved null) must also be excluded from
+            // re-selection for the rest of this tick, not just a thrown
+            // pre-claim.
+            failedPreClaimPrIds.add(itemId);
+            continue;
+          }
           preClaimMarker = formatPreClaimMarker(
             claimResult.id,
             claimResult.commitSha,
