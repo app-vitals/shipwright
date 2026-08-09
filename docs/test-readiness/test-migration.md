@@ -69,13 +69,15 @@ test` job, which this sandbox does have. See Speed measurement section for the n
 
 ## This cycle's flagged gaps, verified
 
-Phase 2 (`test-system.md`, this cycle) carries the same 14 items in its "Gaps and
-blockers summary" as the 2026-08-06 pass, plus one newly-flagged-and-already-resolved
-item (#15, the HSR-1.1 data-migration coverage) — the rest of this cycle's source delta
-(HSR-1.1's field-rename plumbing, RCG-1.2, STD-1.1/1.2/1.4, `scripts/minikube.ts`) was
-confined to already-integration/unit-tested rows and introduced no new gap. Each item
-was re-checked directly against current test file contents rather than trusted from the
-prior pass's snapshot:
+Phase 2's (`test-system.md`) "Gaps and blockers summary" is unchanged this cycle — still
+the same 14 items as the 2026-08-06 pass. This Phase 3 audit separately self-identified
+one additional, already-resolved item (#15, the HSR-1.1 data-migration coverage) while
+cross-referencing Phase 1's delta list against current test file contents — it is not a
+Phase 2 doc entry. The rest of this cycle's source delta (HSR-1.1's field-rename
+plumbing, RCG-1.2, STD-1.1/1.2/1.4, `scripts/minikube.ts`) was confined to
+already-integration/unit-tested rows and introduced no new gap. Each of Phase 2's 14
+items was re-checked directly against current test file contents rather than trusted
+from the prior pass's snapshot:
 
 | # | Flagged item | Verdict | Evidence |
 |---|---|---|---|
