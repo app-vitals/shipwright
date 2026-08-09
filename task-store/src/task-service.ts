@@ -78,6 +78,7 @@ export interface TaskListFilters {
   pr?: number;
   branch?: string;
   hitl?: boolean;
+  requiresHumanApproval?: boolean;
   limit?: number;
   offset?: number;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
@@ -162,6 +163,8 @@ export class TaskService implements TaskServiceLike {
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.hitl !== undefined) where.hitl = filters.hitl;
+    if (filters.requiresHumanApproval !== undefined)
+      where.requiresHumanApproval = filters.requiresHumanApproval;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }
