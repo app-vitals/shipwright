@@ -722,6 +722,97 @@ describe("PullRequestService.recordSkip()", () => {
   });
 });
 
+describe("PullRequestService.resetSkip()", () => {
+  const NOW = new Date("2026-07-21T09:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("clears blocked/blockedReason when the PR was auto-blocked by the skip mechanism", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 3,
+      blocked: true,
+      blockedReason:
+        "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.skipCount).toBe(0);
+    expect(data.lastSkippedAt).toBeNull();
+    expect(data.blocked).toBe(false);
+    expect(data.blockedReason).toBeNull();
+    expect(result.blocked).toBe(false);
+    expect(result.blockedReason).toBeNull();
+  });
+
+  test("does NOT clear blocked/blockedReason when the PR was blocked by a different mechanism (e.g. CI-failure streak)", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason:
+        "Auto-blocked after 3 consecutive patch cycles hitting the same CI failure (npm-test-failed-foo.unit.test.ts)",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.skipCount).toBe(0);
+    expect(data.lastSkippedAt).toBeNull();
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+    expect(result.blocked).toBe(true);
+    expect(result.blockedReason).toBe(
+      "Auto-blocked after 3 consecutive patch cycles hitting the same CI failure (npm-test-failed-foo.unit.test.ts)",
+    );
+  });
+
+  test("no-ops on blocked fields when the PR is not currently blocked", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 1,
+      blocked: false,
+      blockedReason: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+  });
+
+  test("defensive: blocked:true with a null blockedReason does not crash and does not clear the block", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      blocked: true,
+      blockedReason: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.resetSkip("pr-1");
+
+    const { data } = prisma._updateCalls[0];
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+    expect(result.blocked).toBe(true);
+  });
+
+  test("throws NotFoundError when the PR does not exist", async () => {
+    const prisma = makePrismaDouble(null);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.resetSkip("missing")).rejects.toThrow(NotFoundError);
+  });
+});
+
 describe("PullRequestService.update() merge completion", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);

@@ -21,7 +21,8 @@
  *   POST   /prs/:id/patch     patchCycles++, reviewState=pending (conditionally on commitSha); optional ciFailureSignature tracks a CI-failure streak, auto-blocking at threshold
  *   POST   /prs/:id/release   unclaim → reviewState=pending
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
- *   POST   /prs/:id/skip/reset  reset skipCount back to 0
+ *   POST   /prs/:id/skip/reset  reset skipCount back to 0; also clears blocked/blockedReason
+ *                                but only when blockedReason matches the skip-auto-block pattern
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -300,7 +301,8 @@ const skipResetRoute = createRoute({
   method: "post",
   path: "/:id/skip/reset",
   tags: ["PRs"],
-  summary: "Reset skip tracking — skipCount back to 0",
+  summary:
+    "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
   request: {
     params: PrIdParamSchema,
   },
