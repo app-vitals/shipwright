@@ -8,9 +8,10 @@
  * focuses on the structural migration contract.
  */
 
-import { OpenAPIHono } from "@hono/zod-openapi";
 import { describe, expect, it } from "bun:test";
-import { NotFoundError } from "../errors.ts";
+import { OpenAPIHono } from "@hono/zod-openapi";
+import type { TaskStoreAuthEnv } from "../auth.ts";
+import { ApiError, NotFoundError } from "../errors.ts";
 import type { PullRequest } from "../index.ts";
 import type {
   PullRequestListFilters,
@@ -210,6 +211,30 @@ function fakePrService(
   };
 }
 
+/**
+ * Build a typed parent app that injects admin context (agentId=null, repos=null)
+ * and translates ApiErrors to their status codes — mirrors app.ts's auth +
+ * onError so PATCH handlers that read c.get("agentId")/c.get("repos") behave
+ * like the real mounted app instead of crashing on undefined context vars.
+ */
+function makeAdminParent(app: OpenAPIHono<TaskStoreAuthEnv>) {
+  const parent = new OpenAPIHono<TaskStoreAuthEnv>();
+  parent.use("*", async (c, next) => {
+    c.set("agentId", null);
+    c.set("repos", null);
+    c.set("scopeDegraded", false);
+    await next();
+  });
+  parent.onError((err, c) => {
+    if (err instanceof ApiError) {
+      return c.json({ error: err.message }, err.statusCode as 400);
+    }
+    return c.json({ error: "internal error" }, 500);
+  });
+  parent.route("/", app);
+  return parent;
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
@@ -309,6 +334,70 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
       body: JSON.stringify({ staged: true }),
     });
     expect(res.status).not.toBe(404);
+  });
+
+  // ─── PATCH_ALLOWED_FIELDS: blocked/hitl split (HSR-1.6) ──────────────────────
+
+  it("PATCH /:id accepts 'blocked' and reflects it in the update", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/pr-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ blocked: true }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { blocked: boolean };
+    expect(body.blocked).toBe(true);
+  });
+
+  it("PATCH /:id rejects a body containing only 'hitl' with 400 (no longer an allowed field)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/pr-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hitl: true }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /:id rejects a body containing only 'hitlNotifiedAt' with 400 (no longer an allowed field)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/pr-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ hitlNotifiedAt: new Date().toISOString() }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("PATCH /:id silently drops 'hitl'/'hitlNotifiedAt' when combined with an allowed field", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const parent = makeAdminParent(app);
+    const res = await parent.request("/pr-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        blocked: true,
+        hitl: true,
+        hitlNotifiedAt: new Date().toISOString(),
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.blocked).toBe(true);
+    expect(body.hitl).toBeUndefined();
+    expect(body.hitlNotifiedAt).toBeUndefined();
   });
 
   it("POST /:id/heartbeat route is registered", async () => {

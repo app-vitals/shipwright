@@ -135,11 +135,11 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
-    hitlNotifiedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    requiresHumanApproval: z.boolean().default(false).openapi({
+      example: false,
+      description:
+        "Type B merge-approval-gate classification. Does not gate dispatch candidacy.",
+    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -335,12 +335,7 @@ export const PullRequestSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
-    hitl: z.boolean().default(false).openapi({ example: false }),
-    hitlNotifiedAt: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "2026-01-02T00:00:00.000Z" }),
+    blocked: z.boolean().default(false).openapi({ example: false }),
     blockedReason: z
       .string()
       .nullable()
@@ -349,7 +344,7 @@ export const PullRequestSchema = z
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Consecutive skip count. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+        "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
     }),
     lastSkippedAt: z
       .string()
@@ -364,7 +359,7 @@ export const PullRequestSchema = z
     consecutiveCiFailureCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (hitl+blockedReason) once it crosses the threshold (3).",
+        "Count of consecutive patch() calls whose ciFailureSignature matched lastCiFailureSignature. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
     }),
     createdAt: z
       .string()
@@ -619,7 +614,7 @@ export const PrListQuerySchema = z
     blocked: z.enum(["true", "false"]).optional().openapi({
       example: "true",
       description:
-        "When true, return only PRs considered blocked: pr.hitl===true OR (linked task exists AND (task.hitl===true OR task.status==='blocked')). Composable with other filters (e.g. state=open).",
+        "When true, return only PRs considered blocked: pr.blocked===true OR (linked task exists AND task.status==='blocked'). Task.hitl is not consulted — post-redesign, Type A tasks (the only ones that keep hitl:true) never have a linked PR. Composable with other filters (e.g. state=open).",
     }),
     sort: z.enum(["asc", "desc"]).optional().openapi({
       example: "asc",
@@ -709,7 +704,7 @@ export const PatchPrBodySchema = z
     ciFailureSignature: z.string().optional().openapi({
       example: "npm-test-failed-foo.unit.test.ts",
       description:
-        "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets hitl:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
+        "Signature identifying the current CI failure (e.g. which check + which test). When it matches the record's stored lastCiFailureSignature, consecutiveCiFailureCount increments; when it differs (or none is stored), the count resets to 1 and the new signature is stored. Crossing CI_FAILURE_BLOCK_THRESHOLD (3) auto-sets blocked:true plus a descriptive blockedReason. When omitted (e.g. merge-conflict/review-fix patch calls unrelated to CI), both fields are left untouched.",
     }),
   })
   .openapi("PatchPrBody");

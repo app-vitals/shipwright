@@ -152,7 +152,7 @@ describe("PullRequestService.patch()", () => {
     const { data } = prisma._updateCalls[0];
     expect("lastCiFailureSignature" in data).toBe(false);
     expect("consecutiveCiFailureCount" in data).toBe(false);
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
@@ -208,7 +208,7 @@ describe("PullRequestService.patch()", () => {
     expect(data.lastCiFailureSignature).toBe("first-signature");
   });
 
-  test("ciFailureSignature crossing CI_FAILURE_BLOCK_THRESHOLD (3) sets hitl:true and a descriptive blockedReason in the same request", async () => {
+  test("ciFailureSignature crossing CI_FAILURE_BLOCK_THRESHOLD (3) sets blocked:true and a descriptive blockedReason in the same request", async () => {
     const signature = "flaky-e2e-test";
     const prisma = makePrismaDouble({
       id: "pr-1",
@@ -223,14 +223,14 @@ describe("PullRequestService.patch()", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.consecutiveCiFailureCount).toEqual({ increment: 1 });
-    expect(data.hitl).toBe(true);
+    expect(data.blocked).toBe(true);
     expect(data.blockedReason).toBeTruthy();
     expect(data.blockedReason).toContain("3");
     expect(data.blockedReason).toContain(signature);
-    expect(result.hitl).toBe(true);
+    expect(result.blocked).toBe(true);
   });
 
-  test("ciFailureSignature below threshold does NOT set hitl/blockedReason", async () => {
+  test("ciFailureSignature below threshold does NOT set blocked/blockedReason", async () => {
     const signature = "some-signature";
     const prisma = makePrismaDouble({
       id: "pr-1",
@@ -244,17 +244,17 @@ describe("PullRequestService.patch()", () => {
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
-  test("ciFailureSignature reset case (differing signature) does NOT set hitl/blockedReason even if prior count was at/above threshold", async () => {
+  test("ciFailureSignature reset case (differing signature) does NOT set blocked/blockedReason even if prior count was at/above threshold", async () => {
     const prisma = makePrismaDouble({
       id: "pr-1",
       commitSha: "abc123",
       lastCiFailureSignature: "old-signature",
       consecutiveCiFailureCount: 5,
-      hitl: true,
+      blocked: true,
     } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -263,7 +263,7 @@ describe("PullRequestService.patch()", () => {
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
     expect(data.consecutiveCiFailureCount).toBe(1);
-    expect("hitl" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 
@@ -501,6 +501,224 @@ describe("PullRequestService.list() updatedSince/repo where clause", () => {
     expect(prisma._findManyCalls[0].where).toMatchObject({
       repo: "org/repo",
     });
+  });
+});
+
+describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  /**
+   * Prisma double for the blocked-filter branch of list(): captures the
+   * candidates findMany() result and the joined task.findMany() lookup,
+   * mirroring the non-transactional shape list({ blocked: true }) actually
+   * issues (see pull-request-service.ts's `if (filters.blocked)` branch).
+   */
+  function makeBlockedListPrismaDouble(
+    candidates: Partial<PullRequest>[],
+    tasks: Array<{ id: string; status: string }> = [],
+  ) {
+    const prisma = {
+      pullRequest: {
+        findMany() {
+          return Promise.resolve(candidates);
+        },
+      },
+      task: {
+        findMany() {
+          return Promise.resolve(tasks);
+        },
+      },
+    };
+
+    return prisma as unknown as {
+      pullRequest: { findMany: () => Promise<Partial<PullRequest>[]> };
+      task: {
+        findMany: () => Promise<Array<{ id: string; status: string }>>;
+      };
+    };
+  }
+
+  test("list({ blocked: true }) returns a PR with pr.blocked === true", async () => {
+    const prisma = makeBlockedListPrismaDouble([
+      { id: "pr-1", taskId: null, blocked: true } as Partial<PullRequest>,
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs.map((p) => p.id)).toEqual(["pr-1"]);
+    expect(result.total).toBe(1);
+  });
+
+  test("list({ blocked: true }) returns a PR whose linked task has status === 'blocked'", async () => {
+    const prisma = makeBlockedListPrismaDouble(
+      [
+        {
+          id: "pr-1",
+          taskId: "task-1",
+          blocked: false,
+        } as Partial<PullRequest>,
+      ],
+      [{ id: "task-1", status: "blocked" }],
+    );
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs.map((p) => p.id)).toEqual(["pr-1"]);
+    expect(result.total).toBe(1);
+  });
+
+  test("list({ blocked: true }) excludes a PR whose linked task has hitl:true but status not 'blocked' (task.hitl branch removed)", async () => {
+    // Task double intentionally includes a legacy `hitl` field to prove
+    // isPrBlocked no longer reads it.
+    const taskWithHitl: { id: string; status: string; hitl: boolean } = {
+      id: "task-1",
+      status: "in_progress",
+      hitl: true,
+    };
+    const prisma = makeBlockedListPrismaDouble(
+      [
+        {
+          id: "pr-1",
+          taskId: "task-1",
+          blocked: false,
+        } as Partial<PullRequest>,
+      ],
+      [taskWithHitl],
+    );
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
+  test("list({ blocked: true }) excludes a PR with pr.blocked === false and no blocked linked task", async () => {
+    const prisma = makeBlockedListPrismaDouble(
+      [
+        {
+          id: "pr-1",
+          taskId: "task-1",
+          blocked: false,
+        } as Partial<PullRequest>,
+      ],
+      [{ id: "task-1", status: "pr_open" }],
+    );
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
+  test("list({ blocked: true }) evaluates a PR with no taskId on pr.blocked alone (no crash/false-positive)", async () => {
+    const prisma = makeBlockedListPrismaDouble([
+      { id: "pr-1", taskId: null, blocked: false } as Partial<PullRequest>,
+      { id: "pr-2", taskId: null, blocked: true } as Partial<PullRequest>,
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs.map((p) => p.id)).toEqual(["pr-2"]);
+  });
+});
+
+describe("PullRequestService.recordSkip()", () => {
+  const NOW = new Date("2026-07-21T09:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  /**
+   * Prisma double for recordSkip(): simulates real atomic-increment
+   * semantics for `skipCount: { increment: 1 }` (the generic makePrismaDouble
+   * above merges args.data verbatim, which doesn't resolve Prisma's
+   * increment operator to a numeric value) so tests can assert on the
+   * resulting skipCount across recordSkip()'s two possible update() calls.
+   */
+  function makeRecordSkipPrismaDouble(initialSkipCount: number) {
+    const updateCalls: UpdateCall[] = [];
+    const record: Partial<PullRequest> = {
+      id: "pr-1",
+      skipCount: initialSkipCount,
+      blocked: false,
+      blockedReason: null,
+    };
+
+    const prisma = {
+      pullRequest: {
+        update(args: UpdateCall): Promise<Partial<PullRequest>> {
+          updateCalls.push(args);
+          const { data } = args;
+          for (const [key, value] of Object.entries(data)) {
+            if (
+              key === "skipCount" &&
+              typeof value === "object" &&
+              value !== null &&
+              "increment" in value
+            ) {
+              record.skipCount =
+                (record.skipCount ?? 0) +
+                (value as { increment: number }).increment;
+            } else {
+              (record as Record<string, unknown>)[key] = value;
+            }
+          }
+          return Promise.resolve({ ...record });
+        },
+      },
+      _updateCalls: updateCalls,
+    };
+
+    return prisma as unknown as {
+      pullRequest: {
+        update: (args: UpdateCall) => Promise<Partial<PullRequest>>;
+      };
+      _updateCalls: UpdateCall[];
+    };
+  }
+
+  test("recordSkip() below SKIP_BLOCK_THRESHOLD only increments skipCount/lastSkippedAt, no blocked/blockedReason", async () => {
+    const prisma = makeRecordSkipPrismaDouble(1);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.recordSkip("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(1);
+    const { data } = prisma._updateCalls[0];
+    expect(data.skipCount).toEqual({ increment: 1 });
+    expect(data.lastSkippedAt).toBe(NOW.toISOString());
+    expect("blocked" in data).toBe(false);
+    expect("blockedReason" in data).toBe(false);
+    expect(result.skipCount).toBe(2);
+  });
+
+  test("recordSkip() crossing SKIP_BLOCK_THRESHOLD (3) sets blocked:true and a descriptive blockedReason in a second update call", async () => {
+    const prisma = makeRecordSkipPrismaDouble(2);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.recordSkip("pr-1");
+
+    expect(prisma._updateCalls).toHaveLength(2);
+    const blockUpdate = prisma._updateCalls[1].data;
+    expect(blockUpdate.blocked).toBe(true);
+    expect(blockUpdate.blockedReason).toBeTruthy();
+    expect(blockUpdate.blockedReason).toContain("3");
+    expect("hitl" in blockUpdate).toBe(false);
+    expect(result.blocked).toBe(true);
+  });
+
+  test("recordSkip() exactly at threshold (skipCount reaching 3) sets blocked:true", async () => {
+    const prisma = makeRecordSkipPrismaDouble(2);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.recordSkip("pr-1");
+
+    expect(result.skipCount).toBe(3);
+    expect(result.blocked).toBe(true);
   });
 });
 
@@ -782,31 +1000,28 @@ describe("PullRequestService.release()", () => {
   });
 });
 
-describe("PullRequestService.update() hitl/hitlNotifiedAt/blockedReason pass-through", () => {
+describe("PullRequestService.update() blocked/blockedReason pass-through", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);
 
-  test("update() persists hitl/hitlNotifiedAt/blockedReason and returns them", async () => {
+  test("update() persists blocked/blockedReason and returns them", async () => {
     const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
     const result = await svc.update("pr-1", {
-      hitl: true,
-      hitlNotifiedAt: NOW.toISOString(),
+      blocked: true,
       blockedReason: "no linked task",
     });
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect(data.hitl).toBe(true);
-    expect(data.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(data.blocked).toBe(true);
     expect(data.blockedReason).toBe("no linked task");
-    expect(result.hitl).toBe(true);
-    expect(result.hitlNotifiedAt).toBe(NOW.toISOString());
+    expect(result.blocked).toBe(true);
     expect(result.blockedReason).toBe("no linked task");
   });
 
-  test("update() omitting hitl/hitlNotifiedAt/blockedReason does not touch them", async () => {
+  test("update() omitting blocked/blockedReason does not touch them", async () => {
     const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -814,8 +1029,7 @@ describe("PullRequestService.update() hitl/hitlNotifiedAt/blockedReason pass-thr
 
     expect(prisma._updateCalls).toHaveLength(1);
     const { data } = prisma._updateCalls[0];
-    expect("hitl" in data).toBe(false);
-    expect("hitlNotifiedAt" in data).toBe(false);
+    expect("blocked" in data).toBe(false);
     expect("blockedReason" in data).toBe(false);
   });
 });

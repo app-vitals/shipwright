@@ -72,7 +72,7 @@ export interface WorkflowRun {
 export interface PrRecord {
   readyForDeployAt?: string | null;
   claimedBy?: string | null;
-  hitl?: boolean | null;
+  blocked?: boolean | null;
 }
 
 export interface CheckDeployDeps {
@@ -279,11 +279,11 @@ export async function getDeployCandidates(
         // candidacy, mirroring check-review.ts.
         if (record?.claimedBy != null) continue;
 
-        // A PR-record hitl:true gate (PRB-2.4) — lets a PR with no linked
-        // task at all still be excluded via its own PR-record hitl flag,
+        // A PR-record blocked:true gate (PRB-2.4) — lets a PR with no linked
+        // task at all still be excluded via its own PR-record blocked flag,
         // alongside the linked-task hitl/blocked check above (PRB-3.1:
         // patch.md Step 5a.7's second-round-disagreement escalation writes
-        // hitl:true directly on the PR record when there's no linked task
+        // blocked:true directly on the PR record when there's no linked task
         // to flag).
         if (isPrRecordBlockedForDispatch(record)) continue;
       }

@@ -564,7 +564,7 @@ describe("getDeployCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  test("excludes a PR whose PR-record has hitl:true, even when there is no linked task at all (PRB-2.4, PRB-3.1 Step 5a.7 escalation)", async () => {
+  test("excludes a PR whose PR-record has blocked:true, even when there is no linked task at all (PRB-2.4, PRB-3.1 Step 5a.7 escalation)", async () => {
     const pr = makeGhPr({
       reviewDecision: "APPROVED",
       createdAt: "2026-06-01T00:00:00.000Z",
@@ -574,12 +574,12 @@ describe("getDeployCandidates", () => {
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
-    deps.queryPrRecord = async () => ({ hitl: true });
+    deps.queryPrRecord = async () => ({ blocked: true });
     const result = await getDeployCandidates(deps);
     expect(result).toEqual([]);
   });
 
-  test("does NOT exclude a PR whose PR-record has hitl:false and no linked task", async () => {
+  test("does NOT exclude a PR whose PR-record has blocked:false and no linked task", async () => {
     const pr = makeGhPr({
       reviewDecision: "APPROVED",
       createdAt: "2026-06-01T00:00:00.000Z",
@@ -589,7 +589,7 @@ describe("getDeployCandidates", () => {
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
-    deps.queryPrRecord = async () => ({ hitl: false });
+    deps.queryPrRecord = async () => ({ blocked: false });
     const result = await getDeployCandidates(deps);
     expect(result).toHaveLength(1);
   });

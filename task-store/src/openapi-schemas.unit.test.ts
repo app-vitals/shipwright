@@ -56,7 +56,7 @@ const validTask = {
   model: "sonnet",
   complexity: 7,
   hitl: true,
-  hitlNotifiedAt: yesterday,
+  requiresHumanApproval: false,
   claimedBy: "agent-id-123",
   agentHint: "prefer-sonnet",
   claimedAt: yesterday,
@@ -102,8 +102,7 @@ const validPullRequest = {
   readyForReviewAt: yesterday,
   readyForPatchAt: null,
   readyForDeployAt: null,
-  hitl: false,
-  hitlNotifiedAt: null,
+  blocked: false,
   blockedReason: null,
   skipCount: 0,
   lastSkippedAt: null,
@@ -449,25 +448,23 @@ describe("PullRequestSchema", () => {
     }
   });
 
-  test("parses pull request with hitl/hitlNotifiedAt/blockedReason set", () => {
+  test("parses pull request with blocked/blockedReason set", () => {
     const result = PullRequestSchema.safeParse({
       ...validPullRequest,
-      hitl: true,
-      hitlNotifiedAt: yesterday,
+      blocked: true,
       blockedReason: "no linked task",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.hitl).toBe(true);
-      expect(result.data.hitlNotifiedAt).toBe(yesterday);
+      expect(result.data.blocked).toBe(true);
       expect(result.data.blockedReason).toBe("no linked task");
     }
   });
 
-  test("rejects non-boolean hitl", () => {
+  test("rejects non-boolean blocked", () => {
     const result = PullRequestSchema.safeParse({
       ...validPullRequest,
-      hitl: "yes",
+      blocked: "yes",
     });
     expect(result.success).toBe(false);
   });

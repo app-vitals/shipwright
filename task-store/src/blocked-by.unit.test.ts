@@ -19,7 +19,7 @@ function makeTask(overrides: Partial<ReadyTaskLike> = {}): ReadyTaskLike {
     dependencies: [],
     pr: null,
     hitl: null,
-    hitlNotifiedAt: null,
+    blockedReason: null,
     ...overrides,
   };
 }
@@ -39,20 +39,65 @@ describe("computeBlockedBy", () => {
     expect(result).toEqual([]);
   });
 
-  it("includes hitl block when hitl=true and hitlNotifiedAt is null", () => {
-    const task = makeTask({ id: "t1", hitl: true, hitlNotifiedAt: null });
+  it("includes plain { type: 'hitl' } block when hitl=true", () => {
+    const task = makeTask({ id: "t1", hitl: true });
     const result = computeBlockedBy(task, [task]);
     expect(result).toEqual([{ type: "hitl" }]);
   });
 
-  it("includes { type: 'hitl', notified: true } when hitl=true and hitlNotifiedAt is set", () => {
+  it("includes { type: 'blocked', reason } when status=blocked with a reason", () => {
     const task = makeTask({
       id: "t1",
-      hitl: true,
-      hitlNotifiedAt: "2026-06-24T10:00:00.000Z",
+      status: "blocked",
+      blockedReason: "waiting on infra",
     });
     const result = computeBlockedBy(task, [task]);
-    expect(result).toEqual([{ type: "hitl", notified: true }]);
+    expect(result).toEqual([{ type: "blocked", reason: "waiting on infra" }]);
+  });
+
+  it("includes { type: 'blocked', reason: null } when status=blocked with no reason", () => {
+    const task = makeTask({
+      id: "t1",
+      status: "blocked",
+      blockedReason: null,
+    });
+    const result = computeBlockedBy(task, [task]);
+    expect(result).toEqual([{ type: "blocked", reason: null }]);
+  });
+
+  it("does not include a blocked entry when status is not 'blocked'", () => {
+    const task = makeTask({ id: "t1", status: "pending" });
+    const result = computeBlockedBy(task, [task]);
+    expect(result).toEqual([]);
+  });
+
+  it("includes both hitl and blocked entries (hitl first) when status=blocked and hitl=true", () => {
+    const task = makeTask({
+      id: "t1",
+      status: "blocked",
+      hitl: true,
+      blockedReason: "manual gate",
+    });
+    const result = computeBlockedBy(task, [task]);
+    expect(result).toEqual([
+      { type: "hitl" },
+      { type: "blocked", reason: "manual gate" },
+    ]);
+  });
+
+  it("includes blocked and dependency entries when status=blocked with an unsatisfied dep", () => {
+    const dep = makeTask({ id: "dep-1", status: "pending" });
+    const task = makeTask({
+      id: "t1",
+      status: "blocked",
+      blockedReason: "stuck",
+      dependencies: ["dep-1"],
+    });
+    const result = computeBlockedBy(task, [task, dep]);
+    expect(result).toEqual([
+      { type: "blocked", reason: "stuck" },
+      { type: "dependency", id: "dep-1", status: "pending" },
+    ]);
   });
 
   it("includes dep block for dependency in non-terminal status (pending)", () => {
@@ -187,7 +232,6 @@ describe("computeBlockedBy", () => {
     const task = makeTask({
       id: "t1",
       hitl: true,
-      hitlNotifiedAt: null,
       dependencies: ["dep-1", "dep-2"],
     });
     const result = computeBlockedBy(task, [task, dep1, dep2]);
