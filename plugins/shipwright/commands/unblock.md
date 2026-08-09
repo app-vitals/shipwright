@@ -94,31 +94,40 @@ If both `BLOCKED_TASKS` and `BLOCKED_PRS` are empty after dedup, print and stop:
 
 ## Step 4: Infer Origin Phase
 
-For each item, parse `blockedReason` (tasks: `.blockedReason`; PR-only records:
-`.blockedReason` on the PR) against the known patterns below. Match on substring
+For each item, parse the reason text against the known patterns below. Match on substring
 containment, not exact equality — several patterns include a dynamic suffix (a run ID, a
 subagent's own detail) after a fixed prefix.
 
-| Origin phase | `blockedReason` pattern (substring match) |
-|---|---|
-| **dev-task** | `implementation_blocked_after_model_escalation` |
-| **dev-task** | `requirements_not_met` |
-| **dev-task** | `pr_creation_failed` |
-| **dev-task** | `ci_max_retries_exhausted` |
-| **patch** | `merge-conflict` (resolution blocked) |
-| **patch** | `second-round disagreement` (reviewer vs. automated fix, escalated to HITL) |
-| **patch** | `review-finding fix blocked` |
-| **patch** | `CI-fix blocked` |
-| **deploy** | `Post-merge CI failed` |
-| **deploy** | `Deploy stage failed` |
-| **deploy** | `canary_blocked` |
-| **deploy** | `Pipeline timeout` |
-| **deploy** | `Canary failed after deploy` |
-| **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a) |
-| **spin-detection — skip-count (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — tracked via `skipCount`; **not task-only** — `Task` and `PullRequest` each carry their own `skipCount`/`lastSkippedAt` (`task-store/prisma/schema.prisma`) and `PullRequestService.recordSkip()` produces this identical blockedReason string on a PR-only record (no linked task), just like `TaskService.recordSkip()` does on a task — distinct from (though similarly named to) the PR CI-failure-streak variant below |
-| **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately |
+- **PR-only records:** parse `.blockedReason` on the PR.
+- **Tasks:** parse `.blockedReason` first. If it's empty, also check `.note` — `deploy.md`
+  writes its five escalation strings (`Post-merge CI failed`, `Deploy stage failed`,
+  `canary_blocked`, `Pipeline timeout`, `Canary failed after deploy`) into the task's `note`
+  field when a task is linked (`$TASK_ID` set), not `blockedReason`; `blockedReason` on a
+  task-linked deploy escalation stays `null`. `blockedReason` is only populated for these
+  five deploy patterns in the PR-only branch (`$PR_RECORD_ID`, no linked task). All other
+  phases (dev-task, patch, spin-detection) write to `blockedReason` on tasks as usual — the
+  `.note` fallback only matters for deploy-originated task escalations.
 
-If `blockedReason` doesn't match any pattern above (empty, or genuinely unrecognized text),
+| Origin phase | pattern (substring match) | field(s) to check |
+|---|---|---|
+| **dev-task** | `implementation_blocked_after_model_escalation` | task: `blockedReason` |
+| **dev-task** | `requirements_not_met` | task: `blockedReason` |
+| **dev-task** | `pr_creation_failed` | task: `blockedReason` |
+| **dev-task** | `ci_max_retries_exhausted` | task: `blockedReason` |
+| **patch** | `merge-conflict` (resolution blocked) | task: `blockedReason` |
+| **patch** | `second-round disagreement` (reviewer vs. automated fix, escalated to HITL) | task: `blockedReason` |
+| **patch** | `review-finding fix blocked` | task: `blockedReason` |
+| **patch** | `CI-fix blocked` | task: `blockedReason` |
+| **deploy** | `Post-merge CI failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
+| **deploy** | `Deploy stage failed` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
+| **deploy** | `canary_blocked` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
+| **deploy** | `Pipeline timeout` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
+| **deploy** | `Canary failed after deploy` | task: `blockedReason`, fallback `note`; PR: `blockedReason` |
+| **deploy** | `Post-merge CI still pending after 10 minutes` (post-merge CI budget timed out with runs still pending — PR-only, set by `deploy.md`'s Step 5a; the task-linked branch of that same step sets `status=deployed` with no note/blockedReason at all, so this pattern never appears on a task) | PR: `blockedReason` only |
+| **spin-detection — skip-count (`recordSkip`)** | starts with `Auto-blocked after` and contains `consecutive skips` — exact format is `` Auto-blocked after ${N} consecutive skips (dispatched but found nothing to do) `` — tracked via `skipCount`; **not task-only** — `Task` and `PullRequest` each carry their own `skipCount`/`lastSkippedAt` (`task-store/prisma/schema.prisma`) and `PullRequestService.recordSkip()` produces this identical blockedReason string on a PR-only record (no linked task), just like `TaskService.recordSkip()` does on a task — distinct from (though similarly named to) the PR CI-failure-streak variant below | task: `blockedReason`; PR: `blockedReason` |
+| **spin-detection — PR CI-failure streak (`patch()`/`ciFailureSignature`)** | starts with `Auto-blocked after` and contains `consecutive patch cycles hitting the same CI failure` — exact format is `` Auto-blocked after ${N} consecutive patch cycles hitting the same CI failure (${signature}) `` — PR-only, tracked via `consecutiveCiFailureCount` on the PR record (a distinct counter from task-side `skipCount`); **no dedicated reset endpoint exists today** — Step 6d's `/tasks/:id/skip/reset` doesn't apply (task-only, wrong counter), so a 6c retry clears `blocked`/`blockedReason` but leaves the streak elevated and one more matching CI failure re-blocks the PR immediately | PR: `blockedReason` only |
+
+If neither field matches any pattern above (both empty, or genuinely unrecognized text),
 present it as **unknown origin phase** — do not guess which phase set it. Never crash on an
 unmatched reason.
 
@@ -136,7 +145,7 @@ Title:         {title}
 Repo:          {repo}
 Origin phase:  {dev-task | patch | deploy | spin-detection — skip-count | spin-detection — PR CI-failure streak | unknown origin phase}
 Blocked at:    {blockedAt}
-Blocked reason: {blockedReason}
+Blocked reason: {blockedReason, or task.note when blockedReason is empty (deploy escalations on a linked task)}
 PR:            {task.pr or "(none)"}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
