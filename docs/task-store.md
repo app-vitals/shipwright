@@ -47,7 +47,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `status != blocked`, no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, no `hitl`, no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
@@ -452,7 +452,7 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 1. **No tasks assigned to this agent** — repo-pool visibility means an unfiltered query can still exclude tasks assigned elsewhere. Use an admin token, or drop the `?assignee=` filter, to see all ready tasks in scope.
 
-2. **Task blocked** — query `?state=blocked` to check whether tasks have `status='blocked'`. Clear the flag once the human action is complete via `/tasks/:id/release` or `PATCH /tasks/:id` with `status=pending` (admin only).
+2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. Clear the flag once the human action is complete.
 
 3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 65 minutes old with no heartbeat, by default), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
 
