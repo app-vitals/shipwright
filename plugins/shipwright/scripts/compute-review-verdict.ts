@@ -9,8 +9,8 @@
 // expected label before the review is posted.
 //
 // CLI:
-//   bun run plugins/shipwright/scripts/compute-review-verdict.ts '{"selfReview":true,"unaddressedFindings":false}'
-//   bun run plugins/shipwright/scripts/compute-review-verdict.ts '{"selfReview":true,"unaddressedFindings":false,"body":"Verdict: APPROVE — ..."}'
+//   bun run plugins/shipwright/scripts/compute-review-verdict.ts '{"selfReview":true,"unaddressedFindings":false,"currentPassHasBlockingFindings":false}'
+//   bun run plugins/shipwright/scripts/compute-review-verdict.ts '{"selfReview":true,"unaddressedFindings":false,"currentPassHasBlockingFindings":false,"body":"Verdict: APPROVE — ..."}'
 // or pipe the same JSON blob via stdin.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -20,6 +20,7 @@ export type Verdict = "APPROVE" | "COMMENT";
 export type ComputeVerdictInput = {
   selfReview: boolean;
   unaddressedFindings: boolean;
+  currentPassHasBlockingFindings: boolean;
 };
 
 export type ComputeVerdictResult = {
@@ -38,30 +39,43 @@ export type ValidateReviewVerdictResult = {
 
 // ─── computeVerdict ───────────────────────────────────────────────────────────
 //
-// The 4-row truth table (review.md Step 10, "Worked example" + "Event
-// selection"):
+// The 8-row truth table (2^3 boolean combinations; review.md Step 10, "Worked
+// example" + "Event selection"):
 //
-// | selfReview | unaddressedFindings | event                            | verdictLabel |
-// |------------|----------------------|-----------------------------------|--------------|
-// | true       | false                | COMMENT (self-review override)   | APPROVE      |  Case 1
-// | true       | true                 | COMMENT (self-review override)   | COMMENT      |  Case 2 (self-review variant)
-// | false      | false                | APPROVE                          | APPROVE      |  normal clean approve
-// | false      | true                 | COMMENT                          | COMMENT      |  Case 2
+// | selfReview | unaddressedFindings | currentPassHasBlockingFindings | event                            | verdictLabel |
+// |------------|----------------------|--------------------------------|-----------------------------------|--------------|
+// | true       | false                | false                          | COMMENT (self-review override)   | APPROVE      |  Case 1
+// | true       | false                | true                           | COMMENT (self-review override)   | COMMENT      |  Case 1 + fresh blocking finding
+// | true       | true                 | false                          | COMMENT (self-review override)   | COMMENT      |  Case 2 (self-review variant)
+// | true       | true                 | true                           | COMMENT (self-review override)   | COMMENT      |  Case 2 (self-review variant)
+// | false      | false                | false                          | APPROVE                          | APPROVE      |  normal clean approve
+// | false      | false                | true                           | COMMENT                          | COMMENT      |  fresh blocking finding, no prior unaddressed
+// | false      | true                 | false                          | COMMENT                          | COMMENT      |  Case 2
+// | false      | true                 | true                           | COMMENT                          | COMMENT      |  Case 2
 //
 // `event` is COMMENT whenever selfReview is true (GitHub rejects self-APPROVE
-// via the API) OR unaddressedFindings is true (Step 9.5's hard gate) — either
-// condition alone is sufficient, matching Step 9.5/Step 10's "not mutually
-// exclusive" note. `verdictLabel` reflects the *actual* quality verdict:
-// COMMENT only when there is a genuine unaddressed finding, regardless of why
-// `event` was forced to COMMENT.
+// via the API) OR unaddressedFindings is true (Step 9.5's hard gate) OR
+// currentPassHasBlockingFindings is true (Step 8's threshold-filtered
+// findings for THIS review pass contain an important/critical severity
+// finding) — any one condition alone is sufficient, matching Step 9.5/Step
+// 10's "not mutually exclusive" note. `verdictLabel` reflects the *actual*
+// quality verdict: COMMENT whenever there is a genuine unaddressed finding
+// (prior, per Step 9.5) OR a genuine blocking finding in the current pass
+// (per Step 8), regardless of why `event` was forced to COMMENT. This
+// restores the old "Event selection" behavior ("any finding at
+// important/critical severity remains after threshold filtering: COMMENT —
+// no exceptions") that a purely selfReview/unaddressedFindings computation
+// cannot express — without currentPassHasBlockingFindings, an any-author PR
+// with no prior unresolved GitHub review threads but a fresh critical
+// finding in this pass would silently compute as APPROVE.
 export function computeVerdict(
   input: ComputeVerdictInput,
 ): ComputeVerdictResult {
+  const hasBlockingSignal =
+    input.unaddressedFindings || input.currentPassHasBlockingFindings;
   const event: Verdict =
-    input.selfReview || input.unaddressedFindings ? "COMMENT" : "APPROVE";
-  const verdictLabel: Verdict = input.unaddressedFindings
-    ? "COMMENT"
-    : "APPROVE";
+    input.selfReview || hasBlockingSignal ? "COMMENT" : "APPROVE";
+  const verdictLabel: Verdict = hasBlockingSignal ? "COMMENT" : "APPROVE";
   return { event, verdictLabel };
 }
 
@@ -100,14 +114,14 @@ export function validateReviewVerdict(
   if (actual === null) {
     return {
       valid: false,
-      error: `No "Verdict: APPROVE" or "Verdict: COMMENT" label found in the review body. Expected "Verdict: ${expected}" (selfReview=${input.selfReview}, unaddressedFindings=${input.unaddressedFindings}). Add the literal "Verdict: ${expected}" phrase to the body before posting.`,
+      error: `No "Verdict: APPROVE" or "Verdict: COMMENT" label found in the review body. Expected "Verdict: ${expected}" (selfReview=${input.selfReview}, unaddressedFindings=${input.unaddressedFindings}, currentPassHasBlockingFindings=${input.currentPassHasBlockingFindings}). Add the literal "Verdict: ${expected}" phrase to the body before posting.`,
     };
   }
 
   if (actual !== expected) {
     return {
       valid: false,
-      error: `Verdict label mismatch: body reads "Verdict: ${actual}" but the computed verdict for selfReview=${input.selfReview}, unaddressedFindings=${input.unaddressedFindings} is "Verdict: ${expected}". Fix the body to read "Verdict: ${expected}" before posting — do not post with a mismatched label (this is the exact production bug DRO-1.1 guards against).`,
+      error: `Verdict label mismatch: body reads "Verdict: ${actual}" but the computed verdict for selfReview=${input.selfReview}, unaddressedFindings=${input.unaddressedFindings}, currentPassHasBlockingFindings=${input.currentPassHasBlockingFindings} is "Verdict: ${expected}". Fix the body to read "Verdict: ${expected}" before posting — do not post with a mismatched label (this is the exact production bug DRO-1.1 guards against).`,
     };
   }
 
@@ -119,6 +133,7 @@ export function validateReviewVerdict(
 type CliInput = {
   selfReview: boolean;
   unaddressedFindings: boolean;
+  currentPassHasBlockingFindings: boolean;
   body?: string;
 };
 
@@ -132,9 +147,15 @@ function parseCliInput(raw: string): CliInput {
       'Input JSON must have a boolean "unaddressedFindings" field',
     );
   }
+  if (typeof parsed.currentPassHasBlockingFindings !== "boolean") {
+    throw new Error(
+      'Input JSON must have a boolean "currentPassHasBlockingFindings" field',
+    );
+  }
   return {
     selfReview: parsed.selfReview,
     unaddressedFindings: parsed.unaddressedFindings,
+    currentPassHasBlockingFindings: parsed.currentPassHasBlockingFindings,
     body: parsed.body,
   };
 }
@@ -148,6 +169,7 @@ if (import.meta.main) {
     const result = validateReviewVerdict({
       selfReview: input.selfReview,
       unaddressedFindings: input.unaddressedFindings,
+      currentPassHasBlockingFindings: input.currentPassHasBlockingFindings,
       body: input.body,
     });
     console.log(JSON.stringify(result));

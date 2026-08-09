@@ -415,6 +415,14 @@ Apply policy thresholds to the subagent's `findings[]`:
 **Keep it tight.** A good review has 2-5 actionable items. If the subagent returned
 more, trim to the highest-confidence few.
 
+**Compute `CURRENT_PASS_HAS_BLOCKING_FINDINGS`** from the threshold-filtered findings above:
+`true` if any remaining finding is `important` or `critical` severity, else `false`. This is
+Step 10/10.5's `currentPassHasBlockingFindings` input to `compute-review-verdict.ts` — it
+reflects what THIS review pass found (fresh, post-threshold-filtering), independent of Step
+9.5's `unaddressedFindings` (which only reflects prior, already-posted GitHub review state).
+Without this input, a fresh critical finding in an otherwise-clean review pass with zero prior
+unresolved threads would silently compute as `APPROVE` — see Step 10's worked example, Case 3.
+
 ---
 
 ## Step 9: Write Review File
@@ -571,19 +579,24 @@ store.
 
 Follow `references/post-review-guide.md` for the full mechanics.
 
-**The event/verdict decision is mechanical, not freehand.** Two inputs are already computed
+**The event/verdict decision is mechanical, not freehand.** Three inputs are already computed
 by this point in the procedure:
 - `selfReview` = `true` if the PR's `author.login == CURRENT_USER`, else `false`.
 - `unaddressedFindings` = the boolean Step 9.5's hard gate computed (real unresolved findings
-  present at head, per that step's exact definition).
+  from BEFORE this review pass — unresolved prior GitHub review threads/comments — present at
+  head, per that step's exact definition).
+- `currentPassHasBlockingFindings` = `true` if Step 8's threshold-filtered `findings[]` for
+  THIS review pass contains at least one `important` or `critical` severity finding, else
+  `false`. This is distinct from `unaddressedFindings`: it reflects what the code-reviewer
+  subagent found fresh in Steps 7/8, not prior GitHub-posted review state.
 
-Invoke `compute-review-verdict.ts` to turn those two booleans into the `event` and
+Invoke `compute-review-verdict.ts` to turn those three booleans into the `event` and
 `verdictLabel` to use — do not decide the event or the body's `Verdict: ...` label by
 narrative judgment:
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
-  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}}"
+  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}}"
 # -> {"event":"APPROVE"|"COMMENT","verdictLabel":"APPROVE"|"COMMENT"}
 ```
 
@@ -618,10 +631,10 @@ it was written as if it were Case 2. Both cases resolve to the
 but they MUST produce **different** `Verdict: ...` body labels:
 
 - **Case 1 — self-authored PR, all findings resolved via Step 9.5's exclusions.** The PR's
-  `author.login == CURRENT_USER` (`selfReview = true`) and Step 9.5's unaddressed-findings gate
+  `author.login == CURRENT_USER` (`selfReview = true`), Step 9.5's unaddressed-findings gate
   computes no unaddressed findings (`unaddressedFindings = false`) — every review either is a
-  clean self-APPROVE or was addressed by a subsequent author reply, per the exclusions above.
-  This is a genuinely clean approval.
+  clean self-APPROVE or was addressed by a subsequent author reply — and the current pass has
+  no blocking findings (`currentPassHasBlockingFindings = false`). A genuinely clean approval.
   Result: `event: "COMMENT"` (forced by the self-review override, since GitHub blocks
   self-APPROVE via the API — not because there's anything wrong with the PR), body **must**
   read `"Verdict: APPROVE — ..."`. Writing `Verdict: COMMENT` here is the exact bug observed
@@ -630,11 +643,21 @@ but they MUST produce **different** `Verdict: ...` body labels:
 - **Case 2 — any-author PR, a genuine unresolved finding still present at head.** Step 9.5's
   gate computes real unaddressed findings (`unaddressedFindings = true`) — an unresolved inline
   thread, or a qualifying `COMMENTED`/`CHANGES_REQUESTED` review body not excluded by the
-  clean-APPROVE or author-reply rules. This holds regardless of `selfReview`. Result:
-  `event: "COMMENT"`, body correctly reads `"Verdict: COMMENT — ..."`. This is the only case
-  where `Verdict: COMMENT` is the right label.
-- **Normal clean approve — any-author PR, no unaddressed findings.** `selfReview = false` and
-  `unaddressedFindings = false`. Result: `event: "APPROVE"`, body reads
+  clean-APPROVE or author-reply rules. This holds regardless of `selfReview` or
+  `currentPassHasBlockingFindings`. Result: `event: "COMMENT"`, body correctly reads
+  `"Verdict: COMMENT — ..."`.
+- **Case 3 — any-author PR, no prior unaddressed findings, but a fresh blocking finding in
+  this pass.** `selfReview = false` and `unaddressedFindings = false` (zero prior unresolved
+  GitHub review threads/comments), but Step 8's threshold-filtered `findings[]` for THIS review
+  pass contains an important/critical severity finding (`currentPassHasBlockingFindings =
+  true`). Without this input, this case would silently compute as a clean `APPROVE` — the same
+  failure mode as Case 1 above, reintroduced by a different path. Result: `event: "COMMENT"`,
+  body correctly reads `"Verdict: COMMENT — ..."`. This restores the old "Event selection"
+  rule: "If any finding at important/critical severity remains after threshold filtering:
+  COMMENT — no exceptions."
+- **Normal clean approve — any-author PR, no unaddressed findings, no blocking findings this
+  pass.** `selfReview = false`, `unaddressedFindings = false`, and
+  `currentPassHasBlockingFindings = false`. Result: `event: "APPROVE"`, body reads
   `"Verdict: APPROVE — ..."`. This is the ordinary non-self-review approve path.
 
 Both self-review-forced-COMMENT cases select `event: "COMMENT"` for entirely different reasons
@@ -642,15 +665,19 @@ Both self-review-forced-COMMENT cases select `event: "COMMENT"` for entirely dif
 body label is the *only* signal that distinguishes them for downstream automation, so it must
 always reflect the actual computed verdict, never be copied from the `event` value or from
 generic "this went through COMMENT" boilerplate. `compute-review-verdict.ts`'s `computeVerdict`
-implements this exact 4-row truth table so it can never drift into freehand narrative
-judgment again:
+implements this exact 8-row truth table (2^3 boolean combinations) so it can never drift into
+freehand narrative judgment again:
 
-| selfReview | unaddressedFindings | event | verdictLabel |
-|---|---|---|---|
-| true | false | COMMENT (self-review override) | APPROVE |
-| true | true | COMMENT (self-review override) | COMMENT |
-| false | false | APPROVE | APPROVE |
-| false | true | COMMENT | COMMENT |
+| selfReview | unaddressedFindings | currentPassHasBlockingFindings | event | verdictLabel |
+|---|---|---|---|---|
+| true | false | false | COMMENT (self-review override) | APPROVE |
+| true | false | true | COMMENT (self-review override) | COMMENT |
+| true | true | false | COMMENT (self-review override) | COMMENT |
+| true | true | true | COMMENT (self-review override) | COMMENT |
+| false | false | false | APPROVE | APPROVE |
+| false | false | true | COMMENT | COMMENT |
+| false | true | false | COMMENT | COMMENT |
+| false | true | true | COMMENT | COMMENT |
 
 Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 
@@ -683,11 +710,12 @@ should be held; the inline comments convey the specific feedback to the author.
 ### Step 10.5: Hard-Gate Validation (Before Posting)
 
 Before Step 11 posts or stages anything, validate the constructed `body` against the same
-`selfReview`/`unaddressedFindings` inputs used above, via the script's validation mode:
+`selfReview`/`unaddressedFindings`/`currentPassHasBlockingFindings` inputs used above, via the
+script's validation mode:
 
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
-  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"body\": $(jq -Rs . <<< "$BODY")}"
+  "{\"selfReview\": ${SELF_REVIEW}, \"unaddressedFindings\": ${UNADDRESSED_FINDINGS}, \"currentPassHasBlockingFindings\": ${CURRENT_PASS_HAS_BLOCKING_FINDINGS}, \"body\": $(jq -Rs . <<< "$BODY")}"
 ```
 
 - If the result's `valid` field is `true`, proceed to Step 11.

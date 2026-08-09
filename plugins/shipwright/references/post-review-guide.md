@@ -124,12 +124,25 @@ that cannot be deleted or dismissed via the API.
 
 ## APPROVE vs COMMENT Rule
 
-- **COMMENT**: any finding at `important` (75-89) or `critical` (90-100) severity
-  remains after threshold filtering — no exceptions
-- **APPROVE**: all remaining findings are `suggestion` level (50-74), or there are
-  no findings at all
+**The event/verdict decision is mechanical, not freehand** — `commands/review.md` Step 10
+computes it by invoking `scripts/compute-review-verdict.ts` with three booleans, rather than
+by narrative severity judgment:
 
-APPROVE means the PR is clean enough to merge. If there is anything blocking or
+- `selfReview` — the PR's `author.login == CURRENT_USER`
+- `unaddressedFindings` — Step 9.5's hard gate: real unresolved findings from BEFORE this
+  review pass (unresolved prior GitHub review threads/comments)
+- `currentPassHasBlockingFindings` — `true` if Step 8's threshold-filtered `findings[]` for
+  THIS review pass contains any `important` (75-89) or `critical` (90-100) severity finding
+
+`event` is `COMMENT` whenever any of those three is `true` (GitHub rejects self-APPROVE via
+the API, a prior unaddressed finding exists, or a fresh blocking finding was found this pass);
+otherwise `APPROVE`. The body's `Verdict: ...` label reflects the actual quality verdict:
+`COMMENT` whenever `unaddressedFindings` or `currentPassHasBlockingFindings` is `true`,
+`APPROVE` otherwise — regardless of why `event` was forced to `COMMENT`. See
+`commands/review.md` Step 10's full 8-row truth table and worked example.
+
+APPROVE means the PR is clean enough to merge: no unresolved prior findings and no
+important/critical finding surfaced in this pass. If there is anything blocking or
 important, COMMENT so it gets addressed before the deploy pipeline runs.
 
 **Never use REQUEST_CHANGES** -- it blocks the PR and requires the reviewer to

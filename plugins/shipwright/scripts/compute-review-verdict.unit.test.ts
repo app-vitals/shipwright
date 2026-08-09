@@ -13,34 +13,74 @@ import {
 } from "./compute-review-verdict";
 
 describe("computeVerdict", () => {
-  it("selfReview=true, unaddressedFindings=false -> Case 1: event COMMENT (self-review override), label APPROVE", () => {
+  it("selfReview=true, unaddressedFindings=false, currentPassHasBlockingFindings=false -> Case 1: event COMMENT (self-review override), label APPROVE", () => {
     const result = computeVerdict({
       selfReview: true,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
     });
     expect(result).toEqual({ event: "COMMENT", verdictLabel: "APPROVE" });
   });
 
-  it("selfReview=true, unaddressedFindings=true -> Case 2 self-review variant: event COMMENT, label COMMENT", () => {
+  it("selfReview=true, unaddressedFindings=false, currentPassHasBlockingFindings=true -> event COMMENT, label COMMENT (fresh blocking finding on an otherwise-clean self-review)", () => {
     const result = computeVerdict({
       selfReview: true,
-      unaddressedFindings: true,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: true,
     });
     expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
   });
 
-  it("selfReview=false, unaddressedFindings=false -> normal clean approve: event APPROVE, label APPROVE", () => {
+  it("selfReview=true, unaddressedFindings=true, currentPassHasBlockingFindings=false -> Case 2 self-review variant: event COMMENT, label COMMENT", () => {
+    const result = computeVerdict({
+      selfReview: true,
+      unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
+    });
+    expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
+  });
+
+  it("selfReview=true, unaddressedFindings=true, currentPassHasBlockingFindings=true -> event COMMENT, label COMMENT", () => {
+    const result = computeVerdict({
+      selfReview: true,
+      unaddressedFindings: true,
+      currentPassHasBlockingFindings: true,
+    });
+    expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
+  });
+
+  it("selfReview=false, unaddressedFindings=false, currentPassHasBlockingFindings=false -> normal clean approve: event APPROVE, label APPROVE", () => {
     const result = computeVerdict({
       selfReview: false,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
     });
     expect(result).toEqual({ event: "APPROVE", verdictLabel: "APPROVE" });
   });
 
-  it("selfReview=false, unaddressedFindings=true -> Case 2: event COMMENT, label COMMENT", () => {
+  it("selfReview=false, unaddressedFindings=false, currentPassHasBlockingFindings=true -> Case 3 (the bug this fix closes): event COMMENT, label COMMENT, not a silent APPROVE", () => {
+    const result = computeVerdict({
+      selfReview: false,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: true,
+    });
+    expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
+  });
+
+  it("selfReview=false, unaddressedFindings=true, currentPassHasBlockingFindings=false -> Case 2: event COMMENT, label COMMENT", () => {
     const result = computeVerdict({
       selfReview: false,
       unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
+    });
+    expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
+  });
+
+  it("selfReview=false, unaddressedFindings=true, currentPassHasBlockingFindings=true -> event COMMENT, label COMMENT", () => {
+    const result = computeVerdict({
+      selfReview: false,
+      unaddressedFindings: true,
+      currentPassHasBlockingFindings: true,
     });
     expect(result).toEqual({ event: "COMMENT", verdictLabel: "COMMENT" });
   });
@@ -51,6 +91,7 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: true,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
       body: "Verdict: APPROVE — Clean conversion, all routes verified, no blocking issues.",
     });
     expect(result).toEqual({ valid: true });
@@ -60,15 +101,27 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: false,
       unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
       body: "Verdict: COMMENT — missing error handling on the retry path.",
     });
     expect(result).toEqual({ valid: true });
   });
 
-  it("catches the exact production mismatch: Case 1 (selfReview=true, unaddressedFindings=false) mislabeled 'Verdict: COMMENT'", () => {
+  it("returns valid:true when the body's Verdict label matches the computed label (Case 3, correctly labeled: fresh blocking finding, no prior unaddressed findings)", () => {
+    const result = validateReviewVerdict({
+      selfReview: false,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: true,
+      body: "Verdict: COMMENT — new critical finding: unbounded recursion on the retry path.",
+    });
+    expect(result).toEqual({ valid: true });
+  });
+
+  it("catches the exact production mismatch: Case 1 (selfReview=true, unaddressedFindings=false, currentPassHasBlockingFindings=false) mislabeled 'Verdict: COMMENT'", () => {
     const result = validateReviewVerdict({
       selfReview: true,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
       body: "Verdict: COMMENT — No blocking issues found... checks out clean.",
     });
     expect(result.valid).toBe(false);
@@ -81,6 +134,20 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: false,
       unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
+      body: "Verdict: APPROVE — looks fine to me.",
+    });
+    expect(result.valid).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(result.error).toMatch(/APPROVE/);
+    expect(result.error).toMatch(/COMMENT/);
+  });
+
+  it("catches the exact bug this fix closes: a fresh critical finding with no prior unaddressed findings mislabeled 'Verdict: APPROVE'", () => {
+    const result = validateReviewVerdict({
+      selfReview: false,
+      unaddressedFindings: false,
+      currentPassHasBlockingFindings: true,
       body: "Verdict: APPROVE — looks fine to me.",
     });
     expect(result.valid).toBe(false);
@@ -93,6 +160,7 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: false,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
       body: "Looks good, approved.",
     });
     expect(result.valid).toBe(false);
@@ -104,6 +172,7 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: false,
       unaddressedFindings: false,
+      currentPassHasBlockingFindings: false,
       body: "**Verdict:** approve — all checks pass.",
     });
     expect(result).toEqual({ valid: true });
@@ -113,6 +182,7 @@ describe("validateReviewVerdict", () => {
     const result = validateReviewVerdict({
       selfReview: true,
       unaddressedFindings: true,
+      currentPassHasBlockingFindings: false,
       body: "Some preamble.\n\nVerdict: COMMENT — still one unresolved thread on error handling.\n\nMore trailing notes.",
     });
     expect(result).toEqual({ valid: true });
