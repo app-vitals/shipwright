@@ -248,13 +248,56 @@ function isAddressedByAuthorReply(
 }
 
 /**
+ * Returns true when a self-authored review is superseded by a LATER,
+ * genuinely clean self-review from the same identity (DRO-1.2 — mirrors
+ * patch.md's Step 3a "Self-review superseded by a later clean self-review"
+ * exclusion).
+ *
+ * review.md's Step 10/11 procedure always posts a *new* review object each
+ * pass rather than rewriting a prior one's body, so a self-authored PR that
+ * goes through N review rounds — each finding and fixing one real issue —
+ * ends up with N-1 COMMENT-bodied self-reviews on the PR even after every
+ * finding has been fixed. None of those qualifies for the clean-APPROVE
+ * exclusion (their bodies read `Verdict: COMMENT`, not `Verdict: APPROVE`),
+ * and the reply exclusion doesn't apply either (self-reviews aren't
+ * "third-party," and this PR's convention never posts a PR-level author
+ * reply) — so without this exclusion, `hasUnaddressedFindings` would return
+ * true forever and a self-authored PR could never reach a clean verdict once
+ * it has had more than one review round.
+ *
+ * Only a PRIOR self-review is superseded, and only when a later self-review
+ * (matched by `submittedAt`, same `author.login` as `currentUser`) is itself
+ * a clean verdict per `isCleanApproveBody` — a later self-review that is
+ * itself non-clean (e.g. this round found a fresh issue) does not supersede
+ * anything.
+ */
+function isSupersededBySelfReview(
+  review: Pick<ReviewNode, "author" | "submittedAt">,
+  allReviews: ReviewNode[],
+  currentUser: string,
+): boolean {
+  if (review.author.login !== currentUser) return false;
+
+  const reviewedAt = new Date(review.submittedAt).getTime();
+  return allReviews.some(
+    (r) =>
+      r.author.login === currentUser &&
+      new Date(r.submittedAt).getTime() > reviewedAt &&
+      isCleanApproveBody(r.body),
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
  *
- * A self-authored review is excluded only when it is a clean APPROVE verdict
- * (see isSelfCleanApprove) — a self-review with a real (non-APPROVE) verdict
- * still counts as an unaddressed finding, same as any other reviewer's.
+ * A self-authored review is excluded when it is a clean APPROVE verdict (see
+ * isSelfCleanApprove) or when it is superseded by a later, genuinely clean
+ * self-review from the same identity (see isSupersededBySelfReview, DRO-1.2)
+ * — a self-review with a real (non-APPROVE) verdict that is not later
+ * superseded still counts as an unaddressed finding, same as any other
+ * reviewer's.
  *
  * A review's non-empty body is also excluded when there are no unresolved
  * threads AND the PR author has replied after the review (see
@@ -269,12 +312,14 @@ function hasUnaddressedFindings(
   const { headRefOid, reviews, reviewThreads, comments } = data;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
-  // excluding self-authored clean-APPROVE reviews.
+  // excluding self-authored clean-APPROVE reviews and self-reviews superseded
+  // by a later clean self-review (DRO-1.2).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
-      !isSelfCleanApprove(r, currentUser),
+      !isSelfCleanApprove(r, currentUser) &&
+      !isSupersededBySelfReview(r, reviews.nodes, currentUser),
   );
 
   if (qualifyingReviews.length === 0) return false;

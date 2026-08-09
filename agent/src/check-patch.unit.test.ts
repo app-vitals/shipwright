@@ -980,6 +980,165 @@ describe("getPatchCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // ─── Self-review superseded by a later clean self-review (DRO-1.2) ────────
+
+  test("returns empty array when an earlier self-authored COMMENT review is superseded by a later clean self-review", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — found a race condition in the retry logic, needs a fix before merge.",
+          },
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-27T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verified the race condition is fixed. Verdict: APPROVE",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: async () => "the-agent",
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns a candidate when an earlier self-authored COMMENT review is followed by a LATER self-review that is itself non-clean", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — found issue #1.",
+          },
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-27T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — found a fresh issue #2.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: async () => "the-agent",
+      }),
+    );
+    // Both self-reviews still count as findings: the earlier one is not
+    // superseded (the later one isn't clean), and the later one is its own
+    // real finding.
+    expect(result).toHaveLength(1);
+  });
+
+  test("does NOT supersede an earlier self-review when the clean self-review comes BEFORE it (order matters)", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: APPROVE — looks good so far.",
+          },
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-27T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — found a new issue on a later pass.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: async () => "the-agent",
+      }),
+    );
+    // The earlier review is a clean-APPROVE itself (excluded on its own
+    // grounds), and the later non-clean self-review is a real, un-superseded
+    // finding — still one candidate.
+    expect(result).toHaveLength(1);
+  });
+
+  test("does NOT supersede a THIRD-PARTY review's finding, even when a later self-review is clean", async () => {
+    const pr = makeOwnPr();
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-27T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: APPROVE",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+    });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => [],
+        getCurrentUser: async () => "the-agent",
+      }),
+    );
+    // The DRO-1.2 exclusion only supersedes self-authored reviews — a
+    // third-party's finding is untouched by a later self-review.
+    expect(result).toHaveLength(1);
+  });
+
   // ─── Third-party review addressed via author reply (CPF-2.3) ──────────────
 
   test("returns empty array when a third-party COMMENTED review's non-empty body is followed by a PR-author reply (mirrors PR #1432)", async () => {
