@@ -237,8 +237,9 @@ a clean APPROVE verdict, matched either by:
 Not restricted to self-authored reviews (SRV-1.1): multiple distinct Shipwright agents
 operate under different GitHub identities in the same repo, so WHO posted a clean APPROVE
 verdict is not meaningful — the verdict text itself is the ground truth. Per review.md's
-Step 10 note ("Self-review event override"), GitHub rejects self-APPROVE via the API, so an
-agent's own clean approval of its own PR is always posted as `COMMENTED` with a body like
+Step 10 mechanical verdict computation (the `selfReview` input), GitHub rejects self-APPROVE
+via the API, so an agent's own clean approval of its own PR is always posted as `COMMENTED`
+with a body like
 `"APPROVE — looks good, no changes needed."` or a narrative containing `"Verdict: APPROVE"`
 instead of an `APPROVED` review. Without this exclusion, that clean approval would look
 identical to a real finding and loop the patch cron forever on an already-approved PR. The
