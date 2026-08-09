@@ -1834,7 +1834,7 @@
         "tags": [
           "PRs"
         ],
-        "summary": "Reset skip tracking — skipCount back to 0",
+        "summary": "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
         "parameters": [
           {
             "schema": {
@@ -2750,7 +2750,7 @@
           "skipCount": {
             "type": "integer",
             "default": 0,
-            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
+            "description": "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
             "example": 0
           },
           "lastSkippedAt": {

@@ -824,12 +824,39 @@ export class PullRequestService implements PullRequestServiceLike {
     }
   }
 
-  /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
+  /**
+   * Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null.
+   * If the PR is currently blocked AND its blockedReason matches the
+   * skip-auto-block message pattern set by recordSkip() (contains
+   * "consecutive skips"), also clears blocked:false and blockedReason:null
+   * in the same update — giving a human-retried PR a way back into
+   * candidacy. A block set by a different mechanism (e.g. the CI-failure-
+   * streak auto-block in patch()) is left untouched.
+   */
   async resetSkip(id: string): Promise<PullRequest> {
+    const existing = await this.prisma.pullRequest.findUnique({
+      where: { id },
+    });
+    if (!existing) {
+      throw new NotFoundError("pr not found");
+    }
+
+    const updateData: Prisma.PullRequestUpdateInput = {
+      skipCount: 0,
+      lastSkippedAt: null,
+    };
+    if (
+      existing.blocked &&
+      existing.blockedReason?.includes("consecutive skips")
+    ) {
+      updateData.blocked = false;
+      updateData.blockedReason = null;
+    }
+
     try {
       return await this.prisma.pullRequest.update({
         where: { id },
-        data: { skipCount: 0, lastSkippedAt: null },
+        data: updateData,
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");

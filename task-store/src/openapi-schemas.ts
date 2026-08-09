@@ -344,7 +344,7 @@ export const PullRequestSchema = z
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
-        "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3).",
+        "Consecutive skip count. Auto-blocks (blocked+blockedReason) once it crosses the threshold (3). POST /prs/:id/skip/reset resets this to 0 and, only when blockedReason matches the skip-auto-block message pattern (contains 'consecutive skips'), also clears blocked/blockedReason — a block set by a different mechanism (e.g. the CI-failure-streak auto-block) is left untouched.",
     }),
     lastSkippedAt: z
       .string()
