@@ -818,7 +818,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     expect(gateBlock).toContain("override");
   });
 
-  it("the gate computes the verdict once and feeds both the event field and the Verdict body label from that value", () => {
+  it("the gate feeds unaddressedFindings into Step 10's mechanical three-input verdict computation, not a standalone formula", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
     const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
@@ -827,7 +827,33 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     expect(gateIdx).toBeGreaterThan(-1);
     const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
 
-    expect(gateBlock).toContain("Verdict: COMMENT");
+    expect(gateBlock).toContain("compute-review-verdict.ts");
+    expect(gateBlock).toContain("three-input truth table");
+    // The stale two-input inline formula from before Step 10's mechanical gate must not
+    // reappear -- it contradicted the three-input truth table (RUC-1.1/DRO-1.1 review
+    // finding: Step 9.5 must not restate a freehand fallback to the subagent's own
+    // recommendation).
+    expect(gateBlock).not.toContain(
+      'unaddressedFindings ? "COMMENT" : {code-reviewer subagent\'s recommended',
+    );
+  });
+
+  it("the gate's cross-reference to the other two verdict inputs does not point at the deleted 'Self-review event override' subsection", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
+    const searchWindow = content.slice(step9Idx, eventSelectionIdx);
+
+    const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
+    expect(gateIdx).toBeGreaterThan(-1);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+
+    // This PR folds the old named "Self-review event override" subsection into Step 10's
+    // unnamed mechanical paragraph -- Step 9.5's cross-reference must point at the
+    // mechanical computation (the selfReview input), not at the now-deleted subsection name
+    // (RUC-1.1/DRO-1.1 review finding: a dangling cross-reference to removed prose).
+    expect(gateBlock).not.toContain("Step 10 self-review COMMENT-forcing override");
+    expect(gateBlock).toContain("`selfReview` input");
+    expect(gateBlock).toContain("Step 10's mechanical");
   });
 
   it("the gate references the OR condition of any unresolved inline thread, matching patch.md's Step 3a", () => {

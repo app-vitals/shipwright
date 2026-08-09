@@ -552,20 +552,22 @@ This is the same computation patch.md's Step 3a performs to decide whether a PR 
 its List A — see that section for the full clean-APPROVE and author-reply exclusion rules
 (not restated here to avoid a fourth divergent copy).
 
-**If unaddressed findings are present, force the verdict to `COMMENT`** — compute the
-verdict once (`unaddressedFindings ? "COMMENT" : {code-reviewer subagent's recommended
-verdict}`) and feed that single value into both Step 10's `event` field (`COMMENT`) and the
-review body's `Verdict: ...` label (literal text `Verdict: COMMENT`), the same body-label
-convention Step 10 already documents. This gate:
+**If unaddressed findings are present, force the verdict to `COMMENT`** — this
+`unaddressedFindings` boolean is one of the three inputs Step 10's mechanical
+`compute-review-verdict.ts` call uses to compute the `event` and `verdictLabel`; it is not
+combined with the code-reviewer subagent's own top-line recommendation here (see Step 10 for
+the full three-input truth table, which also folds in `selfReview` and
+`currentPassHasBlockingFindings`). This gate:
 - **Overrides the code-reviewer subagent's severity-based recommendation** from Step 7 —
   even if the subagent recommends APPROVE (e.g. only suggestion-level findings, or no
   findings at all in the new diff), a genuinely unresolved inline thread or qualifying
   review from a prior pass still forces `COMMENT`.
-- **Is not mutually exclusive with the Step 10 self-review COMMENT-forcing override** below
-  — a self-reviewed PR can independently trigger the self-review override (GitHub rejects
-  self-APPROVE via the API) AND this gate (real unaddressed feedback exists); either one on
-  its own is sufficient to force `COMMENT`, and this gate must not be skipped just because
-  the PR is a self-review. This holds even when the review narrative would otherwise
+- **Is not mutually exclusive with the other two inputs to Step 10's mechanical
+  computation** — the `selfReview` input (a self-review override: GitHub rejects
+  self-APPROVE via the API) and the `currentPassHasBlockingFindings` input (Step 8's
+  threshold-filtered findings for this pass) can each independently force `COMMENT` too; any
+  one of the three is sufficient, and this gate must not be skipped just because another
+  input already forces `COMMENT`. This holds even when the review narrative would otherwise
   self-report `Verdict: APPROVE` — the computed verdict always wins over narrative wording.
 
 This gate is computed live from the GraphQL data fetched in Step 5.5 at review-post time —
