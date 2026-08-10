@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/agent",
-  "version": "1.137.0",
+  "version": "1.137.1",
   "private": true,
   "description": "Shipwright agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
