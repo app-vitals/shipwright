@@ -248,6 +248,110 @@ describe("SKILL.md — environment-artifact noise filtering (Tier 1 scan targets
   });
 });
 
+describe("SKILL.md — Tier 1 tool binaries staged outside the scan target", () => {
+  it("establishes a mktemp -d staging directory before Step 3.1's gitleaks download", () => {
+    const mktempIndex = content.indexOf("mktemp -d");
+    const gitleaksStepIndex = content.indexOf("### 3.1 gitleaks");
+    expect(mktempIndex).toBeGreaterThan(-1);
+    expect(gitleaksStepIndex).toBeGreaterThan(-1);
+    expect(mktempIndex).toBeLessThan(gitleaksStepIndex);
+  });
+
+  it("stores the staging directory in a reusable shell variable", () => {
+    expect(content).toMatch(/TOOLS_DIR=.*mktemp -d/);
+  });
+
+  for (const tool of ["gitleaks", "osv-scanner", "grype", "syft", "zizmor"]) {
+    it(`downloads ${tool} into the staging directory, not the repo root`, () => {
+      const sectionHeader = `### 3.${["gitleaks", "osv-scanner", "grype", "syft", "zizmor"].indexOf(tool) + 1} ${tool}`;
+      const startIndex = content.indexOf(sectionHeader);
+      expect(startIndex).toBeGreaterThan(-1);
+      const nextHeaderMatch = content.slice(startIndex + 1).search(/\n### 3\.\d/);
+      const endIndex =
+        nextHeaderMatch === -1 ? content.length : startIndex + 1 + nextHeaderMatch;
+      const section = content.slice(startIndex, endIndex);
+      expect(section).toContain("$TOOLS_DIR");
+      // The curl -o destination must not be a bare filename in the repo root.
+      const curlLine = section
+        .split("\n")
+        .find((line) => line.trim().startsWith("curl -sSfL"));
+      expect(curlLine).toBeDefined();
+      expect(curlLine).toContain("$TOOLS_DIR");
+    });
+  }
+
+  it("invokes grype from the staging directory while still scanning the repo root (dir:.)", () => {
+    const grypeSection = content.slice(
+      content.indexOf("### 3.3 grype"),
+      content.indexOf("### 3.4 syft"),
+    );
+    expect(grypeSection).toMatch(/\$TOOLS_DIR\/grype"? dir:\./);
+  });
+
+  it("invokes syft from the staging directory while still scanning the repo root (dir:.)", () => {
+    const syftSection = content.slice(
+      content.indexOf("### 3.4 syft"),
+      content.indexOf("### 3.5 zizmor"),
+    );
+    expect(syftSection).toMatch(/\$TOOLS_DIR\/syft"? dir:\./);
+  });
+
+  it("still passes the node_modules/worktrees --exclude flags on grype's dir:. invocation", () => {
+    const grypeSection = content.slice(
+      content.indexOf("### 3.3 grype"),
+      content.indexOf("### 3.4 syft"),
+    );
+    expect(grypeSection).toContain("--exclude './node_modules/**'");
+    expect(grypeSection).toContain("--exclude './worktrees/**'");
+  });
+
+  it("still passes the node_modules/worktrees --exclude flags on syft's dir:. invocation", () => {
+    const syftSection = content.slice(
+      content.indexOf("### 3.4 syft"),
+      content.indexOf("### 3.5 zizmor"),
+    );
+    expect(syftSection).toContain("--exclude './node_modules/**'");
+    expect(syftSection).toContain("--exclude './worktrees/**'");
+  });
+
+  it("explains why staging outside the repo root prevents tool-binary self-pollution", () => {
+    const text = content.toLowerCase();
+    const mentionsSelfPollution =
+      text.includes("self-pollut") ||
+      text.includes("its own embedded") ||
+      text.includes("binary classifier");
+    expect(mentionsSelfPollution).toBe(true);
+  });
+});
+
+describe("SKILL.md — osv-cve authoritative for bun.lock dependency CVEs", () => {
+  it("documents osv-scanner/osv-cve as the authoritative dependency-CVE source for Bun-lockfile repos", () => {
+    const text = content.toLowerCase();
+    expect(text).toContain("bun.lock");
+    const hasAuthority =
+      text.includes("authoritative") || text.includes("authority");
+    expect(hasAuthority).toBe(true);
+  });
+
+  it("documents grype-cve as a narrow, non-independent subset rather than corroboration", () => {
+    const text = content.toLowerCase();
+    const hasSubset = text.includes("subset");
+    const hasNotCorroboration =
+      text.includes("not independent") ||
+      text.includes("non-independent") ||
+      text.includes("not corroborat");
+    expect(hasSubset).toBe(true);
+    expect(hasNotCorroboration).toBe(true);
+  });
+
+  it("explains the root cause: syft/grype only partially parse this org's bun.lock format", () => {
+    const text = content.toLowerCase();
+    const mentionsParsing =
+      text.includes("partially parse") || text.includes("only partially");
+    expect(mentionsParsing).toBe(true);
+  });
+});
+
 describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
   it("references the security-patrol ledger location", () => {
     expect(content).toContain("state/security-patrol-ledger.json");
