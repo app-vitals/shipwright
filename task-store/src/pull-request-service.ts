@@ -5,10 +5,13 @@
  *
  * claim() is atomic via a Prisma $transaction:
  *   1. Find existing record by @@unique([repo, prNumber])
- *   2. Already claimed (claimedBy !== null) AND same commitSha AND
- *      reviewState !== 'pending' → ConflictError(409)
- *   3. Not claimed, OR different commitSha, OR reviewState === 'pending' → update (200)
- *   4. No record → create (201)
+ *   2. Update with the conflict conditions re-checked in the UPDATE's own WHERE
+ *      clause (so Postgres, holding the row lock, is the sole arbiter of a
+ *      concurrent claim — not a possibly-stale JS snapshot). A write that no
+ *      longer matches affects 0 rows → P2025 → ConflictError(409) (or, if the
+ *      row was deleted, NotFoundError). Otherwise → update (200)
+ *   3. No record → create (201); a concurrent INSERT loser hits the
+ *      @@unique([repo, prNumber]) constraint → P2002 → ConflictError(409)
  *
  * Timestamp fields are stored as ISO strings to match the application contract;
  * only createdAt/updatedAt are DateTime columns.
@@ -397,36 +400,6 @@ export class PullRequestService implements PullRequestServiceLike {
       });
 
       if (existing) {
-        // Conflict: same commitSha AND already claimed by someone for the same phase.
-        // Heartbeat staleness is not checked here — a stale claim still blocks; only
-        // the reaper resolves staleness and clears stale claims.
-        if (
-          existing.commitSha === commitSha &&
-          existing.claimedBy !== null &&
-          existing.phase === phase
-        ) {
-          throw new ConflictError(
-            `pr ${repo}#${prNumber} is already claimed with the same commit`,
-          );
-        }
-
-        // Legacy review conflict: already claimed, same commitSha, and
-        // reviewState is not pending (covers the case where phase was not
-        // set yet). The claimedBy check keeps this guard from firing while
-        // the PR is idle (claimedBy: null) — e.g. after release()/complete()
-        // clear the claim — so a legitimate re-claim (such as the
-        // fresh-author-reply re-candidacy case) is not permanently blocked.
-        if (
-          phase === "review" &&
-          existing.claimedBy !== null &&
-          existing.commitSha === commitSha &&
-          existing.reviewState !== "pending"
-        ) {
-          throw new ConflictError(
-            `pr ${repo}#${prNumber} is already claimed with the same commit`,
-          );
-        }
-
         // Build update payload based on phase
         const updateData: Prisma.PullRequestUpdateInput = {
           commitSha,
@@ -447,11 +420,72 @@ export class PullRequestService implements PullRequestServiceLike {
         }
         // phase === 'patch': do NOT touch reviewState (preserve 'posted')
 
-        const record = await tx.pullRequest.update({
-          where: { id: existing.id },
-          data: updateData,
-        });
-        return { status: 200 as const, record };
+        // Re-validate the two conflict conditions in the UPDATE's own WHERE
+        // clause so Postgres — holding the row lock at execution time — is the
+        // sole arbiter of who wins a concurrent claim, not application-level JS
+        // reading a possibly-stale findUnique() snapshot. Under READ COMMITTED
+        // two racers could both pass a pre-update JS `if` against the same stale
+        // read and the second writer would silently clobber the first's claim
+        // (a lost-update race, CRF-1.1). Expressing the guards as negated WHERE
+        // filters means the losing writer matches 0 rows and Prisma throws
+        // P2025 instead — which we disambiguate into ConflictError vs
+        // NotFoundError below.
+        //
+        // Conflict conditions (the UPDATE must match only when NEITHER holds):
+        //   1. Modern phase guard: same commitSha AND already claimed AND same phase.
+        //      Heartbeat staleness is not checked — a stale claim still blocks; only
+        //      the reaper resolves staleness and clears stale claims.
+        //   2. Legacy review guard (phase === 'review' only): already claimed, same
+        //      commitSha, and reviewState !== 'pending' (covers the case where phase
+        //      was not set yet). The claimedBy check keeps this guard from firing
+        //      while the PR is idle (claimedBy: null) — e.g. after release()/
+        //      complete() clear the claim — so a legitimate re-claim (such as the
+        //      fresh-author-reply re-candidacy case) is not permanently blocked.
+        const conflictConditions: Prisma.PullRequestWhereInput[] = [
+          { commitSha, claimedBy: { not: null }, phase },
+        ];
+        if (phase === "review") {
+          conflictConditions.push({
+            commitSha,
+            claimedBy: { not: null },
+            reviewState: { not: "pending" },
+          });
+        }
+
+        try {
+          const record = await tx.pullRequest.update({
+            where: {
+              id: existing.id,
+              NOT: { OR: conflictConditions },
+            },
+            data: updateData,
+          });
+          return { status: 200 as const, record };
+        } catch (err: unknown) {
+          // The combined WHERE matched 0 rows → Prisma throws P2025. Distinguish
+          // the two causes: the row still exists (a concurrent claim() now
+          // satisfies a conflict condition — the expected outcome this fix
+          // closes the race for) → ConflictError; the row was deleted entirely
+          // (much rarer) → genuine NotFoundError.
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            "code" in err &&
+            (err as { code: string }).code === "P2025"
+          ) {
+            const stillExists = await tx.pullRequest.findUnique({
+              where: { id: existing.id },
+              select: { id: true },
+            });
+            if (stillExists) {
+              throw new ConflictError(
+                `pr ${repo}#${prNumber} is already claimed with the same commit`,
+              );
+            }
+            throw new NotFoundError(`pr ${repo}#${prNumber} not found`);
+          }
+          throw err;
+        }
       }
 
       // No existing record → create.
