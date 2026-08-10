@@ -136,6 +136,7 @@ jobs:
   # completes (not merely starts).
   debounce:
     name: debounce burst of release tags
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     # This job only sleeps — it never touches the repo, so it needs none of
     # the workflow-level contents:write / pull-requests:write permissions.
@@ -155,6 +156,7 @@ jobs:
   bump-chart:
     name: bump chart version
     needs: debounce
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     permissions:
       contents: write      # push branch + commit

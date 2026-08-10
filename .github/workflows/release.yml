@@ -19,6 +19,7 @@ permissions:
 jobs:
   guard:
     name: Admin check
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - name: Assert actor is admin
@@ -34,6 +35,7 @@ jobs:
 
   release:
     name: semantic-release
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     needs: guard
     steps:

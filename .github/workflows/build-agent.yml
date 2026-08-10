@@ -16,6 +16,7 @@ jobs:
   filter:
     name: filter changed paths
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     outputs:
       changed: ${{ steps.filter.outputs.changed }}
@@ -51,6 +52,7 @@ jobs:
     name: build / tag / push
     needs: filter
     if: needs.filter.outputs.changed == 'true'
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     permissions:
       packages: write # docker/login-action push to GHCR
