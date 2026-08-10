@@ -939,16 +939,14 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
   }
 
   /**
-   * makeClaimPrismaDouble — simulates claim() behavior with an in-memory row.
-   * The double allows configuring whether to enforce the claimedBy=null guard.
-   * When enforceClaimedByGuard=true, the double checks both status AND claimedBy IS NULL.
-   * When enforceClaimedByGuard=false, it only checks status (simulating the old behavior).
+   * makeClaimPrismaDouble — simulates a Postgres row against the *actual* SQL
+   * text claim() sends. Reads the tagged-template `strings` to determine
+   * whether the query's WHERE clause includes the "claimedBy" IS NULL guard,
+   * rather than hardcoding that behavior — so this double breaks (and the
+   * ConflictError test below fails) if claim()'s WHERE clause regresses.
    * Also implements task.findUnique to support the existing 404-vs-409 disambiguation.
    */
-  function makeClaimPrismaDouble(
-    initialTask: Task,
-    enforceClaimedByGuard = true,
-  ) {
+  function makeClaimPrismaDouble(initialTask: Task) {
     // In-memory row state — must be let because $executeRaw mutates it
     let row = { ...initialTask };
 
@@ -957,10 +955,9 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
         strings: TemplateStringsArray,
         ...values: unknown[]
       ): Promise<number> {
-        // Simulate the WHERE clause in claim():
-        // - always check: id matches AND status = 'pending'
-        // - when enforceClaimedByGuard=true: also check claimedBy IS NULL
-        // In real Postgres, the query would return 0 rows affected if any condition fails.
+        // Determine which WHERE conditions the real SQL text actually asserts.
+        const sql = strings.join("?");
+        const requiresClaimedByNull = /"claimedBy"\s+IS\s+NULL/i.test(sql);
 
         // values[0] is claimedBy (the new claimer)
         // values[values.length - 1] is id (the task ID)
@@ -969,11 +966,9 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
 
         const matchesId = row.id === taskId;
         const matchesStatus = row.status === "pending";
-        const matchesClaimedBy = row.claimedBy === null;
+        const matchesClaimedBy = !requiresClaimedByNull || row.claimedBy === null;
 
-        const shouldUpdate = enforceClaimedByGuard
-          ? matchesId && matchesStatus && matchesClaimedBy
-          : matchesId && matchesStatus;
+        const shouldUpdate = matchesId && matchesStatus && matchesClaimedBy;
 
         if (shouldUpdate) {
           // Update succeeds — simulate applying the SET clause by reassigning row
@@ -1023,15 +1018,12 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
   });
 
   it("claim() throws ConflictError when task is pending but claimedBy is already set (defense-in-depth guard)", async () => {
-    // enforceClaimedByGuard=true simulates the post-implementation behavior
-    // where the WHERE clause checks both status='pending' AND claimedBy IS NULL.
     const prisma = makeClaimPrismaDouble(
       makeFullTask({
         id: "task-1",
         status: "pending",
         claimedBy: "agent-original",
       }),
-      true, // enforceClaimedByGuard=true (with the new guard)
     );
     const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
     const service = new TaskService(prisma, clock);
