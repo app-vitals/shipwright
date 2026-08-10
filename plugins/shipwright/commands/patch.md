@@ -1378,9 +1378,9 @@ same signal before dispatch is ever considered — but that filter only guards t
 bypasses `check-patch.ts` entirely, and time can also pass between candidate selection and
 this point in the run (a bundle-mate task can start, or get blocked, after this PR was
 selected). Mirror deploy.md's Step 2b here, immediately before Step 6c's dispatch, so an
-incomplete bundle is caught on both paths — this is where the vitals-os#3558 incident
-actually happened: re-query the same sibling-branch-status signal now, right before
-dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.
+incomplete bundle is caught on both paths — this is where a prior CI-fix-on-an-incomplete-
+bundle incident actually happened: re-query the same sibling-branch-status signal now, right
+before dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.
 
 ```bash
 BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
