@@ -105,6 +105,27 @@ verification fails for a specific tool, do **not** abort the scan. Instead:
 The overall scan must **never fail** just because one tool's binary couldn't be fetched or
 verified.
 
+**Stage tool binaries outside the scan target.** Before Step 3.1's gitleaks download, create
+one staging directory for all five tools' downloads and reuse it for the rest of Step 3:
+
+```bash
+TOOLS_DIR="$(mktemp -d)"
+```
+
+Every tool's `curl -o`, `tar -xz -f ... -C`, `chmod +x`, and binary-invocation path below uses
+`$TOOLS_DIR` — never a bare filename in the repo root. This matters because grype's and
+syft's `dir:.` scans (Step 3.3/3.4) walk the **entire** repo-root filesystem tree. If a tool's
+own downloaded archive/binary is sitting in the repo root when `dir:.` runs, grype's binary
+classifier detects that binary's own embedded Go module info (e.g. `github.com/anchore/syft`,
+`github.com/google/osv-scalibr`, `github.com/go-git/go-git`) and reports CVEs against it as if
+it were repo code — self-pollution that has inflated raw grype match counts by 10-20x in past
+runs. Staging every tool's download in `$TOOLS_DIR` (outside the repo root, and never itself a
+scan target) fixes this at the root for all five tools at once, including gitleaks/osv-scanner/
+zizmor's binaries, which also currently land in the repo root before grype/syft run. The
+`--exclude './node_modules/**' --exclude './worktrees/**'` flags on grype/syft (Step 3.0) are
+unrelated environment-noise fixes and stay as-is — grype/syft still scan `.` (the real repo
+root); only the tool binaries' own location moves.
+
 > **Checksum provenance.** All five checksums below were independently verified — downloaded
 > and hashed locally, then cross-checked against each vendor's published manifest
 > (`gitleaks`: `ci.yml`'s existing value; `osv-scanner`: `osv-scanner_SHA256SUMS`; `grype` /
@@ -157,10 +178,10 @@ Unlike `ci.yml` (which runs `--no-git` on the working tree), this skill runs a *
 secret scan so secrets committed and later removed are still caught.
 
 ```bash
-curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" -o gitleaks.tar.gz
-echo "141c3b2dede46d8b3a53b47116da756bd223decc0374797559a6b50ecba5590c  gitleaks.tar.gz" | sha256sum -c
-tar -xz -f gitleaks.tar.gz gitleaks
-./gitleaks detect --source . --redact --report-format json --report-path gitleaks-report.json
+curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v8.27.2/gitleaks_8.27.2_linux_x64.tar.gz" -o "$TOOLS_DIR/gitleaks.tar.gz"
+echo "141c3b2dede46d8b3a53b47116da756bd223decc0374797559a6b50ecba5590c  $TOOLS_DIR/gitleaks.tar.gz" | sha256sum -c
+tar -xz -f "$TOOLS_DIR/gitleaks.tar.gz" -C "$TOOLS_DIR" gitleaks
+"$TOOLS_DIR/gitleaks" detect --source . --redact --report-format json --report-path gitleaks-report.json
 ```
 
 (Full-history mode: run `gitleaks detect` **without** `--no-git` so it walks the git log.)
@@ -182,11 +203,25 @@ the filename) plus a `osv-scanner_SHA256SUMS` manifest per release.
 grep -qxF 'node_modules/' .git/info/exclude 2>/dev/null || echo 'node_modules/' >> .git/info/exclude
 grep -qxF 'worktrees/' .git/info/exclude 2>/dev/null || echo 'worktrees/' >> .git/info/exclude
 
-curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o osv-scanner
-echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  osv-scanner" | sha256sum -c
-chmod +x osv-scanner
-./osv-scanner scan --recursive --format json --output osv-report.json .
+curl -sSfL "https://github.com/google/osv-scanner/releases/download/v2.0.2/osv-scanner_linux_amd64" -o "$TOOLS_DIR/osv-scanner"
+echo "3abcfd7126c453a00421487e721b296e0cb68085bd431d6cef60872774170fc8  $TOOLS_DIR/osv-scanner" | sha256sum -c
+chmod +x "$TOOLS_DIR/osv-scanner"
+"$TOOLS_DIR/osv-scanner" scan --recursive --format json --output osv-report.json .
 ```
+
+> **osv-cve is authoritative for Bun-lockfile dependency CVEs.** For repos using `bun.lock`,
+> treat **osv-scanner's `osv-cve` findings as the authoritative dependency-CVE source**, not
+> grype's `grype-cve` findings on lockfile-derived (npm/bun) packages. Confirmed root cause:
+> syft's package cataloger and grype's own embedded lockfile reader both only **partially parse**
+> this org's `bun.lock` format — a generated `sbom.cyclonedx.json` had **zero**
+> `pkg:npm/` entries despite hundreds of packages actually present in the lockfile across
+> multiple repos scanned, and grype's lockfile reader itself extracted only 2-5 packages out of
+> hundreds. osv-scanner's dedicated `bun.lock` parser is comprehensive by comparison (dozens of
+> unique CVEs found vs. grype's 1-2 packages in the same runs). Until upstream syft/grype
+> `bun.lock` support improves, any `grype-cve` finding on an npm/bun package is a narrow,
+> **non-independent subset** of osv-scanner's results — it does **not** corroborate or add
+> confidence beyond what osv-cve already reports; absence of a matching grype-cve finding
+> means nothing about a real CVE's presence, since grype is undercounting, not disagreeing.
 
 ### 3.3 grype — container / filesystem CVE scan
 
@@ -194,10 +229,10 @@ Anchore projects publish `grype_{version}_linux_amd64.tar.gz` plus a
 `grype_{version}_checksums.txt` manifest per release.
 
 ```bash
-curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o grype.tar.gz
-echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  grype.tar.gz" | sha256sum -c
-tar -xz -f grype.tar.gz grype
-./grype dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file grype-report.json
+curl -sSfL "https://github.com/anchore/grype/releases/download/v0.116.0/grype_0.116.0_linux_amd64.tar.gz" -o "$TOOLS_DIR/grype.tar.gz"
+echo "40aff724297312f91ea390d003bed8d8651c74cc7f5b26732db80b3a408d2fc5  $TOOLS_DIR/grype.tar.gz" | sha256sum -c
+tar -xz -f "$TOOLS_DIR/grype.tar.gz" -C "$TOOLS_DIR" grype
+"$TOOLS_DIR/grype" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o json --file grype-report.json
 ```
 
 ### 3.4 syft — SBOM generation
@@ -207,13 +242,16 @@ Syft is the second Anchore project; same asset/checksum naming as grype
 feeds Tier 3's SBOM-presence posture check.
 
 ```bash
-curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o syft.tar.gz
-echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  syft.tar.gz" | sha256sum -c
-tar -xz -f syft.tar.gz syft
-./syft dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json=sbom.cyclonedx.json
+curl -sSfL "https://github.com/anchore/syft/releases/download/v1.27.1/syft_1.27.1_linux_amd64.tar.gz" -o "$TOOLS_DIR/syft.tar.gz"
+echo "c2cb5867a238baf41adf15f7e01e28cbd886378859eed81e52c080ca0346eefe  $TOOLS_DIR/syft.tar.gz" | sha256sum -c
+tar -xz -f "$TOOLS_DIR/syft.tar.gz" -C "$TOOLS_DIR" syft
+"$TOOLS_DIR/syft" dir:. --exclude './node_modules/**' --exclude './worktrees/**' -o cyclonedx-json=sbom.cyclonedx.json
 ```
 
-The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for.
+The generated `sbom.cyclonedx.json` is the SBOM artifact Tier 3 checks for. Note: this SBOM's
+package cataloger currently produces **zero** `pkg:npm/` entries for Bun-lockfile repos (see
+the osv-cve authority note in Step 3.2) — it is complete for container/filesystem CVE-scan
+posture purposes, but is not a reliable source for enumerating npm/bun dependencies.
 
 ### 3.5 zizmor — GitHub Actions workflow lint
 
@@ -225,10 +263,10 @@ a SHA256 digest for each release asset, which was independently confirmed by dow
 asset and hashing it locally.
 
 ```bash
-curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v1.27.0/zizmor-x86_64-unknown-linux-gnu.tar.gz" -o zizmor.tar.gz
-echo "277f2bd8fd37cf60c42ab7afca6faa884e65440fa31e02b44bdaae60f62a358f  zizmor.tar.gz" | sha256sum -c
-tar -xz -f zizmor.tar.gz zizmor
-./zizmor --format json .github/workflows/ > zizmor-report.json
+curl -sSfL "https://github.com/zizmorcore/zizmor/releases/download/v1.27.0/zizmor-x86_64-unknown-linux-gnu.tar.gz" -o "$TOOLS_DIR/zizmor.tar.gz"
+echo "277f2bd8fd37cf60c42ab7afca6faa884e65440fa31e02b44bdaae60f62a358f  $TOOLS_DIR/zizmor.tar.gz" | sha256sum -c
+tar -xz -f "$TOOLS_DIR/zizmor.tar.gz" -C "$TOOLS_DIR" zizmor
+"$TOOLS_DIR/zizmor" --format json .github/workflows/ > zizmor-report.json
 ```
 
 If the repo has no `.github/workflows/` directory, record "no workflows to scan" — not a
