@@ -23,6 +23,7 @@ jobs:
   # Fast, no-cluster gate: lint + unit tests + schema validation.
   helm-checks:
     name: helm lint / unittest / validate
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -79,6 +80,7 @@ jobs:
   # variant, running `helm test` against each install.
   helm-e2e:
     name: ct install (kind)
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

@@ -27,6 +27,7 @@ jobs:
   # running them unnecessarily.
   changes:
     name: Detect changed paths
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     outputs:
       app: ${{ steps.filter.outputs.app }}
@@ -76,6 +77,7 @@ jobs:
 
   ci:
     name: lint / typecheck / test
+    timeout-minutes: 8
     runs-on: ubuntu-latest
     needs: changes
     # always() so this still runs (fail-open) if the changes job itself
@@ -177,6 +179,7 @@ jobs:
 
   site:
     name: site build / brand-lint / smoke
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
@@ -206,6 +209,7 @@ jobs:
 
   admin-docker-build:
     name: admin docker build
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
@@ -219,6 +223,7 @@ jobs:
 
   agent-docker-build:
     name: agent docker build
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
@@ -253,6 +258,7 @@ jobs:
 
   metrics-docker-build:
     name: metrics docker build
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: changes
     if: always() && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
@@ -266,6 +272,7 @@ jobs:
 
   e2e:
     name: e2e (metrics dashboard)
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: ci
     steps:
@@ -293,6 +300,7 @@ jobs:
 
   admin-e2e:
     name: e2e (admin UI)
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     needs: ci
     steps:

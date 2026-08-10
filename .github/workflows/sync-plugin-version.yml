@@ -92,6 +92,7 @@ permissions:
 jobs:
   sync-version:
     name: sync plugin version
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       # Check out main (not the tag's commit) so we always sync from the

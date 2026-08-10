@@ -52,6 +52,7 @@ jobs:
   publish:
     name: package + publish (gh-pages)
     if: github.event_name == 'push'
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     concurrency:
       group: chart-release
@@ -129,6 +130,7 @@ jobs:
   dry-run:
     name: package + index (dry run)
     if: github.event_name == 'pull_request'
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
