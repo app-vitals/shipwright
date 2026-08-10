@@ -169,7 +169,7 @@ Returns `204`. Agent tokens can only delete their own tasks.
 POST /tasks/:id/claim
 ```
 
-Atomically claims a pending task — a single conditional `UPDATE ... WHERE status='pending'`. Sets `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeps existing if already set) in one round-trip. No request body is sent by agent tokens — the service pins `claimedBy` to the calling agent's ID server-side. Admin tokens must supply `{ claimedBy: string }` in the body. Returns `200` with the updated task on success, or `409` if already claimed or not in pending status.
+Atomically claims a pending task — a single conditional `UPDATE ... WHERE status='pending' AND "claimedBy" IS NULL`. Sets `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeps existing if already set) in one round-trip. No request body is sent by agent tokens — the service pins `claimedBy` to the calling agent's ID server-side. Admin tokens must supply `{ claimedBy: string }` in the body. Returns `200` with the updated task on success, or `409` if already claimed or not in pending status.
 
 #### Heartbeat
 
