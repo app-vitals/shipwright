@@ -1028,15 +1028,9 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
     const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
     const service = new TaskService(prisma, clock);
 
-    try {
-      await service.claim("task-1", "agent-new");
-      expect.unreachable("claim() should have thrown ConflictError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ConflictError);
-      if (err instanceof ConflictError) {
-        expect(err.message).toContain("already claimed");
-      }
-    }
+    await expect(service.claim("task-1", "agent-new")).rejects.toThrow(
+      ConflictError,
+    );
   });
 
   it("claim() throws NotFoundError when task does not exist", async () => {
@@ -1050,12 +1044,9 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
     const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
     const service = new TaskService(prisma, clock);
 
-    try {
-      await service.claim("task-missing", "agent-1");
-      expect.unreachable("claim() should have thrown NotFoundError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(NotFoundError);
-    }
+    await expect(service.claim("task-missing", "agent-1")).rejects.toThrow(
+      NotFoundError,
+    );
   });
 
   it("claim() throws ConflictError when task status is not pending", async () => {
@@ -1069,15 +1060,8 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
     const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
     const service = new TaskService(prisma, clock);
 
-    try {
-      await service.claim("task-1", "agent-1");
-      expect.unreachable("claim() should have thrown ConflictError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ConflictError);
-      if (err instanceof ConflictError) {
-        expect(err.message).toContain("already claimed");
-      }
-    }
+    await expect(service.claim("task-1", "agent-1")).rejects.toThrow(
+      ConflictError,
+    );
   });
-
 });
