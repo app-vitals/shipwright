@@ -48,23 +48,23 @@
  * `reconcileReviewState()` function — no new setInterval tick.
  *
  * PSR-1.1 introduced an `updatedSince` recency window on
- * `reconcilePrOpenTasks`, `reconcileOrphanedTasks`, `reconcilePrState`'s own
- * open-record scan, and `reconcileReviewState`'s pending-record scan, to stop
- * a full-table gh-backed scan every tick from exhausting the shared GitHub
- * GraphQL rate limit on a long tail of untouched fixture/smoke-test records.
- * An initial 1-hour window was too tight (see this PR's own review history):
- * every one of those four passes exists specifically to heal a record that
- * is stuck precisely BECAUSE nothing will ever touch its `updatedAt` again
- * after the crash/hang that stranded it — the exact reasoning
- * `listPostedReviewRecords` (CHU-2.4) is permanently exempted for below — so
- * a record that aged out of a too-tight window before the next tick caught
- * it would never be healed again. Rather than dropping the filter entirely
- * (which fully reverts the rate-limit mitigation), the window was widened to
+ * `reconcilePrOpenTasks`, `reconcilePrState`'s own open-record scan, and
+ * `reconcileReviewState`'s pending-record scan, to stop a full-table
+ * gh-backed scan every tick from exhausting the shared GitHub GraphQL rate
+ * limit on a long tail of untouched fixture/smoke-test records. An initial
+ * 1-hour window was too tight (see this PR's own review history): every one
+ * of those passes exists specifically to heal a record that is stuck
+ * precisely BECAUSE nothing will ever touch its `updatedAt` again after the
+ * crash/hang that stranded it — the exact reasoning `listPostedReviewRecords`
+ * (CHU-2.4) is permanently exempted for below — so a record that aged out of
+ * a too-tight window before the next tick caught it would never be healed
+ * again. Rather than dropping the filter entirely (which fully reverts the
+ * rate-limit mitigation), the window was widened to
  * `RECONCILER_UPDATED_SINCE_WINDOW_MS` (default 6h — several multiples of
  * the reconciler's own 30-60 minute tick interval), so a single missed or
  * delayed tick (restart, deploy) still self-corrects on the next tick or two
  * without ever fully losing the ability to heal a stuck record. `computeUpdatedSinceCutoff`
- * centralizes the cutoff computation used by all four passes.
+ * centralizes the cutoff computation used by these passes.
  *
  * RDG-1.1 extends `reconcilePrOpenTask()`'s DIRECT path (`task.pr` set) with
  * the same bundle-mate headcount (BBR-1.1) + startedAt (RCP-1.1) precondition
@@ -138,9 +138,9 @@ export interface PrOpenTaskRecord {
    * task-service.ts's claim() sets this via COALESCE (never overwritten on a
    * re-claim) and release() (task-store/src/task-service.ts:450-464) leaves
    * it untouched even though it nulls `claimedAt` back out. This is the
-   * durable signal this file's two branch-based heal paths
-   * (`reconcileOrphanedTask`, `reconcilePrOpenTask`'s branch-fallback path)
-   * gate on: `null`/`undefined` (never claimed, pre-dating this field, or a
+   * durable signal `reconcilePrOpenTask`'s two branch-based heal paths
+   * (the direct path with a `branch` set, and the branch-fallback path) gate
+   * on: `null`/`undefined` (never claimed, pre-dating this field, or a
    * genuinely-never-worked task) means a branch-only PR match can't be
    * trusted to be THIS task's own work, even when the BBR-1.1 headcount
    * guard alone would pass (exactly one task shares the branch) — confirmed
@@ -150,8 +150,7 @@ export interface PrOpenTaskRecord {
    * bundle-mate. `claimedAt` is deliberately NOT used for this gate — a
    * stale-claim reaper releasing a crashed session's claim nulls `claimedAt`
    * even though the session pushed a real commit and opened a real PR before
-   * crashing, which is exactly the case `reconcileOrphanedTask` exists to
-   * recover.
+   * crashing.
    */
   startedAt?: string | null;
 }
@@ -203,47 +202,18 @@ export interface PrStateReconcilerDeps {
     branch: string,
   ) => Promise<Array<{ number: number }>>;
   /**
-   * List every task-store Task with status "pending" or "in_progress" that
-   * has a `branch` set and no `pr` linked (TCR-1.2). The `PrOpenTaskRecord`
-   * shape is reused as-is — no new record type needed. Unlike
-   * `listPrOpenTasks` (a single status, paged one page at a time by the
-   * module-level `listAllPrOpenTasks` loop), this dep's contract is to
-   * already page BOTH the "pending" and "in_progress" queries to completion
-   * internally and return the fully-merged, filtered result — because a
-   * single (limit, offset) pair can't address two independently-paginated
-   * upstream queries being unioned together. See `buildProductionDeps`'s
-   * implementation below for the two independent pagination loops. Filtered
-   * by `updatedSince` (PSR-1.1 — see `listOpenPrRecords`'s doc comment for
-   * the wide-window rationale).
-   */
-  listOrphanCandidateTasks: (
-    updatedSince: string,
-  ) => Promise<PrOpenTaskRecord[]>;
-  /**
-   * Branch lookup for a real, currently-OPEN PR (`gh pr list --head <branch>
-   * --state open`) — the TCR-1.2 counterpart to `ghListMergedPrsForBranch`
-   * above, but for OPEN PRs, and additionally returning `createdAt` since
-   * the orphan pass needs the PR's actual creation time for `prCreatedAt`
-   * (unlike the merged-task branch-fallback path, this pass has no `now()`
-   * fallback requirement).
-   */
-  ghListOpenPrsForBranch: (
-    repo: string,
-    branch: string,
-  ) => Promise<Array<{ number: number; createdAt: string }>>;
-  /**
    * List every task-store Task sharing a given repo+branch (BBR-1.1's
    * bundle-mate guard) — `GET /tasks?repo=<repo>&branch=<branch>`, paged the
-   * same way this file's other list* deps page (see `listAllOpenRecords`/
-   * `listAllTasksByStatus`). Multiple tasks can share one branch when a
-   * bundle of tasks was dispatched together onto the same branch; both
-   * `reconcileOrphanedTask` and `reconcilePrOpenTask`'s branch-fallback path
-   * call this BEFORE auto-healing a task via a branch-only PR match, and
-   * skip the auto-heal entirely when it returns more than one task — a
-   * branch-only PR lookup can't tell which sibling's work the PR actually
-   * contains, so guessing is worse than leaving the task untouched (a real
-   * bundle only advances a sibling when something explicit says so, e.g.
-   * dev-task's own status PATCH — never by branch-level inference alone).
+   * same way this file's other list* deps page (see `listAllOpenRecords`).
+   * Multiple tasks can share one branch when a
+   * bundle of tasks was dispatched together onto the same branch;
+   * `reconcilePrOpenTask`'s branch-fallback path calls this BEFORE
+   * auto-healing a task via a branch-only PR match, and skips the auto-heal
+   * entirely when it returns more than one task — a branch-only PR lookup
+   * can't tell which sibling's work the PR actually contains, so guessing is
+   * worse than leaving the task untouched (a real bundle only advances a
+   * sibling when something explicit says so, e.g. dev-task's own status
+   * PATCH — never by branch-level inference alone).
    *
    * RSG-1.2: may resolve to the `SCOPE_DEGRADED` sentinel instead of an
    * array. The task-store's GET /tasks response carries a `scopeDegraded`
@@ -586,16 +556,17 @@ function resolveTaskRepo(
 }
 
 /**
- * RCP-1.1: a hard precondition for both of this file's branch-based heal
- * paths (`reconcileOrphanedTask`, `reconcilePrOpenTask`'s branch-fallback
- * path) — `task.startedAt` must be set before a branch-only PR match is ever
- * trusted as this task's own work, regardless of what the BBR-1.1 headcount
- * guard (`listAllTasksForBranch`) finds. That guard only answers "how many
- * task-store records share this branch" — a single-task branch still passes
- * it even when that one task was never actually claimed/started, which is
- * exactly the gap TRD-1.2 (PR 2270) and RSG-1.2 (PR 2287) fell through: both
- * healed to a merged/deploying-looking state purely because a bundle-mate's
- * real work happened to live on the same branch.
+ * RCP-1.1: a hard precondition for both of `reconcilePrOpenTask`'s
+ * branch-based heal paths (the direct path with a `branch` set, and the
+ * branch-fallback path) — `task.startedAt` must be set before a branch-only
+ * PR match is ever trusted as this task's own work, regardless of what the
+ * BBR-1.1 headcount guard (`listAllTasksForBranch`) finds. That guard only
+ * answers "how many task-store records share this branch" — a single-task
+ * branch still passes it even when that one task was never actually
+ * claimed/started, which is exactly the gap TRD-1.2 (PR 2270) and RSG-1.2
+ * (PR 2287) fell through: both healed to a merged/deploying-looking state
+ * purely because a bundle-mate's real work happened to live on the same
+ * branch.
  *
  * Falsy-checked (`!task.startedAt`) rather than strictly `=== null` —
  * `startedAt` is only ever a non-empty ISO string or null/undefined
@@ -793,122 +764,6 @@ export async function reconcilePrOpenTasks(
   }
 }
 
-/**
- * Reconcile one orphaned pending/in_progress task against live GitHub state
- * (TCR-1.2 — closes the gap behind 5+ documented recurrences: LCT-3.1,
- * CHU-2.2, PSF-2.1, ADS-1.2, TS-web-hitl-filter/PR#1789, where a dev-task
- * session pushes a commit and opens a real PR on GitHub but gets interrupted
- * before the final task-store PATCH to status:"pr_open" — leaving the task
- * stuck at pending/in_progress forever with an orphaned, never-linked PR).
- *
- * Causally, this pass runs FIRST in the chain: it heals pending/in_progress
- * → pr_open drift, i.e. it's what gets a task INTO the state the existing
- * `reconcilePrOpenTasks` pass above then watches for merges/closes on
- * (pr_open → merged drift). A task only ever needs this pass once, before it
- * would ever reach the existing one.
- *
- * `deps.listOrphanCandidateTasks()` is defined to only return
- * pending/in_progress tasks with a branch set and no pr linked — a task
- * already at pr_open is never returned by a correct implementation, so no
- * extra status filtering happens here (matches every other list* dep in this
- * file: filtering is the dep's contract, not this function's job).
- */
-async function reconcileOrphanedTask(
-  deps: PrStateReconcilerDeps,
-  task: PrOpenTaskRecord,
-): Promise<void> {
-  const taskRepo = resolveTaskRepo(deps, task);
-  if (!taskRepo) return; // no repo to resolve against — skip defensively
-
-  if (!task.branch) return; // shouldn't happen given the dep contract, but defend anyway
-
-  // RCP-1.1: checked before the GitHub call — a task that was never
-  // claimed/started can't qualify for the orphan heal regardless of what's
-  // found on GitHub, so no gh call should be spent finding out.
-  if (!hasStarted(task)) {
-    logStartedAtSkip(task, taskRepo);
-    return;
-  }
-
-  const open = await deps.ghListOpenPrsForBranch(taskRepo, task.branch);
-  const first = open[0];
-  if (!first) return; // no open PR found for this branch yet — no-op
-
-  // BBR-1.1: a branch-only PR match can't tell which sibling's work a shared
-  // branch's PR actually contains — on a bundle (>1 task sharing this
-  // branch), skip the auto-heal rather than guessing which sibling the PR
-  // belongs to. Single-task branches (the original TCR-1.2 crash-recovery
-  // case) are unaffected.
-  //
-  // RSG-1.2: see reconcilePrOpenTask's branch-fallback path above for the
-  // full rationale — `listAllTasksForBranch` may resolve to `SCOPE_DEGRADED`
-  // when the true sibling count is unconfirmable; skip identically to the
-  // >1-sibling case but log a message naming the real cause.
-  const branchTasks = await deps.listAllTasksForBranch(taskRepo, task.branch);
-  if (branchTasks === SCOPE_DEGRADED) {
-    console.error(
-      `[pr-state-reconciler] skipping orphan pr_open heal for task ${task.id} — degraded scope resolution for ${taskRepo}#${task.branch} (sibling task count unknown, not a confirmed single-task branch), cannot determine which one PR #${first.number} belongs to`,
-    );
-    return;
-  }
-  if (branchTasks.length > 1) {
-    console.error(
-      `[pr-state-reconciler] skipping orphan pr_open heal for task ${task.id} — ${branchTasks.length} tasks share branch ${taskRepo}#${task.branch}, cannot determine which one PR #${first.number} belongs to`,
-    );
-    return;
-  }
-
-  await deps.updateTaskStatus(task.id, {
-    status: "pr_open",
-    pr: first.number,
-    prCreatedAt: first.createdAt,
-  });
-}
-
-/**
- * Scan every orphan-candidate task (pending/in_progress, branch set, no pr
- * linked), resolve a real open PR on GitHub for its branch, and PATCH the
- * task to pr_open when one is found (TCR-1.2). A single per-task failure is
- * logged and does not abort reconciliation of the rest of the batch —
- * mirrors `reconcilePrOpenTasks`'s own per-task error isolation above.
- */
-export async function reconcileOrphanedTasks(
-  deps: PrStateReconcilerDeps,
-): Promise<void> {
-  // Computed once per reconcile pass (PSR-1.1) — see reconcilePrOpenTasks above.
-  const updatedSince = computeUpdatedSinceCutoff(
-    new Date(deps.now()).getTime(),
-  );
-
-  let tasks: PrOpenTaskRecord[];
-  try {
-    tasks = await deps.listOrphanCandidateTasks(updatedSince);
-  } catch (err) {
-    console.error(
-      "[pr-state-reconciler] failed to list orphan-candidate tasks:",
-      err instanceof Error ? err.message : String(err),
-    );
-    return;
-  }
-
-  const scopedReposSet = new Set(deps.getScopedRepos());
-
-  for (const task of tasks) {
-    const taskRepo = resolveTaskRepo(deps, task);
-    if (!taskRepo || !scopedReposSet.has(taskRepo)) continue; // out of scope — skip, zero gh calls
-
-    try {
-      await reconcileOrphanedTask(deps, task);
-    } catch (err) {
-      console.error(
-        `[pr-state-reconciler] failed to reconcile orphan-candidate task ${task.id}:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
-  }
-}
-
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -916,8 +771,7 @@ export async function reconcileOrphanedTasks(
  * GitHub state, and PATCH only the ones that disagree (GitHub shows
  * MERGED/CLOSED but the record still says "open"). A single per-PR gh
  * lookup failure is logged and does not abort reconciliation of the rest
- * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) and
- * the orphaned pending/in_progress-task reconciliation pass (TCR-1.2) so
+ * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) so
  * agent/src/index.ts's single call site doesn't need to change.
  */
 export async function reconcilePrState(
@@ -957,7 +811,6 @@ export async function reconcilePrState(
   }
 
   await reconcilePrOpenTasks(deps);
-  await reconcileOrphanedTasks(deps);
 }
 
 // ─── reconcileReviewState ───────────────────────────────────────────────────────
@@ -1214,19 +1067,13 @@ interface TaskListResponseJson {
 /**
  * Shared GET
  * /tasks?status=<status>&limit=<limit>&offset=<offset>&updatedSince=<updatedSince>
- * helper for `listPrOpenTasks` and `listOrphanCandidateTasks` (TCR-1.2,
- * extended by PSR-1.1) — the task-store's GET /tasks only accepts one status
- * value at a time (no comma-separated multi-status support), so
- * `listOrphanCandidateTasks` below issues two of these paginated calls (one
- * per status) and merges the results client-side. `limit`/`offset` are
- * passed straight through, same as `listOpenPrRecords`'s own GET /prs
- * helper, so the module-level `listAllPrOpenTasks`/
- * `listAllOrphanCandidateTasks` pagination loops above can page each status
- * to completion instead of only ever seeing the task-store's default first
- * page. `updatedSince` is unconditionally included — both statuses backed by
- * this shared helper are recency-filtered per PSR-1.1's (widened) window;
- * see the module doc comment and `PrStateReconcilerDeps.listOpenPrRecords`'s
- * doc comment.
+ * helper backing `listPrOpenTasks` (PSR-1.1). `limit`/`offset` are passed
+ * straight through, same as `listOpenPrRecords`'s own GET /prs helper, so the
+ * module-level `listAllPrOpenTasks` pagination loop above can page to
+ * completion instead of only ever seeing the task-store's default first
+ * page. `updatedSince` is unconditionally included — recency-filtered per
+ * PSR-1.1's (widened) window; see the module doc comment and
+ * `PrStateReconcilerDeps.listOpenPrRecords`'s doc comment.
  */
 function makeListTasksByStatus(opts: {
   baseUrl: string;
@@ -1389,35 +1236,9 @@ export function buildProductionDeps(opts: {
   });
 
   /**
-   * Page a single status query to completion (TCR-1.2) — same loop shape as
-   * `listAllOpenRecords`/`listAllPendingReviewRecords` elsewhere in this
-   * file, but over `listTasksByStatus` instead of a per-repo dep. Used by
-   * `listOrphanCandidateTasks` below to fully page both "pending" and
-   * "in_progress" before merging, since a single (limit, offset) pair can't
-   * address two independently-paginated queries being unioned together.
-   */
-  const listAllTasksByStatus = async (
-    status: string,
-    updatedSince: string,
-  ): Promise<PrOpenTaskRecord[]> => {
-    const limit = DEFAULT_PAGE_LIMIT;
-    const tasks: PrOpenTaskRecord[] = [];
-    let offset = 0;
-
-    for (;;) {
-      const page = await listTasksByStatus(status, limit, offset, updatedSince);
-      tasks.push(...page);
-      if (page.length < limit) break;
-      offset += limit;
-    }
-
-    return tasks;
-  };
-
-  /**
    * Page a single repo+branch query to completion (BBR-1.1) — same loop
-   * shape as `listAllTasksByStatus` above/`listAllOpenRecords` elsewhere in
-   * this file, but over `listTasksByBranch`. Used by `listAllTasksForBranch`
+   * shape as `listAllOpenRecords` elsewhere in this file, but over
+   * `listTasksByBranch`. Used by `listAllTasksForBranch`
    * below so a bundle branch with more task-store records than one page
    * still yields its true sibling count instead of silently truncating.
    *
@@ -1536,36 +1357,6 @@ export function buildProductionDeps(opts: {
       ]);
     },
     listAllTasksForBranch: listAllTasksForBranchImpl,
-    // TCR-1.2: the task-store's GET /tasks only accepts one status value at
-    // a time and has no server-side "has a branch AND no pr" filter, so this
-    // pages each status to completion (via listAllTasksByStatus — fixes a
-    // live truncation bug where the default 50-record page was silently
-    // dropping candidates once pending+in_progress volume exceeded 50:
-    // verified live, `GET /tasks?status=pending` had `total: 62`) and
-    // filters the merged result client-side.
-    listOrphanCandidateTasks: async (updatedSince: string) => {
-      const [pending, inProgress] = await Promise.all([
-        listAllTasksByStatus("pending", updatedSince),
-        listAllTasksByStatus("in_progress", updatedSince),
-      ]);
-      return [...pending, ...inProgress].filter(
-        (task) => !!task.branch && !task.pr,
-      );
-    },
-    ghListOpenPrsForBranch: async (repo: string, branch: string) => {
-      return await ghJson<Array<{ number: number; createdAt: string }>>([
-        "pr",
-        "list",
-        "--head",
-        branch,
-        "--state",
-        "open",
-        "--repo",
-        repo,
-        "--json",
-        "number,createdAt",
-      ]);
-    },
     // createPrRecordQuery (check-helpers.ts) already implements exactly this
     // repo+prNumber lookup and, unlike this file's own listOpenPrRecords/
     // patchPrRecord, never throws — it resolves to null on missing config or

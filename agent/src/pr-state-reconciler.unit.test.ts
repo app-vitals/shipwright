@@ -82,13 +82,6 @@ interface MakeDepsOptions {
   now?: () => string;
   /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
   getScopedRepos?: () => string[];
-  /** orphan-candidate (pending/in_progress, branch set, no pr linked) tasks for the TCR-1.2 pass; defaults to [] so existing tests are unaffected. */
-  orphanCandidateTasks?: PrOpenTaskRecord[];
-  /** "repo#branch" -> open-PR-list result, or an Error to throw, for the TCR-1.2 orphan pass. */
-  openBranchResults?: Record<
-    string,
-    Array<{ number: number; createdAt: string }> | Error
-  >;
   /**
    * "repo#branch" -> full list of task-store tasks sharing that branch
    * (BBR-1.1's bundle-mate guard). Defaults to a lazy single-task stand-in
@@ -134,8 +127,6 @@ function makeDeps({
   prRecords = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
-  orphanCandidateTasks = [],
-  openBranchResults = {},
   tasksForBranch = {},
   cleanupMergedWorktreesEnabled = false,
   removeWorktree = async () => {},
@@ -145,7 +136,6 @@ function makeDeps({
   patchCalls: PatchCall[];
   taskPatchCalls: PatchCall[];
   listPrOpenTasksCalls: ListTasksCall[];
-  orphanCandidateUpdatedSinceCalls: string[];
   delayCalls: number[];
   listAllTasksForBranchCalls: string[];
   removeWorktreeCalls: Array<{ shortRepo: string; worktreeDirName: string }>;
@@ -154,7 +144,6 @@ function makeDeps({
   const patchCalls: PatchCall[] = [];
   const taskPatchCalls: PatchCall[] = [];
   const listPrOpenTasksCalls: ListTasksCall[] = [];
-  const orphanCandidateUpdatedSinceCalls: string[] = [];
   const delayCalls: number[] = [];
   const listAllTasksForBranchCalls: string[] = [];
   const removeWorktreeCalls: Array<{
@@ -208,16 +197,6 @@ function makeDeps({
       return prRecords[key] ?? null;
     },
     now,
-    listOrphanCandidateTasks: async (updatedSince: string) => {
-      orphanCandidateUpdatedSinceCalls.push(updatedSince);
-      return orphanCandidateTasks;
-    },
-    ghListOpenPrsForBranch: async (repo: string, branch: string) => {
-      const key = `${repo}#${branch}`;
-      const result = openBranchResults[key];
-      if (result instanceof Error) throw result;
-      return result ?? [];
-    },
     listAllTasksForBranch: async (repo: string, branch: string) => {
       const key = `${repo}#${branch}`;
       listAllTasksForBranchCalls.push(key);
@@ -244,7 +223,6 @@ function makeDeps({
     patchCalls,
     taskPatchCalls,
     listPrOpenTasksCalls,
-    orphanCandidateUpdatedSinceCalls,
     delayCalls,
     listAllTasksForBranchCalls,
     removeWorktreeCalls,
@@ -2066,100 +2044,6 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
     expect(calls).toHaveLength(1);
     expect(delayCalls).toHaveLength(0);
   });
-
-  test("listOrphanCandidateTasks pages past the default 50-row task-store page for both statuses (regression: previously silently truncated at 50)", async () => {
-    // 62 pending + 55 in_progress tasks, all orphan candidates (branch set,
-    // no pr linked) — mirrors the live truncation this finding reported
-    // (GET /tasks?status=pending had total: 62, but returned only 50).
-    const pending = Array.from({ length: 62 }, (_, i) => ({
-      id: `pending-${i}`,
-      repo: "acme/example-repo",
-      branch: `feat/pending-${i}`,
-    }));
-    const inProgress = Array.from({ length: 55 }, (_, i) => ({
-      id: `in-progress-${i}`,
-      repo: "acme/example-repo",
-      branch: `feat/in-progress-${i}`,
-    }));
-    const { fetchFn, calls } = makeFakeTaskStoreFetch({
-      tasksByStatus: { pending, in_progress: inProgress },
-    });
-    const deps = buildProductionDeps({
-      ghJson: () => Promise.reject(new Error("not used in this test")),
-      fetchFn,
-      getScopedRepos: () => [],
-    });
-
-    const result = await deps.listOrphanCandidateTasks(
-      "2026-07-19T17:00:00.000Z",
-    );
-
-    // All 117 orphan candidates returned — not truncated at 50.
-    expect(result).toHaveLength(117);
-    expect(result.map((t) => t.id)).toEqual([
-      ...pending.map((t) => t.id),
-      ...inProgress.map((t) => t.id),
-    ]);
-
-    // "pending" paged across 2 requests (50 + 12), "in_progress" across 2 (50 + 5).
-    const pendingCalls = calls.filter((c) => c.status === "pending");
-    const inProgressCalls = calls.filter((c) => c.status === "in_progress");
-    expect(pendingCalls).toEqual([
-      {
-        status: "pending",
-        limit: 50,
-        offset: 0,
-        updatedSince: "2026-07-19T17:00:00.000Z",
-      },
-      {
-        status: "pending",
-        limit: 50,
-        offset: 50,
-        updatedSince: "2026-07-19T17:00:00.000Z",
-      },
-    ]);
-    expect(inProgressCalls).toEqual([
-      {
-        status: "in_progress",
-        limit: 50,
-        offset: 0,
-        updatedSince: "2026-07-19T17:00:00.000Z",
-      },
-      {
-        status: "in_progress",
-        limit: 50,
-        offset: 50,
-        updatedSince: "2026-07-19T17:00:00.000Z",
-      },
-    ]);
-  });
-
-  test("listOrphanCandidateTasks still filters out tasks with no branch or an existing pr across paginated pages", async () => {
-    const pending = [
-      { id: "keep-1", repo: "acme/example-repo", branch: "feat/keep-1" },
-      { id: "no-branch", repo: "acme/example-repo" },
-      {
-        id: "has-pr",
-        repo: "acme/example-repo",
-        branch: "feat/has-pr",
-        pr: 5,
-      },
-    ];
-    const { fetchFn } = makeFakeTaskStoreFetch({
-      tasksByStatus: { pending, in_progress: [] },
-    });
-    const deps = buildProductionDeps({
-      ghJson: () => Promise.reject(new Error("not used in this test")),
-      fetchFn,
-      getScopedRepos: () => [],
-    });
-
-    const result = await deps.listOrphanCandidateTasks(
-      "2026-07-19T17:00:00.000Z",
-    );
-
-    expect(result.map((t) => t.id)).toEqual(["keep-1"]);
-  });
 });
 
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
@@ -2903,432 +2787,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
   });
 });
 
-describe("reconcilePrState — orphaned pending/in_progress task reconciliation pass", () => {
-  test("listOrphanCandidateTasks is called with updatedSince computed as now-6h via the injected now() (PSR-1.1, widened per review)", async () => {
-    const { deps, orphanCandidateUpdatedSinceCalls } = makeDeps({
-      orphanCandidateTasks: [],
-      now: () => "2026-07-19T23:15:00.000Z",
-    });
-
-    await reconcilePrState(deps);
-
-    expect(orphanCandidateUpdatedSinceCalls).toEqual([
-      "2026-07-19T17:15:00.000Z",
-    ]);
-  });
-
-  test("orphaned pending task with a real open PR on its branch self-heals to pr_open", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-orphan-1",
-      repo: "acme/example-repo",
-      branch: "feat/tcr-1-2-orphan",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-      openBranchResults: {
-        "acme/example-repo#feat/tcr-1-2-orphan": [
-          { number: 99, createdAt: "2026-07-16T00:00:00.000Z" },
-        ],
-      },
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-orphan-1");
-    expect(taskPatchCalls[0].fields.status).toBe("pr_open");
-    expect(taskPatchCalls[0].fields.pr).toBe(99);
-    expect(taskPatchCalls[0].fields.prCreatedAt).toBe(
-      "2026-07-16T00:00:00.000Z",
-    );
-  });
-
-  test("orphan candidate task with a branch but no matching open PR is left untouched — no PATCH", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-orphan-2",
-      repo: "acme/example-repo",
-      branch: "feat/tcr-1-2-no-pr-yet",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-      openBranchResults: {},
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("a task already at pr_open is not touched by this pass (no double-processing with the existing pr_open pass)", async () => {
-    // listOrphanCandidateTasks, per its contract, only ever returns
-    // pending/in_progress tasks — a correct production implementation would
-    // never include a pr_open task here. This fixture asserts the reconciler
-    // doesn't blow up or double-count when a pr_open task coexists in the
-    // data: it's returned by listPrOpenTasks (the existing pass) but NOT by
-    // listOrphanCandidateTasks (this new pass).
-    const prOpenTask: PrOpenTaskRecord = {
-      id: "task-already-pr-open",
-      repo: "acme/example-repo",
-      pr: 123,
-      branch: "feat/already-open",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      prOpenTasks: [prOpenTask],
-      orphanCandidateTasks: [], // correctly excludes the pr_open task
-      ghResults: {
-        "acme/example-repo#123": { state: "OPEN", mergedAt: null },
-      },
-      openBranchResults: {
-        "acme/example-repo#feat/already-open": [
-          { number: 123, createdAt: "2026-07-16T00:00:00.000Z" },
-        ],
-      },
-    });
-
-    await reconcilePrState(deps);
-
-    // Still open on GitHub via the existing pr_open pass — no merge PATCH —
-    // and the orphan pass never even sees this task, so no pr_open PATCH either.
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("orphan candidate task with no branch set is skipped defensively — no throw", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-orphan-no-branch",
-      repo: "acme/example-repo",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  test("ghListOpenPrsForBranch failure for one orphan task does not abort reconciliation of the others", async () => {
-    const taskA: PrOpenTaskRecord = {
-      id: "task-orphan-fail",
-      repo: "acme/example-repo",
-      branch: "feat/will-fail",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const taskB: PrOpenTaskRecord = {
-      id: "task-orphan-ok",
-      repo: "acme/example-repo",
-      branch: "feat/will-succeed",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [taskA, taskB],
-      openBranchResults: {
-        "acme/example-repo#feat/will-fail": new Error(
-          "gh pr list failed: rate limited",
-        ),
-        "acme/example-repo#feat/will-succeed": [
-          { number: 200, createdAt: "2026-07-17T00:00:00.000Z" },
-        ],
-      },
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-orphan-ok");
-    expect(taskPatchCalls[0].fields.pr).toBe(200);
-  });
-
-  test("multiple candidate tasks where only some have a matching open PR", async () => {
-    const taskMatch: PrOpenTaskRecord = {
-      id: "task-orphan-match",
-      repo: "acme/example-repo",
-      branch: "feat/has-pr",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const taskNoMatch: PrOpenTaskRecord = {
-      id: "task-orphan-no-match",
-      repo: "acme/example-repo",
-      branch: "feat/no-pr-yet",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [taskMatch, taskNoMatch],
-      openBranchResults: {
-        "acme/example-repo#feat/has-pr": [
-          { number: 300, createdAt: "2026-07-18T00:00:00.000Z" },
-        ],
-      },
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-orphan-match");
-  });
-
-  test("listOrphanCandidateTasks failure is logged and does not abort the rest of reconcilePrState", async () => {
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [],
-    });
-    deps.listOrphanCandidateTasks = async () => {
-      throw new Error("task-store GET /tasks failed");
-    };
-
-    await expect(reconcilePrState(deps)).resolves.toBeUndefined();
-    expect(taskPatchCalls).toHaveLength(0);
-  });
-
-  // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
-
-  test("an orphan-candidate task whose resolveTaskRepo() is out of scope is skipped with zero gh calls, while an in-scope task in the same batch still reconciles", async () => {
-    const taskInScope: PrOpenTaskRecord = {
-      id: "task-orphan-in-scope",
-      repo: "acme/repo-a",
-      branch: "feat/in-scope",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const taskOutOfScope: PrOpenTaskRecord = {
-      id: "task-orphan-out-of-scope",
-      repo: "acme/repo-b",
-      branch: "feat/out-of-scope",
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const ghCalls: string[] = [];
-    const { deps, taskPatchCalls } = makeDeps({
-      repos: ["acme/repo-a", "acme/repo-b"],
-      orphanCandidateTasks: [taskInScope, taskOutOfScope],
-      openBranchResults: {
-        "acme/repo-a#feat/in-scope": [
-          { number: 300, createdAt: "2026-07-18T00:00:00.000Z" },
-        ],
-        "acme/repo-b#feat/out-of-scope": [
-          { number: 301, createdAt: "2026-07-18T00:00:00.000Z" },
-        ],
-      },
-      getScopedRepos: () => ["acme/repo-a"],
-    });
-    const originalGhListOpenPrsForBranch = deps.ghListOpenPrsForBranch;
-    deps.ghListOpenPrsForBranch = async (repo: string, branch: string) => {
-      ghCalls.push(`${repo}#${branch}`);
-      return await originalGhListOpenPrsForBranch(repo, branch);
-    };
-
-    await reconcilePrState(deps);
-
-    expect(ghCalls).toEqual(["acme/repo-a#feat/in-scope"]);
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-orphan-in-scope");
-  });
-
-  // ─── bundle-mate guard (BBR-1.1) ───────────────────────────────────────────
-
-  test("BBR-1.1: a pending sibling on a 2-task bundle branch is skipped despite a real open PR on the branch — no PATCH, skip logged", async () => {
-    const sibling: PrOpenTaskRecord = {
-      id: "task-bundle-sibling",
-      repo: "acme/example-repo",
-      branch: "feat/asa-slack-oauth-ui",
-      // startedAt set so this test still exercises the BBR-1.1 headcount
-      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
-      // and is covered by its own dedicated test above).
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls, listAllTasksForBranchCalls } = makeDeps({
-      orphanCandidateTasks: [sibling],
-      openBranchResults: {
-        "acme/example-repo#feat/asa-slack-oauth-ui": [
-          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
-        ],
-      },
-      tasksForBranch: {
-        "acme/example-repo#feat/asa-slack-oauth-ui": [
-          { id: "task-bundle-real-work", repo: "acme/example-repo" },
-          sibling,
-        ],
-      },
-    });
-
-    const errorSpy: unknown[][] = [];
-    const originalConsoleError = console.error;
-    console.error = (...args: unknown[]) => {
-      errorSpy.push(args);
-    };
-
-    try {
-      await reconcilePrState(deps);
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    // The bundle-mate guard must consult listAllTasksForBranch for this
-    // branch before ever considering a PATCH.
-    expect(listAllTasksForBranchCalls).toContain(
-      "acme/example-repo#feat/asa-slack-oauth-ui",
-    );
-    // Zero PATCHes — the sibling must NOT be marked pr_open despite a real
-    // open PR existing on the shared branch.
-    expect(taskPatchCalls).toHaveLength(0);
-    // The skip must be observable via the file's existing logging convention.
-    expect(
-      errorSpy.some((args) =>
-        args.some(
-          (a) => typeof a === "string" && a.includes("task-bundle-sibling"),
-        ),
-      ),
-    ).toBe(true);
-  });
-
-  test("RCP-1.1: a single-task branch (BBR-1.1 headcount guard passes) with task.startedAt null/missing is skipped in the orphan pass — no PATCH, no ghListOpenPrsForBranch call, distinct skip logged", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-never-started-orphan",
-      repo: "acme/example-repo",
-      branch: "feat/never-started-orphan",
-      // startedAt omitted entirely — must be treated the same as null.
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-      openBranchResults: {
-        "acme/example-repo#feat/never-started-orphan": [
-          { number: 800, createdAt: "2026-07-21T00:00:00.000Z" },
-        ],
-      },
-      // Deliberately NOT overriding tasksForBranch — makeDeps's default
-      // single-element stand-in means the BBR-1.1 headcount guard alone
-      // would pass (only one task shares this branch).
-    });
-
-    const ghListOpenPrsForBranchCalls: string[] = [];
-    const originalGhListOpenPrsForBranch = deps.ghListOpenPrsForBranch;
-    deps.ghListOpenPrsForBranch = async (repo: string, branch: string) => {
-      ghListOpenPrsForBranchCalls.push(`${repo}#${branch}`);
-      return await originalGhListOpenPrsForBranch(repo, branch);
-    };
-
-    const errorSpy: unknown[][] = [];
-    const originalConsoleError = console.error;
-    console.error = (...args: unknown[]) => {
-      errorSpy.push(args);
-    };
-
-    try {
-      await reconcilePrState(deps);
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    // No GitHub call at all — the startedAt-null check must happen before
-    // ghListOpenPrsForBranch is ever invoked.
-    expect(ghListOpenPrsForBranchCalls).toHaveLength(0);
-    expect(taskPatchCalls).toHaveLength(0);
-    // Distinct from the BBR-1.1 "N tasks share this branch" message — must
-    // mention this specific task and that it was never started.
-    expect(
-      errorSpy.some((args) =>
-        args.some(
-          (a) =>
-            typeof a === "string" &&
-            a.includes("task-never-started-orphan") &&
-            a.includes("startedAt"),
-        ),
-      ),
-    ).toBe(true);
-    // Must NOT be the BBR-1.1 bundle-mate message (which mentions "share branch").
-    expect(
-      errorSpy.some((args) =>
-        args.some((a) => typeof a === "string" && a.includes("share branch")),
-      ),
-    ).toBe(false);
-  });
-
-  // ─── RSG-1.2: degraded scope resolution guard ────────────────────────────
-
-  test("RSG-1.2: listAllTasksForBranch signals SCOPE_DEGRADED (still degraded after retry) — orphan pr_open heal is skipped with a distinct log message, not the 'N tasks share this branch' message", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-degraded-orphan",
-      repo: "acme/example-repo",
-      branch: "feat/asa-slack-oauth-ui",
-      // startedAt set so this test exercises the RSG-1.2 degraded-scope
-      // guard specifically (RCP-1.1's own startedAt-null skip fires earlier
-      // and is covered by its own dedicated test above).
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls, listAllTasksForBranchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-      openBranchResults: {
-        "acme/example-repo#feat/asa-slack-oauth-ui": [
-          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
-        ],
-      },
-      tasksForBranch: {
-        "acme/example-repo#feat/asa-slack-oauth-ui": SCOPE_DEGRADED,
-      },
-    });
-
-    const errorSpy: unknown[][] = [];
-    const originalConsoleError = console.error;
-    console.error = (...args: unknown[]) => {
-      errorSpy.push(args);
-    };
-
-    try {
-      await reconcilePrState(deps);
-    } finally {
-      console.error = originalConsoleError;
-    }
-
-    expect(listAllTasksForBranchCalls).toContain(
-      "acme/example-repo#feat/asa-slack-oauth-ui",
-    );
-    expect(taskPatchCalls).toHaveLength(0);
-    const degradedLog = errorSpy.find((args) =>
-      args.some(
-        (a) => typeof a === "string" && a.includes("task-degraded-orphan"),
-      ),
-    );
-    expect(degradedLog).toBeDefined();
-    expect(
-      degradedLog?.some((a) => typeof a === "string" && /degraded/i.test(a)),
-    ).toBe(true);
-    expect(
-      degradedLog?.some(
-        (a) => typeof a === "string" && a.includes("share branch"),
-      ),
-    ).toBe(false);
-  });
-
-  test("RSG-1.2: listAllTasksForBranch recovers on retry (non-degraded, true single-task count) — orphan pr_open heal proceeds normally", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-recovered-orphan",
-      repo: "acme/example-repo",
-      branch: "feat/asa-slack-oauth-ui-recovered",
-      // startedAt set so this test exercises the RSG-1.2 recovery path
-      // specifically, not RCP-1.1's own startedAt-null skip.
-      startedAt: "2026-07-01T00:00:00.000Z",
-    };
-    const { deps, taskPatchCalls } = makeDeps({
-      orphanCandidateTasks: [task],
-      openBranchResults: {
-        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [
-          { number: 500, createdAt: "2026-07-20T00:00:00.000Z" },
-        ],
-      },
-      // Only the task itself is returned — a real, non-degraded single-task
-      // branch (as if the first call had been degraded and a retry recovered
-      // to reveal the true count).
-      tasksForBranch: {
-        "acme/example-repo#feat/asa-slack-oauth-ui-recovered": [task],
-      },
-    });
-
-    await reconcilePrState(deps);
-
-    expect(taskPatchCalls).toHaveLength(1);
-    expect(taskPatchCalls[0].id).toBe("task-recovered-orphan");
-    expect(taskPatchCalls[0].fields.status).toBe("pr_open");
-    expect(taskPatchCalls[0].fields.pr).toBe(500);
-  });
-});
-
 // ─── gh-call throttling (PSR-1.2) ──────────────────────────────────────────────
 
 describe("reconcile delay throttling (PSR-1.2)", () => {
@@ -3484,7 +2942,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
     expect(calls[0].updatedSince).toBe("2026-07-19T17:00:00.000Z");
   });
 
-  test("listTasksByStatus (backing listPrOpenTasks/listOrphanCandidateTasks) passes updatedSince computed as now-6h", async () => {
+  test("listTasksByStatus (backing listPrOpenTasks) passes updatedSince computed as now-6h", async () => {
     const { fetchFn, calls } = makeFakeTasksFetch();
     const deps = buildProductionDeps({
       ghJson: () => Promise.reject(new Error("not used in this test")),
@@ -3497,9 +2955,8 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
     ).toISOString();
 
     await deps.listPrOpenTasks(50, 0, updatedSince);
-    await deps.listOrphanCandidateTasks(updatedSince);
 
-    expect(calls.length).toBeGreaterThanOrEqual(3); // pr_open, pending, in_progress
+    expect(calls.length).toBeGreaterThanOrEqual(1); // pr_open
     for (const call of calls) {
       expect(call.updatedSince).toBe("2026-07-19T17:00:00.000Z");
     }
