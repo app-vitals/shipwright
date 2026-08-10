@@ -297,11 +297,12 @@ Body:
 | `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. Phase-specific behavior on record creation: `review` sets `readyForReviewAt=now`; `deploy` sets `readyForDeployAt=now`; `patch` does not set a ready timestamp. |
 | `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
-Claim semantics:
-- No existing record → creates and returns `201`
-- Same `commitSha`, same `phase`, and already claimed by another agent → returns `409` (phase already locked)
-- Already claimed (claimedBy !== null) AND same `commitSha` AND `reviewState !== pending` (review phase only) → returns `409` (already reviewed at this commit)
-- Not claimed, OR different `commitSha`, OR `reviewState === pending` → updates and returns `200` (new cycle)
+Claim semantics (atomic via Postgres row locking):
+- No existing record → creates and returns `201`; a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint → `409`
+- Existing record with conflict conditions re-checked in the UPDATE's WHERE clause (Postgres holds the row lock, ensuring only one writer wins):
+  - Same `commitSha`, same `phase`, and already claimed by another agent → no rows affected → `409` (phase already locked)
+  - Already claimed (claimedBy !== null) AND same `commitSha` AND `reviewState !== pending` (review phase only) → no rows affected → `409` (already reviewed at this commit)
+- Not claimed, OR different `commitSha`, OR `reviewState === pending` → row affected → updates and returns `200` (new cycle)
 
 The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
