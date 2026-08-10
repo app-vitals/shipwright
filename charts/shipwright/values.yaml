@@ -117,7 +117,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.69.0
+    tag: admin-v1.69.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -185,7 +185,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.34.0
+    tag: metrics-v1.34.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -301,7 +301,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.136.2
+    tag: agent-v1.136.3
     pullPolicy: ""
   service:
     port: 3000
@@ -324,7 +324,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.136.2
+      tag: agent-v1.136.3
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -563,7 +563,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.49.1
+    tag: task-store-v1.49.2
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -652,7 +652,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.31.0
+    tag: chat-v1.31.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.

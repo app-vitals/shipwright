@@ -26,6 +26,7 @@
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
 import type { PullRequest } from "../index.ts";
@@ -43,20 +44,6 @@ import {
 } from "../openapi-schemas.ts";
 import type { PullRequestServiceLike } from "../pull-request-service.ts";
 import { isOrgRepo } from "../validate.ts";
-
-async function readJson(c: {
-  req: { json: () => Promise<unknown> };
-}): Promise<Record<string, unknown>> {
-  try {
-    const body = await c.req.json();
-    if (body && typeof body === "object" && !Array.isArray(body)) {
-      return body as Record<string, unknown>;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 // repos === null means admin token — bypass scope check; still enforce format.
 function validateRepo(repo: unknown, repos: string[] | null): void {

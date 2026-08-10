@@ -438,8 +438,8 @@ export class TaskService implements TaskServiceLike {
   /**
    * Atomically claim a pending task.
    *
-   * Single conditional UPDATE — `WHERE id = $1 AND status = 'pending'`. If 0 rows
-   * are affected the task is either missing or already claimed: distinguish the
+   * Single conditional UPDATE — `WHERE id = $1 AND status = 'pending' AND "claimedBy" IS NULL`.
+   * If 0 rows are affected the task is either missing or already claimed: distinguish the
    * two with a follow-up read so callers get 404 vs 409.
    */
   async claim(id: string, claimedBy: string): Promise<Task> {
@@ -452,7 +452,7 @@ export class TaskService implements TaskServiceLike {
           "heartbeatAt" = ${now},
           "startedAt" = COALESCE("startedAt", ${now}),
           "updatedAt" = now()
-      WHERE id = ${id} AND status = 'pending'
+      WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
     `;
 
     if (affected === 0) {

@@ -8,6 +8,7 @@
     "./agent-default-tools": "./agent-default-tools.ts",
     "./claim-ttl": "./claim-ttl.ts",
     "./github-login": "./github-login.ts",
+    "./http": "./http.ts",
     "./org-repo": "./org-repo.ts",
     "./pricing": "./pricing.ts",
     "./request-context": "./request-context.ts",
