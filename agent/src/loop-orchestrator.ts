@@ -270,6 +270,24 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  * through, while re-fires far tighter than that cadence (the observed bug —
  * a PR was re-dispatched every 2-5 minutes for hours on an unchanged commit)
  * are suppressed.
+ *
+ * Per-phase load-bearing status (investigated for a possible scoped removal —
+ * see PH-1.3):
+ * - **review**: redundant-but-harmless. check-review.ts has its own
+ *   commitSha+reviewState dedup, plus RVD-1.1's live-GitHub dedup — an
+ *   unchanged-commit PR never even reaches getReviewCandidates()'s output, so
+ *   this cooldown never gets a chance to fire for review in practice.
+ * - **patch**: load-bearing. check-patch.ts re-evaluates live state every
+ *   tick and keeps no "already attempted this commit" memory of its own — a
+ *   non-blocking failed/no-op cycle would redispatch every tick without this
+ *   cooldown.
+ * - **deploy**: partially load-bearing. The 30-minute pipeline-timeout path
+ *   sets `blocked` for its own designed failure mode and doesn't need this
+ *   cooldown, but a transient/unhandled failure outside that path has the
+ *   same unbounded-redispatch exposure as patch.
+ *
+ * A scoped (patch/deploy-only) removal wasn't pursued: this is a single
+ * shared constant, and review's redundant coverage costs nothing to keep.
  */
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 
