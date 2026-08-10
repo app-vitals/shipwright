@@ -75,8 +75,10 @@ async function readJson(c: {
 // assignee/claimant match), so without this guard a repo-scoped agent token
 // could overwrite an actively claimed task's status back to "pending",
 // making it immediately re-claimable by a different agent while the
-// original session still holds it (TaskService.claim()'s atomic UPDATE
-// gates solely on status = 'pending', never on claimedBy IS NULL).
+// original session still holds it (TaskService.claim()'s atomic UPDATE now
+// also gates on claimedBy IS NULL, but a PATCH bypassing /claim or /release
+// could still directly clear claimedBy/status, defeating that protection
+// outside the atomic claim path).
 const LIFECYCLE_GUARD_KEYS = ["claimedBy", "claimedAt", "heartbeatAt"] as const;
 
 // admin tokens (agentId === null) are unrestricted, mirroring the existing
