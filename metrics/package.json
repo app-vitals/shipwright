@@ -13,7 +13,7 @@
     "@sentry/bun": "^10.63.0",
     "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "*",
-    "hono": "^4",
+    "hono": "^4.13.1",
     "openapi-fetch": "^0.13",
     "zod": "^3"
   },
