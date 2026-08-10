@@ -1368,7 +1368,55 @@ decision already recorded on the PR.
 
 **Otherwise** (neither the PR record has `blocked: true` nor its linked task has
 `status: 'blocked'`): no escalation
-is on record for this PR — proceed normally to Step 6c.
+is on record for this PR — proceed to Step 6b.7.
+
+### Step 6b.7: Bundle Completeness Gate (PH-1.1)
+
+`check-patch.ts`'s `isBundleComplete` (CPB-1.1) already filters this PR's candidacy on the
+same signal before dispatch is ever considered — but that filter only guards the
+`shipwright-loop`-driven path. A human running `/shipwright:patch org/repo#123` directly
+bypasses `check-patch.ts` entirely, and time can also pass between candidate selection and
+this point in the run (a bundle-mate task can start, or get blocked, after this PR was
+selected). Mirror deploy.md's Step 2b here, immediately before Step 6c's dispatch, so an
+incomplete bundle is caught on both paths — this is where the vitals-os#3558 incident
+actually happened: re-query the same sibling-branch-status signal now, right before
+dispatching the CI-fix subagent, rather than trusting the state candidate selection saw.
+
+```bash
+BRANCH_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}" 2>/dev/null || echo '{"tasks":[],"total":0,"limit":50,"offset":0}')
+INCOMPLETE_TASKS=$(echo "$BRANCH_TASKS" | jq '[.tasks[] | select(.status == "pending" or .status == "in_progress" or .status == "blocked") | {id, status}]')
+INCOMPLETE=$(echo "$INCOMPLETE_TASKS" | jq 'length')
+```
+
+**If `INCOMPLETE > 0`** (one or more bundle-mate tasks on this branch are still in flight):
+do NOT dispatch the fix subagent — a CI-fix pushed now would land on top of a branch that
+other tasks are still actively developing.
+
+1. Release the pre-work claim from Step 6b.5 — no fix is in flight, this cycle intentionally
+   stops short of dispatching one:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+   ```
+2. Print:
+   ```
+   ⏸ Bundle gate: {INCOMPLETE} task(s) on branch {branch} are still in flight:
+     {for each item in INCOMPLETE_TASKS: "  - {id} ({status})"}
+     Deferring CI-fix dispatch until bundle-mates reach pr_open.
+   ```
+3. Stop here. `patch.md` is explicit-single-PR-target-only (WLS-3.3) — there is no other
+   candidate to fall back to, so this fully stops the command rather than moving on to
+   another PR the way Step 6b.6 does. Emit `[skip-reason:patch:deferred:bundle-incomplete:{branch}]`
+   alongside `[silent]` (interpolating `{branch}` from the value already in scope) — order
+   relative to `[silent]` does not matter, both are recognized regardless of position. The
+   skip-reason marker records exactly which branch's bundle gate blocked this dispatch in the
+   `AgentCronRun.skipReason` field, visible in the admin cron-logs UI, instead of the generic
+   `command:no-work` reason the loop orchestrator falls back to for silent dispatches that
+   don't tag a specific reason.
+
+**Otherwise** (`INCOMPLETE == 0` — no tasks tracked on this branch, or all tasks are past
+`pending`/`in_progress`/`blocked`): the bundle is complete — proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 

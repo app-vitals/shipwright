@@ -768,6 +768,92 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
     const otherwiseSection = section.slice(otherwiseIdx);
     expect(otherwiseSection).toContain("Step 6c");
   });
+
+  it("otherwise branch hands off to Step 6b.7, not straight to 6c", () => {
+    const section = getStep6b6Section();
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("Step 6b.7");
+  });
+});
+
+describe("patch.md — bundle-incomplete self-check before CI-fix dispatch (PH-1.1)", () => {
+  function getStep6b7Section() {
+    const step6b7Idx = content.indexOf(
+      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
+    );
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b7Idx).toBeGreaterThan(-1);
+    expect(step6cIdx).toBeGreaterThan(-1);
+    return content.slice(step6b7Idx, step6cIdx);
+  }
+
+  it("Step 6b.7 exists between Step 6b.6 (escalation check) and Step 6c (dispatch)", () => {
+    const step6b6Idx = content.indexOf(
+      "### Step 6b.6: Escalation Check (CFE-1.1)",
+    );
+    const step6b7Idx = content.indexOf(
+      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
+    );
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b6Idx).toBeGreaterThan(-1);
+    expect(step6b7Idx).toBeGreaterThan(step6b6Idx);
+    expect(step6cIdx).toBeGreaterThan(step6b7Idx);
+  });
+
+  it("re-queries /tasks?branch= and checks for pending/in_progress/blocked statuses, matching isBundleComplete's signal", () => {
+    const section = getStep6b7Section();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?branch=");
+    expect(section).toContain('"pending"');
+    expect(section).toContain('"in_progress"');
+    expect(section).toContain('"blocked"');
+  });
+
+  it("uses {branch} already in scope rather than re-deriving HEAD_BRANCH via gh pr view again", () => {
+    const section = getStep6b7Section();
+    expect(section).not.toContain("gh pr view");
+    expect(section).not.toContain("headRefName");
+  });
+
+  it("contains [silent] and the fully-interpolated [skip-reason:patch:deferred:bundle-incomplete:{branch}] marker", () => {
+    const section = getStep6b7Section();
+    expect(section).toContain("[silent]");
+    expect(section).toContain(
+      "[skip-reason:patch:deferred:bundle-incomplete:",
+    );
+    expect(section).toContain(
+      "[skip-reason:patch:deferred:bundle-incomplete:{branch}]",
+    );
+  });
+
+  it("does not require a specific ordering between [skip-reason:...] and [silent]", () => {
+    const section = getStep6b7Section();
+    expect(section).toContain("does not matter");
+  });
+
+  it("releases the Step 6b.5 pre-work claim before stopping", () => {
+    const section = getStep6b7Section();
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+  });
+
+  it("fully stops the command on incomplete bundle rather than continuing to the next PR in List D (unlike Step 6b.6)", () => {
+    const section = getStep6b7Section();
+    expect(section).not.toContain("next PR in List D");
+    expect(section).not.toContain("Step 7");
+    const hasStopLanguage =
+      /stop\s+here/is.test(section) || /stop\s+the\s+command/is.test(section);
+    expect(hasStopLanguage).toBe(true);
+  });
+
+  it("otherwise branch (bundle complete) proceeds to Step 6c and does not emit [silent]", () => {
+    const section = getStep6b7Section();
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("Step 6c");
+    expect(otherwiseSection).not.toContain("[silent]");
+  });
 });
 
 describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
