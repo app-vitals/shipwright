@@ -452,7 +452,7 @@ export class TaskService implements TaskServiceLike {
           "heartbeatAt" = ${now},
           "startedAt" = COALESCE("startedAt", ${now}),
           "updatedAt" = now()
-      WHERE id = ${id} AND status = 'pending'
+      WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
     `;
 
     if (affected === 0) {

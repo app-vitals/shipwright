@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
-import { BadRequestError } from "./errors.ts";
+import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrismaClient, Task } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import { type TaskListFilters, TaskService } from "./task-service.ts";
+import { FixedClock } from "./clock.ts";
 
 // ─── Minimal in-memory stub matching only the logic under test ────────────────
 
@@ -884,4 +885,207 @@ describe("TaskService.distinct() orgs field (unit)", () => {
     expect(result.repos).toEqual([]);
     expect(result.orgs).toEqual([]);
   });
+});
+
+// ─── TaskService.claim() defense-in-depth claimedBy guard ──────────────────
+
+describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
+  /**
+   * makeFullTask — full task object for use in Prisma doubles.
+   */
+  function makeFullTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "pending",
+      source: null,
+      session: null,
+      repo: null,
+      description: null,
+      acceptanceCriteria: [],
+      layer: null,
+      branch: null,
+      dependencies: [],
+      pr: null,
+      hours: null,
+      addedAt: null,
+      startedAt: null,
+      prCreatedAt: null,
+      mergedAt: null,
+      blockedAt: null,
+      blockedReason: null,
+      note: null,
+      type: null,
+      priority: null,
+      cancelledAt: null,
+      completedAt: null,
+      deployingAt: null,
+      ciFixAttempts: null,
+      mergeCommit: null,
+      prUrl: null,
+      assignee: null,
+      issue: null,
+      model: null,
+      complexity: null,
+      hitl: null,
+      claimedBy: null,
+      agentHint: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      createdAt: new Date("2026-08-10T12:00:00.000Z"),
+      updatedAt: new Date("2026-08-10T12:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  /**
+   * makeClaimPrismaDouble — simulates claim() behavior with an in-memory row.
+   * The double allows configuring whether to enforce the claimedBy=null guard.
+   * When enforceClaimedByGuard=true, the double checks both status AND claimedBy IS NULL.
+   * When enforceClaimedByGuard=false, it only checks status (simulating the old behavior).
+   * Also implements task.findUnique to support the existing 404-vs-409 disambiguation.
+   */
+  function makeClaimPrismaDouble(
+    initialTask: Task,
+    enforceClaimedByGuard = true,
+  ) {
+    // In-memory row state — must be let because $executeRaw mutates it
+    let row = { ...initialTask };
+
+    const prisma = {
+      async $executeRaw(
+        strings: TemplateStringsArray,
+        ...values: unknown[]
+      ): Promise<number> {
+        // Simulate the WHERE clause in claim():
+        // - always check: id matches AND status = 'pending'
+        // - when enforceClaimedByGuard=true: also check claimedBy IS NULL
+        // In real Postgres, the query would return 0 rows affected if any condition fails.
+
+        // values[0] is claimedBy (the new claimer)
+        // values[values.length - 1] is id (the task ID)
+        const newClaimedBy = values[0] as string;
+        const taskId = values[values.length - 1] as string;
+
+        const matchesId = row.id === taskId;
+        const matchesStatus = row.status === "pending";
+        const matchesClaimedBy = row.claimedBy === null;
+
+        const shouldUpdate = enforceClaimedByGuard
+          ? matchesId && matchesStatus && matchesClaimedBy
+          : matchesId && matchesStatus;
+
+        if (shouldUpdate) {
+          // Update succeeds — simulate applying the SET clause by reassigning row
+          row = {
+            ...row,
+            status: "in_progress",
+            claimedBy: newClaimedBy,
+            claimedAt: new Date().toISOString(),
+            heartbeatAt: new Date().toISOString(),
+            startedAt: row.startedAt ?? new Date().toISOString(),
+            updatedAt: new Date(),
+          };
+          return 1; // 1 row affected
+        }
+        // WHERE clause did not match — no rows affected
+        return 0;
+      },
+      task: {
+        findUnique({ where }: { where: { id: string } }): Promise<Task | null> {
+          if (where.id === row.id) {
+            return Promise.resolve({ ...row });
+          }
+          return Promise.resolve(null);
+        },
+      },
+    };
+
+    return prisma as unknown as PrismaClient;
+  }
+
+  it("claim() succeeds when task is pending with claimedBy=null (happy path)", async () => {
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "pending",
+        claimedBy: null,
+      }),
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    const result = await service.claim("task-1", "agent-1");
+
+    expect(result.id).toBe("task-1");
+    expect(result.status).toBe("in_progress");
+    expect(result.claimedBy).toBe("agent-1");
+  });
+
+  it("claim() throws ConflictError when task is pending but claimedBy is already set (defense-in-depth guard)", async () => {
+    // enforceClaimedByGuard=true simulates the post-implementation behavior
+    // where the WHERE clause checks both status='pending' AND claimedBy IS NULL.
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "pending",
+        claimedBy: "agent-original",
+      }),
+      true, // enforceClaimedByGuard=true (with the new guard)
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    try {
+      await service.claim("task-1", "agent-new");
+      expect.unreachable("claim() should have thrown ConflictError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConflictError);
+      if (err instanceof ConflictError) {
+        expect(err.message).toContain("already claimed");
+      }
+    }
+  });
+
+  it("claim() throws NotFoundError when task does not exist", async () => {
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "pending",
+        claimedBy: null,
+      }),
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    try {
+      await service.claim("task-missing", "agent-1");
+      expect.unreachable("claim() should have thrown NotFoundError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(NotFoundError);
+    }
+  });
+
+  it("claim() throws ConflictError when task status is not pending", async () => {
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "in_progress",
+        claimedBy: null,
+      }),
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    try {
+      await service.claim("task-1", "agent-1");
+      expect.unreachable("claim() should have thrown ConflictError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConflictError);
+      if (err instanceof ConflictError) {
+        expect(err.message).toContain("already claimed");
+      }
+    }
+  });
+
 });
