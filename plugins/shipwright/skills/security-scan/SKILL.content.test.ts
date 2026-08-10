@@ -352,6 +352,107 @@ describe("SKILL.md — osv-cve authoritative for bun.lock dependency CVEs", () =
   });
 });
 
+describe("SKILL.md — Step 3.5a zizmor.yml suppression filter", () => {
+  it("has a Step 3.5a subsection for suppressing zizmor findings covered by .github/zizmor.yml", () => {
+    expect(content).toContain("3.5a");
+    expect(content).toContain(".github/zizmor.yml");
+  });
+
+  it("is positioned between Step 3.5 and Step 4 (scoped to zizmor specifically)", () => {
+    const start = content.indexOf("### 3.5a");
+    const step35End = content.indexOf(
+      "If the repo has no `.github/workflows/` directory",
+    );
+    const step4Start = content.indexOf("## Step 4:");
+    expect(start).toBeGreaterThan(-1);
+    expect(step35End).toBeGreaterThan(-1);
+    expect(step4Start).toBeGreaterThan(-1);
+    expect(start).toBeGreaterThan(step35End);
+    expect(start).toBeLessThan(step4Start);
+  });
+
+  it("explains zizmor's own line-based ignore matching is unreliable due to line drift", () => {
+    const text = content.toLowerCase();
+    const hasDrift =
+      text.includes("line drift") || text.includes("line-based");
+    const hasUnreliable =
+      text.includes("unreliable") || text.includes("fragile");
+    expect(hasDrift).toBe(true);
+    expect(hasUnreliable).toBe(true);
+  });
+
+  it("instructs skipping the filter entirely when .github/zizmor.yml does not exist", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section.toLowerCase()).toContain("does not exist");
+    expect(section.toLowerCase()).toContain("skip");
+  });
+
+  it("documents parsing ignore entries into rule/file/line/stepName tuples", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section).toContain("stepName");
+  });
+
+  it("documents a small line tolerance for matching (e.g. ±5 lines)", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section.toLowerCase()).toContain("tolerance");
+    expect(section).toContain("5");
+  });
+
+  it("documents re-resolving the ignore entry's line via the named step comment as a fallback match", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section.toLowerCase()).toContain("step name");
+  });
+
+  it("documents that a non-matching rule+file keeps the finding (not suppressed)", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section.toLowerCase()).toContain("not suppressed");
+  });
+
+  it("documents that suppressed findings are dropped before Step 6 and never reach the report or ledger", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    const text = section.toLowerCase();
+    expect(text).toContain("step 6");
+    expect(text.includes("security-report.md") || text.includes("report")).toBe(
+      true,
+    );
+    expect(text).toContain("ledger");
+  });
+
+  it("references the live ignore-entry format from this repo's own .github/zizmor.yml", () => {
+    const section = content.slice(
+      content.indexOf("### 3.5a"),
+      content.indexOf("## Step 4:"),
+    );
+    expect(section).toContain("auto-bump-chart.yml:178");
+  });
+
+  it("cross-references the zizmor suppression filter at the top of Step 6", () => {
+    const step6Section = content.slice(
+      content.indexOf("## Step 6:"),
+      content.indexOf("## Step 7:"),
+    );
+    expect(step6Section.toLowerCase()).toContain("3.5a");
+  });
+});
+
 describe("SKILL.md — ledger classification with repo-namespaced keys", () => {
   it("references the security-patrol ledger location", () => {
     expect(content).toContain("state/security-patrol-ledger.json");

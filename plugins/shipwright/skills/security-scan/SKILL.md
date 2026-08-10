@@ -272,6 +272,48 @@ tar -xz -f "$TOOLS_DIR/zizmor.tar.gz" -C "$TOOLS_DIR" zizmor
 If the repo has no `.github/workflows/` directory, record "no workflows to scan" — not a
 failure.
 
+### 3.5a Suppress zizmor Findings Already Covered by `.github/zizmor.yml`
+
+zizmor supports its own `ignore` config in `.github/zizmor.yml`, keyed by exact `file:line`.
+That native matching is fragile for this purpose: it pins an **exact line number**, and any
+commit that shifts lines above an ignored step — even an unrelated change elsewhere in the
+workflow file — moves the finding to a new line and breaks the exact match. When that
+happens, a finding a human already reviewed and explicitly accepted as risk silently
+resurfaces in `zizmor-report.json` as if it were new, purely from line drift, not from any
+change to the risk decision itself. This step applies a drift-tolerant suppression filter on
+top of zizmor's raw output before any zizmor finding reaches Step 6 — so a reader skimming
+Step 6 should know zizmor findings have already been filtered by the time they get there.
+
+1. **No `.github/zizmor.yml`.** If the file does not exist in the repo, skip this filter
+   entirely — proceed with every zizmor finding unfiltered.
+2. **Parse ignore entries.** If it exists, parse every rule's `ignore` list into
+   `{rule, file, line, stepName}` tuples. Each entry is `{file}:{line}` followed by a
+   trailing `# "Step Name" — reason` comment — the step name is the quoted text immediately
+   after the `#`. For example, this repo's own `.github/zizmor.yml` has entries like:
+   ```
+   artipacked:
+     ignore:
+       - auto-bump-chart.yml:178 # "Checkout main" — pushed from by `git push -u origin "$BRANCH"`
+   ```
+   which parses to `{rule: "artipacked", file: "auto-bump-chart.yml", line: 178, stepName: "Checkout main"}`.
+3. **Match each zizmor finding against the parsed tuples**, rule+file first:
+   - No rule+file match in the ignore list → keep the finding; it is not suppressed.
+   - Rule+file match found → treat it as the same accepted-risk step (and suppress it) when
+     **either**:
+     (a) the finding's line is within a small tolerance of the ignore entry's line (±5
+     lines), **or**
+     (b) re-reading the named workflow file confirms a step named `stepName` still exists
+     at/near the finding's actual line (handles drift larger than the tolerance).
+   - If neither holds — the named step is gone or renamed — do **not** suppress. Let the
+     finding proceed normally; it may be a genuinely new or different finding at that
+     location, not the same accepted-risk decision.
+4. **Suppressed findings are dropped here, before Step 6.** A suppressed finding gets no
+   finding record at all — it never appears in `security-report.md` (Step 8) and is never
+   diffed against the ledger (Step 7). Step 7's existing "present in ledger as unresolved but
+   absent from this run ⇒ resolved" logic already handles the case where a finding that used
+   to be unresolved becomes suppressed on a later run — no additional ledger-side logic is
+   needed for that transition.
+
 ---
 
 ## Step 4: Tier 2 — LLM-Driven authn/authz + Hardcoded-Credential Checks
@@ -319,6 +361,10 @@ Presence/configuration checks, each recorded as a finding when **absent/misconfi
 ---
 
 ## Step 6: Finding-Record Shape
+
+zizmor findings reach this step only after passing the Step 3.5a suppression filter —
+anything matching an accepted-risk entry in `.github/zizmor.yml` was already dropped and
+never gets a record here.
 
 All findings from Tier 1, Tier 2, and Tier 3 use one common record shape:
 
@@ -524,6 +570,10 @@ SECURITY SCAN COMPLETE
   verification — treat an unverifiable tool as unavailable (fallback) instead.
 - **Trivy stays excluded.** Do not reintroduce Trivy (GHSA-69fq-xp46-6x23) without an explicit
   security review; Grype + Syft cover container CVE + SBOM.
+- **Never report a zizmor finding already suppressed in `.github/zizmor.yml`.** Step 3.5a's
+  drift-tolerant match runs before any zizmor finding reaches Step 6 — a finding matching an
+  accepted-risk ignore entry is dropped, not merely deprioritized, and must never appear in
+  `security-report.md` or the ledger.
 - **Repo-namespaced IDs, always.** Every ledger key and finding ID is
   `security-{rule}-{repo-slug}-{YYYY-Www}` — never `{rule}-{YYYY-Www}` — so same-week
   multi-repo runs never collide (the `entropy-fix` task-ID collision bug).
