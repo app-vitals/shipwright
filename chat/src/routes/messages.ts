@@ -25,6 +25,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import { readJson } from "@shipwright/lib/http";
 import type { ChatAuthEnv } from "../auth.ts";
 import {
   BadRequestError,
@@ -40,20 +41,6 @@ import { parseIntParam } from "./utils.ts";
 
 /** Maximum allowed size for message attachment bytes (10 MB). */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
-
-async function readJson(c: {
-  req: { json: () => Promise<unknown> };
-}): Promise<Record<string, unknown>> {
-  try {
-    const body = await c.req.json();
-    if (body && typeof body === "object" && !Array.isArray(body)) {
-      return body as Record<string, unknown>;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 // ─── Route-local schemas ──────────────────────────────────────────────────────
 

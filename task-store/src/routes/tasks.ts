@@ -35,6 +35,7 @@
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, ForbiddenError, NotFoundError } from "../errors.ts";
 import type { Prisma } from "../index.ts";
@@ -54,20 +55,6 @@ import {
 } from "../openapi-schemas.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { isOrgRepo } from "../validate.ts";
-
-async function readJson(c: {
-  req: { json: () => Promise<unknown> };
-}): Promise<Record<string, unknown>> {
-  try {
-    const body = await c.req.json();
-    if (body && typeof body === "object" && !Array.isArray(body)) {
-      return body as Record<string, unknown>;
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 // Fields that gate task claim ownership. Agent tokens must go through the
 // dedicated /claim and /release routes to change these — never generic PATCH.
