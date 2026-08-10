@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const PATCH_MD_PATH = join(import.meta.dir, "patch.md");
+const ESCALATION_PATTERN_PATH = join(import.meta.dir, "references", "escalation-pattern.md");
 
 let content: string;
+let escalationPatternContent: string;
 
 beforeAll(() => {
   content = readFileSync(PATCH_MD_PATH, "utf-8");
+  escalationPatternContent = readFileSync(ESCALATION_PATTERN_PATH, "utf-8");
 });
 
 describe("patch.md — explicit-target-only argument contract (WLS-3.3)", () => {
@@ -146,34 +149,37 @@ describe("patch.md — pre-work PR claim lock (CLM-2.1)", () => {
     expect(preDispatchSection).toContain("List D");
   });
 
-  it("Step 4c (merge conflicts): BLOCKED path releases the pre-work claim", () => {
+  it("Step 4c (merge conflicts): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
     const step4cIdx = content.indexOf("### Step 4c: Handle Subagent Status");
     const step4c5Idx = content.indexOf("### Step 4c.5:");
     expect(step4cIdx).toBeGreaterThan(-1);
     expect(step4c5Idx).toBeGreaterThan(-1);
     const section = content.slice(step4cIdx, step4c5Idx);
     expect(section).toContain("BLOCKED");
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
   });
 
-  it("Step 5c (review findings): BLOCKED path releases the pre-work claim", () => {
+  it("Step 5c (review findings): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
     const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
     const step5c5Idx = content.indexOf("### Step 5c.5:");
     expect(step5cIdx).toBeGreaterThan(-1);
     expect(step5c5Idx).toBeGreaterThan(-1);
     const section = content.slice(step5cIdx, step5c5Idx);
     expect(section).toContain("BLOCKED");
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
   });
 
-  it("Step 6d (failing CI): BLOCKED path releases the pre-work claim", () => {
+  it("Step 6d (failing CI): BLOCKED path points at the shared escalation pattern, which releases the pre-work claim (PH-1.2)", () => {
     const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
     const step6d5Idx = content.indexOf("### Step 6d.5:");
     expect(step6dIdx).toBeGreaterThan(-1);
     expect(step6d5Idx).toBeGreaterThan(-1);
     const section = content.slice(step6dIdx, step6d5Idx);
     expect(section).toContain("BLOCKED");
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
   });
 
   it("post-fix step 4c.5 reuses PR_RECORD_ID instead of re-calling POST /prs/claim", () => {
@@ -561,7 +567,7 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
     expect(section).toContain("reply dated *before* the");
   });
 
-  it("escalation case reuses the shared PR_TASK_ID from Step 2.1 and PATCHes status: blocked (no fresh taskId fetch)", () => {
+  it("escalation case reuses the shared PR_TASK_ID from Step 2.1, and the shared escalation pattern PATCHes status: blocked (no fresh taskId fetch) (PH-1.2)", () => {
     const section = getStep5a7Section();
     expect(section).toContain("PR_TASK_ID");
     // No independent GET .../prs/$PR_RECORD_ID fetch for taskId purposes anymore — that
@@ -570,50 +576,62 @@ describe("patch.md — escalate to HITL instead of looping on a second-round dis
       /GET[^\n]*\n[^\n]*"\$SHIPWRIGHT_TASK_STORE_URL\/prs\/\$PR_RECORD_ID"[^\n]*\n[^\n]*taskId/,
     );
     expect(section).toMatch(/Step 2\.1|reuse/i);
-    expect(section).toContain("-X PATCH");
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
-    expect(section).toContain('"status": "blocked"');
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(escalationPatternContent).toContain("-X PATCH");
+    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(escalationPatternContent).toContain('"status": "blocked"');
   });
 
-  it("escalation case with no linked task PATCHes the PR record itself with blocked: true and a blockedReason, not just a warning", () => {
+  it("escalation case's {blockedReason} is stated inline, and the shared pattern PATCHes the PR record with blocked: true when no task is linked (PH-1.2)", () => {
     const section = getStep5a7Section();
+    expect(section).toContain("second-round disagreement between reviewer and automated fix");
+    expect(section).toContain("references/escalation-pattern.md");
     const patchPrSnippet =
-      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n     -d \'{"blocked": true, "blockedReason"';
-    expect(section).toContain("PR_TASK_ID` is empty");
-    expect(section).not.toContain("log a warning and skip the");
-    expect(section).toContain(
-      `curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n     -H "Content-Type: application/json" \\\n     ${patchPrSnippet}`,
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \\\n  -d \'{"blocked": true, "blockedReason"';
+    expect(escalationPatternContent).toContain("PR_TASK_ID` is empty");
+    expect(escalationPatternContent).not.toContain("log a warning and skip the");
+    expect(escalationPatternContent).toContain(
+      `curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  ${patchPrSnippet}`,
     );
-    expect(section).toContain("second-round disagreement");
-    const emptyBranchIdx = section.indexOf("PR_TASK_ID` is empty");
-    const patchPrIdx = section.indexOf(patchPrSnippet);
+    const emptyBranchIdx = escalationPatternContent.indexOf("PR_TASK_ID` is empty");
+    const patchPrIdx = escalationPatternContent.indexOf(patchPrSnippet);
     expect(patchPrIdx).toBeGreaterThan(emptyBranchIdx);
   });
 
-  it("escalation case posts exactly one PR comment via a temp file scoped by PR number", () => {
+  it("escalation case states its {temp_file_slug}/comment inline, and the shared pattern posts exactly one PR comment via a temp file scoped by PR number (PH-1.2)", () => {
     const section = getStep5a7Section();
-    expect(section).toContain("gh pr comment {pr} --repo {org}/{repo} --body-file");
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(section).toContain("`escalation`");
     expect(section).toContain("/tmp/shipwright-patch-escalation-{pr}.txt");
-    expect(section).toContain("rm /tmp/shipwright-patch-escalation-{pr}.txt");
+    expect(escalationPatternContent).toContain(
+      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
+    );
+    expect(escalationPatternContent).toContain("rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt");
   });
 
-  it("escalation case releases the pre-work claim and skips to the next PR without dispatching a fix subagent", () => {
+  it("escalation case releases the pre-work claim (via the shared pattern) and skips to the next PR without dispatching a fix subagent", () => {
     const section = getStep5a7Section();
-    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("references/escalation-pattern.md");
+    expect(escalationPatternContent).toContain("/prs/$PR_RECORD_ID/release");
     expect(section).toContain("do not dispatch the fix subagent");
     expect(section).toContain("do not post another rebuttal");
     expect(section).toContain("do not reset");
     expect(section).toContain("Move to the next qualifying PR in List A");
   });
 
-  it("escalation case resolves the unresolved inline threads for the qualifying second-round review before releasing the claim", () => {
+  it("escalation case resolves the unresolved inline threads for the qualifying second-round review before releasing the claim (site-specific hook step, per escalation-pattern.md)", () => {
     const section = getStep5a7Section();
     expect(section).toContain("resolveReviewThread");
     expect(section).toContain("re-flag this same PR next");
+    expect(section).toContain("Extra step, unique to this site");
     const resolveIdx = section.indexOf("resolveReviewThread");
-    const releaseIdx = section.indexOf("/prs/$PR_RECORD_ID/release");
+    const releaseNoteIdx = section.indexOf("Claim released");
     expect(resolveIdx).toBeGreaterThan(-1);
-    expect(releaseIdx).toBeGreaterThan(resolveIdx);
+    // The site documents the thread-resolution step; the actual release call lives in the
+    // shared reference (verified above) and happens after this site-specific hook per
+    // escalation-pattern.md's step 3/4 ordering.
+    expect(releaseNoteIdx).toBeGreaterThan(-1);
+    expect(escalationPatternContent).toContain("Site-specific hook point");
   });
 
   it("does not reference commit.oid, a field Step 3a's reviews query never fetches", () => {
@@ -972,29 +990,35 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     return section.slice(blockedIdx);
   }
 
-  function assertEscalationBeforeRelease(
-    section: string,
-    opts: { taskPatchSnippet: string; prPatchSnippet: string; commentTmpPath: string },
-  ) {
-    const blocked = getBlockedBranch(section);
-
+  // PH-1.2: the literal PATCH/comment/release curl sequence lives once in
+  // references/escalation-pattern.md now, rather than being repeated at each of the 4 call
+  // sites. Verify the shared file's sequencing once, then verify each call site (a) points
+  // at the shared reference and (b) still carries its own distinct blockedReason/comment/
+  // temp-file-slug parameter values inline.
+  function assertSharedPatternSequencing() {
     // status: blocked PATCH to the linked task
-    expect(blocked).toContain(opts.taskPatchSnippet);
-    expect(blocked).toContain('"status": "blocked"');
+    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(escalationPatternContent).toContain('"status": "blocked"');
 
     // blocked + blockedReason PATCH fallback to the PR record
-    expect(blocked).toContain(opts.prPatchSnippet);
-    expect(blocked).toContain("blockedReason");
+    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(escalationPatternContent).toContain("blockedReason");
 
     // PR comment via temp file
-    expect(blocked).toContain(`gh pr comment {pr} --repo {org}/{repo} --body-file ${opts.commentTmpPath}`);
-    expect(blocked).toContain(`rm ${opts.commentTmpPath}`);
+    expect(escalationPatternContent).toContain(
+      "gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt",
+    );
+    expect(escalationPatternContent).toContain("rm /tmp/shipwright-patch-{temp_file_slug}-{pr}.txt");
 
     // Ordering: status PATCH + comment must occur BEFORE the release call
-    const taskPatchIdx = blocked.indexOf(opts.taskPatchSnippet);
-    const prPatchIdx = blocked.indexOf(opts.prPatchSnippet);
-    const commentIdx = blocked.indexOf(`--body-file ${opts.commentTmpPath}`);
-    const releaseIdx = blocked.indexOf("/prs/$PR_RECORD_ID/release");
+    const taskPatchIdx = escalationPatternContent.indexOf(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
+    );
+    const prPatchIdx = escalationPatternContent.indexOf(
+      '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
+    );
+    const commentIdx = escalationPatternContent.indexOf("--body-file /tmp/shipwright-patch-");
+    const releaseIdx = escalationPatternContent.indexOf("/prs/$PR_RECORD_ID/release");
 
     expect(releaseIdx).toBeGreaterThan(-1);
     expect(taskPatchIdx).toBeGreaterThan(-1);
@@ -1005,26 +1029,34 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(commentIdx).toBeLessThan(releaseIdx);
   }
 
-  it("Step 4c BLOCKED branch escalates to HITL (task or PR record) and posts a PR comment before releasing the claim", () => {
-    const section = getStep4cSection();
-    assertEscalationBeforeRelease(section, {
-      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-      commentTmpPath: "/tmp/shipwright-patch-blocked-4c-{pr}.txt",
-    });
-    const blocked = getBlockedBranch(section);
-    expect(blocked.toLowerCase()).toContain("merge-conflict");
+  it("the shared escalation-pattern.md sequences task/PR PATCH + PR comment before the claim release", () => {
+    assertSharedPatternSequencing();
   });
 
-  it("Step 5c BLOCKED branch (first-round, plain BLOCKED) escalates to HITL and posts a PR comment before releasing the claim", () => {
-    const section = getStep5cSection();
-    assertEscalationBeforeRelease(section, {
-      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-      commentTmpPath: "/tmp/shipwright-patch-blocked-5c-{pr}.txt",
-    });
+  it("Step 4c BLOCKED branch points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
+    const section = getStep4cSection();
     const blocked = getBlockedBranch(section);
-    expect(blocked.toLowerCase()).toContain("review-finding fix");
+    expect(blocked).toContain("references/escalation-pattern.md");
+    expect(blocked).toContain(
+      '"merge-conflict resolution blocked — automated conflict\n    resolution could not complete"',
+    );
+    expect(blocked.toLowerCase()).toContain("merge-conflict resolution subagent reported blocked");
+    expect(blocked).toContain("`blocked-4c`");
+    expect(blocked).toContain("/tmp/shipwright-patch-blocked-4c-{pr}.txt");
+    expect(blocked).toContain("Step 2.1");
+  });
+
+  it("Step 5c BLOCKED branch (first-round, plain BLOCKED) points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
+    const section = getStep5cSection();
+    const blocked = getBlockedBranch(section);
+    expect(blocked).toContain("references/escalation-pattern.md");
+    expect(blocked).toContain(
+      '"review-finding fix blocked — automated fix subagent could not\n    complete"',
+    );
+    expect(blocked.toLowerCase()).toContain("review-finding fix subagent reported blocked");
+    expect(blocked).toContain("`blocked-5c`");
+    expect(blocked).toContain("/tmp/shipwright-patch-blocked-5c-{pr}.txt");
+    expect(blocked).toContain("Step 2.1");
   });
 
   it("Step 5c's BLOCKED escalation reuses PR_TASK_ID rather than re-fetching taskId", () => {
@@ -1036,15 +1068,19 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     );
   });
 
-  it("Step 6d BLOCKED branch escalates to HITL and posts a PR comment before releasing the claim", () => {
+  it("Step 6d BLOCKED branch points at the shared escalation pattern and states its own blockedReason/comment/temp-file-slug inline", () => {
     const section = getStep6dSection();
-    assertEscalationBeforeRelease(section, {
-      taskPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"',
-      prPatchSnippet: '"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"',
-      commentTmpPath: "/tmp/shipwright-patch-blocked-6d-{pr}.txt",
-    });
     const blocked = getBlockedBranch(section);
-    expect(blocked.toLowerCase()).toContain("ci-fix");
+    expect(blocked).toContain("references/escalation-pattern.md");
+    expect(blocked).toContain(
+      '"CI-fix blocked — automated CI-fix subagent could not\n    complete"',
+    );
+    expect(blocked.toLowerCase()).toContain("ci-fix subagent reported blocked");
+    expect(blocked).toContain("`blocked-6d`");
+    expect(blocked).toContain("/tmp/shipwright-patch-blocked-6d-{pr}.txt");
+    // Distinct from the other two BLOCKED sites: this one reuses PR_TASK_ID from Step 6b.6,
+    // not Step 2.1.
+    expect(blocked).toContain("Step 6b.6");
   });
 
   it("all three BLOCKED sites use distinct temp file names to avoid cross-worktree collisions", () => {
@@ -1063,7 +1099,7 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     expect(step5a7Section).toContain("second-round disagreement");
   });
 
-  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets)", () => {
+  it("Step 6d's BLOCKED escalation is consistent with Step 6b.6's pre-dispatch status check (same PATCH targets, via the shared escalation pattern)", () => {
     const step6b6Idx = content.indexOf("### Step 6b.6: Escalation Check (CFE-1.1)");
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const step6b6Section = content.slice(step6b6Idx, step6cIdx);
@@ -1072,8 +1108,11 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
 
     const step6dSection = getStep6dSection();
     const blocked = getBlockedBranch(step6dSection);
-    expect(blocked).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
-    expect(blocked).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(blocked).toContain("references/escalation-pattern.md");
+    // The shared pattern Step 6d points at uses the same two PATCH targets as Step 6b.6's
+    // own pre-dispatch check.
+    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID"');
+    expect(escalationPatternContent).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
   });
 });
 
@@ -1271,9 +1310,9 @@ describe("patch.md — drop stale review-patch reference from claim-release step
     expect(content.toLowerCase()).not.toContain("review-patch");
   });
 
-  it("all three claim-release steps (4c.3, 5c.3, 6d.3) use the corrected 'a subsequent patch run' phrasing", () => {
-    const matches = content.match(/a subsequent patch run/g) ?? [];
-    expect(matches.length).toBe(3);
+  it("the shared escalation-pattern.md reference uses the corrected 'a subsequent patch run' phrasing (PH-1.2 collapsed the 3 formerly-separate inline copies into this one)", () => {
+    const matches = escalationPatternContent.match(/a subsequent patch run/g) ?? [];
+    expect(matches.length).toBe(1);
   });
 });
 

@@ -512,52 +512,22 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 4c.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 4c.5.
-- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
+- **BLOCKED**: The conflict-resolution subagent (dispatched in Step 4b) reported it could
+  not complete. A generic BLOCKED release with no escalation flag makes this PR immediately
   re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
   tick — `claimedBy`/`blocked` are the only exclusions it checks, and releasing the claim
-  below clears the former without setting the latter. Escalate to HITL first, mirroring Step
-  5a.7's (RPF-1.3) escalation pattern, before releasing the claim:
+  below clears the former without setting the latter. Escalate to HITL first, following
+  `references/escalation-pattern.md`'s shared PATCH/comment/release sequence, before
+  releasing the claim:
 
-  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
-     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"status": "blocked", "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
-     ```
-     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
-     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
-     patch candidate every cycle, spinning forever:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"blocked": true, "blockedReason": "merge-conflict resolution blocked — automated conflict resolution could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
-     ```
-     Still post the PR comment below either way.
-  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
-     file first, same convention as Step 5a.7's escalation comment (heredocs break
-     permission glob matching):
-     ```bash
-     # Write to /tmp/shipwright-patch-blocked-4c-{pr}.txt:
-     #   The merge-conflict resolution subagent reported BLOCKED and could not complete —
-     #   flagging for a human decision instead of retrying indefinitely.
-     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-4c-{pr}.txt
-     rm /tmp/shipwright-patch-blocked-4c-{pr}.txt
-     ```
-     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
-     across all worktrees.
-  3. Release the pre-work claim from Step 4a.6 so a subsequent patch run within
-     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
-     completed, so nothing is actually in flight:
-     ```bash
-     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-     ```
+  - **`{blockedReason}`**: `"merge-conflict resolution blocked — automated conflict
+    resolution could not complete"`
+  - **`{comment_body}`**: "The merge-conflict resolution subagent reported BLOCKED and
+    could not complete — flagging for a human decision instead of retrying indefinitely."
+  - **`{temp_file_slug}`**: `blocked-4c` (temp file:
+    `/tmp/shipwright-patch-blocked-4c-{pr}.txt`)
+  - **`PR_TASK_ID`**: reused from Step 2.1 (no fresh fetch)
+  - **Claim released**: the pre-work claim from Step 4a.6
 
   Log the blocker. Skip Steps 4c.5 and 4d. Move to the next PR in List C.
   Include the blocker in the final report.
@@ -770,80 +740,58 @@ second round.
 **If at least one candidate reply is judged `SAME_FINDING`** (a genuine second round on the
 same disagreement): escalate instead of looping. Skip the rest of Step 5 for this PR
 entirely — do not dispatch the fix subagent, do not post another rebuttal, and do not reset
-`reviewState`.
+`reviewState`. Escalate to HITL following `references/escalation-pattern.md`'s shared
+PATCH/comment/release sequence, with an extra thread-resolution step inserted between the
+comment and the claim release:
 
-1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. (Step 2.1
-   fetched `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right
-   after Step 2 resolved this same PR, independent of any claim, so it's already available
-   by the time this check runs.)
-2. If `PR_TASK_ID` is non-empty, PATCH it to `status: 'blocked'` so the task is flagged for a human
-   decision:
-   ```bash
-   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-     -d '{"status": "blocked", "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
-     echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
-   ```
-   If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
-   instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
-   patch candidate every cycle, spinning forever:
-   ```bash
-   curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     -H "Content-Type: application/json" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-     -d '{"blocked": true, "blockedReason": "second-round disagreement between reviewer and automated fix — escalated to HITL"}' > /dev/null 2>&1 || \
-     echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
-   ```
-   Still post the PR comment below either way.
-3. Post a single PR comment stating a human decision is needed. Write the body to a temp
-   file first, same convention as the rebuttal comment in Step 5b [D] (heredocs break
-   permission glob matching):
-   ```bash
-   # Write to /tmp/shipwright-patch-escalation-{pr}.txt:
-   #   This finding was already rebutted once and the review still disagrees after
-   #   re-evaluating that rebuttal — this looks like a genuine disagreement between the
-   #   reviewer and the automated fix, not something another automated pass will resolve.
-   #   Flagging for a human decision instead of rebutting again.
-   gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-escalation-{pr}.txt
-   rm /tmp/shipwright-patch-escalation-{pr}.txt
-   ```
-   The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
-   across all worktrees.
-4. Resolve **all** currently-unresolved inline threads on this PR (from Step 3a's
-   `reviewThreads.nodes[]`) — not just threads tied to the qualifying second-round review.
-   Step 3a's query carries no field linking a thread back to the review that raised it
-   (only `id`, `isResolved`, and the first comment's `author.login`/`body`/`path`/`line`),
-   so scoping resolution to "threads belonging to" a specific review isn't something this
-   step can actually determine. Escalating already means giving up on automated resolution
-   for this cycle — the PR comment posted in step 3 above tells the human reader that
-   everything was escalated for manual review, not silently fixed, so resolving every
-   open thread here carries no silent-dismissal risk. Leaving any thread unresolved,
-   however, would leave it `isResolved == false`, so Step 3a's List A criteria would
-   re-flag this same PR next cycle and re-fire this same escalation indefinitely — the
-   exact loop this step exists to close. Use the same mutation as Step 5b [D]/[E]:
-   ```bash
-   gh api graphql -f query='
-   mutation {
-     resolveReviewThread(input: {threadId: "{thread.id}"}) {
-       thread { isResolved }
-     }
-   }'
-   ```
-   Run this for the Thread ID of every thread in Step 3a's `reviewThreads.nodes[]` with
-   `isResolved == false`. If there are none, there is nothing to resolve — move on.
-5. Release the pre-work claim from Step 5a.6 — no fix is in flight, this cycle intentionally
-   stops short of dispatching one:
-   ```bash
-   curl -s -o /dev/null -X POST \
-     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-   ```
-6. Print:
-   ```
-   ⏸ PR #{pr} — second-round disagreement detected, escalating to HITL (task {PR_TASK_ID or "none"}). Skipping rebuttal/reset for this cycle.
-   ```
-7. Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
+- **`{blockedReason}`**: `"second-round disagreement between reviewer and automated fix —
+  escalated to HITL"`
+- **`{comment_body}`**: "This finding was already rebutted once and the review still
+  disagrees after re-evaluating that rebuttal — this looks like a genuine disagreement
+  between the reviewer and the automated fix, not something another automated pass will
+  resolve. Flagging for a human decision instead of rebutting again."
+- **`{temp_file_slug}`**: `escalation` (temp file: `/tmp/shipwright-patch-escalation-{pr}.txt`
+  — note this site's slug is `escalation`, not `blocked-5a7`, since it fires before
+  dispatch rather than after a BLOCKED report)
+- **`PR_TASK_ID`**: reused from Step 2.1 (no fresh fetch — Step 2.1 fetched
+  `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right after Step 2
+  resolved this same PR, independent of any claim, so it's already available by the time
+  this check runs)
+- **Claim released**: the pre-work claim from Step 5a.6
+
+**Extra step, unique to this site — resolve unresolved inline threads before releasing the
+claim.** Resolve **all** currently-unresolved inline threads on this PR (from Step 3a's
+`reviewThreads.nodes[]`) — not just threads tied to the qualifying second-round review.
+Step 3a's query carries no field linking a thread back to the review that raised it (only
+`id`, `isResolved`, and the first comment's `author.login`/`body`/`path`/`line`), so scoping
+resolution to "threads belonging to" a specific review isn't something this step can
+actually determine. Escalating already means giving up on automated resolution for this
+cycle — the PR comment posted above tells the human reader that everything was escalated
+for manual review, not silently fixed, so resolving every open thread here carries no
+silent-dismissal risk. Leaving any thread unresolved, however, would leave it
+`isResolved == false`, so Step 3a's List A criteria would re-flag this same PR next cycle
+and re-fire this same escalation indefinitely — the exact loop this step exists to close.
+Use the same mutation as Step 5b [D]/[E]:
+
+```bash
+gh api graphql -f query='
+mutation {
+  resolveReviewThread(input: {threadId: "{thread.id}"}) {
+    thread { isResolved }
+  }
+}'
+```
+
+Run this for the Thread ID of every thread in Step 3a's `reviewThreads.nodes[]` with
+`isResolved == false`. If there are none, there is nothing to resolve — move on. Do this
+before releasing the pre-work claim from Step 5a.6.
+
+After releasing the claim, print:
+```
+⏸ PR #{pr} — second-round disagreement detected, escalating to HITL (task {PR_TASK_ID or "none"}). Skipping rebuttal/reset for this cycle.
+```
+
+Move to the next qualifying PR in List A. If no candidates remain, continue to Step 6.
 
 **Otherwise** — either no candidate replies were found at all in Step 1 (a first-round
 rebuttal, or no rebuttal history at all), or candidates were found but every one was judged
@@ -1104,48 +1052,17 @@ Parse the subagent's STATUS:
   and came back unable to complete the fix. The same unbounded-retry risk applies: a generic
   release with no escalation flag makes this PR immediately re-eligible for
   `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop` tick. Escalate to
-  HITL first, mirroring Step 5a.7's escalation pattern, before releasing the claim:
+  HITL first, following `references/escalation-pattern.md`'s shared PATCH/comment/release
+  sequence, before releasing the claim:
 
-  1. Reuse `PR_TASK_ID`, already resolved once in Step 2.1 — no second fetch here. If
-     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"status": "blocked", "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
-     ```
-     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
-     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
-     patch candidate every cycle, spinning forever:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"blocked": true, "blockedReason": "review-finding fix blocked — automated fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
-     ```
-     Still post the PR comment below either way.
-  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
-     file first, same convention as Step 5a.7's escalation comment (heredocs break
-     permission glob matching):
-     ```bash
-     # Write to /tmp/shipwright-patch-blocked-5c-{pr}.txt:
-     #   The review-finding fix subagent reported BLOCKED and could not complete — flagging
-     #   for a human decision instead of retrying indefinitely.
-     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-5c-{pr}.txt
-     rm /tmp/shipwright-patch-blocked-5c-{pr}.txt
-     ```
-     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
-     across all worktrees.
-  3. Release the pre-work claim from Step 5a.6 so a subsequent patch run within
-     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
-     completed, so nothing is actually in flight:
-     ```bash
-     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-     ```
+  - **`{blockedReason}`**: `"review-finding fix blocked — automated fix subagent could not
+    complete"`
+  - **`{comment_body}`**: "The review-finding fix subagent reported BLOCKED and could not
+    complete — flagging for a human decision instead of retrying indefinitely."
+  - **`{temp_file_slug}`**: `blocked-5c` (temp file:
+    `/tmp/shipwright-patch-blocked-5c-{pr}.txt`)
+  - **`PR_TASK_ID`**: reused from Step 2.1 (no fresh fetch)
+  - **Claim released**: the pre-work claim from Step 5a.6
 
   Log the blocker. Skip Steps 5c.5 and 5d. Move to the next qualifying PR.
   Include the blocker in the final report.
@@ -1459,54 +1376,25 @@ Parse the subagent's STATUS:
 - **DONE_WITH_CONCERNS**: Read concerns. If the push already happened, log concerns and
   proceed to Step 6d.5 (upsert PR record). If the subagent did not push, note it in the
   final report and skip Step 6d.5.
-- **BLOCKED**: A generic BLOCKED release with no escalation flag makes this PR immediately
-  re-eligible for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop`
-  tick — and, absent the `blocked` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to
-  have this same CI-fix subagent re-dispatched against it next cycle. Escalate to HITL
-  first, mirroring Step 5a.7's (RPF-1.3) escalation pattern, before releasing the claim —
-  this is the same `blocked` flag Step 6b.6 already reads pre-dispatch (it runs before
-  dispatch, this runs after a BLOCKED report; they compose without conflict):
+- **BLOCKED**: The CI-fix subagent (dispatched in Step 6c) reported it could not complete.
+  A generic BLOCKED release with no escalation flag makes this PR immediately re-eligible
+  for `check-patch.ts`'s `getPatchCandidates()` on the next `shipwright-loop` tick — and,
+  absent the `blocked` flag Step 6b.6 (CFE-1.1) checks for, also re-eligible to have this
+  same CI-fix subagent re-dispatched against it next cycle. Escalate to HITL first,
+  following `references/escalation-pattern.md`'s shared PATCH/comment/release sequence,
+  before releasing the claim — this is the same `blocked` flag Step 6b.6 already reads
+  pre-dispatch (it runs before dispatch, this runs after a BLOCKED report; they compose
+  without conflict):
 
-  1. Reuse `PR_TASK_ID`, already resolved in Step 6b.6 — no second fetch here. If
-     non-empty, PATCH the linked task to `status: 'blocked'` so it's flagged for a human decision:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" \
-       -d '{"status": "blocked", "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /tasks/$PR_TASK_ID blocked status failed — continuing"
-     ```
-     If `PR_TASK_ID` is empty (no linked task on the PR record), PATCH the PR record itself
-     instead — otherwise nothing is ever recorded to stop this PR from re-qualifying as a
-     patch candidate every cycle, spinning forever:
-     ```bash
-     curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       -H "Content-Type: application/json" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-       -d '{"blocked": true, "blockedReason": "CI-fix blocked — automated CI-fix subagent could not complete"}' > /dev/null 2>&1 || \
-       echo "⚠ PATCH /prs/$PR_RECORD_ID blocked flag failed — continuing"
-     ```
-     Still post the PR comment below either way.
-  2. Post a single PR comment stating a human decision is needed. Write the body to a temp
-     file first, same convention as Step 5a.7's escalation comment (heredocs break
-     permission glob matching):
-     ```bash
-     # Write to /tmp/shipwright-patch-blocked-6d-{pr}.txt:
-     #   The CI-fix subagent reported BLOCKED and could not complete — flagging for a human
-     #   decision instead of retrying indefinitely.
-     gh pr comment {pr} --repo {org}/{repo} --body-file /tmp/shipwright-patch-blocked-6d-{pr}.txt
-     rm /tmp/shipwright-patch-blocked-6d-{pr}.txt
-     ```
-     The temp file path MUST include the PR number to avoid collisions — `/tmp` is shared
-     across all worktrees.
-  3. Release the pre-work claim from Step 6b.5 so a subsequent patch run within
-     the reaper's TTL is not 409-blocked by a stale `phase: "patch"` lock — the fix never
-     completed, so nothing is actually in flight:
-     ```bash
-     [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
-       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
-     ```
+  - **`{blockedReason}`**: `"CI-fix blocked — automated CI-fix subagent could not
+    complete"`
+  - **`{comment_body}`**: "The CI-fix subagent reported BLOCKED and could not complete —
+    flagging for a human decision instead of retrying indefinitely."
+  - **`{temp_file_slug}`**: `blocked-6d` (temp file:
+    `/tmp/shipwright-patch-blocked-6d-{pr}.txt`)
+  - **`PR_TASK_ID`**: reused from Step 6b.6 (no fresh fetch — note this differs from the
+    other BLOCKED sites, which reuse Step 2.1's resolution instead)
+  - **Claim released**: the pre-work claim from Step 6b.5
 
   Log the blocker. Skip Steps 6d.5 and 6e. Move to the next PR in List D.
   Include the blocker in the final report.
