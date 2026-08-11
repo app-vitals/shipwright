@@ -91,23 +91,26 @@ result:
   (`session`/`source`/etc.) behaves when `agentId` is absent.
 
 **Known divergence from what actually shipped:** `TRF-1.1` shipped independently via PR #2563
-(merged 2026-08-11T09:37:47Z) while this plan's own review was still in flight. The shipped
-`matchesReadyFilters()` (`task-service.ts:94-107`) applies `assignee` as a flat, unconditional
-AND — `if (filters.assignee !== undefined && task.assignee !== filters.assignee) return
-false;` — with no branching on `repos` presence, and `listReady()` ANDs that filter
-unconditionally on top of the `agentId`/`repos` OR-union. That means the second sub-case above
-(`agentId` present, `repos` absent/empty → ignore caller-supplied `assignee`, fall back to
-plain `agentId` match) describes intended/safer behavior that the shipped code does **not**
-implement: today, a repos-absent agent token passing a mismatched `?assignee=` gets an
-always-empty result instead of falling back to its own `agentId` — the exact footgun this
-sub-case was designed to avoid. `task-service.unit.test.ts`'s only `assignee`-specific
-`listReady()` test (~line 1216) exercises solely the admin-token/no-`agentId` case, so this gap
-is asserted against neither positively nor negatively. This plan currently documents the
-*intended* three-sub-case design, not what's live on `main`; treat it as a design doc, not a
-description of current behavior, until one of the following happens — whichever is decided,
-file a follow-up task to either (a) update this plan to match the shipped flat-AND behavior as
-an accepted simplification, or (b) fix `matchesReadyFilters()` to match this plan's safer
-repos-absent fallback and add the missing test coverage.
+(merged 2026-08-11T09:37:47Z) while this plan's own review was still in flight, and has since
+been further extended by PR #2566 (`listBlocked()` support) and PR #2569 (which refactored the
+per-task predicate into a helper shared by both `listReady()` and `listBlocked()`). The shipped
+`matchesTaskFilters()` (`task-service.ts:95-109`, renamed from the original PR #2563's
+`matchesReadyFilters()` by #2569's refactor) applies `assignee` as a flat, unconditional AND —
+`if (filters.assignee !== undefined && task.assignee !== filters.assignee) return false;` —
+with no branching on `repos` presence, and `listReady()` ANDs that filter unconditionally on
+top of the `agentId`/`repos` OR-union. That means the second sub-case above (`agentId` present,
+`repos` absent/empty → ignore caller-supplied `assignee`, fall back to plain `agentId` match)
+describes intended/safer behavior that the shipped code does **not** implement: today, a
+repos-absent agent token passing a mismatched `?assignee=` gets an always-empty result instead
+of falling back to its own `agentId` — the exact footgun this sub-case was designed to avoid.
+`task-service.unit.test.ts`'s only `assignee`-specific `listReady()` test (~line 1216) exercises
+solely the admin-token/no-`agentId` case, so this gap is asserted against neither positively nor
+negatively. This plan currently documents the *intended* three-sub-case design, not what's live
+on `main`; treat it as a design doc, not a description of current behavior. This divergence
+remains unresolved as of this writing — a follow-up task should still be filed to either (a)
+update this plan to match the shipped flat-AND behavior as an accepted simplification, or (b)
+fix `matchesTaskFilters()` to match this plan's safer repos-absent fallback and add the missing
+test coverage.
 
 Thread the same query params through `tasks.ts`'s `ready=true`/`state=ready` branch
 (currently `tasks.ts:559-566`), reading them the same way the fallback branch already does.
@@ -123,59 +126,57 @@ branch.
 
 ## Tasks
 
-| Task | Title | Depends on | Blocks | HITL |
-|---|---|---|---|---|
-| TRF-1.1 | Fix `listReady()` to honor session/repo/org/source/claimedBy/pr/branch/assignee filters | — | — | — |
+**Status: SHIPPED.** TRF-1.1 landed independently of this plan while its review was still in
+flight, and was subsequently extended by two follow-on PRs. All three acceptance criteria below
+are satisfied on `main` today. This section is retained as a historical record of the intended
+design (see "Known divergence from what actually shipped" above for the one point where shipped
+behavior differs from what's described here).
 
-### TRF-1.1
+| Task | Title | Depends on | Blocks | HITL | Status |
+|---|---|---|---|---|---|
+| TRF-1.1 | Fix `listReady()` to honor session/repo/org/source/claimedBy/pr/branch/assignee filters | — | — | — | **Shipped** — #2563 (core fix), #2566 (`listBlocked()` parity), #2569 (shared-helper refactor) |
 
-**Description:** `?ready=true`/`?state=ready` silently drops every query filter except
-`agentId`/`repos` (token-derived scope). Extend `TaskService.listReady()` to accept an
-optional filters object covering `session`, `source`, `repo`, `org`, `claimedBy`, `pr`,
-`branch`, `assignee`, applied as a post-filter over the already-resolved ready array. Thread
-the same query params through `tasks.ts`'s `ready=true` branch. Update
-`docs/task-store.md` accordingly.
+### TRF-1.1 (shipped — #2563, #2566, #2569)
 
-**Acceptance Criteria:**
-1. `TaskService.listReady()` accepts an optional filters param (`session`, `source`, `repo`,
-   `org`, `claimedBy`, `pr`, `branch`, `assignee`), applied strictly *after*
-   `resolveReadyTasks()` resolves the graph — mirrors the existing `agentId`/`repos`
-   post-filter at `task-service.ts:273-281`. `repo`/`org` matching mirrors
+**Description:** `?ready=true`/`?state=ready` silently dropped every query filter except
+`agentId`/`repos` (token-derived scope). PR #2563 extended `TaskService.listReady()` to accept
+an optional filters object covering `session`, `source`, `repo`, `org`, `claimedBy`, `pr`,
+`branch`, `assignee`, applied as a post-filter over the already-resolved ready array, and
+threaded the same query params through `tasks.ts`'s `ready=true` branch. PR #2566 extended the
+same filter set to `listBlocked()`. PR #2569 (ATB-1.3) then refactored the per-task predicate
+out of `listReady()` into a helper, `matchesTaskFilters()` (`task-service.ts:95-109`), shared by
+both `listReady()` and `listBlocked()`. `docs/task-store.md` was updated accordingly.
+
+**Acceptance Criteria (all satisfied on `main`):**
+1. **Done.** `TaskService.listReady()` accepts an optional filters param (`session`, `source`,
+   `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee`), applied strictly *after*
+   `resolveReadyTasks()` resolves the graph via the shared `matchesTaskFilters()` helper
+   (`task-service.ts:95-109`, used at `task-service.ts:386`). `repo`/`org` matching mirrors
    `buildRepoOrgWhere`'s semantics (array-any-match for repo, `startsWith "<org>/"` for org,
-   AND between the two). `assignee` specifically mirrors `list()`'s own two-sub-case split
-   (`useAgentScope = agentId !== null && repos !== null && repos.length > 0`, `tasks.ts:589-590`):
-   when `agentId` is present AND `repos` is present/non-empty, AND-narrows the existing
-   `agentId`/`repos` OR-union result (mirrors `list()`'s `agentScope` AND-narrowing,
-   `tasks.ts:624-633`); when `agentId` is present AND `repos` is absent/empty, a
-   caller-supplied `assignee` is ignored and the plain `t.assignee === agentId` filter applies
-   (mirrors `list()`'s identity-replacement precedent at `tasks.ts:638`, avoiding an
-   always-empty result from AND-narrowing against a mismatched value); when `agentId` is
-   absent, `assignee` applies as a standalone equality filter against the ready array (no
-   token identity to replace, unlike `list()`'s no-`agentScope` branch at `tasks.ts:638`) —
-   see Design section for full reasoning.
-2. `tasks.ts`'s `ready=true`/`state=ready` branch reads `session`/`source`/`repo`/`org`/
-   `claimedBy`/`pr`/`branch`/`assignee` from the query string (same parsing already used in
-   the fallback branch) and forwards them into `listReady()` alongside `agentId`/`repos`.
-3. `docs/task-store.md`'s `ready` row + prose are updated: session/source/repo/org/
+   AND between the two, via `matchesRepoOrg()`). Note: `assignee` on `main` applies as a flat,
+   unconditional AND rather than this plan's originally-designed three-sub-case split — see
+   "Known divergence from what actually shipped" above.
+2. **Done.** `tasks.ts`'s `ready=true`/`state=ready` branch reads `session`/`source`/`repo`/
+   `org`/`claimedBy`/`pr`/`branch`/`assignee` from the query string (same parsing already used
+   in the fallback branch) and forwards them into `listReady()` alongside `agentId`/`repos`
+   (`tasks.ts:565-577`).
+3. **Done.** `docs/task-store.md`'s `ready` row + prose are updated: session/source/repo/org/
    claimedBy/pr/branch/assignee apply identically under `ready=true`; `limit`/`offset`/
    `sort`/`updatedSince` remain the only real full-graph exceptions (unchanged);
    `hitl`/`requiresHumanApproval` keep their existing documented ready-specific semantics
    (unchanged).
-4. **Test decision:** add unit tests in `task-service.unit.test.ts` for `listReady()`
-   covering each new filter alone and combined with `agentId`/`repos` scoping; add an
-   integration test in `tasks.integration.test.ts` proving filtering happens *post*-
-   dependency-resolution (a task excluded by a filter must still correctly satisfy a
-   dependency edge for an in-scope task — the regression case for this bug's actual root
-   cause); extend `state-filter.smoke.test.ts`/`api.smoke.test.ts` asserting the route
-   forwards each new param to `listReady()` (mirrors the existing `agentId`-forwarding case
-   at `api.smoke.test.ts:623`). No existing tests are retired — purely additive.
+4. **Test decision — done.** Unit tests in `task-service.unit.test.ts` cover `listReady()`'s
+   new filters alone and combined with `agentId`/`repos` scoping; an integration test in
+   `tasks.integration.test.ts` proves filtering happens *post*-dependency-resolution; smoke
+   tests assert the route forwards each new param to `listReady()`. No existing tests were
+   retired — purely additive.
 
 **Dependencies:** none
-**Branch:** `feat/trf-1-1-ready-filter-passthrough`
+**Branch:** shipped via `#2563`/`#2566`/`#2569` (no branch remains to create)
 **Layer:** API
-**Hours:** 4
+**Hours:** 4 (actual, across the three shipping PRs)
 **HITL:** none
-**Complexity:** 3 (`sonnet`) — pure modification of existing code, reuses established
+**Complexity:** 3 (`sonnet`) — pure modification of existing code, reused established
 patterns (no new abstraction)
 **Safe to deploy standalone:** yes — purely additive optional filters, no behavior change
-when omitted
+when omitted. Already deployed.
