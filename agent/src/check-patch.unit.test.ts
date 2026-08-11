@@ -19,6 +19,7 @@ import {
   type MergeStatusInfo,
   type OwnPr,
   type PrReviewData,
+  findCancelledRuns,
   getPatchCandidates,
   hasFailingCi,
 } from "./check-patch.ts";
@@ -466,6 +467,46 @@ describe("getPatchCandidates", () => {
       }),
     );
     expect(result).toHaveLength(1);
+  });
+
+  // ─── cancelled-only CI candidacy (PCC-1.1) ──────────────────────────────────
+
+  test("returns a candidate when PR's only CI signal is hasCancelled (no genuine failure)", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: {
+          10: { hasFailing: false, hasCancelled: true, cancelledRunId: 555 },
+        },
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns empty array when hasCancelled is false and hasFailing is false (green CI, no findings, no conflict)", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: false, hasCancelled: false } },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array when PR has no findings, green CI, and no merge conflict (defaults hasCancelled to false when omitted)", async () => {
+    const pr = makeOwnPr({ number: 10 });
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: {},
+        ciStatusByPr: { 10: { hasFailing: false } },
+      }),
+    );
+    expect(result).toEqual([]);
   });
 
   test("returns empty array when PR is merely behind main (not dirty) with no other issues", async () => {
@@ -1553,7 +1594,7 @@ describe("getPatchCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("a PR whose linked task has status:\"blocked\" is excluded from patch candidacy (isTaskBlockedForDispatch, new behavior)", async () => {
+  test('a PR whose linked task has status:"blocked" is excluded from patch candidacy (isTaskBlockedForDispatch, new behavior)', async () => {
     const pr = makeOwnPr({ number: 10 });
     const deps = makeDeps({
       ownPrs: [pr],
@@ -1752,5 +1793,64 @@ describe("hasFailingCi", () => {
   test("returns false for a single passing run", () => {
     const runs = [{ workflow_id: 1, run_number: 1, conclusion: "success" }];
     expect(hasFailingCi(runs)).toBe(false);
+  });
+});
+
+// ─── findCancelledRuns (PCC-1.1) ───────────────────────────────────────────────
+
+describe("findCancelledRuns", () => {
+  test("cancelled with no newer run for that workflow → true (returns the qualifying run)", () => {
+    const runs = [
+      { id: 111, workflow_id: 1, run_number: 1, conclusion: "cancelled" },
+    ];
+    const result = findCancelledRuns(runs);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      id: 111,
+      workflow_id: 1,
+      run_number: 1,
+    });
+  });
+
+  test("cancelled but a newer run for the same workflow exists and succeeded → false (no qualifying runs)", () => {
+    const runs = [
+      { id: 111, workflow_id: 1, run_number: 1, conclusion: "cancelled" },
+      { id: 112, workflow_id: 1, run_number: 2, conclusion: "success" },
+    ];
+    expect(findCancelledRuns(runs)).toEqual([]);
+  });
+
+  test("one workflow's latest run is cancelled AND a different workflow's latest run genuinely failed — both signals independently detectable", () => {
+    const runs = [
+      { id: 201, workflow_id: 1, run_number: 1, conclusion: "cancelled" },
+      { id: 202, workflow_id: 2, run_number: 1, conclusion: "failure" },
+    ];
+    const cancelled = findCancelledRuns(runs);
+    expect(cancelled).toHaveLength(1);
+    expect(cancelled[0]).toMatchObject({ id: 201, workflow_id: 1 });
+
+    // hasFailingCi (unchanged) still independently reports the failed workflow.
+    expect(hasFailingCi(runs)).toBe(true);
+  });
+
+  test("returns false for an empty runs array", () => {
+    expect(findCancelledRuns([])).toEqual([]);
+  });
+
+  test("returns false for a single passing run", () => {
+    const runs = [
+      { id: 1, workflow_id: 1, run_number: 1, conclusion: "success" },
+    ];
+    expect(findCancelledRuns(runs)).toEqual([]);
+  });
+
+  test("a workflow's earlier run was cancelled but a later rerun (same workflow_id, higher run_number) also cancelled → still true (latest is cancelled)", () => {
+    const runs = [
+      { id: 301, workflow_id: 1, run_number: 1, conclusion: "cancelled" },
+      { id: 302, workflow_id: 1, run_number: 2, conclusion: "cancelled" },
+    ];
+    const result = findCancelledRuns(runs);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ id: 302, workflow_id: 1 });
   });
 });

@@ -320,7 +320,7 @@ For each PR not in List C (DIRTY PRs have unreliable CI until conflicts are reso
 
 ```bash
 gh api "repos/{org}/{repo}/actions/runs?head_sha={headRefOid}&per_page=20" \
-  -q '.workflow_runs[] | {workflow_id, run_number, conclusion}'
+  -q '.workflow_runs[] | {id, workflow_id, run_number, conclusion}'
 ```
 
 A PR has **failing CI** when any workflow's **latest run** (highest `run_number` per
@@ -332,7 +332,23 @@ returns both the original failed run and the new rerun as separate entries with 
 produce a false positive if an older run failed but a newer rerun passed. Deduplication
 by keeping only the latest run per workflow mirrors the behavior of `gh pr checks`.
 
-If failing CI is found, add the PR to **List D**.
+If failing CI is found, add the PR to **List D** and set `CI_HAS_FAILING=true` for this PR.
+
+**Stale-cancelled CI (PCC-1.1):** using the same latest-run-per-workflow dedup above, a PR
+also has **cancelled CI** when any workflow's latest run has `conclusion == "cancelled"` —
+e.g. a job that hit `timeout-minutes` and was reported by GitHub's API as `cancelled` rather
+than `timed_out`. This is checked independently of, and is not mutually exclusive with, the
+failing-CI check above — a PR can have one workflow whose latest run genuinely failed and a
+different workflow whose latest run was cancelled at the same time. If cancelled CI is
+found, add the PR to **List D** (if not already there) and set `CI_HAS_CANCELLED=true` and
+record the qualifying run's `id` as `CANCELLED_RUN_ID` (highest `run_number` wins when more
+than one workflow qualifies) for this PR.
+
+A PR whose **only** List D signal is `CI_HAS_CANCELLED=true` (i.e. `CI_HAS_FAILING` is not
+also true for this PR — cancelled-only, no failure/timed_out) is handled by the new Step
+6b.8 rerun-first branch instead of going straight to Step 6c. A PR with a genuine
+failure/timed_out run (`CI_HAS_FAILING=true`), with or without an additional cancelled run
+elsewhere, is unaffected by Step 6b.8 and proceeds straight to Step 6c exactly as before.
 
 ### Step 3d: Summary
 
@@ -1333,7 +1349,97 @@ other tasks are still actively developing.
    don't tag a specific reason.
 
 **Otherwise** (`INCOMPLETE == 0` — no tasks tracked on this branch, or all tasks are past
-`pending`/`in_progress`/`blocked`): the bundle is complete — proceed to Step 6c.
+`pending`/`in_progress`/`blocked`): the bundle is complete — proceed to Step 6b.8.
+
+### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)
+
+Per the Candidate Selection Contract, `check-patch.ts`'s `getPatchCandidates` (via
+`fetchCiStatus`'s `hasCancelled` field) already decided this PR is a valid patch candidate —
+this step re-validates current-state safety immediately before acting, it does not
+requalify. Step 3c tracked, per PR, which List D signal(s) applied: `CI_HAS_FAILING` (a
+genuine `failure`/`timed_out` run) and/or `CI_HAS_CANCELLED` (a `cancelled` latest run for
+some workflow, with `CANCELLED_RUN_ID` holding the qualifying run's `id`).
+
+**Gate — cancelled-only, no failure/timed_out:** this step only applies when
+`CI_HAS_CANCELLED=true` AND `CI_HAS_FAILING` is NOT also true for this PR. A cancelled run
+is not equivalent to a real test failure — it is most often a job that hit
+`timeout-minutes` and was reported by GitHub's API as `cancelled` rather than `timed_out`,
+or an external cancellation with no code-level cause at all. A cheap rerun is a safe,
+essentially no-op action even for workflows that use `concurrency`/`cancel-in-progress`
+(e.g. `chart-release.yml`, `sync-plugin-version.yml`, `auto-bump-chart.yml`,
+`deploy-site.yml`) — this gate is scoped to the PR's latest-run state, not to workflow
+identity, so it is safe to run unconditionally whenever the cancelled-only condition holds.
+
+**If the gate does not hold** (`CI_HAS_FAILING=true`, with or without an additional
+cancelled run elsewhere on this PR): this PR has a genuine failure/timed_out run — skip this
+step entirely, completely unaffected by the cancelled-only branch, and proceed directly to
+Step 6c exactly as before.
+
+**Otherwise** (cancelled-only): attempt a rerun before touching anything else — no commit,
+no subagent dispatch in this branch.
+
+```bash
+gh run rerun "$CANCELLED_RUN_ID" --repo {org}/{repo}
+```
+
+Poll for a terminal result — a brief, bounded poll (not the full CI gate used elsewhere):
+every 15 seconds, up to 8 times (~2 minutes total). On each poll iteration, renew the claim
+heartbeat first, same reasoning as the heartbeat renewals before every subagent dispatch in
+Steps 4b/5b/6c:
+
+```bash
+curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/heartbeat"
+
+gh run view "$CANCELLED_RUN_ID" --repo {org}/{repo} --json status,conclusion
+```
+
+Keep polling while `status` is `queued`, `in_progress`, or `waiting`. Stop as soon as
+`status == "completed"`.
+
+**Poll window exhausted with no terminal result:** treat this as inconclusive — the rerun
+must not leave the PR in limbo. Fall through to Step 6c exactly as the failed/cancelled case
+below does.
+
+**If the rerun's terminal `conclusion` is `success`, or any other non-cancelled,
+non-failure terminal state** (e.g. `neutral`, `skipped`): the PR is resolved — the cancelled
+CI was indeed stale/transient. Skip Step 6c entirely for this PR:
+
+1. Release the pre-work claim from Step 6b.5 — no fix is in flight, the rerun alone resolved
+   the PR:
+   ```bash
+   curl -s -o /dev/null -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+   ```
+2. Print:
+   ```
+   ✓ PR #{pr} — cancelled run {CANCELLED_RUN_ID} rerun succeeded, no fix needed — skipping CI-fix dispatch.
+   ```
+3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
+
+**If the rerun itself ends `cancelled` or `failure` (or the poll window is exhausted without
+a terminal result, per above):** this is a repeated-timeout/hang signal, not a normal test
+failure — fall through to Step 6c as normal. Before dispatching, collect the job's abnormal
+duration vs. its typical duration for the Step 6c prompt, if obtainable:
+
+```bash
+gh api "repos/{org}/{repo}/actions/runs/$CANCELLED_RUN_ID/jobs" \
+  --jq '.jobs[] | {name, started_at, completed_at}'
+```
+
+Approximate a typical duration from a handful of recent successful runs of the same
+workflow (best-effort — use your judgment on how deep to go; this is context for the
+subagent prompt, not a statistical guarantee):
+
+```bash
+gh run list --workflow {workflow-name-or-id} --repo {org}/{repo} --status success \
+  --limit 5 --json startedAt,updatedAt
+```
+
+Store both durations (or a note that typical duration was unavailable) as
+`{repeated-timeout-context}` for use in Step 6c's prompt. Proceed to Step 6c.
 
 ### Step 6c: Dispatch Fix Subagent
 
@@ -1365,6 +1471,16 @@ TOOLCHAIN:
 
 CI FAILURE OUTPUT (last 200 lines):
 {log output from Step 6b}
+
+{if arriving via Step 6b.8's cancelled-only rerun-first branch (the rerun itself ended
+cancelled or failure, or its poll window was exhausted with no terminal result), include:
+"NOTE — REPEATED TIMEOUT/HANG SIGNAL: this PR's CI was cancelled (not a normal test
+failure), a rerun was attempted, and the rerun ALSO ended {cancelled|failure|inconclusive
+after polling}. This looks like a repeated timeout/hang rather than a deterministic test
+failure. Job duration vs. typical duration: {repeated-timeout-context from Step 6b.8, or
+'unavailable' if the duration lookup failed}. Investigate whether the job is hanging,
+hitting `timeout-minutes`, or genuinely regressed before treating this as an ordinary
+failing-test fix."}
 
 INSTRUCTIONS — follow in order:
 

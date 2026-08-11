@@ -801,10 +801,12 @@ describe("patch.md — bundle-incomplete self-check before CI-fix dispatch (PH-1
     const step6b7Idx = content.indexOf(
       "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
     );
-    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6b8Idx = content.indexOf(
+      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
+    );
     expect(step6b7Idx).toBeGreaterThan(-1);
-    expect(step6cIdx).toBeGreaterThan(-1);
-    return content.slice(step6b7Idx, step6cIdx);
+    expect(step6b8Idx).toBeGreaterThan(-1);
+    return content.slice(step6b7Idx, step6b8Idx);
   }
 
   it("Step 6b.7 exists between Step 6b.6 (escalation check) and Step 6c (dispatch)", () => {
@@ -864,12 +866,12 @@ describe("patch.md — bundle-incomplete self-check before CI-fix dispatch (PH-1
     expect(hasStopLanguage).toBe(true);
   });
 
-  it("otherwise branch (bundle complete) proceeds to Step 6c and does not emit [silent]", () => {
+  it("otherwise branch (bundle complete) proceeds to Step 6b.8 (which itself falls through to Step 6c) and does not emit [silent]", () => {
     const section = getStep6b7Section();
     const otherwiseIdx = section.indexOf("**Otherwise**");
     expect(otherwiseIdx).toBeGreaterThan(-1);
     const otherwiseSection = section.slice(otherwiseIdx);
-    expect(otherwiseSection).toContain("Step 6c");
+    expect(otherwiseSection).toContain("Step 6b.8");
     expect(otherwiseSection).not.toContain("[silent]");
   });
 });
@@ -1466,5 +1468,165 @@ describe("patch.md — capture and report CI failure signature (CSD-1.2)", () =>
     const section = getStep6d5Section();
     expect(section).toMatch(/if\s*\[\s*-n\s*"\$PR_RECORD_ID"\s*\]/);
     expect(section).toMatch(/if\s*\[\s*-n\s*"\$CI_FAILURE_SIGNATURE"\s*\]/);
+  });
+});
+
+describe("patch.md — detect stale-cancelled CI, rerun before escalating to CI-fix (PCC-1.1)", () => {
+  function getStep3cSection() {
+    const step3cIdx = content.indexOf(
+      "### Step 3c: Check for Failing CI (for PRs not in List C)",
+    );
+    const step3dIdx = content.indexOf("### Step 3d: Summary");
+    expect(step3cIdx).toBeGreaterThan(-1);
+    expect(step3dIdx).toBeGreaterThan(step3cIdx);
+    return content.slice(step3cIdx, step3dIdx);
+  }
+
+  function getStep6b8Section() {
+    const step6b8Idx = content.indexOf(
+      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
+    );
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b8Idx).toBeGreaterThan(-1);
+    expect(step6cIdx).toBeGreaterThan(step6b8Idx);
+    return content.slice(step6b8Idx, step6cIdx);
+  }
+
+  it("Step 3c independently detects cancelled CI using the same latest-run-per-workflow dedup, distinct from the failure/timed_out check", () => {
+    const section = getStep3cSection();
+    expect(section).toContain('conclusion == "cancelled"');
+    expect(section).toContain("CI_HAS_CANCELLED");
+    expect(section).toContain("CI_HAS_FAILING");
+    expect(section).toContain("CANCELLED_RUN_ID");
+    expect(section).toContain("independently");
+    expect(section).toContain("not mutually exclusive with");
+  });
+
+  it("Step 3c records that a cancelled-only PR (no CI_HAS_FAILING) routes to the new Step 6b.8 branch", () => {
+    const section = getStep3cSection();
+    expect(section).toContain("Step 6b.8");
+    expect(section).toContain("cancelled-only");
+  });
+
+  it("Step 6b.8 exists between Step 6b.7 (bundle gate) and Step 6c (dispatch)", () => {
+    const step6b7Idx = content.indexOf(
+      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
+    );
+    const step6b8Idx = content.indexOf(
+      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
+    );
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    expect(step6b7Idx).toBeGreaterThan(-1);
+    expect(step6b8Idx).toBeGreaterThan(step6b7Idx);
+    expect(step6cIdx).toBeGreaterThan(step6b8Idx);
+  });
+
+  it("Step 6b.7's otherwise branch hands off to Step 6b.8, not straight to 6c", () => {
+    const step6b7Idx = content.indexOf(
+      "### Step 6b.7: Bundle Completeness Gate (PH-1.1)",
+    );
+    const step6b8Idx = content.indexOf(
+      "### Step 6b.8: Rerun-First for Cancelled-Only CI (PCC-1.1)",
+    );
+    const section = content.slice(step6b7Idx, step6b8Idx);
+    const otherwiseIdx = section.indexOf("**Otherwise**");
+    expect(otherwiseIdx).toBeGreaterThan(-1);
+    const otherwiseSection = section.slice(otherwiseIdx);
+    expect(otherwiseSection).toContain("Step 6b.8");
+  });
+
+  it("gates the rerun-first branch on cancelled-only, no failure/timed_out", () => {
+    const section = getStep6b8Section();
+    expect(section.toLowerCase()).toContain("cancelled-only, no failure/timed_out");
+    expect(section).toContain("CI_HAS_CANCELLED=true");
+    expect(section).toContain("CI_HAS_FAILING");
+    expect(section).toMatch(/CI_HAS_FAILING.{0,40}NOT also true/is);
+  });
+
+  it("a PR with a genuine failure/timed_out run skips this step entirely and proceeds directly to Step 6c", () => {
+    const section = getStep6b8Section();
+    expect(section).toMatch(
+      /does not hold.{0,400}proceed directly to\s+Step 6c/is,
+    );
+    expect(section).toContain("completely unaffected by the cancelled-only branch");
+  });
+
+  it("does not treat cancelled as failure-equivalent for concurrency/cancel-in-progress workflows — scoped to run state, not workflow identity", () => {
+    const section = getStep6b8Section();
+    for (const workflow of [
+      "chart-release.yml",
+      "sync-plugin-version.yml",
+      "auto-bump-chart.yml",
+      "deploy-site.yml",
+    ]) {
+      expect(section).toContain(workflow);
+    }
+    expect(section).toContain("concurrency");
+    expect(section.toLowerCase()).toMatch(/not to workflow\s+identity/);
+    expect(section.toLowerCase()).toContain("no-op");
+  });
+
+  it("calls `gh run rerun` for the cancelled run, with no commit and no subagent dispatch in this branch", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("gh run rerun");
+    expect(section).toContain("$CANCELLED_RUN_ID");
+    expect(section).toContain("no commit");
+    expect(section).toContain("no subagent dispatch");
+  });
+
+  it("polls for a terminal result with a brief, bounded cadence distinct from Step 6.5a's 30s/10-poll gate", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("gh run view");
+    expect(section).toMatch(/status.{0,20}conclusion/is);
+    expect(section).toMatch(/15 seconds/);
+    expect(section).toMatch(/8 times/);
+    expect(section).toContain("queued");
+    expect(section).toContain("in_progress");
+    expect(section).toContain("waiting");
+  });
+
+  it("renews the claim heartbeat on each poll iteration, same as other polling loops", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("/prs/$PR_RECORD_ID/heartbeat");
+  });
+
+  it("treats an exhausted poll window with no terminal result as inconclusive and falls through to Step 6c", () => {
+    const section = getStep6b8Section();
+    expect(section.toLowerCase()).toContain("inconclusive");
+    expect(section).toMatch(/exhausted.{0,200}Step 6c/is);
+  });
+
+  it("on a successful (or other non-cancelled/non-failure terminal) rerun, skips Step 6c, releases the claim, and moves to the next PR in List D", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("Skip Step 6c entirely");
+    expect(section).toContain("/prs/$PR_RECORD_ID/release");
+    expect(section).toContain("next PR in List D");
+  });
+
+  it("falls through to Step 6c only when the rerun itself ends cancelled or failure (or times out inconclusively)", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("ends `cancelled` or `failure`");
+    expect(section).toContain("repeated-timeout/hang signal");
+    expect(section).not.toContain("normal test failure");
+  });
+
+  it("collects the job's abnormal duration vs. typical duration from the Actions API for the Step 6c prompt", () => {
+    const section = getStep6b8Section();
+    expect(section).toContain("actions/runs/$CANCELLED_RUN_ID/jobs");
+    expect(section).toContain("started_at");
+    expect(section).toContain("completed_at");
+    expect(section).toContain("typical duration");
+  });
+
+  it("Step 6c's prompt construction notes the repeated-timeout/hang context when arriving via Step 6b.8", () => {
+    const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
+    const step6dIdx = content.indexOf("### Step 6d: Handle Subagent Status");
+    expect(step6cIdx).toBeGreaterThan(-1);
+    expect(step6dIdx).toBeGreaterThan(step6cIdx);
+    const section = content.slice(step6cIdx, step6dIdx);
+    expect(section).toContain("REPEATED TIMEOUT/HANG SIGNAL");
+    expect(section).toContain("Step 6b.8");
+    expect(section).toContain("repeated-timeout-context");
+    expect(section.toLowerCase()).toMatch(/not a normal test\s+failure/);
   });
 });
