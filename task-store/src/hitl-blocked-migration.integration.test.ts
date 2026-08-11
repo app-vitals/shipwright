@@ -109,6 +109,21 @@ describeOrSkip("split-hitl/blocked data migration (integration)", () => {
     expect(task.hitl).toBe(false);
   });
 
+  it("a hitl:true + null blockedReason task is untouched", async () => {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Task" ("id","title","status","hitl","blockedReason","hitlNotifiedAt","updatedAt")
+       VALUES ('t-genuine', 'genuine hitl', 'pending', true, NULL, NULL, now());`,
+    );
+
+    await runDataMigration(prisma);
+
+    const task = await prisma.task.findUniqueOrThrow({
+      where: { id: "t-genuine" },
+    });
+    expect(task.status).toBe("pending");
+    expect(task.hitl).toBe(true);
+  });
+
   it("a terminal-status hitl:true + non-null blockedReason task has hitl cleared but status untouched", async () => {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Task" ("id","title","status","hitl","blockedReason","hitlNotifiedAt","updatedAt")
