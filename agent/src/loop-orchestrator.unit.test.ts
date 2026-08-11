@@ -10,7 +10,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import type {
+  ErrorCapturingClient,
+  ScopeTagSetter,
+} from "@shipwright/lib/sentry";
 import {
   ClaudeRunError,
   ClaudeTimeoutError,
@@ -116,7 +119,15 @@ function makeRecordingReporter(): {
       itemType,
       itemId,
     ) {
-      completes.push({ cronId, runId, outcome, opts, phaseId, itemType, itemId });
+      completes.push({
+        cronId,
+        runId,
+        outcome,
+        opts,
+        phaseId,
+        itemType,
+        itemId,
+      });
     },
     async skipRun(
       cronId,
@@ -247,9 +258,7 @@ function makeFakeSentryClient(): {
       captured.push({ err, tags: { ...active } });
     },
     withScope: async <T>(
-      callback: (scope: {
-        setTag: (key: string, value: string) => unknown;
-      }) => Promise<T>,
+      callback: (scope: ScopeTagSetter) => Promise<T>,
     ): Promise<T> => {
       // Fork: a brand-new tag bag per call, seeded from nothing (real
       // Sentry.withScope forks the CURRENT scope's tags too, but no
@@ -572,9 +581,7 @@ async function withCapturedWarnings(
 // original afterward even if `fn` throws. Mirrors withCapturedWarnings above
 // — used to assert on the busy-stall escalation's console.error call without
 // touching the console.warn capture used by the non-escalated busy-skip path.
-async function withCapturedErrors(
-  fn: () => Promise<void>,
-): Promise<string[]> {
+async function withCapturedErrors(fn: () => Promise<void>): Promise<string[]> {
   const errorMessages: string[] = [];
   const originalError = console.error.bind(console);
   console.error = (...args: unknown[]) => {
@@ -2613,9 +2620,7 @@ describe("createLoopOrchestrator", () => {
       async () => {
         const { clock } = makeMutableClockForBackoff("2026-01-01T00:00:00Z");
         const calls: string[] = [];
-        const devTaskCandidates = [
-          task("SWC-BOOM", "2026-01-01T00:00:00Z"),
-        ];
+        const devTaskCandidates = [task("SWC-BOOM", "2026-01-01T00:00:00Z")];
 
         const deps = {
           ...makeDeps({
@@ -3165,9 +3170,7 @@ describe("createLoopOrchestrator", () => {
     expect(skips).toEqual([]);
 
     // The failure is logged, observable, and identifies the offending item.
-    expect(
-      warnings.some((w) => w.includes("SWC-BOOM")),
-    ).toBe(true);
+    expect(warnings.some((w) => w.includes("SWC-BOOM"))).toBe(true);
   });
 
   // ─── Sentry per-item tag isolation (LO-1.1) ─────────────────────────────────
