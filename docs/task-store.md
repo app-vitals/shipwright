@@ -46,8 +46,8 @@ Query params:
 | Param | Type | Description |
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
-| `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `hitl` is not filterable here — it is structurally excluded from the ready set by definition (see above). `limit`/`offset`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). The `?sort` parameter is not supported with `?ready=true`. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
+| `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked`. `blocked` returns tasks with `status=blocked` OR (a non-terminal status AND an unresolved `blockedBy` entry — dependency or HITL). `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?state=blocked` identically to the plain list path and to `?ready=true` (applied as an AND filter *after* the full task graph is loaded and dependency resolution has run — a task excluded by one of these filters can still contribute a `blockedBy` entry for an in-scope dependent task, since resolution needs the complete graph). `limit`/`offset`/`updatedSince` have no effect under `?state=blocked` (see the unpaginated-convenience-endpoint note below); `sort` does apply (see that same note). |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `hitl` is not filterable here — it is structurally excluded from the ready set by definition (see above). `limit`/`offset`/`sort`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
@@ -99,13 +99,16 @@ whole-graph reason.
 Aside from those pagination/sort/recency exceptions (and `hitl`, which
 keeps the ready-specific semantics documented in its own row above), every other filter in
 the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee` — applies
-under `?ready=true` exactly as it does on the plain list path. `TaskService.listReady()` applies
-these as a post-filter *after* `resolveReadyTasks()` has resolved the complete dependency graph,
-never folded into the initial query — a task that gets filtered out of the final response can
-still correctly satisfy a dependency edge for another, in-scope task. `repo`/`org` matching
-mirrors the same array-any-match (`repo`) / `startsWith "<org>/"` (`org`) / AND-between-both
-semantics described above for the plain list path, just evaluated in-memory instead of as a
-Prisma `where` clause.
+under `?ready=true` and `?state=blocked` exactly as it does on the plain list path.
+`TaskService.listReady()` applies these as a post-filter *after* `resolveReadyTasks()` has
+resolved the complete dependency graph; `TaskService.listBlocked()` applies the identically-shaped
+filter set (`ListBlockedFilters`, mirroring `listReady()`'s `ListReadyFilters`) as a post-filter
+*after* the full task graph is loaded and `computeBlockedBy()` has resolved it. Neither is folded
+into the initial query — a task that gets filtered out of the final response can still correctly
+satisfy a dependency edge (for `?ready=true`) or contribute a `blockedBy` entry (for
+`?state=blocked`) for another, in-scope task. `repo`/`org` matching mirrors the same
+array-any-match (`repo`) / `startsWith "<org>/"` (`org`) / AND-between-both semantics described
+above for the plain list path, just evaluated in-memory instead of as a Prisma `where` clause.
 
 **Agent token visibility:**
 - **With repo scope** (repos configured): Return tasks where `assignee === agentId` OR (`assignee === null` AND `repo` is in the agent's scope). This union of explicitly-assigned and pool tasks enables the agent to claim unassigned work from its scoped repositories.

@@ -108,6 +108,7 @@ function fakeTaskService(opts: {
   capturedListBlockedCalls?: number[];
   capturedListBlockedArgs?: Array<string | undefined>;
   capturedListBlockedSortArgs?: Array<"asc" | "desc" | undefined>;
+  capturedListBlockedFilters?: Array<Record<string, unknown> | undefined>;
 }): TaskServiceLike {
   return {
     async list(filters?: TaskListFilters) {
@@ -130,12 +131,15 @@ function fakeTaskService(opts: {
       agentId?: string,
       _repos?: string[],
       sort?: "asc" | "desc",
+      filters?: Record<string, unknown>,
     ) {
       if (opts.capturedListBlockedCalls) opts.capturedListBlockedCalls.push(1);
       if (opts.capturedListBlockedArgs)
         opts.capturedListBlockedArgs.push(agentId);
       if (opts.capturedListBlockedSortArgs)
         opts.capturedListBlockedSortArgs.push(sort);
+      if (opts.capturedListBlockedFilters)
+        opts.capturedListBlockedFilters.push(filters);
       return (opts.listBlockedResult ?? []).map((t) => withBlockedBy(t));
     },
     async get(id: string) {
@@ -544,5 +548,51 @@ describe("GET /tasks state filter (smoke)", () => {
       "t-middle",
       "t-oldest",
     ]);
+  });
+
+  // ─── new filters for state=blocked (ATB-1.2) ───────────────────────────────
+
+  it("GET /tasks?state=blocked forwards session/source/repo/org/claimedBy/pr/branch/assignee to listBlocked", async () => {
+    const capturedListBlockedFilters: Array<
+      Record<string, unknown> | undefined
+    > = [];
+    const taskService = fakeTaskService({ capturedListBlockedFilters });
+    const app = makeApp(taskService);
+
+    const res = await app.request(
+      "/tasks?state=blocked&session=session-a&source=entropy-fix&repo=acme-inc%2Fbackend-api&org=acme-inc&claimedBy=agent-9&pr=42&branch=feat%2Ffoo&assignee=agent-9",
+      { headers: auth() },
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedListBlockedFilters[0]).toMatchObject({
+      session: "session-a",
+      source: "entropy-fix",
+      repo: ["acme-inc/backend-api"],
+      org: ["acme-inc"],
+      claimedBy: "agent-9",
+      pr: 42,
+      branch: "feat/foo",
+      assignee: "agent-9",
+    });
+  });
+
+  it("GET /tasks?state=blocked without the new filter params forwards them as undefined to listBlocked", async () => {
+    const capturedListBlockedFilters: Array<
+      Record<string, unknown> | undefined
+    > = [];
+    const taskService = fakeTaskService({ capturedListBlockedFilters });
+    const app = makeApp(taskService);
+
+    await app.request("/tasks?state=blocked", { headers: auth() });
+
+    expect(capturedListBlockedFilters[0]).toMatchObject({
+      session: undefined,
+      source: undefined,
+      claimedBy: undefined,
+      pr: undefined,
+      branch: undefined,
+      assignee: undefined,
+    });
   });
 });

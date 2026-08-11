@@ -1422,3 +1422,396 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["dependent-task"]);
   });
 });
+
+// ─── TaskService.listBlocked() filters (ATB-1.2) ────────────────────────────
+//
+// Mirrors "TaskService.listReady() filters (unit)" above — same filter field
+// set (session/source/repo/org/claimedBy/pr/branch/assignee), applied as an
+// in-memory post-filter, just evaluated against listBlocked()'s blocked-task
+// selection instead of the ready set.
+
+describe("TaskService.listBlocked() filters (unit)", () => {
+  /**
+   * makeBlockedFilterTask — full task object for use in the listBlocked()
+   * Prisma double. Defaults to a plain blocked, unclaimed, dependency-free
+   * task so every test only needs to override the fields it cares about.
+   */
+  function makeBlockedFilterTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "blocked",
+      source: null,
+      session: null,
+      repo: null,
+      description: null,
+      acceptanceCriteria: [],
+      layer: null,
+      branch: null,
+      dependencies: [],
+      pr: null,
+      hours: null,
+      startedAt: null,
+      prCreatedAt: null,
+      mergedAt: null,
+      blockedAt: null,
+      blockedReason: null,
+      note: null,
+      type: null,
+      priority: null,
+      cancelledAt: null,
+      completedAt: null,
+      deployingAt: null,
+      ciFixAttempts: null,
+      mergeCommit: null,
+      prUrl: null,
+      assignee: null,
+      issue: null,
+      model: null,
+      complexity: null,
+      hitl: null,
+      requiresHumanApproval: false,
+      claimedBy: null,
+      agentHint: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      createdAt: new Date("2026-08-10T12:00:00.000Z"),
+      updatedAt: new Date("2026-08-10T12:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  /** Prisma double serving a fixed set of tasks to the whole-graph findMany(). */
+  function makeBlockedFilterPrismaDouble(tasks: Task[]) {
+    const prisma = {
+      task: {
+        findMany() {
+          return Promise.resolve(tasks);
+        },
+      },
+    };
+    return prisma as unknown as PrismaClient;
+  }
+
+  // ─── session ──────────────────────────────────────────────────────────────
+
+  it("listBlocked({ session }) returns only tasks matching the session", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", session: "session-a" }),
+      makeBlockedFilterTask({ id: "t2", session: "session-b" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      session: "session-a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── source ───────────────────────────────────────────────────────────────
+
+  it("listBlocked({ source }) returns only tasks matching the source", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", source: "entropy-fix" }),
+      makeBlockedFilterTask({ id: "t2", source: "plan-session" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      source: "entropy-fix",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── claimedBy ────────────────────────────────────────────────────────────
+
+  it("listBlocked({ claimedBy }) returns only tasks matching claimedBy", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", claimedBy: "agent-x" }),
+      makeBlockedFilterTask({ id: "t2", claimedBy: "agent-y" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      claimedBy: "agent-x",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── pr ───────────────────────────────────────────────────────────────────
+
+  it("listBlocked({ pr }) returns only tasks matching the PR number", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", pr: 42 }),
+      makeBlockedFilterTask({ id: "t2", pr: 99 }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      pr: 42,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── branch ───────────────────────────────────────────────────────────────
+
+  it("listBlocked({ branch }) returns only tasks matching the branch", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", branch: "feat/a" }),
+      makeBlockedFilterTask({ id: "t2", branch: "feat/b" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      branch: "feat/a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── assignee ─────────────────────────────────────────────────────────────
+
+  it("listBlocked({ assignee }) returns only tasks matching the assignee", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", assignee: "agent-x" }),
+      makeBlockedFilterTask({ id: "t2", assignee: "agent-y" }),
+      makeBlockedFilterTask({ id: "t3", assignee: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      assignee: "agent-x",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── repo (array-any-match, mirrors buildRepoOrgWhere) ─────────────────────
+
+  it("listBlocked({ repo: string }) returns only tasks with an exact repo match", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", repo: "acme/foo" }),
+      makeBlockedFilterTask({ id: "t2", repo: "acme/bar" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      repo: "acme/foo",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ repo: string[] }) returns tasks matching any repo in the list", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", repo: "acme/foo" }),
+      makeBlockedFilterTask({ id: "t2", repo: "acme/bar" }),
+      makeBlockedFilterTask({ id: "t3", repo: "acme/baz" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      repo: ["acme/foo", "acme/bar"],
+    });
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  // ─── org (startsWith "<org>/", mirrors buildRepoOrgWhere) ──────────────────
+
+  it("listBlocked({ org: string }) returns tasks whose repo starts with '<org>/'", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      makeBlockedFilterTask({ id: "t2", repo: "acme/backend-api" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      org: "app-vitals",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ org: string[] }) returns tasks matching any org", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      makeBlockedFilterTask({ id: "t2", repo: "acme/backend-api" }),
+      makeBlockedFilterTask({ id: "t3", repo: "other/repo" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      org: ["app-vitals", "acme"],
+    });
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("listBlocked({ repo, org }) ANDs repo and org, mirroring buildRepoOrgWhere", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      // Matches both repo list AND org.
+      makeBlockedFilterTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      // Matches repo list but not org.
+      makeBlockedFilterTask({ id: "t2", repo: "acme/backend-api" }),
+      // Matches org but not repo list.
+      makeBlockedFilterTask({ id: "t3", repo: "app-vitals/other-repo" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      repo: ["app-vitals/shipwright", "acme/backend-api"],
+      org: "app-vitals",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── combined filters ───────────────────────────────────────────────────────
+
+  it("listBlocked() combines multiple new filters together (AND semantics)", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({
+        id: "t1",
+        session: "session-a",
+        source: "entropy-fix",
+      }),
+      makeBlockedFilterTask({
+        id: "t2",
+        session: "session-a",
+        source: "plan-session",
+      }),
+      makeBlockedFilterTask({
+        id: "t3",
+        session: "session-b",
+        source: "entropy-fix",
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      session: "session-a",
+      source: "entropy-fix",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked() combines new filters with agentId/repos scoping", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      // Owned by agent-1, matches source filter.
+      makeBlockedFilterTask({
+        id: "t1",
+        assignee: "agent-1",
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+      // Owned by agent-1, but wrong source — excluded by the new filter.
+      makeBlockedFilterTask({
+        id: "t2",
+        assignee: "agent-1",
+        source: "plan-session",
+        repo: "acme/backend-api",
+      }),
+      // Unassigned pool task in scope, matches source filter.
+      makeBlockedFilterTask({
+        id: "t3",
+        assignee: null,
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+      // Owned by a different agent but in-scope repo, matches source filter
+      // — listBlocked()'s repo scope (unlike listReady()'s) includes any
+      // assignee for an in-scope repo, not just unassigned pool tasks.
+      makeBlockedFilterTask({
+        id: "t4",
+        assignee: "agent-2",
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+      // Owned by a different agent, out of repo scope, matches source
+      // filter — excluded by agentId/repos scoping regardless.
+      makeBlockedFilterTask({
+        id: "t5",
+        assignee: "agent-2",
+        source: "entropy-fix",
+        repo: "acme/other-repo",
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(
+      "agent-1",
+      ["acme/backend-api"],
+      undefined,
+      { source: "entropy-fix" },
+    );
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t3", "t4"]);
+  });
+
+  // ─── undefined/empty filters do not exclude tasks ──────────────────────────
+
+  it("listBlocked() with no filters object returns every blocked task (back-compat)", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1" }),
+      makeBlockedFilterTask({ id: "t2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked();
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("listBlocked({}) (empty filters object) returns every blocked task", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1" }),
+      makeBlockedFilterTask({ id: "t2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {});
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  // ─── dependency graph resolved before filtering ────────────────────────────
+
+  it("listBlocked() applies filters strictly after dependency resolution — an excluded task still contributes a blockedBy entry for an in-scope dependent task", async () => {
+    // depTask is still pending (unsatisfied dependency) but belongs to a
+    // different session than the filter — if the filter were folded into
+    // the initial query (instead of applied as a post-filter over the
+    // fully-resolved graph), computeBlockedBy would never see depTask and
+    // the dependent task below would be wrongly reported as unblocked.
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({
+        id: "dep-task",
+        status: "pending",
+        session: "session-other",
+      }),
+      makeBlockedFilterTask({
+        id: "dependent-task",
+        status: "pending",
+        session: "session-a",
+        dependencies: ["dep-task"],
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      session: "session-a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["dependent-task"]);
+    expect(result[0]?.blockedBy).toContainEqual({
+      type: "dependency",
+      id: "dep-task",
+      status: "pending",
+    });
+  });
+});
