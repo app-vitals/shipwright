@@ -622,6 +622,108 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(resultIds).toEqual(expectedOrder);
   });
 
+  // ─── TaskService.listReady() session/repo/org/source/claimedBy/pr/branch/assignee filters (TRF-1.1) ───
+
+  it("listReady({ session }) applies the session filter strictly after dependency resolution — a filtered-out dependency still satisfies its dependent's readiness", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Dependency belongs to a different session than the filter — if the
+    // filter were folded into the initial query (instead of applied as a
+    // post-filter over the fully-resolved graph), this task would be
+    // invisible to resolveReadyTasks() and the dependent below would be
+    // wrongly excluded from the ready set.
+    const depTask = await prisma.task.create({
+      data: {
+        title: "Dependency (different session, already done)",
+        status: "done",
+        session: "session-other",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    const dependentTask = await prisma.task.create({
+      data: {
+        title: "Dependent (in-scope session)",
+        status: "pending",
+        session: "session-a",
+        repo: "acme-inc/backend-api",
+        dependencies: [depTask.id],
+      },
+    });
+    // A distractor pending task in the filtered session with no
+    // dependencies, to prove the filter doesn't just pass everything.
+    await prisma.task.create({
+      data: {
+        title: "Unrelated same-session task, wrong repo",
+        status: "pending",
+        session: "session-a",
+        repo: "acme-inc/other-repo",
+      },
+    });
+
+    const result = await taskService.listReady(undefined, undefined, {
+      session: "session-a",
+    });
+
+    const titles = result.map((t) => t.title);
+    expect(titles).toContain("Dependent (in-scope session)");
+    // The filtered-out dependency itself must not appear in the final
+    // result (it belongs to a different session)...
+    expect(titles).not.toContain(
+      "Dependency (different session, already done)",
+    );
+    // ...yet the dependent task must still be considered ready, proving
+    // dependency resolution saw the complete graph before filtering.
+    expect(result.map((t) => t.id)).toContain(dependentTask.id);
+  });
+
+  it("listReady() combines session/source/repo/org/claimedBy/pr/branch/assignee filters with agentId/repos scoping", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Matches every filter",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "entropy-fix",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Wrong source, owned by agent-1",
+        status: "pending",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "plan-session",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Matches filters but owned by a different agent",
+        status: "pending",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "entropy-fix",
+      },
+    });
+
+    const result = await taskService.listReady(
+      "agent-1",
+      ["acme-inc/backend-api"],
+      { session: "session-a", source: "entropy-fix" },
+    );
+
+    const titles = result.map((t) => t.title);
+    expect(titles).toContain("Matches every filter");
+    expect(titles).not.toContain("Wrong source, owned by agent-1");
+    expect(titles).not.toContain(
+      "Matches filters but owned by a different agent",
+    );
+  });
+
   it("list() with agentScope AND repo filter applies repo as additional AND condition", async () => {
     const taskService = new TaskService(prisma);
 
