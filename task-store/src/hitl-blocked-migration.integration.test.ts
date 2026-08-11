@@ -4,8 +4,8 @@
  * Integration tests for the split-hitl/blocked-signals data migration
  * (20260731000000_split_hitl_blocked_signals). Verifies the three
  * data-migration UPDATE statements preserve the right state when the old
- * hitl signal is split into Task.requiresHumanApproval / status='blocked'
- * and PullRequest.blocked.
+ * hitl signal is split into the task status='blocked' signal and
+ * PullRequest.blocked.
  *
  * The migration DROPs Task.hitlNotifiedAt, PullRequest.hitl and
  * PullRequest.hitlNotifiedAt, so those columns no longer exist in the
@@ -109,7 +109,7 @@ describeOrSkip("split-hitl/blocked data migration (integration)", () => {
     expect(task.hitl).toBe(false);
   });
 
-  it("a hitl:true + null blockedReason task (genuine Type B) is untouched", async () => {
+  it("a hitl:true + null blockedReason task is untouched", async () => {
     await prisma.$executeRawUnsafe(
       `INSERT INTO "Task" ("id","title","status","hitl","blockedReason","hitlNotifiedAt","updatedAt")
        VALUES ('t-genuine', 'genuine hitl', 'pending', true, NULL, NULL, now());`,

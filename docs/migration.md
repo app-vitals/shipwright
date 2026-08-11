@@ -96,10 +96,7 @@ the dead `hitlNotifiedAt` fields are removed:
 
 - **Removed**: `PullRequest.hitl`, `PullRequest.hitlNotifiedAt`, `Task.hitlNotifiedAt`.
 - **Added**: `PullRequest.blocked` (Boolean, default `false`) — replaces `PullRequest.hitl` as
-  the PR-level pipeline-block signal; `PullRequest.blockedReason` is unchanged. `Task.requiresHumanApproval`
-  (Boolean, default `false`) — a distinct Type-B merge-approval-gate classification. This is
-  **not** the same thing as `Task.hitl`, which still exists unchanged and continues to gate
-  dispatch candidacy the same way it always has.
+  the PR-level pipeline-block signal; `PullRequest.blockedReason` is unchanged.
 
 A data migration accompanying this change clears `Task.hitl` on records that were actually
 pipeline-escalation/spin-detection rather than genuine Type A infra tasks (moving still-open
@@ -219,4 +216,23 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
     failed: Array<{ agentId: string; error: string }>  // Operations that failed
   }
   ```
+
+---
+
+## `Task.requiresHumanApproval` field removed _(RHA-1)_
+
+**Version**: next (RHA-1)
+
+The `Task.requiresHumanApproval` field has been removed entirely from the database schema and API layer. The field was no longer consulted by any workflow; the deploy command's merge-approval logic has been simplified to a single unconditional path — human approval is no longer gated at the task level.
+
+**What changed**:
+- The `deploy` command no longer reads `Task.requiresHumanApproval` when evaluating PR approval.
+- The `plan-session` command no longer classifies tasks as "Type B" (requiring merge approval) — it only recognizes Type A (human-executable tasks with `hitl: true`) and neither (standard tasks).
+- The deploy workflow's Step 3a no longer branches on `requiresHumanApproval: true` — it proceeds directly to the self-review approval fallback path when GitHub's review decision is not APPROVED.
+- In RHA-1.4, the column was dropped from the Prisma schema and the database via migration `20260811000000_drop_requires_human_approval`. The filter parameter was removed from the task-store API in RHA-1.3.
+
+**Migration**:
+- **For existing tasks**: No action required. The field is gone and has no replacement.
+- **For API consumers**: Remove any code that filters by `?requiresHumanApproval=` or writes to this field. Attempts to set it via `PATCH /tasks/:id` will be silently ignored (the field no longer exists in the schema).
+- **For code reading the field**: All references have been removed. The field is purely historical and has been completely eliminated from the system.
 

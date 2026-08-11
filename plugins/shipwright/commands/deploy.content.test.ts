@@ -813,62 +813,32 @@ describe("deploy.md — Step 2b bundle gate skip-reason marker (DBV-1.1)", () =>
   });
 });
 
-describe("deploy.md — requiresHumanApproval merge-gate (HSR-2.4)", () => {
-  it("Step 2 extracts TASK_REQUIRES_HUMAN_APPROVAL from the task lookup", () => {
-    const step2Match = content.match(
-      /## Step 2: Resolve Target PR[\s\S]*?(?=\n---|\n## Step 3)/,
+describe("deploy.md — self-review approval fallback (RHA-1.1)", () => {
+  it("Step 3a falls back to the self-review path unconditionally when reviewDecision is not APPROVED", () => {
+    const step3aSection = extractStep3aSection(content);
+    // The self-review fallback must sit directly under the not-APPROVED branch, no
+    // longer gated behind any prior conditional branch.
+    expect(step3aSection).toContain(
+      "**If `reviewDecision` is not `\"APPROVED\"`**",
     );
-    expect(step2Match).not.toBeNull();
-    const step2Section = step2Match?.[0] ?? "";
-    expect(step2Section).toContain("TASK_REQUIRES_HUMAN_APPROVAL");
-    expect(step2Section).toContain("requiresHumanApproval");
-  });
-
-  it("Step 3a section references requiresHumanApproval / TASK_REQUIRES_HUMAN_APPROVAL", () => {
-    const step3aSection = extractStep3aSection(content);
-    const hasReference =
-      step3aSection.includes("requiresHumanApproval") ||
-      step3aSection.includes("TASK_REQUIRES_HUMAN_APPROVAL");
-    expect(hasReference).toBe(true);
-  });
-
-  it("when requiresHumanApproval is true and reviewDecision is not APPROVED, the self-review fallback does not apply and a stop message is printed", () => {
-    const step3aSection = extractStep3aSection(content);
-    const gateMatch = step3aSection.match(
-      /requiresHumanApproval:?\s*\n?[\s\S]{0,600}/,
-    );
-    expect(gateMatch).not.toBeNull();
-    const gateSection = gateMatch?.[0] ?? "";
-    const normalized = gateSection.toLowerCase().replace(/\s+/g, " ");
-    expect(normalized).toContain("does not apply");
-    expect(normalized).toContain("self-review");
-    expect(step3aSection).toContain("requires human approval");
-  });
-
-  it("does not proceed past the gate unless reviewDecision is genuinely APPROVED from GitHub", () => {
-    const step3aSection = extractStep3aSection(content);
-    expect(step3aSection.toLowerCase()).toContain(
-      "a genuine github human",
-    );
-  });
-
-  it("leaves the existing self-review fallback text unconditionally present for requiresHumanApproval:false/unset tasks", () => {
-    const step3aSection = extractStep3aSection(content);
     expect(step3aSection).toContain("allow_self_review");
     expect(step3aSection).toContain('sub("^\\\\*+";"")');
     expect(step3aSection).toContain('startsWith("APPROVE")');
   });
 
-  it("Step 4b's merge command remains the single unconditional admin merge (no requiresHumanApproval branching)", () => {
+  it("prints the clean-APPROVE proceed message and the not-approved stop message on the fallback path", () => {
+    const step3aSection = extractStep3aSection(content);
+    expect(step3aSection).toContain(
+      "No GitHub approval. Proceeding on clean APPROVE review.",
+    );
+    expect(step3aSection).toContain(
+      "Pre-flight failed: PR #{pr} is not approved.",
+    );
+  });
+
+  it("Step 4b's merge command remains the single unconditional admin merge", () => {
     const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
     const occurrences = content.split(adminMergeCommand).length - 1;
     expect(occurrences).toBe(1);
-    const step4bMatch = content.match(
-      /### 4b\. Squash Merge[\s\S]*?(?=\n### 4c)/,
-    );
-    expect(step4bMatch).not.toBeNull();
-    const step4bSection = step4bMatch?.[0] ?? "";
-    expect(step4bSection).not.toContain("requiresHumanApproval");
-    expect(step4bSection).not.toContain("TASK_REQUIRES_HUMAN_APPROVAL");
   });
 });

@@ -47,7 +47,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked`. `blocked` returns tasks with `status=blocked` OR (a non-terminal status AND an unresolved `blockedBy` entry — dependency or HITL). `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?state=blocked` identically to the plain list path and to `?ready=true` (applied as an AND filter *after* the full task graph is loaded and dependency resolution has run — a task excluded by one of these filters can still contribute a `blockedBy` entry for an in-scope dependent task, since resolution needs the complete graph). `limit`/`offset`/`updatedSince` have no effect under `?state=blocked` (see the unpaginated-convenience-endpoint note below); `sort` does apply (see that same note). |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded; Type B tasks with `requiresHumanApproval=true` remain included), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `hitl` and `requiresHumanApproval` are not filterable here — `hitl` is structurally excluded from the ready set by definition (see above), and `requiresHumanApproval` intentionally does not gate the ready set at all (see its own row below). `limit`/`offset`/`sort`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `hitl` is not filterable here — it is structurally excluded from the ready set by definition (see above). `limit`/`offset`/`sort`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
@@ -57,7 +57,6 @@ Query params:
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
 | `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
-| `requiresHumanApproval` | `true` or `false` | Filter by approval-gate flag (Type B classification): return tasks that do or do not require human review/approval before merge. Unlike `hitl`, tasks with `requiresHumanApproval=true` are not excluded from the ready set — they ship through `dev-task` normally and are subject to a separate merge-gate check later. |
 | `limit` | number | Page size. Defaults to `50` when omitted. |
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
@@ -97,8 +96,8 @@ is simply `tasks.length`; `limit`/`offset` query params have no effect on these 
 supported with `?ready=true`. `updatedSince` has no effect on either branch, for the same
 whole-graph reason.
 
-Aside from those pagination/sort/recency exceptions (and `hitl`/`requiresHumanApproval`, which
-keep the ready-specific semantics documented in their own rows above), every other filter in
+Aside from those pagination/sort/recency exceptions (and `hitl`, which
+keeps the ready-specific semantics documented in its own row above), every other filter in
 the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee` — applies
 under `?ready=true` and `?state=blocked` exactly as it does on the plain list path.
 `TaskService.listReady()` applies these as a post-filter *after* `resolveReadyTasks()` has
@@ -469,7 +468,7 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 1. **No tasks assigned to this agent** — repo-pool visibility means an unfiltered query can still exclude tasks assigned elsewhere. Use an admin token, or drop the `?assignee=` filter, to see all ready tasks in scope.
 
-2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. This is the Type A classification — the task cannot be completed autonomously because it requires a human to execute it directly (no code/acceptance-criteria diff). Clear the flag once the human action is complete. (Note: tasks with `requiresHumanApproval=true` are Type B and remain included in the ready set — they are not a ready-filter obstacle.)
+2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. This is the Type A classification — the task cannot be completed autonomously because it requires a human to execute it directly (no code/acceptance-criteria diff). Clear the flag once the human action is complete.
 
 3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 65 minutes old with no heartbeat, by default), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
 

@@ -120,7 +120,7 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
  * still be a dependency of an in-scope task, and must still contribute a
  * blockedBy entry for it).
  *
- * Deliberately excludes status/state/hitl/requiresHumanApproval/limit/
+ * Deliberately excludes status/state/hitl/limit/
  * offset/sort/updatedSince/agentScope: the ready/blocked sets' status/hitl
  * semantics are structural (see ready.ts / listBlocked()'s doc comment),
  * pagination/sort don't apply to these whole-graph convenience endpoints
@@ -165,7 +165,6 @@ export interface TaskListFilters {
   pr?: number;
   branch?: string;
   hitl?: boolean;
-  requiresHumanApproval?: boolean;
   limit?: number;
   offset?: number;
   /** Order results by createdAt. Defaults to "asc" (existing behavior). */
@@ -255,8 +254,6 @@ export class TaskService implements TaskServiceLike {
     if (filters.pr !== undefined) where.pr = filters.pr;
     if (filters.branch !== undefined) where.branch = filters.branch;
     if (filters.hitl !== undefined) where.hitl = filters.hitl;
-    if (filters.requiresHumanApproval !== undefined)
-      where.requiresHumanApproval = filters.requiresHumanApproval;
     if (filters.updatedSince) {
       where.updatedAt = { gte: parseUpdatedSince(filters.updatedSince) };
     }

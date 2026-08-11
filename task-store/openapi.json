@@ -2116,12 +2116,6 @@
             ],
             "example": true
           },
-          "requiresHumanApproval": {
-            "type": "boolean",
-            "default": false,
-            "description": "Type B merge-approval-gate classification. Does not gate dispatch candidacy.",
-            "example": false
-          },
           "skipCount": {
             "type": "integer",
             "default": 0,

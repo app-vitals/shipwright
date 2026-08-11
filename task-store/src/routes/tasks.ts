@@ -14,7 +14,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?requiresHumanApproval=true|false, ?limit, ?offset, ?ready=true)
+ *   GET    /tasks               list (?status, ?state=open|closed, ?session, ?assignee, ?pr, ?branch, ?hitl=true|false, ?limit, ?offset, ?ready=true)
  *                              returns { tasks, total, scopeDegraded } — scopeDegraded
  *                              mirrors the auth middleware's scopeDegraded context var
  *                              (true only when the agent's repo-scope resolver call itself
@@ -96,7 +96,9 @@ function assertNoLifecycleFieldWrite(
 // still sending the old field gets the same silently-ignored outcome that the
 // prs.ts PATCH allowlist gives non-writable fields.
 //   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
-const REMOVED_TASK_FIELDS = ["hitlNotifiedAt"] as const;
+//   requiresHumanApproval — dropped in RHA-1.4; the merge-approval gate that consulted
+//   it was removed from the deploy workflow in RHA-1.1.
+const REMOVED_TASK_FIELDS = ["hitlNotifiedAt", "requiresHumanApproval"] as const;
 
 function stripRemovedFields(body: Record<string, unknown>): void {
   for (const key of REMOVED_TASK_FIELDS) {
@@ -626,12 +628,6 @@ export function createTasksRoutes(
         c.req.query("hitl") === "true"
           ? true
           : c.req.query("hitl") === "false"
-            ? false
-            : undefined,
-      requiresHumanApproval:
-        c.req.query("requiresHumanApproval") === "true"
-          ? true
-          : c.req.query("requiresHumanApproval") === "false"
             ? false
             : undefined,
       limit:

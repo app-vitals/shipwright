@@ -1108,7 +1108,6 @@ describe("TaskService.listReady() filters (unit)", () => {
       model: null,
       complexity: null,
       hitl: null,
-      requiresHumanApproval: false,
       claimedBy: null,
       agentHint: null,
       claimedAt: null,
