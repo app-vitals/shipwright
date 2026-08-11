@@ -92,6 +92,31 @@ function matchesRepoOrg(
  * the initial findMany(). Every set field is AND'd together; undefined/
  * absent fields impose no restriction.
  */
+/**
+ * When an agent token has no repo scope (repos undefined/empty), a
+ * caller-supplied `assignee` filter must not AND-narrow on top of the
+ * agentId match — doing so would silently produce an always-empty result
+ * whenever the caller passes an assignee that differs from the token's own
+ * agentId, instead of falling back to the token's own tasks (see
+ * planning/task-store-ready-filters/PLAN.md's "assignee's combination with
+ * agentId/repos scoping" section). Strips `assignee` from the filters object
+ * in that case; leaves filters untouched when repos is present/non-empty
+ * (repo-scoped AND-narrowing still applies) or when agentId is absent
+ * (admin token — assignee applies as a standalone filter).
+ */
+function effectiveFilters(
+  agentId: string | undefined,
+  repos: string[] | undefined,
+  filters: TaskListPostFilters | undefined,
+): TaskListPostFilters | undefined {
+  if (!filters) return filters;
+  if (agentId && (repos === undefined || repos.length === 0)) {
+    const { assignee: _assignee, ...rest } = filters;
+    return rest;
+  }
+  return filters;
+}
+
 function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   if (filters.session !== undefined && task.session !== filters.session)
     return false;
@@ -382,8 +407,9 @@ export class TaskService implements TaskServiceLike {
               repos.includes(t.repo)),
         )
       : ready;
-    return filters
-      ? scoped.filter((t) => matchesTaskFilters(t, filters))
+    const effective = effectiveFilters(agentId, repos, filters);
+    return effective
+      ? scoped.filter((t) => matchesTaskFilters(t, effective))
       : scoped;
   }
 
@@ -424,6 +450,7 @@ export class TaskService implements TaskServiceLike {
     const useRepoScope =
       agentId !== undefined && repos !== undefined && repos.length > 0;
     const closedStatuses = new Set<string>(CLOSED_STATUSES);
+    const effective = effectiveFilters(agentId, repos, filters);
     return allTasks
       .map((t: Task) => ({ ...t, blockedBy: computeBlockedBy(t, allTasks) }))
       .filter((t: TaskWithBlockedBy) => {
@@ -433,7 +460,7 @@ export class TaskService implements TaskServiceLike {
             useRepoScope && t.repo !== null && repos?.includes(t.repo);
           if (!ownedByAssignee && !inRepoScope) return false;
         }
-        if (filters && !matchesTaskFilters(t, filters)) return false;
+        if (effective && !matchesTaskFilters(t, effective)) return false;
         if (t.status === "blocked") return true;
         if (closedStatuses.has(t.status)) return false;
         return t.blockedBy.length > 0;
