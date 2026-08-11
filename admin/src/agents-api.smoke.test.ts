@@ -3065,6 +3065,75 @@ describe("admin API — cron runs", () => {
     expect(body.items[0].phaseId).toBeNull();
   });
 
+  it("GET /agents/:id/crons/:cronId/runs accepts itemId and phaseId query params end-to-end", async () => {
+    const base = makeMockDepsWithRunService();
+    const listCalls: Array<{
+      cronId: string;
+      agentId: string;
+      opts: unknown;
+    }> = [];
+    const deps: AdminDeps = {
+      ...base,
+      agentCronRunService: {
+        ...base.agentCronRunService,
+        list: async (cronId, agentId, opts) => {
+          listCalls.push({ cronId, agentId, opts });
+          return {
+            items: [],
+            total: 0,
+            limit: opts?.limit ?? 20,
+            offset: opts?.offset ?? 0,
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+
+    const res = await app.request(
+      `/agents/${AGENT_ID}/crons/${CRON_ID}/runs?itemId=acme%2Fx%23123&phaseId=phase-cron-review`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+
+    expect(res.status).toBe(200);
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].opts).toMatchObject({
+      itemId: "acme/x#123",
+      phaseId: "phase-cron-review",
+    });
+  });
+
+  it("GET /agents/:id/crons/:cronId/runs omits itemId/phaseId from list() opts when not passed as query params", async () => {
+    const base = makeMockDepsWithRunService();
+    const listCalls: Array<{ opts: unknown }> = [];
+    const deps: AdminDeps = {
+      ...base,
+      agentCronRunService: {
+        ...base.agentCronRunService,
+        list: async (cronId, agentId, opts) => {
+          listCalls.push({ opts });
+          return {
+            items: [],
+            total: 0,
+            limit: opts?.limit ?? 20,
+            offset: opts?.offset ?? 0,
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+
+    const res = await app.request(`/agents/${AGENT_ID}/crons/${CRON_ID}/runs`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+
+    expect(res.status).toBe(200);
+    expect(listCalls).toHaveLength(1);
+    expect(listCalls[0].opts).toMatchObject({
+      itemId: undefined,
+      phaseId: undefined,
+    });
+  });
+
   it("GET /agents/:id/crons/:cronId/runs exposes phaseId when the run has one", async () => {
     const deps = makeMockDepsWithRunService({ phaseId: "phase-cron-review" });
     const app = createAdminApp(deps);

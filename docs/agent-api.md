@@ -299,7 +299,7 @@ Returns `201` with the created run record.
 GET /agents/:id/crons/:cronId/runs
 ```
 
-Query params: `limit` (default 20), `offset` (default 0). Returns `{ items: AgentCronRun[], total: number }`.
+Query params: `limit` (default 20), `offset` (default 0), `itemId` (optional; narrows to runs dispatched against this work item), `phaseId` (optional; narrows to runs dispatched by this phase cron). `itemId`/`phaseId` filter server-side via the Prisma `where` clause and can be combined (AND, not OR). Returns `{ items: AgentCronRun[], total: number }`.
 
 Each run record includes: `id`, `cronId`, `agentId`, `startedAt`, `completedAt`, `skipped`, `skipReason`, `outcome`, `error`, `phaseId` (nullable; child `AgentCronJob` id (FK) of the pipeline phase this run served — dev-task/review/patch/deploy; null for legacy five-job crons or runs with no phase attribution), `itemType`, `itemId`, `sessionId` (nullable; Claude session id this cron run corresponds to), `createdAt`, `modelBreakdown` (per-model token and cost breakdown array, each entry: `{ model, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd }`). Top-level token fields (`inputTokens`/`outputTokens`/`cacheReadTokens`/`cacheCreationTokens`/`model`) were dropped from `AgentCronRun` — all token accounting now lives on `modelBreakdown`. The legacy `phase` string field was replaced by a `phaseId` foreign key (LPC-3.1). Note: the resolved `phaseCron` relation (`{ id, name }`) is only included by `listForAgent()`, used by the HTML cron-logs page — not by this JSON endpoint.
 
