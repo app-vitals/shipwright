@@ -90,6 +90,25 @@ result:
   fall back to, so `assignee` simply filters, matching how every other new filter
   (`session`/`source`/etc.) behaves when `agentId` is absent.
 
+**Known divergence from what actually shipped:** `TRF-1.1` shipped independently via PR #2563
+(merged 2026-08-11T09:37:47Z) while this plan's own review was still in flight. The shipped
+`matchesReadyFilters()` (`task-service.ts:94-107`) applies `assignee` as a flat, unconditional
+AND — `if (filters.assignee !== undefined && task.assignee !== filters.assignee) return
+false;` — with no branching on `repos` presence, and `listReady()` ANDs that filter
+unconditionally on top of the `agentId`/`repos` OR-union. That means the second sub-case above
+(`agentId` present, `repos` absent/empty → ignore caller-supplied `assignee`, fall back to
+plain `agentId` match) describes intended/safer behavior that the shipped code does **not**
+implement: today, a repos-absent agent token passing a mismatched `?assignee=` gets an
+always-empty result instead of falling back to its own `agentId` — the exact footgun this
+sub-case was designed to avoid. `task-service.unit.test.ts`'s only `assignee`-specific
+`listReady()` test (~line 1216) exercises solely the admin-token/no-`agentId` case, so this gap
+is asserted against neither positively nor negatively. This plan currently documents the
+*intended* three-sub-case design, not what's live on `main`; treat it as a design doc, not a
+description of current behavior, until one of the following happens — whichever is decided,
+file a follow-up task to either (a) update this plan to match the shipped flat-AND behavior as
+an accepted simplification, or (b) fix `matchesReadyFilters()` to match this plan's safer
+repos-absent fallback and add the missing test coverage.
+
 Thread the same query params through `tasks.ts`'s `ready=true`/`state=ready` branch
 (currently `tasks.ts:559-566`), reading them the same way the fallback branch already does.
 
