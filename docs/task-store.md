@@ -103,7 +103,7 @@ the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `
 under `?ready=true` and `?state=blocked` exactly as it does on the plain list path.
 `TaskService.listReady()` applies these as a post-filter *after* `resolveReadyTasks()` has
 resolved the complete dependency graph; `TaskService.listBlocked()` applies the identically-shaped
-filter set (`ListBlockedFilters`, mirroring `listReady()`'s `ListReadyFilters`) as a post-filter
+filter set (`TaskListPostFilters`) as a post-filter
 *after* the full task graph is loaded and `computeBlockedBy()` has resolved it. Neither is folded
 into the initial query — a task that gets filtered out of the final response can still correctly
 satisfy a dependency edge (for `?ready=true`) or contribute a `blockedBy` entry (for
