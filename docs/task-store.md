@@ -57,7 +57,7 @@ Query params:
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
 | `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
-| `requiresHumanApproval` | `true` or `false` | Legacy field (no longer consulted). Previously used to gate merge approval; this check was removed in RHA-1. Filter queries still accept the parameter for backwards compatibility, but the deploy workflow ignores this field entirely. |
+| `requiresHumanApproval` | _(removed)_ | This field was removed in RHA-1.3/1.4. It previously gated merge approval, but that logic has been eliminated. Any attempt to read or write this parameter has no effect. |
 | `limit` | number | Page size. Defaults to `50` when omitted. |
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
