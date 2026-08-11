@@ -1317,10 +1317,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
   // GET /agents/:id/crons/:cronId/runs — list cron runs (paginated)
   app.openapi(listCronRunsRoute, async (c) => {
     const { id: agentId, cronId } = c.req.valid("param");
-    const { limit, offset } = c.req.valid("query");
+    const { limit, offset, itemId, phaseId } = c.req.valid("query");
     const result = await agentCronRunService.list(cronId, agentId, {
       limit,
       offset,
+      itemId,
+      phaseId,
     });
     return c.json(
       {

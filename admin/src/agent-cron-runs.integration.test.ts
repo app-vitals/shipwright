@@ -306,6 +306,150 @@ describeOrSkip("AgentCronRunService (integration)", () => {
     );
   });
 
+  it("list() opts.itemId narrows results to runs dispatched against that item", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+      itemType: "task",
+      itemId: "WLS-2.2",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+      itemType: "pr",
+      itemId: "acme/x#123",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-03T08:00:00Z"),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.list(cronId, agentId, {
+      itemId: "WLS-2.2",
+    });
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].itemId).toBe("WLS-2.2");
+  });
+
+  it("list() opts.phaseId narrows results to runs dispatched by that phase cron", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const phaseCronReview = await cronJobService.create(agentId, {
+      schedule: "0 9 * * *",
+      prompt: "Test prompt",
+      silent: true,
+      name: "shipwright-review",
+    });
+    const phaseCronDeploy = await cronJobService.create(agentId, {
+      schedule: "0 9 * * *",
+      prompt: "Test prompt",
+      silent: true,
+      name: "shipwright-deploy",
+    });
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+      phaseId: phaseCronReview.id,
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+      phaseId: phaseCronDeploy.id,
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-03T08:00:00Z"),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.list(cronId, agentId, {
+      phaseId: phaseCronReview.id,
+    });
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].phaseId).toBe(phaseCronReview.id);
+  });
+
+  it("list() combines itemId and phaseId filters (AND, not OR)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+    const phaseCronReview = await cronJobService.create(agentId, {
+      schedule: "0 9 * * *",
+      prompt: "Test prompt",
+      silent: true,
+      name: "shipwright-review",
+    });
+    const phaseCronDeploy = await cronJobService.create(agentId, {
+      schedule: "0 9 * * *",
+      prompt: "Test prompt",
+      silent: true,
+      name: "shipwright-deploy",
+    });
+
+    // Matches both filters
+    const matching = await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+      itemType: "pr",
+      itemId: "acme/x#123",
+      phaseId: phaseCronReview.id,
+    });
+    // Same itemId, different phaseId — must not match
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+      itemType: "pr",
+      itemId: "acme/x#123",
+      phaseId: phaseCronDeploy.id,
+    });
+    // Same phaseId, different itemId — must not match
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-03T08:00:00Z"),
+      skipped: false,
+      itemType: "pr",
+      itemId: "acme/y#456",
+      phaseId: phaseCronReview.id,
+    });
+
+    const { items, total } = await runService.list(cronId, agentId, {
+      itemId: "acme/x#123",
+      phaseId: phaseCronReview.id,
+    });
+
+    expect(total).toBe(1);
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe(matching.id);
+  });
+
+  it("list() with neither itemId nor phaseId returns unfiltered results (existing behavior unchanged)", async () => {
+    const agentId = await createAgent(prisma);
+    const cronId = await createCron(cronJobService, agentId);
+
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-01T08:00:00Z"),
+      skipped: false,
+      itemId: "WLS-2.2",
+    });
+    await runService.create(cronId, agentId, {
+      startedAt: new Date("2026-01-02T08:00:00Z"),
+      skipped: false,
+    });
+
+    const { items, total } = await runService.list(cronId, agentId, {
+      limit: 10,
+      offset: 0,
+    });
+
+    expect(total).toBe(2);
+    expect(items).toHaveLength(2);
+  });
+
   it("list() returns modelBreakdown rows for a run with multiple models", async () => {
     const agentId = await createAgent(prisma);
     const cronId = await createCron(cronJobService, agentId);
