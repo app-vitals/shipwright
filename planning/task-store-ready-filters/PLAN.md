@@ -52,6 +52,30 @@ dependency of an in-scope task). This mirrors the existing `agentId`/`repos` pos
 `task-service.ts:273-281`. `repo`/`org` matching mirrors `buildRepoOrgWhere`'s semantics
 (array-any-match for repo; `startsWith "<org>/"` for org; AND between the two).
 
+**`assignee`'s combination with `agentId`/`repos` scoping — specified explicitly, since it
+doesn't slot in cleanly:** in the plain `list()` path, `assignee` is a genuine `where`-builder
+filter, so it composes uniformly — AND-narrows the `agentScope` OR union when repo scope is
+present (`tasks.ts:624-633`), or otherwise directly replaces the token's own identity
+(`assignee: agentId ?? c.req.query("assignee")`, `tasks.ts:638`). `listReady()` has no `where`
+clause to fold an `assignee` filter into — its existing `agentId` param (`task-service.ts:262-284`)
+*is itself* the OR-union predicate (`assignee === agentId OR (assignee === null AND repo in
+repos)`), computed directly against the post-resolution `ready` array. The rule this plan
+adopts, chosen to preserve the same narrowing-only safety property `list()`'s agentScope case
+relies on:
+- **When `agentId` is present** (agent token calling `?ready=true`): a caller-supplied
+  `assignee` AND-narrows the `agentId`/`repos` OR-union result — i.e. `listReady()` first
+  computes the existing `agentId`/`repos` union, then, if `assignee` was also supplied,
+  additionally filters that result to `t.assignee === assignee`. This mirrors `list()`'s
+  `agentScope` behavior (narrow-only, never widens what the token can already see) and is a
+  no-op unless the caller passes an `assignee` that's a subset of what `agentId`/`repos`
+  already permits.
+- **When `agentId` is absent** (admin token calling `?ready=true`): `assignee` applies as a
+  standalone equality filter (`t.assignee === assignee`) against the ready array — there is no
+  token identity to replace (unlike `list()`'s no-`agentScope` branch, which replaces because
+  the caller **is** an assignable identity there); an admin token has no identity of its own to
+  fall back to, so `assignee` simply filters, matching how every other new filter
+  (`session`/`source`/etc.) behaves when `agentId` is absent.
+
 Thread the same query params through `tasks.ts`'s `ready=true`/`state=ready` branch
 (currently `tasks.ts:559-566`), reading them the same way the fallback branch already does.
 
@@ -85,7 +109,11 @@ the same query params through `tasks.ts`'s `ready=true` branch. Update
    `resolveReadyTasks()` resolves the graph — mirrors the existing `agentId`/`repos`
    post-filter at `task-service.ts:273-281`. `repo`/`org` matching mirrors
    `buildRepoOrgWhere`'s semantics (array-any-match for repo, `startsWith "<org>/"` for org,
-   AND between the two).
+   AND between the two). `assignee` specifically: when `agentId` is present, AND-narrows the
+   existing `agentId`/`repos` OR-union result (mirrors `list()`'s `agentScope` AND-narrowing,
+   `tasks.ts:624-633`); when `agentId` is absent, applies as a standalone equality filter
+   against the ready array (no token identity to replace, unlike `list()`'s no-`agentScope`
+   branch at `tasks.ts:638`) — see Design section for full reasoning.
 2. `tasks.ts`'s `ready=true`/`state=ready` branch reads `session`/`source`/`repo`/`org`/
    `claimedBy`/`pr`/`branch`/`assignee` from the query string (same parsing already used in
    the fallback branch) and forwards them into `listReady()` alongside `agentId`/`repos`.
