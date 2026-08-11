@@ -86,13 +86,6 @@ function matchesRepoOrg(
 }
 
 /**
- * Post-filter predicate shared by TaskService.listReady() and
- * TaskService.listBlocked() — see TaskListPostFilters' doc comment for why
- * this is applied after dependency resolution instead of being folded into
- * the initial findMany(). Every set field is AND'd together; undefined/
- * absent fields impose no restriction.
- */
-/**
  * When an agent token has no repo scope (repos undefined/empty), a
  * caller-supplied `assignee` filter must not AND-narrow on top of the
  * agentId match — doing so would silently produce an always-empty result
@@ -117,6 +110,13 @@ function effectiveFilters(
   return filters;
 }
 
+/**
+ * Post-filter predicate shared by TaskService.listReady() and
+ * TaskService.listBlocked() — see TaskListPostFilters' doc comment for why
+ * this is applied after dependency resolution instead of being folded into
+ * the initial findMany(). Every set field is AND'd together; undefined/
+ * absent fields impose no restriction.
+ */
 function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   if (filters.session !== undefined && task.session !== filters.session)
     return false;
