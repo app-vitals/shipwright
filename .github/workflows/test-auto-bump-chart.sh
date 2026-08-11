@@ -489,6 +489,244 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Required-check failure retry logic (mirrors the "Wait for checks and
+# merge" step's checks-watch retry)
+#
+# `gh pr checks --watch --interval 15 --required` exits non-zero the instant
+# any required check fails — flaky or not (e.g. a flaky "admin docker
+# build", or the gitleaks-download curl in the secret-scan step hitting
+# "Recv failure: Connection reset by peer"). Before this change, that ended
+# the job immediately, leaving the auto-generated chart-bump PR open/blocked
+# until a human manually merged it with `gh pr merge --admin`. Confirmed
+# twice: PR #2542 stuck ~21h on 2026-08-10 (admin docker build flake), PR
+# #2570 stuck on 2026-08-11 (gitleaks curl connection reset).
+#
+# The fix: on a checks-watch failure, identify the failed required check(s)
+# via `gh pr checks --required --json name,state,link`, extract the
+# workflow run id(s) behind them from the `link` field (a GitHub Actions
+# run URL like https://github.com/{owner}/{repo}/actions/runs/{run_id}/job/
+# {job_id}), rerun just the failed jobs (`gh run rerun <run_id> --failed`),
+# and retry the checks-watch — bounded to a fixed MAX_ATTEMPTS (3 total
+# attempts / 2 retries), mirroring the resolve_batch_with_retry() idiom
+# above. Exhausting all retries still exits 1, same as today — a genuine
+# break still fails loudly. This is a separate, independent retry loop from
+# the merge-side is_stale_base_error retry below it — different failure
+# mode (checks watch vs the merge call itself), not touched by this change.
+# ---------------------------------------------------------------------------
+
+# Extracts the numeric run id from a `gh pr checks --json link` URL, e.g.
+# "https://github.com/app-vitals/shipwright/actions/runs/31518876841/job/
+# 93871505296" → "31518876841". Mirrors the function of the same name
+# inlined in auto-bump-chart.yml's "Wait for checks and merge" step. Keep
+# both copies in sync.
+extract_run_id_from_link() {
+  local link="$1"
+  echo "$link" | sed -n 's#.*/actions/runs/\([0-9]\+\).*#\1#p'
+}
+
+# Given the JSON array produced by `gh pr checks --required --json
+# name,state,link`, prints the unique set of run ids (one per line) behind
+# every check whose state is not SUCCESS. A required check's `state` value
+# from `gh pr checks --json` is uppercase (SUCCESS, FAILURE, IN_PROGRESS,
+# ...) — confirmed against a live `gh pr checks --json state` call, not
+# assumed. Anything other than SUCCESS is treated as a failure worth
+# rerunning (e.g. FAILURE, CANCELLED, TIMED_OUT) — a check that's still
+# IN_PROGRESS would never reach this function in practice, since it's only
+# invoked after `gh pr checks --watch` has already exited non-zero (watch
+# only exits once every required check has reached a terminal state).
+# Mirrors the function of the same name inlined in auto-bump-chart.yml's
+# "Wait for checks and merge" step. Keep both copies in sync.
+failed_required_check_run_ids() {
+  local checks_json="$1"
+  echo "$checks_json" \
+    | python3 -c 'import json, sys; data = json.load(sys.stdin); [print(c["link"]) for c in data if c.get("state") != "SUCCESS"]' \
+    | while IFS= read -r link; do
+        extract_run_id_from_link "$link"
+      done \
+    | sort -u
+}
+
+# Bounded retry loop around the checks-watch step: run `watch_fn` (no args,
+# returns the watch command's exit status); on failure, call `list_fn` (no
+# args, prints the `gh pr checks --required --json name,state,link` payload
+# on stdout) to find the failed required check(s), extract their run ids,
+# and call `rerun_fn <run_id>` for each one (mirrors `gh run rerun <run_id>
+# --failed`) before retrying `watch_fn` — up to `max_attempts` times.
+# Callbacks are injected (same pattern as resolve_batch_with_retry's
+# resync_fn above) so tests can drive exactly what "watch" and "rerun"
+# return without invoking the real `gh` CLI. Returns 0 as soon as `watch_fn`
+# succeeds; returns 1 if every attempt is exhausted — the caller (the real
+# workflow step) must let that failure propagate as a non-zero exit, not
+# swallow it, so a genuine break still fails loudly and alerts a human.
+checks_watch_with_retry() {
+  local watch_fn="$1"
+  local list_fn="$2"
+  local rerun_fn="$3"
+  local max_attempts="${4:-3}"
+
+  local attempt
+  for (( attempt=1; attempt<=max_attempts; attempt++ )); do
+    if "$watch_fn"; then
+      return 0
+    fi
+
+    echo "Required check(s) failed on attempt ${attempt}/${max_attempts}." >&2
+
+    if [ "$attempt" -lt "$max_attempts" ]; then
+      local checks_json run_ids run_id
+      checks_json=$("$list_fn")
+      run_ids=$(failed_required_check_run_ids "$checks_json")
+
+      if [ -z "$run_ids" ]; then
+        echo "No failed required check run ids found to rerun — not retrying." >&2
+        return 1
+      fi
+
+      echo "Rerunning failed job(s) behind: $(echo "$run_ids" | paste -sd, -)" >&2
+      while IFS= read -r run_id; do
+        [ -z "$run_id" ] && continue
+        "$rerun_fn" "$run_id"
+      done <<< "$run_ids"
+      continue
+    fi
+  done
+
+  echo "ERROR: exhausted ${max_attempts} attempts waiting for required checks to pass." >&2
+  return 1
+}
+
+echo ""
+echo "=== extract_run_id_from_link tests ==="
+
+assert_eq "extracts run id from a real-shaped job link" \
+  "31518876841" \
+  "$(extract_run_id_from_link 'https://github.com/app-vitals/shipwright/actions/runs/31518876841/job/93871505296')"
+
+assert_eq "extracts run id when link has no job suffix" \
+  "12345" \
+  "$(extract_run_id_from_link 'https://github.com/app-vitals/shipwright/actions/runs/12345')"
+
+assert_eq "non-matching link → empty" \
+  "" \
+  "$(extract_run_id_from_link 'not-a-url')"
+
+echo ""
+echo "=== failed_required_check_run_ids tests ==="
+
+CHECKS_JSON_ONE_FAILURE='[
+  {"name":"admin docker build","state":"FAILURE","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/1"},
+  {"name":"lint / typecheck / test","state":"SUCCESS","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/2"}
+]'
+assert_eq "single failed check → its run id" \
+  "111" \
+  "$(failed_required_check_run_ids "$CHECKS_JSON_ONE_FAILURE")"
+
+CHECKS_JSON_ALL_PASS='[
+  {"name":"admin docker build","state":"SUCCESS","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/1"},
+  {"name":"lint / typecheck / test","state":"SUCCESS","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/2"}
+]'
+assert_eq "all checks passing → no run ids" \
+  "" \
+  "$(failed_required_check_run_ids "$CHECKS_JSON_ALL_PASS")"
+
+CHECKS_JSON_TWO_RUNS='[
+  {"name":"admin docker build","state":"FAILURE","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/1"},
+  {"name":"secret-scan","state":"FAILURE","link":"https://github.com/app-vitals/shipwright/actions/runs/222/job/2"},
+  {"name":"lint / typecheck / test","state":"SUCCESS","link":"https://github.com/app-vitals/shipwright/actions/runs/111/job/3"}
+]'
+assert_eq "failures across two different runs → both run ids, deduped and sorted" \
+  "111
+222" \
+  "$(failed_required_check_run_ids "$CHECKS_JSON_TWO_RUNS")"
+
+echo ""
+echo "=== checks_watch_with_retry tests ==="
+
+# (a) A required-check failure is classified as retryable and triggers a
+# rerun: watch_fn fails once, then succeeds on the second attempt — the
+# loop must call rerun_fn with the failed check's run id in between, and
+# return success overall.
+WATCH_CALL_COUNT_A=0
+RERUN_CALLS_A=""
+
+watch_fn_fails_once_then_succeeds() {
+  WATCH_CALL_COUNT_A=$(( WATCH_CALL_COUNT_A + 1 ))
+  [ "$WATCH_CALL_COUNT_A" -ge 2 ]
+}
+
+list_fn_one_failure() {
+  echo '[{"name":"admin docker build","state":"FAILURE","link":"https://github.com/app-vitals/shipwright/actions/runs/999/job/1"}]'
+}
+
+rerun_fn_record_a() {
+  RERUN_CALLS_A="${RERUN_CALLS_A}${1},"
+}
+
+set +e
+checks_watch_with_retry watch_fn_fails_once_then_succeeds list_fn_one_failure rerun_fn_record_a 3
+CWR_STATUS_A=$?
+set -e
+
+assert_eq "(a) retryable required-check failure eventually succeeds" "0" "$CWR_STATUS_A"
+assert_eq "(a) watch_fn invoked twice (initial + one retry)" "2" "$WATCH_CALL_COUNT_A"
+assert_eq "(a) rerun_fn called with the failed check's run id" "999," "$RERUN_CALLS_A"
+
+# (b) The merge-side stale-base retry path (is_stale_base_error, the
+# separate `gh pr merge --admin` retry loop below in the real workflow) is
+# completely untouched by this new checks-watch retry loop — re-assert its
+# existing behavior here, unmodified, to prove the two loops don't
+# interfere with each other.
+if is_stale_base_error "GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)"; then
+  pass "(b) merge-side is_stale_base_error still classifies the real stale-base error unaffected by the new retry loop"
+else
+  fail "(b) merge-side is_stale_base_error still classifies the real stale-base error unaffected by the new retry loop" "true (match)" "false (no match)"
+fi
+
+if is_stale_base_error "some unrelated required-check failure text"; then
+  fail "(b) merge-side is_stale_base_error does not misclassify a required-check failure as a stale-base error" "false (no match)" "true (match)"
+else
+  pass "(b) merge-side is_stale_base_error does not misclassify a required-check failure as a stale-base error"
+fi
+
+# (c) Retries exhausted still returns non-zero: watch_fn always fails, so
+# every attempt reruns and retries until max_attempts is hit, then the loop
+# must fail loudly (non-zero) rather than silently giving up successfully.
+RERUN_CALLS_C=""
+
+watch_fn_always_fails() {
+  return 1
+}
+
+list_fn_one_failure_c() {
+  echo '[{"name":"admin docker build","state":"FAILURE","link":"https://github.com/app-vitals/shipwright/actions/runs/555/job/1"}]'
+}
+
+rerun_fn_record_c() {
+  RERUN_CALLS_C="${RERUN_CALLS_C}${1},"
+}
+
+# Captured via a temp file rather than `$(...)` command substitution:
+# command substitution forks a subshell, and rerun_fn_record_c's mutations
+# to RERUN_CALLS_C would be lost when that subshell exits — a real footgun
+# this test exists to catch, not just work around silently.
+CWR_OUTPUT_FILE_C="$(mktemp)"
+set +e
+checks_watch_with_retry watch_fn_always_fails list_fn_one_failure_c rerun_fn_record_c 3 > "$CWR_OUTPUT_FILE_C" 2>&1
+CWR_STATUS_C=$?
+set -e
+CWR_OUTPUT_C=$(cat "$CWR_OUTPUT_FILE_C")
+rm -f "$CWR_OUTPUT_FILE_C"
+
+assert_eq "(c) retries exhausted still returns non-zero" "1" "$CWR_STATUS_C"
+assert_eq "(c) rerun_fn called once per retry attempt (max_attempts - 1 = 2), not on the final failed attempt" "555,555," "$RERUN_CALLS_C"
+
+if echo "$CWR_OUTPUT_C" | grep -qi "ERROR.*exhausted"; then
+  pass "(c) exhaustion emits a greppable ERROR message"
+else
+  fail "(c) exhaustion emits a greppable ERROR message" "ERROR...exhausted present" "$CWR_OUTPUT_C"
+fi
+
+# ---------------------------------------------------------------------------
 # Test fixtures
 # ---------------------------------------------------------------------------
 

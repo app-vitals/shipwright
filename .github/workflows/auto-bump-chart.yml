@@ -111,6 +111,36 @@ name: Auto-Bump Chart Version
 #   6. Clean up the dummy tag and any leftover branches:
 #        git push origin --delete agent-v9.9.7 chore/chart-vX.Y.(Z+1)
 #
+# Manual test plan — required-check retry (also cannot be fully exercised in
+# CI without a real PR + required checks):
+#   1. Push a dummy tag to trigger a real run and let it open its bump PR:
+#        git tag agent-v9.9.6 && git push origin agent-v9.9.6
+#   2. While the PR's required checks are still running, cause one required
+#      check to fail on purpose — e.g. cancel a required job's run from the
+#      Actions UI (`gh run cancel <run_id>`), or temporarily break something
+#      the "admin docker build" job depends on and revert right after.
+#   3. In the "Wait for checks and merge" step's logs, confirm it detects the
+#      `gh pr checks --watch --required` failure ("Required check(s) failed
+#      on attempt 1/3"), looks up the failed check(s) via `gh pr checks
+#      --required --json name,state,link`, and reruns the run id(s) behind
+#      them via `gh run rerun <run_id> --failed` ("Rerunning failed job(s)
+#      behind: ...").
+#   4. Confirm the reran job succeeds and the watch loop's retry (attempt
+#      2/3) then passes, letting the PR proceed to merge as normal.
+#   5. To exercise the exhaustion path: repeat step 2 for every attempt (3
+#      times) so the required check fails again after each rerun. Confirm
+#      the job fails (non-zero exit) and the step's log contains a line
+#      starting with "ERROR: exhausted 3 attempts waiting for required
+#      checks to pass" — this must surface as a real failed GitHub Actions
+#      run, not a silent success, leaving the PR open for a human to
+#      investigate/merge with `gh pr merge --admin`.
+#   6. Confirm throughout that the separate merge-side stale-base retry
+#      logic (`is_stale_base_error`, the `gh pr merge --admin` loop) is
+#      unaffected — it should only ever engage after checks have actually
+#      passed.
+#   7. Clean up the dummy tag and close/delete the PR if left open:
+#        git push origin --delete agent-v9.9.6
+#
 # Logic tests live in .github/workflows/test-auto-bump-chart.sh.
 # Run locally: bash .github/workflows/test-auto-bump-chart.sh
 
@@ -665,6 +695,31 @@ jobs:
       # PR #1084, where `gh pr merge --squash` (no `--admin`) failed with
       # "the base branch policy prohibits the merge" even after checks passed.
       #
+      # Retry on required-check failures: `gh pr checks --watch --required`
+      # exits non-zero the instant any required check fails, flaky or not —
+      # e.g. a flaky "admin docker build", or the gitleaks-download curl in
+      # the secret-scan step hitting "Recv failure: Connection reset by
+      # peer". Before this retry existed, that ended the job immediately,
+      # leaving the PR open/blocked until a human manually merged it with
+      # `gh pr merge --admin` — meanwhile every subsequent service-release
+      # tag cascaded into "branch collision exhausted" failures against the
+      # still-open branch. Confirmed twice: PR #2542 stuck ~21h on
+      # 2026-08-10 (admin docker build flake), PR #2570 stuck on 2026-08-11
+      # (gitleaks curl connection reset). On a checks-watch failure, identify
+      # the failed required check(s) via `gh pr checks --required --json
+      # name,state,link`, extract the workflow run id(s) behind them from
+      # the `link` field, and `gh run rerun <run_id> --failed` to re-run
+      # just the failed jobs before retrying the watch — bounded to
+      # MAX_ATTEMPTS (2 retries / 3 total attempts). Exhausting all retries
+      # still exits 1 exactly as before this change — a genuine break still
+      # fails loudly and alerts a human. This is a separate, independent
+      # retry loop from the merge-side stale-base retry below it (different
+      # failure mode — checks watch vs the merge call itself) and does not
+      # change that loop's behavior. Mirrors
+      # .github/workflows/test-auto-bump-chart.sh's
+      # extract_run_id_from_link() / failed_required_check_run_ids() /
+      # checks_watch_with_retry() — keep both copies in sync.
+      #
       # Retry on stale-base races: this workflow and sync-plugin-version.yml
       # both trigger off the same tag pushes and race to merge onto main.
       # When the other workflow's PR lands first, main moves out from under
@@ -706,8 +761,59 @@ jobs:
             sleep 2
           done
 
+          # Extracts the numeric run id from a `gh pr checks --json link`
+          # URL, e.g. ".../actions/runs/31518876841/job/93871505296" →
+          # "31518876841". Mirrors
+          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
+          # sync.
+          extract_run_id_from_link() {
+            local link="$1"
+            echo "$link" | sed -n 's#.*/actions/runs/\([0-9]\+\).*#\1#p'
+          }
+
+          # Prints the unique set of run ids (one per line) behind every
+          # required check whose state is not SUCCESS, from the JSON array
+          # produced by `gh pr checks --required --json name,state,link`.
+          # `state` values from `gh pr checks --json` are uppercase
+          # (SUCCESS, FAILURE, ...). Mirrors
+          # .github/workflows/test-auto-bump-chart.sh — keep both copies in
+          # sync.
+          failed_required_check_run_ids() {
+            local checks_json="$1"
+            echo "$checks_json" \
+              | python3 -c 'import json, sys; data = json.load(sys.stdin); [print(c["link"]) for c in data if c.get("state") != "SUCCESS"]' \
+              | while IFS= read -r link; do
+                  extract_run_id_from_link "$link"
+                done \
+              | sort -u
+          }
+
           echo "Waiting for required checks on ${PR_URL}..."
-          gh pr checks "$PR_URL" --watch --interval 15 --required
+          CHECKS_MAX_ATTEMPTS=3
+          for checks_attempt in $(seq 1 "$CHECKS_MAX_ATTEMPTS"); do
+            gh pr checks "$PR_URL" --watch --interval 15 --required && break
+
+            echo "Required check(s) failed on attempt ${checks_attempt}/${CHECKS_MAX_ATTEMPTS}." >&2
+
+            if [ "$checks_attempt" -ge "$CHECKS_MAX_ATTEMPTS" ]; then
+              echo "ERROR: exhausted ${CHECKS_MAX_ATTEMPTS} attempts waiting for required checks to pass on ${PR_URL}." >&2
+              exit 1
+            fi
+
+            CHECKS_JSON=$(gh pr checks "$PR_URL" --required --json name,state,link)
+            RUN_IDS=$(failed_required_check_run_ids "$CHECKS_JSON")
+
+            if [ -z "$RUN_IDS" ]; then
+              echo "No failed required check run ids found to rerun — not retrying." >&2
+              exit 1
+            fi
+
+            echo "Rerunning failed job(s) behind: $(echo "$RUN_IDS" | paste -sd, -)"
+            while IFS= read -r run_id; do
+              [ -z "$run_id" ] && continue
+              gh run rerun "$run_id" --failed
+            done <<< "$RUN_IDS"
+          done
           echo "Checks passed — merging ${PR_URL}."
 
           # Detects the transient stale-base GraphQL error (see comment
