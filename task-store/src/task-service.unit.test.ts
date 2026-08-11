@@ -1227,6 +1227,82 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t1"]);
   });
 
+  // ─── assignee fallback for repos-absent agent tokens (ARF-1.1) ─────────────
+  //
+  // When agentId is present and repos is undefined/empty, a caller-supplied
+  // assignee filter must not AND-narrow on top of the agentId match — it
+  // should fall back to the token's own tasks instead of producing an
+  // always-empty result on mismatch. See planning/task-store-ready-filters/
+  // PLAN.md's "Known divergence from what actually shipped" section.
+
+  it("listReady({ assignee }) with agentId present and repos absent falls back to the token's own tasks on a mismatched assignee", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", assignee: "agent-1" }),
+      makeReadyTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady("agent-1", undefined, {
+      assignee: "agent-2",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ assignee }) with agentId present and repos an empty array falls back to the token's own tasks on a mismatched assignee", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", assignee: "agent-1" }),
+      makeReadyTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady("agent-1", [], {
+      assignee: "agent-2",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ assignee }) with agentId present and repos absent is unaffected when assignee matches agentId", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", assignee: "agent-1" }),
+      makeReadyTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady("agent-1", undefined, {
+      assignee: "agent-1",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ assignee }) with agentId present and repos non-empty still AND-narrows on a mismatched assignee (repo-scoped case untouched)", async () => {
+    const prisma = makeReadyPrismaDouble([
+      // Owned by agent-1, in repo scope, but assignee filter targets a
+      // different agent — must still be excluded (AND-narrowing preserved).
+      makeReadyTask({
+        id: "t1",
+        assignee: "agent-1",
+        repo: "acme/backend-api",
+      }),
+      // Unassigned pool task in repo scope — also excluded, since the
+      // assignee filter doesn't match null.
+      makeReadyTask({
+        id: "t2",
+        assignee: null,
+        repo: "acme/backend-api",
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady("agent-1", ["acme/backend-api"], {
+      assignee: "agent-2",
+    });
+
+    expect(result).toEqual([]);
+  });
+
   // ─── repo (array-any-match, mirrors buildRepoOrgWhere) ─────────────────────
 
   it("listReady({ repo: string }) returns only tasks with an exact repo match", async () => {
@@ -1588,6 +1664,83 @@ describe("TaskService.listBlocked() filters (unit)", () => {
     });
 
     expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── assignee fallback for repos-absent agent tokens (ARF-1.1) ─────────────
+  //
+  // Mirrors the listReady() fallback tests above — see that section's
+  // comment and planning/task-store-ready-filters/PLAN.md's "Known
+  // divergence from what actually shipped" section.
+
+  it("listBlocked({ assignee }) with agentId present and repos absent falls back to the token's own tasks on a mismatched assignee", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", assignee: "agent-1" }),
+      makeBlockedFilterTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked("agent-1", undefined, undefined, {
+      assignee: "agent-2",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ assignee }) with agentId present and repos an empty array falls back to the token's own tasks on a mismatched assignee", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", assignee: "agent-1" }),
+      makeBlockedFilterTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked("agent-1", [], undefined, {
+      assignee: "agent-2",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ assignee }) with agentId present and repos absent is unaffected when assignee matches agentId", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", assignee: "agent-1" }),
+      makeBlockedFilterTask({ id: "t2", assignee: "agent-2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked("agent-1", undefined, undefined, {
+      assignee: "agent-1",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ assignee }) with agentId present and repos non-empty still AND-narrows on a mismatched assignee (repo-scoped case untouched)", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      // Owned by agent-1, in repo scope, but assignee filter targets a
+      // different agent — must still be excluded (AND-narrowing preserved).
+      makeBlockedFilterTask({
+        id: "t1",
+        assignee: "agent-1",
+        repo: "acme/backend-api",
+      }),
+      // Unassigned pool task in repo scope — also excluded, since the
+      // assignee filter doesn't match null.
+      makeBlockedFilterTask({
+        id: "t2",
+        assignee: null,
+        repo: "acme/backend-api",
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(
+      "agent-1",
+      ["acme/backend-api"],
+      undefined,
+      { assignee: "agent-2" },
+    );
+
+    expect(result).toEqual([]);
   });
 
   // ─── repo (array-any-match, mirrors buildRepoOrgWhere) ─────────────────────
