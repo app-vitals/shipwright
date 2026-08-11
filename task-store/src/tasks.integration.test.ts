@@ -466,6 +466,130 @@ describeOrSkip("Task store schema (integration)", () => {
     expect(result.map((t) => t.id)).not.toContain(merged.id);
   });
 
+  // ─── TaskService.listBlocked() filters (ATB-1.2) ──────────────────────────
+
+  it("listBlocked({ session }) applies the session filter strictly after dependency resolution — a filtered-out dependency still contributes a blockedBy entry for its dependent", async () => {
+    const taskService = new TaskService(prisma);
+
+    // Dependency belongs to a different session than the filter and is
+    // still pending (unsatisfied) — if the filter were folded into the
+    // initial query (instead of applied as a post-filter over the fully
+    // resolved graph), computeBlockedBy would never see depTask and the
+    // dependent below would be wrongly reported as unblocked.
+    const depTask = await prisma.task.create({
+      data: {
+        title: "Dependency (different session, still pending)",
+        status: "pending",
+        session: "session-other",
+        repo: "acme-inc/backend-api",
+      },
+    });
+    const dependentTask = await prisma.task.create({
+      data: {
+        title: "Dependent (in-scope session)",
+        status: "pending",
+        session: "session-a",
+        repo: "acme-inc/backend-api",
+        dependencies: [depTask.id],
+      },
+    });
+    // A distractor blocked task in the filtered session with no
+    // dependencies, to prove the filter doesn't just pass everything.
+    await prisma.task.create({
+      data: {
+        title: "Unrelated same-session task, wrong repo",
+        status: "blocked",
+        session: "session-a",
+        repo: "acme-inc/other-repo",
+      },
+    });
+
+    const result = await taskService.listBlocked(undefined, undefined, undefined, {
+      session: "session-a",
+    });
+
+    const titles = result.map((t) => t.title);
+    expect(titles).toContain("Dependent (in-scope session)");
+    // The filtered-out dependency itself must not appear in the final
+    // result (it belongs to a different session)...
+    expect(titles).not.toContain(
+      "Dependency (different session, still pending)",
+    );
+    // ...yet the dependent task must still correctly show the unresolved
+    // dependency in its blockedBy array, proving dependency resolution saw
+    // the complete graph before filtering.
+    const dependent = result.find((t) => t.id === dependentTask.id);
+    expect(dependent).toBeDefined();
+    expect(dependent?.blockedBy).toContainEqual({
+      type: "dependency",
+      id: depTask.id,
+      status: "pending",
+    });
+  });
+
+  it("listBlocked() combines session/source/repo/org/claimedBy/pr/branch/assignee filters with agentId/repos scoping", async () => {
+    const taskService = new TaskService(prisma);
+
+    await prisma.task.create({
+      data: {
+        title: "Matches every filter",
+        status: "blocked",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "entropy-fix",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Wrong source, owned by agent-1",
+        status: "blocked",
+        assignee: "agent-1",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "plan-session",
+      },
+    });
+    // listBlocked()'s repo scope (unlike listReady()'s) includes any
+    // assignee for an in-scope repo, not just unassigned pool tasks, so this
+    // one is expected to be included — matches every filter + in scope repo.
+    await prisma.task.create({
+      data: {
+        title: "Matches filters, owned by a different agent, in-scope repo",
+        status: "blocked",
+        assignee: "agent-2",
+        repo: "acme-inc/backend-api",
+        session: "session-a",
+        source: "entropy-fix",
+      },
+    });
+    await prisma.task.create({
+      data: {
+        title: "Matches filters but out of repo scope",
+        status: "blocked",
+        assignee: "agent-2",
+        repo: "acme-inc/other-repo",
+        session: "session-a",
+        source: "entropy-fix",
+      },
+    });
+
+    const result = await taskService.listBlocked(
+      "agent-1",
+      ["acme-inc/backend-api"],
+      undefined,
+      { session: "session-a", source: "entropy-fix" },
+    );
+
+    const titles = result.map((t) => t.title);
+    expect(titles).toContain("Matches every filter");
+    expect(titles).toContain(
+      "Matches filters, owned by a different agent, in-scope repo",
+    );
+    expect(titles).not.toContain("Wrong source, owned by agent-1");
+    expect(titles).not.toContain("Matches filters but out of repo scope");
+  });
+
   // ─── TaskService.distinct() repo scope ────────────────────────────────────
 
   it("distinct() without scopeRepos only returns sessions/repos from own tasks", async () => {
