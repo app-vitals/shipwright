@@ -25,16 +25,39 @@ interface SentryClient {
 }
 
 /**
+ * Narrowed to the one method a scope fork needs to expose — setting a tag on
+ * the forked (not shared/global) scope passed into `withScope`'s callback.
+ * The real `Sentry.Scope` from `@sentry/bun` satisfies this shape via its
+ * `setTag` method; it has many more methods, but callers of `withScope` below
+ * only ever need this one.
+ */
+export interface ScopeTagSetter {
+  setTag: (key: string, value: string) => unknown;
+}
+
+/**
  * Narrowed to the methods callers need to report unhandled errors and
  * expected-but-notable events, so tests can inject a fake without
  * mock.module(). Mirrors the SentryClient pattern — the real `Sentry` from
  * `@sentry/bun` satisfies this shape via its `captureException`/
- * `captureMessage` exports. `captureMessage` is optional so existing fakes
- * that only implement `captureException` keep type-checking.
+ * `captureMessage`/`withScope` exports. `captureMessage` and `withScope` are
+ * optional so existing fakes that only implement `captureException` keep
+ * type-checking.
+ *
+ * `withScope` mirrors `@sentry/bun`'s `Sentry.withScope` signature: it forks
+ * the current scope for the duration of the async `callback`, so tags set on
+ * the forked scope (via `ScopeTagSetter.setTag`) are visible to any Sentry
+ * event (Issue or Log) captured while `callback` is in flight, without
+ * mutating any other concurrent or sequential call's scope. Real `Sentry`
+ * satisfies this via its AsyncLocalStorage-based async context strategy —
+ * scope propagation survives the awaited callback, including nested awaits.
  */
 export interface ErrorCapturingClient {
   captureException: (err: unknown) => void;
   captureMessage?: (message: string) => void;
+  withScope?: <T>(
+    callback: (scope: ScopeTagSetter) => Promise<T>,
+  ) => Promise<T>;
 }
 
 /** Max depth walked when scrubbing, so a pathological/deeply-nested object can't hang scrubbing. */

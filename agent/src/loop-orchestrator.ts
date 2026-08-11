@@ -62,6 +62,7 @@
  * noise.
  */
 
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   buildProductionDeps as buildDeployDeps,
   getDeployCandidates,
@@ -197,6 +198,27 @@ export interface LoopOrchestratorDeps {
   loopCronId: string;
   /** Clock for deterministic run timestamps. Defaults to SystemClock(). */
   clock?: Clock;
+  /**
+   * LO-1.1 — optional injected Sentry client, mirroring cron-failure-
+   * reporter.ts's sentryClient?.captureException pattern (undefined when
+   * SENTRY_DSN is unset, matching every other optional-by-convention
+   * sentryClient call site in this codebase). When present, dispatch()'s
+   * entire per-item execution runs inside `sentryClient.withScope(...)` —
+   * a forked (not shared/mutated) Sentry scope tagged with `item_type`/
+   * `item_id` for the item currently being dispatched. Any Sentry event
+   * captured while that scope is active (dispatch()'s own
+   * captureException call on a thrown runner failure below, or a
+   * console.warn/console.error forwarded as a Sentry Log by
+   * consoleLoggingIntegration) carries those tags, so a Sentry
+   * Issue/Log is attributable to the specific task/PR in flight — not
+   * just "which service/agent" (lib/sentry.ts's static initialScope
+   * tags). `withScope` is optional on ErrorCapturingClient — a fake that
+   * only implements `captureException` (the older, pre-LO-1.1 shape)
+   * still type-checks; dispatch() falls back to running the per-item body
+   * unscoped when either `sentryClient` or `sentryClient.withScope` is
+   * absent.
+   */
+  sentryClient?: ErrorCapturingClient;
 }
 
 // ─── Command routing ──────────────────────────────────────────────────────────
@@ -370,6 +392,7 @@ export function createLoopOrchestrator(
     workQueueReporter,
     loopCronId,
     clock = SystemClock(),
+    sentryClient,
   } = deps;
 
   // Persisted across ticks: guards against a second concurrent drain.
@@ -456,8 +479,19 @@ export function createLoopOrchestrator(
    * `recordId` is the task's plain id for a task item, or the PullRequest DB
    * record's CUID (from claimPr's result) for a PR item. See the recordSkip
    * doc comment on LoopOrchestratorDeps for the full rationale.
+   *
+   * LO-1.1: the entire body below runs inside `sentryClient.withScope(...)`
+   * (see the thin `dispatch` wrapper below this function) — a Sentry scope
+   * forked just for this call and tagged `item_type`/`item_id` for the item
+   * being dispatched. Any Sentry event captured while this function is
+   * in flight (its own captureException call in the catch block below, or a
+   * console.warn/console.error forwarded as a Sentry Log by
+   * consoleLoggingIntegration) carries those tags — see LoopOrchestratorDeps's
+   * sentryClient doc comment for the full rationale and why a fork (not a
+   * bare Sentry.setTag() global mutation) is required for correctness under
+   * concurrent/sequential dispatches.
    */
-  async function dispatch(
+  async function dispatchItem(
     phase: LoopPhase,
     phaseId: string | null,
     itemType: "task" | "pr",
@@ -562,6 +596,15 @@ export function createLoopOrchestrator(
         itemId,
       );
       markCronRunFailureReported(err);
+      // LO-1.1: captured while the sentryClient.withScope fork set up by the
+      // dispatch() wrapper below is still active — item_type/item_id tags
+      // are attached to this Issue automatically. Previously a per-item
+      // dispatch failure was only ever surfaced as a console.warn at the
+      // runLoopTick call site (never reaching reportCronFailure's
+      // captureException, since that catch swallows-and-continues rather
+      // than rethrowing out of the tick) — this is a genuinely new Sentry
+      // Issue capture point, not a duplicate of cron-failure-reporter.ts's.
+      sentryClient?.captureException(err);
       throw err;
     }
 
@@ -659,6 +702,58 @@ export function createLoopOrchestrator(
     );
     // SKT-2.1: real progress clears any prior skip streak.
     await callSkipTracker("resetSkip", () => resetSkip(itemType, recordId));
+  }
+
+  /**
+   * LO-1.1 — thin wrapper around dispatchItem(): forks a Sentry scope (via
+   * the injected sentryClient's withScope) tagged `item_type`/`item_id` for
+   * the item about to be dispatched, then runs dispatchItem() entirely
+   * inside that fork. A fork — not a bare `Sentry.setTag()` global mutation
+   * — is required for correctness: setTag would mutate one shared scope
+   * object, so two dispatch() calls (sequential across drain iterations, or
+   * concurrent across cron ticks were that ever possible) would race to
+   * overwrite each other's tags, mistagging whichever Sentry event fires
+   * last. `sentryClient.withScope`'s AsyncLocalStorage-based propagation
+   * (real @sentry/bun) keeps each fork's tags isolated and correctly
+   * attributed even across the awaited chain inside dispatchItem(), while
+   * never leaking into a sibling call's fork.
+   *
+   * Falls back to calling dispatchItem() unscoped when no sentryClient is
+   * injected, or when the injected client doesn't implement `withScope`
+   * (the pre-LO-1.1 ErrorCapturingClient shape, e.g. a fake that only
+   * implements captureException) — identical behavior to today for every
+   * existing caller/test that doesn't opt in.
+   */
+  async function dispatch(
+    phase: LoopPhase,
+    phaseId: string | null,
+    itemType: "task" | "pr",
+    itemId: string,
+    recordId: string,
+    preClaimMarker?: string,
+  ): Promise<void> {
+    if (!sentryClient?.withScope) {
+      return dispatchItem(
+        phase,
+        phaseId,
+        itemType,
+        itemId,
+        recordId,
+        preClaimMarker,
+      );
+    }
+    return sentryClient.withScope(async (scope) => {
+      scope.setTag("item_type", itemType);
+      scope.setTag("item_id", itemId);
+      return dispatchItem(
+        phase,
+        phaseId,
+        itemType,
+        itemId,
+        recordId,
+        preClaimMarker,
+      );
+    });
   }
 
   return async function runLoopTick(jobs: CronJobLike[]): Promise<void> {
@@ -1074,6 +1169,8 @@ export interface LoopOrchestratorGetterDeps {
   cronRunReporter: CronRunReporter;
   workQueueReporter: WorkQueueReporter;
   createOrchestrator?: typeof createProductionLoopOrchestrator;
+  /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
+  sentryClient?: ErrorCapturingClient;
 }
 
 /**
@@ -1108,6 +1205,7 @@ export function createLoopOrchestratorGetter(
         cronRunReporter: deps.cronRunReporter,
         workQueueReporter: deps.workQueueReporter,
         loopCronId,
+        sentryClient: deps.sentryClient,
       })
         .then((orch) => {
           orchestrator = orch;
@@ -1135,6 +1233,8 @@ export interface LoopOrchestratorProductionOptions {
   workQueueReporter: WorkQueueReporter;
   loopCronId?: string;
   clock?: Clock;
+  /** LO-1.1 — see LoopOrchestratorDeps's sentryClient doc comment. */
+  sentryClient?: ErrorCapturingClient;
 }
 
 /**
@@ -1186,5 +1286,6 @@ export async function createProductionLoopOrchestrator(
     workQueueReporter: opts.workQueueReporter,
     loopCronId: opts.loopCronId ?? "shipwright-loop",
     clock: opts.clock ?? SystemClock(),
+    sentryClient: opts.sentryClient,
   });
 }

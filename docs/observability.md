@@ -18,7 +18,7 @@ When `SENTRY_DSN` is set, a service reports:
 - **`console.log` / `console.warn` / `console.error` calls**, forwarded as structured Sentry Logs via `consoleLoggingIntegration`.
 - **Request path and method** for errors that occur inside an HTTP handler (via `@sentry/hono`'s `sentry()` middleware, or the app's own `onError` hook).
 - **Caller identity** (admin or agent token) in error logs from admin, metrics, and task-store, for tracing which token triggered an unhandled error.
-- **Tags** — structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`).
+- **Tags** — structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
 
 ## What is never collected
 

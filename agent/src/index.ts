@@ -401,6 +401,10 @@ const getLoopOrchestrator = createLoopOrchestratorGetter({
   runner: (message, onProgress) => runner(message, undefined, onProgress),
   cronRunReporter: cronRunReporter ?? new NoopCronRunReporter(),
   workQueueReporter,
+  // LO-1.1: same optional-by-convention pattern as every other sentryClient
+  // call site in this file (undefined, i.e. fully inert, when SENTRY_DSN is
+  // unset) — see LoopOrchestratorDeps's sentryClient doc comment.
+  sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
 });
 
 if (runtimeClient && agentId) {

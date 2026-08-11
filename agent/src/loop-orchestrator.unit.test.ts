@@ -9,6 +9,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
   ClaudeRunError,
   ClaudeTimeoutError,
@@ -210,6 +212,65 @@ function makeRecordingWorkQueueReporter(): {
   return { reporter, snapshots };
 }
 
+// ─── Stub Sentry client (LO-1.1) ────────────────────────────────────────────
+
+/**
+ * A fake ErrorCapturingClient whose `withScope` genuinely forks a per-call
+ * tag bag using node:async_hooks's `AsyncLocalStorage` — the same
+ * primitive @sentry/bun's async context strategy uses under the hood — so
+ * this fake exercises real per-async-context isolation semantics rather
+ * than a simplified approximation. A naive stack (push on enter, pop on
+ * exit) would look correct for sequential calls but is WRONG under
+ * concurrency: two `withScope` calls interleaved on the event loop would
+ * push/pop out of order, letting one call's `captureException` see the
+ * OTHER call's tags (a real bug this fake must not itself introduce — see
+ * the concurrent isolation test below, which specifically catches this
+ * class of bug). `AsyncLocalStorage.run()` binds the fork to the async
+ * execution context itself, so `captureException` called from inside
+ * `callback`'s continuation always reads the correct fork regardless of
+ * interleaving with sibling calls. `captureException` snapshots (not
+ * references) whichever fork is active in `als.getStore()` at call time; a
+ * bare `Sentry.setTag()`-style implementation (one shared mutable object,
+ * no forking at all) would make every captured exception see the LAST tag
+ * written — exactly the failure mode the isolation tests below must catch.
+ */
+function makeFakeSentryClient(): {
+  client: ErrorCapturingClient;
+  captured: Array<{ err: unknown; tags: Record<string, string> }>;
+} {
+  const captured: Array<{ err: unknown; tags: Record<string, string> }> = [];
+  const als = new AsyncLocalStorage<Record<string, string>>();
+
+  const client: ErrorCapturingClient = {
+    captureException: (err: unknown) => {
+      const active = als.getStore() ?? {};
+      captured.push({ err, tags: { ...active } });
+    },
+    withScope: async <T>(
+      callback: (scope: {
+        setTag: (key: string, value: string) => unknown;
+      }) => Promise<T>,
+    ): Promise<T> => {
+      // Fork: a brand-new tag bag per call, seeded from nothing (real
+      // Sentry.withScope forks the CURRENT scope's tags too, but no
+      // production call site here relies on inherited tags, so an empty
+      // fork is sufficient and keeps the isolation property maximally
+      // strict).
+      const forked: Record<string, string> = {};
+      return als.run(forked, () =>
+        callback({
+          setTag: (key: string, value: string) => {
+            forked[key] = value;
+            return undefined;
+          },
+        }),
+      );
+    },
+  };
+
+  return { client, captured };
+}
+
 // ─── Stub runner ──────────────────────────────────────────────────────────
 
 /** Records each dispatched message and returns a scripted result per call. */
@@ -383,6 +444,10 @@ interface MakeDepsOptions {
   // throw, following the claimTask/claimPr default-stub pattern above.
   recordSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
   resetSkip?: (itemType: "task" | "pr", recordId: string) => Promise<void>;
+  // LO-1.1: optional injected Sentry client double — undefined by default
+  // (matching production's optional-by-convention sentryClient), so existing
+  // tests that don't pass this option are unaffected.
+  sentryClient?: ErrorCapturingClient;
 }
 
 /**
@@ -464,6 +529,7 @@ function makeDeps(options: MakeDepsOptions = {}): LoopOrchestratorDeps {
       })),
     recordSkip: options.recordSkip ?? (async () => {}),
     resetSkip: options.resetSkip ?? (async () => {}),
+    sentryClient: options.sentryClient,
   };
 }
 
@@ -3102,6 +3168,164 @@ describe("createLoopOrchestrator", () => {
     expect(
       warnings.some((w) => w.includes("SWC-BOOM")),
     ).toBe(true);
+  });
+
+  // ─── Sentry per-item tag isolation (LO-1.1) ─────────────────────────────────
+
+  test("LO-1.1: two dispatch() calls for different items produce Sentry events tagged with their own item, not each other's", async () => {
+    // Both dispatched items fail at the runner — each dispatch() throw is
+    // caught (CBD-2.3) but still calls cronRunReporter.completeRun BEFORE
+    // rethrowing; the rethrow is what a real caller (index.ts's cron-sync
+    // callback) would forward into reportCronFailure()'s
+    // sentryClient?.captureException. Here we call captureException directly
+    // inside a scripted runner failure path to prove item_type/item_id tag
+    // isolation across two sequential dispatch()-triggering ticks — the
+    // specific failure mode a bare Sentry.setTag() (shared mutable state)
+    // would introduce is BOTH captured exceptions ending up tagged with the
+    // LAST item dispatched, rather than each with its own.
+    const { client: sentryClient, captured } = makeFakeSentryClient();
+
+    // First tick: a single dev-task item whose dispatch always throws. The
+    // throw is caught by dispatch()'s own catch block, which — per this
+    // task's brief — must have already captured the exception to Sentry
+    // under a scope tagged with THIS item's type/id before rethrowing.
+    const consumedA = new Set<string>();
+    const depsA = makeDeps({
+      devTaskCandidates: [task("TASK-A", "2026-01-01T00:00:00Z")],
+      consumed: consumedA,
+      claimTask: consumingClaimTask(consumedA),
+      sentryClient,
+      runner: async () => {
+        throw new Error("boom for TASK-A");
+      },
+    });
+    const loopA = createLoopOrchestrator(depsA);
+    await withCapturedWarnings(async () => {
+      await loopA([job("shipwright-dev-task", true)]);
+    });
+
+    // Second tick: a different item (a PR, not a task — different itemType
+    // too) whose dispatch also always throws, dispatched via a SEPARATE
+    // orchestrator instance/tick from the first. A leaking/global tag
+    // implementation would still show TASK-A's tags here (or worse, mix
+    // both), since nothing about a naive Sentry.setTag() call scopes it to
+    // a single dispatch.
+    const consumedB = new Set<string>();
+    const prCandidateB = pr("acme/y#42", "2026-01-01T00:00:00Z", "review");
+    const depsB = makeDeps({
+      reviewCandidates: [prCandidateB],
+      consumed: consumedB,
+      claimPr: async (candidate) => {
+        consumedB.add(candidate.id);
+        return { id: candidate.id, commitSha: candidate.commitSha };
+      },
+      sentryClient,
+      runner: async () => {
+        throw new Error("boom for acme/y#42");
+      },
+    });
+    const loopB = createLoopOrchestrator(depsB);
+    await withCapturedWarnings(async () => {
+      await loopB([job("shipwright-review", true)]);
+    });
+
+    // Both dispatches' exceptions were captured...
+    expect(captured).toHaveLength(2);
+
+    // ...each tagged with its OWN item, not the other's. This is the
+    // isolation assertion: a global-mutation implementation would make both
+    // entries show the same (last-written) tags.
+    expect(captured[0]?.tags.item_type).toBe("task");
+    expect(captured[0]?.tags.item_id).toBe("TASK-A");
+    expect((captured[0]?.err as Error | undefined)?.message).toBe(
+      "boom for TASK-A",
+    );
+
+    expect(captured[1]?.tags.item_type).toBe("pr");
+    expect(captured[1]?.tags.item_id).toBe("acme/y#42");
+    expect((captured[1]?.err as Error | undefined)?.message).toBe(
+      "boom for acme/y#42",
+    );
+  });
+
+  test("LO-1.1: concurrent in-flight dispatch()es for different items do not cross-contaminate each other's Sentry tags", async () => {
+    // Stronger isolation proof than the sequential test above: two
+    // dispatch()-triggering ticks run CONCURRENTLY (both runners gated on
+    // the same manually-released promise), so their withScope forks are
+    // genuinely interleaved in the event loop, not just temporally
+    // separated. A bare Sentry.setTag() global mutation would very likely
+    // leak one item's tag onto the other's captured exception under this
+    // interleaving.
+    const { client: sentryClient, captured } = makeFakeSentryClient();
+
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((res) => {
+      releaseA = res;
+    });
+    let releaseB!: () => void;
+    const gateB = new Promise<void>((res) => {
+      releaseB = res;
+    });
+
+    const consumedA = new Set<string>();
+    const depsA = makeDeps({
+      devTaskCandidates: [task("CONC-A", "2026-01-01T00:00:00Z")],
+      consumed: consumedA,
+      claimTask: consumingClaimTask(consumedA),
+      sentryClient,
+      runner: async () => {
+        await gateA;
+        throw new Error("boom for CONC-A");
+      },
+    });
+
+    const consumedB = new Set<string>();
+    const prCandidateB = pr("acme/z#9", "2026-01-01T00:00:00Z", "patch");
+    const depsB = makeDeps({
+      patchCandidates: [prCandidateB],
+      consumed: consumedB,
+      claimPr: async (candidate) => {
+        consumedB.add(candidate.id);
+        return { id: candidate.id, commitSha: candidate.commitSha };
+      },
+      sentryClient,
+      runner: async () => {
+        await gateB;
+        throw new Error("boom for acme/z#9");
+      },
+    });
+
+    const loopA = createLoopOrchestrator(depsA);
+    const loopB = createLoopOrchestrator(depsB);
+
+    const tickA = withCapturedWarnings(async () => {
+      await loopA([job("shipwright-dev-task", true)]);
+    });
+    const tickB = withCapturedWarnings(async () => {
+      await loopB([job("shipwright-patch", true)]);
+    });
+
+    // Release B first, then A — deliberately the reverse of dispatch order,
+    // so a stack/shared-state bug that just tracks "most recently entered
+    // scope" can't accidentally pass by matching temporal order.
+    releaseB();
+    releaseA();
+    await Promise.all([tickA, tickB]);
+
+    expect(captured).toHaveLength(2);
+
+    const taskCapture = captured.find(
+      (c) => (c.err as Error | undefined)?.message === "boom for CONC-A",
+    );
+    const prCapture = captured.find(
+      (c) => (c.err as Error | undefined)?.message === "boom for acme/z#9",
+    );
+
+    expect(taskCapture?.tags.item_type).toBe("task");
+    expect(taskCapture?.tags.item_id).toBe("CONC-A");
+
+    expect(prCapture?.tags.item_type).toBe("pr");
+    expect(prCapture?.tags.item_id).toBe("acme/z#9");
   });
 
   // ─── Pre-claim tests (CBD-1.3 — PR items) ──────────────────────────────────
