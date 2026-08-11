@@ -9,7 +9,7 @@
     "postinstall": "prisma generate --schema=prisma/schema.prisma",
     "test": "NODE_ENV=test bun test",
     "test:e2e": "bunx playwright test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.type-parity.json",
     "db:generate": "prisma generate --schema=prisma/schema.prisma",
     "db:migrate": "prisma migrate deploy --schema=prisma/schema.prisma"
   },
