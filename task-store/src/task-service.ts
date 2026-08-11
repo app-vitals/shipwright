@@ -50,8 +50,92 @@ function parseUpdatedSince(value: string): Date {
   return date;
 }
 
+/**
+ * In-memory equivalent of buildRepoOrgWhere's repo/org matching, evaluated
+ * against a single already-resolved Task rather than built as a Prisma
+ * where-clause fragment. Semantics are intentionally identical:
+ *   - repo (string): exact match against task.repo
+ *   - repo (string[]): true if task.repo is any of the listed repos
+ *   - org (string | string[]): true if task.repo starts with "<org>/" for
+ *     any of the listed orgs
+ *   - repo AND org both present: both must match (AND, not OR)
+ *   - neither present: true (no restriction)
+ * Empty arrays are treated the same as absent, matching buildRepoOrgWhere.
+ */
+function matchesRepoOrg(
+  task: { repo: string | null },
+  repo: string | string[] | undefined,
+  org: string | string[] | undefined,
+): boolean {
+  if (typeof repo === "string") {
+    if (task.repo !== repo) return false;
+  } else if (repo && repo.length > 0) {
+    if (task.repo === null || !repo.includes(task.repo)) return false;
+  }
+
+  if (org) {
+    const orgs = typeof org === "string" ? [org] : org;
+    if (orgs.length > 0) {
+      if (task.repo === null) return false;
+      const repoValue = task.repo;
+      if (!orgs.some((o) => repoValue.startsWith(`${o}/`))) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Post-filter predicate for TaskService.listReady() — see ListReadyFilters'
+ * doc comment for why this is applied after dependency resolution instead
+ * of being folded into the initial findMany(). Every set field is AND'd
+ * together; undefined/absent fields impose no restriction.
+ */
+function matchesReadyFilters(task: Task, filters: ListReadyFilters): boolean {
+  if (filters.session !== undefined && task.session !== filters.session)
+    return false;
+  if (filters.source !== undefined && task.source !== filters.source)
+    return false;
+  if (filters.claimedBy !== undefined && task.claimedBy !== filters.claimedBy)
+    return false;
+  if (filters.pr !== undefined && task.pr !== filters.pr) return false;
+  if (filters.branch !== undefined && task.branch !== filters.branch)
+    return false;
+  if (filters.assignee !== undefined && task.assignee !== filters.assignee)
+    return false;
+  if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
+  return true;
+}
+
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
+
+/**
+ * Filters accepted by TaskService.listReady(), applied as an in-memory
+ * post-filter over the already-resolved ready array (see listReady() below)
+ * — never folded into the initial findMany(), since dependency resolution
+ * needs the complete task graph (a filtered-out task may still be a
+ * dependency of an in-scope task).
+ *
+ * Deliberately excludes status/state/hitl/limit/
+ * offset/sort/updatedSince/agentScope: the ready set's status/hitl
+ * semantics are structural (see ready.ts), pagination/sort don't apply to
+ * this whole-graph convenience endpoint (see docs/task-store.md), and
+ * agentId/repos scoping already has its own dedicated parameters mirroring
+ * the pre-existing signature.
+ */
+export interface ListReadyFilters {
+  session?: string;
+  source?: string;
+  /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
+  repo?: string | string[];
+  /** startsWith "<org>/" match, mirrors buildRepoOrgWhere's OR clause. Combines with `repo` via AND. */
+  org?: string | string[];
+  claimedBy?: string;
+  pr?: number;
+  branch?: string;
+  assignee?: string;
+}
 
 /** Filters accepted by TaskService.list. */
 export interface TaskListFilters {
@@ -110,7 +194,11 @@ export interface TaskListResult {
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
-  listReady(agentId?: string, repos?: string[]): Promise<Task[]>;
+  listReady(
+    agentId?: string,
+    repos?: string[],
+    filters?: ListReadyFilters,
+  ): Promise<Task[]>;
   listBlocked(
     agentId?: string,
     repos?: string[],
@@ -253,10 +341,23 @@ export class TaskService implements TaskServiceLike {
    * When `repos` is provided (repo-scoped agent token), unassigned pool tasks
    * whose repo is in the repos list are also included.
    *
+   * `filters` (session/source/repo/org/claimedBy/pr/branch/assignee) is
+   * applied as an additional AND condition, strictly *after*
+   * resolveReadyTasks() has resolved the graph — see ListReadyFilters'
+   * doc comment for why this can't be folded into the initial findMany().
+   * repo/org matching mirrors buildRepoOrgWhere's semantics (array-any-match
+   * for repo; startsWith "<org>/" for org; AND between the two), just
+   * evaluated in-memory against already-resolved Task objects rather than
+   * built as a Prisma where-clause.
+   *
    * Tasks are returned in ascending createdAt order (oldest first) to ensure
    * deterministic selection regardless of insertion order.
    */
-  async listReady(agentId?: string, repos?: string[]): Promise<Task[]> {
+  async listReady(
+    agentId?: string,
+    repos?: string[],
+    filters?: ListReadyFilters,
+  ): Promise<Task[]> {
     // Load all tasks so dependency resolution sees the full graph, then filter
     // the result set to the caller's agent if one is specified.
     const tasks = await this.prisma.task.findMany({
@@ -267,17 +368,19 @@ export class TaskService implements TaskServiceLike {
       async () => false,
       () => this.clock.now(),
     );
-    if (agentId) {
-      return ready.filter(
-        (t) =>
-          t.assignee === agentId ||
-          (repos !== undefined &&
-            t.assignee === null &&
-            t.repo !== null &&
-            repos.includes(t.repo)),
-      );
-    }
-    return ready;
+    const scoped = agentId
+      ? ready.filter(
+          (t) =>
+            t.assignee === agentId ||
+            (repos !== undefined &&
+              t.assignee === null &&
+              t.repo !== null &&
+              repos.includes(t.repo)),
+        )
+      : ready;
+    return filters
+      ? scoped.filter((t) => matchesReadyFilters(t, filters))
+      : scoped;
   }
 
   /**

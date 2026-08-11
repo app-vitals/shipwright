@@ -232,10 +232,11 @@ describe("SKILL.md — admin API run lookup", () => {
     expect(content).toContain("itemId");
   });
 
-  it("documents that runs endpoint filtering is done client-side, not via query params", () => {
-    const hasClientSideNote =
-      content.includes("client-side") || content.includes("client side");
-    expect(hasClientSideNote).toBe(true);
+  it("documents that runs endpoint filtering is done server-side via itemId/phaseId query params", () => {
+    const hasServerSideNote =
+      content.includes("server-side `itemId`/`phaseId`") ||
+      (content.includes("server-side") && content.includes("query filters"));
+    expect(hasServerSideNote).toBe(true);
   });
 
   it("uses SHIPWRIGHT_AGENT_API_KEY bearer auth for admin API calls", () => {
@@ -431,8 +432,8 @@ describe("SKILL.md — Step 1b populates ITEM_ARG in name+time mode (review fix)
   it("assigns ITEM_ARG from BEST_RUN's itemId in the name+time branch", () => {
     // Must appear in the BEST_RUN resolution block, not just anywhere in the doc.
     const bestRunBlock = content.slice(
-      content.indexOf("**Name+time mode** — filter client-side to `phaseId"),
-      content.indexOf("**Item mode** — filter client-side to `itemId"),
+      content.indexOf("**Name+time mode** — fetch runs scoped to `phaseId"),
+      content.indexOf("**Item mode** — fetch runs scoped to `itemId"),
     );
     expect(bestRunBlock).toContain('ITEM_ARG=$(echo "$BEST_RUN" | jq -r \'.itemId // empty\')');
   });

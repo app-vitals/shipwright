@@ -232,10 +232,11 @@ describe("SKILL.md — admin API run lookup", () => {
     expect(content).toContain("itemId");
   });
 
-  it("documents that runs endpoint filtering is done client-side, not via query params", () => {
-    const hasClientSideNote =
-      content.includes("client-side") || content.includes("client side");
-    expect(hasClientSideNote).toBe(true);
+  it("documents that runs endpoint filtering is done server-side via itemId/phaseId query params", () => {
+    const hasServerSideNote =
+      content.includes("server-side `itemId`/`phaseId`") ||
+      (content.includes("server-side") && content.includes("query filters"));
+    expect(hasServerSideNote).toBe(true);
   });
 
   it("uses SHIPWRIGHT_AGENT_API_KEY bearer auth for admin API calls", () => {

@@ -107,48 +107,52 @@ cron matches `<name>` — fall back to the pre-admin-API approach documented in
 the **Fallback: pre-admin-API history** section below, and skip the rest of
 this step.
 
-### 1b. List runs for the loop cron and filter client-side
+### 1b. List runs for the loop cron, filtered server-side
 
-`GET /agents/{id}/crons/{cronId}/runs` only supports `limit`/`offset` — there is
-**no server-side `phaseId` or `itemId` query filter**. Fetch pages of runs and
-filter the returned `items` array in your own script; do not pass `phaseId=` or
-`itemId=` as query params, the server ignores them.
+`GET /agents/{id}/crons/{cronId}/runs` supports `limit`/`offset` plus
+server-side `itemId`/`phaseId` query filters — pass `phaseId=` (name+time mode)
+or `itemId=` (item mode) directly as query params and the server narrows the
+Prisma `where` clause accordingly. There's no need to paginate through the full
+run history and filter client-side anymore.
+
+**Name+time mode** — fetch runs scoped to `phaseId=$PHASE_ID` directly. A
+single phase's run history is typically much smaller than the loop cron's full
+history, so one call with a generous `limit` is usually enough; only paginate
+(mirroring the loop below, scoped by `phaseId`) if `total` exceeds what you
+fetched:
 
 ```bash
-# Paginate through runs (limit=100 per page, cap at 5 pages / 500 runs).
-ALL_RUNS_FILE=$(mktemp)
-echo "[]" > "$ALL_RUNS_FILE"
-OFFSET=0
-LIMIT=100
-for PAGE in 1 2 3 4 5; do
+PHASE_RUNS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/$LOOP_CRON_ID/runs?phaseId=$PHASE_ID&limit=100")
+PHASE_RUNS_FILE=$(mktemp)
+echo "$PHASE_RUNS_JSON" | jq '.items' > "$PHASE_RUNS_FILE"
+
+TOTAL=$(echo "$PHASE_RUNS_JSON" | jq -r '.total')
+OFFSET=100
+while [ "$OFFSET" -lt "$TOTAL" ]; do
   PAGE_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-    "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/$LOOP_CRON_ID/runs?limit=$LIMIT&offset=$OFFSET")
-  ITEMS=$(echo "$PAGE_JSON" | jq '.items')
-  TOTAL=$(echo "$PAGE_JSON" | jq -r '.total')
-  ALL_RUNS_FILE_NEW=$(mktemp)
-  jq -s '.[0] + .[1]' "$ALL_RUNS_FILE" <(echo "$ITEMS") > "$ALL_RUNS_FILE_NEW"
-  mv "$ALL_RUNS_FILE_NEW" "$ALL_RUNS_FILE"
-  OFFSET=$((OFFSET + LIMIT))
-  if [ "$OFFSET" -ge "$TOTAL" ]; then
-    break
-  fi
+    "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/$LOOP_CRON_ID/runs?phaseId=$PHASE_ID&limit=100&offset=$OFFSET")
+  PHASE_RUNS_FILE_NEW=$(mktemp)
+  jq -s '.[0] + .[1]' "$PHASE_RUNS_FILE" <(echo "$PAGE_JSON" | jq '.items') > "$PHASE_RUNS_FILE_NEW"
+  mv "$PHASE_RUNS_FILE_NEW" "$PHASE_RUNS_FILE"
+  OFFSET=$((OFFSET + 100))
 done
-echo "Fetched $(jq 'length' "$ALL_RUNS_FILE") total runs for loopCronId=$LOOP_CRON_ID"
+echo "Fetched $(jq 'length' "$PHASE_RUNS_FILE") runs for phaseId=$PHASE_ID"
 ```
 
-**Name+time mode** — filter client-side to `phaseId === <PHASE_ID>`, then pick
-the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in 3a):
+Then pick the run whose `startedAt` is closest to `TARGET_EPOCH` (computed in
+3a) — this ranking is still done client-side, since the API doesn't take a
+"closest to a timestamp" query:
 
 ```bash
-BEST_RUN=$(jq -r --arg phase "$PHASE_ID" --argjson target "$TARGET_EPOCH" '
-  map(select(.phaseId == $phase))
-  | map(. + {distance: ((((.startedAt | sub("\\.[0-9]+Z$"; "Z")) | fromdateiso8601) - $target) | if . < 0 then -. else . end)})
+BEST_RUN=$(jq -r --argjson target "$TARGET_EPOCH" '
+  map(. + {distance: ((((.startedAt | sub("\\.[0-9]+Z$"; "Z")) | fromdateiso8601) - $target) | if . < 0 then -. else . end)})
   | sort_by(.distance)
   | first
-' "$ALL_RUNS_FILE")
+' "$PHASE_RUNS_FILE")
 
 if [ "$BEST_RUN" = "null" ] || [ -z "$BEST_RUN" ]; then
-  echo "No runs found for phaseId=$PHASE_ID within the fetched page cap — fall back to the pre-admin-API path."
+  echo "No runs found for phaseId=$PHASE_ID — fall back to the pre-admin-API path."
 else
   RUN_STARTED_AT=$(echo "$BEST_RUN" | jq -r '.startedAt')
   # Populate ITEM_ARG from the resolved run's itemId so Step 2's ground-truth
@@ -164,17 +168,26 @@ specific PR/task), `ITEM_ARG` stays empty and Step 2's item-scoped signals
 degrade gracefully — same behavior as when they're checked against an
 already-empty `ITEM_ARG` today.
 
-**Item mode** — filter client-side to `itemId === <ITEM_ARG>`, returning every
-matching run across all four phases, sorted chronologically:
+**Item mode** — fetch runs scoped to `itemId=$ITEM_ARG` directly; the server
+returns every matching run across all four phases in one call, no client-side
+`select()` needed:
 
 ```bash
-ITEM_RUNS=$(jq -r --arg item "$ITEM_ARG" '
-  map(select(.itemId == $item)) | sort_by(.startedAt)
-' "$ALL_RUNS_FILE")
+ITEM_RUNS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/crons/$LOOP_CRON_ID/runs?itemId=$ITEM_ARG&limit=100")
+
+# The API's orderBy is startedAt desc; re-sort ascending (chronological) for
+# the dispatch-history narrative below.
+ITEM_RUNS=$(echo "$ITEM_RUNS_JSON" | jq -r '.items | sort_by(.startedAt)')
 
 echo "Found $(echo "$ITEM_RUNS" | jq 'length') dispatch(es) for item \"$ITEM_ARG\":"
 echo "$ITEM_RUNS" | jq -r '.[] | "  \(.startedAt)  phaseId=\(.phaseId)  outcome=\(.outcome)  skipped=\(.skipped)"'
 ```
+
+If `total` in `ITEM_RUNS_JSON` exceeds the fetched `limit`, paginate with
+`itemId=$ITEM_ARG&limit=100&offset=<n>` the same way as the name+time mode loop
+above before sorting — in practice an item's dispatch count across four phases
+is small enough that this rarely triggers.
 
 If `ITEM_RUNS` is empty, no run was ever dispatched for that PR/task through the
 admin-tracked loop cron — either it predates run tracking, or the item was
@@ -505,8 +518,8 @@ this workspace's CWD doesn't match where the cron actually ran — see the
 
 Runs that predate admin-API run tracking (or that the admin API can't resolve
 for any reason — unreachable, no `shipwright-loop` cron found, no phase cron
-matching `<name>`, no runs returned for the resolved `phaseId`/`itemId` within
-the pagination cap) have no exact `startedAt` to anchor on. For those, fall
+matching `<name>`, no runs returned for the resolved `phaseId`/`itemId`) have no
+exact `startedAt` to anchor on. For those, fall
 back to the original fuzzy approach: a ±90 minute mtime window plus
 `[Cron job:]` string-matching in the transcript's first user message. This path
 only applies to `name-time` mode — `--item` mode has no time argument to build

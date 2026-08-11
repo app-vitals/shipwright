@@ -75,6 +75,10 @@ export interface PatchAgentCronRunInput {
 export interface ListAgentCronRunsOptions {
   limit?: number;
   offset?: number;
+  /** Narrow to runs dispatched against this work item (e.g. "WLS-2.2" or "acme/x#123"). */
+  itemId?: string;
+  /** Narrow to runs dispatched by this phase cron (a child AgentCronJob id). */
+  phaseId?: string;
 }
 
 export interface AgentCronRunList {
@@ -257,17 +261,23 @@ export class AgentCronRunService {
       throw new NotFoundError(`cron job ${cronId} not found`);
     }
 
+    const where: Prisma.AgentCronRunWhereInput = { cronId, agentId };
+    if (opts?.itemId) {
+      where.itemId = opts.itemId;
+    }
+    if (opts?.phaseId) {
+      where.phaseId = opts.phaseId;
+    }
+
     const [items, total] = await this.prisma.$transaction([
       this.prisma.agentCronRun.findMany({
-        where: { cronId, agentId },
+        where,
         orderBy: { startedAt: "desc" },
         take: limit,
         skip: offset,
         include: { modelBreakdown: true },
       }),
-      this.prisma.agentCronRun.count({
-        where: { cronId, agentId },
-      }),
+      this.prisma.agentCronRun.count({ where }),
     ]);
 
     return { items, total, limit, offset };

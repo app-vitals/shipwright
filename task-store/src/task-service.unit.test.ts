@@ -966,7 +966,8 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
 
         const matchesId = row.id === taskId;
         const matchesStatus = row.status === "pending";
-        const matchesClaimedBy = !requiresClaimedByNull || row.claimedBy === null;
+        const matchesClaimedBy =
+          !requiresClaimedByNull || row.claimedBy === null;
 
         const shouldUpdate = matchesId && matchesStatus && matchesClaimedBy;
 
@@ -1063,5 +1064,361 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
     await expect(service.claim("task-1", "agent-1")).rejects.toThrow(
       ConflictError,
     );
+  });
+});
+
+// ─── TaskService.listReady() session/repo/org/source/claimedBy/pr/branch/assignee filters (TRF-1.1) ───
+
+describe("TaskService.listReady() filters (unit)", () => {
+  /**
+   * makeReadyTask — full task object for use in the listReady() Prisma
+   * double. Defaults to a ready, unclaimed, dependency-free pending task.
+   */
+  function makeReadyTask(overrides: Partial<Task> = {}): Task {
+    return {
+      id: "task-1",
+      title: "A task",
+      status: "pending",
+      source: null,
+      session: null,
+      repo: null,
+      description: null,
+      acceptanceCriteria: [],
+      layer: null,
+      branch: null,
+      dependencies: [],
+      pr: null,
+      hours: null,
+      startedAt: null,
+      prCreatedAt: null,
+      mergedAt: null,
+      blockedAt: null,
+      blockedReason: null,
+      note: null,
+      type: null,
+      priority: null,
+      cancelledAt: null,
+      completedAt: null,
+      deployingAt: null,
+      ciFixAttempts: null,
+      mergeCommit: null,
+      prUrl: null,
+      assignee: null,
+      issue: null,
+      model: null,
+      complexity: null,
+      hitl: null,
+      claimedBy: null,
+      agentHint: null,
+      claimedAt: null,
+      heartbeatAt: null,
+      createdAt: new Date("2026-08-10T12:00:00.000Z"),
+      updatedAt: new Date("2026-08-10T12:00:00.000Z"),
+      ...overrides,
+    } as Task;
+  }
+
+  /** Prisma double serving a fixed set of tasks to the whole-graph findMany(). */
+  function makeReadyPrismaDouble(tasks: Task[]) {
+    const prisma = {
+      task: {
+        findMany() {
+          return Promise.resolve(tasks);
+        },
+      },
+    };
+    return prisma as unknown as PrismaClient;
+  }
+
+  // ─── session ──────────────────────────────────────────────────────────────
+
+  it("listReady({ session }) returns only tasks matching the session", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", session: "session-a" }),
+      makeReadyTask({ id: "t2", session: "session-b" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      session: "session-a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── source ───────────────────────────────────────────────────────────────
+
+  it("listReady({ source }) returns only tasks matching the source", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", source: "entropy-fix" }),
+      makeReadyTask({ id: "t2", source: "plan-session" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      source: "entropy-fix",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── claimedBy ────────────────────────────────────────────────────────────
+
+  it("listReady({ claimedBy }) returns only tasks matching claimedBy", async () => {
+    // claimedBy is set on a ready task even though claimed tasks are
+    // typically in_progress — the filter is applied uniformly regardless.
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", claimedBy: "agent-x" }),
+      makeReadyTask({ id: "t2", claimedBy: "agent-y" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      claimedBy: "agent-x",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── pr ───────────────────────────────────────────────────────────────────
+
+  it("listReady({ pr }) returns only tasks matching the PR number", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", pr: 42 }),
+      makeReadyTask({ id: "t2", pr: 99 }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, { pr: 42 });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── branch ───────────────────────────────────────────────────────────────
+
+  it("listReady({ branch }) returns only tasks matching the branch", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", branch: "feat/a" }),
+      makeReadyTask({ id: "t2", branch: "feat/b" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      branch: "feat/a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── assignee ─────────────────────────────────────────────────────────────
+
+  it("listReady({ assignee }) returns only tasks matching the assignee", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", assignee: "agent-x" }),
+      makeReadyTask({ id: "t2", assignee: "agent-y" }),
+      makeReadyTask({ id: "t3", assignee: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      assignee: "agent-x",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── repo (array-any-match, mirrors buildRepoOrgWhere) ─────────────────────
+
+  it("listReady({ repo: string }) returns only tasks with an exact repo match", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", repo: "acme/foo" }),
+      makeReadyTask({ id: "t2", repo: "acme/bar" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      repo: "acme/foo",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ repo: string[] }) returns tasks matching any repo in the list", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", repo: "acme/foo" }),
+      makeReadyTask({ id: "t2", repo: "acme/bar" }),
+      makeReadyTask({ id: "t3", repo: "acme/baz" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      repo: ["acme/foo", "acme/bar"],
+    });
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  // ─── org (startsWith "<org>/", mirrors buildRepoOrgWhere) ──────────────────
+
+  it("listReady({ org: string }) returns tasks whose repo starts with '<org>/'", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      makeReadyTask({ id: "t2", repo: "acme/backend-api" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      org: "app-vitals",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady({ org: string[] }) returns tasks matching any org", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      makeReadyTask({ id: "t2", repo: "acme/backend-api" }),
+      makeReadyTask({ id: "t3", repo: "other/repo" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      org: ["app-vitals", "acme"],
+    });
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("listReady({ repo, org }) ANDs repo and org, mirroring buildRepoOrgWhere", async () => {
+    const prisma = makeReadyPrismaDouble([
+      // Matches both repo list AND org.
+      makeReadyTask({ id: "t1", repo: "app-vitals/shipwright" }),
+      // Matches repo list but not org.
+      makeReadyTask({ id: "t2", repo: "acme/backend-api" }),
+      // Matches org but not repo list.
+      makeReadyTask({ id: "t3", repo: "app-vitals/other-repo" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      repo: ["app-vitals/shipwright", "acme/backend-api"],
+      org: "app-vitals",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  // ─── combined filters ───────────────────────────────────────────────────────
+
+  it("listReady() combines multiple new filters together (AND semantics)", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", session: "session-a", source: "entropy-fix" }),
+      makeReadyTask({ id: "t2", session: "session-a", source: "plan-session" }),
+      makeReadyTask({ id: "t3", session: "session-b", source: "entropy-fix" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      session: "session-a",
+      source: "entropy-fix",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady() combines new filters with agentId/repos scoping", async () => {
+    const prisma = makeReadyPrismaDouble([
+      // Owned by agent-1, matches source filter.
+      makeReadyTask({
+        id: "t1",
+        assignee: "agent-1",
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+      // Owned by agent-1, but wrong source — excluded by the new filter.
+      makeReadyTask({
+        id: "t2",
+        assignee: "agent-1",
+        source: "plan-session",
+        repo: "acme/backend-api",
+      }),
+      // Unassigned pool task in scope, matches source filter.
+      makeReadyTask({
+        id: "t3",
+        assignee: null,
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+      // Owned by a different agent — excluded by agentId scoping regardless
+      // of matching the source filter.
+      makeReadyTask({
+        id: "t4",
+        assignee: "agent-2",
+        source: "entropy-fix",
+        repo: "acme/backend-api",
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady("agent-1", ["acme/backend-api"], {
+      source: "entropy-fix",
+    });
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t3"]);
+  });
+
+  // ─── undefined/empty filters do not exclude tasks ──────────────────────────
+
+  it("listReady() with no filters object returns every ready task (back-compat)", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1" }),
+      makeReadyTask({ id: "t2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady();
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("listReady({}) (empty filters object) returns every ready task", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1" }),
+      makeReadyTask({ id: "t2" }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {});
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  // ─── dependency graph resolved before filtering ────────────────────────────
+
+  it("listReady() applies filters strictly after dependency resolution — an excluded task still satisfies a dependent's readiness", async () => {
+    // depTask is 'done' (satisfies dependency rules) but belongs to a
+    // different session — the session filter must not remove it from the
+    // whole-graph resolution pass, only from the final returned list. The
+    // dependent task must still show up as ready.
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({
+        id: "dep-task",
+        status: "done",
+        session: "session-other",
+      }),
+      makeReadyTask({
+        id: "dependent-task",
+        status: "pending",
+        session: "session-a",
+        dependencies: ["dep-task"],
+      }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      session: "session-a",
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["dependent-task"]);
   });
 });

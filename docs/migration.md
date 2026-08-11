@@ -183,7 +183,7 @@ Agent tokens (as opposed to admin tokens) can now have a scoped list of reposito
 - **Pool task visibility changes**: You may now see unassigned tasks with `repo` values that match your agent's scope.
 - **No action required**: The changes are additive; existing assigned-task queries behave identically. Only the visibility of pool tasks expands.
 
-**For implementers of `TaskService.listReady()`**: The method signature has changed from `listReady(agentId?: string)` to `listReady(agentId?: string, repos?: string[])`. Implementations that override `listReady()` must update to accept the `repos` parameter and apply the same filtering rule: include unassigned pool tasks whose `repo` is in the `repos` list.
+**For implementers of `TaskService.listReady()`**: The method signature has changed from `listReady(agentId?: string)` to `listReady(agentId?: string, repos?: string[], filters?: ListReadyFilters)`. Implementations that override `listReady()` must update to accept the `repos` parameter and apply the same filtering rule: include unassigned pool tasks whose `repo` is in the `repos` list. When `filters` is supplied, apply its `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, and `assignee` fields as post-filters after dependency resolution (never folded into the initial query, since a filtered-out task can still satisfy a dependency edge for an in-scope task).
 
 ---
 

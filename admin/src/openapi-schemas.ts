@@ -440,6 +440,10 @@ export const ListCronRunsQuerySchema = z
       .optional()
       .transform((v) => (v ? Number.parseInt(v, 10) : 0))
       .openapi({ example: "0" }),
+    /** Narrow to runs dispatched against this work item (e.g. "WLS-2.2" or "acme/x#123"). */
+    itemId: z.string().optional().openapi({ example: "acme/x#123" }),
+    /** Narrow to runs dispatched by this phase cron (a child AgentCronJob id). */
+    phaseId: z.string().optional().openapi({ example: "clx1234567890" }),
   })
   .openapi("ListCronRunsQuery");
 

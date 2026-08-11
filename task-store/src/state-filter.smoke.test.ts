@@ -295,6 +295,40 @@ describe("GET /tasks state filter (smoke)", () => {
     expect(body.total).toBe(0);
   });
 
+  it("GET /tasks?state=ready forwards session/source/repo/org/claimedBy/pr/branch/assignee to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+    const baseFake = fakeTaskService({});
+    const taskService: TaskServiceLike = {
+      ...baseFake,
+      async listReady(
+        agentId?: string,
+        repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+    const app = makeApp(taskService);
+
+    const res = await app.request(
+      "/tasks?state=ready&session=session-a&source=entropy-fix&repo=acme-inc%2Fbackend-api&org=acme-inc&claimedBy=agent-9&pr=42&branch=feat%2Ffoo&assignee=agent-9",
+      { headers: auth() },
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]).toMatchObject({
+      session: "session-a",
+      source: "entropy-fix",
+      repo: ["acme-inc/backend-api"],
+      org: ["acme-inc"],
+      claimedBy: "agent-9",
+      pr: 42,
+      branch: "feat/foo",
+      assignee: "agent-9",
+    });
+  });
+
   // ─── state=in_progress ───────────────────────────────────────────────────────
 
   it("GET /tasks?state=in_progress returns 200", async () => {
