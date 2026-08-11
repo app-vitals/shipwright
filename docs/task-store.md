@@ -47,7 +47,7 @@ Query params:
 |-------|------|-------------|
 | `status` | string | Filter by exact status (e.g. `pending`, `in_progress`, `pr_open`) |
 | `state` | string | `open` (all non-terminal), `closed` (terminal), `in_progress`, `ready`, `blocked` |
-| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded; Type B tasks with `requiresHumanApproval=true` remain included), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. The `?sort` parameter is not supported with `?ready=true`. |
+| `ready` | `true` | Alias for `state=ready` — returns only tasks with `status=pending`, `hitl !== true` (Type A HITL tasks excluded; Type B tasks with `requiresHumanApproval=true` remain included), no fresh same-branch in-progress sibling (exclusivity guard, see "Same-branch exclusivity guard" below), and all dependencies satisfied. `session`/`source`/`repo`/`org`/`claimedBy`/`pr`/`branch`/`assignee` all apply under `?ready=true` identically to the plain list path (applied as an AND filter *after* dependency resolution — a task excluded by one of these filters can still satisfy a dependency edge for an in-scope task, since resolution needs the complete graph). `hitl` and `requiresHumanApproval` are not filterable here — `hitl` is structurally excluded from the ready set by definition (see above), and `requiresHumanApproval` intentionally does not gate the ready set at all (see its own row below). `limit`/`offset`/`sort`/`updatedSince` have no effect under `?ready=true` (see the unpaginated-convenience-endpoint note below). Tasks are always returned in ascending `createdAt` order (oldest first) to ensure deterministic selection regardless of insertion order. |
 | `source` | string | Filter by task source (e.g. `plan-session`, `entropy-fix`, `manual`) |
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
@@ -94,7 +94,19 @@ they compute over the entire task graph (dependency resolution needs every task,
 `limit`/`offset` slice) and always return every matching task in one response. Their `total`
 is simply `tasks.length`; `limit`/`offset` query params have no effect on these two branches. The
 `?sort` parameter applies to `?state=blocked` (sort by `createdAt`; default `asc`), but is not
-supported with `?ready=true`.
+supported with `?ready=true`. `updatedSince` has no effect on either branch, for the same
+whole-graph reason.
+
+Aside from those pagination/sort/recency exceptions (and `hitl`/`requiresHumanApproval`, which
+keep the ready-specific semantics documented in their own rows above), every other filter in
+the table — `session`, `source`, `repo`, `org`, `claimedBy`, `pr`, `branch`, `assignee` — applies
+under `?ready=true` exactly as it does on the plain list path. `TaskService.listReady()` applies
+these as a post-filter *after* `resolveReadyTasks()` has resolved the complete dependency graph,
+never folded into the initial query — a task that gets filtered out of the final response can
+still correctly satisfy a dependency edge for another, in-scope task. `repo`/`org` matching
+mirrors the same array-any-match (`repo`) / `startsWith "<org>/"` (`org`) / AND-between-both
+semantics described above for the plain list path, just evaluated in-memory instead of as a
+Prisma `where` clause.
 
 **Agent token visibility:**
 - **With repo scope** (repos configured): Return tasks where `assignee === agentId` OR (`assignee === null` AND `repo` is in the agent's scope). This union of explicitly-assigned and pool tasks enables the agent to claim unassigned work from its scoped repositories.

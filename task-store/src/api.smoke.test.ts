@@ -800,6 +800,75 @@ describe("task-store API (smoke)", () => {
     expect(capturedArgs[0]?.repos).toEqual(["acme-inc/backend-api"]);
   });
 
+  it("GET /tasks?ready=true forwards session/source/repo/org/claimedBy/pr/branch/assignee to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async listReady(
+        _agentId?: string,
+        _repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeTokenService(),
+      taskService: spyTaskService,
+    });
+
+    const res = await app.request(
+      "/tasks?ready=true&session=session-a&source=entropy-fix&repo=acme-inc%2Fbackend-api&org=acme-inc&claimedBy=agent-9&pr=42&branch=feat%2Ffoo&assignee=agent-9",
+      { headers: auth() },
+    );
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]).toMatchObject({
+      session: "session-a",
+      source: "entropy-fix",
+      repo: ["acme-inc/backend-api"],
+      org: ["acme-inc"],
+      claimedBy: "agent-9",
+      pr: 42,
+      branch: "feat/foo",
+      assignee: "agent-9",
+    });
+  });
+
+  it("GET /tasks?ready=true without the new filter params forwards them as undefined to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+
+    const spyTaskService: TaskServiceLike = {
+      ...fakeTaskService(),
+      async listReady(
+        _agentId?: string,
+        _repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+
+    const app = makeApp({
+      tokenService: fakeTokenService(),
+      taskService: spyTaskService,
+    });
+
+    const res = await app.request("/tasks?ready=true", { headers: auth() });
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]?.session).toBeUndefined();
+    expect(capturedFilters[0]?.source).toBeUndefined();
+    expect(capturedFilters[0]?.claimedBy).toBeUndefined();
+    expect(capturedFilters[0]?.pr).toBeUndefined();
+    expect(capturedFilters[0]?.branch).toBeUndefined();
+    expect(capturedFilters[0]?.assignee).toBeUndefined();
+  });
+
   it("GET /tasks?repo=acme-inc/backend-api&pr=42 returns pool task for agent with matching repo", async () => {
     const capturedFilters: TaskListFilters[] = [];
 
