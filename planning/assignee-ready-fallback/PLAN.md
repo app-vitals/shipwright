@@ -4,7 +4,7 @@ Repo: app-vitals/shipwright
 
 ## Background
 
-`planning/task-store-ready-filters/PLAN.md` (PR #2562, merged) designed `assignee`
+`planning/task-store-ready-filters/PLAN.md` (PR #2562, open) designed `assignee`
 filtering under `GET /tasks?ready=true` as a 3-case split by `agentId`/`repos` presence.
 Critically: when an agent token has `agentId` but no/empty `repos`, a mismatched
 caller-supplied `?assignee=` was designed to be *ignored* (falling back to the token's own
@@ -56,7 +56,7 @@ inside the two methods' existing bodies.
 
 | Task | Title | Depends on | Blocks | HITL | Status |
 |---|---|---|---|---|---|
-| ARF-1.1 | Fix assignee filter fallback for repos-absent agent tokens | — | — | — | pending |
+| ARF-1.1 | Fix assignee filter fallback for repos-absent agent tokens | #2562 | — | — | pending |
 
 ### ARF-1.1: Fix assignee filter fallback for repos-absent agent tokens in listReady()/listBlocked()
 
@@ -95,7 +95,8 @@ for the admin-token and repo-scoped cases.
    unit coverage against the service directly is sufficient. No existing tests are retired —
    purely additive.
 
-**Dependencies:** none
+**Dependencies:** #2562 (must merge first — AC2 updates
+`planning/task-store-ready-filters/PLAN.md`, which only exists on `main` once that PR lands)
 **Branch:** `feat/arf-1-1-assignee-ready-fallback`
 **Layer:** API
 **Hours:** 3
