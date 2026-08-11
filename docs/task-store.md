@@ -57,7 +57,7 @@ Query params:
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
 | `hitl` | `true` or `false` | Filter by HITL (human-in-the-loop) flag: return tasks with or without the flag set |
-| `requiresHumanApproval` | `true` or `false` | Filter by approval-gate flag (Type B classification): return tasks that do or do not require human review/approval before merge. Unlike `hitl`, tasks with `requiresHumanApproval=true` are not excluded from the ready set — they ship through `dev-task` normally and are subject to a separate merge-gate check later. |
+| `requiresHumanApproval` | `true` or `false` | Legacy field (no longer consulted). Previously used to gate merge approval; this check was removed in RHA-1. Filter queries still accept the parameter for backwards compatibility, but the deploy workflow ignores this field entirely. |
 | `limit` | number | Page size. Defaults to `50` when omitted. |
 | `offset` | number | Page offset. Defaults to `0` when omitted. |
 | `sort` | string | `asc` (default) or `desc` — orders results by `createdAt`. Default preserves existing ascending order for all callers. |
@@ -454,7 +454,7 @@ If `GET /tasks?ready=true` returns `{ tasks: [], total: 0 }` even though tasks e
 
 1. **No tasks assigned to this agent** — repo-pool visibility means an unfiltered query can still exclude tasks assigned elsewhere. Use an admin token, or drop the `?assignee=` filter, to see all ready tasks in scope.
 
-2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. This is the Type A classification — the task cannot be completed autonomously because it requires a human to execute it directly (no code/acceptance-criteria diff). Clear the flag once the human action is complete. (Note: tasks with `requiresHumanApproval=true` are Type B and remain included in the ready set — they are not a ready-filter obstacle.)
+2. **HITL flag set** — query `?status=pending` to check whether tasks have `"hitl": true`. This is the Type A classification — the task cannot be completed autonomously because it requires a human to execute it directly (no code/acceptance-criteria diff). Clear the flag once the human action is complete. (Note: the `requiresHumanApproval` field is legacy and no longer consulted; it does not affect candidacy.)
 
 3. **Same-branch sibling in progress** — query `?status=in_progress` to check whether another task shares the pending task's `branch` with an active claim. If so, that task holds the exclusivity lock on the branch. Wait for it to complete, fail, or release. If the sibling's claim looks stale (more than 65 minutes old with no heartbeat, by default), it will be reaped automatically; verify via the stale-claim-reaper logs in the meanwhile.
 
