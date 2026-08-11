@@ -86,39 +86,13 @@ function matchesRepoOrg(
 }
 
 /**
- * Post-filter predicate for TaskService.listReady() — see ListReadyFilters'
- * doc comment for why this is applied after dependency resolution instead
- * of being folded into the initial findMany(). Every set field is AND'd
- * together; undefined/absent fields impose no restriction.
+ * Post-filter predicate shared by TaskService.listReady() and
+ * TaskService.listBlocked() — see TaskListPostFilters' doc comment for why
+ * this is applied after dependency resolution instead of being folded into
+ * the initial findMany(). Every set field is AND'd together; undefined/
+ * absent fields impose no restriction.
  */
-function matchesReadyFilters(task: Task, filters: ListReadyFilters): boolean {
-  if (filters.session !== undefined && task.session !== filters.session)
-    return false;
-  if (filters.source !== undefined && task.source !== filters.source)
-    return false;
-  if (filters.claimedBy !== undefined && task.claimedBy !== filters.claimedBy)
-    return false;
-  if (filters.pr !== undefined && task.pr !== filters.pr) return false;
-  if (filters.branch !== undefined && task.branch !== filters.branch)
-    return false;
-  if (filters.assignee !== undefined && task.assignee !== filters.assignee)
-    return false;
-  if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
-  return true;
-}
-
-/**
- * Post-filter predicate for TaskService.listBlocked() — see ListBlockedFilters'
- * doc comment for why this is applied after dependency resolution instead of
- * being folded into the initial findMany(). Every set field is AND'd
- * together; undefined/absent fields impose no restriction. Field-equality
- * checks intentionally near-duplicate matchesReadyFilters above (same filter
- * shape, different task set) — a future cleanup task consolidates the two.
- */
-function matchesBlockedFilters(
-  task: Task,
-  filters: ListBlockedFilters,
-): boolean {
+function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
   if (filters.session !== undefined && task.session !== filters.session)
     return false;
   if (filters.source !== undefined && task.source !== filters.source)
@@ -138,45 +112,22 @@ function matchesBlockedFilters(
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
 
 /**
- * Filters accepted by TaskService.listBlocked(), applied as an in-memory
- * post-filter over the already-resolved blocked array (see listBlocked()
- * below) — never folded into the initial findMany(), since computeBlockedBy
- * needs the complete task graph (a filtered-out task may still be a
- * dependency of an in-scope blocked task, and must still contribute a
+ * Filters shared by TaskService.listReady() and TaskService.listBlocked(),
+ * applied as an in-memory post-filter over the already-resolved
+ * ready/blocked array (see listReady()/listBlocked() below) — never folded
+ * into the initial findMany(), since both dependency resolution and
+ * computeBlockedBy need the complete task graph (a filtered-out task may
+ * still be a dependency of an in-scope task, and must still contribute a
  * blockedBy entry for it).
  *
- * Same field set as ListReadyFilters — kept as a distinct named type for
- * symmetry with listBlocked()'s own signature/doc comments, even though the
- * shape is identical today.
- */
-export interface ListBlockedFilters {
-  session?: string;
-  source?: string;
-  /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
-  repo?: string | string[];
-  /** startsWith "<org>/" match, mirrors buildRepoOrgWhere's OR clause. Combines with `repo` via AND. */
-  org?: string | string[];
-  claimedBy?: string;
-  pr?: number;
-  branch?: string;
-  assignee?: string;
-}
-
-/**
- * Filters accepted by TaskService.listReady(), applied as an in-memory
- * post-filter over the already-resolved ready array (see listReady() below)
- * — never folded into the initial findMany(), since dependency resolution
- * needs the complete task graph (a filtered-out task may still be a
- * dependency of an in-scope task).
- *
  * Deliberately excludes status/state/hitl/requiresHumanApproval/limit/
- * offset/sort/updatedSince/agentScope: the ready set's status/hitl
- * semantics are structural (see ready.ts), pagination/sort don't apply to
- * this whole-graph convenience endpoint (see docs/task-store.md), and
- * agentId/repos scoping already has its own dedicated parameters mirroring
- * the pre-existing signature.
+ * offset/sort/updatedSince/agentScope: the ready/blocked sets' status/hitl
+ * semantics are structural (see ready.ts / listBlocked()'s doc comment),
+ * pagination/sort don't apply to these whole-graph convenience endpoints
+ * (see docs/task-store.md), and agentId/repos scoping already has its own
+ * dedicated parameters mirroring the pre-existing signatures.
  */
-export interface ListReadyFilters {
+export interface TaskListPostFilters {
   session?: string;
   source?: string;
   /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
@@ -250,13 +201,13 @@ export interface TaskServiceLike {
   listReady(
     agentId?: string,
     repos?: string[],
-    filters?: ListReadyFilters,
+    filters?: TaskListPostFilters,
   ): Promise<Task[]>;
   listBlocked(
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
-    filters?: ListBlockedFilters,
+    filters?: TaskListPostFilters,
   ): Promise<TaskWithBlockedBy[]>;
   distinct(
     agentId?: string,
@@ -399,7 +350,7 @@ export class TaskService implements TaskServiceLike {
    *
    * `filters` (session/source/repo/org/claimedBy/pr/branch/assignee) is
    * applied as an additional AND condition, strictly *after*
-   * resolveReadyTasks() has resolved the graph — see ListReadyFilters'
+   * resolveReadyTasks() has resolved the graph — see TaskListPostFilters'
    * doc comment for why this can't be folded into the initial findMany().
    * repo/org matching mirrors buildRepoOrgWhere's semantics (array-any-match
    * for repo; startsWith "<org>/" for org; AND between the two), just
@@ -412,7 +363,7 @@ export class TaskService implements TaskServiceLike {
   async listReady(
     agentId?: string,
     repos?: string[],
-    filters?: ListReadyFilters,
+    filters?: TaskListPostFilters,
   ): Promise<Task[]> {
     // Load all tasks so dependency resolution sees the full graph, then filter
     // the result set to the caller's agent if one is specified.
@@ -435,7 +386,7 @@ export class TaskService implements TaskServiceLike {
         )
       : ready;
     return filters
-      ? scoped.filter((t) => matchesReadyFilters(t, filters))
+      ? scoped.filter((t) => matchesTaskFilters(t, filters))
       : scoped;
   }
 
@@ -458,7 +409,7 @@ export class TaskService implements TaskServiceLike {
    * `filters` (session/source/repo/org/claimedBy/pr/branch/assignee) is
    * applied as an additional AND condition, strictly *after* the full task
    * graph is loaded and computeBlockedBy has resolved it — see
-   * ListBlockedFilters' doc comment for why this can't be folded into the
+   * TaskListPostFilters' doc comment for why this can't be folded into the
    * initial findMany(). repo/org matching mirrors buildRepoOrgWhere's
    * semantics (array-any-match for repo; startsWith "<org>/" for org; AND
    * between the two), just evaluated in-memory against already-resolved Task
@@ -468,7 +419,7 @@ export class TaskService implements TaskServiceLike {
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
-    filters?: ListBlockedFilters,
+    filters?: TaskListPostFilters,
   ): Promise<TaskWithBlockedBy[]> {
     const allTasks = await this.prisma.task.findMany({
       orderBy: { createdAt: sort ?? "asc" },
@@ -485,7 +436,7 @@ export class TaskService implements TaskServiceLike {
             useRepoScope && t.repo !== null && repos?.includes(t.repo);
           if (!ownedByAssignee && !inRepoScope) return false;
         }
-        if (filters && !matchesBlockedFilters(t, filters)) return false;
+        if (filters && !matchesTaskFilters(t, filters)) return false;
         if (t.status === "blocked") return true;
         if (closedStatuses.has(t.status)) return false;
         return t.blockedBy.length > 0;
