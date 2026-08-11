@@ -45,7 +45,10 @@ type AdminType = AdminBlockedByEntry["type"];
  */
 type _AssertEveryRealTypeHasAdminCounterpart = RealType extends AdminType
   ? true
-  : ["missing admin BlockedByEntry variant for type", Exclude<RealType, AdminType>];
+  : [
+      "missing admin BlockedByEntry variant for type",
+      Exclude<RealType, AdminType>,
+    ];
 const _assertEveryRealTypeHasAdminCounterpart: _AssertEveryRealTypeHasAdminCounterpart = true;
 void _assertEveryRealTypeHasAdminCounterpart;
 
@@ -60,7 +63,11 @@ type AssertVariantAssignable<T extends RealType> = Extract<
   { type: T }
 > extends Extract<AdminBlockedByEntry, { type: T }>
   ? true
-  : ["admin BlockedByEntry variant for type", T, "is not assignable from task-store's real shape"];
+  : [
+      "admin BlockedByEntry variant for type",
+      T,
+      "is not assignable from task-store's real shape",
+    ];
 
 type _AssertHitlAssignable = AssertVariantAssignable<"hitl">;
 const _assertHitlAssignable: _AssertHitlAssignable = true;

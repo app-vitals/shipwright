@@ -2514,9 +2514,7 @@ describe("renderTasksPage — blocker badges", () => {
       repo: null,
       assignee: null,
       claimedBy: null,
-      blockedBy: [
-        { type: "blocked", reason: "<script>alert(1)</script>" },
-      ],
+      blockedBy: [{ type: "blocked", reason: "<script>alert(1)</script>" }],
     };
     const html = render([taskBlockedXss]);
     expect(html).not.toContain("<script>alert(1)</script>");
