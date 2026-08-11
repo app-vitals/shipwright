@@ -2467,6 +2467,61 @@ describe("renderTasksPage — blocker badges", () => {
     expect(html).not.toContain("<script>alert(1)</script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  // Regression test for Sentry issue 7665355727: a {type:"blocked"} entry
+  // (status:"blocked" tasks) previously fell through to the dependency
+  // branch and crashed on taskLink(b.id)/escapeHtml(undefined).
+  test("blocked entry with a populated reason renders the reason, not a crash", () => {
+    const taskBlockedWithReason: TaskItem = {
+      id: "TASK-9",
+      title: "Explicitly blocked",
+      status: "blocked",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      blockedBy: [{ type: "blocked", reason: "Waiting on external vendor" }],
+    };
+    expect(() => render([taskBlockedWithReason])).not.toThrow();
+    const html = render([taskBlockedWithReason]);
+    expect(html).toContain("Waiting on external vendor");
+    expect(html).not.toContain("undefined");
+  });
+
+  test("blocked entry with a null reason renders a fallback label, not a crash", () => {
+    const taskBlockedNoReason: TaskItem = {
+      id: "TASK-10",
+      title: "Blocked, no reason recorded",
+      status: "blocked",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      blockedBy: [{ type: "blocked", reason: null }],
+    };
+    expect(() => render([taskBlockedNoReason])).not.toThrow();
+    const html = render([taskBlockedNoReason]);
+    expect(html).toContain("Blocked");
+    expect(html).not.toContain("undefined");
+  });
+
+  test("blocked entry's reason is HTML-escaped", () => {
+    const taskBlockedXss: TaskItem = {
+      id: "TASK-11",
+      title: "Blocked with unsafe reason",
+      status: "blocked",
+      session: null,
+      repo: null,
+      assignee: null,
+      claimedBy: null,
+      blockedBy: [
+        { type: "blocked", reason: "<script>alert(1)</script>" },
+      ],
+    };
+    const html = render([taskBlockedXss]);
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+  });
 });
 
 // ─── renderTasksPage — PR column ──────────────────────────────────────────────
@@ -3141,6 +3196,39 @@ describe("renderTaskDetailPage — blockers", () => {
       blockedBy: [
         { type: "dependency", id: "<script>xss()</script>", status: "pending" },
       ],
+    });
+    expect(html).not.toContain("<script>xss");
+    expect(html).toContain("&lt;script&gt;");
+  });
+
+  // Regression test for Sentry issue 7665355727: a {type:"blocked"} entry
+  // previously fell through to the dependency branch and crashed on
+  // taskLink(b.id)/escapeHtml(b.status), both undefined for this variant.
+  test("blocked entry with a populated reason renders the reason, not a crash", () => {
+    expect(() =>
+      render({
+        blockedBy: [{ type: "blocked", reason: "Waiting on external vendor" }],
+      }),
+    ).not.toThrow();
+    const html = render({
+      blockedBy: [{ type: "blocked", reason: "Waiting on external vendor" }],
+    });
+    expect(html).toContain("Waiting on external vendor");
+    expect(html).not.toContain("undefined");
+  });
+
+  test("blocked entry with a null reason renders a fallback label, not a crash", () => {
+    expect(() =>
+      render({ blockedBy: [{ type: "blocked", reason: null }] }),
+    ).not.toThrow();
+    const html = render({ blockedBy: [{ type: "blocked", reason: null }] });
+    expect(html).toContain("Blocked");
+    expect(html).not.toContain("undefined");
+  });
+
+  test("blocked entry's reason is HTML-escaped in the blockers list", () => {
+    const html = render({
+      blockedBy: [{ type: "blocked", reason: "<script>xss()</script>" }],
     });
     expect(html).not.toContain("<script>xss");
     expect(html).toContain("&lt;script&gt;");
