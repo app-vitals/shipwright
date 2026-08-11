@@ -793,6 +793,35 @@ describe("PATCH /:id — hitlNotifiedAt handling (HSR-1.6)", () => {
   });
 });
 
+describe("PATCH /:id — requiresHumanApproval handling (RHA-1.4)", () => {
+  it("does not 500 when 'requiresHumanApproval' is sent, and never forwards it to the service update", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    let received: Record<string, unknown> | undefined;
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        onUpdate: (_id, data) => {
+          received = data as Record<string, unknown>;
+        },
+      }),
+    );
+    const parent = makeAgentParent(app, "agent-1");
+
+    const res = await parent.request("/t-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        note: "still writable",
+        requiresHumanApproval: true,
+      }),
+    });
+    expect(res.status).not.toBe(500);
+    expect(res.status).toBe(200);
+    expect(received).toBeDefined();
+    expect("requiresHumanApproval" in (received ?? {})).toBe(false);
+  });
+});
+
 describe("POST / and POST /bulk — strip removed 'hitlNotifiedAt' field (HSR-1.1 follow-up)", () => {
   it("POST / does not 500 when 'hitlNotifiedAt' is sent, and never forwards it to the service create", async () => {
     let received: Record<string, unknown> | undefined;

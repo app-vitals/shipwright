@@ -96,7 +96,9 @@ function assertNoLifecycleFieldWrite(
 // still sending the old field gets the same silently-ignored outcome that the
 // prs.ts PATCH allowlist gives non-writable fields.
 //   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
-const REMOVED_TASK_FIELDS = ["hitlNotifiedAt"] as const;
+//   requiresHumanApproval — dropped in RHA-1.4; the merge-approval gate that consulted
+//   it was removed from the deploy workflow in RHA-1.1.
+const REMOVED_TASK_FIELDS = ["hitlNotifiedAt", "requiresHumanApproval"] as const;
 
 function stripRemovedFields(body: Record<string, unknown>): void {
   for (const key of REMOVED_TASK_FIELDS) {
