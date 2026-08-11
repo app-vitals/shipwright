@@ -728,7 +728,7 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  test("an allowlist-excluded author's PR is still excluded even when currentUser is a requested reviewer (regression guard: allowlist is not bypassable via reviewRequests)", async () => {
+  test("an allowlist-excluded author's PR is included when currentUser is a requested reviewer (RRA-1.1: requested-reviewer bypass extends to the allowlist)", async () => {
     const pr = makePr({
       author: { login: "danmcaulay" },
       reviewRequests: [{ login: "bodhi-agent" }],
@@ -738,7 +738,7 @@ describe("getReviewCandidates", () => {
       isAuthorAllowed: (login) => login === "someone-else",
     };
     const result = await getReviewCandidates(deps);
-    expect(result).toEqual([]);
+    expect(result).toHaveLength(1);
   });
 
   test("requested-reviewer status does not override the unconditional draft exclusion", async () => {

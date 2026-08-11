@@ -192,20 +192,24 @@ export async function getReviewCandidates(
     if (pr.author.login === "app/dependabot") continue;
     if (pr.labels?.some((l) => l.name === "automated")) continue;
 
-    // Requested-reviewer inclusion (RRR-1.1) — an additive path layered on
-    // top of the self-review exclusion only: when the agent's own GitHub
-    // identity is listed as a requested reviewer on this PR, it stays
-    // eligible even if it would otherwise be excluded as self-authored. This
-    // deliberately does NOT extend to the author-allowlist exclusion below:
-    // reviewRequests is populated via GitHub's "Request a reviewer" action,
-    // which any author with repo write access can trigger (including on
-    // their own PR) — since GitHub doesn't surface who added a given
-    // request, an excluded author could otherwise self-request the agent as
-    // reviewer to unilaterally defeat the allowlist. The allowlist is a
-    // real access boundary, so it applies unconditionally. All other
-    // exclusions (draft, dependabot, automated label above; live-review
-    // dedup, task-store dedup, hitl/blocked, bundle-incomplete below) also
-    // still apply unconditionally.
+    // Requested-reviewer bypass (RRR-1.1, extended to the allowlist by
+    // RRA-1.1) — an additive path layered on top of BOTH the self-review
+    // exclusion AND the author-allowlist exclusion below: when the agent's
+    // own GitHub identity is listed as a requested reviewer on this PR, it
+    // stays eligible even if it would otherwise be excluded as self-authored
+    // or as an allowlist-excluded author. For an already-allowlisted author
+    // this bypass has no observable effect — isAuthorAllowed already
+    // includes them unconditionally — so its only meaningful effect is for
+    // non-allowlisted authors, which is the intended behavior: any
+    // collaborator with repo write access can trigger an agent review by
+    // explicitly requesting one via GitHub's "Request a reviewer" action,
+    // even on a PR from an author the allowlist would otherwise exclude.
+    // This is a known, accepted access-boundary loosening (confirmed with
+    // the team), not an oversight — the same write access already required
+    // to open a PR is sufficient to request the agent as a reviewer on it.
+    // All other exclusions (draft, dependabot, automated label above; live-
+    // review dedup, task-store dedup, hitl/blocked, bundle-incomplete below)
+    // still apply unconditionally regardless of requested-reviewer status.
     const isRequestedReviewer =
       pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
 
@@ -215,7 +219,11 @@ export async function getReviewCandidates(
       !isRequestedReviewer
     )
       continue;
-    if (deps.isAuthorAllowed && !deps.isAuthorAllowed(pr.author.login))
+    if (
+      deps.isAuthorAllowed &&
+      !deps.isAuthorAllowed(pr.author.login) &&
+      !isRequestedReviewer
+    )
       continue;
 
     let record: PrRecord | null = null;
