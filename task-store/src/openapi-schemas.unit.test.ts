@@ -56,7 +56,6 @@ const validTask = {
   model: "sonnet",
   complexity: 7,
   hitl: true,
-  requiresHumanApproval: false,
   claimedBy: "agent-id-123",
   agentHint: "prefer-sonnet",
   claimedAt: yesterday,

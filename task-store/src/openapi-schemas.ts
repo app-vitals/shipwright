@@ -135,11 +135,6 @@ export const TaskSchema = z
     model: z.string().nullable().optional().openapi({ example: "sonnet" }),
     complexity: z.number().int().nullable().optional().openapi({ example: 7 }),
     hitl: z.boolean().nullable().optional().openapi({ example: true }),
-    requiresHumanApproval: z.boolean().default(false).openapi({
-      example: false,
-      description:
-        "Type B merge-approval-gate classification. Does not gate dispatch candidacy.",
-    }),
     skipCount: z.number().int().default(0).openapi({
       example: 0,
       description:
@@ -444,10 +439,6 @@ export const TaskListQuerySchema = z.object({
   offset: z.string().optional().openapi({ example: "0" }),
   ready: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
   hitl: z.enum(["true", "false"]).optional().openapi({ example: "true" }),
-  requiresHumanApproval: z
-    .enum(["true", "false"])
-    .optional()
-    .openapi({ example: "true" }),
   sort: z.enum(["asc", "desc"]).optional().openapi({ example: "asc" }),
   updatedSince: z.string().optional().openapi({
     example: "2026-01-01T00:00:00.000Z",

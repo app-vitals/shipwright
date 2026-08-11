@@ -453,77 +453,6 @@ describe("createTasksRoutes — OpenAPIHono migration (TSM-1.2)", () => {
     expect(res.status).toBe(400);
   });
 
-  it("GET /?requiresHumanApproval=true passes requiresHumanApproval: true through to taskService.list()", async () => {
-    const task = makeTask({ id: "t-1", requiresHumanApproval: true });
-    let receivedFilters: unknown;
-    const app = createTasksRoutes(
-      fakeTaskService({
-        tasks: [task],
-        onList: (filters) => {
-          receivedFilters = filters;
-        },
-      }),
-    );
-    const parent = makeAdminParent(app);
-
-    const res = await parent.request("/?requiresHumanApproval=true");
-    expect(res.status).toBe(200);
-    expect(
-      (receivedFilters as { requiresHumanApproval?: boolean })
-        .requiresHumanApproval,
-    ).toBe(true);
-  });
-
-  it("GET /?requiresHumanApproval=false passes requiresHumanApproval: false through to taskService.list()", async () => {
-    const task = makeTask({ id: "t-1", requiresHumanApproval: false });
-    let receivedFilters: unknown;
-    const app = createTasksRoutes(
-      fakeTaskService({
-        tasks: [task],
-        onList: (filters) => {
-          receivedFilters = filters;
-        },
-      }),
-    );
-    const parent = makeAdminParent(app);
-
-    const res = await parent.request("/?requiresHumanApproval=false");
-    expect(res.status).toBe(200);
-    expect(
-      (receivedFilters as { requiresHumanApproval?: boolean })
-        .requiresHumanApproval,
-    ).toBe(false);
-  });
-
-  it("GET / with no requiresHumanApproval param passes requiresHumanApproval: undefined through to taskService.list() (existing behavior)", async () => {
-    const task = makeTask({ id: "t-1" });
-    let receivedFilters: unknown;
-    const app = createTasksRoutes(
-      fakeTaskService({
-        tasks: [task],
-        onList: (filters) => {
-          receivedFilters = filters;
-        },
-      }),
-    );
-    const parent = makeAdminParent(app);
-
-    const res = await parent.request("/");
-    expect(res.status).toBe(200);
-    expect(
-      (receivedFilters as { requiresHumanApproval?: boolean })
-        .requiresHumanApproval,
-    ).toBeUndefined();
-  });
-
-  it("GET /?requiresHumanApproval=garbage rejects with a 400 (invalid enum value, mirrors ?hitl= behavior)", async () => {
-    const app = createTasksRoutes(fakeTaskService());
-    const parent = makeAdminParent(app);
-
-    const res = await parent.request("/?requiresHumanApproval=garbage");
-    expect(res.status).toBe(400);
-  });
-
   it("GET /distinct returns 200 with { sessions, repos } shape", async () => {
     const app = createTasksRoutes(fakeTaskService());
     const parent = makeAdminParent(app);
@@ -813,29 +742,7 @@ describe("PATCH /:id — lifecycle field guard (TPL-1.1)", () => {
   });
 });
 
-describe("PATCH /:id — blocked/requiresHumanApproval split (HSR-1.6)", () => {
-  it("accepts 'requiresHumanApproval' and passes it through to the service update", async () => {
-    const task = makeTask({ id: "t-1", assignee: "agent-1" });
-    let received: Record<string, unknown> | undefined;
-    const app = createTasksRoutes(
-      fakeTaskService({
-        tasks: [task],
-        onUpdate: (_id, data) => {
-          received = data as Record<string, unknown>;
-        },
-      }),
-    );
-    const parent = makeAgentParent(app, "agent-1");
-
-    const res = await parent.request("/t-1", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ requiresHumanApproval: true }),
-    });
-    expect(res.status).toBe(200);
-    expect(received?.requiresHumanApproval).toBe(true);
-  });
-
+describe("PATCH /:id — hitlNotifiedAt handling (HSR-1.6)", () => {
   it("does not 500 when 'hitlNotifiedAt' is sent, and never forwards it to the service update", async () => {
     const task = makeTask({ id: "t-1", assignee: "agent-1" });
     let received: Record<string, unknown> | undefined;
