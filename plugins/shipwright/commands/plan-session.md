@@ -178,7 +178,7 @@ For each task:
 - **Branch**: `feat/{id-lowered-dashes}-{first-3-words-kebab}` — or a shared branch name for bundled tasks (see below)
 - **Layer**: API | Frontend | Database | Shared | Background | CLI
 - **Hours**: rough estimate (1-8h; break tasks larger than 8h)
-- **HITL**: `⚠ HITL` if the task is Type A (human executes directly), `⚠ Approval` if the task is Type B (human reviews/approves before merge) — see Step 5.5; omit otherwise
+- **HITL**: `⚠ HITL` if the task is Type A (human executes directly) — see Step 5.5; omit otherwise
 - **Complexity**: integer 1–5 — use the scoring table below
 - **Model**: `haiku` | `sonnet` | `opus` — derived from complexity score (see table)
 
@@ -261,15 +261,12 @@ Present the task list and dependency map as a first pass. The engineer reviews a
 
 ## Step 5.5: HITL Detection
 
-Before writing tasks to the queue, scan every task for Human-in-the-Loop requirements. Classify each task into exactly one of three buckets:
+Before writing tasks to the queue, scan every task for Human-in-the-Loop requirements. Classify each task into exactly one of two buckets:
 
-- **Type A** — no real code / acceptance-criteria diff. The "task" is actually a set of manual steps: human executes commands or clicks directly (in a cloud console, provisioning a secret, running a privileged command outside the automated pipeline). This is the classic HITL case: it cannot be completed autonomously at all. Sets `hitl: true` and injects a `## Human steps` section — unchanged from today.
-- **Type B** — has real code and real acceptance criteria that `dev-task` can autonomously implement and ship as a normal PR, but the human-facing description also includes a "review/approve before merge" style step (e.g. "a human should sanity-check this before it merges," "get sign-off from X before deploying") rather than "go execute this action yourself." The code work is not blocked on a human — a human just needs to bless it before it ships. Sets `requiresHumanApproval: true` instead of setting `hitl` at all.
-- **Neither** — no HITL characteristics at all. Unchanged from today: `hitl: false`, no special handling.
+- **Type A** — no real code / acceptance-criteria diff. The "task" is actually a set of manual steps: human executes commands or clicks directly (in a cloud console, provisioning a secret, running a privileged command outside the automated pipeline). This is the classic HITL case: it cannot be completed autonomously at all. Sets `hitl: true` and injects a `## Human steps` section.
+- **Neither** — no HITL characteristics at all: `hitl: false`, no special handling.
 
-Type A detection (keyword heuristic + judgment step below) is largely unchanged from today — it's just now explicitly scoped to the "no real code diff, human executes commands directly" case. Type B is a new, narrower classification: real code + acceptance-criteria diff, plus a review/approve-before-merge step described somewhere in the task.
-
-**Type A vs. Type B in one line:** Type A is "a human must go execute this instead of dev-task" (`hitl: true` + `## Human steps`, unchanged from today). Type B is "dev-task executes this normally, but a human should review/approve the result before it merges" (`requiresHumanApproval: true`, no `## Human steps`, still ships through dev-task normally).
+Type A detection (keyword heuristic + judgment step below) is scoped to the "no real code diff, human executes commands directly" case.
 
 ### Keyword Heuristics (Type A detection)
 
@@ -295,21 +292,9 @@ Even without a keyword match, flag the task Type A HITL if it fundamentally requ
 
 Apply judgment: if the task description implies "someone must click approve in the console" or "create a secret in 1Password," it's Type A HITL regardless of the keywords present.
 
-### Type B Judgment Step
-
-Apply this check separately, after Type A detection, to every task that was **not** flagged Type A (a task has real code and real acceptance criteria dev-task can autonomously implement). Flag the task Type B if its description or acceptance criteria include a step where a human should **review or approve the work before it merges** — not execute anything themselves. Signals:
-- "A human should review/sanity-check this before it merges"
-- "Get sign-off from {person/role} before deploying"
-- "Requires manual QA / approval before this ships"
-- Any phrasing that is about blessing a PR that dev-task already produced, rather than about a human performing an action dev-task cannot perform
-
-The distinguishing question: **does the human need to go execute this themselves (Type A), or does dev-task execute it and a human just needs to approve the result before merge (Type B)?** If the task is "someone must click X in a console" or "someone must run this command," that's Type A. If the task is "dev-task builds and opens the PR as normal, but get a human's sign-off before merging," that's Type B.
-
-Type B tasks are **not** excluded from the dev-task ready set. `task-store/src/ready.ts`'s ready-filter only excludes a task when `task.hitl === true` — it never reads `requiresHumanApproval`, so a Type B task with `hitl: false` and `requiresHumanApproval: true` remains fully autonomously dispatchable through `dev-task`/`review`/`patch`/`deploy` like any other task. `requiresHumanApproval` is metadata consumed later (a merge-gate decision), not an execution gate.
-
 ### How to Flag a Matched Task
 
-**Type A** — for each task that matches the Type A keyword heuristic or judgment step:
+For each task that matches the Type A keyword heuristic or judgment step:
 
 1. **Set `hitl: true`** in its task JSON (see Step 6 templates)
 2. **Inject a `## Human steps` section** into its description naming:
@@ -318,15 +303,9 @@ Type B tasks are **not** excluded from the dev-task ready set. `task-store/src/r
    - Any pre-requisite setup (e.g., "Must have kube-context set to production cluster")
 3. **Mark the task `⚠ HITL`** in the task table (HITL column)
 
-This is unchanged from today's behavior: the `## Human steps` section replaces what dev-task would otherwise try to autonomously execute, since there's no code to write.
+The `## Human steps` section replaces what dev-task would otherwise try to autonomously execute, since there's no code to write.
 
-**Type B** — for each task that matches the Type B judgment step:
-
-1. **Set `requiresHumanApproval: true`** in its task JSON (see Step 6 templates) — do **not** set `hitl: true` for this task.
-2. **Do not inject a `## Human steps` section.** The task's description and acceptance criteria stay exactly as designed in Step 5 — the code work still ships through `dev-task` normally, and a `## Human steps` block would incorrectly imply the human is replacing dev-task's execution rather than reviewing its output.
-3. **Mark the task `⚠ Approval` in the task table (HITL column)**, distinct from `⚠ HITL`, so the review/approve-before-merge expectation is visible without implying the task is unexecutable by dev-task.
-
-Non-matching (neither Type A nor Type B) tasks are unaffected — do not add a `## Human steps` section, and do not set `hitl: true` or `requiresHumanApproval: true` on them.
+Non-matching (Neither) tasks are unaffected — do not add a `## Human steps` section, and do not set `hitl: true` on them.
 
 **Example Type A HITL description injection:**
 ```
@@ -339,18 +318,13 @@ Action: Set the database password via Cloud SQL Studio or:
 Pre-requisite: Ensure kube-context is pointed at the production cluster before running migrations.
 ```
 
-Type B tasks get no equivalent injection — the description is left as Step 5 wrote it.
-
 After scanning, list any flagged tasks:
 ```
 HITL tasks detected: {count}
 {PREFIX}-X.Y — {title} — flagged by: {keyword match / judgment} (Type A)
-
-Approval-required tasks detected: {count}
-{PREFIX}-X.Y — {title} — flagged by: {review/approve-before-merge step} (Type B)
 ```
 
-If no tasks are flagged in either bucket, print:
+If no tasks are flagged, print:
 ```
 HITL scan: no tasks require human steps
 ```
@@ -420,7 +394,6 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
     "dependencies": [],
     "status": "pending",
     "hitl": false,
-    "requiresHumanApproval": false,
     "pr": null,
     "hours": 2,
     "complexity": {complexity},
@@ -430,8 +403,6 @@ Write the tasks to `/tmp/new-tasks-{session}.json`. Set `source` to `"planning/{
 ```
 
 Set `"hitl": true` (and include the `## Human steps` section in `description`) for any Type A task flagged in Step 5.5.
-
-Set `"requiresHumanApproval": true` for any Type B task flagged in Step 5.5 — leave `"hitl": false` and do **not** inject a `## Human steps` section for these; the task still ships through `dev-task` normally.
 
 Post the tasks to the store:
 
