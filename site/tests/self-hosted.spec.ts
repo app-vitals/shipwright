@@ -44,12 +44,12 @@ test("architecture comparison distinguishes fully-in-your-cloud from hybrid, wit
   const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
   expect(text).toContain("fully in your own cloud");
   expect(text).toContain("hybrid");
-  for (const tool of ["shipwright", "cursor", "openhands", "coder agents", "devin"]) {
+  for (const tool of ["shipwright", "cursor", "openhands", "coder agents", "devin", "factory"]) {
     expect(text).toContain(tool);
   }
   // Every non-Shipwright row carries a [source] citation link.
   const sourceLinks = await page.getByRole("link", { name: /source/i }).count();
-  expect(sourceLinks).toBeGreaterThanOrEqual(4);
+  expect(sourceLinks).toBeGreaterThanOrEqual(5);
 });
 
 test("OpenCode is never named on this page", async ({ page }) => {

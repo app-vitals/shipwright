@@ -12,7 +12,7 @@ import ComparisonTable from "../components/ComparisonTable.astro";
 import TryItCta from "../components/TryItCta.astro";
 import { escapeHtml } from "../lib/html-escape";
 
-const verifiedDate = "July 14, 2026";
+const verifiedDate = "August 11, 2026";
 
 // Sources (Appendix, devin-alternative-positioning-research.md).
 const src = {
@@ -21,6 +21,8 @@ const src = {
   openhandsLicense: "https://github.com/OpenHands/OpenHands/blob/main/LICENSE",
   coder: "https://coder.com/docs",
   devinDeployment: "https://docs.devin.ai/enterprise/deployment/overview",
+  factoryDeployment: "https://docs.factory.ai/enterprise/network-and-deployment",
+  factoryPricing: "https://factory.ai/pricing",
 };
 
 const architectureRows = [
@@ -69,6 +71,15 @@ const architectureRows = [
     citation: src.devinDeployment,
     self: false,
   },
+  {
+    tool: "Factory",
+    license: "Proprietary",
+    architecture: "Cloud-orchestrated by default — full airgap is Enterprise-only.",
+    detail:
+      "Cloud-Managed and Hybrid both keep orchestration in Factory's cloud (Hybrid limits it to metadata). The Fully Airgapped tier genuinely removes Factory's servers from the loop at runtime, including orchestration — but it ships only through the Enterprise plan's sales-gated flow, with no self-serve path at any price point.",
+    citation: [src.factoryDeployment, src.factoryPricing],
+    self: false,
+  },
 ];
 
 // ComparisonTable props for the architecture table. Header/cell style
@@ -89,25 +100,35 @@ const architectureColumns = [
   },
 ];
 
-const architectureTableRows = architectureRows.map((row) => ({
-  highlight: row.self,
-  cells: [
-    {
-      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top;",
-      html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
-    },
-    {
-      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: ` ${escapeHtml(row.license)} `,
-    },
-    {
-      style: "padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: row.citation
-        ? ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
-        : ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  `,
-    },
-  ],
-}));
+const architectureTableRows = architectureRows.map((row) => {
+  const citations = Array.isArray(row.citation)
+    ? row.citation
+    : row.citation
+      ? [row.citation]
+      : [];
+  const sourceLinks = citations
+    .map((c) => `<a href="${c}" class="text-sm">\n[source]\n</a>`)
+    .join("  ");
+  return {
+    highlight: row.self,
+    cells: [
+      {
+        style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top;",
+        html: `<span style="font-family:var(--sw-font-display); font-weight:600; color:${row.self ? "var(--sw-color-brand-default)" : "var(--sw-color-text-heading)"};"> ${escapeHtml(row.tool)} </span>`,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: ` ${escapeHtml(row.license)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem 0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: sourceLinks
+          ? ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  ${sourceLinks}  `
+          : ` <strong>${escapeHtml(row.architecture)}</strong> <span> ${escapeHtml(row.detail)}</span>  `,
+      },
+    ],
+  };
+});
 ---
 
 <BaseLayout
