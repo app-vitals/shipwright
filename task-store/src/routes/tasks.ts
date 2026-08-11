@@ -551,13 +551,14 @@ export function createTasksRoutes(
     const stateRaw = c.req.query("state");
     const prRaw = c.req.query("pr");
 
-    // Note: ?updatedSince, ?limit, ?offset, and ?sort are intentionally NOT
-    // threaded into listReady()/listBlocked() below (sort partially — see
+    // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
+    // threaded into listReady()/listBlocked() below (?sort applies only to
     // the ?state=blocked branch). Both are convenience endpoints computed
     // over the *entire* task graph (dependency resolution needs every task,
     // not a recency-windowed or paginated subset). session/source/repo/org/
-    // claimedBy/pr/branch/assignee DO apply to listReady() (TRF-1.1) — same
-    // parsing as the fallback branch below, just also forwarded here.
+    // claimedBy/pr/branch/assignee DO apply to both listReady() (TRF-1.1)
+    // and listBlocked() (ATB-1.2) — same parsing as the fallback branch
+    // below, just also forwarded here.
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
     if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
@@ -584,6 +585,16 @@ export function createTasksRoutes(
         agentId ?? undefined,
         repos !== null ? repos : undefined,
         c.req.query("sort") === "desc" ? "desc" : undefined,
+        {
+          session: c.req.query("session"),
+          source: c.req.query("source"),
+          repo: c.req.queries("repo"),
+          org: c.req.queries("org"),
+          claimedBy: c.req.query("claimedBy"),
+          pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
+          branch: c.req.query("branch"),
+          assignee: c.req.query("assignee"),
+        },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
     }

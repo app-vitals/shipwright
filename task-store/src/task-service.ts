@@ -107,8 +107,60 @@ function matchesReadyFilters(task: Task, filters: ListReadyFilters): boolean {
   return true;
 }
 
+/**
+ * Post-filter predicate for TaskService.listBlocked() — see ListBlockedFilters'
+ * doc comment for why this is applied after dependency resolution instead of
+ * being folded into the initial findMany(). Every set field is AND'd
+ * together; undefined/absent fields impose no restriction. Field-equality
+ * checks intentionally near-duplicate matchesReadyFilters above (same filter
+ * shape, different task set) — a future cleanup task consolidates the two.
+ */
+function matchesBlockedFilters(
+  task: Task,
+  filters: ListBlockedFilters,
+): boolean {
+  if (filters.session !== undefined && task.session !== filters.session)
+    return false;
+  if (filters.source !== undefined && task.source !== filters.source)
+    return false;
+  if (filters.claimedBy !== undefined && task.claimedBy !== filters.claimedBy)
+    return false;
+  if (filters.pr !== undefined && task.pr !== filters.pr) return false;
+  if (filters.branch !== undefined && task.branch !== filters.branch)
+    return false;
+  if (filters.assignee !== undefined && task.assignee !== filters.assignee)
+    return false;
+  if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
+  return true;
+}
+
 /** A Task augmented with a computed blockedBy array. */
 export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
+
+/**
+ * Filters accepted by TaskService.listBlocked(), applied as an in-memory
+ * post-filter over the already-resolved blocked array (see listBlocked()
+ * below) — never folded into the initial findMany(), since computeBlockedBy
+ * needs the complete task graph (a filtered-out task may still be a
+ * dependency of an in-scope blocked task, and must still contribute a
+ * blockedBy entry for it).
+ *
+ * Same field set as ListReadyFilters — kept as a distinct named type for
+ * symmetry with listBlocked()'s own signature/doc comments, even though the
+ * shape is identical today.
+ */
+export interface ListBlockedFilters {
+  session?: string;
+  source?: string;
+  /** Array-any-match, mirrors buildRepoOrgWhere's `{ repo: { in: repos } }`. */
+  repo?: string | string[];
+  /** startsWith "<org>/" match, mirrors buildRepoOrgWhere's OR clause. Combines with `repo` via AND. */
+  org?: string | string[];
+  claimedBy?: string;
+  pr?: number;
+  branch?: string;
+  assignee?: string;
+}
 
 /**
  * Filters accepted by TaskService.listReady(), applied as an in-memory
@@ -204,6 +256,7 @@ export interface TaskServiceLike {
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
+    filters?: ListBlockedFilters,
   ): Promise<TaskWithBlockedBy[]>;
   distinct(
     agentId?: string,
@@ -401,11 +454,21 @@ export class TaskService implements TaskServiceLike {
    * Loads the full task graph so computeBlockedBy can resolve all dependency IDs.
    *
    * Agent tokens are scoped to their own tasks: pass agentId to filter by assignee.
+   *
+   * `filters` (session/source/repo/org/claimedBy/pr/branch/assignee) is
+   * applied as an additional AND condition, strictly *after* the full task
+   * graph is loaded and computeBlockedBy has resolved it — see
+   * ListBlockedFilters' doc comment for why this can't be folded into the
+   * initial findMany(). repo/org matching mirrors buildRepoOrgWhere's
+   * semantics (array-any-match for repo; startsWith "<org>/" for org; AND
+   * between the two), just evaluated in-memory against already-resolved Task
+   * objects rather than built as a Prisma where-clause.
    */
   async listBlocked(
     agentId?: string,
     repos?: string[],
     sort?: "asc" | "desc",
+    filters?: ListBlockedFilters,
   ): Promise<TaskWithBlockedBy[]> {
     const allTasks = await this.prisma.task.findMany({
       orderBy: { createdAt: sort ?? "asc" },
@@ -422,6 +485,7 @@ export class TaskService implements TaskServiceLike {
             useRepoScope && t.repo !== null && repos?.includes(t.repo);
           if (!ownedByAssignee && !inRepoScope) return false;
         }
+        if (filters && !matchesBlockedFilters(t, filters)) return false;
         if (t.status === "blocked") return true;
         if (closedStatuses.has(t.status)) return false;
         return t.blockedBy.length > 0;
