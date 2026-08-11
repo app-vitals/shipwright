@@ -83,7 +83,8 @@ function relativeTime(date: Date, now: Date = new Date()): string {
 // Inline type — mirrors task-store/src/blocked-by.ts without cross-package coupling.
 export type BlockedByEntry =
   | { type: "hitl"; notified?: true }
-  | { type: "dependency"; id: string; status: string };
+  | { type: "dependency"; id: string; status: string }
+  | { type: "blocked"; reason: string | null };
 
 // Inline type mirroring PullRequest fields relevant to the task detail UI.
 // Avoids cross-package coupling to @shipwright/task-store.
@@ -1749,6 +1750,9 @@ export function renderTasksPage(
         if (b.type === "hitl") {
           return `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">Waiting: HITL</span>`;
         }
+        if (b.type === "blocked") {
+          return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${escapeHtml(b.reason ?? "Blocked")}</span>`;
+        }
         return `<span class="badge badge-dep" style="font-size:10px;margin-left:6px">Blocked: ${readOnly ? escapeHtml(b.id) : taskLink(b.id)}</span>`;
       })
       .join("");
@@ -2196,6 +2200,9 @@ export function renderTaskDetailPage(
                     ? "HITL gate (notification sent — awaiting clearance)"
                     : "HITL gate (notification pending)";
                   return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">${escapeHtml(label)}</li>`;
+                }
+                if (b.type === "blocked") {
+                  return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">Blocked: ${escapeHtml(b.reason ?? "Blocked")}</li>`;
                 }
                 return `<li style="font-size:14px;line-height:1.6;margin-bottom:4px">dep:${taskLink(b.id)} (${escapeHtml(b.status)})</li>`;
               })
