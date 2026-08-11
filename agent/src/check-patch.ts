@@ -84,6 +84,30 @@ export interface PrReviewData {
 
 export interface CiCheckStatus {
   hasFailing: boolean;
+  /**
+   * True when this PR's latest run for some workflow is `cancelled`, with no
+   * newer run for that same workflow since (PCC-1.1) — e.g. a job that hit
+   * `timeout-minutes` and was reported by GitHub's API as `cancelled` rather
+   * than `timed_out`. Distinct from `hasFailing` — not mutually exclusive
+   * with it, since a different workflow can genuinely fail at the same time.
+   * A PR qualifying solely through this field is still a valid patch
+   * candidate (see getPatchCandidates below) so patch.md's rerun-first
+   * branch (Step 6b.8) gets a chance to resolve it before ever escalating to
+   * the CI-fix subagent.
+   *
+   * Optional (defaults to false when absent) so existing fixtures/deps that
+   * predate PCC-1.1 and only ever set `hasFailing` keep compiling and
+   * behaving exactly as before — this field is purely additive.
+   */
+  hasCancelled?: boolean;
+  /**
+   * The `id` of the qualifying cancelled run (needed for `gh run rerun
+   * {run_id}` in patch.md's Step 6b.8), when `hasCancelled` is true. When
+   * multiple workflows qualify, the highest `run_number` wins — arbitrary
+   * but deterministic, since patch.md only needs one run id to attempt a
+   * rerun. `undefined` when `hasCancelled` is false.
+   */
+  cancelledRunId?: number;
 }
 
 export interface MergeStatusInfo {
@@ -162,19 +186,38 @@ export interface CheckPatchDeps {
   isBundleComplete?: (branch: string) => Promise<boolean>;
 }
 
-// ─── CI status (dedup stale reruns — CPC-1.1) ─────────────────────────────────
+// ─── CI status (dedup stale reruns — CPC-1.1, PCC-1.1) ────────────────────────
+
+/**
+ * Reduces a list of Actions API run entries to the latest run per workflow
+ * (highest run_number per workflow_id).
+ *
+ * The GitHub Actions API returns one entry per *run*, not per workflow — a
+ * rerun of a failed/cancelled workflow appears as an additional entry with
+ * the same workflow_id and a higher run_number, alongside the original
+ * entry. Evaluating every historical run at a SHA (rather than just the
+ * latest per workflow) produces a false positive when an older run
+ * failed/was cancelled but a newer rerun succeeded. This mirrors how `gh pr
+ * checks` already reports only the latest run per check. Shared by both
+ * `hasFailingCi` and `findCancelledRuns` below so the dedup semantics never
+ * drift between the two checks.
+ */
+function latestRunPerWorkflow<
+  T extends { workflow_id: number; run_number: number },
+>(runs: T[]): T[] {
+  const latestByWorkflow = new Map<number, T>();
+  for (const run of runs) {
+    const current = latestByWorkflow.get(run.workflow_id);
+    if (!current || run.run_number > current.run_number) {
+      latestByWorkflow.set(run.workflow_id, run);
+    }
+  }
+  return [...latestByWorkflow.values()];
+}
 
 /**
  * Returns true if any workflow's latest run (highest run_number per
  * workflow_id) failed or timed out.
- *
- * The GitHub Actions API returns one entry per *run*, not per workflow — a
- * rerun of a failed workflow appears as an additional entry with the same
- * workflow_id and a higher run_number, alongside the original failed entry.
- * Evaluating every historical run at a SHA (rather than just the latest per
- * workflow) produces a false positive when a failure was later rerun and
- * passed. This mirrors how `gh pr checks` already reports only the latest
- * run per check.
  */
 export function hasFailingCi(
   runs: {
@@ -183,17 +226,36 @@ export function hasFailingCi(
     conclusion: string | null;
   }[],
 ): boolean {
-  const latestByWorkflow = new Map<number, (typeof runs)[number]>();
-  for (const run of runs) {
-    const current = latestByWorkflow.get(run.workflow_id);
-    if (!current || run.run_number > current.run_number) {
-      latestByWorkflow.set(run.workflow_id, run);
-    }
-  }
-
-  return [...latestByWorkflow.values()].some(
+  return latestRunPerWorkflow(runs).some(
     (r) => r.conclusion === "failure" || r.conclusion === "timed_out",
   );
+}
+
+/**
+ * Returns the qualifying run(s) — one per workflow, at most — whose LATEST
+ * run (highest run_number per workflow_id) has conclusion "cancelled", with
+ * no newer run for that workflow since (PCC-1.1). "Latest" already implies
+ * "no newer run since" once the per-workflow dedup below has run — mirrors
+ * hasFailingCi's dedup exactly (via the shared latestRunPerWorkflow helper)
+ * but is evaluated independently: a run that's cancelled is not treated as
+ * failure-equivalent by hasFailingCi, and a run that's failure/timed_out is
+ * not counted here — the two checks are not mutually exclusive (a PR can
+ * have one workflow genuinely fail and a different workflow's latest run be
+ * cancelled at the same time).
+ *
+ * Returns the full run objects (not just a boolean) so callers can recover
+ * the qualifying run's `id` for `gh run rerun {run_id}` (patch.md Step
+ * 6b.8) — the boolean-only shape of hasFailingCi doesn't carry enough
+ * information for that follow-up action.
+ */
+export function findCancelledRuns<
+  T extends {
+    workflow_id: number;
+    run_number: number;
+    conclusion: string | null;
+  },
+>(runs: T[]): T[] {
+  return latestRunPerWorkflow(runs).filter((r) => r.conclusion === "cancelled");
 }
 
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
@@ -454,7 +516,11 @@ export async function getPatchCandidates(
           pr.number,
           pr.headRefOid,
         );
-        if (ciStatus.hasFailing) {
+        // A PR qualifying solely via hasCancelled (no genuine failure) is
+        // still a valid patch candidate (PCC-1.1) — patch.md's Step 6b.8
+        // rerun-first branch is what actually resolves it, but candidacy
+        // itself is decided here per the Candidate Selection Contract.
+        if (ciStatus.hasFailing || ciStatus.hasCancelled) {
           needsPatch = true;
         }
       }
@@ -635,6 +701,7 @@ export async function buildProductionDeps(opts: {
     ) => {
       type ApiResponse = {
         workflow_runs: {
+          id: number;
           status: string;
           conclusion: string | null;
           workflow_id: number;
@@ -647,12 +714,23 @@ export async function buildProductionDeps(opts: {
           `repos/${org}/${repo}/actions/runs?head_sha=${sha}`,
         ]);
         const hasFailing = hasFailingCi(data.workflow_runs);
-        return { hasFailing };
+        const cancelledRuns = findCancelledRuns(data.workflow_runs);
+        // Highest run_number wins when more than one workflow's latest run
+        // is cancelled — arbitrary but deterministic, since patch.md's Step
+        // 6b.8 only needs one run id to attempt a rerun.
+        const cancelledRunId = cancelledRuns.sort(
+          (a, b) => b.run_number - a.run_number,
+        )[0]?.id;
+        return {
+          hasFailing,
+          hasCancelled: cancelledRuns.length > 0,
+          ...(cancelledRunId !== undefined ? { cancelledRunId } : {}),
+        };
       } catch (err) {
         process.stderr.write(
           `check-patch: actions/runs query failed for PR ${pr} sha ${sha}: ${String(err)}\n`,
         );
-        return { hasFailing: false };
+        return { hasFailing: false, hasCancelled: false };
       }
     },
     fetchMergeStatus: async (org: string, repo: string, pr: number) => {
