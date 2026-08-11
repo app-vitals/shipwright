@@ -52,7 +52,7 @@ Query params:
 | `session` | string | Filter by planning session slug |
 | `repo` | string, repeatable | Filter by repo (`org/repo` format). Repeat the param to match any repo in the list (e.g. `?repo=org/a&repo=org/b`). A single `?repo=` behaves identically to before (exact match). |
 | `org` | string, repeatable | Filter by org — matches any repo whose `org/repo` string starts with `<org>/`. Repeat the param to match any of several orgs (e.g. `?org=org-a&org=org-b`). Combines with `repo` as an AND filter (both narrow the same result set). |
-| `assignee` | string | Filter by assignee (admin tokens only; agent tokens without repo scope see only their own tasks). When used with repo-scoped agent tokens under `agentScope`, acts as an additional AND filter narrowing the visible set. |
+| `assignee` | string | Filter by assignee. For admin tokens, filters tasks to those assigned to the specified agent. For repo-scoped agent tokens, further narrows the visible set (AND filter on the OR union of assigned + pool tasks). For agent tokens without repo scope, a mismatched `assignee` filter falls back to the token's own tasks (ignoring the filter); see agent-token-visibility section below for details. |
 | `claimedBy` | string | Filter by claiming agent |
 | `pr` | number | Filter by PR number |
 | `branch` | string | Filter by branch name |
@@ -115,7 +115,7 @@ above for the plain list path, just evaluated in-memory instead of as a Prisma `
 - **Without repo scope** (repos empty or not configured): See only tasks where `assignee === agentId` — no pool tasks visible.
 - **Admin tokens** (agentId null) have unrestricted visibility and can see any task matching the query filters.
 
-An explicit `?assignee=` filter on a repo-scoped agent token further narrows the result (acts as an AND condition on the OR union) — safe, since it only restricts visibility within an already-permitted set.
+An explicit `?assignee=` filter behaves differently depending on the agent's repo scope: when an agent token has repo scope (repos configured), the filter narrows the result (acts as an AND condition on the OR union) — safe, since it only restricts visibility within an already-permitted set. When an agent token has no repo scope (repos empty or not configured), a mismatched `?assignee=` filter is automatically stripped and the agent sees its own tasks instead — this prevents the footgun of silently receiving empty results when a caller passes an `assignee` that differs from the token's own `agentId`.
 
 #### Create task
 

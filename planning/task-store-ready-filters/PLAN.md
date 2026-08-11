@@ -90,27 +90,30 @@ result:
   fall back to, so `assignee` simply filters, matching how every other new filter
   (`session`/`source`/etc.) behaves when `agentId` is absent.
 
-**Known divergence from what actually shipped:** `TRF-1.1` shipped independently via PR #2563
-(merged 2026-08-11T09:37:47Z) while this plan's own review was still in flight, and has since
-been further extended by PR #2566 (`listBlocked()` support) and PR #2569 (which refactored the
-per-task predicate into a helper shared by both `listReady()` and `listBlocked()`). The shipped
-`matchesTaskFilters()` (`task-service.ts:95-109`, renamed from the original PR #2563's
-`matchesReadyFilters()` by #2569's refactor) applies `assignee` as a flat, unconditional AND —
-`if (filters.assignee !== undefined && task.assignee !== filters.assignee) return false;` —
-with no branching on `repos` presence, and `listReady()` ANDs that filter unconditionally on
-top of the `agentId`/`repos` OR-union. That means the second sub-case above (`agentId` present,
-`repos` absent/empty → ignore caller-supplied `assignee`, fall back to plain `agentId` match)
-describes intended/safer behavior that the shipped code does **not** implement: today, a
-repos-absent agent token passing a mismatched `?assignee=` gets an always-empty result instead
-of falling back to its own `agentId` — the exact footgun this sub-case was designed to avoid.
-`task-service.unit.test.ts`'s only `assignee`-specific `listReady()` test (~line 1216) exercises
-solely the admin-token/no-`agentId` case, so this gap is asserted against neither positively nor
-negatively. This plan currently documents the *intended* three-sub-case design, not what's live
-on `main`; treat it as a design doc, not a description of current behavior. This divergence
-remains unresolved as of this writing — a follow-up task should still be filed to either (a)
-update this plan to match the shipped flat-AND behavior as an accepted simplification, or (b)
-fix `matchesTaskFilters()` to match this plan's safer repos-absent fallback and add the missing
-test coverage.
+**Known divergence from what actually shipped — RESOLVED by ARF-1.1:** `TRF-1.1` shipped
+independently via PR #2563 (merged 2026-08-11T09:37:47Z) while this plan's own review was still
+in flight, and has since been further extended by PR #2566 (`listBlocked()` support) and PR
+#2569 (which refactored the per-task predicate into a helper shared by both `listReady()` and
+`listBlocked()`). The shipped `matchesTaskFilters()` (`task-service.ts:95-109`, renamed from the
+original PR #2563's `matchesReadyFilters()` by #2569's refactor) applied `assignee` as a flat,
+unconditional AND — `if (filters.assignee !== undefined && task.assignee !== filters.assignee)
+return false;` — with no branching on `repos` presence, and `listReady()`/`listBlocked()` ANDed
+that filter unconditionally on top of the `agentId`/`repos` OR-union. That meant the second
+sub-case above (`agentId` present, `repos` absent/empty → ignore caller-supplied `assignee`,
+fall back to plain `agentId` match) described intended/safer behavior that the shipped code did
+**not** implement: a repos-absent agent token passing a mismatched `?assignee=` got an
+always-empty result instead of falling back to its own `agentId` — the exact footgun this
+sub-case was designed to avoid.
+
+Task **ARF-1.1** (this task/PR) closed this gap: `listReady()` and `listBlocked()` now strip
+`assignee` from the filters object passed to `matchesTaskFilters()` whenever `agentId` is
+present and `repos` is undefined/empty, falling back to the existing own-assignee match exactly
+as this plan originally specified. `matchesTaskFilters()` itself is unchanged — it remains
+correct as-is for the admin-token (no `agentId`) and repo-scoped (`repos` present/non-empty)
+cases. Unit test coverage for all three sub-cases was added to `task-service.unit.test.ts`
+alongside the fix. `docs/task-store.md:55` already described this same fallback behavior before
+the fix landed and required no wording change — the docs were correct; the code was the
+divergent side.
 
 Thread the same query params through `tasks.ts`'s `ready=true`/`state=ready` branch
 (currently `tasks.ts:559-566`), reading them the same way the fallback branch already does.
