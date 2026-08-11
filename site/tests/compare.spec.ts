@@ -47,6 +47,7 @@ test("landscape table names the commercial tier", async ({ page }) => {
     "GitHub Copilot Agent",
     "OpenHands",
     "Augment Code",
+    "Factory",
     "Shipwright Harness",
   ]) {
     await expect(page.getByText(tool, { exact: false }).first()).toBeVisible();
