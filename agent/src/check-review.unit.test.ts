@@ -1478,9 +1478,9 @@ describe("getReviewCandidates", () => {
 // task, bundle-completeness) — as a single reusable, exported pure
 // function. The earlier cheap checks (draft/dependabot/automated-label/
 // self-review/not-allowlisted) are simple enough that getReviewCandidates
-// traces them inline; see the "inline trace" tests below which assert on
-// the logged line instead of a shared function, since there is no shared
-// function for those checks.
+// traces them inline rather than through a shared function; their
+// candidate-list behavior is already covered by the existing
+// describe("getReviewCandidates") tests above.
 
 describe("traceReviewCandidacyDecision", () => {
   function baseArgs(
