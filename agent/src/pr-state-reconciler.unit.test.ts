@@ -3251,6 +3251,17 @@ async function captureConsoleLog(fn: () => Promise<void>): Promise<string[][]> {
   return logSpy;
 }
 
+/** Finds the captured summary log line matching `prefix` + `label` (e.g. `"[pr-state-reconciler]"` + `"pass summary"`). */
+function findSummaryLine(
+  logs: string[][],
+  prefix: string,
+  label: string,
+): string[] | undefined {
+  return logs.find((args) =>
+    args.some((a) => a.includes(prefix) && a.includes(label)),
+  );
+}
+
 describe("reconcilePrState — per-pass summary logging (RCO-1.5)", () => {
   test("mixed outcomes (patched, no-op, per-record error) — one summary line with correct counts", async () => {
     const patchedRecord = makeRecord({ id: "pr-patched", prNumber: 1 });
@@ -3279,11 +3290,10 @@ describe("reconcilePrState — per-pass summary logging (RCO-1.5)", () => {
       console.error = errOriginal;
     }
 
-    const summaryLine = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
-      ),
+    const summaryLine = findSummaryLine(
+      logs,
+      "[pr-state-reconciler]",
+      "pass summary",
     );
     expect(summaryLine).toBeDefined();
     const text = summaryLine?.join(" ") ?? "";
@@ -3298,11 +3308,10 @@ describe("reconcilePrState — per-pass summary logging (RCO-1.5)", () => {
 
     const logs = await captureConsoleLog(() => reconcilePrState(deps));
 
-    const summaryLine = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
-      ),
+    const summaryLine = findSummaryLine(
+      logs,
+      "[pr-state-reconciler]",
+      "pass summary",
     );
     expect(summaryLine).toBeDefined();
     const text = summaryLine?.join(" ") ?? "";
@@ -3330,11 +3339,10 @@ describe("reconcilePrState — per-pass summary logging (RCO-1.5)", () => {
       console.error = errOriginal;
     }
 
-    const summaryLine = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
-      ),
+    const summaryLine = findSummaryLine(
+      logs,
+      "[pr-state-reconciler]",
+      "pass summary",
     );
     expect(summaryLine).toBeDefined();
     const text = summaryLine?.join(" ") ?? "";
@@ -3393,12 +3401,10 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
       console.error = errOriginal;
     }
 
-    const summaryLine = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("pending scan summary"),
-      ),
+    const summaryLine = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "pending scan summary",
     );
     expect(summaryLine).toBeDefined();
     const text = summaryLine?.join(" ") ?? "";
@@ -3457,12 +3463,10 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
       console.error = errOriginal;
     }
 
-    const summaryLine = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("posted scan summary"),
-      ),
+    const summaryLine = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "posted scan summary",
     );
     expect(summaryLine).toBeDefined();
     const text = summaryLine?.join(" ") ?? "";
@@ -3473,12 +3477,10 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
 
     // The pending scan's own (separate) summary line must also be present,
     // scoped to zero records (no pendingRecords configured in this test).
-    const pendingSummary = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("pending scan summary"),
-      ),
+    const pendingSummary = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "pending scan summary",
     );
     expect(pendingSummary).toBeDefined();
     const pendingText = pendingSummary?.join(" ") ?? "";
@@ -3493,19 +3495,15 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
 
     const logs = await captureConsoleLog(() => reconcileReviewState(deps));
 
-    const pendingSummary = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("pending scan summary"),
-      ),
+    const pendingSummary = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "pending scan summary",
     );
-    const postedSummary = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("posted scan summary"),
-      ),
+    const postedSummary = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "posted scan summary",
     );
     expect(pendingSummary).toBeDefined();
     expect(postedSummary).toBeDefined();
@@ -3539,19 +3537,15 @@ describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
       console.error = errOriginal;
     }
 
-    const pendingSummary = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("pending scan summary"),
-      ),
+    const pendingSummary = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "pending scan summary",
     );
-    const postedSummary = logs.find((args) =>
-      args.some(
-        (a) =>
-          a.includes("[pr-state-reconciler:review]") &&
-          a.includes("posted scan summary"),
-      ),
+    const postedSummary = findSummaryLine(
+      logs,
+      "[pr-state-reconciler:review]",
+      "posted scan summary",
     );
     expect(pendingSummary).toBeDefined();
     expect(postedSummary).toBeDefined();
