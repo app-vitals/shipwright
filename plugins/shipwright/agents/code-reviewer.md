@@ -15,6 +15,7 @@ The caller (the `/review` command's main thread) will pass you:
 - The contents of the root CLAUDE.md plus any CLAUDE.md files that live in directories containing changed files
 - (Optional) `acceptanceCriteria` from a mapped shipwright task
 - (Optional) `testReadinessContext` — contents of `docs/test-readiness/test-system.md` plus the Testing section of the repo's CLAUDE.md; when present, Rule 6 defers to this context instead of the universal baseline
+- (Optional) **Prior Findings — Requires Resolution Check** (PVD-1.2) — a list of prior review bodies this same agent posted on an earlier commit of this PR, each with a `ref` identifying it. When present, for **each** entry you must explicitly assess whether the issue that review originally described is still present in the current diff, and report your determination in the `priorFindingsStatus[]` output field (see Output Format below). Omitted entirely when there are no prior qualifying reviews to check.
 - Policy thresholds: `min_confidence` (default 75) and `max_findings` (default 5)
 
 You return a JSON array of findings. The main thread handles scoring thresholds, output formatting, posting to GitHub, and metrics.
@@ -90,7 +91,14 @@ Return a single JSON object:
   ],
   "strengths": ["{what the PR does well — keep brief, 0-3 bullets}"],
   "recommendation": "APPROVE|COMMENT",
-  "recommendation_reason": "{one-sentence reasoning}"
+  "recommendation_reason": "{one-sentence reasoning}",
+  "priorFindingsStatus": [
+    {
+      "ref": "{the ref identifying which prior review this entry addresses}",
+      "resolved": true,
+      "evidence": "{file:line or diff excerpt proving the fix, or explaining why it's not resolved}"
+    }
+  ]
 }
 ```
 
@@ -102,3 +110,10 @@ Severity mapping:
 Do not emit findings below confidence 50. The main thread applies the caller's `min_confidence` threshold and trims to `max_findings`.
 
 If no findings meet the threshold: return an empty `findings` array and set `recommendation` to `APPROVE`.
+
+`priorFindingsStatus` (PVD-1.2) is **required whenever the caller passed the "Prior Findings —
+Requires Resolution Check" input** — one entry per prior review `ref` passed in, omitted (or an
+empty array) only when the caller passed no such input. `evidence` is required in **both** the
+`resolved: true` and `resolved: false` cases — never leave it blank: for a resolved finding, cite
+the exact `file:line` or diff excerpt proving the fix; for an unresolved finding, explain why the
+originally-described issue is still present.

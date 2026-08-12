@@ -262,6 +262,38 @@ back to `'sonnet'`.
    `comments.nodes[]` — the same shape patch.md's Step 3a extracts. Used below by the
    Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
 
+   #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
+
+   From the same `reviews.nodes[]` fetched above, separately identify **prior qualifying
+   CURRENT_USER reviews** — reviews this agent posted on an earlier commit of this PR whose
+   findings the subagent should be asked to re-verify in Step 7. A review is a prior
+   qualifying review when ALL of the following hold:
+   - `state === "COMMENTED"` or `state === "CHANGES_REQUESTED"`
+   - `body` is non-empty
+   - `author.login === CURRENT_USER` (resolved in Step 3)
+   - `commit.oid !== headRefOid` (posted at a commit earlier than the current head — this is
+     the "prior" distinction from Step 9.5's own `commit.oid === headRefOid` filter, which
+     only looks at reviews **at** head; this collection deliberately looks at reviews
+     **before** head)
+   - NOT excluded by `isSelfCleanApprove` (a clean self-APPROVE) or by
+     `isSupersededBySelfReview` (DRO-1.2 — an earlier self-review superseded by a later,
+     genuinely clean self-review) — reuse these two functions exactly as exported from
+     `compute-unaddressed-findings.ts` (PVD-1.1), the same module Step 9.5 below invokes as
+     its single source of truth, rather than re-deriving their rules in prose here. This
+     collection intentionally does **not** apply Step 9.5's other two conditions
+     (unresolved-thread branching, `isAddressedByAuthorReply`) — those are specific to Step
+     9.5's "unaddressed findings" definition; this collection surfaces prior reviews
+     regardless of whether they've since been resolved, so the subagent can make its own
+     resolved/not-resolved determination for each one.
+
+   Call the result `priorQualifyingReviews` — a list of `{ ref, body }` pairs, where `ref` is
+   a short identifying label for each review (e.g. the commit short SHA plus `submittedAt`,
+   since the GraphQL query above does not fetch a review `id`/`url` field). When
+   `priorQualifyingReviews` is empty (no prior reviews, or all excluded by the two reused
+   exclusions above — e.g. a self-authored PR whose only prior reviews were clean self-approves
+   or superseded self-reviews), the field is simply empty and Step 7 omits the corresponding
+   prompt input entirely (see Step 7).
+
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
 7. **Test-readiness context** (optional): try to read `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
@@ -385,10 +417,27 @@ a single prompt block containing:
   when no test-readiness content was gathered (the subagent falls back to the universal
   baseline in the testing-domain entries of `references/principles.md` when the field is
   absent)
+- **`Prior Findings — Requires Resolution Check`** (PVD-1.2) — when Step 5.5's
+  `priorQualifyingReviews` is non-empty, include this labeled input listing each prior
+  qualifying review's `ref` and full `body`. Omit this field entirely when
+  `priorQualifyingReviews` is empty — mirroring how `acceptanceCriteria` and
+  `testReadinessContext` are omitted rather than passed as an empty value. Instruct the
+  subagent that, for each entry, it must explicitly assess whether the issue that review
+  originally described is still present in the current diff, and return one
+  `priorFindingsStatus[]` entry per input `ref` (see the Output Format section of
+  `agents/code-reviewer.md`).
 - **Policy** — pass `min_confidence` and `max_findings` from Step 1
 
 The subagent returns a JSON object with `summary`, `findings[]`, `strengths[]`,
-`recommendation`, and `recommendation_reason`. Parse it and carry the data into Step 8.
+`recommendation`, `recommendation_reason`, and — whenever the `Prior Findings — Requires
+Resolution Check` input was passed above — `priorFindingsStatus[]`, an array of
+`{ ref, resolved, evidence }` entries, one per prior qualifying review passed in. `ref`
+identifies which prior review the entry addresses (matching the `ref` passed in above),
+`resolved` is a boolean, and `evidence` (required in both the `resolved: true` and
+`resolved: false` cases) is a `file:line` reference or diff excerpt proving the fix, or
+explaining why the issue is not resolved. Parse the full response and carry the data into
+Step 8 and Step 9 (Step 9's Re-Review "Prior Findings Resolution" table is populated from
+`priorFindingsStatus[]` — see Step 9).
 
 If the subagent returns malformed JSON, retry once with a reminder of the schema. If it
 still fails, fall back to an inline review in the main thread using the same rules
@@ -512,11 +561,19 @@ local file is the authoritative signal that *this* agent has a prior review to a
 
 ### Prior Findings Resolution
 
+Populate this table from the subagent's structured `priorFindingsStatus[]` response (Step 7,
+PVD-1.2) rather than freehand narrative — one row per entry, mapping `resolved: true` to
+`Addressed` and `resolved: false` to `Not addressed`, with the `evidence` field verbatim in
+the Evidence column:
+
 | Finding | Status | Evidence |
 |---------|--------|----------|
-| {issue 1} | Addressed | Fixed in `file.ts:45` |
-| {issue 2} | Partial | Logging added but no error ID |
-| {issue 3} | Not addressed | Still missing validation |
+| {ref} | Addressed | {evidence, e.g. Fixed in `file.ts:45`} |
+| {ref} | Not addressed | {evidence, e.g. Still missing validation} |
+
+Only present when Step 7's subagent dispatch included the `Prior Findings — Requires
+Resolution Check` input (i.e. `priorQualifyingReviews` was non-empty); omit this
+subsection when there was nothing to check.
 
 ### New Issues ({count})
 ...

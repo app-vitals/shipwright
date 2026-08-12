@@ -1133,3 +1133,145 @@ describe("review.md — Review Quality Rules reflect mechanical enforcement (RUC
     expect(bulletBlock.toLowerCase()).toContain("mechanically enforced");
   });
 });
+
+describe("review.md — Step 5.5 identifies prior qualifying CURRENT_USER reviews for subagent attestation (PVD-1.2)", () => {
+  let step5Section: string;
+
+  beforeAll(() => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(step5Idx);
+    step5Section = content.slice(step5Idx, step6Idx);
+  });
+
+  it("documents identifying prior qualifying CURRENT_USER reviews at commits earlier than head", () => {
+    expect(step5Section).toContain("PVD-1.2");
+    expect(step5Section.toLowerCase()).toContain("prior qualifying");
+    expect(step5Section).toContain("CURRENT_USER");
+    expect(step5Section).toContain("commit.oid !== headRefOid");
+  });
+
+  it("cites reuse of isSelfCleanApprove and isSupersededBySelfReview from compute-unaddressed-findings.ts rather than re-deriving the rules in prose", () => {
+    const priorIdx = step5Section.indexOf("prior qualifying");
+    expect(priorIdx).toBeGreaterThan(-1);
+    const priorBlock = step5Section.slice(priorIdx, priorIdx + 2000);
+
+    expect(priorBlock).toContain("isSelfCleanApprove");
+    expect(priorBlock).toContain("isSupersededBySelfReview");
+    expect(priorBlock).toContain("compute-unaddressed-findings.ts");
+  });
+
+  it("qualifies on state COMMENTED or CHANGES_REQUESTED with a non-empty body, matching Step 9.5's own review-state filter", () => {
+    const priorIdx = step5Section.indexOf("prior qualifying");
+    expect(priorIdx).toBeGreaterThan(-1);
+    const priorBlock = step5Section.slice(priorIdx, priorIdx + 2000);
+
+    expect(priorBlock).toContain("COMMENTED");
+    expect(priorBlock).toContain("CHANGES_REQUESTED");
+    expect(priorBlock.toLowerCase()).toContain("non-empty");
+  });
+
+  it("produces a labeled artifact (priorQualifyingReviews) for Step 7's prompt to consume", () => {
+    expect(step5Section).toContain("priorQualifyingReviews");
+  });
+});
+
+describe("review.md — Step 7 dispatch prompt includes prior findings input when qualifying reviews exist (PVD-1.2)", () => {
+  let step7Section: string;
+
+  beforeAll(() => {
+    const step7Idx = content.indexOf("## Step 7: Deep Review");
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step8Idx).toBeGreaterThan(step7Idx);
+    step7Section = content.slice(step7Idx, step8Idx);
+  });
+
+  it("includes a new labeled prior-findings input referencing priorQualifyingReviews", () => {
+    expect(step7Section).toContain("priorQualifyingReviews");
+    expect(step7Section.toLowerCase()).toContain("prior findings");
+  });
+
+  it("documents the input is only included when priorQualifyingReviews is non-empty, omitted otherwise", () => {
+    const priorIdx = step7Section.indexOf("priorQualifyingReviews");
+    expect(priorIdx).toBeGreaterThan(-1);
+    const priorBlock = step7Section.slice(Math.max(0, priorIdx - 300), priorIdx + 600);
+
+    expect(priorBlock.toLowerCase()).toContain("omit");
+  });
+
+  it("documents that the subagent must return priorFindingsStatus[] with ref/resolved/evidence", () => {
+    expect(step7Section).toContain("priorFindingsStatus");
+    expect(step7Section).toContain("ref");
+    expect(step7Section).toContain("resolved");
+    expect(step7Section).toContain("evidence");
+  });
+
+  it("references PVD-1.2 in this section", () => {
+    expect(step7Section).toContain("PVD-1.2");
+  });
+});
+
+describe("review.md — Step 9 Prior Findings Resolution table is sourced from priorFindingsStatus (PVD-1.2)", () => {
+  let reReviewSection: string;
+
+  beforeAll(() => {
+    const reReviewIdx = content.indexOf("### Re-Review (Update)");
+    const step95Idx = content.indexOf("## Step 9.5:");
+    expect(reReviewIdx).toBeGreaterThan(-1);
+    expect(step95Idx).toBeGreaterThan(reReviewIdx);
+    reReviewSection = content.slice(reReviewIdx, step95Idx);
+  });
+
+  it("references the structured priorFindingsStatus[] data rather than pure freehand narrative", () => {
+    expect(reReviewSection).toContain("priorFindingsStatus");
+  });
+
+  it("maps resolved:true to Addressed and resolved:false to Not addressed, and evidence to the Evidence column", () => {
+    expect(reReviewSection).toContain("Prior Findings Resolution");
+    expect(reReviewSection).toContain("resolved: true");
+    expect(reReviewSection).toContain("Addressed");
+    expect(reReviewSection).toContain("resolved: false");
+    expect(reReviewSection).toContain("Not addressed");
+    expect(reReviewSection).toContain("evidence");
+  });
+});
+
+describe("review.md — Step 9.5 unaddressed-findings gate is unchanged by PVD-1.2 (regression guard)", () => {
+  let step95Section: string;
+
+  beforeAll(() => {
+    const step95Idx = content.indexOf("## Step 9.5:");
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step95Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(step95Idx);
+    step95Section = content.slice(step95Idx, step10Idx);
+  });
+
+  it("still titles the section 'Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1)'", () => {
+    expect(step95Section).toContain("Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1)");
+  });
+
+  it("still states the computation is mechanical, not freehand", () => {
+    expect(step95Section).toContain("computed mechanically, not freehand");
+  });
+
+  it("still invokes compute-unaddressed-findings.ts with the same CLI call, unchanged", () => {
+    expect(step95Section).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
+    );
+    expect(step95Section).toContain('{"unaddressedFindings":true|false}');
+    expect(step95Section).toContain("UNADDRESSED_FINDINGS=");
+  });
+
+  it("still forces the verdict to COMMENT when unaddressed findings are present, with the same override language", () => {
+    expect(step95Section).toContain("force the verdict to `COMMENT`");
+    expect(step95Section).toContain("Overrides the code-reviewer subagent's severity-based recommendation");
+  });
+
+  it("does not introduce any priorFindingsStatus/priorQualifyingReviews plumbing into its own computation", () => {
+    expect(step95Section).not.toContain("priorFindingsStatus");
+    expect(step95Section).not.toContain("priorQualifyingReviews");
+  });
+});
