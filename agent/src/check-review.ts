@@ -338,9 +338,9 @@ export async function getReviewCandidates(
     // no linked task to flag).
     if (isPrRecordBlockedForDispatch(record)) continue;
 
-    // commitSha matches and reviewState is not pending → already reviewed at
-    // this HEAD, skip — UNLESS the PR author has posted a fresh PR-level
-    // comment since the last review (RVG-1.1). review.md's Step 9.5
+    // reviewedCommitSha matches and reviewState is not pending → already
+    // reviewed at this HEAD, skip — UNLESS the PR author has posted a fresh
+    // PR-level comment since the last review (RVG-1.1). review.md's Step 9.5
     // unaddressed-findings gate has a documented exclusion (CPF-2.3,
     // mirrored from check-patch.ts's isAddressedByAuthorReply): a prior
     // COMMENTED review stops counting as unaddressed once the PR author
@@ -358,11 +358,20 @@ export async function getReviewCandidates(
     // own author's replies count, not the reviewing agent's or a third
     // party's.
     //
+    // Deliberately reads record.reviewedCommitSha, NOT record.commitSha
+    // (RCO-1.2): commitSha is shared claim-lock bookkeeping, overwritten by
+    // any unrelated claim/patch/deploy action independent of whether the PR
+    // was actually re-reviewed at that new head — keying this guard on
+    // commitSha let such a bump silently mask a PR that was never
+    // re-reviewed at its current commit, the same trap class the
+    // staged-check below already guards against for its own reviewedCommitSha
+    // comparison.
+    //
     // hasFreshAuthorReply is hoisted above (RFR-1.1), computed once right
     // after reviewData is fetched, and shared with the RVD-1.1 live-review
     // dedup check above — not recomputed here.
     if (
-      record.commitSha === pr.headRefOid &&
+      record.reviewedCommitSha === pr.headRefOid &&
       record.reviewState !== "pending"
     ) {
       if (!hasFreshAuthorReply) continue;
