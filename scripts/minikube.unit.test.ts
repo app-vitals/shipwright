@@ -12,11 +12,11 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  type Command,
+  DEPLOYMENTS,
   buildAccessUrls,
   buildMinikubeCommands,
   buildTeardownCommands,
-  type Command,
-  DEPLOYMENTS,
   missingBinaries,
   runCommands,
 } from "./minikube.ts";
@@ -147,7 +147,9 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(buildMinikubeCommands());
     for (const deployment of DEPLOYMENTS) {
       expect(
-        lines.some((l) => l.includes(`rollout status deployment/${deployment}`)),
+        lines.some((l) =>
+          l.includes(`rollout status deployment/${deployment}`),
+        ),
       ).toBe(true);
     }
   });
@@ -170,13 +172,15 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(
       buildMinikubeCommands({ release: "sw2", namespace: "other" }),
     );
-    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(true);
-    expect(lines.some((l) => l.includes("helm test sw2 --namespace other"))).toBe(
+    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(
       true,
     );
     expect(
-      lines.every((l) => !l.includes("--namespace shipwright")),
+      lines.some((l) => l.includes("helm test sw2 --namespace other")),
     ).toBe(true);
+    expect(lines.every((l) => !l.includes("--namespace shipwright"))).toBe(
+      true,
+    );
   });
 });
 
@@ -190,7 +194,9 @@ describe("buildTeardownCommands", () => {
   });
 
   it("targets the configured release and namespace", () => {
-    const lines = argvLines(buildTeardownCommands({ release: "sw2", namespace: "n" }));
+    const lines = argvLines(
+      buildTeardownCommands({ release: "sw2", namespace: "n" }),
+    );
     expect(lines[0]).toBe("helm uninstall sw2 --namespace n");
   });
 });
@@ -202,13 +208,17 @@ describe("buildAccessUrls", () => {
     // dashboard route is itself named "/dashboard" — the two compose. A bare
     // "/dashboard" 404s; only "/dashboard/dashboard" resolves.
     const urls = buildAccessUrls("shipwright.local", 8080);
-    expect(urls.metrics).toBe("http://shipwright.local:8080/dashboard/dashboard");
+    expect(urls.metrics).toBe(
+      "http://shipwright.local:8080/dashboard/dashboard",
+    );
   });
 
   it("builds the admin, task-store, and agent-creation URLs against the given host and port", () => {
     const urls = buildAccessUrls("shipwright.local", 8080);
     expect(urls.admin).toBe("http://shipwright.local:8080/");
-    expect(urls.taskStore).toBe("http://shipwright.local:8080/task-store/health");
+    expect(urls.taskStore).toBe(
+      "http://shipwright.local:8080/task-store/health",
+    );
     expect(urls.agentNew).toBe("http://shipwright.local:8080/admin/agents/new");
   });
 
@@ -225,13 +235,17 @@ describe("missingBinaries", () => {
   });
 
   it("reports every missing binary, not just the first", () => {
-    expect(missingBinaries(() => null)).toEqual(["minikube", "helm", "kubectl"]);
+    expect(missingBinaries(() => null)).toEqual([
+      "minikube",
+      "helm",
+      "kubectl",
+    ]);
   });
 
   it("reports only the ones actually absent", () => {
-    expect(missingBinaries((bin) => (bin === "helm" ? null : "/bin/x"))).toEqual([
-      "helm",
-    ]);
+    expect(
+      missingBinaries((bin) => (bin === "helm" ? null : "/bin/x")),
+    ).toEqual(["helm"]);
   });
 });
 

@@ -125,8 +125,14 @@ spec:
             {{- end }}
             {{- if or (eq .Values.auth.mode "open") (eq .Values.auth.mode "none") }}
             # auth.mode=open (or deprecated alias "none") — dev auth, NO OAuth.
-            # Insecure: do not expose publicly. NODE_ENV is intentionally NOT set
-            # to production so the dev-auth path stays enabled.
+            # Insecure: do not expose publicly. The admin image bakes
+            # NODE_ENV=production into its Dockerfile as the base default, and
+            # isDevAuthAllowed() (admin/src/dev-auth-guard.ts) hard-blocks
+            # /admin/dev-login whenever NODE_ENV === "production", regardless of
+            # ADMIN_DEV_AUTH — so this branch must explicitly override it to a
+            # non-production value, not merely omit it, or dev-login 404s.
+            - name: NODE_ENV
+              value: "development"
             - name: ADMIN_DEV_AUTH
               value: "true"
             {{- else if eq .Values.auth.mode "google" }}

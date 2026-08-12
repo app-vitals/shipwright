@@ -1,7 +1,13 @@
 suite: admin auth modes (open vs google)
-# HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true and NO NODE_ENV.
+# HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true and NODE_ENV=development.
 # auth.mode=google → NODE_ENV=production + Google OAuth env (from the admin
 # Secret) + SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
+#
+# NODE_ENV MUST be explicitly overridden (not just omitted) in open mode: the
+# admin Docker image bakes NODE_ENV=production into its own Dockerfile as the
+# base default, and isDevAuthAllowed() (admin/src/dev-auth-guard.ts) hard-blocks
+# /admin/dev-login whenever NODE_ENV === "production" — omitting the chart env
+# var doesn't unset the image's baked-in value, it just fails to override it.
 templates:
   - templates/admin-deployment.yaml
 release:
@@ -17,10 +23,19 @@ tests:
             name: ADMIN_DEV_AUTH
             value: "true"
 
-  - it: open mode does NOT set NODE_ENV=production (keeps dev auth enabled)
+  - it: open mode explicitly sets NODE_ENV=development, overriding the image's baked-in production default (keeps dev auth enabled)
+    # Asserting mere absence isn't enough here — the admin Dockerfile bakes
+    # NODE_ENV=production as the image's own default, so an *omitted* env var
+    # would leave dev-login hard-blocked despite ADMIN_DEV_AUTH=true. This must
+    # be an explicit, non-production value.
     set:
       auth.mode: open
     asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_ENV
+            value: "development"
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
