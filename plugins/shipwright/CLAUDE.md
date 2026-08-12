@@ -46,9 +46,8 @@ written by `/shipwright:review` and consumed by `/shipwright:review-staged`. The
 dedup state — the task store record owns that.
 
 Applies to: **review** (dedup by `reviewedCommitSha`), **review-staged** (stale check via
-`commitSha` vs current `headRefOid` — pending a follow-up to migrate to `reviewedCommitSha`),
-**deploy** (falls back to `gh pr view --json reviewDecision` when no task store APPROVE
-record exists)
+`reviewedCommitSha` vs current `headRefOid`), **deploy** (falls back to
+`gh pr view --json reviewDecision` when no task store APPROVE record exists)
 
 ### 3. A PR Created Outside Shipwright Is Fully Serviceable
 

@@ -89,7 +89,7 @@ gh pr view {prNumber} --repo {org}/{repo} \
   `Skipping #{pr} — @{login} requested changes on {date} and there are no commits since.`
   (Use the same teammate-comment logic from `/shipwright:review` Step 3: not a bot,
   not `CURRENT_USER`, no commits pushed after the review.)
-- **Stale staged review** — if `record.commitSha` differs from the current `headRefOid`,
+- **Stale staged review** — if `record.reviewedCommitSha` differs from the current `headRefOid`,
   skip with: `Skipping #{pr} — new commits since review was staged. Re-run /shipwright:review {org}/{repo}#{pr}.`
 
 When a PR is skipped for any reason, leave its task store record untouched
@@ -254,7 +254,7 @@ Done. {posted}/{N} posted, {skipped}/{N} skipped.
 - This skill never auto-posts. Every post requires an explicit "post it" from the owner.
 - This skill never merges. Merging is handled exclusively by `/shipwright:deploy`.
 - This skill never re-reviews. If the head SHA has moved (current `headRefOid` differs from
-  `record.commitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
+  `record.reviewedCommitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
 - Use `gh` CLI for all GitHub interactions. Respect the active `GH_TOKEN` / `gh auth` context.
 - The task store is the source of truth for staged state. No `state/reviews.json` reads or
   writes occur in this skill.
