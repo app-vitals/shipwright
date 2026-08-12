@@ -37,11 +37,7 @@
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts org/repo#123
 //   bun run plugins/shipwright/scripts/diagnose-review-candidacy.ts ok-wow/ok-wow-agency#66
 
-import {
-  getCurrentUser,
-  ghGraphql,
-  ghJson,
-} from "../../../agent/src/check-helpers.ts";
+import { ghGraphql, ghJson } from "../../../agent/src/check-helpers.ts";
 import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
 import type { PrReviewData } from "../../../agent/src/check-patch.ts";
 import {
@@ -69,7 +65,6 @@ export interface DiagnoseDeps {
     repo: string,
     pr: number,
   ) => Promise<PrReviewData>;
-  getCurrentUser: () => Promise<string>;
 }
 
 // ─── parseTargetArg ─────────────────────────────────────────────────────────
@@ -201,7 +196,6 @@ export async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
     isBundleComplete: async (branch: string) =>
       (await productionDeps.isBundleComplete?.(branch)) ?? true,
     fetchPrReviews: productionDeps.fetchPrReviews,
-    getCurrentUser: productionDeps.getCurrentUser,
   };
 }
 

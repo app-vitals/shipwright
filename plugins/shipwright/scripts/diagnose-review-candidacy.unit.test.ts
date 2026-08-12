@@ -3,9 +3,8 @@
 // diagnostic script.
 //
 // No real network calls: fetchPrInfo/queryPrRecord/queryTaskStatus/
-// isBundleComplete/fetchPrReviews/getCurrentUser are all injected fakes, per
-// this repo's test isolation convention (no mock.module(), no global.fetch
-// overrides).
+// isBundleComplete/fetchPrReviews are all injected fakes, per this repo's
+// test isolation convention (no mock.module(), no global.fetch overrides).
 
 import { describe, expect, test } from "bun:test";
 import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
@@ -50,7 +49,6 @@ function makeDeps(overrides: Partial<DiagnoseDeps> = {}): DiagnoseDeps {
     queryTaskStatus: async () => null,
     isBundleComplete: async () => true,
     fetchPrReviews: defaultFetchPrReviews,
-    getCurrentUser: async () => "bodhi-agent",
     ...overrides,
   };
 }
