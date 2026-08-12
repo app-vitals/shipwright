@@ -135,11 +135,45 @@ describe("getReviewCandidates", () => {
     });
   });
 
-  test("returns empty array when PR record has matching commitSha and reviewState is posted (already reviewed)", async () => {
+  test("returns empty array when PR record has matching reviewedCommitSha and reviewState is posted (already reviewed)", async () => {
     const pr = makePr({ headRefOid: "sha111" });
     const result = await getReviewCandidates(
       makeDeps([pr], async () => ({
         commitSha: "sha111",
+        reviewedCommitSha: "sha111",
+        reviewState: "posted",
+      })),
+    );
+    expect(result).toEqual([]);
+  });
+
+  // ─── RCO-1.2: terminal-skip must key on reviewedCommitSha, not commitSha ────
+  // commitSha is shared claim-lock bookkeeping overwritten by any unrelated
+  // claim/patch/deploy action — it is NOT a reliable "this exact commit was
+  // reviewed" signal (see the staged-check comment a few blocks below, which
+  // already documents this same trap for the staged guard). Regression
+  // guard: a commitSha bump from an unrelated action must not mask a PR
+  // that was never actually re-reviewed at its current head.
+
+  test("RCO-1.2 regression: returns a candidate when commitSha matches headRefOid (stale bump from an unrelated claim/patch/deploy action) but reviewedCommitSha does not", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111", // bumped by an unrelated claim/patch/deploy action
+        reviewedCommitSha: "oldsha000", // last commit actually reviewed
+        reviewState: "posted",
+      })),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RCO-1.2: still returns empty array when reviewedCommitSha genuinely matches headRefOid and reviewState is not pending (preserved correct-skip path)", async () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const result = await getReviewCandidates(
+      makeDeps([pr], async () => ({
+        commitSha: "sha111",
+        reviewedCommitSha: "sha111",
         reviewState: "posted",
       })),
     );
@@ -189,6 +223,7 @@ describe("getReviewCandidates", () => {
     const result = await getReviewCandidates(
       makeDeps([...prs], async (_repo, prNumber) => ({
         commitSha: prNumber === 1 ? "sha-A" : "sha-B",
+        reviewedCommitSha: prNumber === 1 ? "sha-A" : "sha-B",
         reviewState: "posted",
       })),
     );
@@ -203,8 +238,16 @@ describe("getReviewCandidates", () => {
     const result = await getReviewCandidates(
       makeDeps([...prs], async (_repo, prNumber) => {
         if (prNumber === 1)
-          return { commitSha: "sha-A", reviewState: "posted" };
-        return { commitSha: "sha-B-old", reviewState: "posted" };
+          return {
+            commitSha: "sha-A",
+            reviewedCommitSha: "sha-A",
+            reviewState: "posted",
+          };
+        return {
+          commitSha: "sha-B-old",
+          reviewedCommitSha: "sha-B-old",
+          reviewState: "posted",
+        };
       }),
     );
     expect(result).toHaveLength(1);
@@ -251,7 +294,11 @@ describe("getReviewCandidates", () => {
     const result = await getReviewCandidates(
       makeDeps([prA, prB], async (repo, _prNumber) => {
         if (repo === "example-org/repo-a") {
-          return { commitSha: "sha-A", reviewState: "posted" };
+          return {
+            commitSha: "sha-A",
+            reviewedCommitSha: "sha-A",
+            reviewState: "posted",
+          };
         }
         return null; // repo-b has no record → eligible
       }),
@@ -1074,8 +1121,8 @@ describe("getReviewCandidates", () => {
   });
 
   // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
-  // A PR that is already terminal (record.commitSha === pr.headRefOid &&
-  // reviewState !== "pending") is normally skipped at the terminal-skip
+  // A PR that is already terminal (record.reviewedCommitSha === pr.headRefOid
+  // && reviewState !== "pending") is normally skipped at the terminal-skip
   // check. RVG-1.1 adds one exception: if the PR AUTHOR has posted a
   // PR-level comment with createdAt after record.reviewedAt, the PR is
   // re-added as a candidate so a follow-up review pass can consume the
@@ -1122,6 +1169,7 @@ describe("getReviewCandidates", () => {
         [pr],
         async () => ({
           commitSha: "sha111",
+          reviewedCommitSha: "sha111",
           reviewState: "posted",
           reviewedAt: "2026-07-15T00:00:00.000Z",
         }),
@@ -1228,6 +1276,7 @@ describe("getReviewCandidates", () => {
         [pr],
         async () => ({
           commitSha: "sha111",
+          reviewedCommitSha: "sha111",
           reviewState: "posted",
           reviewedAt: "2026-07-15T00:00:00.000Z",
         }),
@@ -1281,6 +1330,7 @@ describe("getReviewCandidates", () => {
         [pr],
         async () => ({
           commitSha: "sha111",
+          reviewedCommitSha: "sha111",
           reviewState: "posted",
           reviewedAt: "2026-07-25T00:00:00.000Z",
         }),
@@ -1356,6 +1406,7 @@ describe("getReviewCandidates", () => {
         [pr],
         async () => ({
           commitSha: "sha111",
+          reviewedCommitSha: "sha111",
           reviewState: "posted",
           reviewedAt: "2026-07-15T00:00:00.000Z",
         }),
