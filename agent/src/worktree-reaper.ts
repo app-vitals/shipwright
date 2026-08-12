@@ -34,6 +34,7 @@ import {
   parseCleanupAfterDays,
   parseCleanupMergedWorktrees,
   resolveWorkspacePath,
+  splitOrgRepo,
 } from "./check-helpers.ts";
 import type { Clock } from "./clock.ts";
 import { SystemClock } from "./clock.ts";
@@ -75,26 +76,68 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Resolve the scoped repo that owns a worktree dirname via longest-prefix
- * match. Repo names can themselves contain dashes (e.g. "example-repo"), so a
- * naive first-dash split is unsafe — instead, every scoped repo is checked
- * as a candidate prefix (`dirname === repo` or `dirname.startsWith(repo +
- * "-")`, so a match only counts at a "-" boundary, never mid-word) and the
- * LONGEST matching repo name wins (so "example-repo" wins over a hypothetical
- * shorter false-positive prefix like "example").
+ * match.
  *
- * Returns null when no scoped repo's name is a prefix of dirname.
+ * `worktrees/<dirname>` uses the BARE repo name convention (e.g.
+ * "ok-wow-agency-feat-foo"), but agentReposRef.get() (and therefore
+ * deps.getScopedRepos()) returns "org/repo"-formatted strings in production
+ * (see agent-repos-ref.ts's doc comment) — so every scoped entry is first
+ * normalized to its bare repo name via splitOrgRepo() (the same helper
+ * pr-state-reconciler.ts uses to derive its own worktree dirname prefix from
+ * `record.repo`) before comparing against dirname. An entry with no "/" is
+ * already bare and normalizes to itself, which keeps the pre-RCO-1.1 bare-
+ * name-only scope format meaningful and matching unchanged.
+ *
+ * Repo names can themselves contain dashes (e.g. "example-repo"), so a naive
+ * first-dash split of dirname is unsafe — instead every normalized bare name
+ * is checked as a candidate prefix (`dirname === bareName` or
+ * `dirname.startsWith(bareName + "-")`, so a match only counts at a "-"
+ * boundary, never mid-word) and the LONGEST matching bare name wins (so
+ * "example-repo" wins over a hypothetical shorter false-positive prefix like
+ * "example").
+ *
+ * Ambiguity guard: two DISTINCT scoped "org/repo" entries can normalize to
+ * the SAME bare name (e.g. "org-a/widget" and "org-b/widget" both ->
+ * "widget") — the bare-dirname worktree convention has no way to tell them
+ * apart. Rather than arbitrarily picking one org's repo and silently
+ * mismatching the worktree (which could point `git worktree remove` at the
+ * wrong repo's local clone), a same-bare-name collision among the
+ * longest-matching entries is treated as unmatched (null), same as "no
+ * match" from the caller's point of view, but logged distinctly by the
+ * caller-visible sentinel below so it doesn't read as an ordinary
+ * "no scoped repo matches" case in Sentry.
  */
+const AMBIGUOUS_MATCH = Symbol("ambiguous-match");
+
 function resolveOwningRepo(
   dirname: string,
   scopedRepos: string[],
-): string | null {
-  let best: string | null = null;
+): string | null | typeof AMBIGUOUS_MATCH {
+  let bestBareName: string | null = null;
+  let bestOriginals: Set<string> = new Set();
+
   for (const repo of scopedRepos) {
-    const isMatch = dirname === repo || dirname.startsWith(`${repo}-`);
+    const [, bareName] = splitOrgRepo(repo);
+    if (!bareName) continue; // defensive — e.g. a malformed "org/" entry
+    const isMatch = dirname === bareName || dirname.startsWith(`${bareName}-`);
     if (!isMatch) continue;
-    if (best === null || repo.length > best.length) best = repo;
+
+    if (bestBareName === null || bareName.length > bestBareName.length) {
+      bestBareName = bareName;
+      bestOriginals = new Set([repo]);
+    } else if (bareName.length === bestBareName.length) {
+      bestOriginals.add(repo);
+    }
   }
-  return best;
+
+  if (bestBareName === null) return null;
+  // Multiple distinct scoped entries tied for the longest match and share
+  // the same normalized bare name — e.g. "org-a/widget" + "org-b/widget".
+  // Note a single scoped entry appearing twice (or one repo matching under
+  // two different-length prefixes) never reaches here since bestOriginals
+  // is reset whenever a strictly longer bareName is found.
+  if (bestOriginals.size > 1) return AMBIGUOUS_MATCH;
+  return bestBareName;
 }
 
 /** True when `mtime` is older than `cleanupAfterDays` days before `now`. */
@@ -131,6 +174,12 @@ export async function reconcileStaleWorktrees(
 
   for (const dirname of dirs) {
     const repo = resolveOwningRepo(dirname, scopedRepos);
+    if (repo === AMBIGUOUS_MATCH) {
+      console.error(
+        `[worktree-reaper] skipping ${dirname} — AMBIGUOUS: multiple distinct scoped org/repo entries normalize to the same bare repo name for this worktree dirname's prefix`,
+      );
+      continue;
+    }
     if (repo === null) {
       console.error(
         `[worktree-reaper] skipping ${dirname} — no scoped repo matches this worktree dirname's prefix`,
