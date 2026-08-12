@@ -51,8 +51,9 @@ work:**
    list either, since it hadn't landed yet at that point — this is the confirmation that
    it landed correctly).
 2. **DRO-1.2** (`check-patch.ts`'s `isSupersededBySelfReview` self-review-supersession
-   predicate) — **confirmed resolved.** `check-patch.unit.test.ts` has 4 dedicated cases
-   proving both directions of the predicate. No longer tracked as a gap.
+   predicate) — **confirmed resolved.** `plugins/shipwright/scripts/compute-unaddressed-findings.unit.test.ts`
+   has 4 dedicated cases proving both directions of the predicate (extracted with PVD-1.1).
+   No longer tracked as a gap.
 3. **The `pr-state-reconciler.ts` orphan-reconciliation removal** — carried forward as an
    *ambiguous item needing human-confirmed rationale* in both the 2026-08-09 inventory and
    design doc (not itself a task, but an open caution in Open risks). This cycle's Phase 3
