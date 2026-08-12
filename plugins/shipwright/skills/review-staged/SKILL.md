@@ -254,7 +254,7 @@ Done. {posted}/{N} posted, {skipped}/{N} skipped.
 - This skill never auto-posts. Every post requires an explicit "post it" from the owner.
 - This skill never merges. Merging is handled exclusively by `/shipwright:deploy`.
 - This skill never re-reviews. If the head SHA has moved (current `headRefOid` differs from
-  `record.commitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
+  `record.reviewedCommitSha`), it skips and points to `/shipwright:review {org}/{repo}#{pr}`.
 - Use `gh` CLI for all GitHub interactions. Respect the active `GH_TOKEN` / `gh auth` context.
 - The task store is the source of truth for staged state. No `state/reviews.json` reads or
   writes occur in this skill.

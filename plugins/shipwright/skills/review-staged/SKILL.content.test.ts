@@ -35,4 +35,8 @@ describe("SKILL.md — Step 3b stale-check references record.reviewedCommitSha, 
     expect(section).toContain("record.reviewedCommitSha");
     expect(section).not.toContain("record.commitSha");
   });
+
+  it("has no remaining record.commitSha references anywhere in the file", () => {
+    expect(content).not.toContain("record.commitSha");
+  });
 });
