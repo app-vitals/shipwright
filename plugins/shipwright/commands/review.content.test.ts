@@ -684,6 +684,24 @@ describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () 
     expect(section).not.toContain("record.commitSha");
   });
 
+  it("Step 11b's PATCH_DATA sets reviewedCommitSha for both the APPROVE branch and the else branch", () => {
+    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    expect(step11bIdx).toBeGreaterThan(-1);
+    expect(step14Idx).toBeGreaterThan(step11bIdx);
+    const section = content.slice(step11bIdx, step14Idx);
+
+    const approveIdx = section.indexOf('\\"reviewState\\": \\"approved\\"');
+    expect(approveIdx).toBeGreaterThan(-1);
+    const approveBlock = section.slice(approveIdx - 200, approveIdx + 200);
+    expect(approveBlock).toContain("reviewedCommitSha");
+
+    const elseIdx = section.indexOf(
+      'PATCH_DATA="{\\"agentId\\": \\"$SHIPWRIGHT_AGENT_ID\\", \\"reviewedCommitSha\\"',
+    );
+    expect(elseIdx).toBeGreaterThan(-1);
+  });
+
   it("the initial /prs/claim call's commitSha argument is unchanged (claim-lock field, not reviewedCommitSha)", () => {
     const step4Idx = content.indexOf("## Step 4: Checkout into Worktree");
     const step5Idx = content.indexOf("## Step 5: Gather Context");
