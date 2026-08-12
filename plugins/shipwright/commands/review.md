@@ -287,8 +287,11 @@ back to `'sonnet'`.
      resolved/not-resolved determination for each one.
 
    Call the result `priorQualifyingReviews` — a list of `{ ref, body }` pairs, where `ref` is
-   a short identifying label for each review (e.g. the commit short SHA plus `submittedAt`,
-   since the GraphQL query above does not fetch a review `id`/`url` field). When
+   built via `compute-unaddressed-findings.ts`'s exported `reviewRef(review)` helper: the
+   review's FULL, untruncated `commit.oid` plus `submittedAt`, joined by `@`
+   (`${review.commit.oid}@${review.submittedAt}`) — never a truncated/short SHA, since the
+   GraphQL query above does not fetch a review `id`/`url` field and `isResolvedByPriorFindingsStatus`
+   later does an exact string match against this exact format. When
    `priorQualifyingReviews` is empty (no prior reviews, or all excluded by the two reused
    exclusions above — e.g. a self-authored PR whose only prior reviews were clean self-approves
    or superseded self-reviews), the field is simply empty and Step 7 omits the corresponding
