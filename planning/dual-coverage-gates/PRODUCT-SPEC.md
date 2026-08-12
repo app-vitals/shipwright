@@ -6,7 +6,7 @@
 
 ## Overview
 
-Add a dual coverage gate — feature coverage AND line coverage, each gated at ≥90% — to Shipwright's own test-readiness pipeline (test-inventory → test-design → test-migration → test-roadmap → test-fix). Today the pipeline enforces a single flat 80% line+branch floor with no feature-level signal and no computed readiness verdict; "ready" is only implied by task-store tickets reaching `done`. This work makes readiness a first-class, machine-checkable verdict, without reintroducing the file-level criticality→CI mapping the pipeline deliberately avoids today.
+Add a dual coverage gate — feature coverage AND line coverage, each gated at ≥90% — to Shipwright's own test-readiness pipeline (test-inventory → test-design → test-migration → test-roadmap → test-fix). Today the pipeline enforces a single flat 80% line+function floor with no feature-level signal and no computed readiness verdict; "ready" is only implied by task-store tickets reaching `done`. This work makes readiness a first-class, machine-checkable verdict, without reintroducing the file-level criticality→CI mapping the pipeline deliberately avoids today.
 
 ## Problem Statement
 
@@ -31,7 +31,7 @@ Primary consumer: **the autonomous agent itself**. The test-readiness pipeline's
 **Requirements**:
 - Feature boundaries are inferred automatically (directory structure, route prefixes, shared entry points) — no manual authoring step, no maintained mapping file.
 - Each feature is tagged with an importance label (revenue-path / security-path / core / auxiliary) for **prioritization only** — no importance tag excludes a feature from the coverage denominator (cosmetic-tier exclusion was considered and explicitly rejected).
-- Ambiguous groupings (e.g. a shared utility that could belong to multiple features) are flagged for visibility, following the same pattern `test-migration` already uses for ambiguous items today — not blocking, not requiring human sign-off.
+- Ambiguous groupings (e.g. a shared utility that could belong to multiple features) are flagged for visibility, following the same pattern `test-inventory` already uses for ambiguous items today — not blocking, not requiring human sign-off.
 - A feature's required test layer is the **highest** layer among its member code units' prescribed layers (from test-design) — not the full union of layers.
 - A feature counts as "covered" only if it has ≥1 test at that required layer, and that test isn't itself flagged for deletion/rebuild by `test-migration` (Phase 3).
 - `feature_coverage_pct = covered_features / total_features × 100` — every non-deleted feature counts in the denominator, full stop.
@@ -39,7 +39,7 @@ Primary consumer: **the autonomous agent itself**. The test-readiness pipeline's
 
 **Acceptance Criteria**:
 - [ ] `test-inventory` output includes a features grouping section, with every code unit assigned to exactly one feature and each feature tagged with an importance label
-- [ ] Ambiguous feature groupings are flagged in the output the same way `test-migration` flags ambiguous items today (visible, non-blocking)
+- [ ] Ambiguous feature groupings are flagged in the output the same way `test-inventory` flags ambiguous items today (visible, non-blocking)
 - [ ] `feature_coverage_pct` is computed as `covered_features / total_features × 100` with no exclusion category of any kind
 - [ ] Each feature's required test layer is documented as the highest layer among its member units' prescribed layers
 
@@ -191,7 +191,7 @@ Feature 1 (feature-coverage matrix) must land first — Features 2, 3, and 4 all
 - **Cosmetic-tier exclusion**: Dropped entirely. Every non-deleted feature counts toward `feature_coverage_pct`'s denominator. Importance tags (revenue-path/security-path/core/auxiliary) remain as prioritization metadata only, never excluded. — Rationale: "a feature is a feature and should be covered by a test"; also removes a gaming vector where features could be mistagged to shrink the denominator.
 - **Feature required-layer definition**: The highest layer among a feature's member code units' prescribed layers, not the full union. — Rationale: simpler; explicit preference over requiring coverage at every member unit's layer.
 - **Feature grouping mechanism**: Fully automatic, inferred from directory/route/entry-point heuristics — no human-confirm step. — Rationale: matches the pipeline's existing read-only/automated Phase 1-4 design; avoids reintroducing a maintained mapping.
-- **Ambiguous grouping handling**: Flagged for visibility using the same pattern `test-migration` already uses for ambiguous items — not blocking. — Rationale: catches misgrouping risk (e.g. shared utilities) without requiring a blocking human-approval gate.
+- **Ambiguous grouping handling**: Flagged for visibility using the same pattern `test-inventory` already uses for ambiguous items — not blocking. — Rationale: catches misgrouping risk (e.g. shared utilities) without requiring a blocking human-approval gate.
 - **Multi-tool coverage support scope**: JaCoCo (XML), coverage.py, c8/nyc, and go cover are all in scope for this PRD, not deferred to follow-on work. — Rationale: explicit requirement — the gate applies across every repo the pipeline runs against, each with a different toolchain.
 - **Coverage-tool detection storage**: Recorded in `test-system.md`'s existing CI pipeline shape section (Phase 2 output), one field alongside what's already recorded per repo. — Rationale: mirrors the existing pattern for CI pipeline shape; no new artifact needed.
 - **CI ratchet promotion mechanism**: Automatic — `test-roadmap` detects `coverage_gate.line_coverage_pct >= 90` on a re-run and emits the promotion task itself, following the existing `repo-config` branch-protection pairing pattern (job lands → dependent task enables it). — Rationale: consistent with the existing pairing pattern; avoids manual toil.
