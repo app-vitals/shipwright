@@ -271,6 +271,71 @@ describe("reconcileStaleWorktrees", () => {
     ]);
   });
 
+  test("RCO-1.1: an org/repo scoped entry matches its corresponding bare-name worktree dirname", async () => {
+    const oldMtime = new Date("2026-07-08T00:00:00.000Z");
+    const { deps, removeCalls } = makeDeps({
+      dirs: ["ok-wow-agency-feat-foo"],
+      scopedRepos: ["ok-wow/ok-wow-agency"],
+      mtimes: { "ok-wow-agency-feat-foo": oldMtime },
+    });
+
+    await reconcileStaleWorktrees(deps);
+
+    // The bare repo name ("ok-wow-agency"), not the raw "org/repo" string, is
+    // what's passed to removeWorktree — mirrors pr-state-reconciler.ts's own
+    // splitOrgRepo(record.repo) -> shortRepo usage for the same worktree path
+    // shape.
+    expect(removeCalls).toEqual([
+      { repo: "ok-wow-agency", dirname: "ok-wow-agency-feat-foo" },
+    ]);
+  });
+
+  test("RCO-1.1: bare-repo-name-only scoped entries (no slash) still match directly", async () => {
+    const oldMtime = new Date("2026-07-08T00:00:00.000Z");
+    const { deps, removeCalls } = makeDeps({
+      dirs: ["shipwright-feat-bar"],
+      scopedRepos: ["shipwright"],
+      mtimes: { "shipwright-feat-bar": oldMtime },
+    });
+
+    await reconcileStaleWorktrees(deps);
+
+    expect(removeCalls).toEqual([
+      { repo: "shipwright", dirname: "shipwright-feat-bar" },
+    ]);
+  });
+
+  test("RCO-1.1: two org/repo entries from different orgs sharing the same bare repo name are treated as ambiguous — neither is matched", async () => {
+    const oldMtime = new Date("2026-07-08T00:00:00.000Z");
+    const { deps, removeCalls } = makeDeps({
+      dirs: ["widget-feat-foo"],
+      scopedRepos: ["org-a/widget", "org-b/widget"],
+      mtimes: { "widget-feat-foo": oldMtime },
+    });
+
+    await reconcileStaleWorktrees(deps);
+
+    // Ambiguous — must NOT arbitrarily pick org-a or org-b's "widget".
+    expect(removeCalls).toEqual([]);
+  });
+
+  test("RCO-1.1: longest-match-wins still applies to the normalized (bare) name when an org/repo entry and a longer bare entry both match", async () => {
+    const oldMtime = new Date("2026-07-08T00:00:00.000Z");
+    const { deps, removeCalls } = makeDeps({
+      dirs: ["example-repo-feat-foo"],
+      // "org/example" normalizes to "example" — a false-positive shorter
+      // prefix; "example-repo" (already bare) is the real, longer match.
+      scopedRepos: ["org/example", "example-repo"],
+      mtimes: { "example-repo-feat-foo": oldMtime },
+    });
+
+    await reconcileStaleWorktrees(deps);
+
+    expect(removeCalls).toEqual([
+      { repo: "example-repo", dirname: "example-repo-feat-foo" },
+    ]);
+  });
+
   test("getScopedRepos is invoked live on each call — a repo added between two reconcile passes is picked up on the second pass without rebuilding deps", async () => {
     const oldMtime = new Date("2026-07-08T00:00:00.000Z");
     // Mutable backing array, mirroring agentReposRef.get()'s live-scope semantics.

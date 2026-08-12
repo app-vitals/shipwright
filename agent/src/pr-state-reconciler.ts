@@ -79,9 +79,9 @@
  * on GitHub's MERGED confirmation, as before.
  */
 
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import {
   classifyReviewState,
   createPrRecordQuery,
@@ -421,6 +421,44 @@ function computeUpdatedSinceCutoff(nowMs: number): string {
   return new Date(nowMs - RECONCILER_UPDATED_SINCE_WINDOW_MS).toISOString();
 }
 
+/**
+ * RCO-1.5: per-pass record-outcome tally, accumulated across every repo a
+ * reconcile pass scans and logged once as a single summary line at the end
+ * of the pass — see `logPassSummary` below. A clean, fully successful pass
+ * previously produced zero log output, making it impossible to tell "ran and
+ * succeeded" apart from "never ran at all" from logs alone.
+ *
+ * `skippedClaimed` is always 0 for `reconcilePrState()`'s pass — `PrStateRecord`
+ * has no claim concept at all — but is included here for schema consistency
+ * across all three passes (`reconcilePrState`, and `reconcileReviewState`'s
+ * two scans, which DO have a live isActivelyClaimed skip).
+ */
+interface PassSummary {
+  /** Records fetched and considered by this pass (a per-repo list-call failure does NOT add to this — the would-be count is unknown). */
+  evaluated: number;
+  /** Records that received a PATCH. */
+  patched: number;
+  /** Records skipped because `isActivelyClaimed()` returned true — always 0 for reconcilePrState's pass. */
+  skippedClaimed: number;
+  /** Per-record reconcile failures PLUS per-repo list-call failures (each list failure counts as 1, representing the failed call itself). */
+  errored: number;
+}
+
+function newPassSummary(): PassSummary {
+  return { evaluated: 0, patched: 0, skippedClaimed: 0, errored: 0 };
+}
+
+/** Logs one summary line for a completed pass — see `PassSummary`'s doc comment for what each count means. */
+function logPassSummary(
+  prefix: string,
+  label: string,
+  summary: PassSummary,
+): void {
+  console.log(
+    `${prefix} ${label} summary: evaluated=${summary.evaluated} patched=${summary.patched} skippedClaimed=${summary.skippedClaimed} errored=${summary.errored}`,
+  );
+}
+
 /** Map GitHub's uppercase PR state to the task-store's lowercase PrState enum. */
 function mapGhStateToPrState(
   state: GhPrView["state"],
@@ -496,14 +534,19 @@ async function listAllPrOpenTasks(
  * PSR-1.2 rate-limit-incident rationale). The removal is isolated in its own
  * try/catch: a failure is logged but never propagates, and never undoes or
  * blocks the already-succeeded state PATCH above.
+ *
+ * RCO-1.5: returns "patched" or "no-op" (rather than void) so the calling
+ * loop in `reconcilePrState()` can tally outcomes for its end-of-pass summary
+ * log — purely a reporting addition, does not change which branch runs or
+ * what gets written.
  */
 async function reconcileRecord(
   deps: PrStateReconcilerDeps,
   record: PrStateRecord,
-): Promise<void> {
+): Promise<"patched" | "no-op"> {
   const ghState = await deps.ghViewPr(record.repo, record.prNumber);
   const newState = mapGhStateToPrState(ghState.state);
-  if (newState === null) return; // still open on GitHub — no-op
+  if (newState === null) return "no-op"; // still open on GitHub — no-op
 
   // claimedBy/claimedAt/heartbeatAt aren't in routes/prs.ts's PATCH
   // allowlist, so including them here is documentation-of-intent rather than
@@ -524,8 +567,8 @@ async function reconcileRecord(
 
   await deps.patchPrRecord(record.id, fields);
 
-  if (!deps.isCleanupMergedWorktreesEnabled) return;
-  if (!ghState.headRefName) return; // defensive — no branch to derive a worktree path from
+  if (!deps.isCleanupMergedWorktreesEnabled) return "patched";
+  if (!ghState.headRefName) return "patched"; // defensive — no branch to derive a worktree path from
 
   try {
     const [, shortRepo] = splitOrgRepo(record.repo);
@@ -537,6 +580,7 @@ async function reconcileRecord(
       err instanceof Error ? err.message : String(err),
     );
   }
+  return "patched";
 }
 
 /**
@@ -773,6 +817,14 @@ export async function reconcilePrOpenTasks(
  * lookup failure is logged and does not abort reconciliation of the rest
  * of the batch. Then runs the pr_open-task reconciliation pass (DSR-1.1) so
  * agent/src/index.ts's single call site doesn't need to change.
+ *
+ * RCO-1.5: logs one end-of-pass summary line (evaluated/patched/
+ * skippedClaimed/errored) via `logPassSummary` — additive only, does not
+ * change any reconciliation decision or write. `skippedClaimed` is always 0
+ * here (see `PassSummary`'s doc comment); included for schema consistency
+ * with `reconcileReviewState()`'s two scans. Scoped to this function's own
+ * PR-record scan only — `reconcilePrOpenTasks()` below has its own
+ * pre-existing error handling and is out of scope for this summary line.
  */
 export async function reconcilePrState(
   deps: PrStateReconcilerDeps,
@@ -785,6 +837,8 @@ export async function reconcilePrState(
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
 
+  const summary = newPassSummary();
+
   for (const repo of scopedRepos) {
     let records: PrStateRecord[];
     try {
@@ -794,21 +848,27 @@ export async function reconcilePrState(
         `[pr-state-reconciler] failed to list open PRs for ${repo}:`,
         err instanceof Error ? err.message : String(err),
       );
+      summary.errored += 1; // the failed list-call itself — would-be record count is unknown
       continue;
     }
 
     for (const record of records) {
+      summary.evaluated += 1;
       try {
-        await reconcileRecord(deps, record);
+        const outcome = await reconcileRecord(deps, record);
+        if (outcome === "patched") summary.patched += 1;
       } catch (err) {
         console.error(
           `[pr-state-reconciler] failed to reconcile ${repo}#${record.prNumber}:`,
           err instanceof Error ? err.message : String(err),
         );
+        summary.errored += 1;
       }
       await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
+
+  logPassSummary("[pr-state-reconciler]", "pass", summary);
 
   await reconcilePrOpenTasks(deps);
 }
@@ -877,25 +937,32 @@ async function listAllReviewRecords(
  * Issues a PATCH only when GitHub shows a terminal review at the PR's
  * current head commit — a genuine unaddressed finding, a stale-commit-only
  * review, or no review at all are all left completely untouched.
+ *
+ * RCO-1.5: returns "patched" | "no-op" | "skipped-claimed" (rather than
+ * void) so the calling loop in `reconcileReviewState()` can tally outcomes
+ * for its end-of-pass summary log — purely a reporting addition, does not
+ * change which branch runs or what gets written.
  */
 async function reconcileReviewStateRecord(
   deps: PrReviewStateReconcilerDeps,
   record: PrReviewStateRecord,
-): Promise<void> {
+): Promise<"patched" | "no-op" | "skipped-claimed"> {
   // deps.claimTtlMs is NOT left unwired here: buildReviewStateProductionDeps
   // (below) reads process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS itself and
   // sets it on the returned deps object, so index.ts's bare
   // buildReviewStateReconcilerDeps({ ghGraphql }) call site still gets the
   // env var end-to-end — confirmed by this factory's own unit tests below.
   const claimTtlMs = deps.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
-  if (isActivelyClaimed(record, deps.clock, claimTtlMs)) return; // live claim — never overwrite
+  if (isActivelyClaimed(record, deps.clock, claimTtlMs))
+    return "skipped-claimed"; // live claim — never overwrite
 
   const [org, repoName] = splitOrgRepo(record.repo);
   const reviewData = await deps.fetchPrReviews(org, repoName, record.prNumber);
   const newReviewState = classifyReviewState(reviewData);
-  if (newReviewState === null) return; // nothing terminal at head — no-op
+  if (newReviewState === null) return "no-op"; // nothing terminal at head — no-op
 
   await deps.patchPrRecord(record.id, { reviewState: newReviewState });
+  return "patched";
 }
 
 /**
@@ -917,19 +984,25 @@ async function reconcileReviewStateRecord(
  *   - Anything else (a genuine unresolved finding at head, a still-terminal
  *     review, or a still-approved review) leaves the record completely
  *     untouched — there's nothing to heal.
+ *
+ * RCO-1.5: returns "patched" | "no-op" | "skipped-claimed" (rather than
+ * void) — see `reconcileReviewStateRecord`'s doc comment above for the same
+ * rationale.
  */
 async function reconcilePostedReviewStateRecord(
   deps: PrReviewStateReconcilerDeps,
   record: PrReviewStateRecord,
-): Promise<void> {
+): Promise<"patched" | "no-op" | "skipped-claimed"> {
   const claimTtlMs = deps.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
-  if (isActivelyClaimed(record, deps.clock, claimTtlMs)) return; // live claim — never overwrite
+  if (isActivelyClaimed(record, deps.clock, claimTtlMs))
+    return "skipped-claimed"; // live claim — never overwrite
 
   const [org, repoName] = splitOrgRepo(record.repo);
   const reviewData = await deps.fetchPrReviews(org, repoName, record.prNumber);
-  if (hasAnyReviewAtHead(reviewData)) return; // something at head (finding or terminal) — untouched
+  if (hasAnyReviewAtHead(reviewData)) return "no-op"; // something at head (finding or terminal) — untouched
 
   await deps.patchPrRecord(record.id, { reviewState: "pending" });
+  return "patched";
 }
 
 /**
@@ -945,6 +1018,10 @@ async function reconcilePostedReviewStateRecord(
  * trapping the PR out of every phase's candidate set. A single per-record
  * failure (claim check aside) is logged and does not abort reconciliation
  * of the rest of the batch, for either scan.
+ *
+ * RCO-1.5: each scan logs its OWN end-of-pass summary line (evaluated/
+ * patched/skippedClaimed/errored) via `logPassSummary` — additive only, does
+ * not change any reconciliation decision or write.
  */
 export async function reconcileReviewState(
   deps: PrReviewStateReconcilerDeps,
@@ -959,6 +1036,8 @@ export async function reconcileReviewState(
   const scopedReposSet = new Set(deps.getScopedRepos());
   const scopedRepos = deps.repos.filter((repo) => scopedReposSet.has(repo));
 
+  const pendingSummary = newPassSummary();
+
   for (const repo of scopedRepos) {
     let records: PrReviewStateRecord[];
     try {
@@ -970,21 +1049,35 @@ export async function reconcileReviewState(
         `[pr-state-reconciler:review] failed to list pending-review PRs for ${repo}:`,
         err instanceof Error ? err.message : String(err),
       );
+      pendingSummary.errored += 1; // the failed list-call itself — would-be record count is unknown
       continue;
     }
 
     for (const record of records) {
+      pendingSummary.evaluated += 1;
       try {
-        await reconcileReviewStateRecord(deps, record);
+        const outcome = await reconcileReviewStateRecord(deps, record);
+        if (outcome === "patched") pendingSummary.patched += 1;
+        else if (outcome === "skipped-claimed")
+          pendingSummary.skippedClaimed += 1;
       } catch (err) {
         console.error(
           `[pr-state-reconciler:review] failed to reconcile ${repo}#${record.prNumber}:`,
           err instanceof Error ? err.message : String(err),
         );
+        pendingSummary.errored += 1;
       }
       await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
+
+  logPassSummary(
+    "[pr-state-reconciler:review]",
+    "pending scan",
+    pendingSummary,
+  );
+
+  const postedSummary = newPassSummary();
 
   for (const repo of scopedRepos) {
     let postedRecords: PrReviewStateRecord[];
@@ -999,21 +1092,29 @@ export async function reconcileReviewState(
         `[pr-state-reconciler:review] failed to list posted-review PRs for ${repo}:`,
         err instanceof Error ? err.message : String(err),
       );
+      postedSummary.errored += 1; // the failed list-call itself — would-be record count is unknown
       continue;
     }
 
     for (const record of postedRecords) {
+      postedSummary.evaluated += 1;
       try {
-        await reconcilePostedReviewStateRecord(deps, record);
+        const outcome = await reconcilePostedReviewStateRecord(deps, record);
+        if (outcome === "patched") postedSummary.patched += 1;
+        else if (outcome === "skipped-claimed")
+          postedSummary.skippedClaimed += 1;
       } catch (err) {
         console.error(
           `[pr-state-reconciler:review] failed to reconcile posted ${repo}#${record.prNumber}:`,
           err instanceof Error ? err.message : String(err),
         );
+        postedSummary.errored += 1;
       }
       await deps.delay(DEFAULT_RECONCILER_DELAY_MS);
     }
   }
+
+  logPassSummary("[pr-state-reconciler:review]", "posted scan", postedSummary);
 }
 
 // ─── Production deps ──────────────────────────────────────────────────────────
