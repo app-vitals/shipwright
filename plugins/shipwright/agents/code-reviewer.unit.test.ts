@@ -255,3 +255,62 @@ describe("test-readiness-tenets.md — retired in favor of principles.md", () =>
     expect(existsSync(tenetsPath)).toBe(false);
   });
 });
+
+describe("code-reviewer.md — prior findings attestation input and output (PVD-1.2)", () => {
+  it("documents the new optional prior-findings input in the caller-passes-in list", () => {
+    const inputsIdx = reviewerContent.indexOf("The caller");
+    expect(inputsIdx).toBeGreaterThan(-1);
+    const outputFormatIdx = reviewerContent.indexOf("## Output Format");
+    const inputsSection = reviewerContent.slice(inputsIdx, outputFormatIdx);
+
+    expect(inputsSection).toContain("Optional");
+    expect(inputsSection.toLowerCase()).toContain("prior");
+    expect(inputsSection.toLowerCase()).toContain("finding");
+  });
+
+  it("instructs the subagent to assess, for each prior finding, whether the issue is still present in the current diff", () => {
+    const inputsIdx = reviewerContent.indexOf("The caller");
+    const outputFormatIdx = reviewerContent.indexOf("## Output Format");
+    const inputsSection = reviewerContent.slice(inputsIdx, outputFormatIdx);
+
+    const priorIdx = inputsSection.toLowerCase().indexOf("prior");
+    expect(priorIdx).toBeGreaterThan(-1);
+    const wholeDoc = reviewerContent.toLowerCase();
+    expect(wholeDoc).toContain("still present");
+  });
+
+  it("documents priorFindingsStatus as a new top-level field in the Output Format JSON schema", () => {
+    const outputFormatIdx = reviewerContent.indexOf("## Output Format");
+    expect(outputFormatIdx).toBeGreaterThan(-1);
+    const outputSection = reviewerContent.slice(outputFormatIdx);
+
+    expect(outputSection).toContain("priorFindingsStatus");
+    expect(outputSection).toContain("ref");
+    expect(outputSection).toContain("resolved");
+    expect(outputSection).toContain("evidence");
+  });
+
+  it("documents priorFindingsStatus is required whenever prior-findings input was passed", () => {
+    const outputFormatIdx = reviewerContent.indexOf("## Output Format");
+    const outputSection = reviewerContent.slice(outputFormatIdx);
+
+    const fieldIdx = outputSection.indexOf("priorFindingsStatus");
+    expect(fieldIdx).toBeGreaterThan(-1);
+    const nearby = outputSection.slice(Math.max(0, fieldIdx - 400), fieldIdx + 800);
+
+    expect(nearby.toLowerCase()).toContain("required");
+  });
+
+  it("documents evidence is required in both the resolved:true and resolved:false cases", () => {
+    const outputFormatIdx = reviewerContent.indexOf("## Output Format");
+    const outputSection = reviewerContent.slice(outputFormatIdx);
+
+    const fieldIdx = outputSection.indexOf("priorFindingsStatus");
+    expect(fieldIdx).toBeGreaterThan(-1);
+    const nearby = outputSection.slice(fieldIdx, fieldIdx + 1200);
+
+    expect(nearby.toLowerCase()).toContain("evidence");
+    expect(nearby.toLowerCase()).toContain("required");
+    expect(nearby.toLowerCase()).toContain("both");
+  });
+});
