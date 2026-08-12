@@ -799,7 +799,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2000);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     expect(gateBlock).toContain("COMMENT");
     expect(gateBlock).toContain("event");
@@ -812,7 +812,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 5000);
 
     expect(gateBlock.toLowerCase()).toContain("self-review");
     expect(gateBlock).toContain("override");
@@ -825,7 +825,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     expect(gateBlock).toContain("compute-review-verdict.ts");
     expect(gateBlock).toContain("three-input truth table");
@@ -845,7 +845,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     // This PR folds the old named "Self-review event override" subsection into Step 10's
     // unnamed mechanical paragraph -- Step 9.5's cross-reference must point at the
@@ -862,7 +862,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     expect(gateBlock.toLowerCase()).toContain("unresolved inline thread");
   });
@@ -873,28 +873,37 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     // Should not introduce any new task-store PATCH/POST field for this gate.
     expect(gateBlock).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
   });
 
-  it("the review-body condition has no headRefOid restriction, matching patch.md's Step 3a exactly", () => {
+  it("Step 5.5's GraphQL query now fetches commit.oid on reviews, required by the mechanical hasUnaddressedFindings gate (PVD-1.1)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(step5Idx);
+    const step5Section = content.slice(step5Idx, step6Idx);
+
+    // agent/src/check-patch.ts's real hasUnaddressedFindings (now the single mechanical
+    // implementation this gate invokes, via compute-unaddressed-findings.ts) filters
+    // qualifying reviews down to `commit.oid === headRefOid` -- Step 5.5's query must fetch
+    // that field or the mechanical gate would silently treat every review as stale and never
+    // find a qualifying finding, a behavior regression versus the pre-PVD-1.1 freehand prose.
+    expect(step5Section).toContain("commit { oid }");
+    expect(step5Section).toContain("commit.oid");
+  });
+
+  it("the review-body condition documents the exclusions, matching patch.md's Step 3a definition", () => {
     const step9Idx = content.indexOf("## Step 9: Write Review File");
     const eventSelectionIdx = content.indexOf("## Step 11: Post or Stage");
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
-    // Step 5.5's GraphQL query for `reviews` fetches no `commit { oid }` field (unlike
-    // Step 14's live-review precheck query), so there is no data to filter "at head"
-    // against. patch.md's actual Step 3a has no headRefOid restriction on reviews at
-    // all -- this gate must mirror that exactly, or it will silently miss real
-    // stale-but-unresolved findings from an earlier commit (RUC-1.1 review finding).
-    expect(gateBlock).not.toContain("at the current");
-    expect(gateBlock).not.toContain("current `headRefOid`");
     expect(gateBlock).toContain(
       'At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a\n  non-empty `body`, excluding:',
     );
@@ -907,7 +916,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 2500);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
 
     // Without this exclusion, a self-authored PR reviewed via a fresh review object each
     // round (rather than a body rewrite) would have unaddressedFindings compute true
@@ -917,6 +926,57 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     // own review history).
     expect(gateBlock).toContain("superseded by a later, genuinely clean self-review");
     expect(gateBlock).toContain("DRO-1.2");
+  });
+});
+
+describe("review.md — Step 9.5 invokes compute-unaddressed-findings.ts mechanically instead of freehand prose (PVD-1.1)", () => {
+  let step95Section: string;
+
+  beforeAll(() => {
+    const step95Idx = content.indexOf("## Step 9.5:");
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step95Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(step95Idx);
+    step95Section = content.slice(step95Idx, step10Idx);
+  });
+
+  it("invokes the extracted compute-unaddressed-findings.ts CLI script via CLAUDE_PLUGIN_ROOT", () => {
+    expect(step95Section).toContain(
+      'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
+    );
+  });
+
+  it("states the computation is mechanical, not freehand narrative judgment", () => {
+    expect(step95Section).toContain("computed mechanically, not freehand");
+    expect(step95Section).toContain("do not decide `unaddressedFindings` by narrative judgment");
+  });
+
+  it("passes through the Step 5.5 GraphQL data (reviews, reviewThreads, comments, headRefOid) and Step 3's CURRENT_USER, without re-fetching", () => {
+    expect(step95Section).toContain("CURRENT_USER");
+    expect(step95Section).toContain("REVIEWS_JSON");
+    expect(step95Section).toContain("REVIEW_THREADS_JSON");
+    expect(step95Section).toContain("COMMENTS_JSON");
+    expect(step95Section).toContain("HEAD_REF_OID");
+    expect(step95Section).toContain("Step 5.5");
+    expect(step95Section).toContain("do not re-fetch or re-shape");
+  });
+
+  it("assigns the script's boolean output to UNADDRESSED_FINDINGS for Step 10 to consume", () => {
+    expect(step95Section).toContain("UNADDRESSED_FINDINGS=");
+    expect(step95Section).toContain('{"unaddressedFindings":true|false}');
+  });
+
+  it("references PVD-1.1 and compute-review-verdict.ts's precedent CLI pattern (DRO-1.1)", () => {
+    expect(step95Section).toContain("PVD-1.1");
+    expect(step95Section).toContain("compute-review-verdict.ts");
+    expect(step95Section).toContain("DRO-1.1");
+  });
+
+  it("no longer instructs the LLM to compute unaddressedFindings by narrative/freehand judgment", () => {
+    expect(step95Section).not.toContain(
+      "compute whether this PR has **unaddressed",
+    );
+    expect(step95Section).toContain("computed mechanically, not freehand");
   });
 });
 
