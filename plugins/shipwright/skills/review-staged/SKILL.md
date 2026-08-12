@@ -89,7 +89,7 @@ gh pr view {prNumber} --repo {org}/{repo} \
   `Skipping #{pr} — @{login} requested changes on {date} and there are no commits since.`
   (Use the same teammate-comment logic from `/shipwright:review` Step 3: not a bot,
   not `CURRENT_USER`, no commits pushed after the review.)
-- **Stale staged review** — if `record.commitSha` differs from the current `headRefOid`,
+- **Stale staged review** — if `record.reviewedCommitSha` differs from the current `headRefOid`,
   skip with: `Skipping #{pr} — new commits since review was staged. Re-run /shipwright:review {org}/{repo}#{pr}.`
 
 When a PR is skipped for any reason, leave its task store record untouched
