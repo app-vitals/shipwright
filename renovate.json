@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": ["at any time"],
+    "labels": ["security"],
+    "dependencyDashboardApproval": false
+  },
+  "packageRules": [
+    {
+      "description": "Shipwright's own GHCR service images are bumped by auto-bump-chart.yml, not Renovate",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": [
+        "ghcr.io/app-vitals/shipwright-admin",
+        "ghcr.io/app-vitals/shipwright-agent",
+        "ghcr.io/app-vitals/shipwright-metrics",
+        "ghcr.io/app-vitals/shipwright-chat",
+        "ghcr.io/app-vitals/shipwright-task-store",
+        "ghcr.io/app-vitals/shipwright-mcp-server"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Group routine (non-security) minor/patch bumps to cut down PR noise",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "routine dependency updates"
+    }
+  ]
+}
