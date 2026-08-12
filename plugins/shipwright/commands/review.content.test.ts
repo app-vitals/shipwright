@@ -799,7 +799,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     expect(gateBlock).toContain("COMMENT");
     expect(gateBlock).toContain("event");
@@ -812,7 +812,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 5000);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     expect(gateBlock.toLowerCase()).toContain("self-review");
     expect(gateBlock).toContain("override");
@@ -825,7 +825,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     expect(gateBlock).toContain("compute-review-verdict.ts");
     expect(gateBlock).toContain("three-input truth table");
@@ -845,7 +845,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     // This PR folds the old named "Self-review event override" subsection into Step 10's
     // unnamed mechanical paragraph -- Step 9.5's cross-reference must point at the
@@ -862,7 +862,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     expect(gateBlock.toLowerCase()).toContain("unresolved inline thread");
   });
@@ -873,7 +873,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
     const searchWindow = content.slice(step9Idx, eventSelectionIdx);
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     // Should not introduce any new task-store PATCH/POST field for this gate.
     expect(gateBlock).not.toContain("SHIPWRIGHT_TASK_STORE_URL");
@@ -902,7 +902,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     expect(gateBlock).toContain(
       'At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a\n  non-empty `body`, excluding:',
@@ -916,7 +916,7 @@ describe("review.md — unaddressed-findings hard gate before Step 10 (RUC-1.1)"
 
     const gateIdx = searchWindow.toLowerCase().indexOf("unaddressed findings");
     expect(gateIdx).toBeGreaterThan(-1);
-    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 4200);
+    const gateBlock = searchWindow.slice(gateIdx, gateIdx + 7000);
 
     // Without this exclusion, a self-authored PR reviewed via a fresh review object each
     // round (rather than a body rewrite) would have unaddressedFindings compute true
@@ -1238,7 +1238,7 @@ describe("review.md — Step 9 Prior Findings Resolution table is sourced from p
   });
 });
 
-describe("review.md — Step 9.5 unaddressed-findings gate is unchanged by PVD-1.2 (regression guard)", () => {
+describe("review.md — Step 9.5 unaddressed-findings gate retains its PVD-1.1 core (regression guard)", () => {
   let step95Section: string;
 
   beforeAll(() => {
@@ -1249,15 +1249,17 @@ describe("review.md — Step 9.5 unaddressed-findings gate is unchanged by PVD-1
     step95Section = content.slice(step95Idx, step10Idx);
   });
 
-  it("still titles the section 'Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1)'", () => {
-    expect(step95Section).toContain("Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1)");
+  it("still titles the section 'Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1, PVD-1.3)'", () => {
+    expect(step95Section).toContain(
+      "Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1, PVD-1.3)",
+    );
   });
 
   it("still states the computation is mechanical, not freehand", () => {
     expect(step95Section).toContain("computed mechanically, not freehand");
   });
 
-  it("still invokes compute-unaddressed-findings.ts with the same CLI call, unchanged", () => {
+  it("still invokes compute-unaddressed-findings.ts with the same CLI call", () => {
     expect(step95Section).toContain(
       'bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts"',
     );
@@ -1269,9 +1271,49 @@ describe("review.md — Step 9.5 unaddressed-findings gate is unchanged by PVD-1
     expect(step95Section).toContain("force the verdict to `COMMENT`");
     expect(step95Section).toContain("Overrides the code-reviewer subagent's severity-based recommendation");
   });
+});
 
-  it("does not introduce any priorFindingsStatus/priorQualifyingReviews plumbing into its own computation", () => {
-    expect(step95Section).not.toContain("priorFindingsStatus");
-    expect(step95Section).not.toContain("priorQualifyingReviews");
+describe("review.md — Step 9.5 wires the fourth exclusion via priorFindingsStatus (PVD-1.3)", () => {
+  let step95Section: string;
+
+  beforeAll(() => {
+    const step95Idx = content.indexOf("## Step 9.5:");
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    expect(step95Idx).toBeGreaterThan(-1);
+    expect(step10Idx).toBeGreaterThan(step95Idx);
+    step95Section = content.slice(step95Idx, step10Idx);
+  });
+
+  it("references PVD-1.3 and the new isResolvedByPriorFindingsStatus predicate", () => {
+    expect(step95Section).toContain("PVD-1.3");
+    expect(step95Section).toContain("isResolvedByPriorFindingsStatus");
+  });
+
+  it("documents the fourth exclusion: a prior CURRENT_USER review attested resolved by priorFindingsStatus[]", () => {
+    expect(step95Section).toContain("priorFindingsStatus");
+    expect(step95Section).toContain("resolved: true");
+    expect(step95Section).toContain("evidence");
+    expect(step95Section).toContain("reviewRef");
+  });
+
+  it("describes the deadlock the fourth exclusion closes (new review object per pass, DRO-1.2 can't fire)", () => {
+    expect(step95Section).toContain("deadlock");
+    expect(step95Section.toLowerCase()).toContain("new review object");
+  });
+
+  it("documents the Option B rationale: each finding judged independently, no coupling to currentPassHasBlockingFindings", () => {
+    expect(step95Section).toContain("Option B");
+    expect(step95Section).toContain("independently");
+    expect(step95Section).toContain("currentPassHasBlockingFindings");
+  });
+
+  it("passes PRIOR_FINDINGS_STATUS_JSON through the CLI invocation from Step 7's subagent output", () => {
+    expect(step95Section).toContain("PRIOR_FINDINGS_STATUS_JSON");
+    expect(step95Section).toContain("priorFindingsStatus: $priorFindingsStatus");
+  });
+
+  it("scopes the fourth exclusion to CURRENT_USER's own prior reviews only, not third-party findings", () => {
+    expect(step95Section).toContain("third-party");
+    expect(step95Section).toContain("CPF-2.3");
   });
 });

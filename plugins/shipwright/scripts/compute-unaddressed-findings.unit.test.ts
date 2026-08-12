@@ -12,14 +12,17 @@
 // smoke coverage instead).
 
 import { describe, expect, test } from "bun:test";
+import { computeVerdict } from "./compute-review-verdict.ts";
 import {
   hasUnaddressedFindings,
   type IssueCommentNode,
   isAddressedByAuthorReply,
+  isResolvedByPriorFindingsStatus,
   isSelfCleanApprove,
   isSupersededBySelfReview,
   type PrReviewData,
   type ReviewNode,
+  reviewRef,
 } from "./compute-unaddressed-findings.ts";
 
 function makeData(overrides: Partial<PrReviewData> = {}): PrReviewData {
@@ -422,6 +425,159 @@ describe("hasUnaddressedFindings", () => {
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
   });
 
+  // ─── Same-pass resolution via priorFindingsStatus[] (PVD-1.3) ─────────────
+  //
+  // The regression case for ok-wow/ok-wow-agency#66: a third-party PR (author
+  // != CURRENT_USER, CURRENT_USER is the reviewer) where each review pass posts
+  // a NEW review object rather than rewriting a prior one. review.md's Step
+  // 10/11 always creates a new review, and DRO-1.2's isSupersededBySelfReview
+  // exclusion only fires when a LATER self-review is ITSELF a clean
+  // "Verdict: APPROVE" body — but that later review can only be clean if
+  // unaddressedFindings was already false for its own pass. That circularity
+  // deadlocks the PR at COMMENT forever once a single self-authored COMMENT
+  // review with a real finding exists. PVD-1.3 breaks the deadlock: the current
+  // pass's structured priorFindingsStatus[] attestation excludes the prior
+  // review when it is marked resolved:true with non-empty evidence.
+
+  test("returns false when a qualifying self-authored review at HEAD is resolved:true with evidence by the current pass's priorFindingsStatus[] (PR #66 deadlock)", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — the retry loop can double-fire on transient errors, needs a guard.",
+    };
+    const data = makeData({
+      reviews: { nodes: [finding] },
+      priorFindingsStatus: [
+        {
+          ref: reviewRef(finding),
+          resolved: true,
+          evidence:
+            "src/retry.ts:42 — added an in-flight guard; the double-fire path is gone.",
+        },
+      ],
+    });
+    // The prior finding is attested-resolved for this pass, and there is no
+    // fresh finding, so the gate must clear.
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+
+    // And the resulting verdict, via compute-review-verdict.ts, must be APPROVE
+    // for this third-party PR (selfReview=false) with zero fresh blocking
+    // findings — the whole point of PVD-1.3 is to let the PR reach an automated
+    // APPROVE again.
+    const { verdictLabel } = computeVerdict({
+      selfReview: false,
+      unaddressedFindings: hasUnaddressedFindings(data, "the-agent"),
+      currentPassHasBlockingFindings: false,
+    });
+    expect(verdictLabel).toBe("APPROVE");
+  });
+
+  test("excludes a resolved prior finding independently even when a fresh unrelated blocking finding exists in the same pass (Option B independence)", () => {
+    const oldFinding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — the retry loop can double-fire, needs a guard.",
+    };
+    const freshFinding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-27T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — a fresh, unrelated null-deref in the new config parser.",
+    };
+    const data = makeData({
+      reviews: { nodes: [oldFinding, freshFinding] },
+      priorFindingsStatus: [
+        {
+          ref: reviewRef(oldFinding),
+          resolved: true,
+          evidence: "src/retry.ts:42 — in-flight guard added, double-fire gone.",
+        },
+        // Note: no entry resolving freshFinding — it is a new, still-open finding.
+      ],
+    });
+    // Option B: the old finding is judged independently and excluded even though
+    // a fresh blocking finding coexists in the same pass. The gate reflects ONLY
+    // the fresh finding, so it is still true — but for the fresh finding alone,
+    // not because the old (resolved) one still counts.
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+
+    // Prove the exclusion actually fired on the old finding: with the fresh
+    // finding removed, the gate would clear via the same priorFindingsStatus[].
+    const dataOldOnly = makeData({
+      reviews: { nodes: [oldFinding] },
+      priorFindingsStatus: data.priorFindingsStatus,
+    });
+    expect(hasUnaddressedFindings(dataOldOnly, "the-agent")).toBe(false);
+  });
+
+  test("does NOT exclude a prior finding when priorFindingsStatus marks it resolved:false", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — the retry loop can double-fire, needs a guard.",
+    };
+    const data = makeData({
+      reviews: { nodes: [finding] },
+      priorFindingsStatus: [
+        {
+          ref: reviewRef(finding),
+          resolved: false,
+          evidence:
+            "src/retry.ts:42 — the guard is still missing; double-fire path remains.",
+        },
+      ],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude a prior finding when priorFindingsStatus marks it resolved:true but evidence is empty", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — the retry loop can double-fire, needs a guard.",
+    };
+    const data = makeData({
+      reviews: { nodes: [finding] },
+      priorFindingsStatus: [
+        { ref: reviewRef(finding), resolved: true, evidence: "   " },
+      ],
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude a THIRD-PARTY reviewer's finding via priorFindingsStatus (only CURRENT_USER's own prior reviews are self-attestable)", () => {
+    const finding: ReviewNode = {
+      author: { login: "dodizzle" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Missing plugin.json/marketplace.json version bump.",
+    };
+    const data = makeData({
+      reviews: { nodes: [finding] },
+      priorFindingsStatus: [
+        {
+          ref: reviewRef(finding),
+          resolved: true,
+          evidence: "bumped both files.",
+        },
+      ],
+    });
+    // A distinct GitHub identity's review is not self-attestable — the agent
+    // can't unilaterally resolve someone else's review via its own subagent
+    // attestation; that path stays governed by CPF-2.3 (author reply).
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
   // ─── Third-party review addressed via author reply (CPF-2.3) ──────────────
 
   test("returns false when a third-party COMMENTED review's non-empty body is followed by a PR-author reply (mirrors PR #1432)", () => {
@@ -691,6 +847,107 @@ describe("isSupersededBySelfReview", () => {
   });
 });
 
+describe("reviewRef", () => {
+  test("derives a stable ref from full commit oid and submittedAt (not a lossy short SHA)", () => {
+    const review: Pick<ReviewNode, "commit" | "submittedAt"> = {
+      commit: { oid: "abcdef0123456789abcdef0123456789abcdef01" },
+      submittedAt: "2026-05-26T10:00:00Z",
+    };
+    const ref = reviewRef(review);
+    // Full oid must be present verbatim (no truncation) so distinct reviews on
+    // different commits never collide.
+    expect(ref).toContain("abcdef0123456789abcdef0123456789abcdef01");
+    expect(ref).toContain("2026-05-26T10:00:00Z");
+  });
+
+  test("is deterministic — same review yields the same ref", () => {
+    const review: Pick<ReviewNode, "commit" | "submittedAt"> = {
+      commit: { oid: "sha" },
+      submittedAt: "2026-05-26T10:00:00Z",
+    };
+    expect(reviewRef(review)).toBe(reviewRef(review));
+  });
+
+  test("distinguishes two reviews at the same commit but different submittedAt", () => {
+    const a: Pick<ReviewNode, "commit" | "submittedAt"> = {
+      commit: { oid: "sha" },
+      submittedAt: "2026-05-26T10:00:00Z",
+    };
+    const b: Pick<ReviewNode, "commit" | "submittedAt"> = {
+      commit: { oid: "sha" },
+      submittedAt: "2026-05-27T10:00:00Z",
+    };
+    expect(reviewRef(a)).not.toBe(reviewRef(b));
+  });
+});
+
+describe("isResolvedByPriorFindingsStatus", () => {
+  const finding: ReviewNode = {
+    author: { login: "the-agent" },
+    state: "COMMENTED",
+    submittedAt: "2026-05-26T10:00:00Z",
+    commit: { oid: "current-head-sha" },
+    body: "Verdict: COMMENT — real finding.",
+  };
+
+  test("true when a self-authored review has a matching resolved:true entry with non-empty evidence", () => {
+    expect(
+      isResolvedByPriorFindingsStatus(
+        finding,
+        [{ ref: reviewRef(finding), resolved: true, evidence: "file.ts:1 fixed" }],
+        "the-agent",
+      ),
+    ).toBe(true);
+  });
+
+  test("false when the matching entry is resolved:false", () => {
+    expect(
+      isResolvedByPriorFindingsStatus(
+        finding,
+        [{ ref: reviewRef(finding), resolved: false, evidence: "still broken" }],
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("false when the matching entry has empty/whitespace evidence", () => {
+    expect(
+      isResolvedByPriorFindingsStatus(
+        finding,
+        [{ ref: reviewRef(finding), resolved: true, evidence: "  " }],
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("false when no entry ref matches the review", () => {
+    expect(
+      isResolvedByPriorFindingsStatus(
+        finding,
+        [{ ref: "some-other-ref", resolved: true, evidence: "file.ts:1 fixed" }],
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("false when the review is not self-authored, even with a matching resolved entry", () => {
+    const thirdParty: ReviewNode = { ...finding, author: { login: "dodizzle" } };
+    expect(
+      isResolvedByPriorFindingsStatus(
+        thirdParty,
+        [{ ref: reviewRef(thirdParty), resolved: true, evidence: "fixed" }],
+        "the-agent",
+      ),
+    ).toBe(false);
+  });
+
+  test("false when priorFindingsStatus is empty", () => {
+    expect(isResolvedByPriorFindingsStatus(finding, [], "the-agent")).toBe(
+      false,
+    );
+  });
+});
+
 // ─── CLI entrypoint (argv/stdin JSON parsing) ──────────────────────────────
 
 const SCRIPT_PATH = new URL("./compute-unaddressed-findings.ts", import.meta.url)
@@ -726,6 +983,45 @@ describe("CLI entrypoint", () => {
     ]);
     expect(exitCode).toBe(0);
     expect(JSON.parse(stdout.trim())).toEqual({ unaddressedFindings: true });
+    expect(stderr).toBe("");
+  });
+
+  test("passes priorFindingsStatus through and prints {unaddressedFindings: false} when it resolves the only finding (PVD-1.3)", async () => {
+    const input = JSON.stringify({
+      currentUser: "the-agent",
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: COMMENT — the retry loop can double-fire.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+      priorFindingsStatus: [
+        {
+          ref: "current-head-sha@2026-05-26T10:00:00Z",
+          resolved: true,
+          evidence: "src/retry.ts:42 — guard added.",
+        },
+      ],
+    });
+    const proc = Bun.spawn(["bun", "run", SCRIPT_PATH, input], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual({ unaddressedFindings: false });
     expect(stderr).toBe("");
   });
 
