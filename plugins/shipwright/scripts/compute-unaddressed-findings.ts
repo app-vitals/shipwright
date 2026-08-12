@@ -19,9 +19,24 @@
 // locally, and review.md's Step 9.5 invokes this file's CLI instead of
 // asking the LLM to recompute the definition by hand.
 //
+// A qualifying review is excluded from counting as an unaddressed finding by
+// any of four exclusions:
+//   1. isSelfCleanApprove (CPF-2.1) — a self-authored clean-APPROVE review.
+//   2. isAddressedByAuthorReply (CPF-2.3) — a third-party review addressed by a
+//      subsequent PR-author reply.
+//   3. isSupersededBySelfReview (DRO-1.2) — an earlier self-review superseded by
+//      a later, genuinely clean self-review.
+//   4. isResolvedByPriorFindingsStatus (PVD-1.3) — a prior self-authored review
+//      attested resolved (with evidence) by the CURRENT pass's structured
+//      priorFindingsStatus[]; breaks the review-verdict deadlock where a
+//      self-authored COMMENT finding could never be superseded. Each entry is
+//      judged independently (Option B) — no coupling to other findings in the
+//      pass.
+//
 // CLI:
-//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]}}'
-// or pipe the same JSON blob via stdin.
+//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...]}'
+// or pipe the same JSON blob via stdin. `priorFindingsStatus` is optional and
+// defaults to [] when absent.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
@@ -50,11 +65,41 @@ export interface IssueCommentNode {
   createdAt: string;
 }
 
+/**
+ * One per-finding resolution attestation from the CURRENT review pass (PVD-1.2's
+ * structured subagent output — see `agents/code-reviewer.md`'s Output Format
+ * section and review.md's Step 5.5 "Prior Qualifying Reviews for Subagent
+ * Attestation"). The code-reviewer subagent is asked, for each prior qualifying
+ * CURRENT_USER review, whether the issue that review originally described is
+ * still present in the current diff; it returns one entry per prior review:
+ *
+ * - `ref`     — the canonical identifier of the prior review this entry
+ *               addresses, matching `reviewRef(review)` (full commit oid +
+ *               submittedAt, so the match is mechanical, not fuzzy).
+ * - `resolved`— whether the originally-described issue is now fixed.
+ * - `evidence`— a `file:line` reference or diff excerpt proving the fix (when
+ *               `resolved`) or explaining why the issue persists (when not).
+ *               Required in both cases; an empty/whitespace `evidence` is
+ *               treated as no attestation for exclusion purposes (PVD-1.3).
+ */
+export interface PriorFindingStatus {
+  ref: string;
+  resolved: boolean;
+  evidence: string;
+}
+
 export interface PrReviewData {
   headRefOid: string;
   reviews: { nodes: ReviewNode[] };
   reviewThreads: { nodes: ReviewThread[] };
   comments: { nodes: IssueCommentNode[] };
+  /**
+   * Structured per-finding resolution attestations from the current review
+   * pass (PVD-1.3). Optional — defaults to `[]` when absent (e.g. a first-pass
+   * review with no prior qualifying reviews to re-verify), so all existing
+   * callers that never build this field keep their current behavior exactly.
+   */
+  priorFindingsStatus?: PriorFindingStatus[];
 }
 
 // ─── Self-review body matching ────────────────────────────────────────────────
@@ -172,6 +217,82 @@ export function isSupersededBySelfReview(
 }
 
 /**
+ * Derives a canonical, collision-resistant identifier for a review, used to
+ * match a `priorFindingsStatus[]` entry's `ref` back to the specific review it
+ * attests about (PVD-1.3).
+ *
+ * review.md's Step 5.5 prose loosely described `ref` as "the commit short SHA
+ * plus submittedAt" — but a short SHA can collide, and leaving the exact format
+ * to freehand prose invites drift between the runbook and this module (the same
+ * class of drift PVD-1.1 exists to eliminate). This function pins the format
+ * mechanically: the FULL commit oid (never truncated) plus the review's
+ * `submittedAt`, joined by `@`. Two reviews can only share a ref if they were
+ * posted at the same commit at the same instant — which GitHub does not permit
+ * for a single author. Both review.md (Step 5.5 / Step 9.5) and this module
+ * reference this function as the single source of truth for the ref format, so
+ * the attestation match is mechanical, not fuzzy string comparison.
+ */
+export function reviewRef(
+  review: Pick<ReviewNode, "commit" | "submittedAt">,
+): string {
+  return `${review.commit.oid}@${review.submittedAt}`;
+}
+
+/**
+ * Returns true when a prior self-authored review has been attested as resolved
+ * by the CURRENT review pass's structured `priorFindingsStatus[]` (PVD-1.3 —
+ * the fourth exclusion, alongside isSelfCleanApprove/CPF-2.1,
+ * isAddressedByAuthorReply/CPF-2.3, and isSupersededBySelfReview/DRO-1.2).
+ *
+ * This closes a structural deadlock confirmed live on a third-party PR where
+ * CURRENT_USER is the reviewer (PR author != CURRENT_USER) and each review pass
+ * posts a NEW review object rather than rewriting a prior one's body.
+ * review.md's Step 10/11 always creates a new review per pass, and DRO-1.2's
+ * isSupersededBySelfReview only excludes an earlier self-review when a LATER
+ * self-review is ITSELF a clean "Verdict: APPROVE" body — but that later review
+ * can only be clean if `hasUnaddressedFindings` was already false for its own
+ * pass. So as long as an earlier self-authored review with a real finding still
+ * qualifies, every subsequent pass's own review is forced to COMMENT too, so it
+ * can never supersede the earlier one, so the earlier one never stops
+ * qualifying: a circular deadlock. Once a single COMMENT-bodied self-authored
+ * review with a real finding exists, the PR can never reach an automated
+ * APPROVE again — even after the finding is fixed and every later pass finds
+ * nothing new.
+ *
+ * This exclusion breaks that cycle by consuming PVD-1.2's per-finding
+ * attestations: a prior qualifying CURRENT_USER review is excluded when the
+ * current pass's `priorFindingsStatus[]` contains an entry (matched by
+ * `reviewRef`) that marks it `resolved: true` with non-empty `evidence`.
+ *
+ * Guardrails, all deliberate:
+ * - **Self-authored only.** Only CURRENT_USER's own prior reviews are
+ *   self-attestable this way. A distinct third-party GitHub identity's review
+ *   is never excluded here — the agent cannot unilaterally resolve someone
+ *   else's review via its own subagent's word; that path stays governed by the
+ *   CPF-2.3 author-reply exclusion.
+ * - **Non-empty evidence required.** `resolved: true` with blank/whitespace
+ *   evidence is treated as no attestation — the subagent must cite a concrete
+ *   `file:line` or diff excerpt, matching code-reviewer.md's contract.
+ * - **Per-finding independence (Option B).** Each entry is evaluated on its own;
+ *   this predicate has no dependency on whether OTHER findings in the same pass
+ *   are blocking. A fresh unrelated blocking finding elsewhere in the pass does
+ *   not prevent an already-verified resolution from being excluded (that fresh
+ *   finding still counts on its own via the normal qualifying-review path).
+ */
+export function isResolvedByPriorFindingsStatus(
+  review: Pick<ReviewNode, "author" | "commit" | "submittedAt">,
+  priorFindingsStatus: PriorFindingStatus[],
+  currentUser: string,
+): boolean {
+  if (review.author.login !== currentUser) return false;
+
+  const ref = reviewRef(review);
+  return priorFindingsStatus.some(
+    (s) => s.ref === ref && s.resolved && s.evidence.trim().length > 0,
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -188,22 +309,34 @@ export function isSupersededBySelfReview(
  * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
  * review's finding as addressed, since only the review's own author can edit
  * its body.
+ *
+ * Finally, a prior self-authored review is excluded when the current pass's
+ * `priorFindingsStatus[]` attests it resolved with evidence (see
+ * isResolvedByPriorFindingsStatus, PVD-1.3) — the fourth exclusion, which
+ * breaks the review-verdict deadlock where a self-authored COMMENT finding
+ * could never be superseded and thus pinned the PR at COMMENT forever. Each
+ * `priorFindingsStatus[]` entry is judged independently (Option B): a fresh
+ * unrelated blocking finding in the same pass does not prevent an
+ * already-verified resolution from being excluded.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
   currentUser: string,
 ): boolean {
   const { headRefOid, reviews, reviewThreads, comments } = data;
+  const priorFindingsStatus = data.priorFindingsStatus ?? [];
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
-  // excluding self-authored clean-APPROVE reviews and self-reviews superseded
-  // by a later clean self-review (DRO-1.2).
+  // excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
+  // superseded by a later clean self-review (DRO-1.2), and prior self-reviews
+  // attested resolved by the current pass's priorFindingsStatus[] (PVD-1.3).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
       !isSelfCleanApprove(r, currentUser) &&
-      !isSupersededBySelfReview(r, reviews.nodes, currentUser),
+      !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
+      !isResolvedByPriorFindingsStatus(r, priorFindingsStatus, currentUser),
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -249,12 +382,25 @@ function parseCliInput(raw: string): CliInput {
       'Input JSON must have a "comments" field shaped { nodes: [...] }',
     );
   }
+  // priorFindingsStatus is optional (PVD-1.3) — absent for first-pass reviews
+  // with no prior qualifying reviews to re-verify. When present it must be an
+  // array; individual entries are trusted as shaped by code-reviewer.md's
+  // Output Format (the subagent contract), same as reviews/comments nodes.
+  if (
+    parsed.priorFindingsStatus !== undefined &&
+    !Array.isArray(parsed.priorFindingsStatus)
+  ) {
+    throw new Error(
+      'Input JSON "priorFindingsStatus" field, when present, must be an array',
+    );
+  }
   return {
     currentUser: parsed.currentUser,
     headRefOid: parsed.headRefOid,
     reviews: parsed.reviews,
     reviewThreads: parsed.reviewThreads,
     comments: parsed.comments,
+    priorFindingsStatus: parsed.priorFindingsStatus ?? [],
   };
 }
 
@@ -269,6 +415,7 @@ if (import.meta.main) {
       reviews: input.reviews,
       reviewThreads: input.reviewThreads,
       comments: input.comments,
+      priorFindingsStatus: input.priorFindingsStatus,
     },
     input.currentUser,
   );
