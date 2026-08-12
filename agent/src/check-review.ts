@@ -104,6 +104,161 @@ export interface PrRecord {
   reviewedAt?: string | null;
 }
 
+// ─── RCO-1.3: review-candidacy tracing ────────────────────────────────────────
+//
+// Structured trace of WHY a PR was or wasn't a review candidate — added after
+// an incident (ok-wow/ok-wow-agency#66, stuck ~4h) where diagnosing a
+// silently-skipped PR required hours of indirect Sentry log archaeology
+// instead of a direct search. `check: "eligible"` means none of the
+// exclusion checks below fired; every other variant names the specific
+// check that excluded the PR plus the field values that drove the decision,
+// so a single log line answers "why wasn't this PR a candidate" without
+// reconstructing state from multiple call sites.
+//
+// Deliberately exported (not a private helper) so RCO-1.4's diagnostic
+// script can call the same classification logic directly instead of
+// re-deriving it — see traceReviewCandidacyDecision below.
+export type ReviewCandidacyTrace =
+  | { check: "eligible" }
+  | { check: "draft" }
+  | { check: "dependabot" }
+  | { check: "automated-label" }
+  | { check: "self-review"; currentUser: string; isRequestedReviewer: boolean }
+  | { check: "not-allowlisted"; author: string; isRequestedReviewer: boolean }
+  | {
+      check: "already-reviewed-live";
+      classifiedState: "approved" | "posted";
+      hasFreshAuthorReply: boolean;
+    }
+  | { check: "task-blocked"; hitl?: boolean; taskStatus?: string }
+  | { check: "bundle-incomplete"; branch: string }
+  | { check: "claimed"; claimedBy: string }
+  | { check: "pr-record-blocked" }
+  | {
+      check: "already-reviewed-terminal";
+      reviewedCommitSha?: string | null;
+      headRefOid: string;
+      reviewState: string;
+    }
+  | { check: "staged"; reviewedCommitSha?: string | null; headRefOid: string };
+
+/**
+ * Classify the "later" exclusion checks — the ones that depend on state
+ * already fetched from live GitHub/task-store data (the task-store PR
+ * record, live review data via fetchPrReviews, the linked task, and
+ * bundle-completeness) — into a single ReviewCandidacyTrace (RCO-1.3).
+ *
+ * Deliberately does NOT cover the earlier, cheap in-memory checks (draft,
+ * dependabot, automated-label, self-review, not-allowlisted) — those don't
+ * need any I/O-derived state and getReviewCandidates traces them inline at
+ * their own `continue` points instead. This function exists specifically
+ * for the checks a standalone diagnostic script (RCO-1.4) would otherwise
+ * have to fetch-once-and-reclassify itself; keeping the classification here
+ * means that script calls this exact function rather than re-deriving the
+ * same conditions.
+ *
+ * Mirrors getReviewCandidates' own exclusion order exactly: live-review
+ * dedup, then task-blocked, then bundle-incomplete, then claimed, then
+ * pr-record-blocked, then terminal-skip, then staged. Pure — no I/O, no
+ * side effects — so it is trivially unit-testable and reusable.
+ */
+export function traceReviewCandidacyDecision(args: {
+  pr: PrInfo;
+  record: PrRecord | null;
+  reviewData: PrReviewData | undefined;
+  hasFreshAuthorReply: boolean;
+  linkedTask: LinkedTaskInfo | null;
+  isBundleComplete: boolean | undefined;
+}): ReviewCandidacyTrace {
+  const {
+    pr,
+    record,
+    reviewData,
+    hasFreshAuthorReply,
+    linkedTask,
+    isBundleComplete,
+  } = args;
+
+  // Live-GitHub review dedup (RVD-1.1) — identity-agnostic terminal review
+  // at the PR's current head commit, independent of the task-store record.
+  if (reviewData) {
+    const classifiedState = classifyReviewState(reviewData);
+    if (classifiedState !== null && !hasFreshAuthorReply) {
+      return {
+        check: "already-reviewed-live",
+        classifiedState,
+        hasFreshAuthorReply,
+      };
+    }
+  }
+
+  // hitl/blocked linked task (CBD-2.2, PRB-2.3).
+  if (isTaskBlockedForDispatch(linkedTask)) {
+    return {
+      check: "task-blocked",
+      hitl: linkedTask?.hitl,
+      taskStatus: linkedTask?.status,
+    };
+  }
+
+  // Bundle completeness gate (RBG-1.1).
+  if (isBundleComplete === false) {
+    return { check: "bundle-incomplete", branch: pr.headRefName };
+  }
+
+  if (!record) return { check: "eligible" };
+
+  // Claimed by another agent replica (LPF-2.2).
+  if (record.claimedBy != null) {
+    return { check: "claimed", claimedBy: record.claimedBy };
+  }
+
+  // Human-escalated PR record (PRB-2.3, PRB-3.1).
+  if (isPrRecordBlockedForDispatch(record)) {
+    return { check: "pr-record-blocked" };
+  }
+
+  // Terminal-skip (RCO-1.2): reviewedCommitSha matches head and reviewState
+  // is not pending, unless the author has a fresh reply (RVG-1.1).
+  if (
+    record.reviewedCommitSha === pr.headRefOid &&
+    record.reviewState !== "pending" &&
+    !hasFreshAuthorReply
+  ) {
+    return {
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: record.reviewedCommitSha,
+      headRefOid: pr.headRefOid,
+      reviewState: record.reviewState,
+    };
+  }
+
+  // Staged review (RCS-1.3), independent of reviewState.
+  if (record.staged === true && record.reviewedCommitSha === pr.headRefOid) {
+    return {
+      check: "staged",
+      reviewedCommitSha: record.reviewedCommitSha,
+      headRefOid: pr.headRefOid,
+    };
+  }
+
+  return { check: "eligible" };
+}
+
+/**
+ * Emit one structured `[check-review]` log line for a skipped PR (RCO-1.3).
+ * Only ever called for non-eligible traces — see getReviewCandidates' call
+ * sites — so every logged line represents a real exclusion, not a candidate.
+ */
+function logSkippedCandidacy(
+  pr: PrInfo,
+  trace: Exclude<ReviewCandidacyTrace, { check: "eligible" }>,
+): void {
+  console.log(
+    `[check-review] ${JSON.stringify({ repo: pr.repo, pr: pr.number, ...trace })}`,
+  );
+}
+
 export interface CheckReviewDeps {
   getCurrentUser: () => Promise<string>;
   isSelfReviewAllowed: boolean;
@@ -162,7 +317,11 @@ export interface CheckReviewDeps {
    * matching this function's existing permissive-on-error philosophy for
    * queryPrRecord failures above.
    */
-  fetchPrReviews: (org: string, repo: string, pr: number) => Promise<PrReviewData>;
+  fetchPrReviews: (
+    org: string,
+    repo: string,
+    pr: number,
+  ) => Promise<PrReviewData>;
 }
 
 // ─── Core logic ───────────────────────────────────────────────────────────────
@@ -188,9 +347,18 @@ export async function getReviewCandidates(
   const candidates: WorkPrCandidate[] = [];
 
   for (const pr of prs) {
-    if (pr.isDraft) continue;
-    if (pr.author.login === "app/dependabot") continue;
-    if (pr.labels?.some((l) => l.name === "automated")) continue;
+    if (pr.isDraft) {
+      logSkippedCandidacy(pr, { check: "draft" });
+      continue;
+    }
+    if (pr.author.login === "app/dependabot") {
+      logSkippedCandidacy(pr, { check: "dependabot" });
+      continue;
+    }
+    if (pr.labels?.some((l) => l.name === "automated")) {
+      logSkippedCandidacy(pr, { check: "automated-label" });
+      continue;
+    }
 
     // Requested-reviewer bypass (RRR-1.1, extended to the allowlist by
     // RRA-1.1) — an additive path layered on top of BOTH the self-review
@@ -217,14 +385,26 @@ export async function getReviewCandidates(
       !deps.isSelfReviewAllowed &&
       pr.author.login === currentUser &&
       !isRequestedReviewer
-    )
+    ) {
+      logSkippedCandidacy(pr, {
+        check: "self-review",
+        currentUser,
+        isRequestedReviewer,
+      });
       continue;
+    }
     if (
       deps.isAuthorAllowed &&
       !deps.isAuthorAllowed(pr.author.login) &&
       !isRequestedReviewer
-    )
+    ) {
+      logSkippedCandidacy(pr, {
+        check: "not-allowlisted",
+        author: pr.author.login,
+        isRequestedReviewer,
+      });
       continue;
+    }
 
     let record: PrRecord | null = null;
     try {
@@ -279,8 +459,26 @@ export async function getReviewCandidates(
             c.author.login === pr.author.login &&
             new Date(c.createdAt).getTime() > reviewedAtMs,
         ) ?? false;
-      if (classifyReviewState(reviewData) !== null && !hasFreshAuthorReply)
+      // Live-GitHub review dedup (RVD-1.1) short-circuits right here, inside
+      // the try block, before the task-store lookups below — traced via the
+      // same traceReviewCandidacyDecision used for the later checks (RCO-1.3)
+      // so this exclusion is classified identically whether it fires here or
+      // there. isBundleComplete/linkedTask aren't known yet at this point in
+      // the loop, so they're passed as their "not excluding" defaults —
+      // traceReviewCandidacyDecision checks live-review dedup first and
+      // returns before it would ever consult them.
+      const liveReviewTrace = traceReviewCandidacyDecision({
+        pr,
+        record,
+        reviewData,
+        hasFreshAuthorReply,
+        linkedTask: null,
+        isBundleComplete: undefined,
+      });
+      if (liveReviewTrace.check === "already-reviewed-live") {
+        logSkippedCandidacy(pr, liveReviewTrace);
         continue;
+      }
     } catch {
       // Fetch failed → treat as "no terminal review" (no dedup)
     }
@@ -298,103 +496,32 @@ export async function getReviewCandidates(
       }
     }
 
-    // Skip PRs whose linked task is hitl:true or status:"blocked" — a human
-    // has already been escalated to (or the task is otherwise blocked) and
-    // needs to act before review tries again (CBD-2.2, PRB-2.3).
-    if (isTaskBlockedForDispatch(linkedTask)) continue;
-
+    let isBundleComplete: boolean | undefined;
     if (deps.isBundleComplete) {
-      const bundleComplete = await deps
+      isBundleComplete = await deps
         .isBundleComplete(pr.headRefName)
         .catch(() => true);
-      if (!bundleComplete) continue;
     }
 
     const age = linkedTask?.createdAt ?? pr.createdAt ?? "";
 
-    // No record → eligible
-    if (!record) {
-      candidates.push({
-        id: candidateId(pr.repo ?? "unknown", pr.number),
-        age,
-        phase: "review",
-        title: pr.title,
-        commitSha: pr.headRefOid,
-      });
+    // Remaining exclusion checks (task-blocked, bundle-incomplete, claimed,
+    // pr-record-blocked, already-reviewed-terminal (RCO-1.2), staged
+    // (RCS-1.3)) are classified by the shared traceReviewCandidacyDecision —
+    // see its doc comment for why this portion is factored out (RCO-1.3).
+    const trace = traceReviewCandidacyDecision({
+      pr,
+      record,
+      reviewData,
+      hasFreshAuthorReply,
+      linkedTask,
+      isBundleComplete,
+    });
+    if (trace.check !== "eligible") {
+      logSkippedCandidacy(pr, trace);
       continue;
     }
 
-    // A record with claimedBy set means another agent is currently mid-review
-    // on this PR (POST /prs/claim already called) — never re-add as a
-    // candidate, regardless of what the commitSha/reviewState check below
-    // would otherwise say (this is NOT queried with ready=true, since a
-    // missing record here must stay distinguishable from "no record yet").
-    if (record.claimedBy != null) continue;
-
-    // A PR-record with blocked:true means a human has already been escalated
-    // to on this PR — applies independently of whether a task is linked
-    // (PRB-2.3, PRB-3.1: patch.md Step 5a.7's second-round-disagreement
-    // escalation writes blocked:true directly on the PR record when there's
-    // no linked task to flag).
-    if (isPrRecordBlockedForDispatch(record)) continue;
-
-    // reviewedCommitSha matches and reviewState is not pending → already
-    // reviewed at this HEAD, skip — UNLESS the PR author has posted a fresh
-    // PR-level comment since the last review (RVG-1.1). review.md's Step 9.5
-    // unaddressed-findings gate has a documented exclusion (CPF-2.3,
-    // mirrored from check-patch.ts's isAddressedByAuthorReply): a prior
-    // COMMENTED review stops counting as unaddressed once the PR author
-    // replies after it. That exclusion only ever runs inside a review pass
-    // — without this retrigger, a PR whose author has replied at an
-    // unchanged commit would never get a follow-up pass to apply it, so the
-    // PR is added back as a candidate instead of skipped. Reuses the
-    // already-fetched reviewData from the live-review dedup above (no
-    // second fetchPrReviews call); when that fetch failed (reviewData is
-    // undefined), the retrigger check simply cannot run and the PR stays
-    // skipped, preserving old behavior. Unlike check-patch.ts's
-    // isAddressedByAuthorReply (which checks currentUser, since that file
-    // operates on the agent's own PRs), this compares against pr.author.login
-    // — check-review.ts reviews PRs from arbitrary authors, so only the PR's
-    // own author's replies count, not the reviewing agent's or a third
-    // party's.
-    //
-    // Deliberately reads record.reviewedCommitSha, NOT record.commitSha
-    // (RCO-1.2): commitSha is shared claim-lock bookkeeping, overwritten by
-    // any unrelated claim/patch/deploy action independent of whether the PR
-    // was actually re-reviewed at that new head — keying this guard on
-    // commitSha let such a bump silently mask a PR that was never
-    // re-reviewed at its current commit, the same trap class the
-    // staged-check below already guards against for its own reviewedCommitSha
-    // comparison.
-    //
-    // hasFreshAuthorReply is hoisted above (RFR-1.1), computed once right
-    // after reviewData is fetched, and shared with the RVD-1.1 live-review
-    // dedup check above — not recomputed here.
-    if (
-      record.reviewedCommitSha === pr.headRefOid &&
-      record.reviewState !== "pending"
-    ) {
-      if (!hasFreshAuthorReply) continue;
-    }
-
-    // reviewedCommitSha matches and a review is already staged → skip
-    // regardless of reviewState. reviewState can read "pending" for a staged
-    // record due to a drift window (a race between staging and the
-    // reviewState write landing, reconciler lag, etc. — CHU-2.5, #1769) so
-    // this check must not depend on reviewState being trustworthy. A staged
-    // record at a DIFFERENT reviewedCommitSha (author pushed since staging)
-    // stays eligible, matching review.md's stale-staged-review re-review
-    // path. Deliberately reads reviewedCommitSha, NOT commitSha (RCS-1.3):
-    // commitSha is shared bookkeeping also advanced by
-    // PullRequestService.patch() (e.g. after a CI-fix cycle) independent of
-    // whether the PR was actually re-reviewed at that new head — keying this
-    // guard on commitSha let such a bump silently mask a stale, never-
-    // re-reviewed staged review as still current.
-    if (record.staged === true && record.reviewedCommitSha === pr.headRefOid) {
-      continue;
-    }
-
-    // Different SHA or pending → eligible
     candidates.push({
       id: candidateId(pr.repo ?? "unknown", pr.number),
       age,

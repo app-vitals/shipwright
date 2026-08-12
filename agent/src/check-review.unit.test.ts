@@ -23,6 +23,7 @@ import {
   type PrRecord,
   buildProductionDeps,
   getReviewCandidates,
+  traceReviewCandidacyDecision,
 } from "./check-review.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1467,6 +1468,223 @@ describe("getReviewCandidates", () => {
       ),
     );
     expect(result).toEqual([]);
+  });
+});
+
+// ─── RCO-1.3: traceReviewCandidacyDecision ────────────────────────────────
+//
+// Covers the "later" exclusion checks — the ones that depend on already-
+// fetched live state (task-store record, live GitHub review data, linked
+// task, bundle-completeness) — as a single reusable, exported pure
+// function. The earlier cheap checks (draft/dependabot/automated-label/
+// self-review/not-allowlisted) are simple enough that getReviewCandidates
+// traces them inline; see the "inline trace" tests below which assert on
+// the logged line instead of a shared function, since there is no shared
+// function for those checks.
+
+describe("traceReviewCandidacyDecision", () => {
+  function baseArgs(
+    overrides: Partial<Parameters<typeof traceReviewCandidacyDecision>[0]> = {},
+  ): Parameters<typeof traceReviewCandidacyDecision>[0] {
+    return {
+      pr: makePr({ headRefOid: "sha111" }),
+      record: null,
+      reviewData: undefined,
+      hasFreshAuthorReply: false,
+      linkedTask: null,
+      isBundleComplete: undefined,
+      ...overrides,
+    };
+  }
+
+  test("returns eligible when no exclusion applies", () => {
+    const trace = traceReviewCandidacyDecision(baseArgs());
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-live: a terminal live review at head with no fresh author reply excludes", () => {
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
+  });
+
+  test("already-reviewed-live: a fresh author reply bypasses the live-review exclusion (eligible)", () => {
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ reviewData, hasFreshAuthorReply: true }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("task-blocked: linked task hitl:true excludes", () => {
+    const linkedTask: LinkedTaskInfo = { status: "pr_open", hitl: true };
+    const trace = traceReviewCandidacyDecision(baseArgs({ linkedTask }));
+    expect(trace).toEqual({
+      check: "task-blocked",
+      hitl: true,
+      taskStatus: "pr_open",
+    });
+  });
+
+  test("task-blocked: linked task status:blocked excludes", () => {
+    const linkedTask: LinkedTaskInfo = { status: "blocked", hitl: false };
+    const trace = traceReviewCandidacyDecision(baseArgs({ linkedTask }));
+    expect(trace).toEqual({
+      check: "task-blocked",
+      hitl: false,
+      taskStatus: "blocked",
+    });
+  });
+
+  test("bundle-incomplete: excludes with the branch name", () => {
+    const pr = makePr({ headRefOid: "sha111", headRefName: "feat/incomplete" });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, isBundleComplete: false }),
+    );
+    expect(trace).toEqual({
+      check: "bundle-incomplete",
+      branch: "feat/incomplete",
+    });
+  });
+
+  test("claimed: a record with claimedBy set excludes", () => {
+    const record: PrRecord = {
+      commitSha: null,
+      reviewState: "pending",
+      claimedBy: "agent-other",
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ record }));
+    expect(trace).toEqual({ check: "claimed", claimedBy: "agent-other" });
+  });
+
+  test("pr-record-blocked: a record with blocked:true excludes", () => {
+    const record: PrRecord = {
+      commitSha: null,
+      reviewState: "pending",
+      blocked: true,
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ record }));
+    expect(trace).toEqual({ check: "pr-record-blocked" });
+  });
+
+  test("already-reviewed-terminal: matching reviewedCommitSha and non-pending reviewState excludes", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+  });
+
+  test("already-reviewed-terminal: a fresh author reply bypasses the terminal-skip exclusion (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+    };
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, hasFreshAuthorReply: true }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("staged: staged:true with matching reviewedCommitSha excludes regardless of reviewState", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "pending",
+      staged: true,
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "staged",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+    });
+  });
+
+  test("eligible: a record with a different reviewedCommitSha (new commits) is eligible", () => {
+    const pr = makePr({ headRefOid: "newsha999" });
+    const record: PrRecord = {
+      commitSha: "oldsha111",
+      reviewedCommitSha: "oldsha111",
+      reviewState: "posted",
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("eligible: no record at all (never reviewed) is eligible", () => {
+    const trace = traceReviewCandidacyDecision(baseArgs({ record: null }));
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("check precedence: already-reviewed-live is checked before task-blocked", () => {
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const linkedTask: LinkedTaskInfo = { status: "blocked", hitl: false };
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ reviewData, linkedTask }),
+    );
+    expect(trace.check).toBe("already-reviewed-live");
+  });
+
+  test("check precedence: claimed is checked before pr-record-blocked", () => {
+    const record: PrRecord = {
+      commitSha: null,
+      reviewState: "pending",
+      claimedBy: "agent-other",
+      blocked: true,
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ record }));
+    expect(trace.check).toBe("claimed");
   });
 });
 
