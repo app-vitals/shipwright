@@ -14,7 +14,6 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import {
   existsSync,
   mkdirSync,
@@ -25,6 +24,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import type { PrReviewData, ReviewNode, ReviewThread } from "./check-patch.ts";
 import { type Clock, FixedClock } from "./clock.ts";
 import {
@@ -2497,9 +2497,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls).toHaveLength(1);
     expect(taskPatchCalls[0].id).toBe("task-direct-bundle-started");
     expect(taskPatchCalls[0].fields.status).toBe("merged");
-    expect(taskPatchCalls[0].fields.mergedAt).toBe(
-      "2026-07-10T00:00:00.000Z",
-    );
+    expect(taskPatchCalls[0].fields.mergedAt).toBe("2026-07-10T00:00:00.000Z");
     expect(patchCalls).toHaveLength(1);
     expect(patchCalls[0].id).toBe("pr-record-602");
     expect(patchCalls[0].fields).toEqual({
@@ -3227,5 +3225,341 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
     expect(existsSync(worktreePath)).toBe(false);
 
     rmSync(workspacePath, { recursive: true, force: true });
+  });
+});
+
+// ─── RCO-1.5: per-pass summary logging ─────────────────────────────────────
+
+/**
+ * Captures console.log calls for the duration of `fn`, restoring the
+ * original afterward (including on throw) — mirrors this file's existing
+ * console.error-capture pattern used throughout (see e.g. the RCP-1.1/RSG-1.2
+ * tests above), just for console.log instead, since the summary line is
+ * logged via console.log (a normal-operation summary, not a failure).
+ */
+async function captureConsoleLog(fn: () => Promise<void>): Promise<string[][]> {
+  const logSpy: string[][] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => {
+    logSpy.push(args.map((a) => (typeof a === "string" ? a : String(a))));
+  };
+  try {
+    await fn();
+  } finally {
+    console.log = original;
+  }
+  return logSpy;
+}
+
+describe("reconcilePrState — per-pass summary logging (RCO-1.5)", () => {
+  test("mixed outcomes (patched, no-op, per-record error) — one summary line with correct counts", async () => {
+    const patchedRecord = makeRecord({ id: "pr-patched", prNumber: 1 });
+    const noopRecord = makeRecord({ id: "pr-noop", prNumber: 2 });
+    const erroredRecord = makeRecord({ id: "pr-erroring", prNumber: 3 });
+    const { deps } = makeDeps({
+      openRecords: {
+        "acme/example-repo": [patchedRecord, noopRecord, erroredRecord],
+      },
+      ghResults: {
+        "acme/example-repo#1": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T00:00:00.000Z",
+        },
+        "acme/example-repo#2": { state: "OPEN", mergedAt: null },
+        "acme/example-repo#3": new Error("gh lookup failed"),
+      },
+    });
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    let logs: string[][];
+    try {
+      logs = await captureConsoleLog(() => reconcilePrState(deps));
+    } finally {
+      console.error = errOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("evaluated=3");
+    expect(text).toContain("patched=1");
+    expect(text).toContain("skippedClaimed=0");
+    expect(text).toContain("errored=1");
+  });
+
+  test("zero records found — summary line still emitted with all-zero counts", async () => {
+    const { deps } = makeDeps({ openRecords: {} });
+
+    const logs = await captureConsoleLog(() => reconcilePrState(deps));
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("evaluated=0");
+    expect(text).toContain("patched=0");
+    expect(text).toContain("skippedClaimed=0");
+    expect(text).toContain("errored=0");
+  });
+
+  test("every repo's list call fails — summary line reflects zero-evaluated with the failure counted into errored", async () => {
+    const { deps } = makeDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      getScopedRepos: () => ["acme/repo-a", "acme/repo-b"],
+    });
+    deps.listOpenPrRecords = async () => {
+      throw new Error("task-store unreachable");
+    };
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    let logs: string[][];
+    try {
+      logs = await captureConsoleLog(() => reconcilePrState(deps));
+    } finally {
+      console.error = errOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler]") && a.includes("pass summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("evaluated=0");
+    expect(text).toContain("patched=0");
+    expect(text).toContain("errored=2");
+  });
+});
+
+describe("reconcileReviewState — per-pass summary logging (RCO-1.5)", () => {
+  test("pending scan: mixed outcomes (patched, skipped-claimed, errored) get their own summary line", async () => {
+    const clock = FixedClock(new Date("2026-07-15T12:00:00.000Z"));
+    const patchedRecord = makeReviewStateRecord({
+      id: "pr-pending-patched",
+      prNumber: 1,
+    });
+    const claimedRecord = makeReviewStateRecord({
+      id: "pr-pending-claimed",
+      prNumber: 2,
+      claimedBy: "some-agent",
+      heartbeatAt: "2026-07-15T11:55:00.000Z", // fresh — within TTL
+    });
+    const erroredRecord = makeReviewStateRecord({
+      id: "pr-pending-erroring",
+      prNumber: 3,
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "head-sha" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const { deps } = makeReviewStateDeps({
+      pendingRecords: {
+        "acme/example-repo": [patchedRecord, claimedRecord, erroredRecord],
+      },
+      reviewResults: {
+        "acme/example-repo#1": reviewData,
+        "acme/example-repo#3": new Error("gh fetch failed"),
+      },
+      clock,
+    });
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    let logs: string[][];
+    try {
+      logs = await captureConsoleLog(() => reconcileReviewState(deps));
+    } finally {
+      console.error = errOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("pending scan summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("evaluated=3");
+    expect(text).toContain("patched=1");
+    expect(text).toContain("skippedClaimed=1");
+    expect(text).toContain("errored=1");
+  });
+
+  test("posted scan: mixed outcomes (patched, skipped-claimed, errored) get their own summary line, distinct from the pending scan's", async () => {
+    const clock = FixedClock(new Date("2026-07-15T12:00:00.000Z"));
+    const patchedRecord = makeReviewStateRecord({
+      id: "pr-posted-patched",
+      prNumber: 1814,
+    });
+    const claimedRecord = makeReviewStateRecord({
+      id: "pr-posted-claimed",
+      prNumber: 1818,
+      claimedBy: "some-agent",
+      heartbeatAt: "2026-07-15T11:55:00.000Z", // fresh — within TTL
+    });
+    const erroredRecord = makeReviewStateRecord({
+      id: "pr-posted-erroring",
+      prNumber: 1819,
+    });
+    // Stale-commit-only review — nothing at current head — heals to pending.
+    const staleReviewData = makeReviewData({
+      headRefOid: "new-head-sha",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "CHANGES_REQUESTED",
+            commit: { oid: "stale-sha" },
+            body: "Please fix.",
+          }),
+        ],
+      },
+    });
+    const { deps } = makeReviewStateDeps({
+      postedRecords: {
+        "acme/example-repo": [patchedRecord, claimedRecord, erroredRecord],
+      },
+      reviewResults: {
+        "acme/example-repo#1814": staleReviewData,
+        "acme/example-repo#1819": new Error("gh fetch failed"),
+      },
+      clock,
+    });
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    let logs: string[][];
+    try {
+      logs = await captureConsoleLog(() => reconcileReviewState(deps));
+    } finally {
+      console.error = errOriginal;
+    }
+
+    const summaryLine = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("posted scan summary"),
+      ),
+    );
+    expect(summaryLine).toBeDefined();
+    const text = summaryLine?.join(" ") ?? "";
+    expect(text).toContain("evaluated=3");
+    expect(text).toContain("patched=1");
+    expect(text).toContain("skippedClaimed=1");
+    expect(text).toContain("errored=1");
+
+    // The pending scan's own (separate) summary line must also be present,
+    // scoped to zero records (no pendingRecords configured in this test).
+    const pendingSummary = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("pending scan summary"),
+      ),
+    );
+    expect(pendingSummary).toBeDefined();
+    const pendingText = pendingSummary?.join(" ") ?? "";
+    expect(pendingText).toContain("evaluated=0");
+  });
+
+  test("zero records in both scans — both summary lines still emitted with all-zero counts", async () => {
+    const { deps } = makeReviewStateDeps({
+      pendingRecords: {},
+      postedRecords: {},
+    });
+
+    const logs = await captureConsoleLog(() => reconcileReviewState(deps));
+
+    const pendingSummary = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("pending scan summary"),
+      ),
+    );
+    const postedSummary = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("posted scan summary"),
+      ),
+    );
+    expect(pendingSummary).toBeDefined();
+    expect(postedSummary).toBeDefined();
+    for (const summary of [pendingSummary, postedSummary]) {
+      const text = summary?.join(" ") ?? "";
+      expect(text).toContain("evaluated=0");
+      expect(text).toContain("patched=0");
+      expect(text).toContain("skippedClaimed=0");
+      expect(text).toContain("errored=0");
+    }
+  });
+
+  test("every repo's list call fails in both scans — summary lines reflect zero-evaluated with the failures counted into errored", async () => {
+    const { deps } = makeReviewStateDeps({
+      repos: ["acme/repo-a", "acme/repo-b"],
+      getScopedRepos: () => ["acme/repo-a", "acme/repo-b"],
+    });
+    deps.listPendingReviewRecords = async () => {
+      throw new Error("task-store unreachable");
+    };
+    deps.listPostedReviewRecords = async () => {
+      throw new Error("task-store unreachable");
+    };
+
+    const errOriginal = console.error;
+    console.error = () => {};
+    let logs: string[][];
+    try {
+      logs = await captureConsoleLog(() => reconcileReviewState(deps));
+    } finally {
+      console.error = errOriginal;
+    }
+
+    const pendingSummary = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("pending scan summary"),
+      ),
+    );
+    const postedSummary = logs.find((args) =>
+      args.some(
+        (a) =>
+          a.includes("[pr-state-reconciler:review]") &&
+          a.includes("posted scan summary"),
+      ),
+    );
+    expect(pendingSummary).toBeDefined();
+    expect(postedSummary).toBeDefined();
+    for (const summary of [pendingSummary, postedSummary]) {
+      const text = summary?.join(" ") ?? "";
+      expect(text).toContain("evaluated=0");
+      expect(text).toContain("patched=0");
+      expect(text).toContain("errored=2");
+    }
   });
 });
