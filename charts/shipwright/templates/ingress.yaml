@@ -34,8 +34,22 @@ spec:
           # more-specific /dashboard prefix wins (ingress controllers match the
           # longest prefix, but ordering keeps intent explicit). Omitted entirely
           # when metrics is disabled.
-          - path: /dashboard
-            pathType: Prefix
+          #
+          # `rewrite-target` is a per-INGRESS annotation, not per-path — once
+          # task-store's exposure turns it on below, nginx applies "/$2" to
+          # EVERY path in this object, not just task-store's. A plain "/dashboard"
+          # Prefix path has no $2 capture group, so nginx rewrites every request
+          # under it to an empty/garbled path and the metrics app 404s. The
+          # metrics app expects the FULL "/dashboard..." path verbatim (it mounts
+          # its whole router under provider.basePath, then re-applies that same
+          # prefix internally — see metrics-deployment.yaml's probe paths), so
+          # when the shared rewrite is active this path must round-trip through
+          # $2 unchanged: an empty group 1 plus a group 2 that recaptures the
+          # entire matched suffix, making "/$2" a no-op rewrite. Ordinary
+          # "/dashboard" is fine, and simpler, when task-store isn't exposed and
+          # no rewrite-target exists to interact with.
+          - path: {{ if $exposeTaskStore }}/()(dashboard.*){{ else }}/dashboard{{ end }}
+            pathType: {{ if $exposeTaskStore }}ImplementationSpecific{{ else }}Prefix{{ end }}
             backend:
               service:
                 name: {{ include "shipwright.metrics.fullname" . }}
@@ -56,9 +70,12 @@ spec:
                   name: http
           {{- end }}
           # Admin UI/API at the root. Everything not matched by a more-specific
-          # path above is routed to the admin service.
-          - path: /
-            pathType: Prefix
+          # path above is routed to the admin service. Same no-op-rewrite
+          # treatment as metrics above, and for the same reason: the admin app
+          # serves real routes below "/" (e.g. /admin/agents/new) and expects
+          # them verbatim, not collapsed by the shared rewrite-target.
+          - path: {{ if $exposeTaskStore }}/()(.*){{ else }}/{{ end }}
+            pathType: {{ if $exposeTaskStore }}ImplementationSpecific{{ else }}Prefix{{ end }}
             backend:
               service:
                 name: {{ include "shipwright.admin.fullname" . }}

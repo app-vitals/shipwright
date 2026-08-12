@@ -128,10 +128,66 @@ tests:
       - equal:
           path: spec.rules[0].http.paths[1].backend.service.port.name
           value: http
-      # admin "/" catch-all remains last
+      # admin "/" catch-all remains last, though its path shape is also
+      # affected by the shared rewrite-target — see the dedicated test below.
+      - equal:
+          path: spec.rules[0].http.paths[2].backend.service.name
+          value: r-shipwright-admin
+
+  - it: switches metrics and admin to no-op-rewrite capture-group paths once the shared rewrite-target is active (TSP-1.1 regression)
+    # `rewrite-target` is per-INGRESS, not per-path: once task-store's exposure
+    # turns it on, nginx applies "/$2" to every path here, not just
+    # task-store's. A plain "/dashboard" or "/" Prefix path has no $2 group, so
+    # nginx would rewrite every request under them to an empty/garbled path —
+    # both the metrics dashboard and any admin route below "/" would 404. The
+    # fix makes $2 recapture the full original suffix for both, so "/$2" is a
+    # no-op round-trip once the shared rewrite is in play.
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /()(dashboard.*)
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: ImplementationSpecific
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: r-shipwright-metrics
       - equal:
           path: spec.rules[0].http.paths[2].path
+          value: /()(.*)
+      - equal:
+          path: spec.rules[0].http.paths[2].pathType
+          value: ImplementationSpecific
+      - equal:
+          path: spec.rules[0].http.paths[2].backend.service.name
+          value: r-shipwright-admin
+
+  - it: keeps the plain /dashboard and / paths when task-store is not exposed (no rewrite-target to interact with)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /dashboard
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].path
           value: /
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
 
   - it: honors an overridden task-store pathPrefix on the Ingress path
     template: templates/ingress.yaml
@@ -238,6 +294,17 @@ tests:
       - notMatchRegex:
           path: spec.containers[0].command[2]
           pattern: /dashboard
+
+  - it: prefixes the metrics dashboard check with basePath (the app mounts its router under METRICS_BASE_PATH when set)
+    template: templates/tests/test-connection.yaml
+    set:
+      metrics.provider.basePath: "/dashboard"
+    release:
+      name: r
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "http://r-shipwright-metrics:3460/dashboard/dashboard"
 
   - it: renders no test-connection Pod when admin is disabled
     template: templates/tests/test-connection.yaml

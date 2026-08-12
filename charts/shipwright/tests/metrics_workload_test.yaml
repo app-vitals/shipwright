@@ -315,6 +315,18 @@ tests:
           content:
             name: METRICS_BASE_PATH
 
+  - it: prefixes the liveness/readiness probe paths with basePath (the app mounts /health under it via METRICS_BASE_PATH)
+    template: templates/metrics-deployment.yaml
+    set:
+      metrics.provider.basePath: "/dashboard"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /dashboard/health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /dashboard/health
+
   - it: injects METRICS_REQUIRE_OWNER_ROLE=true when requireOwnerRole is true
     template: templates/metrics-deployment.yaml
     set:

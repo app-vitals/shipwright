@@ -12,6 +12,7 @@
 
 import { describe, expect, it } from "bun:test";
 import {
+  buildAccessUrls,
   buildMinikubeCommands,
   buildTeardownCommands,
   type Command,
@@ -38,6 +39,18 @@ describe("buildMinikubeCommands — ordering constraints", () => {
     expect(addon).toBeGreaterThanOrEqual(0);
     expect(install).toBeGreaterThanOrEqual(0);
     expect(addon).toBeLessThan(install);
+  });
+
+  it("waits for the ingress admission webhook AFTER enabling the addon and BEFORE the install", () => {
+    // `addons enable` returns once the controller Deployment exists, not once
+    // its webhook Service has a ready endpoint — installing immediately after
+    // races it and helm fails with "connection refused" against the webhook.
+    const cmds = buildMinikubeCommands();
+    const addon = indexOf(cmds, /addons enable ingress/);
+    const wait = indexOf(cmds, /wait.*ingress-nginx.*condition=ready/);
+    const install = indexOf(cmds, /helm upgrade --install/);
+    expect(wait).toBeGreaterThan(addon);
+    expect(wait).toBeLessThan(install);
   });
 
   it("resolves chart dependencies BEFORE the helm install", () => {
@@ -179,6 +192,30 @@ describe("buildTeardownCommands", () => {
   it("targets the configured release and namespace", () => {
     const lines = argvLines(buildTeardownCommands({ release: "sw2", namespace: "n" }));
     expect(lines[0]).toBe("helm uninstall sw2 --namespace n");
+  });
+});
+
+describe("buildAccessUrls", () => {
+  it("doubles the /dashboard segment for metrics", () => {
+    // The metrics service mounts its whole router under provider.basePath
+    // (set to "/dashboard" in examples/values-minikube.yaml), and its own
+    // dashboard route is itself named "/dashboard" — the two compose. A bare
+    // "/dashboard" 404s; only "/dashboard/dashboard" resolves.
+    const urls = buildAccessUrls("shipwright.local", 8080);
+    expect(urls.metrics).toBe("http://shipwright.local:8080/dashboard/dashboard");
+  });
+
+  it("builds the admin, task-store, and agent-creation URLs against the given host and port", () => {
+    const urls = buildAccessUrls("shipwright.local", 8080);
+    expect(urls.admin).toBe("http://shipwright.local:8080/");
+    expect(urls.taskStore).toBe("http://shipwright.local:8080/task-store/health");
+    expect(urls.agentNew).toBe("http://shipwright.local:8080/admin/agents/new");
+  });
+
+  it("honors an arbitrary host and port", () => {
+    const urls = buildAccessUrls("127.0.0.1", 9999);
+    expect(urls.admin).toBe("http://127.0.0.1:9999/");
+    expect(urls.metrics).toBe("http://127.0.0.1:9999/dashboard/dashboard");
   });
 });
 

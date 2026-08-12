@@ -74,6 +74,13 @@ admin:
 
 metrics:
   enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   provider:
     basePath: /dashboard
     # adminUrl / taskStoreUrl have NO chart default — both default to "" in
@@ -95,6 +102,13 @@ metrics:
 
 taskStore:
   enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   database:
     # Opt into the chart-managed bundled-PostgreSQL database. The default is the
     # non-empty "shipwright-secrets", which would require a hand-created Secret.
@@ -107,6 +121,13 @@ chat:
   enabled: true
   database:
     existingSecret: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 agent:
   # No deployment-wide Claude credential is set here — set ANTHROPIC_API_KEY (or
