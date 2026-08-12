@@ -964,15 +964,15 @@ curl -sf -X POST \
   "${SHIPWRIGHT_TASK_STORE_URL}/prs/${PR_RECORD_ID}/complete" >/dev/null 2>&1
 ```
 
-### 3. Set agentId (and reviewState for APPROVE)
+### 3. Set agentId, reviewedCommitSha (and reviewState for APPROVE)
 
-Set `agentId` from `$SHIPWRIGHT_AGENT_ID`. For APPROVE verdicts, also set `reviewState=approved`; for COMMENT/CHANGES_REQUESTED, set agentId only:
+Set `agentId` from `$SHIPWRIGHT_AGENT_ID` and `reviewedCommitSha` from `{headRefOid}` (same shell variable used elsewhere in Step 11, e.g. lines 926, 935 — no re-fetch). For APPROVE verdicts, also set `reviewState=approved`; for COMMENT/CHANGES_REQUESTED, set agentId and reviewedCommitSha only:
 
 ```bash
 if [ "{verdict}" = "APPROVE" ]; then
-  PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewState\": \"approved\"}"
+  PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewState\": \"approved\", \"reviewedCommitSha\": \"{headRefOid}\"}"
 else
-  PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}"
+  PATCH_DATA="{\"agentId\": \"$SHIPWRIGHT_AGENT_ID\", \"reviewedCommitSha\": \"{headRefOid}\"}"
 fi
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
