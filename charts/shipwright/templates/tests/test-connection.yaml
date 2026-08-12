@@ -34,8 +34,12 @@ spec:
             exit 1
           fi
           {{- if .Values.metrics.enabled }}
-          # Metrics /dashboard MUST return 200 or 302 (auth/redirect tolerated).
-          METRICS_URL="http://{{ include "shipwright.metrics.fullname" . }}:{{ .Values.metrics.service.port }}/dashboard"
+          # Metrics dashboard route MUST return 200 or 302 (auth/redirect
+          # tolerated). The app mounts its whole router under
+          # metrics.provider.basePath (METRICS_BASE_PATH) when set, so the
+          # dashboard route lives at "${basePath}/dashboard", not the bare
+          # "/dashboard" — same prefixing as the liveness/readiness probes.
+          METRICS_URL="http://{{ include "shipwright.metrics.fullname" . }}:{{ .Values.metrics.service.port }}{{ .Values.metrics.provider.basePath }}/dashboard"
           echo "GET ${METRICS_URL} (expect 200 or 302)"
           metrics_code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused "${METRICS_URL}")"
           echo "metrics /dashboard -> ${metrics_code}"
