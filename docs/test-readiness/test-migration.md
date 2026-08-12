@@ -79,15 +79,15 @@ tests, #16 self-review supersession tests):
      is corrected from "already resolved" (as it might have looked from file-count alone)
      to genuinely open, half-resolved.
    - **#16, `check-patch.ts`'s `isSupersededBySelfReview` (DRO-1.2)** — confirmed
-     **resolved**: `agent/src/check-patch.unit.test.ts` (this repo's established pattern
-     for `check-*.ts` candidate-provider testing — recorded-GitHub-review-data shaped
-     fixtures under a `.unit.test.ts` filename, not a literal `.integration.test.ts`
-     file, consistent with how `check-review.ts`/`check-deploy.ts` are tested elsewhere
-     in this repo) has 4 dedicated cases under the `DRO-1.2` header: superseded (earlier
-     COMMENT excluded by a later clean self-review), NOT superseded when the later
-     self-review is itself non-clean, order-matters (clean review before the finding
-     doesn't retroactively supersede it), and a third-party review's finding is never
-     superseded by anyone's self-review. Both directions of the predicate are proven.
+     **resolved**: `plugins/shipwright/scripts/compute-unaddressed-findings.unit.test.ts`
+     (extracted from `check-patch.unit.test.ts` with PVD-1.1, this repo's established pattern
+     for testing review-state classification logic via recorded-GitHub-review-data shaped
+     fixtures under a `.unit.test.ts` filename, not a literal `.integration.test.ts` file)
+     has 4 dedicated cases under the `DRO-1.2` header: superseded (earlier COMMENT excluded
+     by a later clean self-review), NOT superseded when the later self-review is itself
+     non-clean, order-matters (clean review before the finding doesn't retroactively supersede
+     it), and a third-party review's finding is never superseded by anyone's self-review. Both
+     directions of the predicate are proven.
 5. Re-ran the isolation-contract grep sweep (`mock.module(`, `global.fetch =`,
    `global.console =`, `DATABASE_URL` inside `*.unit.test.ts`) across the full current
    suite (292 files) — zero new violations. 37 `mock.module(` string matches, all
@@ -216,9 +216,9 @@ duplicate-assertion pattern was introduced by this cycle's delta. This cycle's n
 `lib/http.unit.test.ts`, `compute-review-verdict.unit.test.ts`,
 `unblock.content.test.ts`, `test-readiness/SKILL.content.test.ts`, and
 `pull-request-service.integration.test.ts` each assert distinct properties not covered
-anywhere else, correctly non-duplicative per layer. The `check-patch.unit.test.ts`
-DRO-1.2 cases and the `pull-request-service.unit.test.ts`/`.integration.test.ts` CRF-1.1
-cases are unit-vs-real-Postgres pairs proving distinct properties (pure predicate logic
+anywhere else, correctly non-duplicative per layer. The `plugins/shipwright/scripts/compute-unaddressed-findings.unit.test.ts`
+DRO-1.2 cases (extracted from `check-patch.unit.test.ts`) and the `pull-request-service.unit.test.ts`/`.integration.test.ts`
+CRF-1.1 cases are unit-vs-real-Postgres pairs proving distinct properties (pure predicate logic
 vs. real-DB race arbitration), not duplicate coverage. The `pr-state-reconciler.ts`
 removal (see dedicated section above) deleted assertions alongside the production code
 they tested — not a trim-bucket case (nothing remains asserting a still-live property
@@ -238,14 +238,14 @@ delta list, not re-read in full where unchanged.
 |---|---|---|---|---|
 | `lib/` | `pricing`, `org-repo`, `request-context`, `sentry`, `web/toolbar`, `claim-ttl`, `github-login`, `task-store-types`, **`http` (new)** (`.unit.test.ts`) | unit | Cross-service pure helpers | New this cycle: `lib/http.ts`'s `readJson` (dedup of a threefold-duplicated request-body parser) + `lib/http.unit.test.ts`. |
 | `metrics/src/*` | ~9 top-level + ~7 `lib/` + 2 `providers/` + 1 `dashboard/` | unit/integration/smoke | Formatters, provider selection, HTTP clients, `/metrics/*` routes, request coalescing | Unchanged this cycle. |
-| `agent/src/*` | ~49 files | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, author-allowlist ref, headless-browser launcher | This cycle: `check-patch.ts`'s `isSupersededBySelfReview` predicate + `hasUnaddressedFindings` exclusion (DRO-1.2, 4 new cases in `check-patch.unit.test.ts`, both directions proven — see Method note step 4); `pr-state-reconciler.ts`'s orphan-reconciliation pass removed (547 lines of production + test code, deliberate and verified, see dedicated section above) — remaining `reconcilePrOpenTask` direct/branch-fallback heal paths and RDG-1.1 precondition unchanged. |
+| `agent/src/*` | ~49 files | unit/integration/smoke | Work selection, check-\* precondition scripts, Slack Bolt handlers, `claude.ts` spawner, chat/task-store/GitHub clients, chat-poller loop, author-allowlist ref, headless-browser launcher | This cycle: `check-patch.ts`'s `isSupersededBySelfReview` predicate (DRO-1.2, core unit logic stays in `check-patch.ts`, but extraction moves the `hasUnaddressedFindings` integration into `plugins/shipwright/scripts/compute-unaddressed-findings.ts` with full coverage in `compute-unaddressed-findings.unit.test.ts` — see Step 1 delta for file count); `pr-state-reconciler.ts`'s orphan-reconciliation pass removed (547 lines of production + test code, deliberate and verified, see dedicated section above) — remaining `reconcilePrOpenTask` direct/branch-fallback heal paths and RDG-1.1 precondition unchanged. |
 | `admin/src/*` | ~56 files | unit/integration/smoke | Agent/Env/Cron/Tool/Token CRUD, K8s client, provisioning clients, admin UI, chat-token daily rollup, work-queue snapshots, server composition, agent-type manifest resolution | Unchanged this cycle — no files in Phase 1's delta touch `admin/`. |
 | `task-store/src/*` | ~27 files (was ~26, +`pull-request-service.integration.test.ts`) | unit/integration/smoke | Task/PR/Token services, dependency-resolution rules, routes | This cycle: `pull-request-service.ts`'s `claim()` UPDATE-path conflict-detection race close (CRF-1.1) — moved into the WHERE clause, **new dedicated `pull-request-service.integration.test.ts`** with a real-Postgres `Promise.allSettled`-raced concurrent-claim test (resolves gap #15's PR-side half); companion `resetSkip()` fix (clears `blocked`/`blockedReason` only when set by the skip-count mechanism, not the CI-failure-streak mechanism) covered by 2 dedicated cases in `pull-request-service.unit.test.ts:729,751`. `task-service.ts`'s `claim()` gained the same `AND "claimedBy" IS NULL` WHERE-clause tightening, but **only has mocked-double, single-caller unit coverage** (`task-service.unit.test.ts`'s `makeClaimPrismaDouble()`), no real-Postgres concurrent-race test — see Net-new below, this is the one open item from this cycle's delta. `routes/{tasks,prs}.ts` and `chat/src/routes/messages.ts` switch to the new shared `lib/http.ts` import — no route-shape or coverage change, existing route-contract tests suffice. |
 | `chat/src/*` | 10 files | unit/integration/smoke | Message/thread/token services, routes, OpenAPI schemas, spec generator | Unchanged this cycle beyond the `readJson` import swap noted above (no shape change). |
 | `mcp-server/src/*` | 8 files | unit/integration/smoke | Tool allowlist, tool-caller proxy, MCP wire protocol, inbound bearer auth, Streamable HTTP transport + idle-session reaper, app-factory composition, fail-closed entrypoint guard | Unchanged this cycle — no files in Phase 1's delta touch `mcp-server/`. |
 | `brand/*` | 2 files | unit | Hex-color lint, CSS token generation | Unchanged. |
 | `scripts/*` | 17 files | unit/integration/smoke | Coverage gate, config-docs checker, dev supervisors, seed scripts, version sync, agent-provisioning poll loop, Minikube stack orchestration | Unchanged this cycle. `scripts/hitl.ts`/`hitl.unit.test.ts` unchanged — still only the pure-planning half (`computeMissingClones`/`computeProvisionPlan`) tested; see Net-new below for the open integration-harness gap. |
-| `plugins/shipwright/scripts/*` | 16 files (was 15, +`compute-review-verdict.unit.test.ts`) | unit | `check-*.ts` cron prechecks, `classify_test_layer.ts`, `check-helpers.ts`, **`compute-review-verdict.ts` (new)** | New this cycle: `compute-review-verdict.ts`'s `computeVerdict`/`validateReviewVerdict` (DRO-1.1) — a pure, fully-enumerable 3-boolean truth-table function mechanizing `review.md` Step 10's verdict logic, plus a regex-based label extractor. `compute-review-verdict.unit.test.ts` covers it. |
+| `plugins/shipwright/scripts/*` | 18 files (was 15, +`compute-review-verdict.unit.test.ts`, +`compute-unaddressed-findings.unit.test.ts`) | unit | `check-*.ts` cron prechecks, `classify_test_layer.ts`, `check-helpers.ts`, **`compute-review-verdict.ts` (DRO-1.1)** and **`compute-unaddressed-findings.ts` (PVD-1.1)** (new) | New this cycle: `compute-review-verdict.ts`'s `computeVerdict`/`validateReviewVerdict` — a pure, fully-enumerable 3-boolean truth-table function mechanizing `review.md` Step 10's verdict logic, plus a regex-based label extractor (`compute-review-verdict.unit.test.ts` covers it); `compute-unaddressed-findings.ts`'s `hasUnaddressedFindings`, `isSelfCleanApprove`, `isAddressedByAuthorReply`, and `isSupersededBySelfReview` — extracted from `check-patch.ts` for CLI reuse by `review.md` Step 9.5, implementing the unaddressed-findings check mechanically with full coverage of all exclusion paths (`compute-unaddressed-findings.unit.test.ts` covers both unit logic and the mechanical integration test harness). |
 | `plugins/shipwright/{commands,agents,skills,references,test}/*` | 38 dedicated `*.content.test.ts` files (was 36, +`unblock.content.test.ts`, +`test-readiness/SKILL.content.test.ts`) | content/unit/integration | Command/skill/agent markdown prose assertions | New this cycle: `unblock.content.test.ts` (225 lines, backing the new 30th command `unblock.md` — a human-facing blocked-item triage tool, exempt from the Candidate Selection Contract) and `test-readiness/SKILL.content.test.ts` (97 lines, backing `test-readiness/SKILL.md`'s 67-line extension). `security-scan/SKILL.md`'s 130-line extension has no new dedicated content-test file — its existing `SKILL.content.test.ts` (if any) was not confirmed to have grown; flagged for a light spot-check next cycle, not elevated to a gap since content-layer coverage for skills is asserted at the file level, not per-section. `references/user-guide.md` and the new `references/escalation-pattern.md` still have no dedicated content test — consistent with the established 0-of-N convention for `references/` files, not a gap. |
 | `site/tests/*.spec.ts` | 21 files | e2e | Marketing pages, incl. 11 `docs/*` page specs | Unchanged this cycle — no `site/` source changes in Phase 1's delta. |
 | `admin/e2e/*.e2e.ts`, `metrics/e2e/*.e2e.ts` | 3 files | e2e | Admin login/agents pages, metrics dashboard | Unchanged this cycle. |
@@ -399,8 +399,8 @@ document:
    #2527, DTC-1.1) — no Phase 4 action needed, remove from future ambiguous-items
    tracking unless new evidence surfaces.
 5. **Phase 2's gap #16 (DRO-1.2 self-review supersession) reconfirmed already resolved**
-   — 4 dedicated cases in `check-patch.unit.test.ts` prove both directions of the
-   predicate.
+   — 4 dedicated cases in `plugins/shipwright/scripts/compute-unaddressed-findings.unit.test.ts`
+   prove both directions of the predicate (extracted from `check-patch.unit.test.ts` with PVD-1.1).
 6. **8 carried-forward-from-prior-cycle gaps, all reconfirmed already resolved**
    (`reviewedCommitSha` divergent-value case, RDG-1.1 bundle-mate regression,
    `browser.ts`/`verify-browser-launch.ts` coverage, `ciFailureSignature` streak

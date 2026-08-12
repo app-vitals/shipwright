@@ -34,7 +34,6 @@ import {
   createBundleCompleteQuery,
   createPrRecordQuery,
   createTaskStatusQuery,
-  isCleanApproveBody,
   isMergeOnlyUpdate,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
@@ -43,6 +42,11 @@ import {
   resolveWorkspacePath,
   splitOrgRepo,
 } from "./check-helpers.ts";
+import {
+  hasUnaddressedFindings,
+  isAddressedByAuthorReply,
+  isSelfCleanApprove,
+} from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -259,146 +263,15 @@ export function findCancelledRuns<
 }
 
 // ─── Staleness check (mirrors patch.md Step 3b) ───────────────────────────────
-
-/**
- * True when a review is self-authored and is a clean APPROVE verdict (see
- * check-helpers.ts's isCleanApproveBody — leading `APPROVE` or a "Verdict:
- * APPROVE" label anywhere in the body, the agent's narrative self-review
- * convention, which ends a summary with the verdict rather than leading with
- * it — CPF-2.1).
- *
- * GitHub blocks self-APPROVE via the API, so the agent's own clean approvals
- * are always posted as COMMENTED — treating those as findings would create a
- * permanent false positive. A self-review with a real (non-APPROVE) verdict
- * (e.g. "Verdict: CHANGES_REQUESTED") is not matched here, so it still counts
- * as a finding.
- */
-function isSelfCleanApprove(
-  review: Pick<PrReviewData["reviews"]["nodes"][number], "author" | "body">,
-  currentUser: string,
-): boolean {
-  if (review.author.login !== currentUser) return false;
-
-  return isCleanApproveBody(review.body);
-}
-
-/**
- * Returns true when a review's non-empty body has been addressed by a
- * subsequent PR-author reply (CPF-2.3).
- *
- * The self-review "Verdict: APPROVE" rewrite workaround (CPF-2.1, CPF-2.2)
- * relies on `updatePullRequestReview`, which only permits editing a review's
- * OWN author's body. For a third-party review (e.g. posted by a distinct
- * GitHub identity), the PR author cannot rewrite the review body to signal
- * the finding was addressed or rejected — the review text stays exactly as
- * the third party wrote it forever. A subsequent PR-author reply (a
- * top-level PR comment posted after the review) is the only available
- * signal in that case, so we treat it as evidence the finding was addressed
- * (fixed or rebutted) even though the review body itself never changes.
- */
-function isAddressedByAuthorReply(
-  review: Pick<ReviewNode, "submittedAt">,
-  comments: IssueCommentNode[],
-  currentUser: string,
-): boolean {
-  const reviewedAt = new Date(review.submittedAt).getTime();
-  return comments.some(
-    (c) =>
-      c.author.login === currentUser &&
-      new Date(c.createdAt).getTime() > reviewedAt,
-  );
-}
-
-/**
- * Returns true when a self-authored review is superseded by a LATER,
- * genuinely clean self-review from the same identity (DRO-1.2 — mirrors
- * patch.md's Step 3a "Self-review superseded by a later clean self-review"
- * exclusion).
- *
- * review.md's Step 10/11 procedure always posts a *new* review object each
- * pass rather than rewriting a prior one's body, so a self-authored PR that
- * goes through N review rounds — each finding and fixing one real issue —
- * ends up with N-1 COMMENT-bodied self-reviews on the PR even after every
- * finding has been fixed. None of those qualifies for the clean-APPROVE
- * exclusion (their bodies read `Verdict: COMMENT`, not `Verdict: APPROVE`),
- * and the reply exclusion doesn't apply either (self-reviews aren't
- * "third-party," and this PR's convention never posts a PR-level author
- * reply) — so without this exclusion, `hasUnaddressedFindings` would return
- * true forever and a self-authored PR could never reach a clean verdict once
- * it has had more than one review round.
- *
- * Only a PRIOR self-review is superseded, and only when a later self-review
- * (matched by `submittedAt`, same `author.login` as `currentUser`) is itself
- * a clean verdict per `isCleanApproveBody` — a later self-review that is
- * itself non-clean (e.g. this round found a fresh issue) does not supersede
- * anything.
- */
-function isSupersededBySelfReview(
-  review: Pick<ReviewNode, "author" | "submittedAt">,
-  allReviews: ReviewNode[],
-  currentUser: string,
-): boolean {
-  if (review.author.login !== currentUser) return false;
-
-  const reviewedAt = new Date(review.submittedAt).getTime();
-  return allReviews.some(
-    (r) =>
-      r.author.login === currentUser &&
-      new Date(r.submittedAt).getTime() > reviewedAt &&
-      isCleanApproveBody(r.body),
-  );
-}
-
-/**
- * Returns true if the PR has unaddressed findings:
- * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
- * - AND (has a non-empty review body OR has at least one unresolved inline thread)
- *
- * A self-authored review is excluded when it is a clean APPROVE verdict (see
- * isSelfCleanApprove) or when it is superseded by a later, genuinely clean
- * self-review from the same identity (see isSupersededBySelfReview, DRO-1.2)
- * — a self-review with a real (non-APPROVE) verdict that is not later
- * superseded still counts as an unaddressed finding, same as any other
- * reviewer's.
- *
- * A review's non-empty body is also excluded when there are no unresolved
- * threads AND the PR author has replied after the review (see
- * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
- * review's finding as addressed, since only the review's own author can edit
- * its body.
- */
-function hasUnaddressedFindings(
-  data: PrReviewData,
-  currentUser: string,
-): boolean {
-  const { headRefOid, reviews, reviewThreads, comments } = data;
-
-  // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
-  // excluding self-authored clean-APPROVE reviews and self-reviews superseded
-  // by a later clean self-review (DRO-1.2).
-  const qualifyingReviews = reviews.nodes.filter(
-    (r) =>
-      (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
-      r.commit.oid === headRefOid &&
-      !isSelfCleanApprove(r, currentUser) &&
-      !isSupersededBySelfReview(r, reviews.nodes, currentUser),
-  );
-
-  if (qualifyingReviews.length === 0) return false;
-
-  // Check for unresolved threads
-  const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
-
-  if (unresolvedThreads.length > 0) return true;
-
-  // No unresolved threads — check if any qualifying review has a non-empty
-  // body that hasn't been addressed by a subsequent author reply.
-  return qualifyingReviews.some(
-    (r) =>
-      r.body.trim().length > 0 &&
-      !isAddressedByAuthorReply(r, comments.nodes, currentUser),
-  );
-}
+//
+// isSelfCleanApprove, isAddressedByAuthorReply, isSupersededBySelfReview, and
+// hasUnaddressedFindings were extracted to
+// plugins/shipwright/scripts/compute-unaddressed-findings.ts (PVD-1.1) —
+// mirroring compute-review-verdict.ts's structure (DRO-1.1) so
+// review.md's Step 9.5 can invoke the same definition mechanically via a CLI
+// instead of freehand-replicating it in prose. Only hasMergeOnlyStaleFindings
+// below (which is NOT part of that extraction) remains here, importing back
+// the two helpers it still needs.
 
 // ─── Merge-only stale findings ────────────────────────────────────────────────
 

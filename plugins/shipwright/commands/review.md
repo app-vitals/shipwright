@@ -227,6 +227,7 @@ back to `'sonnet'`.
              author { login }
              state
              submittedAt
+             commit { oid }
              body
            }
          }
@@ -255,10 +256,11 @@ back to `'sonnet'`.
      }
    }'
    ```
-   Extract `reviews.nodes[]`, `reviewThreads.nodes[]` (with `isResolved` and the first
-   comment's `author.login`, `body`, `path`, `line`), and `comments.nodes[]` — the same
-   shape patch.md's Step 3a extracts. Used below by the Unresolved Comment Check and by
-   the unaddressed-findings gate before Step 10.
+   Extract `reviews.nodes[]` (including each review's `commit.oid`, needed by Step 9.5's
+   mechanical gate below to filter reviews at the current `headRefOid`), `reviewThreads.nodes[]`
+   (with `isResolved` and the first comment's `author.login`, `body`, `path`, `line`), and
+   `comments.nodes[]` — the same shape patch.md's Step 3a extracts. Used below by the
+   Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
 
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
@@ -528,15 +530,45 @@ local file is the authoritative signal that *this* agent has a prior review to a
 
 ---
 
-## Step 9.5: Unaddressed-Findings Hard Gate (RUC-1.1)
+## Step 9.5: Unaddressed-Findings Hard Gate (RUC-1.1, PVD-1.1)
 
-Immediately before Step 10 finalizes the verdict, compute whether this PR has **unaddressed
-findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check for
-Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
+Immediately before Step 10 finalizes the verdict, this step determines whether this PR has
+**unaddressed findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check
+for Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
 rather than re-deriving it in different language here (a fourth divergent copy of this logic
 is exactly the drift PRB-2.1 previously fixed between `check-deploy.ts` and
-`check-patch.ts`/`check-review.ts`). Using the `reviews`, `reviewThreads`, and `comments`
-fetched in Step 5.5:
+`check-patch.ts`/`check-review.ts`).
+
+**This is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
+(PVD-1.1) is the single exported, tested implementation of `hasUnaddressedFindings` and its
+helpers — extracted from `agent/src/check-patch.ts`'s List A qualification logic, mirroring
+`compute-review-verdict.ts`'s CLI pattern (DRO-1.1). Invoke it with the `reviews`,
+`reviewThreads`, `comments`, and `headRefOid` fetched in Step 5.5, plus `CURRENT_USER`
+resolved in Step 3 — do not decide `unaddressedFindings` by narrative judgment:
+
+```bash
+CURRENT_USER={the login resolved in Step 3}
+```
+
+```bash
+bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
+  "$(jq -n --arg currentUser "$CURRENT_USER" \
+    --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
+    --argjson reviews "$REVIEWS_JSON" \
+    --argjson reviewThreads "$REVIEW_THREADS_JSON" \
+    --argjson comments "$COMMENTS_JSON" \
+    '{currentUser: $currentUser, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments}')"
+# -> {"unaddressedFindings":true|false}
+```
+
+`HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, and `COMMENTS_JSON` are the
+`headRefOid`, `reviews`, `reviewThreads`, and `comments` values from Step 5.5's GraphQL
+response — pass them through unchanged, do not re-fetch or re-shape them. Assign the script's
+`unaddressedFindings` output to a shell variable for Step 10 to consume:
+
+```bash
+UNADDRESSED_FINDINGS={true or false, from the script's output above}
+```
 
 A PR has **unaddressed findings** when ANY of the following are true:
 - At least one review threads node has `isResolved == false` (any unresolved inline thread)
@@ -555,13 +587,15 @@ A PR has **unaddressed findings** when ANY of the following are true:
 
 This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
 its List A — see that section for the full clean-APPROVE, author-reply, and
-superseded-self-review exclusion rules (not restated here to avoid a fourth divergent copy).
+superseded-self-review exclusion rules (not restated here to avoid a fourth divergent copy);
+`compute-unaddressed-findings.ts`'s own unit tests are the authoritative behavioral spec for
+this definition, not this prose.
 
 **If unaddressed findings are present, force the verdict to `COMMENT`** — this
 `unaddressedFindings` boolean is one of the three inputs Step 10's mechanical
 `compute-review-verdict.ts` call uses to compute the `event` and `verdictLabel`; it is not
 combined with the code-reviewer subagent's own top-line recommendation here (see Step 10 for
-the full three-input truth table, which also folds in `selfReview` and
+the full three-input truth table, which also folds in the `selfReview` input and
 `currentPassHasBlockingFindings`). This gate:
 - **Overrides the code-reviewer subagent's severity-based recommendation** from Step 7 —
   even if the subagent recommends APPROVE (e.g. only suggestion-level findings, or no
