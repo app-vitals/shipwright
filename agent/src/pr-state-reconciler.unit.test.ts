@@ -1631,27 +1631,16 @@ describe("reconcileReviewState — posted-scan pass (CHU-2.4)", () => {
 
 describe("buildReviewStateProductionDeps", () => {
   const savedEnv = {
-    WORKSPACE_PATH: process.env.WORKSPACE_PATH,
     SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS:
       process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS,
   };
 
   beforeEach(() => {
-    // A nonexistent workspace path is fine — resolveAllRepos() just returns
-    // [] when workspace/repos/ doesn't exist, and this suite only cares
-    // about the claimTtlMs field.
-    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     // biome-ignore lint/performance/noDelete: env var must be fully removed, not set to "undefined" string
     delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
   });
 
   afterEach(() => {
-    if (savedEnv.WORKSPACE_PATH === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
-      delete process.env.WORKSPACE_PATH;
-    } else {
-      process.env.WORKSPACE_PATH = savedEnv.WORKSPACE_PATH;
-    }
     if (savedEnv.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_CLAIM_TTL_MS;
@@ -1665,6 +1654,10 @@ describe("buildReviewStateProductionDeps", () => {
     const deps = buildReviewStateProductionDeps({
       ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
       getScopedRepos: () => [],
+      // A nonexistent workspace path is fine — resolveAllRepos() just
+      // returns [] when workspace/repos/ doesn't exist, and this suite only
+      // cares about the claimTtlMs field.
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     expect(deps.claimTtlMs).toBe(DEFAULT_CLAIM_TTL_MS);
@@ -1676,6 +1669,7 @@ describe("buildReviewStateProductionDeps", () => {
     const deps = buildReviewStateProductionDeps({
       ghGraphql: <T>() => Promise.resolve({}) as Promise<T>,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     expect(deps.claimTtlMs).toBe(60_000);
@@ -1726,23 +1720,15 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
-    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
-    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
-      delete process.env.WORKSPACE_PATH;
-    } else {
-      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
-    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
@@ -1768,6 +1754,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     const result = await deps.listPrOpenTasks(
@@ -1838,6 +1825,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     const result = await deps.listAllTasksForBranch(
@@ -1868,6 +1856,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     const result = await deps.listAllTasksForBranch(
@@ -1968,6 +1957,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     const originalDelay = deps.delay;
     deps.delay = async (ms: number) => {
@@ -2002,6 +1992,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     const originalDelay = deps.delay;
     deps.delay = async (ms: number) => {
@@ -2028,6 +2019,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     const originalDelay = deps.delay;
     deps.delay = async (ms: number) => {
@@ -2887,23 +2879,15 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
-    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
-    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
-      delete process.env.WORKSPACE_PATH;
-    } else {
-      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
-    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
@@ -2926,6 +2910,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     // Override the injected now() with a fixed, deterministic value — matches
     // this suite's "never Date.now()/new Date() directly" isolation contract.
@@ -2946,6 +2931,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
       ghJson: () => Promise.reject(new Error("not used in this test")),
       fetchFn,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     (deps as { now: () => string }).now = () => "2026-07-19T23:00:00.000Z";
     const updatedSince = new Date(
@@ -2981,23 +2967,15 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
   const savedTaskStoreEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedTaskStoreEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL =
       process.env.SHIPWRIGHT_TASK_STORE_URL;
     savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_TOKEN =
       process.env.SHIPWRIGHT_TASK_STORE_TOKEN;
-    process.env.WORKSPACE_PATH = "/nonexistent/workspace-for-unit-test";
     process.env.SHIPWRIGHT_TASK_STORE_URL = "https://task-store.example.test";
     process.env.SHIPWRIGHT_TASK_STORE_TOKEN = "fake-token";
   });
 
   afterEach(() => {
-    if (savedTaskStoreEnv.WORKSPACE_PATH === undefined) {
-      // biome-ignore lint/performance/noDelete: restore to fully-unset state
-      delete process.env.WORKSPACE_PATH;
-    } else {
-      process.env.WORKSPACE_PATH = savedTaskStoreEnv.WORKSPACE_PATH;
-    }
     if (savedTaskStoreEnv.SHIPWRIGHT_TASK_STORE_URL === undefined) {
       // biome-ignore lint/performance/noDelete: restore to fully-unset state
       delete process.env.SHIPWRIGHT_TASK_STORE_URL;
@@ -3022,6 +3000,7 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
       fetchFn,
       clock,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
     const updatedSince = new Date(
       clock.now().getTime() - 6 * 60 * 60 * 1000,
@@ -3047,6 +3026,7 @@ describe("buildReviewStateProductionDeps — updatedSince filtering (PSR-1.1)", 
       fetchFn,
       clock,
       getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
     await deps.listPostedReviewRecords("acme/example-repo", 50, 0);
@@ -3115,7 +3095,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedEnv.WORKSPACE_PATH = process.env.WORKSPACE_PATH;
     savedEnv.SHIPWRIGHT_WORKTREE_DIR = process.env.SHIPWRIGHT_WORKTREE_DIR;
   });
 
@@ -3186,7 +3165,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   test("fresh worktree (mtime within cleanup_after_days) is skipped, not removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
       setupFakeWorkspace({ cleanupAfterDays: 14 });
-    process.env.WORKSPACE_PATH = workspacePath;
     // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const now = new Date();
@@ -3195,6 +3173,7 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
     const deps = buildProductionDeps({
       ghJson: () => Promise.reject(new Error("not used in this test")),
       getScopedRepos: () => [],
+      workspacePath,
     });
 
     await deps.removeWorktree(shortRepo, worktreeDirName);
@@ -3208,7 +3187,6 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
   test("stale worktree (mtime older than cleanup_after_days) is force-removed", async () => {
     const { workspacePath, shortRepo, worktreeDirName, worktreePath } =
       setupFakeWorkspace({ cleanupAfterDays: 14 });
-    process.env.WORKSPACE_PATH = workspacePath;
     // biome-ignore lint/performance/noDelete: ensure no leftover override from a prior test
     delete process.env.SHIPWRIGHT_WORKTREE_DIR;
     const twentyDaysAgo = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
@@ -3217,6 +3195,7 @@ describe("buildProductionDeps — removeWorktree staleness gate (WTR-1.4)", () =
     const deps = buildProductionDeps({
       ghJson: () => Promise.reject(new Error("not used in this test")),
       getScopedRepos: () => [],
+      workspacePath,
     });
 
     await deps.removeWorktree(shortRepo, worktreeDirName);
