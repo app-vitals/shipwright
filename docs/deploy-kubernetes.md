@@ -159,25 +159,41 @@ From the repo root:
 task minikube:up
 ```
 
-That handles the four ordering constraints that otherwise fail confusingly:
+That handles the five ordering constraints that otherwise fail confusingly:
 VM sizing (only settable at `minikube start`), the ingress addon (must precede
-the install, or the Ingress has no controller), `helm dependency build` (the
-PostgreSQL subchart is OCI-pinned in `Chart.lock`), and the `/etc/hosts` entry
-(only possible once the VM has an IP). It then waits on each Deployment
-individually and runs `helm test`.
+the install, or the Ingress has no controller), waiting for the ingress
+controller's admission webhook pod to be Ready (installing immediately after
+enabling the addon races it — the webhook Service has no ready endpoint yet
+and helm fails with "connect: connection refused"), `helm dependency build`
+(the PostgreSQL subchart is OCI-pinned in `Chart.lock`), and the `/etc/hosts`
+entry (only possible once there's a routable address to point it at). It then
+waits on each Deployment individually and runs `helm test`.
 
-Tear down with `task minikube:down` (helm uninstall, then minikube delete).
+With the `docker` driver (the default on macOS/Colima), `minikube ip` returns
+an address on a Docker-internal network the host can't route to at all, so the
+script starts a background `kubectl port-forward` from a local port (`8080`)
+to the ingress controller Service instead, and points `/etc/hosts` at
+`127.0.0.1`. The port-forward's PID is tracked in
+`state/minikube-port-forward.pid` so repeat `task minikube:up` runs reuse an
+already-running forwarder rather than starting duplicates; `task minikube:down`
+tears it down automatically.
+
+Tear down with `task minikube:down` (stops the port-forward, then helm
+uninstall, then minikube delete).
 
 ### By hand
 
 ```bash
 minikube start --cpus=4 --memory=8192 --disk-size=40g
 minikube addons enable ingress
+kubectl wait --namespace ingress-nginx --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller --timeout=120s
 helm dependency build charts/shipwright
 helm upgrade --install shipwright charts/shipwright \
   --namespace shipwright --create-namespace \
   -f charts/shipwright/examples/values-minikube.yaml --wait
-echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
+kubectl port-forward --namespace ingress-nginx svc/ingress-nginx-controller 8080:80 &
+echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
 ```
 
 ### Sizing
@@ -228,11 +244,18 @@ that Secret is created and referenced by hand.
 ### Reaching the services
 
 The Ingress routes `/dashboard` to metrics, `/task-store` to the task store, and
-`/` (catch-all) to admin:
+`/` (catch-all) to admin. The metrics app mounts its whole router under
+`provider.basePath` (`/dashboard` in the Minikube example values) and its own
+dashboard route is itself named `/dashboard`, so the two compose — the
+browsable URL is `/dashboard/dashboard`, not `/dashboard`:
 
 - Admin UI/API: `http://shipwright.local/`
-- Metrics dashboard: `http://shipwright.local/dashboard`
+- Metrics dashboard: `http://shipwright.local/dashboard/dashboard`
 - Task store: `http://shipwright.local/task-store/health`
+
+`task minikube:up` prints these exact URLs (via `buildAccessUrls()` in
+`scripts/minikube.ts`) once the stack is reachable, rather than requiring you
+to work them out by hand.
 
 Or port-forward instead (works with the default `networking.type=ClusterIP`):
 
@@ -335,7 +358,10 @@ Point your DNS `A`/`AAAA` record (or the host's reserved IP) at the Gateway's
 external address once provisioned, then reach:
 
 - Admin UI/API: `https://shipwright.example.com/`
-- Metrics dashboard: `https://shipwright.example.com/dashboard`
+- Metrics dashboard: `https://shipwright.example.com/dashboard/dashboard`
+  (the metrics app mounts its whole router under `provider.basePath` and its
+  own dashboard route is itself named `/dashboard`, so the two compose — see
+  the Minikube [Reaching the services](#reaching-the-services) note)
 
 ### TLS
 
@@ -413,7 +439,9 @@ controller-driven through those annotations.
 Point your DNS record at the ALB's DNS name once provisioned, then reach:
 
 - Admin UI/API: `https://shipwright.example.com/`
-- Metrics dashboard: `https://shipwright.example.com/dashboard`
+- Metrics dashboard: `https://shipwright.example.com/dashboard/dashboard`
+  (see the Minikube [Reaching the services](#reaching-the-services) note on
+  why the path is doubled)
 
 ### TLS
 
