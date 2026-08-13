@@ -1018,6 +1018,52 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("RVD-2.1: a self-authored COMMENTED review at head with a genuine finding (classifyReviewState → null) still excludes — app-vitals/shipwright#2600 shape", async () => {
+    // Live-confirmed shape (app-vitals/shipwright#2600, app-vitals/goals#68):
+    // a self-authored COMMENTED review posted at the current head commit,
+    // with a non-empty, non-clean-approve body (a real finding) and an
+    // unresolved thread — classifyReviewState() returns null for this
+    // (genuine unaddressed finding, not "no review at head"), and the
+    // task-store record's reviewState is stuck at "pending". Before this
+    // fix, classifyReviewState() !== null was the exclusion condition, so
+    // this shape was WRONGLY treated as review-eligible (identical to "no
+    // review at head at all") even though a review already exists at head —
+    // causing the loop to re-select this PR for the review phase every
+    // tick. hasAnyReviewAtHead() correctly reports true here, so the PR
+    // must be excluded regardless of what classifyReviewState() returns.
+    const pr = makePr({ headRefOid: "sha2600" });
+    const reviewData = makeReviewData({
+      headRefOid: "sha2600",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "bodhi-agent" },
+            state: "COMMENTED",
+            commit: { oid: "sha2600" },
+            body: "Found a real issue: the error handler swallows the original exception.",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({ commitSha: null, reviewState: "pending" }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
   test("RFR-1.1: a clean/no-finding COMMENT review (classifyReviewState → 'approved') at head, plus a fresh author reply after reviewedAt, stays a candidate", async () => {
     // Real-world trigger shape (PR #2456): unlike the RVG-1.1 fixtures below
     // (which deliberately use an unresolved thread so classifyReviewState()
@@ -1131,9 +1177,13 @@ describe("getReviewCandidates", () => {
   //
   // These fixtures use a qualifying COMMENTED review with an unresolved
   // thread at head (mirrors the "still a genuine finding" shape from the
-  // RVD-1.1 block above) so classifyReviewState() returns null and the
-  // earlier live-review dedup does NOT short-circuit before reaching the
-  // terminal-skip branch under test.
+  // RVD-1.1 block above), so classifyReviewState() returns null for it.
+  // Since RVD-2.1, the earlier live-review dedup now short-circuits on
+  // this shape too (hasAnyReviewAtHead() is true regardless of what
+  // classifyReviewState() classifies it as) — every test below hits
+  // exactly the same fresh-author-reply exception at that earlier
+  // check-point instead of falling through to the terminal-skip branch,
+  // so the asserted candidate-list outcomes are unchanged.
 
   test("regression: no new author comment since reviewedAt → still skipped", async () => {
     const pr = makePr({
@@ -1541,6 +1591,49 @@ describe("traceReviewCandidacyDecision", () => {
     const trace = traceReviewCandidacyDecision(
       baseArgs({ reviewData, hasFreshAuthorReply: true }),
     );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("RVD-2.1: already-reviewed-live: a genuine-finding review at head (classifyReviewState → null) still excludes, with classifiedState: null in the trace", () => {
+    // The exact ambiguity being fixed: classifyReviewState() returns null
+    // both for "no review at head at all" and for "a review exists but has
+    // a genuine unaddressed finding". hasAnyReviewAtHead() disambiguates —
+    // this fixture has a qualifying COMMENTED review with an unresolved
+    // thread at head, so hasAnyReviewAtHead() is true even though
+    // classifyReviewState() classifies it as null.
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Found a real issue here.",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: null,
+      hasFreshAuthorReply: false,
+    });
+  });
+
+  test("eligible: no review at all at head (classifyReviewState → null, hasAnyReviewAtHead → false) stays eligible", () => {
+    // The OTHER null case — genuinely no review exists at head yet. Must
+    // remain review-eligible, unlike the genuine-finding null case above.
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: { nodes: [] },
+    });
+    const trace = traceReviewCandidacyDecision(baseArgs({ reviewData }));
     expect(trace).toEqual({ check: "eligible" });
   });
 

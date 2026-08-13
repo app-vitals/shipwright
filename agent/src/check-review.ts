@@ -47,6 +47,7 @@ import {
   createTaskStatusQuery,
   getCurrentUser,
   ghGraphql as ghGraphqlDefault,
+  hasAnyReviewAtHead,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
   mapReposTolerant,
@@ -127,7 +128,7 @@ export type ReviewCandidacyTrace =
   | { check: "not-allowlisted"; author: string; isRequestedReviewer: boolean }
   | {
       check: "already-reviewed-live";
-      classifiedState: "approved" | "posted";
+      classifiedState: "approved" | "posted" | null;
       hasFreshAuthorReply: boolean;
     }
   | { check: "task-blocked"; hitl?: boolean; taskStatus?: string }
@@ -179,14 +180,23 @@ export function traceReviewCandidacyDecision(args: {
     isBundleComplete,
   } = args;
 
-  // Live-GitHub review dedup (RVD-1.1) — identity-agnostic terminal review
-  // at the PR's current head commit, independent of the task-store record.
+  // Live-GitHub review dedup (RVD-1.1, widened by RVD-2.1) —
+  // identity-agnostic: ANY review at the PR's current head commit excludes
+  // it from candidacy, independent of the task-store record. Deliberately
+  // broader than classifyReviewState() !== null: that helper returns null
+  // for two situations that look identical to this caller — "no review at
+  // head at all" (still eligible) and "a review exists but has a genuine
+  // unaddressed finding" (must NOT be re-selected for another review pass;
+  // review.md's own RVD-1.2 dispatch-time check already defers on it, so
+  // treating it as candidate here just wastes a tick reselecting a PR that
+  // will bounce right back). hasAnyReviewAtHead() disambiguates the two,
+  // matching review.md's RVD-1.2 rule exactly: any review at head + no
+  // fresh author reply -> excluded, regardless of finding content.
   if (reviewData) {
-    const classifiedState = classifyReviewState(reviewData);
-    if (classifiedState !== null && !hasFreshAuthorReply) {
+    if (hasAnyReviewAtHead(reviewData) && !hasFreshAuthorReply) {
       return {
         check: "already-reviewed-live",
-        classifiedState,
+        classifiedState: classifyReviewState(reviewData),
         hasFreshAuthorReply,
       };
     }
