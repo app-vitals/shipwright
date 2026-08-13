@@ -1081,6 +1081,63 @@ if [ -n "$PRECLAIM_RECORD_ID" ]; then
 fi
 ```
 
+Before printing the skip message, write this terminal outcome back to the task-store PR
+record so the same mis-selection doesn't recur every tick — this is the fix for the
+cross-task-store race this whole pre-check exists to catch: if the record's `reviewState`
+doesn't already reflect "reviewed at this head", the next tick's candidate selection
+(`check-review.ts`) or another pre-check run sees a stale `pending` (or a `posted` record
+pinned to an older commit) and re-selects this PR again, indefinitely.
+
+Determine `PR_RECORD_ID`: reuse `PRECLAIM_RECORD_ID` directly if it was set (it already
+names the correct record — no extra fetch needed). Otherwise look the record up by
+repo+prNumber, the same lookup Step 14's Pre-Claim Fast Path uses below:
+```bash
+if [ -n "$PRECLAIM_RECORD_ID" ]; then
+  PR_RECORD_ID="$PRECLAIM_RECORD_ID"
+  record=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}")
+else
+  record=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -c '.prs[0] // empty')
+  PR_RECORD_ID=$(echo "$record" | jq -r '.id // empty')
+fi
+recordReviewState=$(echo "$record" | jq -r '.reviewState // empty')
+recordReviewedCommitSha=$(echo "$record" | jq -r '.reviewedCommitSha // empty')
+```
+
+Only PATCH when the record doesn't already reflect this outcome — avoid a double-write when
+it's already correct. The record is already correct when `reviewState` is `posted` or
+`approved` AND `reviewedCommitSha` already equals `headRefOid`; a `posted`/`approved` record
+still pinned to an older commit (`reviewedCommitSha != headRefOid`) is stale and needs the
+write:
+```bash
+if [ -n "$PR_RECORD_ID" ] && ! { [ "$recordReviewState" = "posted" -o "$recordReviewState" = "approved" ] && [ "$recordReviewedCommitSha" = "$headRefOid" ]; }; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
+    -d '{"reviewState": "posted", "reviewedCommitSha": "'"$headRefOid"'"}' >/dev/null
+fi
+```
+Note this PATCH sets `reviewedCommitSha` only, not `commitSha` — `commitSha` is the separate
+claim-lock field (overwritten on every claim, per Rule 2 in this plugin's design
+constitution) and this code path takes no claim, so there's nothing to lock; only the
+review-dedup field (`reviewedCommitSha`) is meaningful here.
+
+**Caveat (why this is safe against the CHU-2.4 reconciler):** `agent/src/pr-state-reconciler.ts`'s
+background `reconcileReviewState()` runs a posted-scan sub-pass via
+`reconcilePostedReviewStateRecord()`, which reverts a `posted` record back to `pending` only
+when `hasAnyReviewAtHead()` returns `false` for that record's live GitHub data — i.e. only
+when NO review object exists at the current head commit at all. This write-back only ever
+runs when `$terminal == true`, which by construction means a real, terminal-labeled review
+object was found at `headRefOid` by the GraphQL query above — so `hasAnyReviewAtHead()` is
+guaranteed `true` for this record on the very next reconcile pass, and
+`reconcilePostedReviewStateRecord()` takes its `"no-op"` branch, leaving the record
+untouched. Unlike the Step 5 "unresolved human feedback" write-back above (whose caveat
+applies when the trigger is a plain issue-level PR comment with no accompanying formal
+review object), there is no equivalent gap here: a formal review object is exactly what
+`$terminal == true` asserts exists.
+
 Then print:
 ```
 Skipping #{pr} — a review already exists at this commit (${headRefOid:0:7}) on GitHub (cross-task-store check), nothing to do.
