@@ -414,6 +414,40 @@ opting in is an explicit `existingSecret: ""`.
 {{- end }}
 
 {{/*
+MCP server component fullname: "<fullname>-mcp-server".
+*/}}
+{{- define "shipwright.mcpServer.fullname" -}}
+{{- printf "%s-mcp-server" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+MCP server selector labels — fullname selector labels plus the component label.
+*/}}
+{{- define "shipwright.mcpServer.selectorLabels" -}}
+{{ include "shipwright.selectorLabels" . }}
+app.kubernetes.io/component: mcp-server
+{{- end }}
+
+{{/*
+MCP server labels — common labels plus the component label.
+*/}}
+{{- define "shipwright.mcpServer.labels" -}}
+{{ include "shipwright.labels" . }}
+app.kubernetes.io/component: mcp-server
+{{- end }}
+
+{{/*
+MCP server ServiceAccount name.
+*/}}
+{{- define "shipwright.mcpServer.serviceAccountName" -}}
+{{- if .Values.mcpServer.serviceAccount.create }}
+{{- default (include "shipwright.mcpServer.fullname" .) .Values.mcpServer.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.mcpServer.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
 Chat component fullname: "<fullname>-chat".
 */}}
 {{- define "shipwright.chat.fullname" -}}

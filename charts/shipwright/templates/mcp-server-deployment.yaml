@@ -1,0 +1,83 @@
+{{- if .Values.mcpServer.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "shipwright.mcpServer.fullname" . }}
+  labels:
+    {{- include "shipwright.mcpServer.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mcpServer.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "shipwright.mcpServer.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.mcpServer.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "shipwright.mcpServer.serviceAccountName" . }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: mcp-server
+          image: {{ include "shipwright.imageRef" (dict "context" $ "repository" .Values.mcpServer.image.repository "tag" (.Values.mcpServer.image.tag | default .Chart.AppVersion)) | quote }}
+          imagePullPolicy: {{ .Values.mcpServer.image.pullPolicy | default .Values.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3010
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3010
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          env:
+            # Bind the mcp-server to the chart-standard port 3010 (matches the
+            # app's own DEFAULT_PORT — see mcp-server/src/main.ts).
+            - name: PORT
+              value: "3010"
+            # Inbound auth (TSM-2.6): main.ts throws at startup if this is
+            # unset, so it is always sourced here — never plaintext env — from
+            # mcpServer.auth.existingSecret (bring-your-own, always).
+            - name: SHIPWRIGHT_MCP_SERVER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpServer.auth.existingSecret }}
+                  key: {{ .Values.mcpServer.auth.mcpServerTokenKey | default "SHIPWRIGHT_MCP_SERVER_TOKEN" }}
+            # Outbound: the task-store this instance proxies to. Required —
+            # main.ts has no fallback. Not auto-derived from taskStore.* since
+            # mcp-server may point at a task-store outside this chart.
+            - name: SHIPWRIGHT_TASK_STORE_URL
+              value: {{ required "mcpServer.taskStoreUrl is required when mcpServer.enabled=true" .Values.mcpServer.taskStoreUrl | quote }}
+            # Outbound auth token, sourced the same way as the inbound token
+            # above — never plaintext env.
+            - name: SHIPWRIGHT_TASK_STORE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcpServer.auth.existingSecret }}
+                  key: {{ .Values.mcpServer.auth.taskStoreTokenKey | default "SHIPWRIGHT_TASK_STORE_TOKEN" }}
+            {{- with .Values.mcpServer.extraEnv }}
+            # mcpServer.extraEnv: caller-supplied env vars appended last so they
+            # can override anything above if needed.
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.mcpServer.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

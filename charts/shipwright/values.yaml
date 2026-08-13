@@ -645,6 +645,70 @@ taskStore:
     # -- Name of the task-store ServiceAccount. Generated if empty and create=true.
     name: ""
 
+# -- MCP server (@shipwright/mcp-server) — Model Context Protocol HTTP service that
+# proxies the task-store to remote MCP clients (e.g. Claude Desktop custom
+# connectors). Port 3010. Disabled by default — purely additive, safe to deploy
+# without this. mcp-server has no database of its own; it always proxies an
+# EXISTING task-store (in-cluster or external), so — unlike taskStore/chat —
+# there is no bundled-PostgreSQL path here.
+#
+# SAFETY: mcp-server proxies a privileged SHIPWRIGHT_TASK_STORE_TOKEN. Enabling
+# this component only renders a ClusterIP Service — it does NOT expose anything
+# externally. Deliberately exposing it (e.g. via networking.type=ingress/gateway)
+# is a separate, human decision outside this chart.
+mcpServer:
+  # -- Whether to render the mcp-server Deployment and Service.
+  enabled: false
+  image:
+    repository: ghcr.io/app-vitals/shipwright-mcp-server
+    tag: mcp-server-v0.35.0
+    pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
+  service:
+    # -- Service type for the mcp-server service. ClusterIP is Minikube-friendly.
+    type: ClusterIP
+    port: 3010
+  replicas: 1
+  # -- Compute resources for the mcp-server container. Minikube-friendly defaults.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # -- Externally-reachable task-store base URL mcp-server proxies to (sets
+  # SHIPWRIGHT_TASK_STORE_URL). Required — main.ts has no fallback. Can point at
+  # this chart's own task-store component (e.g.
+  # http://<release>-task-store:3000) or at a task-store outside this chart;
+  # the chart does not auto-derive it from taskStore.* so either is supported.
+  taskStoreUrl: ""
+  # -- Auth wiring: both the inbound bearer token mcp-server itself requires
+  # (SHIPWRIGHT_MCP_SERVER_TOKEN — main.ts refuses to start without it) and the
+  # outbound task-store bearer token (SHIPWRIGHT_TASK_STORE_TOKEN) are ALWAYS
+  # bring-your-own-Secret; the chart never generates or stores these tokens
+  # itself. Both are sourced via secretKeyRef, never plaintext env.
+  auth:
+    # -- Name of a pre-existing Secret holding SHIPWRIGHT_MCP_SERVER_TOKEN and
+    # SHIPWRIGHT_TASK_STORE_TOKEN. Defaults to the same "shipwright-secrets"
+    # bring-your-own Secret used by the other components.
+    existingSecret: "shipwright-secrets"
+    # -- Key in existingSecret that holds SHIPWRIGHT_MCP_SERVER_TOKEN.
+    mcpServerTokenKey: SHIPWRIGHT_MCP_SERVER_TOKEN
+    # -- Key in existingSecret that holds SHIPWRIGHT_TASK_STORE_TOKEN.
+    taskStoreTokenKey: SHIPWRIGHT_TASK_STORE_TOKEN
+  # -- Extra env vars to inject into the mcp-server container. Appended LAST so
+  # caller overrides win.
+  extraEnv: []
+  # -- ServiceAccount for the mcp-server pod. Set create: false and name: <sa>
+  # to reuse an existing SA (e.g. the umbrella chart's Workload Identity SA).
+  serviceAccount:
+    # -- Whether a ServiceAccount is created for the mcp-server workload.
+    create: true
+    # -- Annotations for the mcp-server ServiceAccount. Generated if empty and create=true.
+    annotations: {}
+    # -- Name of the mcp-server ServiceAccount. Generated if empty and create=true.
+    name: ""
+
 # -- Chat service (@shipwright/chat) — Thread/Message store + scoped tokens. Port 3000.
 # Disabled by default — purely additive, safe to deploy without this.
 chat:
