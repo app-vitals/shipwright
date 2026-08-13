@@ -358,7 +358,7 @@ If all three lists are empty:
 No PRs need attention.
 ```
 
-Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{number}]` alongside `[silent]` (interpolating
+Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]` alongside `[silent]` (interpolating
 the target PR number) — order relative to `[silent]` does not matter, both are recognized regardless
 of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
 field (visible in the admin cron-logs UI) instead of the generic `command:no-work` reason, letting the
@@ -370,8 +370,6 @@ gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status fresh from live
 no persisted "needs patch" cache field to drift, so there is no stale state to correct via a write-back
 here. If telemetry later shows this recurring for the same PR repeatedly, that is the signal for a
 follow-up write-back task, not something to speculatively build now.
-
-Append `[skip-reason:patch:deferred:no-op-at-dispatch:{number}]` followed by `[silent]` and stop.
 
 Print a summary before proceeding:
 

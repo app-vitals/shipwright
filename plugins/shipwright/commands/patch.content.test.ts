@@ -1640,14 +1640,14 @@ describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
     return content.slice(step3dIdx, step4Idx);
   }
 
-  it("Step 3d (empty lists) contains [skip-reason:patch:deferred:no-op-at-dispatch:{number}] alongside [silent]", () => {
+  it("Step 3d (empty lists) contains [skip-reason:patch:deferred:no-op-at-dispatch:{pr}] alongside [silent]", () => {
     const section = getStep3dSection();
     expect(section).toContain("[silent]");
     expect(section).toContain(
       "[skip-reason:patch:deferred:no-op-at-dispatch:",
     );
     expect(section).toContain(
-      "[skip-reason:patch:deferred:no-op-at-dispatch:{number}]",
+      "[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]",
     );
   });
 
