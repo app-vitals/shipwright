@@ -649,7 +649,7 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
     expect(patchIdx).toBeLessThan(respondIdx);
   });
 
-  it("the write-back is gated on the record not already reflecting a terminal state", () => {
+  it("the write-back is unconditional, not re-gated on record.reviewState", () => {
     const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
     const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
     const section = content.slice(step14Idx, endIdx);
@@ -659,7 +659,13 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
     );
     const dedupSection = section.slice(dedupIdx);
 
-    expect(dedupSection).toMatch(/not already `posted` or `approved`/);
+    // The block's own entry condition (lines above) already requires
+    // record.reviewState to be posted/approved to reach this point, and nothing
+    // re-fetches or mutates that field in between — so re-guarding the PATCH on
+    // the same unmutated field would be dead code (unreachable). The PATCH must
+    // fire unconditionally, mirroring the Step 5 precedent.
+    expect(dedupSection).not.toMatch(/not already `posted` or `approved`/);
+    expect(dedupSection).toContain("unconditional");
   });
 
   it("documents that this reuses the record already fetched in this step, without an extra query", () => {
