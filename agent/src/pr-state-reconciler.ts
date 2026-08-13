@@ -1312,8 +1312,21 @@ export function buildProductionDeps(opts: {
   ghJson: <T>(args: string[]) => Promise<T>;
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   getScopedRepos: () => string[];
+  /**
+   * Optional override for the resolved workspace root, normally derived from
+   * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests
+   * that only care about other deps don't need AGENT_HOME/WORKSPACE_PATH set
+   * in the ambient process.env — avoiding a shared-process test-isolation
+   * hazard where another suite's temporary env mutation (e.g.
+   * check-helpers.unit.test.ts's resolveWorkspacePath tests deleting
+   * AGENT_HOME around their own assertions) could otherwise leak into these
+   * tests since Bun runs all test files in one process. Defaults to
+   * resolveWorkspacePath() when omitted, so production callers are
+   * unaffected.
+   */
+  workspacePath?: string;
 }): PrStateReconcilerDeps {
-  const workspacePath = resolveWorkspacePath();
+  const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
   const repos = resolveAllRepos(workspacePath);
   const { ghJson } = opts;
 
@@ -1527,8 +1540,21 @@ export function buildReviewStateProductionDeps(opts: {
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   clock?: Clock;
   getScopedRepos: () => string[];
+  /**
+   * Optional override for the resolved workspace root, normally derived from
+   * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests
+   * that only care about other deps don't need AGENT_HOME/WORKSPACE_PATH set
+   * in the ambient process.env — avoiding a shared-process test-isolation
+   * hazard where another suite's temporary env mutation (e.g.
+   * check-helpers.unit.test.ts's resolveWorkspacePath tests deleting
+   * AGENT_HOME around their own assertions) could otherwise leak into these
+   * tests since Bun runs all test files in one process. Defaults to
+   * resolveWorkspacePath() when omitted, so production callers are
+   * unaffected.
+   */
+  workspacePath?: string;
 }): PrReviewStateReconcilerDeps {
-  const workspacePath = resolveWorkspacePath();
+  const workspacePath = opts.workspacePath ?? resolveWorkspacePath();
   const repos = resolveAllRepos(workspacePath);
   const { ghGraphql } = opts;
 
