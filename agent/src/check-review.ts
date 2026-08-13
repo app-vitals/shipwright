@@ -418,10 +418,14 @@ export async function getReviewCandidates(
     }
 
     let record: PrRecord | null = null;
+    let queryPrRecordFailed = false;
     try {
       record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
     } catch {
-      // Query failed → treat as eligible (no dedup)
+      // Query failed → treat as eligible (no dedup). Tracked separately from
+      // "no record" (see queryPrRecordFailed below) so a transient failure
+      // can't be confused with a genuine absence of a PrRecord.
+      queryPrRecordFailed = true;
     }
 
     // Author allowlist (HRA-1.1) — deliberately gated on `record == null`
@@ -443,8 +447,21 @@ export async function getReviewCandidates(
     // value is logged alongside the decision so a repeat of the ok-wow-ai#1919
     // mystery (how the first two cycles got through despite the allowlist)
     // is diagnosable from Sentry logs alone, without needing to reproduce.
+    //
+    // `queryPrRecordFailed` guards against conflating "queryPrRecord threw"
+    // with "queryPrRecord returned null because no PrRecord exists yet" —
+    // both leave `record == null`, but only the latter is a genuine "never
+    // passed the gate" case that should grant the re-gate exception below. A
+    // transient fetch failure must NOT grant that exception — doing so could
+    // let an already-excluded, non-allowlisted author's PR slip through
+    // undetected. Instead, on failure the allowlist check falls through to
+    // normal isAuthorAllowed evaluation, matching pre-AAL-3.2 behavior
+    // (queryPrRecord was fetched after the allowlist check and so never
+    // influenced it) — this preserves the exact ok-wow-ai#1919 fix (a
+    // genuinely existing record still bypasses re-gating) while not letting
+    // a fetch failure masquerade as one.
     if (
-      record == null &&
+      (record == null || queryPrRecordFailed) &&
       deps.isAuthorAllowed &&
       !deps.isAuthorAllowed(pr.author.login) &&
       !isRequestedReviewer
