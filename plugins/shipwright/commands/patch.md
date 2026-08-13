@@ -357,7 +357,19 @@ If all three lists are empty:
 ```
 No PRs need attention.
 ```
-Append `[silent]` and stop.
+
+Emit `[skip-reason:patch:deferred:no-op-at-dispatch:{pr}]` alongside `[silent]` (interpolating
+the target PR number) — order relative to `[silent]` does not matter, both are recognized regardless
+of position. The skip-reason marker records exactly which PR found no work in the `AgentCronRun.skipReason`
+field (visible in the admin cron-logs UI) instead of the generic `command:no-work` reason, letting the
+loop orchestrator's SKIP_BLOCK_THRESHOLD handling classify this correctly.
+
+**Design note:** Reaching Step 3d is most likely a genuine race (CI went green, or a human fixed the
+issue directly, between candidate selection and dispatch). Unlike `review.md`'s RVD-2.2/2.3 write-back
+gaps, `getPatchCandidates()` re-derives DIRTY/CI/findings status fresh from live GitHub every tick with
+no persisted "needs patch" cache field to drift, so there is no stale state to correct via a write-back
+here. If telemetry later shows this recurring for the same PR repeatedly, that is the signal for a
+follow-up write-back task, not something to speculatively build now.
 
 Print a summary before proceeding:
 
