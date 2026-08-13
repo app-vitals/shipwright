@@ -13,6 +13,7 @@ import type { PrInfo, PrRecord } from "../../../agent/src/check-review.ts";
 import {
   type DiagnoseDeps,
   diagnoseReviewCandidacy,
+  fetchPrInfoViaGh,
   formatTraceOutput,
   parseTargetArg,
 } from "./diagnose-review-candidacy.ts";
@@ -78,6 +79,39 @@ describe("parseTargetArg", () => {
 
   test("throws a clear error on an empty string", () => {
     expect(() => parseTargetArg("")).toThrow();
+  });
+});
+
+// ─── fetchPrInfoViaGh ───────────────────────────────────────────────────────
+
+describe("fetchPrInfoViaGh", () => {
+  test("stamps repo onto the PR from org/repo, since `gh pr view` doesn't return one", async () => {
+    // Fake `gh pr view` output deliberately omits `repo` — this is what the
+    // real gh CLI returns for the requested --json field list, which does
+    // not include `repo`. Regression test for the bug where fetchPrInfo
+    // never set pr.repo, so formatTraceOutput's header always printed
+    // "unknown#{n}" instead of "org/repo#{n}".
+    const fakeGhJson = async () =>
+      ({
+        number: 66,
+        title: "Add feature X",
+        author: { login: "danmcaulay" },
+        headRefName: "feat/x",
+        headRefOid: "abc123def456",
+        isDraft: false,
+        createdAt: "2026-05-01T00:00:00.000Z",
+        // Note: no `repo` field — matches real `gh pr view --json ...` output.
+      }) as unknown as PrInfo;
+
+    const pr = await fetchPrInfoViaGh(
+      fakeGhJson,
+      "ok-wow",
+      "ok-wow-agency",
+      66,
+    );
+
+    expect(pr.repo).toBe("ok-wow/ok-wow-agency");
+    expect(pr.number).toBe(66);
   });
 });
 

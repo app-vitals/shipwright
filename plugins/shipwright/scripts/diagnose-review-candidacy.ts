@@ -176,20 +176,37 @@ export function formatTraceOutput(
 
 // ─── Production deps ──────────────────────────────────────────────────────────
 
+/**
+ * Fetch PR metadata via `gh pr view` and stamp `repo` onto the result — `gh`
+ * doesn't return a `repo` field itself, so it's added from the already-known
+ * org/repo, mirroring check-review.ts's production `listOpenPrs`
+ * (`.map((pr) => ({ ...pr, repo }))`). Takes `ghJsonFn` as a parameter so
+ * this can be unit-tested with an injected fake instead of the real `gh` CLI.
+ */
+export async function fetchPrInfoViaGh(
+  ghJsonFn: typeof ghJson,
+  org: string,
+  repo: string,
+  prNumber: number,
+): Promise<PrInfo> {
+  const pr = await ghJsonFn<PrInfo>([
+    "pr",
+    "view",
+    "--repo",
+    `${org}/${repo}`,
+    String(prNumber),
+    "--json",
+    "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
+  ]);
+  return { ...pr, repo: `${org}/${repo}` };
+}
+
 /** Wire production implementations — real gh CLI + task-store calls. */
 export async function buildDiagnoseDeps(): Promise<DiagnoseDeps> {
   const productionDeps = await buildProductionDeps({ ghJson, ghGraphql });
   return {
-    fetchPrInfo: async (org: string, repo: string, prNumber: number) =>
-      ghJson<PrInfo>([
-        "pr",
-        "view",
-        "--repo",
-        `${org}/${repo}`,
-        String(prNumber),
-        "--json",
-        "number,title,author,headRefName,headRefOid,isDraft,labels,createdAt,reviewRequests",
-      ]),
+    fetchPrInfo: (org: string, repo: string, prNumber: number) =>
+      fetchPrInfoViaGh(ghJson, org, repo, prNumber),
     queryPrRecord: productionDeps.queryPrRecord,
     queryTaskStatus: async (repo: string, prNumber: number) =>
       (await productionDeps.queryTaskStatus?.(repo, prNumber)) ?? null,
