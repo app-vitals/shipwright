@@ -125,7 +125,20 @@ export type ReviewCandidacyTrace =
   | { check: "dependabot" }
   | { check: "automated-label" }
   | { check: "self-review"; currentUser: string; isRequestedReviewer: boolean }
-  | { check: "not-allowlisted"; author: string; isRequestedReviewer: boolean }
+  | {
+      check: "not-allowlisted";
+      author: string;
+      isRequestedReviewer: boolean;
+      /**
+       * The live authorAllowlistRef value at decision time (AAL-3.2),
+       * included so a repeat of the ok-wow/ok-wow-ai#1919 mystery — two
+       * review cycles somehow completing despite a non-allowlisted author,
+       * before this exact check later (correctly) started firing on every
+       * subsequent commit — is diagnosable from a single Sentry log line
+       * instead of hours of indirect archaeology.
+       */
+      authorAllowlistRef: string[];
+    }
   | {
       check: "already-reviewed-live";
       classifiedState: "approved" | "posted" | null;
@@ -403,7 +416,35 @@ export async function getReviewCandidates(
       });
       continue;
     }
+
+    let record: PrRecord | null = null;
+    try {
+      record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
+    } catch {
+      // Query failed → treat as eligible (no dedup)
+    }
+
+    // Author allowlist (HRA-1.1) — deliberately gated on `record == null`
+    // (AAL-3.2): the allowlist gates INITIAL exposure to a repo's PRs, not
+    // every subsequent commit on a PR that already cleared it once. Once a
+    // PrRecord exists, the PR already passed this gate at least one prior
+    // tick and entered the review pipeline (a human/agent reviewer already
+    // engaged with it) — re-excluding it on a later commit from the same
+    // (still non-allowlisted) author would silently and permanently drop an
+    // actively-reviewed PR out of candidacy the moment its author pushes a
+    // follow-up commit responding to review feedback (confirmed live on
+    // ok-wow/ok-wow-ai#1919: two review cycles completed, then every
+    // subsequent tick excluded on this check). This does not reopen the
+    // self-request-defeat concern the isRequestedReviewer bypass above
+    // exists to avoid: a non-allowlisted author still cannot manufacture an
+    // initial PrRecord solo — reaching this record-exists branch still
+    // requires having passed the allowlist gate (or the requested-reviewer
+    // bypass) at least once, exactly as today. The live authorAllowlistRef
+    // value is logged alongside the decision so a repeat of the ok-wow-ai#1919
+    // mystery (how the first two cycles got through despite the allowlist)
+    // is diagnosable from Sentry logs alone, without needing to reproduce.
     if (
+      record == null &&
       deps.isAuthorAllowed &&
       !deps.isAuthorAllowed(pr.author.login) &&
       !isRequestedReviewer
@@ -412,15 +453,9 @@ export async function getReviewCandidates(
         check: "not-allowlisted",
         author: pr.author.login,
         isRequestedReviewer,
+        authorAllowlistRef: agentAuthorAllowlistRef.get(),
       });
       continue;
-    }
-
-    let record: PrRecord | null = null;
-    try {
-      record = await deps.queryPrRecord(pr.repo ?? "", pr.number);
-    } catch {
-      // Query failed → treat as eligible (no dedup)
     }
 
     // Live-GitHub review dedup (RVD-1.1) — a second, independent signal from

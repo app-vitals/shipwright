@@ -763,6 +763,41 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // AAL-3.2: once a PrRecord already exists for a PR (i.e. it already
+  // cleared the allowlist gate once and entered the review pipeline), a
+  // later commit from the same non-allowlisted author must NOT be re-
+  // excluded by isAuthorAllowed — it should proceed to the normal
+  // commitSha/reviewState dedup checks further down instead. Here the
+  // existing record's reviewedCommitSha is stale relative to the PR's
+  // current head, so — once the allowlist re-gate is removed — the PR
+  // should fall through every other check and come out eligible.
+  test("isAuthorAllowed does not re-exclude a non-allowlisted author once a PrRecord already exists (AAL-3.2)", async () => {
+    const pr = makePr({
+      author: { login: "zayyen-p" },
+      headRefOid: "new-commit-sha",
+    });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => ({
+        commitSha: "old-commit-sha",
+        reviewedCommitSha: "old-commit-sha",
+        reviewState: "posted",
+      })),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed still excludes a non-allowlisted author when no PrRecord exists yet (AAL-3.2: initial-gate behavior unchanged)", async () => {
+    const pr = makePr({ author: { login: "zayyen-p" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
   // ─── requested-reviewer inclusion (RRR-1.1) ──────────────────────────────
 
   test("a self-authored PR is included when isSelfReviewAllowed is false but currentUser is a requested reviewer", async () => {
