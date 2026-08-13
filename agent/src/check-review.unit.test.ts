@@ -1167,6 +1167,127 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("RVG-2.1: a fresh author reply posted inline on a review thread (not a top-level comment) also stays a candidate", async () => {
+    // Same shape as the RFR-1.1 test above, but the author's reply lives in
+    // reviewThreads[].comments.nodes[] instead of the top-level comments —
+    // exercises the real hasFreshAuthorReply computation in
+    // getReviewCandidates (not just traceReviewCandidacyDecision's
+    // pass-through of a pre-computed boolean).
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "some-reviewer" },
+                  body: "Can you address this?",
+                  createdAt: "2026-07-14T00:00:00.000Z",
+                },
+                {
+                  author: { login: "danmcaulay" },
+                  body: "I will pick this up in a follow-up PR -- deferring it, not dropping it.",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: { nodes: [] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RVG-2.1 regression: a review-thread reply from someone other than the PR author does not flip the outcome", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "some-other-agent" },
+                  body: "I'll take this one.",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: { nodes: [] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
   // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
   // A PR that is already terminal (record.reviewedCommitSha === pr.headRefOid
   // && reviewState !== "pending") is normally skipped at the terminal-skip
