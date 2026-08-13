@@ -7,7 +7,7 @@
 // test isolation convention (no mock.module(), no global.fetch overrides).
 
 import { describe, expect, test } from "bun:test";
-import type { LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
+import type { ghJson, LinkedTaskInfo } from "../../../agent/src/check-helpers.ts";
 import type { PrReviewData } from "../../../agent/src/check-patch.ts";
 import type { PrInfo, PrRecord } from "../../../agent/src/check-review.ts";
 import {
@@ -91,7 +91,7 @@ describe("fetchPrInfoViaGh", () => {
     // not include `repo`. Regression test for the bug where fetchPrInfo
     // never set pr.repo, so formatTraceOutput's header always printed
     // "unknown#{n}" instead of "org/repo#{n}".
-    const fakeGhJson = async () =>
+    const fakeGhJson: typeof ghJson = async <T>() =>
       ({
         number: 66,
         title: "Add feature X",
@@ -101,7 +101,7 @@ describe("fetchPrInfoViaGh", () => {
         isDraft: false,
         createdAt: "2026-05-01T00:00:00.000Z",
         // Note: no `repo` field — matches real `gh pr view --json ...` output.
-      }) as unknown as PrInfo;
+      }) as unknown as T;
 
     const pr = await fetchPrInfoViaGh(
       fakeGhJson,
