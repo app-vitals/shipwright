@@ -1249,6 +1249,19 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
      loop orchestrator's generic `[silent]` handling would count it toward
      `SKIP_BLOCK_THRESHOLD`, risking a false HITL auto-block (see
      `agent/src/loop-orchestrator.ts`).
+   - PATCH the already-fetched record (`PR_RECORD_ID`) to write back a terminal state
+     before stopping — no extra query, reuses the record fetched in step 2 above. This is
+     unconditional (mirroring the Step 5 precedent), not guarded on `record.reviewState`:
+     the entry condition above already requires `record.reviewState` to be `posted` or
+     `approved` to reach this point, so a guard re-checking the same unmutated field would
+     be dead code:
+     ```bash
+     curl -sf -X PATCH \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
+       -d '{"reviewState": "posted", "reviewedCommitSha": "{headRefOid}"}' >/dev/null
+     ```
    - Respond `[silent]`. Stop.
 
    If no record exists (first review), or `record.reviewState` is `pending` (claimed but

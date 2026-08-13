@@ -699,6 +699,64 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent]
   });
 });
 
+describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back terminal reviewState (RVD-2.3)", () => {
+  it("the skip block contains a PATCH call to /prs/{PR_RECORD_ID} with reviewState:posted before the [silent] stop", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    expect(step14Idx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain("PATCH");
+    expect(dedupSection).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}");
+    expect(dedupSection).toContain('"reviewState": "posted"');
+    expect(dedupSection).toContain('"reviewedCommitSha": "{headRefOid}"');
+
+    const patchIdx = dedupSection.indexOf("PATCH");
+    const respondIdx = dedupSection.indexOf("Respond `[silent]`. Stop.");
+    expect(respondIdx).toBeGreaterThan(-1);
+    expect(patchIdx).toBeLessThan(respondIdx);
+  });
+
+  it("the write-back is unconditional, not re-gated on record.reviewState", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    const dedupSection = section.slice(dedupIdx);
+
+    // The block's own entry condition (lines above) already requires
+    // record.reviewState to be posted/approved to reach this point, and nothing
+    // re-fetches or mutates that field in between — so re-guarding the PATCH on
+    // the same unmutated field would be dead code (unreachable). The PATCH must
+    // fire unconditionally, mirroring the Step 5 precedent.
+    expect(dedupSection).not.toMatch(/not already `posted` or `approved`/);
+    expect(dedupSection).toContain("unconditional");
+  });
+
+  it("documents that this reuses the record already fetched in this step, without an extra query", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain("no extra query");
+  });
+});
+
 describe("review.md — reviewedCommitSha written/read for dedup (RCS-1.2)", () => {
   it("Step 5's Unresolved Comment Check PATCH call also sets reviewedCommitSha alongside commitSha", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
