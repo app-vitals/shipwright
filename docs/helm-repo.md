@@ -50,12 +50,13 @@ once checks pass. Once the PR merges, `chart-release.yml` fires and publishes
 the new chart version. No manual version bump is required.
 
 The `values.yaml` pinning ensures the chart's GHCR image defaults (in the
-`admin`, `metrics`, `agent`, `taskStore`, and `chat` blocks) track the same
+`admin`, `metrics`, `agent`, `taskStore`, `chat`, and `mcpServer` blocks) track the same
 releases the chart version is crediting — preventing a scenario where the
 bumped chart would be deployed with stale image tags. Each batched release
 tag is pinned into its corresponding `values.yaml` path(s); for example,
-`admin-v0.156.2` pins into `admin.image.tag`, and `agent-v1.5.0` pins into
-both `agent.image.tag` and `agent.provisioning.image.tag`.
+`admin-v0.156.2` pins into `admin.image.tag`, `agent-v1.5.0` pins into
+both `agent.image.tag` and `agent.provisioning.image.tag`, and
+`mcp-server-v0.35.0` pins into `mcpServer.image.tag`.
 
 Services release independently, so it's common for two or three tags to land
 within seconds or minutes of each other. Rather than bumping the chart once
