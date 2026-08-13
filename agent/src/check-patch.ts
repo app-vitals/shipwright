@@ -70,7 +70,21 @@ export interface ReviewNode {
 
 export interface ReviewThread {
   isResolved: boolean;
-  comments: { nodes: Array<{ author: { login: string }; body: string }> };
+  comments: {
+    nodes: Array<{
+      author: { login: string };
+      body: string;
+      /**
+       * Optional (RVG-2.1): only check-review.ts's fetchPrReviews query
+       * requests createdAt on thread comments (needed to detect a fresh
+       * author reply posted inline on a review thread). check-patch.ts's and
+       * pr-state-reconciler.ts's own queries don't request it and don't read
+       * thread-comment authorship/freshness — left undefined there, which
+       * is fine since neither consumer touches this field.
+       */
+      createdAt?: string;
+    }>;
+  };
 }
 
 export interface IssueCommentNode {
