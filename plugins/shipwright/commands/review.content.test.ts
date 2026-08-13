@@ -584,6 +584,81 @@ describe("review.md — RVD-1.2 terminal-review skip emits [silent] + skip-reaso
   });
 });
 
+describe("review.md — RVD-1.2 terminal-review skip writes back task-store reviewState (RVD-2.2)", () => {
+  it("the terminal-review branch contains a PATCH call to /prs/{PR_RECORD_ID} with reviewState:posted", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    expect(preCheckIdx).toBeGreaterThan(-1);
+    expect(fastPathIdx).toBeGreaterThan(preCheckIdx);
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("PATCH");
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/");
+    expect(section).toContain("PR_RECORD_ID");
+    expect(section).toContain("reviewState");
+    expect(section).toContain("posted");
+  });
+
+  it("the PATCH body sets reviewedCommitSha to headRefOid", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+    const patchBlock = section.slice(patchIdx, patchIdx + 700);
+
+    expect(patchBlock).toContain("reviewedCommitSha");
+    expect(patchBlock).toContain("headRefOid");
+  });
+
+  it("determines PR_RECORD_ID by reusing PRECLAIM_RECORD_ID when present, else looking it up by repo+prNumber", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("PRECLAIM_RECORD_ID");
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo=");
+    expect(section).toContain("prNumber=");
+  });
+
+  it("documents not double-writing when the record already reflects the terminal state at this head commit", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const lower = section.toLowerCase();
+    expect(lower).toContain("already");
+    expect(lower).toMatch(/double-write|double write/);
+  });
+
+  it("the write-back logic appears before the 'Skipping' print and the [silent] stop", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const patchIdx = section.indexOf("PATCH");
+    const skippingIdx = section.indexOf("Skipping #{pr}");
+    const silentIdx = section.lastIndexOf("[silent]");
+
+    expect(patchIdx).toBeGreaterThan(-1);
+    expect(skippingIdx).toBeGreaterThan(-1);
+    expect(silentIdx).toBeGreaterThan(-1);
+    expect(patchIdx).toBeLessThan(skippingIdx);
+    expect(patchIdx).toBeLessThan(silentIdx);
+  });
+
+  it("explains the write-back is safe against pr-state-reconciler.ts's CHU-2.4 posted-scan reverting it, citing hasAnyReviewAtHead", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("pr-state-reconciler.ts");
+    expect(section).toContain("hasAnyReviewAtHead");
+    expect(section).toContain("reconcilePostedReviewStateRecord");
+  });
+});
+
 describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
   it("the already-reviewed-at-commit skip block contains the skip-reason marker before [silent], exempting it from the HITL auto-block skip counter", () => {
     const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
