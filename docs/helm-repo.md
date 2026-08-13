@@ -54,9 +54,16 @@ The `values.yaml` pinning ensures the chart's GHCR image defaults (in the
 releases the chart version is crediting — preventing a scenario where the
 bumped chart would be deployed with stale image tags. Each batched release
 tag is pinned into its corresponding `values.yaml` path(s); for example,
-`admin-v0.156.2` pins into `admin.image.tag`, `agent-v1.5.0` pins into
-both `agent.image.tag` and `agent.provisioning.image.tag`, and
-`mcp-server-v0.35.0` pins into `mcpServer.image.tag`.
+`admin-v0.156.2` pins into `admin.image.tag`, and `agent-v1.5.0` pins into
+both `agent.image.tag` and `agent.provisioning.image.tag`.
+
+The `mcpServer` block follows the same `values.yaml` pinning shape as the
+other components, but `auto-bump-chart.yml`'s tag-push trigger and
+`service_for_tag`/`values_paths_for_service` cases do not yet include an
+`mcp-server-v*` entry — until that fast-follow lands, `mcp-server-v*` release
+tags will not auto-pin `mcpServer.image.tag` the way the other five
+components do. This is not a live-cluster risk today, since `mcpServer` is
+disabled by default (`mcpServer.enabled=false`).
 
 Services release independently, so it's common for two or three tags to land
 within seconds or minutes of each other. Rather than bumping the chart once
