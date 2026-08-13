@@ -1230,6 +1230,127 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
+  test("RVG-2.1: a fresh author reply posted inline on a review thread (not a top-level comment) also stays a candidate", async () => {
+    // Same shape as the RFR-1.1 test above, but the author's reply lives in
+    // reviewThreads[].comments.nodes[] instead of the top-level comments —
+    // exercises the real hasFreshAuthorReply computation in
+    // getReviewCandidates (not just traceReviewCandidacyDecision's
+    // pass-through of a pre-computed boolean).
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "some-reviewer" },
+                  body: "Can you address this?",
+                  createdAt: "2026-07-14T00:00:00.000Z",
+                },
+                {
+                  author: { login: "danmcaulay" },
+                  body: "I will pick this up in a follow-up PR -- deferring it, not dropping it.",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: { nodes: [] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RVG-2.1 regression: a review-thread reply from someone other than the PR author does not flip the outcome", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "some-other-agent" },
+                  body: "I'll take this one.",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: { nodes: [] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toEqual([]);
+  });
+
   // ─── author-reply retrigger at unchanged HEAD (RVG-1.1) ──────────────────
   // A PR that is already terminal (record.reviewedCommitSha === pr.headRefOid
   // && reviewState !== "pending") is normally skipped at the terminal-skip
@@ -1655,6 +1776,166 @@ describe("traceReviewCandidacyDecision", () => {
       baseArgs({ reviewData, hasFreshAuthorReply: true }),
     );
     expect(trace).toEqual({ check: "eligible" });
+  });
+
+  // ─── RVG-2.1: fresh author reply sourced from an inline review-thread reply ──
+  //
+  // Mirrors production hasFreshAuthorReply's OR condition (check-review.ts
+  // ~460-471): true when EITHER a top-level PR comment OR a reviewThreads
+  // reply is authored by the PR author after record.reviewedAt. This block
+  // recomputes that boolean from the fixture the same way production does,
+  // rather than hardcoding `true`, so the computation itself is exercised —
+  // not just traceReviewCandidacyDecision's pass-through of a given boolean.
+  function computeHasFreshAuthorReply(
+    reviewData: PrReviewData,
+    authorLogin: string,
+    reviewedAtMs: number,
+  ): boolean {
+    const topLevelFresh = reviewData.comments.nodes.some(
+      (c) =>
+        c.author.login === authorLogin &&
+        new Date(c.createdAt).getTime() > reviewedAtMs,
+    );
+    const threadReplyFresh = reviewData.reviewThreads.nodes.some((t) =>
+      t.comments.nodes.some(
+        (c) =>
+          c.author.login === authorLogin &&
+          c.createdAt !== undefined &&
+          new Date(c.createdAt).getTime() > reviewedAtMs,
+      ),
+    );
+    return topLevelFresh || threadReplyFresh;
+  }
+
+  test("already-reviewed-live: a fresh author reply posted inline on a review thread bypasses the live-review exclusion (eligible)", () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const record: PrRecord = {
+      reviewedAt: "2026-07-15T09:00:00.000Z",
+    } as PrRecord;
+    const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "some-reviewer" },
+                  body: "Can you address this?",
+                  createdAt: "2026-07-15T08:00:00.000Z",
+                },
+                {
+                  author: { login: "danmcaulay" },
+                  body: "I will pick this up in a follow-up PR -- deferring it, not dropping it.",
+                  createdAt: "2026-07-15T10:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    // Sanity check: this is genuinely testing the new OR'd computation, not
+    // just the trace's pass-through — the OLD (comments-only) computation
+    // would have produced false for this fixture since the author's reply
+    // only appears in reviewThreads, never in top-level comments.
+    const oldComputation = reviewData.comments.nodes.some(
+      (c) =>
+        c.author.login === pr.author.login &&
+        new Date(c.createdAt).getTime() > reviewedAtMs,
+    );
+    expect(oldComputation).toBe(false);
+
+    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+      reviewData,
+      pr.author.login,
+      reviewedAtMs,
+    );
+    expect(hasFreshAuthorReply).toBe(true);
+
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-live: a review-thread reply from someone other than the PR author, or before reviewedAt, does not flip hasFreshAuthorReply (still excluded)", () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const record: PrRecord = {
+      reviewedAt: "2026-07-15T09:00:00.000Z",
+    } as PrRecord;
+    const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                // Fresh, but NOT the PR author.
+                {
+                  author: { login: "some-other-agent" },
+                  body: "I'll take this one.",
+                  createdAt: "2026-07-15T10:00:00.000Z",
+                },
+                // The PR author, but BEFORE reviewedAt (stale).
+                {
+                  author: { login: "danmcaulay" },
+                  body: "Old reply from before the last review.",
+                  createdAt: "2026-07-15T08:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+      reviewData,
+      pr.author.login,
+      reviewedAtMs,
+    );
+    expect(hasFreshAuthorReply).toBe(false);
+
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
   });
 
   test("RVD-2.1: already-reviewed-live: a genuine-finding review at head (classifyReviewState → null) still excludes, with classifiedState: null in the trace", () => {
