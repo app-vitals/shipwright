@@ -1630,3 +1630,37 @@ describe("patch.md — detect stale-cancelled CI, rerun before escalating to CI-
     expect(section.toLowerCase()).toMatch(/not a normal test\s+failure/);
   });
 });
+
+describe("patch.md — no-op at dispatch skip-reason tag (RVD-2.4)", () => {
+  function getStep3dSection() {
+    const step3dIdx = content.indexOf("### Step 3d: Summary");
+    const step4Idx = content.indexOf("## Step 4: Resolve Merge Conflicts");
+    expect(step3dIdx).toBeGreaterThan(-1);
+    expect(step4Idx).toBeGreaterThan(step3dIdx);
+    return content.slice(step3dIdx, step4Idx);
+  }
+
+  it("Step 3d (empty lists) contains [skip-reason:patch:deferred:no-op-at-dispatch:{number}] alongside [silent]", () => {
+    const section = getStep3dSection();
+    expect(section).toContain("[silent]");
+    expect(section).toContain(
+      "[skip-reason:patch:deferred:no-op-at-dispatch:",
+    );
+    expect(section).toContain(
+      "[skip-reason:patch:deferred:no-op-at-dispatch:{number}]",
+    );
+  });
+
+  it("does not require a specific ordering between [skip-reason:...] and [silent]", () => {
+    const section = getStep3dSection();
+    expect(section).toContain("does not matter");
+  });
+
+  it("explains that this differs from review.md's RVD-2.2/2.3 because getPatchCandidates() has no persisted cache drift", () => {
+    const section = getStep3dSection();
+    const hasExplanation =
+      section.indexOf("getPatchCandidates") > -1 &&
+      section.indexOf("no persisted") > -1;
+    expect(hasExplanation).toBe(true);
+  });
+});
