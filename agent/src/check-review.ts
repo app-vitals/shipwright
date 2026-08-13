@@ -457,18 +457,41 @@ export async function getReviewCandidates(
     // the queryPrRecord call above); record may be null here (no task-store
     // record yet), in which case the `?? 0` epoch fallback makes any author
     // comment count, mirroring RVG-1.1's existing null-safety.
+    //
+    // RVG-2.1: also OR's in any reply the PR author posted inline on a
+    // review thread (reviewThreads[].comments.nodes[]), not just top-level
+    // PR conversation comments. GitHub represents an inline thread reply as
+    // its own zero-body PullRequestReview record stamped to head — counted
+    // by hasAnyReviewAtHead() as "a review at head" like any other, so
+    // without this the one signal meant to override that skip (a genuine
+    // author response) never fires when the reply was posted inline instead
+    // of as a new top-level comment (confirmed live on
+    // verygood-ops/skills#80). createdAt is optional on thread comments
+    // (only this file's fetchPrReviews query requests it — check-patch.ts's
+    // and pr-state-reconciler.ts's queries don't), so a missing value is
+    // treated as not-fresh rather than throwing.
     const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
     let reviewData: PrReviewData | undefined;
     let hasFreshAuthorReply = false;
     try {
       const [org, repoName] = splitOrgRepo(pr.repo ?? "");
       reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
-      hasFreshAuthorReply =
+      const hasFreshTopLevelReply =
         reviewData?.comments.nodes.some(
           (c) =>
             c.author.login === pr.author.login &&
             new Date(c.createdAt).getTime() > reviewedAtMs,
         ) ?? false;
+      const hasFreshThreadReply =
+        reviewData?.reviewThreads.nodes.some((t) =>
+          t.comments.nodes.some(
+            (c) =>
+              c.author.login === pr.author.login &&
+              c.createdAt !== undefined &&
+              new Date(c.createdAt).getTime() > reviewedAtMs,
+          ),
+        ) ?? false;
+      hasFreshAuthorReply = hasFreshTopLevelReply || hasFreshThreadReply;
       // Live-GitHub review dedup (RVD-1.1) short-circuits right here, inside
       // the try block, before the task-store lookups below — traced via the
       // same traceReviewCandidacyDecision used for the later checks (RCO-1.3)
@@ -644,10 +667,11 @@ export async function buildProductionDeps(opts: {
       reviewThreads(first: 100) {
         nodes {
           isResolved
-          comments(first: 1) {
+          comments(last: 20) {
             nodes {
               author { login }
               body
+              createdAt
             }
           }
         }
