@@ -1,0 +1,351 @@
+suite: mcp-server Deployment / Service / ServiceAccount workloads
+# TSM-3.2 adds the mcp-server workload templates. These assert the structural
+# facts: image (pinned to the GHCR default), container port 3010, /health
+# liveness + readiness probes, Service shape, and that BOTH inbound
+# (SHIPWRIGHT_MCP_SERVER_TOKEN) and outbound (SHIPWRIGHT_TASK_STORE_TOKEN)
+# tokens are sourced via secretKeyRef — NEVER plaintext env — from the
+# existingSecret (shipwright-secrets by default). mcp-server has no database,
+# so there is no bundled-PostgreSQL path to test here (unlike task-store).
+tests:
+  - it: renders the mcp-server Deployment with the GHCR-pinned image and port 3010
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - isKind:
+          of: Deployment
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^ghcr\\.io/app-vitals/shipwright-mcp-server:mcp-server-v\\d+\\.\\d+\\.\\d+$"
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].containerPort
+          value: 3010
+
+  - it: uses the default mcp-server image repository (ghcr.io/app-vitals/shipwright-mcp-server)
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/app-vitals/shipwright-mcp-server:mcp-server-v0.35.0
+
+  - it: sets liveness and readiness probes against /health on port 3010
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 3010
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 3010
+
+  - it: wires standard selector labels onto the Deployment
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/component"]
+          value: mcp-server
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: shipwright
+    release:
+      name: r
+
+  - it: applies the configured mcp-server resources
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.resources:
+        requests:
+          cpu: 111m
+          memory: 222Mi
+        limits:
+          cpu: 333m
+          memory: 444Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 111m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 444Mi
+
+  - it: sets PORT to 3010
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PORT
+            value: "3010"
+
+  - it: passes SHIPWRIGHT_TASK_STORE_URL as a plain value
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_URL
+            value: http://shipwright-task-store:3000
+
+  # ── inbound auth: SHIPWRIGHT_MCP_SERVER_TOKEN ────────────────────────────
+
+  - it: wires SHIPWRIGHT_MCP_SERVER_TOKEN from the default existingSecret (shipwright-secrets)
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_MCP_SERVER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_MCP_SERVER_TOKEN
+
+  - it: wires SHIPWRIGHT_MCP_SERVER_TOKEN from a custom existingSecret
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.auth.existingSecret: my-mcp-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_MCP_SERVER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mcp-secret
+                key: SHIPWRIGHT_MCP_SERVER_TOKEN
+
+  - it: never sources SHIPWRIGHT_MCP_SERVER_TOKEN as a plaintext value
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_MCP_SERVER_TOKEN
+            value: shipwright-secrets
+
+  # ── outbound auth: SHIPWRIGHT_TASK_STORE_TOKEN ───────────────────────────
+
+  - it: wires SHIPWRIGHT_TASK_STORE_TOKEN from the default existingSecret (shipwright-secrets)
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: SHIPWRIGHT_TASK_STORE_TOKEN
+
+  - it: wires SHIPWRIGHT_TASK_STORE_TOKEN from a custom existingSecret
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.auth.existingSecret: my-mcp-secret
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: my-mcp-secret
+                key: SHIPWRIGHT_TASK_STORE_TOKEN
+
+  - it: never sources SHIPWRIGHT_TASK_STORE_TOKEN as a plaintext value
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_TOKEN
+            value: shipwright-secrets
+
+  - it: honors custom key names for both tokens
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.auth.mcpServerTokenKey: CUSTOM_MCP_TOKEN_KEY
+      mcpServer.auth.taskStoreTokenKey: CUSTOM_TASK_STORE_TOKEN_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_MCP_SERVER_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: CUSTOM_MCP_TOKEN_KEY
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_TASK_STORE_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: shipwright-secrets
+                key: CUSTOM_TASK_STORE_TOKEN_KEY
+
+  # ── Service ───────────────────────────────────────────────────────────────
+
+  - it: renders the mcp-server Service (ClusterIP) mapping the service port to targetPort 3010
+    template: templates/mcp-server-service.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 3010
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3010
+      - equal:
+          path: spec.selector["app.kubernetes.io/component"]
+          value: mcp-server
+
+  - it: honors a custom mcpServer.service.type and port
+    template: templates/mcp-server-service.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.service.type: NodePort
+      mcpServer.service.port: 30010
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].port
+          value: 30010
+      - equal:
+          path: spec.ports[0].targetPort
+          value: 3010
+
+  # ── ServiceAccount ───────────────────────────────────────────────────────
+
+  - it: renders a ServiceAccount for the mcp-server workload by default
+    template: templates/mcp-server-serviceaccount.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: r-shipwright-mcp-server
+
+  - it: renders NO ServiceAccount when mcpServer.serviceAccount.create=false
+    template: templates/mcp-server-serviceaccount.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.serviceAccount.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ── mcpServer.extraEnv ────────────────────────────────────────────────────
+
+  - it: appends mcpServer.extraEnv entries to the container env
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.extraEnv:
+        - name: CUSTOM_VAR
+          value: "test-value"
+        - name: FROM_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: my-secret
+              key: MY_KEY
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: CUSTOM_VAR
+            value: "test-value"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FROM_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: my-secret
+                key: MY_KEY
+
+  - it: keeps extraEnv rendering LAST so caller overrides still win
+    # Kubernetes resolves duplicate env names to the LAST occurrence.
+    template: templates/mcp-server-deployment.yaml
+    set:
+      mcpServer.enabled: true
+      mcpServer.taskStoreUrl: http://shipwright-task-store:3000
+      mcpServer.extraEnv:
+        - name: SHIPWRIGHT_TASK_STORE_URL
+          value: "http://override-task-store:3000"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].name
+          value: SHIPWRIGHT_TASK_STORE_URL
+      - equal:
+          path: spec.template.spec.containers[0].env[-1].value
+          value: "http://override-task-store:3000"
+
+  # ── disabled by default ──────────────────────────────────────────────────
+
+  - it: renders NO mcp-server workloads when mcpServer.enabled=false (the default)
+    templates:
+      - templates/mcp-server-deployment.yaml
+      - templates/mcp-server-service.yaml
+      - templates/mcp-server-serviceaccount.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

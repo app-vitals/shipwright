@@ -1,17 +1,17 @@
 # Deploying to Kubernetes
 
-> How to deploy the five Shipwright services (admin, metrics, agent, task-store, chat) to
-> Kubernetes with the `shipwright` Helm chart — local on Minikube, and in
+> How to deploy the Shipwright services (admin, metrics, agent, task-store, chat, and
+> MCP server) to Kubernetes with the `shipwright` Helm chart — local on Minikube, and in
 > production on GKE (Gateway API + cert-manager) or EKS (ALB + cert-manager).
 
 The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
 published to a Helm repo on every chart version bump (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
-(port **3460**), agent (port **3000**), task-store (port **3000**), and optional chat
-(port **3000**) services plus an optional bundled PostgreSQL dependency,
-with Minikube-friendly defaults throughout. Task-store and chat are disabled by
-default; the agent is provisioned dynamically when `agent.provisioning.enabled=true`
-is set.
+(port **3460**), agent (port **3000**), task-store (port **3000**), optional chat
+(port **3000**), and optional MCP server (port **3010**) services plus an optional bundled
+PostgreSQL dependency, with Minikube-friendly defaults throughout. Task-store, chat, and
+MCP server are disabled by default; the agent is provisioned dynamically when
+`agent.provisioning.enabled=true` is set.
 
 This guide covers three deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
@@ -143,13 +143,53 @@ accessed via the agent's internal network, not the public host.
 See [configuration.md](./configuration.md#metrics--admin--chat--task-store-services)
 for the full list of chat service env vars and their defaults.
 
+### MCP server (opt-in)
+
+The optional MCP server (`@shipwright/mcp-server`) exposes the task-store API via the
+[Model Context Protocol](https://modelcontextprotocol.io/), allowing remote MCP clients
+(e.g. Claude Desktop custom connectors) to query and mutate tasks and pull requests. By
+default it is **disabled** (`mcpServer.enabled=false`) — purely additive and safe to deploy
+without. To enable it:
+
+```bash
+--set mcpServer.enabled=true --set mcpServer.taskStoreUrl=http://shipwright-task-store:3000
+```
+
+The MCP server requires:
+
+- **A task-store to proxy to** (either this chart's own task-store component or external).
+  Set via `mcpServer.taskStoreUrl` — the chart does not auto-derive it from `taskStore.*` so
+  both in-cluster and external task-stores are supported.
+- **Auth tokens via a Kubernetes Secret.** Both the inbound bearer token MCP server requires
+  (`SHIPWRIGHT_MCP_SERVER_TOKEN`, secures the tool proxy surface itself) and the outbound
+  task-store bearer token (`SHIPWRIGHT_TASK_STORE_TOKEN`, authenticates the mcp-server to
+  the task-store) are always sourced via `secretKeyRef`, never plaintext env. Add them to
+  a Secret (default: `shipwright-secrets`), then reference via
+  `mcpServer.auth.existingSecret`:
+
+```bash
+kubectl -n shipwright patch secret shipwright-secrets --type merge \
+  -p "{\"stringData\":{\"SHIPWRIGHT_MCP_SERVER_TOKEN\":\"$(openssl rand -hex 32)\",\"SHIPWRIGHT_TASK_STORE_TOKEN\":\"<token>\"}}"
+```
+
+The MCP server runs as a standalone `Deployment` (one pod by default) listening on
+port **3010**. By default the Service is `ClusterIP`-only and has no external route —
+reachable only from within the cluster. **Deliberately exposing it externally
+(e.g. via `networking.type=ingress` or `networking.type=gateway`) is a separate, human
+decision outside this chart.** The chart only renders the internal ClusterIP Service; any
+external path routing is operator-driven.
+
+See [configuration.md](./configuration.md#metrics--admin--chat--task-store-services)
+for the full list of MCP server env vars and their defaults.
+
 ---
 
 ## Minikube (local)
 
 The **full stack** — admin, metrics, task-store, chat, bundled PostgreSQL, and
 runtime agent provisioning — over plain HTTP, with **no hand-created Secrets**.
-The chart assembles every database connection string for you.
+The chart assembles every database connection string for you. The MCP server is disabled
+by default; enable it with `mcpServer.enabled=true` if needed.
 
 ### One command
 

@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.11.39] - 2026-08-13
+
+### Added
+
+- `mcpServer.*` renders the mcp-server Deployment/Service/ServiceAccount (TSM-3.2), mirroring task-store. Disabled by default (`mcpServer.enabled=false`) — safe to merge, changes nothing in any live cluster. Both `SHIPWRIGHT_MCP_SERVER_TOKEN` and `SHIPWRIGHT_TASK_STORE_TOKEN` are always sourced via `secretKeyRef` from `mcpServer.auth.existingSecret`, never plaintext env
+
 ## [1.11.38] - 2026-08-13
 
 ### Changed

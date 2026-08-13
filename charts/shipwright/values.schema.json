@@ -372,6 +372,36 @@
         }
       ]
     },
+    "mcpServer": {
+      "allOf": [
+        { "$ref": "#/definitions/service" },
+        {
+          "type": "object",
+          "properties": {
+            "taskStoreUrl": { "type": "string" },
+            "auth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "existingSecret": { "type": "string" },
+                "mcpServerTokenKey": { "type": "string" },
+                "taskStoreTokenKey": { "type": "string" }
+              }
+            },
+            "extraEnv": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
     "auth": {
       "type": "object",
       "additionalProperties": false,
