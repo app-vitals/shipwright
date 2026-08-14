@@ -763,6 +763,69 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // AAL-3.2: once a PrRecord already exists for a PR (i.e. it already
+  // cleared the allowlist gate once and entered the review pipeline), a
+  // later commit from the same non-allowlisted author must NOT be re-
+  // excluded by isAuthorAllowed — it should proceed to the normal
+  // commitSha/reviewState dedup checks further down instead. Here the
+  // existing record's reviewedCommitSha is stale relative to the PR's
+  // current head, so — once the allowlist re-gate is removed — the PR
+  // should fall through every other check and come out eligible.
+  test("isAuthorAllowed does not re-exclude a non-allowlisted author once a PrRecord already exists (AAL-3.2)", async () => {
+    const pr = makePr({
+      author: { login: "zayyen-p" },
+      headRefOid: "new-commit-sha",
+    });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => ({
+        commitSha: "old-commit-sha",
+        reviewedCommitSha: "old-commit-sha",
+        reviewState: "posted",
+      })),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed still excludes a non-allowlisted author when no PrRecord exists yet (AAL-3.2: initial-gate behavior unchanged)", async () => {
+    const pr = makePr({ author: { login: "zayyen-p" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  // A queryPrRecord failure must NOT be conflated with "no PrRecord exists
+  // yet": both leave `record == null`, but only a genuine "no record" case
+  // should grant the AAL-3.2 re-gate exception. If a transient fetch
+  // failure were treated the same as "no record", a non-allowlisted
+  // author's PR would wrongly bypass the allowlist for the duration of the
+  // failure — reintroducing the exact ok-wow-ai#1919 failure mode this PR
+  // fixes.
+  test("isAuthorAllowed still excludes a non-allowlisted author when queryPrRecord throws (AAL-3.2: fetch failure is not conflated with no-record)", async () => {
+    const pr = makePr({ author: { login: "zayyen-p" } });
+    const deps: CheckReviewDeps = {
+      listOpenPrs: async (_repo: string) => [pr],
+      queryPrRecord: async (
+        _repo: string,
+        _prNumber: number,
+      ): Promise<PrRecord | null> => {
+        throw new Error("Network error");
+      },
+      getCurrentUser: async () => "bodhi-agent",
+      isSelfReviewAllowed: false,
+      getScopedRepos: () => [pr.repo ?? ""],
+      hasScopeSynced: () => true,
+      fetchPrReviews: defaultFetchPrReviews,
+      isAuthorAllowed: (login) => login === "dmcaulay",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
   // ─── requested-reviewer inclusion (RRR-1.1) ──────────────────────────────
 
   test("a self-authored PR is included when isSelfReviewAllowed is false but currentUser is a requested reviewer", async () => {
