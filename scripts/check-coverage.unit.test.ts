@@ -2,12 +2,13 @@
  * Unit tests for scripts/check-coverage.ts
  *
  * Verifies LcovParser (the CoverageParser implementation for the lcov.info
- * format) against a hand-built fixture. Pure logic, no I/O: parse(content)
- * takes a raw lcov string and returns FileStats[] — nothing here touches
- * the filesystem or triggers the script's process.exit side effects.
+ * format) and JacocoParser (the CoverageParser implementation for JaCoCo's
+ * XML report format) against hand-built fixtures. Pure logic, no I/O:
+ * parse(content) takes a raw string and returns FileStats[] — nothing here
+ * touches the filesystem or triggers the script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { LcovParser } from "./check-coverage";
+import { JacocoParser, LcovParser } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -141,5 +142,160 @@ describe("LcovParser.parse", () => {
     expect(totalLh).toBe(68);
     expect(totalFnf).toBe(10);
     expect(totalFnh).toBe(7);
+  });
+});
+
+describe("JacocoParser.parse", () => {
+  test("parses a single class with LINE and METHOD counters into FileStats", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <class name="com/example/foo/Bar" sourcefilename="Bar.java">
+      <counter type="INSTRUCTION" missed="3" covered="20"/>
+      <counter type="LINE" missed="1" covered="10"/>
+      <counter type="METHOD" missed="0" covered="3"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>`;
+
+    const result = JacocoParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "com/example/foo/Bar", lf: 11, lh: 10, fnf: 3, fnh: 3 },
+    ]);
+  });
+
+  test("parses multiple classes across multiple packages in document order", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <class name="com/example/foo/Bar" sourcefilename="Bar.java">
+      <counter type="LINE" missed="1" covered="10"/>
+      <counter type="METHOD" missed="0" covered="3"/>
+    </class>
+    <class name="com/example/foo/Baz" sourcefilename="Baz.java">
+      <counter type="LINE" missed="5" covered="5"/>
+      <counter type="METHOD" missed="1" covered="1"/>
+    </class>
+  </package>
+  <package name="com/example/qux">
+    <class name="com/example/qux/Quux" sourcefilename="Quux.java">
+      <counter type="LINE" missed="0" covered="2"/>
+      <counter type="METHOD" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>`;
+
+    const result = JacocoParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "com/example/foo/Bar", lf: 11, lh: 10, fnf: 3, fnh: 3 },
+      { path: "com/example/foo/Baz", lf: 10, lh: 5, fnf: 2, fnh: 1 },
+      { path: "com/example/qux/Quux", lf: 2, lh: 2, fnf: 1, fnh: 1 },
+    ]);
+  });
+
+  test("does not double-count nested <method> counters into class-level totals", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <class name="com/example/foo/Bar" sourcefilename="Bar.java">
+      <method name="doThing" desc="()V" line="10">
+        <counter type="INSTRUCTION" missed="0" covered="5"/>
+        <counter type="LINE" missed="0" covered="2"/>
+        <counter type="METHOD" missed="0" covered="1"/>
+      </method>
+      <method name="doOtherThing" desc="()V" line="20">
+        <counter type="INSTRUCTION" missed="1" covered="4"/>
+        <counter type="LINE" missed="1" covered="8"/>
+        <counter type="METHOD" missed="1" covered="0"/>
+      </method>
+      <counter type="INSTRUCTION" missed="3" covered="20"/>
+      <counter type="LINE" missed="1" covered="10"/>
+      <counter type="METHOD" missed="0" covered="3"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>`;
+
+    const result = JacocoParser.parse(fixture);
+
+    // If nested <method> LINE/METHOD counters were summed in, lf would be
+    // 1+2+1+8=12 additional and fnf/fnh would be off too. Expect only the
+    // class's own direct counters (missed=1 covered=10 / missed=0 covered=3).
+    expect(result).toEqual([
+      { path: "com/example/foo/Bar", lf: 11, lh: 10, fnf: 3, fnh: 3 },
+    ]);
+  });
+
+  test("ignores report- and package-level counters, attributing nothing to any class", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <class name="com/example/foo/Bar" sourcefilename="Bar.java">
+      <counter type="LINE" missed="1" covered="10"/>
+      <counter type="METHOD" missed="0" covered="3"/>
+    </class>
+    <sourcefile name="Bar.java">
+      <counter type="LINE" missed="1" covered="10"/>
+    </sourcefile>
+    <counter type="LINE" missed="1" covered="10"/>
+    <counter type="METHOD" missed="0" covered="3"/>
+  </package>
+  <counter type="LINE" missed="1" covered="10"/>
+  <counter type="METHOD" missed="0" covered="3"/>
+</report>`;
+
+    const result = JacocoParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "com/example/foo/Bar", lf: 11, lh: 10, fnf: 3, fnh: 3 },
+    ]);
+  });
+
+  test("defaults to 0 when a class is missing LINE or METHOD counters", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <class name="com/example/foo/EmptyInterface" sourcefilename="EmptyInterface.java">
+      <counter type="INSTRUCTION" missed="0" covered="0"/>
+      <counter type="CLASS" missed="0" covered="1"/>
+    </class>
+  </package>
+</report>`;
+
+    const result = JacocoParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "com/example/foo/EmptyInterface",
+        lf: 0,
+        lh: 0,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("returns an empty array for empty content", () => {
+    expect(JacocoParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array when there are no <class> elements", () => {
+    const fixture = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="example">
+  <package name="com/example/foo">
+    <counter type="LINE" missed="0" covered="0"/>
+  </package>
+</report>`;
+
+    expect(JacocoParser.parse(fixture)).toEqual([]);
   });
 });

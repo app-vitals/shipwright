@@ -85,6 +85,72 @@ export const LcovParser: CoverageParser = {
   },
 };
 
+// Matches one <class ...> ... </class> block (non-greedy so consecutive
+// classes don't merge into a single match), capturing its attributes and
+// inner body separately so nested <method> counters can be stripped before
+// scanning for the class's own direct <counter> children.
+const CLASS_BLOCK_RE = /<class\b([^>]*)>([\s\S]*?)<\/class>/g;
+const NAME_ATTR_RE = /\bname="([^"]*)"/;
+const METHOD_BLOCK_RE = /<method\b[^>]*>[\s\S]*?<\/method>/g;
+
+// Extracts a class-level `<counter type="TYPE" missed="M" covered="C"/>`
+// pair from XML already stripped of nested <method> blocks. Returns
+// { missed: 0, covered: 0 } if the counter type is absent — JaCoCo omits
+// counters for types that don't apply (e.g. no METHOD counter on an
+// interface with no method bodies).
+function readCounter(
+  body: string,
+  type: string,
+): { missed: number; covered: number } {
+  const re = new RegExp(
+    `<counter\\s+type="${type}"\\s+missed="(\\d+)"\\s+covered="(\\d+)"`,
+  );
+  const match = body.match(re);
+  if (!match) return { missed: 0, covered: 0 };
+  return {
+    missed: Number.parseInt(match[1], 10),
+    covered: Number.parseInt(match[2], 10),
+  };
+}
+
+// Parses JaCoCo XML report content into an ordered FileStats[] — one entry
+// per <class> element, in document order. Uses the class's `name` attribute
+// (a slash-separated fully-qualified class name) as the FileStats `path`,
+// the closest JaCoCo analog to LCOV's SF: path. Only class-level counters
+// (direct children of <class>) are counted; per-method nested counters and
+// package/report-level rollup counters are ignored to avoid double-counting.
+// String/regex-based, no XML parsing library — mirrors LcovParser's
+// lightweight, dependency-free style. DOCTYPE and other non-<class> content
+// is inert text that's simply never matched.
+export const JacocoParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    const files: FileStats[] = [];
+
+    for (const classMatch of content.matchAll(CLASS_BLOCK_RE)) {
+      const [, attrs, body] = classMatch;
+      const nameMatch = attrs.match(NAME_ATTR_RE);
+      const path = nameMatch ? nameMatch[1] : "";
+
+      // Strip nested <method> blocks so only the class's own direct
+      // <counter> children remain for readCounter to scan.
+      const classOwnBody = body.replace(METHOD_BLOCK_RE, "");
+
+      const line = readCounter(classOwnBody, "LINE");
+      const method = readCounter(classOwnBody, "METHOD");
+
+      files.push({
+        path,
+        lf: line.missed + line.covered,
+        lh: line.covered,
+        fnf: method.missed + method.covered,
+        fnh: method.covered,
+      });
+    }
+
+    return files;
+  },
+};
+
 async function main() {
   const lcov = await Bun.file(LCOV_PATH)
     .text()
