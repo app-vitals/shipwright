@@ -244,6 +244,15 @@ describe("buildCloneSteps", () => {
       "gh repo clone failed for app-vitals/shipwright",
     );
   });
+
+  test("carries a start-of-step progress message distinct from the failure label", () => {
+    const c = cfg({ SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright" });
+    const step = buildCloneSteps(c, nothingExists)[0];
+    expect(step?.startLabel).toBe(
+      "cloning app-vitals/shipwright into /home/dev/.shipwright/workspace/repos/shipwright...",
+    );
+    expect(step?.startLabel).not.toBe(step?.label);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -290,6 +299,21 @@ describe("buildMigrationSteps", () => {
     const seedIdx = steps.findIndex((s) => s.label === "admin token seed failed");
     expect(seedIdx).toBeGreaterThan(migrateIdx);
   });
+
+  test("gives every step a start-of-step progress message distinct from its failure label", () => {
+    const steps = buildMigrationSteps(cfg());
+    for (const step of steps) {
+      expect(step.startLabel).toBeTruthy();
+      expect(step.startLabel).not.toBe(step.label);
+    }
+    expect(steps.map((s) => s.startLabel)).toEqual([
+      "running task-store prisma generate...",
+      "running task-store prisma migrate...",
+      "seeding task-store admin token...",
+      "running admin prisma generate...",
+      "running admin prisma migrate...",
+    ]);
+  });
 });
 
 describe("buildTokenSeedStep", () => {
@@ -305,12 +329,16 @@ describe("buildTokenSeedStep", () => {
       "admin-tok",
     ]);
     expect(step.label).toBe("admin token seed failed");
+    expect(step.startLabel).toBe("seeding task-store admin token...");
   });
 
   test("appends --agent-id for the repo-scoped agent token", () => {
     const step = buildTokenSeedStep(cfg(), "agent-tok", "agent-123");
     expect(step.argv?.slice(-2)).toEqual(["--agent-id", "agent-123"]);
     expect(step.label).toBe("agent token seed failed");
+    expect(step.startLabel).toBe(
+      "seeding task-store agent token (agentId: agent-123)...",
+    );
   });
 });
 
@@ -415,6 +443,23 @@ describe("runSteps", () => {
   test("returns the steps it ran", async () => {
     const steps = buildMigrationSteps(cfg());
     expect(await runSteps(steps, () => {})).toEqual(steps);
+  });
+
+  test("exposes each exec/clone step's startLabel to the executor for progress logging", async () => {
+    const c = cfg({ SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright" });
+    const steps = [...buildCloneSteps(c, nothingExists), ...buildMigrationSteps(c)];
+    const startLabels: (string | undefined)[] = [];
+
+    await runSteps(steps, (step) => {
+      startLabels.push(step.startLabel);
+    });
+
+    // Every clone/exec step in the preflight sequence carries a distinct
+    // start-of-step message a real executor can log before spawning.
+    expect(startLabels).toHaveLength(steps.length);
+    expect(startLabels.every((s) => typeof s === "string" && s.length > 0)).toBe(
+      true,
+    );
   });
 });
 

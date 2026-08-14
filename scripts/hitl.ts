@@ -310,6 +310,14 @@ export type HitlStep = {
   kind: HitlStepKind;
   /** Human-readable label, also used for the failure message on exec steps. */
   label: string;
+  /**
+   * Progress message logged before a clone/exec step runs (e.g. "cloning
+   * {repo} into {dest}..."). Distinct from `label`, which is phrased as a
+   * failure message ("X failed") and would read oddly printed up front.
+   * Steps that don't need start-of-step visibility (mkdir, seed-file,
+   * install-plugins) omit it.
+   */
+  startLabel?: string;
   /** Target directory (mkdir) or destination file (seed-file). */
   path?: string;
   /** Source template path for seed-file steps. */
@@ -383,6 +391,7 @@ export function buildCloneSteps(
     ({ repo, dest }) => ({
       kind: "clone" as const,
       label: `gh repo clone failed for ${repo}`,
+      startLabel: `cloning ${repo} into ${dest}...`,
       argv: ["gh", "repo", "clone", repo, dest],
       cwd: cfg.repoRoot,
     }),
@@ -411,12 +420,14 @@ export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
     {
       kind: "exec",
       label: "task-store prisma generate failed",
+      startLabel: "running task-store prisma generate...",
       argv: prismaArgs("generate"),
       cwd: join(cfg.repoRoot, "task-store"),
     },
     {
       kind: "exec",
       label: "task-store migrate failed",
+      startLabel: "running task-store prisma migrate...",
       argv: prismaArgs("deploy"),
       cwd: join(cfg.repoRoot, "task-store"),
       env: { DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl },
@@ -425,12 +436,14 @@ export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
     {
       kind: "exec",
       label: "admin prisma generate failed",
+      startLabel: "running admin prisma generate...",
       argv: prismaArgs("generate"),
       cwd: join(cfg.repoRoot, "admin"),
     },
     {
       kind: "exec",
       label: "admin migrate failed",
+      startLabel: "running admin prisma migrate...",
       argv: prismaArgs("deploy"),
       cwd: join(cfg.repoRoot, "admin"),
       env: { DATABASE_URL_SHIPWRIGHT_ADMIN: cfg.adminDatabaseUrl },
@@ -451,6 +464,9 @@ export function buildTokenSeedStep(
   return {
     kind: "exec",
     label: agentId ? "agent token seed failed" : "admin token seed failed",
+    startLabel: agentId
+      ? `seeding task-store agent token (agentId: ${agentId})...`
+      : "seeding task-store admin token...",
     argv: [
       "bun",
       "run",
@@ -514,6 +530,7 @@ async function execStep(step: HitlStep): Promise<void> {
       return;
     case "clone":
     case "exec": {
+      if (step.startLabel) log(step.startLabel);
       const result = Bun.spawnSync(step.argv as string[], {
         cwd: step.cwd,
         ...(step.env ? { env: { ...process.env, ...step.env } } : {}),
