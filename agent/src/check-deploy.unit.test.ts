@@ -8,9 +8,13 @@
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  */
 
-import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
+  buildProductionDeps,
   type CheckDeployDeps,
   type CiRun,
   type GhPr,
@@ -461,6 +465,128 @@ describe("getDeployCandidates", () => {
     expect(result[0].commitSha).toBe("sha2");
   });
 
+  // ─── stale-queued-run handling (isActiveRun) ──────────────────────────────
+
+  test("a queued Deploy run with no createdAt is treated conservatively as active (blocks the repo)", async () => {
+    const pr1 = makeGhPr({ number: 1, headRefOid: "sha1" });
+    const deps: CheckDeployDeps = {
+      getCurrentUser: async () => "bodhi-agent",
+      isSelfReviewAllowed: true,
+      repos: ["acme/example-repo"],
+      getScopedRepos: () => ["acme/example-repo"],
+      hasScopeSynced: () => true,
+      clock: () => "2026-06-01T00:00:00.000Z",
+      fetchActiveDeployRuns: async () => [
+        { name: "Deploy", status: "queued" }, // no createdAt
+      ],
+      listOpenPrs: async () => [pr1],
+      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
+      fetchPrReviews: async () => [],
+    };
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("a queued Deploy run older than 1 hour is treated as stale/ghost and does not block the repo", async () => {
+    const pr1 = makeGhPr({ number: 1, headRefOid: "sha1", reviewDecision: "APPROVED" });
+    const deps: CheckDeployDeps = {
+      getCurrentUser: async () => "bodhi-agent",
+      isSelfReviewAllowed: true,
+      repos: ["acme/example-repo"],
+      getScopedRepos: () => ["acme/example-repo"],
+      hasScopeSynced: () => true,
+      clock: () => "2026-06-01T02:00:00.000Z",
+      fetchActiveDeployRuns: async () => [
+        {
+          name: "Deploy",
+          status: "queued",
+          createdAt: "2026-06-01T00:00:00.000Z", // 2h old, older than 1h threshold
+        },
+      ],
+      listOpenPrs: async () => [pr1],
+      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
+      fetchPrReviews: async () => [],
+    };
+    const result = await getDeployCandidates(deps);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/example-repo#1");
+  });
+
+  test("a queued Deploy run under 1 hour old still blocks the repo", async () => {
+    const pr1 = makeGhPr({ number: 1, headRefOid: "sha1", reviewDecision: "APPROVED" });
+    const deps: CheckDeployDeps = {
+      getCurrentUser: async () => "bodhi-agent",
+      isSelfReviewAllowed: true,
+      repos: ["acme/example-repo"],
+      getScopedRepos: () => ["acme/example-repo"],
+      hasScopeSynced: () => true,
+      clock: () => "2026-06-01T00:30:00.000Z",
+      fetchActiveDeployRuns: async () => [
+        {
+          name: "Deploy",
+          status: "queued",
+          createdAt: "2026-06-01T00:00:00.000Z", // 30min old, under 1h threshold
+        },
+      ],
+      listOpenPrs: async () => [pr1],
+      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
+      fetchPrReviews: async () => [],
+    };
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  // ─── per-PR error handling ─────────────────────────────────────────────────
+
+  test("logs to stderr and excludes only the failing PR when a per-PR query throws (other PRs still qualify)", async () => {
+    const goodPr = makeGhPr({
+      number: 1,
+      headRefOid: "sha1",
+      reviewDecision: "APPROVED",
+    });
+    const badPr = makeGhPr({
+      number: 2,
+      headRefOid: "sha2",
+      reviewDecision: "APPROVED",
+    });
+
+    const stderrLines: string[] = [];
+    const origStderr = process.stderr.write.bind(process.stderr);
+    // biome-ignore lint/suspicious/noExplicitAny: patching write for test capture
+    process.stderr.write = (chunk: any, ...rest: any[]) => {
+      stderrLines.push(String(chunk));
+      return origStderr(chunk, ...rest);
+    };
+
+    const deps: CheckDeployDeps = {
+      getCurrentUser: async () => "bodhi-agent",
+      isSelfReviewAllowed: true,
+      repos: ["acme/example-repo"],
+      getScopedRepos: () => ["acme/example-repo"],
+      hasScopeSynced: () => true,
+      fetchActiveDeployRuns: async () => [],
+      listOpenPrs: async () => [goodPr, badPr],
+      fetchCiRuns: async (_org, _repo, headSha: string) => {
+        if (headSha === "sha2") throw new Error("gh api rate limited");
+        return [{ status: "completed", conclusion: "success" }];
+      },
+      fetchPrReviews: async () => [],
+    };
+
+    const result = await getDeployCandidates(deps);
+    process.stderr.write = origStderr;
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/example-repo#1");
+    expect(
+      stderrLines.some(
+        (l) =>
+          l.includes("gh query failed for PR 2") &&
+          l.includes("gh api rate limited"),
+      ),
+    ).toBe(true);
+  });
+
   // ─── age field sourcing ────────────────────────────────────────────────────
 
   test("age is sourced from the linked task's createdAt when a task is linked", async () => {
@@ -827,5 +953,241 @@ describe("getDeployCandidates", () => {
     );
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/example-repo#50");
+  });
+});
+
+// ─── buildProductionDeps ────────────────────────────────────────────────────
+//
+// Exercises the closures buildProductionDeps wires up against a fake ghJson
+// (no real `gh` process) — same injection pattern as
+// check-patch.unit.test.ts's buildProductionDeps suite. Downstream helpers
+// they delegate to (createBundleCompleteQuery, createPrRecordQuery,
+// createTaskStatusQuery) are already covered by their own dedicated tests in
+// check-helpers.unit.test.ts and are not re-verified here.
+describe("buildProductionDeps", () => {
+  let savedWorkspacePath: string | undefined;
+  let savedAgentHome: string | undefined;
+
+  beforeEach(() => {
+    savedWorkspacePath = process.env.WORKSPACE_PATH;
+    savedAgentHome = process.env.AGENT_HOME;
+    // Point resolveWorkspacePath() at a directory with no repos/ subfolder,
+    // so resolveAllRepos() deterministically returns [] — these tests call
+    // the deps' functions directly rather than exercising the repo scan.
+    process.env.WORKSPACE_PATH = "/tmp/check-deploy-buildProductionDeps-stub";
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.AGENT_HOME;
+  });
+
+  afterEach(() => {
+    if (savedWorkspacePath !== undefined) {
+      process.env.WORKSPACE_PATH = savedWorkspacePath;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.WORKSPACE_PATH;
+    }
+    if (savedAgentHome !== undefined) {
+      process.env.AGENT_HOME = savedAgentHome;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.AGENT_HOME;
+    }
+  });
+
+  test("repos reflects an empty scan when WORKSPACE_PATH has no repos/ subfolder", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+    });
+    expect(deps.repos).toEqual([]);
+  });
+
+  test("repos reflects a real repos/ scan under WORKSPACE_PATH", async () => {
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-deploy-buildProductionDeps-"),
+    );
+    try {
+      const repoDir = join(scratchDir, "repos", "example-repo");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/example-repo.git\n`,
+      );
+      process.env.WORKSPACE_PATH = scratchDir;
+
+      const deps = await buildProductionDeps({
+        ghJson: async <T>() => [] as unknown as T,
+      });
+
+      expect(deps.repos).toEqual(["acme/example-repo"]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  test("listOpenPrs queries gh pr list with the expected --json field set for the given repo", async () => {
+    const seenArgs: string[][] = [];
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        seenArgs.push(args);
+        return [
+          {
+            number: 7,
+            title: "Ship it",
+            headRefOid: "sha7",
+            headRefName: "feat/ship-it",
+            author: { login: "bodhi-agent" },
+            reviewDecision: "APPROVED",
+            createdAt: "2026-05-01T00:00:00Z",
+            mergeStateStatus: "CLEAN",
+          },
+        ] as unknown as T;
+      },
+    });
+
+    const prs = await deps.listOpenPrs("acme/example-repo");
+
+    expect(prs).toHaveLength(1);
+    expect(prs[0].number).toBe(7);
+    expect(seenArgs[0]).toEqual([
+      "pr",
+      "list",
+      "--state",
+      "open",
+      "--repo",
+      "acme/example-repo",
+      "--json",
+      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+    ]);
+  });
+
+  test("fetchPrReviews unwraps the reviews array from gh pr view", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        expect(args).toContain("--repo");
+        expect(args).toContain("acme/widgets");
+        return {
+          reviews: [
+            { author: { login: "reviewer1" }, body: "APPROVE", state: "APPROVED" },
+          ],
+        } as unknown as T;
+      },
+    });
+
+    const reviews = await deps.fetchPrReviews("acme", "widgets", 42);
+    expect(reviews).toEqual([
+      { author: { login: "reviewer1" }, body: "APPROVE", state: "APPROVED" },
+    ]);
+  });
+
+  test("fetchCiRuns filters workflow_runs down to name === 'CI' and maps status/conclusion", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        expect(args[1]).toContain(
+          "repos/acme/widgets/actions/runs?head_sha=deadbeef",
+        );
+        return {
+          workflow_runs: [
+            { name: "CI", status: "completed", conclusion: "success" },
+            { name: "Deploy", status: "completed", conclusion: "success" },
+          ],
+        } as unknown as T;
+      },
+    });
+
+    const runs = await deps.fetchCiRuns("acme", "widgets", "deadbeef");
+    expect(runs).toEqual([{ status: "completed", conclusion: "success" }]);
+  });
+
+  test("fetchActiveDeployRuns merges in_progress and queued runs, filters to name === 'Deploy', and maps created_at", async () => {
+    const calls: string[][] = [];
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        calls.push(args);
+        if (args[1]?.includes("status=in_progress")) {
+          return {
+            workflow_runs: [
+              {
+                name: "Deploy",
+                status: "in_progress",
+                conclusion: null,
+                created_at: "2026-05-01T00:00:00Z",
+              },
+              {
+                name: "CI",
+                status: "in_progress",
+                conclusion: null,
+                created_at: "2026-05-01T00:00:00Z",
+              },
+            ],
+          } as unknown as T;
+        }
+        return {
+          workflow_runs: [
+            {
+              name: "Deploy",
+              status: "queued",
+              conclusion: null,
+              created_at: "2026-05-01T00:05:00Z",
+            },
+          ],
+        } as unknown as T;
+      },
+    });
+
+    const runs = await deps.fetchActiveDeployRuns("acme", "widgets");
+    expect(runs).toEqual([
+      { name: "Deploy", status: "in_progress", createdAt: "2026-05-01T00:00:00Z" },
+      { name: "Deploy", status: "queued", createdAt: "2026-05-01T00:05:00Z" },
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(calls[0][1]).toContain("status=in_progress");
+    expect(calls[1][1]).toContain("status=queued");
+  });
+
+  test("clock returns a parseable ISO string", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+    });
+    const now = deps.clock ? deps.clock() : "";
+    expect(Number.isNaN(new Date(now).getTime())).toBe(false);
+  });
+
+  test("getScopedRepos/hasScopeSynced default to the shared agentReposRef when not overridden", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+    });
+
+    expect(typeof deps.getScopedRepos).toBe("function");
+    expect(typeof deps.hasScopeSynced).toBe("function");
+    expect(() => deps.getScopedRepos()).not.toThrow();
+    expect(() => deps.hasScopeSynced()).not.toThrow();
+  });
+
+  test("an explicit opts.getScopedRepos/hasScopeSynced override the agentReposRef default", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      getScopedRepos: () => ["acme/widgets"],
+      hasScopeSynced: () => true,
+    });
+
+    expect(deps.getScopedRepos()).toEqual(["acme/widgets"]);
+    expect(deps.hasScopeSynced()).toBe(true);
+  });
+
+  test("isBundleComplete/queryPrRecord/queryTaskStatus are wired and callable (delegate to check-helpers query builders)", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+    });
+
+    expect(typeof deps.isBundleComplete).toBe("function");
+    expect(typeof deps.queryPrRecord).toBe("function");
+    expect(typeof deps.queryTaskStatus).toBe("function");
+  });
+
+  test("isSelfReviewAllowed reflects readAllowSelfReview's default (true) when no policy file is present", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+    });
+    expect(deps.isSelfReviewAllowed).toBe(true);
   });
 });

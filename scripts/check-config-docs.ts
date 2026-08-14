@@ -7,9 +7,10 @@
  * Usage (CLI):
  *   bun scripts/check-config-docs.ts
  *
- * Exports (pure string-parsing, no I/O):
- *   extractEnvVarNames(sourceCode: string): string[]
- *   extractDocumentedVars(markdownContent: string): string[]
+ * Exports:
+ *   extractEnvVarNames(sourceCode: string): string[]        — pure string-parsing, no I/O
+ *   extractDocumentedVars(markdownContent: string): string[] — pure string-parsing, no I/O
+ *   collectTsFiles(dir: string, out: string[]): void         — real filesystem walk, exported for testing
  *
  * Exit codes:
  *   0 — all env vars are documented (or in the allowlist)
@@ -118,8 +119,12 @@ export function extractDocumentedVars(markdownContent: string): string[] {
 /**
  * Recursively collects all *.ts files from `dir` (excluding test files).
  * Skips node_modules, .git, dist, and worktrees directories.
+ *
+ * Exported (alongside the other pure functions in this file) so it can be
+ * unit-tested directly against a real scratch directory tree, without
+ * exercising main()'s CLI/exit-code plumbing.
  */
-function collectTsFiles(dir: string, out: string[]): void {
+export function collectTsFiles(dir: string, out: string[]): void {
   const SKIP_DIRS = new Set([
     "node_modules",
     ".git",

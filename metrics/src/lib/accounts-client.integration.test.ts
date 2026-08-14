@@ -263,19 +263,222 @@ describe("HttpAccountsClient listAgentCronJobs", () => {
 });
 
 // ─── stub methods (501 not implemented) ──────────────────────────────────────
+//
+// metrics/src only actually calls getUser/listUsers/listAgents/
+// listAgentCronJobs against the real accounts service (see the module doc).
+// Every other AccountsClient method exists solely so metrics/src's test
+// doubles satisfy the full interface — HttpAccountsClient itself must never
+// be called for them in production. Each stub is asserted individually
+// (rather than looped, so a future implementation of any one of them shows
+// up as a specific failing test, not a silently-shrinking loop) to lock in
+// both the 501 statusCode and the "not implemented" message metrics/src's
+// error handling depends on.
 
 describe("HttpAccountsClient stub methods", () => {
+  const client = new HttpAccountsClient("http://accounts", "tok");
+
   test("createUser rejects with AccountsClientError statusCode 501", async () => {
-    const client = new HttpAccountsClient("http://accounts", "tok");
     await expect(client.createUser({})).rejects.toMatchObject({
+      statusCode: 501,
+      message: "[501] not implemented",
+    });
+  });
+
+  test("updateUser rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.updateUser("u1", {})).rejects.toMatchObject({
       statusCode: 501,
     });
   });
 
   test("listClients rejects with AccountsClientError statusCode 501", async () => {
-    const client = new HttpAccountsClient("http://accounts", "tok");
     await expect(client.listClients()).rejects.toMatchObject({
       statusCode: 501,
     });
+  });
+
+  test("getClient rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getClient("c1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("createClient rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.createClient({})).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("updateClient rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.updateClient("c1", {})).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("deleteClient rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.deleteClient("c1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("listEngagements rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listEngagements()).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("getEngagement rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getEngagement("e1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("createEngagement rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.createEngagement({})).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("updateEngagement rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.updateEngagement("e1", {})).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("deleteEngagement rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.deleteEngagement("e1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("listOAuthConnections rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listOAuthConnections("u1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("getOAuthConnection rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.getOAuthConnection("u1", "github"),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("deleteOAuthConnection rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.deleteOAuthConnection("u1", "github"),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("getOAuthToken rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getOAuthToken("u1", "github")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("listConnections rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listConnections()).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("getConnectionToken rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getConnectionToken("conn1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("getAgentEnv rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getAgentEnv("agent-1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("upsertAgentEnv rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.upsertAgentEnv("agent-1", {}),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("patchAgentEnv rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.patchAgentEnv("agent-1", {})).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("getAgentConfigBundle rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.getAgentConfigBundle("agent-1"),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("listAgentEnvs rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listAgentEnvs()).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("createAgentToken rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.createAgentToken("u1", "client-1", "label"),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("getTeam rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.getTeam("team-1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("listTeams rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listTeams()).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("listEnabledCronJobs rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.listEnabledCronJobs()).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+
+  test("createAgentCronJob rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.createAgentCronJob("agent-1", {}),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("deleteAgentCronJob rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.deleteAgentCronJob("agent-1", "cron-1"),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("setAgentCronJobEnabled rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.setAgentCronJobEnabled("agent-1", "cron-1", true),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("reconcileSystemCrons rejects with AccountsClientError statusCode 501", async () => {
+    await expect(
+      client.reconcileSystemCrons("agent-1", {}),
+    ).rejects.toMatchObject({ statusCode: 501 });
+  });
+
+  test("validateAgentToken rejects with AccountsClientError statusCode 501", async () => {
+    await expect(client.validateAgentToken("token-1")).rejects.toMatchObject({
+      statusCode: 501,
+    });
+  });
+});
+
+// ─── AccountsClientError ────────────────────────────────────────────────────
+
+describe("AccountsClientError", () => {
+  test("formats message as [statusCode] message and sets name/statusCode", () => {
+    const err = new AccountsClientError(503, "service unavailable");
+    expect(err.name).toBe("AccountsClientError");
+    expect(err.statusCode).toBe(503);
+    expect(err.message).toBe("[503] service unavailable");
+    expect(err).toBeInstanceOf(Error);
   });
 });
