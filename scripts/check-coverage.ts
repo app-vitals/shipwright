@@ -6,8 +6,8 @@
 // on individual low-coverage files regardless of overall coverage — hence
 // this separate aggregate gate.
 
-const THRESHOLD_LINES = 80;
-const THRESHOLD_FUNCTIONS = 80;
+const THRESHOLD_LINES = 90;
+const THRESHOLD_FUNCTIONS = 90;
 
 const EXCLUDE_PREFIXES = [
   // Generated / vendor code
