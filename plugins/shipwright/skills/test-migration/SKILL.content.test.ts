@@ -153,6 +153,19 @@ describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
     expect(/Functions:/.test(section)).toBe(true);
   });
 
+  it("scopes the log read to the actual `Test` Actions step, not a literal `test:coverage` step", () => {
+    const section = step4cSection();
+    expect(section).toContain("`Test` step");
+    expect(section).toContain("task test:coverage");
+    expect(/not the step label/i.test(section)).toBe(true);
+  });
+
+  it("keeps the never-guess null-fallback condition consistent with the `Test` step name", () => {
+    const section = step4cSection();
+    expect(section).toContain("no `Test` step");
+    expect(section).not.toContain("no `test:coverage` step");
+  });
+
   it("contains the never-guess idiom", () => {
     const section = step4cSection();
     expect(/never guess/i.test(section)).toBe(true);

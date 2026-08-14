@@ -124,9 +124,10 @@ actually breaches the Tier 2 trigger.
 
 Mirrors Step 4a's mechanism exactly, applied to coverage instead of wall-clock: locate the
 most recent green CI run of the `lint / typecheck / test` job via the same `gh run list` /
-`gh run view --log` pull, but scope the log read to that run's `test:coverage` step
-specifically. That step runs `scripts/check-coverage.ts`, which prints a summary block in
-this exact shape:
+`gh run view --log` pull, but scope the log read to that run's `Test` step specifically —
+per `.github/workflows/ci.yml`, that step is named `Test`; `task test:coverage` is just the
+shell command it runs, not the step label to grep the log by. That step runs
+`scripts/check-coverage.ts`, which prints a summary block in this exact shape:
 
 ```
 Lines:     88.84% (12345/13897) — threshold: 80%
@@ -148,7 +149,7 @@ this run (Phase 1's `test-inventory` skill computes and writes it).
 - `feature_coverage_pct` — cite that the value was carried forward from
   `docs/test-readiness/test-inventory.md`.
 
-**Never guess.** If no green CI run can be found, the run has no `test:coverage` step, or
+**Never guess.** If no green CI run can be found, the run has no `Test` step, or
 `docs/test-readiness/test-inventory.md` is missing or lacks the field, the corresponding
 percentage is `null` — never a guessed or estimated value. This mirrors Step 4a's
 verify-before-cite rule: a percentage without a citable CI run URL + commit (or, for
