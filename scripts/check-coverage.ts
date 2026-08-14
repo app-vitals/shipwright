@@ -160,8 +160,7 @@ export const IstanbulParser: CoverageParser = {
 // e.g. "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1"
 // Columns and numStmt aren't needed for line-level FileStats; only the file
 // path, the line range, and the hit count matter here.
-const GO_COVER_LINE_RE =
-  /^(.+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)$/;
+const GO_COVER_LINE_RE = /^(.+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)$/;
 
 // Parses go cover's text profile format (`go test -coverprofile=cover.out`):
 // a `mode: <set|count|atomic>` header line followed by one block-coverage

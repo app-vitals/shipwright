@@ -367,10 +367,22 @@ describe("GoCoverParser.parse", () => {
     ].join("\n");
 
     expect(GoCoverParser.parse(countFixture)).toEqual([
-      { path: "github.com/example/repo/pkg/foo.go", lf: 1, lh: 1, fnf: 0, fnh: 0 },
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
     ]);
     expect(GoCoverParser.parse(atomicFixture)).toEqual([
-      { path: "github.com/example/repo/pkg/foo.go", lf: 1, lh: 1, fnf: 0, fnh: 0 },
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
     ]);
   });
 
