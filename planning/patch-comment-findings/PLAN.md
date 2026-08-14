@@ -73,8 +73,8 @@ anyone other than the reviewing agent itself" in both places:
 **Layer:** Shared/CLI logic only — no DB, API, or frontend changes.
 
 1. **`agent/src/check-review.ts`** — extract the inline fresh-reply computation
-   (currently in `buildProductionDeps`, ~lines 528-546) into a named, exported pure
-   function; broaden its author filter from `=== pr.author.login` to
+   (currently inline inside `getReviewCandidates`, ~lines 528-546) into a named, exported
+   pure function; broaden its author filter from `=== pr.author.login` to
    `!== currentUser`. Apply at both call sites: the `hasAnyReviewAtHead` exclusion
    (~line 209) and the RCO-1.2 terminal-skip exclusion (~line 246).
 2. **`plugins/shipwright/commands/review.md`'s RVD-1.2 Live-Review Pre-Check** — mirror
