@@ -547,8 +547,20 @@ async function execStep(step: HitlStep): Promise<void> {
 // Preflight: workspace + migrations + token seed
 // ---------------------------------------------------------------------------
 
-async function runPreflight(): Promise<void> {
-  await runSteps(buildPreflightSteps(CONFIG, existsSync), execStep);
+/**
+ * Drives the preflight step sequence through an injected executor. Defaults
+ * to the real (CONFIG-derived) step plan and the real execStep executor —
+ * the entrypoint below calls this with no arguments. Tests inject an
+ * explicit step list and a recording/fake executor instead, so the
+ * composition (provision → clone → install-plugins → migrate, propagating
+ * an executor failure the same way runSteps() does) is assertable without
+ * touching the filesystem, gh, or prisma.
+ */
+export async function runPreflight(
+  steps: HitlStep[] = buildPreflightSteps(CONFIG, existsSync),
+  exec: StepExecFn = execStep,
+): Promise<void> {
+  await runSteps(steps, exec);
   log(`workspace provisioned: ${WORKSPACE}`);
 }
 
@@ -616,10 +628,28 @@ export function buildServiceSpecs(
   ];
 }
 
-function startServices(): ServiceHandle[] {
+/**
+ * Injectable process spawner so tests can supply a fake instead of
+ * Bun.spawn. Loosely typed (vs. Bun's exact overload set) since callers only
+ * need argv/cwd in, a proc-like handle out — tests return a minimal
+ * `{ kill }` stand-in rather than a real subprocess.
+ */
+type SpawnLike = (
+  argv: string[],
+  opts: { cwd: string; env: Record<string, string> },
+) => { kill: (signal?: string) => void };
+
+/**
+ * Boots the task-store and admin services via an injected spawner. Defaults
+ * to the real Bun.spawn — the entrypoint calls this with no arguments. Tests
+ * inject a recording fake so the two ServiceSpecs built by buildServiceSpecs()
+ * are asserted to actually get spawned, in order, without starting real
+ * long-running processes.
+ */
+export function startServices(spawn: SpawnLike = Bun.spawn): ServiceHandle[] {
   return buildServiceSpecs(CONFIG, process.env).map((spec) => ({
     label: spec.label,
-    proc: Bun.spawn(spec.argv, {
+    proc: spawn(spec.argv, {
       cwd: spec.cwd,
       env: spec.env,
       stdout: "inherit",
@@ -838,9 +868,17 @@ export function buildPrCommand(
   return `/shipwright:${command} ${prId} ${marker}`;
 }
 
-async function fetchReadyTasks(): Promise<Task[]> {
+/**
+ * Polls the task-store for ready tasks via an injected fetch. Defaults to
+ * the real global fetch — the entrypoint (runLoop()) calls this with no
+ * arguments. Tests inject a fake so the non-ok-response and
+ * network-error-swallowing paths are assertable without a real task-store.
+ */
+export async function fetchReadyTasks(
+  fetchImpl: FetchLike = fetch,
+): Promise<Task[]> {
   try {
-    const res = await fetch(`${TASK_STORE_URL}/tasks?ready=true`, {
+    const res = await fetchImpl(`${TASK_STORE_URL}/tasks?ready=true`, {
       headers: { Authorization: `Bearer ${DEV_TOKEN}` },
     });
     if (!res.ok) {
