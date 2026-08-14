@@ -28,6 +28,19 @@ This is the closed set of items that define the canary suite. Anything outside t
 
 {{CANARY_ROSTER}}
 
+## Features
+
+A coarser, separate grouping of the units above — for coverage rollup and prioritization
+only, not a per-file criticality->CI mapping. Every code unit is assigned to exactly one
+feature. Importance is prioritization-only and never excludes a feature from the
+`feature_coverage_pct` denominator.
+
+| Feature name | Member units | Required layer | Importance | Covered (y/n) |
+|---|---|---|---|---|
+{{FEATURES_ROWS}}
+
+**feature_coverage_pct:** {{FEATURE_COVERAGE_PCT}} (covered_features / total_features x 100 — no exclusion category of any kind)
+
 ## Per-category detail
 
 ### 1. Pure business logic

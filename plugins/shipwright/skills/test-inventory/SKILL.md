@@ -1,7 +1,7 @@
 ---
 name: test-inventory
 description: >
-  Phase 1 of the test-readiness pipeline. Crawls a target repo, classifies every meaningful unit of code (business logic, service boundary, HTTP route, error path, external integration, user journey), prescribes the appropriate test layer (unit / integration / smoke / E2E) using the rubrics, ranks each by criticality (critical / high / medium), and tags canary eligibility. Outputs a deduplicated inventory — each functional unit appears exactly once at its canonical layer per the no-duplicate-coverage rule. Writes `docs/test-readiness/test-inventory.md`. Invoke when the `/test-inventory` command runs.
+  Phase 1 of the test-readiness pipeline. Crawls a target repo, classifies every meaningful unit of code (business logic, service boundary, HTTP route, error path, external integration, user journey), prescribes the appropriate test layer (unit / integration / smoke / E2E) using the rubrics, ranks each by criticality (critical / high / medium), groups units into features with importance tags (revenue-path / security-path / core / auxiliary), and tags canary eligibility. Outputs a deduplicated inventory — each functional unit appears exactly once at its canonical layer per the no-duplicate-coverage rule. Writes `docs/test-readiness/test-inventory.md`. Invoke when the `/test-inventory` command runs.
 ---
 
 # test-inventory skill
@@ -98,6 +98,80 @@ repo's conventions), do not apply it — classify the file normally per the mech
 and note in the row why the registry entry was not applied (its revisit condition was met, or
 its recorded layer no longer applies) rather than silently ignoring the stale entry.
 
+### Step 3b — group into features
+
+Once units are classified and deduplicated (Step 3), group them into **features** — a
+coarser, separate structure used for a coverage rollup, not a replacement for the per-unit
+inventory built above.
+
+**Heuristic inference.** Infer feature boundaries from whichever signal is strongest for the
+repo's structure — do not force a single signal:
+- **Directory structure** — a top-level (or otherwise clearly-bounded) source directory
+  often maps 1:1 to a feature (e.g. `src/billing/`, `app/checkout/`).
+- **Route prefix** — HTTP routes sharing a common path prefix (e.g. everything under
+  `/api/orders/*`) usually belong to the same feature, even if their handlers live in
+  different files.
+- **Entry point** — a CLI command, queue consumer, or scheduled job entry point often
+  anchors a feature that fans out into several supporting units.
+
+Every code unit discovered in Step 2 must be assigned to **exactly one feature** — no
+orphans. If a unit genuinely spans two plausible features (e.g. shared utility code used by
+both billing and checkout), assign it to the feature it most directly serves and note the
+overlap rather than double-counting it or leaving it unassigned.
+
+**Importance tagging.** Tag each feature with exactly one of four labels:
+- `revenue-path` — directly on the path to revenue (checkout, billing, payments)
+- `security-path` — auth, authz, secrets handling, PII boundaries
+- `core` — primary product functionality outside the above two
+- `auxiliary` — internal tooling, admin-only surfaces, low-traffic utilities
+
+Importance is **prioritization-only** — it tells a human which features to shore up first.
+It never excludes a feature from the denominator used to compute `feature_coverage_pct`
+(defined below). An `auxiliary` feature is exactly as "counted" as a `revenue-path` feature;
+importance affects order of attention, not membership in the coverage calculation.
+
+**This is not the same as Step 4's per-unit criticality tier.** A feature's importance label
+and a unit's criticality tier (`critical` / `high` / `medium`, assigned in Step 4) are
+independent, differently-shaped concepts — one tags a coarse group, the other tags an
+individual unit — and must not be conflated or merged into a single field. Feature importance
+does not feed, replace, or override Step 4's per-unit criticality ranking, and per Step 4's
+own note, neither drives separate CI enforcement thresholds.
+
+**This feature-grouping structure must not reintroduce a maintained per-file criticality to
+CI mapping.** The whole point of Step 4's note ("Maintaining a criticality inventory just for
+CI enforcement creates mapping decay as the codebase evolves") applies here too, at a
+coarser grain: features and their importance labels are a coverage-rollup and prioritization
+structure only, never a maintained per-file (or per-feature) mapping that any CI gate
+consults directly. If a CI threshold is ever introduced, it must stay tier-agnostic, exactly
+as Step 4 already prescribes for criticality.
+
+**Ambiguous groupings.** When a unit's feature assignment is genuinely unclear, this is not a
+new mechanism — reuse the skill's existing pattern exactly: list it in the "Ambiguous items"
+section using the identical wording already used for classifier-confidence flags
+("classifier was not confident"; see Sampling tips and the template's Ambiguous items
+section). A reviewer confirms the grouping the same way they confirm an uncertain
+category/layer classification.
+
+**Required layer.** Each feature's "required layer" in the Features table is the *highest*
+layer among its member units' prescribed layers, per the canonical-layer hierarchy from
+Step 3 (`unit > integration > smoke > E2E`, lowest-to-highest reversed here — E2E is
+highest). E.g. a feature whose member units are prescribed unit, unit, and E2E has a
+required layer of E2E — the feature as a whole isn't provably covered until its
+highest-layer member is.
+
+**`feature_coverage_pct`.** Compute this value during the SKILL run as:
+
+```
+feature_coverage_pct = covered_features / total_features x 100
+```
+
+A feature counts as "covered" once every member unit in the per-unit inventory has at least
+one test at its prescribed layer (per Phase 3's findings, or per the pre-existing test suite
+if already known at inventory time). There is **no exclusion category of any kind** — every
+feature identified in this step is included in `total_features` regardless of its importance
+label, size, or anything else. Nothing is excluded from either numerator-eligibility or the
+denominator based on importance.
+
 ### Step 4 — rank by criticality
 
 Three tiers:
@@ -131,7 +205,7 @@ When `deploy_model == 'staged'`, proceed with the existing canary-eligibility ru
 
 ### Step 6 — write the artifact
 
-Load the template at `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-inventory.md.tmpl` and fill it in. Write to `docs/test-readiness/test-inventory.md` in the target repo. Create the directory if missing.
+Load the template at `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-inventory.md.tmpl` and fill it in, including the Features section — populate `{{FEATURES_ROWS}}` with one row per feature from Step 3b (feature name, member units, required layer, importance, covered y/n) and `{{FEATURE_COVERAGE_PCT}}` with the computed value. Write to `docs/test-readiness/test-inventory.md` in the target repo. Create the directory if missing.
 
 ## Sampling tips for large repos
 
