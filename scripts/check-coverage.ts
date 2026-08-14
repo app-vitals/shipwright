@@ -220,6 +220,66 @@ export const IstanbulParser: CoverageParser = {
   },
 };
 
+// Matches a single go cover text-profile data line:
+//   <file>:<startLine>.<startCol>,<endLine>.<endCol> <numStmt> <count>
+// e.g. "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1"
+// Columns and numStmt aren't needed for line-level FileStats; only the file
+// path, the line range, and the hit count matter here.
+const GO_COVER_LINE_RE = /^(.+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)$/;
+
+// Parses go cover's text profile format (`go test -coverprofile=cover.out`):
+// a `mode: <set|count|atomic>` header line followed by one block-coverage
+// record per line. Unlike LCOV/Istanbul, go cover reports coverage per
+// *block* (a span of lines), not per line or per statement — there is no
+// per-line hit count in the source format. Line coverage is derived by
+// expanding each block's [startLine, endLine] span across a per-file
+// Map<lineNumber, maxHitCount>, mirroring how IstanbulParser's
+// deriveLineCoverage dedupes multiple statements landing on the same line:
+// a line is "found" if any block touches it, and "hit" if the max hit count
+// of any block touching it is > 0. Go's blocks don't normally overlap, but
+// taking the max is defensive in case they ever do.
+// go cover's text profile carries no function-level granularity, so fnf/fnh
+// are always 0 (same limitation as CoveragePyParser's statement-only format).
+export const GoCoverParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    const lineHitsByFile = new Map<string, Map<number, number>>();
+
+    for (const line of content.split("\n")) {
+      if (!line.trim() || line.startsWith("mode:")) continue;
+
+      const match = line.match(GO_COVER_LINE_RE);
+      if (!match) continue;
+
+      const [, path, startLineStr, endLineStr, countStr] = match;
+      const startLine = Number.parseInt(startLineStr, 10);
+      const endLine = Number.parseInt(endLineStr, 10);
+      const count = Number.parseInt(countStr, 10);
+
+      let lineHits = lineHitsByFile.get(path);
+      if (!lineHits) {
+        lineHits = new Map<number, number>();
+        lineHitsByFile.set(path, lineHits);
+      }
+
+      for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+        const current = lineHits.get(lineNum) ?? 0;
+        lineHits.set(lineNum, Math.max(current, count));
+      }
+    }
+
+    const files: FileStats[] = [];
+    for (const [path, lineHits] of lineHitsByFile.entries()) {
+      let lh = 0;
+      for (const hit of lineHits.values()) {
+        if (hit > 0) lh++;
+      }
+      files.push({ path, lf: lineHits.size, lh, fnf: 0, fnh: 0 });
+    }
+
+    return files;
+  },
+};
+
 async function main() {
   const lcov = await Bun.file(LCOV_PATH)
     .text()

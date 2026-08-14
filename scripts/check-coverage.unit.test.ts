@@ -18,6 +18,7 @@ import {
   aggregateStats,
   computeFailures,
   filterRelevantFiles,
+  GoCoverParser,
   IstanbulParser,
   LcovParser,
   percentOf,
@@ -409,5 +410,153 @@ describe("IstanbulParser.parse", () => {
 
   test("returns an empty array for an empty JSON object", () => {
     expect(IstanbulParser.parse("{}")).toEqual([]);
+  });
+});
+
+describe("GoCoverParser.parse", () => {
+  test("parses a single file, single block, fully covered", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("parses a single file, single block, uncovered", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:14.2,14.20 1 0",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 0,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("a block spanning multiple physical lines counts every line in range", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/bar.go:5.10,7.2 2 3",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    // lines 5, 6, 7 => lf 3; count 3 > 0 => all hit => lh 3
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/bar.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("a multi-line uncovered block counts every line as found but none hit", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/baz.go:20.1,23.2 3 0",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    // lines 20, 21, 22, 23 => lf 4; count 0 => lh 0
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/baz.go",
+        lf: 4,
+        lh: 0,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("parses multiple files in first-appearance order", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1",
+      "github.com/example/repo/pkg/foo.go:14.2,14.20 1 0",
+      "github.com/example/repo/pkg/bar.go:5.10,7.2 2 3",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        // block1: lines 10,11,12 hit; block2: line 14 not hit => lf 4, lh 3
+        lf: 4,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+      {
+        path: "github.com/example/repo/pkg/bar.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("mode: count / mode: atomic header lines are skipped, not treated as data or errors", () => {
+    const countFixture = [
+      "mode: count",
+      "github.com/example/repo/pkg/foo.go:1.1,1.10 1 5",
+    ].join("\n");
+    const atomicFixture = [
+      "mode: atomic",
+      "github.com/example/repo/pkg/foo.go:1.1,1.10 1 5",
+    ].join("\n");
+
+    expect(GoCoverParser.parse(countFixture)).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+    expect(GoCoverParser.parse(atomicFixture)).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("returns an empty array for empty content", () => {
+    expect(GoCoverParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array for a profile with only the mode line", () => {
+    expect(GoCoverParser.parse("mode: set")).toEqual([]);
+    expect(GoCoverParser.parse("mode: set\n")).toEqual([]);
   });
 });
