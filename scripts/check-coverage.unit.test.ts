@@ -7,7 +7,7 @@
  * the filesystem or triggers the script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { LcovParser } from "./check-coverage";
+import { computeAggregateLinePct, LcovParser } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -141,5 +141,58 @@ describe("LcovParser.parse", () => {
     expect(totalLh).toBe(68);
     expect(totalFnf).toBe(10);
     expect(totalFnh).toBe(7);
+  });
+});
+
+describe("computeAggregateLinePct", () => {
+  test("computes the weighted aggregate line percentage across relevant files", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 38, fnf: 4, fnh: 4 },
+      { path: "metrics/src/bar.ts", lf: 60, lh: 30, fnf: 6, fnh: 3 },
+    ];
+
+    // (38 + 30) / (40 + 60) * 100 = 68
+    expect(computeAggregateLinePct(files)).toBe(68);
+  });
+
+  test("excludes files matching EXCLUDE_PREFIXES from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 40, fnf: 4, fnh: 4 },
+      {
+        path: "node_modules/some-dep/index.js",
+        lf: 1000,
+        lh: 0,
+        fnf: 100,
+        fnh: 0,
+      },
+    ];
+
+    // node_modules/ is excluded, so only foo.ts counts: 40/40 = 100
+    expect(computeAggregateLinePct(files)).toBe(100);
+  });
+
+  test("excludes files matching EXCLUDE_SUBSTRINGS from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 10, lh: 5, fnf: 1, fnh: 1 },
+      {
+        path: "task-store/prisma/client/index.js",
+        lf: 500,
+        lh: 500,
+        fnf: 50,
+        fnh: 50,
+      },
+    ];
+
+    // prisma/client/ is excluded, so only foo.ts counts: 5/10 = 50
+    expect(computeAggregateLinePct(files)).toBe(50);
+  });
+
+  test("returns 100 when there are no relevant files (no lines found, not a failure)", () => {
+    expect(computeAggregateLinePct([])).toBe(100);
+  });
+
+  test("returns 100 when total lines-found across relevant files is zero", () => {
+    const files = [{ path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 }];
+    expect(computeAggregateLinePct(files)).toBe(100);
   });
 });

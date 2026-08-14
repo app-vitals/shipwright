@@ -177,6 +177,56 @@ jobs:
           ./gitleaks detect --source . --no-git --redact
 
 
+  # Compares this PR's aggregate line-coverage percentage against the base
+  # branch's and fails if it decreased (scripts/check-coverage-no-decrease.ts).
+  # check-coverage.ts (in the `ci` job above) only gates on an absolute 80%
+  # threshold — this catches an already-passing repo backsliding over time.
+  # Only meaningful on a pull_request (there's no "base to compare against"
+  # on a push to main). No new secret: base-ref coverage is computed by
+  # checking out origin/<base> into an isolated git worktree with the
+  # default checkout token, entirely within this job.
+  #
+  # DB-backed integration tests self-skip when DATABASE_URL_*_TEST is unset
+  # (see admin/src/*.integration.test.ts), so no postgres service is needed
+  # here — both the current-PR and base-ref coverage runs skip the same
+  # tests, keeping the comparison apples-to-apples. Chromium is still
+  # required: agent/src/browser.integration.test.ts launches a real browser
+  # and does not self-skip.
+  coverage-no-decrease:
+    name: coverage must not decrease
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: "1.x"
+
+      - name: Install go-task
+        uses: arduino/setup-task@b91d5d2c96a56797b48ac1e0e89220bf64044611 # v2.0.0
+        with:
+          version: 3.51.1
+
+      - name: Install dependencies
+        run: task setup
+
+      - name: Install Playwright chromium-headless-shell
+        run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
+
+      - name: Test with coverage
+        run: task test:coverage
+
+      - name: Check coverage did not decrease vs base branch
+        env:
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+        run: bun run scripts/check-coverage-no-decrease.ts
+
   site:
     name: site build / brand-lint / smoke
     timeout-minutes: 20
