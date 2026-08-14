@@ -85,6 +85,76 @@ export const LcovParser: CoverageParser = {
   },
 };
 
+// Raw Istanbul coverage shapes (c8/nyc's native `coverage-final.json`), pared
+// down to the fields FileStats derivation needs. branchMap/b are present in
+// real output but irrelevant here.
+type IstanbulStatement = { start: { line: number } };
+type IstanbulFileCoverage = {
+  path: string;
+  statementMap: Record<string, IstanbulStatement>;
+  fnMap: Record<string, unknown>;
+  s: Record<string, number>;
+  f: Record<string, number>;
+};
+
+// Derives line coverage the same way istanbul-lib-coverage does: Istanbul
+// tracks coverage per *statement*, not per line, so a single line with
+// multiple statements (e.g. a chained expression split across `;`s on one
+// line) must be deduplicated onto its starting line number rather than
+// counted per statement. A line counts as "found" once if any statement
+// starts on it, and as "hit" if at least one statement starting on that
+// line has a hit count > 0.
+function deriveLineCoverage(
+  statementMap: Record<string, IstanbulStatement>,
+  hits: Record<string, number>,
+): { lf: number; lh: number } {
+  const maxHitsByLine = new Map<number, number>();
+
+  for (const [id, statement] of Object.entries(statementMap)) {
+    const line = statement.start.line;
+    const hit = hits[id] ?? 0;
+    const current = maxHitsByLine.get(line) ?? 0;
+    maxHitsByLine.set(line, Math.max(current, hit));
+  }
+
+  let lh = 0;
+  for (const maxHit of maxHitsByLine.values()) {
+    if (maxHit > 0) lh++;
+  }
+
+  return { lf: maxHitsByLine.size, lh };
+}
+
+// Parses c8/nyc's native Istanbul JSON format (e.g. `c8 --reporter=json` or
+// `nyc report --reporter=json`, a.k.a. `coverage-final.json`): a JSON object
+// keyed by absolute file path, each value carrying statementMap/s (statement
+// hit counts) and fnMap/f (function hit counts). Line coverage is NOT a raw
+// statement count — see deriveLineCoverage above.
+export const IstanbulParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    if (!content.trim()) return [];
+
+    let raw: Record<string, IstanbulFileCoverage>;
+    try {
+      raw = JSON.parse(content);
+    } catch {
+      return [];
+    }
+
+    const files: FileStats[] = [];
+
+    for (const [, file] of Object.entries(raw)) {
+      const { lf, lh } = deriveLineCoverage(file.statementMap, file.s);
+      const fnf = Object.keys(file.fnMap).length;
+      const fnh = Object.values(file.f).filter((hit) => hit > 0).length;
+
+      files.push({ path: file.path, lf, lh, fnf, fnh });
+    }
+
+    return files;
+  },
+};
+
 async function main() {
   const lcov = await Bun.file(LCOV_PATH)
     .text()
