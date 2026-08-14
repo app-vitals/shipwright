@@ -120,6 +120,42 @@ step — do not treat the absence of local per-layer infra (e.g. no Postgres in 
 a gap requiring escalation. The infra gap is not a speed problem unless Step 4a's aggregate
 actually breaches the Tier 2 trigger.
 
+#### Step 4c — pull real coverage percentages (always)
+
+Mirrors Step 4a's mechanism exactly, applied to coverage instead of wall-clock: locate the
+most recent green CI run of the `lint / typecheck / test` job via the same `gh run list` /
+`gh run view --log` pull, but scope the log read to that run's `Test` step specifically —
+per `.github/workflows/ci.yml`, that step is named `Test`; `task test:coverage` is just the
+shell command it runs, not the step label to grep the log by. That step runs
+`scripts/check-coverage.ts`, which prints a summary block in this exact shape:
+
+```
+Lines:     88.84% (12345/13897) — threshold: 80%
+Functions: 88.00% (2200/2500) — threshold: 80%
+```
+
+Grep the step's log for these `Lines:` / `Functions:` lines and parse `line_coverage_pct` and
+`function_coverage_pct` from them. No local coverage run is needed — like Step 4a, this is
+always obtainable from CI history alone. This step is mandatory and runs on every
+`/test-migration` invocation.
+
+Carry `feature_coverage_pct` forward rather than recomputing it: read it from
+`docs/test-readiness/test-inventory.md`, the Step 1 prerequisite artifact already loaded for
+this run (Phase 1's `test-inventory` skill computes and writes it).
+
+**Cite sources explicitly, every time:**
+- `line_coverage_pct` / `function_coverage_pct` — cite the CI run URL and the commit SHA it
+  ran against (both available from `gh run view`).
+- `feature_coverage_pct` — cite that the value was carried forward from
+  `docs/test-readiness/test-inventory.md`.
+
+**Never guess.** If no green CI run can be found, the run has no `Test` step, or
+`docs/test-readiness/test-inventory.md` is missing or lacks the field, the corresponding
+percentage is `null` — never a guessed or estimated value. This mirrors Step 4a's
+verify-before-cite rule: a percentage without a citable CI run URL + commit (or, for
+`feature_coverage_pct`, a citable test-inventory.md reference) does not get reported as a
+number.
+
 ### Step 5 — assign buckets
 
 Walk the matrix:

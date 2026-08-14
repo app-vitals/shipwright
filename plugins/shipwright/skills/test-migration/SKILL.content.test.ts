@@ -100,3 +100,80 @@ describe("SKILL.md — Failure modes: measurement-only items carried forward acr
     expect(content.toLowerCase()).not.toContain("this cycle");
   });
 });
+
+describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
+  const step4cIdx = () => content.indexOf("Step 4c");
+  const step4cSection = () => {
+    const idx = step4cIdx();
+    expect(idx).toBeGreaterThan(-1);
+    // Slice to the next top-level (### ) or Step 5 heading, whichever comes first.
+    const rest = content.slice(idx);
+    const nextHeadingMatch = rest.slice(1).match(/\n#{2,3}\s/);
+    return nextHeadingMatch && nextHeadingMatch.index !== undefined
+      ? rest.slice(0, nextHeadingMatch.index + 1)
+      : rest;
+  };
+
+  it("has a Step 4c heading", () => {
+    expect(step4cIdx()).toBeGreaterThan(-1);
+  });
+
+  it("states it is mandatory and always runs on every /test-migration invocation", () => {
+    const section = step4cSection();
+    expect(/mandatory/i.test(section)).toBe(true);
+    expect(/\/test-migration/i.test(section)).toBe(true);
+    expect(/always/i.test(section)).toBe(true);
+  });
+
+  it("mentions line_coverage_pct and function_coverage_pct", () => {
+    const section = step4cSection();
+    expect(section).toContain("line_coverage_pct");
+    expect(section).toContain("function_coverage_pct");
+  });
+
+  it("mentions feature_coverage_pct and carrying it forward from test-inventory", () => {
+    const section = step4cSection();
+    expect(section).toContain("feature_coverage_pct");
+    expect(/carr(y|ied|ying) forward/i.test(section)).toBe(true);
+    expect(section).toContain("test-inventory.md");
+  });
+
+  it("requires citing the CI run URL and commit as the source", () => {
+    const section = step4cSection();
+    expect(/CI run/i.test(section)).toBe(true);
+    expect(/URL/i.test(section)).toBe(true);
+    expect(/commit/i.test(section)).toBe(true);
+    expect(/cite/i.test(section)).toBe(true);
+  });
+
+  it("references the test:coverage CI step and its Lines/Functions summary output", () => {
+    const section = step4cSection();
+    expect(section).toContain("test:coverage");
+    expect(/Lines:/.test(section)).toBe(true);
+    expect(/Functions:/.test(section)).toBe(true);
+  });
+
+  it("scopes the log read to the actual `Test` Actions step, not a literal `test:coverage` step", () => {
+    const section = step4cSection();
+    expect(section).toContain("`Test` step");
+    expect(section).toContain("task test:coverage");
+    expect(/not the step label/i.test(section)).toBe(true);
+  });
+
+  it("keeps the never-guess null-fallback condition consistent with the `Test` step name", () => {
+    const section = step4cSection();
+    expect(section).toContain("no `Test` step");
+    expect(section).not.toContain("no `test:coverage` step");
+  });
+
+  it("contains the never-guess idiom", () => {
+    const section = step4cSection();
+    expect(/never guess/i.test(section)).toBe(true);
+  });
+
+  it("states unavailable values are null rather than guessed/estimated", () => {
+    const section = step4cSection();
+    expect(section).toContain("null");
+    expect(/guess|estimat/i.test(section)).toBe(true);
+  });
+});
