@@ -5,7 +5,6 @@
 // coverageThreshold enforces a PER-FILE minimum instead, which would fail CI
 // on individual low-coverage files regardless of overall coverage — hence
 // this separate aggregate gate.
-export {};
 
 const THRESHOLD_LINES = 80;
 const THRESHOLD_FUNCTIONS = 80;
@@ -46,83 +45,107 @@ const EXCLUDE_PREFIXES = [
 const EXCLUDE_SUBSTRINGS = ["prisma/client/"];
 const LCOV_PATH = "coverage/lcov.info";
 
-const lcov = await Bun.file(LCOV_PATH)
-  .text()
-  .catch(() => {
-    console.error(
-      `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
-    );
-    process.exit(1);
-  });
-
-type FileStats = {
+export type FileStats = {
+  path: string;
   lf: number;
   lh: number;
   fnf: number;
   fnh: number;
 };
-const files: Record<string, FileStats> = {};
-let current = "";
 
-for (const line of lcov.split("\n")) {
-  if (line.startsWith("SF:")) {
-    current = line.slice(3);
-    files[current] = { lf: 0, lh: 0, fnf: 0, fnh: 0 };
-  } else if (line.startsWith("LF:")) {
-    files[current].lf = Number.parseInt(line.slice(3), 10);
-  } else if (line.startsWith("LH:")) {
-    files[current].lh = Number.parseInt(line.slice(3), 10);
-  } else if (line.startsWith("FNF:")) {
-    files[current].fnf = Number.parseInt(line.slice(4), 10);
-  } else if (line.startsWith("FNH:")) {
-    files[current].fnh = Number.parseInt(line.slice(4), 10);
+export interface CoverageParser {
+  parse(content: string): FileStats[];
+}
+
+// Parses LCOV-format content (SF:/LF:/LH:/FNF:/FNH: records) into an
+// ordered FileStats[] — one entry per SF: block, in the order each first
+// appears in the content (mirrors the insertion order of the original
+// `files: Record<string, FileStats>` map this was extracted from).
+export const LcovParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    const files: FileStats[] = [];
+    let current: FileStats | undefined;
+
+    for (const line of content.split("\n")) {
+      if (line.startsWith("SF:")) {
+        current = { path: line.slice(3), lf: 0, lh: 0, fnf: 0, fnh: 0 };
+        files.push(current);
+      } else if (line.startsWith("LF:")) {
+        if (current) current.lf = Number.parseInt(line.slice(3), 10);
+      } else if (line.startsWith("LH:")) {
+        if (current) current.lh = Number.parseInt(line.slice(3), 10);
+      } else if (line.startsWith("FNF:")) {
+        if (current) current.fnf = Number.parseInt(line.slice(4), 10);
+      } else if (line.startsWith("FNH:")) {
+        if (current) current.fnh = Number.parseInt(line.slice(4), 10);
+      }
+    }
+
+    return files;
+  },
+};
+
+async function main() {
+  const lcov = await Bun.file(LCOV_PATH)
+    .text()
+    .catch(() => {
+      console.error(
+        `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
+      );
+      process.exit(1);
+    });
+
+  const files = LcovParser.parse(lcov);
+
+  const relevant = files.filter(
+    (file) =>
+      !EXCLUDE_PREFIXES.some((ex) => file.path.startsWith(ex)) &&
+      !EXCLUDE_SUBSTRINGS.some((sub) => file.path.includes(sub)),
+  );
+
+  if (relevant.length === 0) {
+    console.log("No source files in coverage report.");
+    process.exit(0);
   }
-}
 
-const relevant = Object.entries(files).filter(
-  ([path]) =>
-    !EXCLUDE_PREFIXES.some((ex) => path.startsWith(ex)) &&
-    !EXCLUDE_SUBSTRINGS.some((sub) => path.includes(sub)),
-);
+  let totalLf = 0;
+  let totalLh = 0;
+  let totalFnf = 0;
+  let totalFnh = 0;
 
-if (relevant.length === 0) {
-  console.log("No source files in coverage report.");
-  process.exit(0);
-}
+  for (const { path, lf, lh, fnf, fnh } of relevant) {
+    totalLf += lf;
+    totalLh += lh;
+    totalFnf += fnf;
+    totalFnh += fnh;
 
-let totalLf = 0;
-let totalLh = 0;
-let totalFnf = 0;
-let totalFnh = 0;
+    const linePct = lf === 0 ? 100 : (lh / lf) * 100;
+    const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
+    console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
+  }
 
-for (const [path, { lf, lh, fnf, fnh }] of relevant) {
-  totalLf += lf;
-  totalLh += lh;
-  totalFnf += fnf;
-  totalFnh += fnh;
+  const overallLines = totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
+  const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
 
-  const linePct = lf === 0 ? 100 : (lh / lf) * 100;
-  const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
-  console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
-}
-
-const overallLines = totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
-const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
-
-console.log(`
+  console.log(`
 Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
-const failures: string[] = [];
-if (overallLines < THRESHOLD_LINES)
-  failures.push(`Lines ${overallLines.toFixed(2)}% < ${THRESHOLD_LINES}%`);
-if (overallFunctions < THRESHOLD_FUNCTIONS)
-  failures.push(
-    `Functions ${overallFunctions.toFixed(2)}% < ${THRESHOLD_FUNCTIONS}%`,
-  );
+  const failures: string[] = [];
+  if (overallLines < THRESHOLD_LINES)
+    failures.push(`Lines ${overallLines.toFixed(2)}% < ${THRESHOLD_LINES}%`);
+  if (overallFunctions < THRESHOLD_FUNCTIONS)
+    failures.push(
+      `Functions ${overallFunctions.toFixed(2)}% < ${THRESHOLD_FUNCTIONS}%`,
+    );
 
-if (failures.length > 0) {
-  console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
-  process.exit(1);
+  if (failures.length > 0) {
+    console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
+    process.exit(1);
+  }
+  console.log("✅ Coverage gate passed");
 }
-console.log("✅ Coverage gate passed");
+
+if (import.meta.main) {
+  await main();
+}
