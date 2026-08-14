@@ -85,6 +85,71 @@ export const LcovParser: CoverageParser = {
   },
 };
 
+// Filters out files that match an exclude prefix or substring, preserving
+// the input order. Mirrors the EXCLUDE_PREFIXES ("process entrypoints")
+// and EXCLUDE_SUBSTRINGS (e.g. generated Prisma client code) exclusion
+// rules documented above those constants.
+export function filterRelevantFiles(
+  files: FileStats[],
+  excludePrefixes: string[],
+  excludeSubstrings: string[],
+): FileStats[] {
+  return files.filter(
+    (file) =>
+      !excludePrefixes.some((ex) => file.path.startsWith(ex)) &&
+      !excludeSubstrings.some((sub) => file.path.includes(sub)),
+  );
+}
+
+export type AggregateStats = {
+  totalLf: number;
+  totalLh: number;
+  totalFnf: number;
+  totalFnh: number;
+};
+
+// Sums LF/LH/FNF/FNH across every file into aggregate totals.
+export function aggregateStats(files: FileStats[]): AggregateStats {
+  let totalLf = 0;
+  let totalLh = 0;
+  let totalFnf = 0;
+  let totalFnh = 0;
+
+  for (const { lf, lh, fnf, fnh } of files) {
+    totalLf += lf;
+    totalLh += lh;
+    totalFnf += fnf;
+    totalFnh += fnh;
+  }
+
+  return { totalLf, totalLh, totalFnf, totalFnh };
+}
+
+// A file (or the aggregate) with zero countable lines/functions is treated
+// as 100% by convention — there's nothing to have missed.
+export function percentOf(hit: number, found: number): number {
+  return found === 0 ? 100 : (hit / found) * 100;
+}
+
+// Builds the list of human-readable gate failure messages for the overall
+// line/function percentages against their thresholds. Returns an empty
+// array when both are at or above threshold (gate passes).
+export function computeFailures(
+  overallLines: number,
+  overallFunctions: number,
+  thresholdLines: number,
+  thresholdFunctions: number,
+): string[] {
+  const failures: string[] = [];
+  if (overallLines < thresholdLines)
+    failures.push(`Lines ${overallLines.toFixed(2)}% < ${thresholdLines}%`);
+  if (overallFunctions < thresholdFunctions)
+    failures.push(
+      `Functions ${overallFunctions.toFixed(2)}% < ${thresholdFunctions}%`,
+    );
+  return failures;
+}
+
 async function main() {
   const lcov = await Bun.file(LCOV_PATH)
     .text()
@@ -97,10 +162,10 @@ async function main() {
 
   const files = LcovParser.parse(lcov);
 
-  const relevant = files.filter(
-    (file) =>
-      !EXCLUDE_PREFIXES.some((ex) => file.path.startsWith(ex)) &&
-      !EXCLUDE_SUBSTRINGS.some((sub) => file.path.includes(sub)),
+  const relevant = filterRelevantFiles(
+    files,
+    EXCLUDE_PREFIXES,
+    EXCLUDE_SUBSTRINGS,
   );
 
   if (relevant.length === 0) {
@@ -108,36 +173,26 @@ async function main() {
     process.exit(0);
   }
 
-  let totalLf = 0;
-  let totalLh = 0;
-  let totalFnf = 0;
-  let totalFnh = 0;
-
-  for (const { path, lf, lh, fnf, fnh } of relevant) {
-    totalLf += lf;
-    totalLh += lh;
-    totalFnf += fnf;
-    totalFnh += fnh;
-
-    const linePct = lf === 0 ? 100 : (lh / lf) * 100;
+  for (const { path, lf, lh } of relevant) {
+    const linePct = percentOf(lh, lf);
     const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
     console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
   }
 
-  const overallLines = totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
-  const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
+  const { totalLf, totalLh, totalFnf, totalFnh } = aggregateStats(relevant);
+  const overallLines = percentOf(totalLh, totalLf);
+  const overallFunctions = percentOf(totalFnh, totalFnf);
 
   console.log(`
 Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
-  const failures: string[] = [];
-  if (overallLines < THRESHOLD_LINES)
-    failures.push(`Lines ${overallLines.toFixed(2)}% < ${THRESHOLD_LINES}%`);
-  if (overallFunctions < THRESHOLD_FUNCTIONS)
-    failures.push(
-      `Functions ${overallFunctions.toFixed(2)}% < ${THRESHOLD_FUNCTIONS}%`,
-    );
+  const failures = computeFailures(
+    overallLines,
+    overallFunctions,
+    THRESHOLD_LINES,
+    THRESHOLD_FUNCTIONS,
+  );
 
   if (failures.length > 0) {
     console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
