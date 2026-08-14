@@ -2,14 +2,15 @@
  * Unit tests for scripts/check-coverage.ts
  *
  * Verifies LcovParser (the CoverageParser implementation for the lcov.info
- * format) and CoveragePyParser (the CoverageParser implementation for
- * coverage.py's `coverage json` output) against hand-built fixtures. Pure
- * logic, no I/O: parse(content) takes raw string content and returns
- * FileStats[] — nothing here touches the filesystem or triggers the
- * script's process.exit side effects.
+ * format), IstanbulParser (the CoverageParser implementation for c8/nyc's
+ * native Istanbul JSON format), and CoveragePyParser (the CoverageParser
+ * implementation for coverage.py's `coverage json` output) against
+ * hand-built fixtures. Pure logic, no I/O: parse(content) takes raw string
+ * content and returns FileStats[] — nothing here touches the filesystem or
+ * triggers the script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { CoveragePyParser, LcovParser } from "./check-coverage";
+import { CoveragePyParser, IstanbulParser, LcovParser } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -257,5 +258,107 @@ describe("CoveragePyParser.parse", () => {
     });
 
     expect(CoveragePyParser.parse(arrayFixture)).toEqual([]);
+  });
+});
+
+describe("IstanbulParser.parse", () => {
+  test("derives line coverage from statement starting lines, not a raw statement count", () => {
+    // Two statements on line 1 (one hit, one not — line still counts as
+    // covered because at least one statement on it was hit), one statement
+    // on line 3 (not hit). Distinct starting lines = 2 (line 1, line 3), so
+    // lf must be 2, not 3 (the raw statementMap count).
+    const fixture = {
+      "/abs/path/to/file.js": {
+        path: "/abs/path/to/file.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+          "1": { start: { line: 1, column: 12 }, end: { line: 1, column: 20 } },
+          "2": { start: { line: 3, column: 2 }, end: { line: 3, column: 30 } },
+        },
+        fnMap: {
+          "0": { name: "foo" },
+        },
+        s: { "0": 5, "1": 0, "2": 0 },
+        f: { "0": 3 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/file.js", lf: 2, lh: 1, fnf: 1, fnh: 1 },
+    ]);
+  });
+
+  test("counts function coverage from fnMap size and hit count in f", () => {
+    const fixture = {
+      "/abs/path/to/multi-fn.js": {
+        path: "/abs/path/to/multi-fn.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+        },
+        fnMap: {
+          "0": { name: "hitFn" },
+          "1": { name: "missedFn" },
+        },
+        s: { "0": 1 },
+        f: { "0": 4, "1": 0 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/multi-fn.js", lf: 1, lh: 1, fnf: 2, fnh: 1 },
+    ]);
+  });
+
+  test("parses multiple files, preserving Object.entries key order", () => {
+    const fixture = {
+      "/abs/path/to/first.js": {
+        path: "/abs/path/to/first.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+          "1": { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
+        },
+        fnMap: {},
+        s: { "0": 1, "1": 1 },
+        f: {},
+        branchMap: {},
+        b: {},
+      },
+      "/abs/path/to/second.js": {
+        path: "/abs/path/to/second.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+        },
+        fnMap: {
+          "0": { name: "bar" },
+        },
+        s: { "0": 0 },
+        f: { "0": 0 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/first.js", lf: 2, lh: 2, fnf: 0, fnh: 0 },
+      { path: "/abs/path/to/second.js", lf: 1, lh: 0, fnf: 1, fnh: 0 },
+    ]);
+  });
+
+  test("returns an empty array for empty content", () => {
+    expect(IstanbulParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array for an empty JSON object", () => {
+    expect(IstanbulParser.parse("{}")).toEqual([]);
   });
 });
