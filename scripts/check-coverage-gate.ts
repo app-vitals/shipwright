@@ -7,8 +7,13 @@
 // recomputed one throws, making a contradictory block structurally
 // unrenderable rather than policy-enforced by a prompt instruction.
 //
-// No I/O, no CLI entrypoint, no caller yet — this is bundled with CGT-1.3,
-// which wires it into the test-readiness-plan.md render step.
+// CLI entrypoint (CGT-1.3): wired into the test-readiness-plan.md render
+// step in plugins/shipwright/skills/test-roadmap/SKILL.md, which invokes
+// this script via Bash rather than hand-computing the verdict text.
+//
+// CLI:
+//   bun run scripts/check-coverage-gate.ts '{"featurePct":92,"featureSource":"...","linePct":87,"lineSource":"..."}'
+// or pipe the same JSON blob via stdin.
 
 export type CoverageGateTargets = {
   feature: number;
@@ -94,4 +99,54 @@ export function computeCoverageGate(
     verdict,
     targets,
   };
+}
+
+// ─── CLI ──────────────────────────────────────────────────────────────────────
+
+/**
+ * Parses and validates the CLI's JSON input blob into a
+ * ComputeCoverageGateInput. Throws with a message naming the offending field
+ * on malformed JSON, a missing required field, or a wrong-typed field —
+ * mirrors compute-review-verdict.ts's parseCliInput convention. Exported so
+ * the CLI's input handling is directly unit-testable without spawning a
+ * subprocess.
+ */
+export function parseCliInput(raw: string): ComputeCoverageGateInput {
+  const parsed = JSON.parse(raw) as Partial<ComputeCoverageGateInput>;
+
+  if (typeof parsed.featurePct !== "number") {
+    throw new Error('Input JSON must have a numeric "featurePct" field');
+  }
+  if (typeof parsed.featureSource !== "string") {
+    throw new Error('Input JSON must have a string "featureSource" field');
+  }
+  if (typeof parsed.linePct !== "number") {
+    throw new Error('Input JSON must have a numeric "linePct" field');
+  }
+  if (typeof parsed.lineSource !== "string") {
+    throw new Error('Input JSON must have a string "lineSource" field');
+  }
+
+  const input: ComputeCoverageGateInput = {
+    featurePct: parsed.featurePct,
+    featureSource: parsed.featureSource,
+    linePct: parsed.linePct,
+    lineSource: parsed.lineSource,
+  };
+  if (parsed.targets !== undefined) input.targets = parsed.targets;
+  if (parsed.verdict !== undefined) input.verdict = parsed.verdict;
+  return input;
+}
+
+if (import.meta.main) {
+  const arg = process.argv[2];
+  const raw = arg && arg.length > 0 ? arg : await Bun.stdin.text();
+  try {
+    const input = parseCliInput(raw);
+    const result = computeCoverageGate(input);
+    console.log(JSON.stringify(result));
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
