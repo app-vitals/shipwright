@@ -2,12 +2,14 @@
  * Unit tests for scripts/check-coverage.ts
  *
  * Verifies LcovParser (the CoverageParser implementation for the lcov.info
- * format) against a hand-built fixture. Pure logic, no I/O: parse(content)
- * takes a raw lcov string and returns FileStats[] — nothing here touches
- * the filesystem or triggers the script's process.exit side effects.
+ * format) and CoveragePyParser (the CoverageParser implementation for
+ * coverage.py's `coverage json` output) against hand-built fixtures. Pure
+ * logic, no I/O: parse(content) takes raw string content and returns
+ * FileStats[] — nothing here touches the filesystem or triggers the
+ * script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { LcovParser } from "./check-coverage";
+import { CoveragePyParser, LcovParser } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -141,5 +143,119 @@ describe("LcovParser.parse", () => {
     expect(totalLh).toBe(68);
     expect(totalFnf).toBe(10);
     expect(totalFnh).toBe(7);
+  });
+});
+
+describe("CoveragePyParser.parse", () => {
+  test("parses a single-file JSON report into FileStats", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {
+        "mypackage/module.py": {
+          executed_lines: [1, 2, 3, 5, 6],
+          summary: {
+            covered_lines: 5,
+            num_statements: 7,
+            percent_covered: 71.42857142857143,
+            percent_covered_display: "71",
+            missing_lines: 2,
+            excluded_lines: 0,
+          },
+          missing_lines: [4, 7],
+          excluded_lines: [],
+        },
+      },
+      totals: {
+        covered_lines: 5,
+        num_statements: 7,
+        percent_covered: 71.42857142857143,
+        percent_covered_display: "71",
+        missing_lines: 2,
+        excluded_lines: 0,
+      },
+    });
+
+    const result = CoveragePyParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "mypackage/module.py", lf: 7, lh: 5, fnf: 0, fnh: 0 },
+    ]);
+  });
+
+  test("parses multiple files, preserving the order they appear in the files object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {
+        "a/first.py": {
+          executed_lines: [1, 2],
+          summary: { covered_lines: 2, num_statements: 4 },
+          missing_lines: [3, 4],
+          excluded_lines: [],
+        },
+        "b/second.py": {
+          executed_lines: [1, 2, 3],
+          summary: { covered_lines: 3, num_statements: 3 },
+          missing_lines: [],
+          excluded_lines: [],
+        },
+        "c/third.py": {
+          executed_lines: [],
+          summary: { covered_lines: 0, num_statements: 0 },
+          missing_lines: [],
+          excluded_lines: [],
+        },
+      },
+      totals: { covered_lines: 5, num_statements: 7 },
+    });
+
+    const result = CoveragePyParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "a/first.py", lf: 4, lh: 2, fnf: 0, fnh: 0 },
+      { path: "b/second.py", lf: 3, lh: 3, fnf: 0, fnh: 0 },
+      { path: "c/third.py", lf: 0, lh: 0, fnf: 0, fnh: 0 },
+    ]);
+  });
+
+  test("returns an empty array for a report with an empty files object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {},
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+  });
+
+  test("returns an empty array for malformed/invalid JSON input without throwing", () => {
+    expect(CoveragePyParser.parse("{not valid json")).toEqual([]);
+    expect(CoveragePyParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array if the parsed JSON has no files key", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+  });
+
+  test("returns an empty array if files is not an object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: "not-an-object",
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+
+    const arrayFixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: [],
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(arrayFixture)).toEqual([]);
   });
 });
