@@ -154,10 +154,9 @@ category/layer classification.
 
 **Required layer.** Each feature's "required layer" in the Features table is the *highest*
 layer among its member units' prescribed layers, per the canonical-layer hierarchy from
-Step 3 (`unit > integration > smoke > E2E`, lowest-to-highest reversed here — E2E is
-highest). E.g. a feature whose member units are prescribed unit, unit, and E2E has a
-required layer of E2E — the feature as a whole isn't provably covered until its
-highest-layer member is.
+Step 3, ascending from unit (lowest) to integration to smoke to E2E (highest). E.g. a
+feature whose member units are prescribed unit, unit, and E2E has a required layer of E2E —
+the feature as a whole isn't provably covered until its highest-layer member is.
 
 **`feature_coverage_pct`.** Compute this value during the SKILL run as:
 
