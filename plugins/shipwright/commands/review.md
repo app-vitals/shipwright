@@ -1044,18 +1044,20 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' --jq '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and (.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i"))) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login == $pr.author.login and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
+}' --arg currentUser "$CURRENT_USER" --jq '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and (.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i"))) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
 ```
 
 This filters reviews down to only those submitted at the current `headRefOid`, then tests
 whether ANY of their bodies matches a terminal verdict label. If a terminal review exists,
-the query also fetches the PR author's login and the PR's comments (with author and
-`createdAt`), and the jq program computes whether the PR author has posted a comment
-_after_ the latest terminal review's `submittedAt` timestamp. If such a fresh author reply
-exists, `terminal` is set to `false` (exception: see RFR-1.1 logic in
-`agent/src/check-review.ts`, which applies the same fresh-reply logic at the TypeScript
+the query also fetches the PR's comments (with author and `createdAt`), and the jq program
+computes whether anyone _other than_ the resolved `$CURRENT_USER` (the reviewing agent's
+own identity, threaded in via `--arg currentUser "$CURRENT_USER"`) has posted a comment
+_after_ the latest terminal review's `submittedAt` timestamp. If such a fresh non-agent
+comment exists, `terminal` is set to `false` (mirrors `hasFreshNonAgentComment` in
+`agent/src/check-review.ts`, which applies the same broadened fresh-reply logic — any
+commenter other than the reviewing agent, not just the PR author — at the TypeScript
 layer). The jq program outputs a JSON object with the `headRefOid` string and a `terminal`
 boolean, captured into shell variables of the same names.
 
@@ -1065,9 +1067,9 @@ a literal `Verdict:` label match rather than the fuller thread/finding-body anal
 10) always carry an explicit `Verdict: APPROVE` or `Verdict: COMMENT` line, so a literal
 label match is sufficient to detect "already reviewed, terminal" at this commit. There is
 no author filtering on the terminal review check itself (any author's review counts) —
-the fresh-author-reply exception is the only place author identity matters: it checks
-whether the PR's _own_ author has replied after the review, mirroring the RFR-1.1 fix
-in `agent/src/check-review.ts`.
+the fresh-reply exception is the only place author identity matters: it checks whether
+anyone other than the reviewing agent itself (`$CURRENT_USER`) has replied after the
+review, mirroring `hasFreshNonAgentComment` in `agent/src/check-review.ts`.
 
 **If `$terminal` is `true`** (a terminal review already exists at head on GitHub):
 
