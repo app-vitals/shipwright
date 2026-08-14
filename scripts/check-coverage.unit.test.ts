@@ -7,7 +7,7 @@
  * the filesystem or triggers the script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { computeAggregateLinePct, LcovParser } from "./check-coverage";
+import { LcovParser, computeAggregateLinePct } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -192,7 +192,9 @@ describe("computeAggregateLinePct", () => {
   });
 
   test("returns 100 when total lines-found across relevant files is zero", () => {
-    const files = [{ path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 }];
+    const files = [
+      { path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 },
+    ];
     expect(computeAggregateLinePct(files)).toBe(100);
   });
 });

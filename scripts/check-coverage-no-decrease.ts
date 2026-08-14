@@ -10,7 +10,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { computeAggregateLinePct, LcovParser } from "./check-coverage";
+import { LcovParser, computeAggregateLinePct } from "./check-coverage";
 
 const LCOV_PATH = "coverage/lcov.info";
 const DEFAULT_BASE_REF = "main";
