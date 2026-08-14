@@ -109,8 +109,8 @@ describe("SKILL.md — Step 4c: sourcing coverage percentages", () => {
     // Slice to the next top-level (### ) or Step 5 heading, whichever comes first.
     const rest = content.slice(idx);
     const nextHeadingMatch = rest.slice(1).match(/\n#{2,3}\s/);
-    return nextHeadingMatch
-      ? rest.slice(0, nextHeadingMatch.index! + 1)
+    return nextHeadingMatch && nextHeadingMatch.index !== undefined
+      ? rest.slice(0, nextHeadingMatch.index + 1)
       : rest;
   };
 
