@@ -2123,6 +2123,173 @@ describe("traceReviewCandidacyDecision", () => {
     const trace = traceReviewCandidacyDecision(baseArgs({ record }));
     expect(trace.check).toBe("claimed");
   });
+
+  // ─── T-082: 3+-condition combinations ────────────────────────────────────
+  //
+  // The pairwise "even when X" cases above (already-reviewed-live vs.
+  // task-blocked; claimed vs. pr-record-blocked; staged vs. reviewState)
+  // each combine exactly two conditions. These cases stack 3+ of the
+  // conditions the 2026-08-14 fix cycle touched — stale commitSha/
+  // reviewedCommitSha divergence, review-thread-reply freshness,
+  // author-allowlist status, and task-blocked state — in one fixture, to
+  // prove the exclusion checks still fire in the documented precedence
+  // order (live-review dedup -> task-blocked -> bundle-incomplete ->
+  // claimed -> pr-record-blocked -> terminal-skip -> staged) when several
+  // would-be exclusions are simultaneously true, not just when isolated
+  // pairwise.
+
+  test("3-condition: a fresh review-thread reply bypasses the live-review exclusion, but a simultaneously task-blocked linked task still excludes (precedence: task-blocked fires after live-review, ahead of the record-based checks)", () => {
+    // Stacks: (1) a terminal live review at head, (2) a fresh author reply
+    // sourced from a review-thread reply (not top-level comments) — which
+    // together would otherwise resolve to "eligible" per the
+    // already-reviewed-live bypass — plus (3) a hitl-blocked linked task.
+    // Proves the thread-reply freshness signal only defeats the live-review
+    // check it's paired with; it has no effect on the independent
+    // task-blocked check next in precedence order.
+    const pr = makePr({ headRefOid: "sha111", author: { login: "danmcaulay" } });
+    const record: PrRecord = { reviewedAt: "2026-07-15T09:00:00.000Z" } as PrRecord;
+    const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "danmcaulay" },
+                  body: "Addressed, PTAL.",
+                  createdAt: "2026-07-15T10:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+      reviewData,
+      pr.author.login,
+      reviewedAtMs,
+    );
+    expect(hasFreshAuthorReply).toBe(true);
+
+    // Sanity check: with no linked task, the same fixture resolves eligible
+    // (confirms the thread-reply freshness genuinely bypasses live-review).
+    const withoutTaskBlock = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply }),
+    );
+    expect(withoutTaskBlock).toEqual({ check: "eligible" });
+
+    const linkedTask: LinkedTaskInfo = { status: "pr_open", hitl: true };
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply, linkedTask }),
+    );
+    expect(trace).toEqual({
+      check: "task-blocked",
+      hitl: true,
+      taskStatus: "pr_open",
+    });
+  });
+
+  test("3-condition: a fresh review-thread reply bypasses both live-review and terminal-skip, but a simultaneously staged record still excludes (precedence: staged has no fresh-reply bypass)", () => {
+    // Stacks: (1) a terminal live review at head, (2) a fresh author reply
+    // via a review-thread reply (bypasses both already-reviewed-live AND
+    // already-reviewed-terminal — both of those checks share the same
+    // hasFreshAuthorReply exception), and (3) reviewedCommitSha equal to
+    // headRefOid with staged:true. The staged check (RCS-1.3) is
+    // deliberately independent of hasFreshAuthorReply/reviewState — proves
+    // that a fresh reply which clears the two earlier, reply-aware checks
+    // does NOT also clear the later staged check, which has no such
+    // exception.
+    const pr = makePr({ headRefOid: "sha111", author: { login: "danmcaulay" } });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "pending",
+      staged: true,
+      reviewedAt: "2026-07-15T09:00:00.000Z",
+    };
+    const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "danmcaulay" },
+                  body: "Fixed, please re-review.",
+                  createdAt: "2026-07-15T10:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+      reviewData,
+      pr.author.login,
+      reviewedAtMs,
+    );
+    expect(hasFreshAuthorReply).toBe(true);
+
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply }),
+    );
+    expect(trace).toEqual({
+      check: "staged",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+    });
+  });
+
+  test("3-condition: claimed, pr-record-blocked, and task-blocked all simultaneously true still resolve to task-blocked (precedence order holds under triple stacking, not just the claimed-vs-pr-record-blocked pair)", () => {
+    // Stacks all three of: a hitl-escalated linked task, a claimedBy set by
+    // another agent replica, and a human-escalated (blocked:true) PR
+    // record. The existing pairwise case above only proves claimed beats
+    // pr-record-blocked; this proves task-blocked (checked earlier, before
+    // record is even consulted) still wins over BOTH of the later,
+    // record-based checks when all three fire at once — not just the
+    // later pair in isolation.
+    const linkedTask: LinkedTaskInfo = { status: "blocked", hitl: true };
+    const record: PrRecord = {
+      commitSha: null,
+      reviewState: "pending",
+      claimedBy: "agent-other",
+      blocked: true,
+    };
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ record, linkedTask }),
+    );
+    expect(trace).toEqual({
+      check: "task-blocked",
+      hitl: true,
+      taskStatus: "blocked",
+    });
+  });
 });
 
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
