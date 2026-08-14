@@ -77,25 +77,21 @@ export const HITL_ALLOWED_TOOLS = [
 // ---------------------------------------------------------------------------
 
 const REPO_ROOT = resolve(import.meta.dir, "..");
-const HITL_HOME =
-  process.env.SHIPWRIGHT_HITL_HOME ?? join(homedir(), ".shipwright");
-const WORKSPACE = join(HITL_HOME, "workspace");
-const REPOS_DIR = join(WORKSPACE, "repos");
-const WORKTREES_DIR = join(WORKSPACE, "worktrees");
 
 // ---------------------------------------------------------------------------
 // Constants — mirrors dev-tmux.ts defaults; no env vars required
 // ---------------------------------------------------------------------------
 
-const TASK_STORE_PORT = 3002;
-const ADMIN_PORT = 3001;
-const HOST = process.env.SHIPWRIGHT_HITL_HOST ?? "localhost";
-const TASK_STORE_URL = `http://${HOST}:${TASK_STORE_PORT}`;
-const ADMIN_URL = `http://${HOST}:${ADMIN_PORT}`;
+export const TASK_STORE_PORT = 3002;
+export const ADMIN_PORT = 3001;
 const DEV_TOKEN = "dev-task-store-admin-token";
 const DEV_AGENT_TOKEN = "dev-task-store-hitl-token";
 const DEV_ADMIN_API_KEY = "dev-hitl-admin-key";
 const HITL_AGENT_NAME = "hitl";
+
+const DUMMY_ENCRYPTION_KEY =
+  "0000000000000000000000000000000000000000000000000000000000000000";
+const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
 
 /**
  * Parses the comma-separated SHIPWRIGHT_HITL_REPOS env value into a list of
@@ -111,8 +107,6 @@ export function parseHitlRepos(raw: string | undefined): string[] {
         .filter(Boolean)
     : [];
 }
-
-const HITL_REPOS = parseHitlRepos(process.env.SHIPWRIGHT_HITL_REPOS);
 
 /**
  * Parses the comma-separated SHIPWRIGHT_HITL_AUTHORS env value into a list of
@@ -132,19 +126,92 @@ export function parseHitlAuthors(raw: string | undefined): string[] {
     : [];
 }
 
-const HITL_AUTHORS = parseHitlAuthors(process.env.SHIPWRIGHT_HITL_AUTHORS);
-const POLL_INTERVAL_S = Number(
-  process.env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "60",
-);
+// ---------------------------------------------------------------------------
+// Config — every env-derived value in one pure, injectable record
+// ---------------------------------------------------------------------------
 
-const DEV_DB_USER = process.env.USER ?? "";
-const DEV_DB_PREFIX = DEV_DB_USER ? `${DEV_DB_USER}@` : "";
-const DEV_DATABASE_URL = `postgresql://${DEV_DB_PREFIX}localhost:5432/shipwright_dev`;
-const DEV_TASK_STORE_DATABASE_URL = `postgresql://${DEV_DB_PREFIX}localhost:5432/shipwright_task_store_dev`;
+/**
+ * The full env-derived configuration for a HITL run. Everything the bootstrap
+ * sequence needs to plan its work: paths, ports, URLs, dev credentials, and
+ * the repo/author allowlists. Assembled once by buildHitlConfig() so the
+ * builders below stay pure functions of (config) rather than reaching into
+ * process.env at module scope.
+ */
+export type HitlConfig = {
+  repoRoot: string;
+  hitlHome: string;
+  workspace: string;
+  reposDir: string;
+  worktreesDir: string;
+  claudeMdTemplate: string;
+  agentPolicyTemplate: string;
+  repos: string[];
+  authors: string[];
+  pollIntervalS: number;
+  host: string;
+  taskStoreUrl: string;
+  adminUrl: string;
+  adminDatabaseUrl: string;
+  taskStoreDatabaseUrl: string;
+};
 
-const DUMMY_ENCRYPTION_KEY =
-  "0000000000000000000000000000000000000000000000000000000000000000";
-const DUMMY_SESSION_SECRET = "dev-session-secret-not-for-production-use!";
+/**
+ * Builds the HitlConfig from an env bag, the user's home dir, and the repo
+ * root. Pure and exported so the env→config mapping (defaults, overrides, the
+ * USER-prefixed Postgres URLs) is unit-testable without touching process.env
+ * or the real filesystem.
+ */
+export function buildHitlConfig(
+  env: Record<string, string | undefined>,
+  homeDir: string,
+  repoRoot: string,
+): HitlConfig {
+  const hitlHome = env.SHIPWRIGHT_HITL_HOME ?? join(homeDir, ".shipwright");
+  const workspace = join(hitlHome, "workspace");
+  const host = env.SHIPWRIGHT_HITL_HOST ?? "localhost";
+  const dbUser = env.USER ?? "";
+  const dbPrefix = dbUser ? `${dbUser}@` : "";
+
+  return {
+    repoRoot,
+    hitlHome,
+    workspace,
+    reposDir: join(workspace, "repos"),
+    worktreesDir: join(workspace, "worktrees"),
+    claudeMdTemplate: join(
+      repoRoot,
+      "agent",
+      "workspace",
+      "CLAUDE-HITL.md.template",
+    ),
+    agentPolicyTemplate: join(
+      repoRoot,
+      "agent",
+      "workspace",
+      "state",
+      "agent-policy.md.template",
+    ),
+    repos: parseHitlRepos(env.SHIPWRIGHT_HITL_REPOS),
+    authors: parseHitlAuthors(env.SHIPWRIGHT_HITL_AUTHORS),
+    pollIntervalS: Number(env.SHIPWRIGHT_HITL_POLL_INTERVAL ?? "60"),
+    host,
+    taskStoreUrl: `http://${host}:${TASK_STORE_PORT}`,
+    adminUrl: `http://${host}:${ADMIN_PORT}`,
+    adminDatabaseUrl: `postgresql://${dbPrefix}localhost:5432/shipwright_dev`,
+    taskStoreDatabaseUrl: `postgresql://${dbPrefix}localhost:5432/shipwright_task_store_dev`,
+  };
+}
+
+const CONFIG = buildHitlConfig(process.env, homedir(), REPO_ROOT);
+
+const WORKSPACE = CONFIG.workspace;
+const REPOS_DIR = CONFIG.reposDir;
+const WORKTREES_DIR = CONFIG.worktreesDir;
+const TASK_STORE_URL = CONFIG.taskStoreUrl;
+const ADMIN_URL = CONFIG.adminUrl;
+const HITL_REPOS = CONFIG.repos;
+const HITL_AUTHORS = CONFIG.authors;
+const POLL_INTERVAL_S = CONFIG.pollIntervalS;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -178,21 +245,6 @@ async function waitForHealth(url: string, label: string): Promise<void> {
 // ---------------------------------------------------------------------------
 // Workspace provisioning — mirrors agent/src/setup.ts ensureAgentHome()
 // ---------------------------------------------------------------------------
-
-const HITL_TEMPLATE = join(
-  REPO_ROOT,
-  "agent",
-  "workspace",
-  "CLAUDE-HITL.md.template",
-);
-
-const AGENT_POLICY_TEMPLATE = join(
-  REPO_ROOT,
-  "agent",
-  "workspace",
-  "state",
-  "agent-policy.md.template",
-);
 
 /**
  * Pure planning step for provisionWorkspace(): given the set of dirs the
@@ -238,37 +290,256 @@ export function computeMissingClones(
     .filter(({ dest }) => !exists(dest));
 }
 
-function provisionWorkspace(): void {
+// ---------------------------------------------------------------------------
+// Bootstrap step builders — pure planners, mirroring dev-tmux.ts's
+// buildStackCommands()/runStack() split. Each builder returns the ORDERED
+// sequence of steps the bootstrap will perform; runSteps() drives them
+// through an injected executor. Tests assert the sequence without spawning
+// processes, touching the filesystem, or booting services.
+// ---------------------------------------------------------------------------
+
+export type HitlStepKind =
+  | "mkdir"
+  | "seed-file"
+  | "clone"
+  | "install-plugins"
+  | "exec";
+
+/** One planned step in the HITL bootstrap sequence. */
+export type HitlStep = {
+  kind: HitlStepKind;
+  /** Human-readable label, also used for the failure message on exec steps. */
+  label: string;
+  /**
+   * Progress message logged before a clone/exec step runs (e.g. "cloning
+   * {repo} into {dest}..."). Distinct from `label`, which is phrased as a
+   * failure message ("X failed") and would read oddly printed up front.
+   * Steps that don't need start-of-step visibility (mkdir, seed-file,
+   * install-plugins) omit it.
+   */
+  startLabel?: string;
+  /** Target directory (mkdir) or destination file (seed-file). */
+  path?: string;
+  /** Source template path for seed-file steps. */
+  templatePath?: string;
+  /** argv for clone/exec steps. */
+  argv?: string[];
+  /** Working directory for clone/exec steps. */
+  cwd?: string;
+  /** Env overrides layered onto the base env for exec steps. */
+  env?: Record<string, string>;
+};
+
+/** Runs a single planned step. Injected so tests can record instead of act. */
+export type StepExecFn = (step: HitlStep) => void | Promise<void>;
+
+/**
+ * Plans the workspace provisioning steps: the dirs to create and the template
+ * files to seed. Pure — takes an injectable existence check and returns the
+ * steps rather than performing them.
+ */
+export function buildProvisionSteps(
+  cfg: HitlConfig,
+  exists: (path: string) => boolean,
+): HitlStep[] {
   const dirs = [
-    WORKSPACE,
-    REPOS_DIR,
-    WORKTREES_DIR,
-    join(WORKSPACE, "state", "reviews"),
-    join(WORKSPACE, ".claude"),
+    cfg.workspace,
+    cfg.reposDir,
+    cfg.worktreesDir,
+    join(cfg.workspace, "state", "reviews"),
+    join(cfg.workspace, ".claude"),
   ];
-  const claudeMd = join(WORKSPACE, "CLAUDE.md");
-  const agentPolicy = join(WORKSPACE, "state", "agent-policy.md");
+  const claudeMd = join(cfg.workspace, "CLAUDE.md");
+  const agentPolicy = join(cfg.workspace, "state", "agent-policy.md");
 
-  const plan = computeProvisionPlan(dirs, claudeMd, agentPolicy, existsSync);
-
-  for (const dir of plan.missingDirs) {
-    mkdirSync(dir, { recursive: true });
-  }
+  const plan = computeProvisionPlan(dirs, claudeMd, agentPolicy, exists);
+  const steps: HitlStep[] = plan.missingDirs.map((dir) => ({
+    kind: "mkdir",
+    label: `mkdir ${dir}`,
+    path: dir,
+  }));
 
   if (plan.needsClaudeMd) {
-    const template = readFileSync(HITL_TEMPLATE, "utf8");
-    writeFileSync(claudeMd, template, { flag: "wx" });
-    log("seeded CLAUDE.md");
+    steps.push({
+      kind: "seed-file",
+      label: "seeded CLAUDE.md",
+      path: claudeMd,
+      templatePath: cfg.claudeMdTemplate,
+    });
   }
-
   if (plan.needsAgentPolicy) {
-    const template = readFileSync(AGENT_POLICY_TEMPLATE, "utf8");
-    writeFileSync(agentPolicy, template, { flag: "wx" });
-    log("seeded agent-policy.md");
+    steps.push({
+      kind: "seed-file",
+      label: "seeded agent-policy.md",
+      path: agentPolicy,
+      templatePath: cfg.agentPolicyTemplate,
+    });
   }
 
-  if (plan.missingDirs.length > 0) {
-    log(`workspace provisioned: ${WORKSPACE}`);
+  return steps;
+}
+
+/**
+ * Plans the auto-clone steps for any configured repo not already present
+ * under reposDir. Pure — wraps computeMissingClones() into executable steps.
+ */
+export function buildCloneSteps(
+  cfg: HitlConfig,
+  exists: (path: string) => boolean,
+): HitlStep[] {
+  return computeMissingClones(cfg.repos, cfg.reposDir, exists).map(
+    ({ repo, dest }) => ({
+      kind: "clone" as const,
+      label: `gh repo clone failed for ${repo}`,
+      startLabel: `cloning ${repo} into ${dest}...`,
+      argv: ["gh", "repo", "clone", repo, dest],
+      cwd: cfg.repoRoot,
+    }),
+  );
+}
+
+/**
+ * Plans the schema/seed steps: prisma generate + migrate for both the
+ * task-store and admin services, plus the admin token seed between them.
+ * Ordering matters — the token seed runs against an already-migrated
+ * task-store DB, and admin migrates last.
+ */
+export function buildMigrationSteps(cfg: HitlConfig): HitlStep[] {
+  const prismaArgs = (cmd: "generate" | "deploy"): string[] =>
+    cmd === "generate"
+      ? ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"]
+      : [
+          "bunx",
+          "prisma",
+          "migrate",
+          "deploy",
+          "--schema=prisma/schema.prisma",
+        ];
+
+  return [
+    {
+      kind: "exec",
+      label: "task-store prisma generate failed",
+      startLabel: "running task-store prisma generate...",
+      argv: prismaArgs("generate"),
+      cwd: join(cfg.repoRoot, "task-store"),
+    },
+    {
+      kind: "exec",
+      label: "task-store migrate failed",
+      startLabel: "running task-store prisma migrate...",
+      argv: prismaArgs("deploy"),
+      cwd: join(cfg.repoRoot, "task-store"),
+      env: { DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl },
+    },
+    buildTokenSeedStep(cfg, DEV_TOKEN),
+    {
+      kind: "exec",
+      label: "admin prisma generate failed",
+      startLabel: "running admin prisma generate...",
+      argv: prismaArgs("generate"),
+      cwd: join(cfg.repoRoot, "admin"),
+    },
+    {
+      kind: "exec",
+      label: "admin migrate failed",
+      startLabel: "running admin prisma migrate...",
+      argv: prismaArgs("deploy"),
+      cwd: join(cfg.repoRoot, "admin"),
+      env: { DATABASE_URL_SHIPWRIGHT_ADMIN: cfg.adminDatabaseUrl },
+    },
+  ];
+}
+
+/**
+ * Plans a task-store token seed. Used twice: once during preflight for the
+ * admin token (no agent id), and again after ensureHitlAgent() resolves an
+ * agent id so the agent token is repo-scoped.
+ */
+export function buildTokenSeedStep(
+  cfg: HitlConfig,
+  token: string,
+  agentId?: string,
+): HitlStep {
+  return {
+    kind: "exec",
+    label: agentId ? "agent token seed failed" : "admin token seed failed",
+    startLabel: agentId
+      ? `seeding task-store agent token (agentId: ${agentId})...`
+      : "seeding task-store admin token...",
+    argv: [
+      "bun",
+      "run",
+      join(cfg.repoRoot, "scripts", "seed-task-store-token.ts"),
+      "--db-url",
+      cfg.taskStoreDatabaseUrl,
+      "--token",
+      token,
+      ...(agentId ? ["--agent-id", agentId] : []),
+    ],
+    cwd: cfg.repoRoot,
+  };
+}
+
+/**
+ * Plans the complete preflight sequence in execution order:
+ * provision → clone → install plugins → migrate/seed. This is the
+ * clone→seed half of the bootstrap, as one assertable list.
+ */
+export function buildPreflightSteps(
+  cfg: HitlConfig,
+  exists: (path: string) => boolean,
+): HitlStep[] {
+  return [
+    ...buildProvisionSteps(cfg, exists),
+    ...buildCloneSteps(cfg, exists),
+    { kind: "install-plugins", label: "installing shipwright plugin..." },
+    ...buildMigrationSteps(cfg),
+  ];
+}
+
+/** Drives a planned step sequence through an injected executor, in order. */
+export async function runSteps(
+  steps: HitlStep[],
+  exec: StepExecFn,
+): Promise<HitlStep[]> {
+  for (const step of steps) {
+    await exec(step);
+  }
+  return steps;
+}
+
+/**
+ * The real executor: performs a planned step's I/O. Used only by the
+ * entrypoint — tests inject a recording executor instead.
+ */
+async function execStep(step: HitlStep): Promise<void> {
+  switch (step.kind) {
+    case "mkdir":
+      mkdirSync(step.path as string, { recursive: true });
+      return;
+    case "seed-file": {
+      const template = readFileSync(step.templatePath as string, "utf8");
+      writeFileSync(step.path as string, template, { flag: "wx" });
+      log(step.label);
+      return;
+    }
+    case "install-plugins":
+      log(step.label);
+      await installPlugins();
+      return;
+    case "clone":
+    case "exec": {
+      if (step.startLabel) log(step.startLabel);
+      const result = Bun.spawnSync(step.argv as string[], {
+        cwd: step.cwd,
+        ...(step.env ? { env: { ...process.env, ...step.env } } : {}),
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      if (result.exitCode !== 0) throw new Error(step.label);
+      return;
+    }
   }
 }
 
@@ -277,85 +548,8 @@ function provisionWorkspace(): void {
 // ---------------------------------------------------------------------------
 
 async function runPreflight(): Promise<void> {
-  provisionWorkspace();
-
-  const missingClones = computeMissingClones(HITL_REPOS, REPOS_DIR, existsSync);
-  for (const { repo, dest } of missingClones) {
-    log(`cloning ${repo} into ${dest}...`);
-    const clone = Bun.spawnSync(["gh", "repo", "clone", repo, dest], {
-      cwd: REPO_ROOT,
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    if (clone.exitCode !== 0)
-      throw new Error(`gh repo clone failed for ${repo}`);
-    log(`cloned ${repo}`);
-  }
-
-  log("installing shipwright plugin...");
-  await installPlugins();
-
-  log("running task-store prisma generate + migrate...");
-  const tsGen = Bun.spawnSync(
-    ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"],
-    {
-      cwd: join(REPO_ROOT, "task-store"),
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
-  if (tsGen.exitCode !== 0)
-    throw new Error("task-store prisma generate failed");
-
-  const tsMigrate = Bun.spawnSync(
-    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
-    {
-      cwd: join(REPO_ROOT, "task-store"),
-      env: {
-        ...process.env,
-        DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
-      },
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
-  if (tsMigrate.exitCode !== 0) throw new Error("task-store migrate failed");
-
-  log("seeding task-store admin token...");
-  const adminSeed = Bun.spawnSync(
-    [
-      "bun",
-      "run",
-      join(REPO_ROOT, "scripts", "seed-task-store-token.ts"),
-      "--db-url",
-      DEV_TASK_STORE_DATABASE_URL,
-      "--token",
-      DEV_TOKEN,
-    ],
-    { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" },
-  );
-  if (adminSeed.exitCode !== 0) throw new Error("admin token seed failed");
-
-  log("running admin prisma generate + migrate...");
-  const adminGen = Bun.spawnSync(
-    ["bunx", "prisma", "generate", "--schema=prisma/schema.prisma"],
-    { cwd: join(REPO_ROOT, "admin"), stdout: "inherit", stderr: "inherit" },
-  );
-  if (adminGen.exitCode !== 0) throw new Error("admin prisma generate failed");
-
-  const adminMigrate = Bun.spawnSync(
-    ["bunx", "prisma", "migrate", "deploy", "--schema=prisma/schema.prisma"],
-    {
-      cwd: join(REPO_ROOT, "admin"),
-      env: {
-        ...process.env,
-        DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
-      },
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
-  if (adminMigrate.exitCode !== 0) throw new Error("admin migrate failed");
+  await runSteps(buildPreflightSteps(CONFIG, existsSync), execStep);
+  log(`workspace provisioned: ${WORKSPACE}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -367,45 +561,71 @@ type ServiceHandle = {
   proc: ReturnType<typeof Bun.spawn>;
 };
 
-function startServices(): ServiceHandle[] {
-  const taskStore = Bun.spawn(
-    ["bun", "run", join(REPO_ROOT, "task-store", "src", "main.ts")],
-    {
-      cwd: REPO_ROOT,
-      env: {
-        ...process.env,
-        PORT: String(TASK_STORE_PORT),
-        DATABASE_URL_SHIPWRIGHT_TASK_STORE: DEV_TASK_STORE_DATABASE_URL,
-        TASK_STORE_SEED_ADMIN_TOKEN: DEV_TOKEN,
-        SHIPWRIGHT_TASK_STORE_AGENTS_URL: ADMIN_URL,
-        SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY: DEV_ADMIN_API_KEY,
-      },
-      stdout: "inherit",
-      stderr: "inherit",
-    },
-  );
+/** A service the bootstrap boots: what to run, where, and with what env. */
+export type ServiceSpec = {
+  label: string;
+  argv: string[];
+  cwd: string;
+  env: Record<string, string>;
+};
 
-  const admin = Bun.spawn(["bun", join(REPO_ROOT, "admin", "src", "main.ts")], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      PORT: String(ADMIN_PORT),
-      DATABASE_URL_SHIPWRIGHT_ADMIN: DEV_DATABASE_URL,
-      SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
-      SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
-      ADMIN_DEV_AUTH: "true",
-      SHIPWRIGHT_ADMIN_API_KEYS: `hitl:${DEV_ADMIN_API_KEY}:*`,
-      SHIPWRIGHT_TASK_STORE_URL: TASK_STORE_URL,
-      SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TOKEN,
-    },
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+/**
+ * Plans the boot step: the exact argv, cwd, and fully-resolved env for the
+ * task-store and admin services, layered onto a caller-supplied base env.
+ * Pure — mirrors buildClaudeSpawnEnv()'s overlay contract, so the boot
+ * sequence is assertable without spawning long-running processes.
+ */
+export function buildServiceSpecs(
+  cfg: HitlConfig,
+  baseEnv: Record<string, string | undefined>,
+): ServiceSpec[] {
+  const base = Object.fromEntries(
+    Object.entries(baseEnv).filter(([, v]) => v !== undefined),
+  ) as Record<string, string>;
 
   return [
-    { label: "task-store", proc: taskStore },
-    { label: "admin", proc: admin },
+    {
+      label: "task-store",
+      argv: ["bun", "run", join(cfg.repoRoot, "task-store", "src", "main.ts")],
+      cwd: cfg.repoRoot,
+      env: {
+        ...base,
+        PORT: String(TASK_STORE_PORT),
+        DATABASE_URL_SHIPWRIGHT_TASK_STORE: cfg.taskStoreDatabaseUrl,
+        TASK_STORE_SEED_ADMIN_TOKEN: DEV_TOKEN,
+        SHIPWRIGHT_TASK_STORE_AGENTS_URL: cfg.adminUrl,
+        SHIPWRIGHT_TASK_STORE_AGENTS_API_KEY: DEV_ADMIN_API_KEY,
+      },
+    },
+    {
+      label: "admin",
+      argv: ["bun", join(cfg.repoRoot, "admin", "src", "main.ts")],
+      cwd: cfg.repoRoot,
+      env: {
+        ...base,
+        PORT: String(ADMIN_PORT),
+        DATABASE_URL_SHIPWRIGHT_ADMIN: cfg.adminDatabaseUrl,
+        SHIPWRIGHT_ENCRYPTION_KEY: DUMMY_ENCRYPTION_KEY,
+        SHIPWRIGHT_SESSION_SECRET: DUMMY_SESSION_SECRET,
+        ADMIN_DEV_AUTH: "true",
+        SHIPWRIGHT_ADMIN_API_KEYS: `hitl:${DEV_ADMIN_API_KEY}:*`,
+        SHIPWRIGHT_TASK_STORE_URL: cfg.taskStoreUrl,
+        SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN: DEV_TOKEN,
+      },
+    },
   ];
+}
+
+function startServices(): ServiceHandle[] {
+  return buildServiceSpecs(CONFIG, process.env).map((spec) => ({
+    label: spec.label,
+    proc: Bun.spawn(spec.argv, {
+      cwd: spec.cwd,
+      env: spec.env,
+      stdout: "inherit",
+      stderr: "inherit",
+    }),
+  }));
 }
 
 function killServices(handles: ServiceHandle[]): void {
@@ -560,23 +780,9 @@ export async function ensureHitlAgent(
   return null;
 }
 
-function seedAgentToken(agentId: string): void {
+async function seedAgentToken(agentId: string): Promise<void> {
   log(`seeding task-store agent token (agentId: ${agentId})...`);
-  const result = Bun.spawnSync(
-    [
-      "bun",
-      "run",
-      join(REPO_ROOT, "scripts", "seed-task-store-token.ts"),
-      "--db-url",
-      DEV_TASK_STORE_DATABASE_URL,
-      "--token",
-      DEV_AGENT_TOKEN,
-      "--agent-id",
-      agentId,
-    ],
-    { cwd: REPO_ROOT, stdout: "inherit", stderr: "inherit" },
-  );
-  if (result.exitCode !== 0) throw new Error("agent token seed failed");
+  await execStep(buildTokenSeedStep(CONFIG, DEV_AGENT_TOKEN, agentId));
 }
 
 // ---------------------------------------------------------------------------
@@ -614,6 +820,22 @@ export function buildTaskCommand(task: Pick<Task, "id" | "hitl">): string {
   return task.hitl
     ? `/shipwright:hitl ${task.id}`
     : `/shipwright:dev-task ${task.id}`;
+}
+
+/**
+ * Picks the command to launch for a claimed PR candidate, stamping the
+ * orchestrator pre-claim marker the review/patch commands consume so they
+ * skip their own redundant self-claim (CBD-1.4/1.5). Pure — the claim itself
+ * happens in runLoop(); this only formats the resulting dispatch.
+ */
+export function buildPrCommand(
+  prId: string,
+  phase: string,
+  claim: { id: string; commitSha: string },
+): string {
+  const marker = `[preclaim:${claim.id}:${claim.commitSha}]`;
+  const command = phase === "review" ? "review" : "patch";
+  return `/shipwright:${command} ${prId} ${marker}`;
 }
 
 async function fetchReadyTasks(): Promise<Task[]> {
@@ -783,11 +1005,7 @@ async function runLoop(): Promise<void> {
         continue;
       }
 
-      const preclaimMarker = `[preclaim:${claimResult.id}:${claimResult.commitSha}]`;
-      command =
-        next.pr.phase === "review"
-          ? `/shipwright:review ${next.pr.id} ${preclaimMarker}`
-          : `/shipwright:patch ${next.pr.id} ${preclaimMarker}`;
+      command = buildPrCommand(next.pr.id, next.pr.phase, claimResult);
       label = `${next.pr.id} — ${next.pr.title ?? ""}`;
     }
 
@@ -851,7 +1069,7 @@ if (import.meta.main) {
 
     const agentId = await ensureHitlAgent();
     if (agentId) {
-      seedAgentToken(agentId);
+      await seedAgentToken(agentId);
     } else {
       log("warning: no hitl agent — agent token will not be repo-scoped");
     }

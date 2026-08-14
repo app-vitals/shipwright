@@ -83,3 +83,43 @@ e2e suite doesn't already exercise.
 matching `*.spec.ts` covering it, or if `site/` adopts a `bun:test` unit
 convention (at which point unit coverage becomes consistent with the rest of the
 project and worth adding).
+
+### scripts/hitl.ts bootstrap sequence — planner/executor split, unit layer not integration
+
+**Item:** `test-t-080-shipwright` (T-080) flagged the HITL dev-loop bootstrap's
+full clone→seed→boot→poll sequence in `scripts/hitl.ts` as an ambiguous item
+under rule (d), ambiguous fix approach. The orchestration functions
+(`runPreflight`, `provisionWorkspace`, `startServices`, `runLoop`) called
+`Bun.spawnSync`/`Bun.spawn` directly with no injected exec seam, no existing
+test in the repo faked the boot of long-running services (task-store + admin),
+and the row's scope crossed the task-store/admin/agent package boundaries with
+no shared fixture convention spanning all three. The task prescribed
+`Layer: integration` and a `scripts/hitl.integration.test.ts`.
+**Decision:** Split `scripts/hitl.ts` into pure planners plus a thin injected
+executor, and cover the sequence at the **unit** layer in
+`scripts/hitl.bootstrap.unit.test.ts` — not as an integration test. The
+prescribed integration layer and filename are deliberately not used.
+**Rationale:** The repo already solved this exact shape once, in
+`scripts/dev-tmux.ts`: `buildStackCommands()` is a pure builder returning an
+ordered command list and `runStack(panes, exec)` drives an injected `ExecFn`,
+covered by `scripts/dev-tmux.unit.test.ts` at the unit layer. `hitl.ts` was
+already half-built this way (`computeProvisionPlan`, `computeMissingClones` are
+pure and unit-tested). Extending that pattern — `buildHitlConfig`,
+`buildPreflightSteps`, `buildServiceSpecs`, `runSteps` — covers the sequencing,
+argv, cwd, and cross-wired service env without a new fixture convention. The
+task's own acceptance criteria are self-contradictory on this point: they demand
+the sequence be "proven correct end-to-end" *and* that "no real … long-running
+task-store/admin service processes are spawned." Anything satisfying the second
+clause proves the *plan*, not the boot, so the honest layer is unit. Booting the
+services for real would require Postgres, exceed the integration speed budget,
+and — for a script that ships nowhere (`scripts/hitl.ts` is a local dev
+entrypoint referenced only by `Taskfile.yml`'s `task hitl`; it is absent from
+`agent/Dockerfile` and the Helm chart) — buy no confidence proportional to that
+cost.
+**Revisit:** Revisit if `scripts/hitl.ts` starts shipping in a deployed artifact
+(agent image or Helm chart), if the bootstrap grows a step whose failure mode is
+genuinely I/O-shaped rather than sequencing-shaped (e.g. port-binding or
+migration-ordering bugs observed in practice), or if the repo adopts a shared
+multi-service integration fixture that makes a real boot cheap. Note also that
+T-080's `criticality: high` tag looks miscalibrated for a dev-only script — if
+this row resurfaces, re-tier it before re-planning the work.
