@@ -417,8 +417,50 @@ export const GoCoverParser: CoverageParser = {
   },
 };
 
+// Matches the `- **Coverage toolchain:** \`<tool>\`` field recorded per repo
+// in docs/test-readiness/test-system.md (added by CGT-1.3). Returns
+// undefined when the field is absent — callers should treat that the same
+// as an unrecognized tool (see selectParser's default-to-LcovParser
+// fallback), preserving today's behavior for every repo without a recorded
+// value.
+const COVERAGE_TOOL_RE = /\*\*Coverage toolchain:\*\*\s*`([^`]+)`/;
+
+export function extractCoverageTool(
+  markdownContent: string,
+): string | undefined {
+  const match = markdownContent.match(COVERAGE_TOOL_RE);
+  return match ? match[1] : undefined;
+}
+
+// Dispatches a recorded `tool` value (from extractCoverageTool) to the
+// matching CoverageParser. "c8", "nyc", and "c8-nyc" are all aliases for the
+// same Istanbul JSON format (c8 and nyc both produce it), so all three
+// dispatch to IstanbulParser. Unset or unrecognized values fall back to
+// LcovParser — the pre-MTC-1.6 default — so every repo without an explicit
+// recorded tool keeps behaving exactly as it did before this dispatch
+// existed.
+export function selectParser(tool: string | undefined): CoverageParser {
+  switch (tool) {
+    case "jacoco":
+      return JacocoParser;
+    case "coverage.py":
+      return CoveragePyParser;
+    case "c8":
+    case "nyc":
+    case "c8-nyc":
+      return IstanbulParser;
+    case "go-cover":
+      return GoCoverParser;
+    default:
+      return LcovParser;
+  }
+}
+
+const COVERAGE_TOOL_DOC_PATH = "docs/test-readiness/test-system.md";
+
 export type CliDeps = {
   readLcov?: () => Promise<string>;
+  readCoverageToolDoc?: () => Promise<string>;
   log?: (msg: string) => void;
   error?: (msg: string) => void;
 };
@@ -431,6 +473,7 @@ export type CliDeps = {
 export async function runCli(deps: CliDeps = {}): Promise<number> {
   const {
     readLcov = () => Bun.file(LCOV_PATH).text(),
+    readCoverageToolDoc = () => Bun.file(COVERAGE_TOOL_DOC_PATH).text(),
     log = console.log,
     error = console.error,
   } = deps;
@@ -445,7 +488,19 @@ export async function runCli(deps: CliDeps = {}): Promise<number> {
     return 1;
   }
 
-  const files = LcovParser.parse(lcov);
+  // A missing/unreadable test-system.md is not fatal — treat the tool as
+  // unset so selectParser falls back to LcovParser, same as any other repo
+  // without a recorded Coverage toolchain field.
+  let toolDoc: string;
+  try {
+    toolDoc = await readCoverageToolDoc();
+  } catch {
+    toolDoc = "";
+  }
+  const tool = extractCoverageTool(toolDoc);
+  const parser = selectParser(tool);
+
+  const files = parser.parse(lcov);
 
   const relevant = filterRelevantFiles(
     files,

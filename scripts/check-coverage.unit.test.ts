@@ -14,27 +14,35 @@
  * FileStats[] — nothing here touches the filesystem or triggers the
  * script's process.exit side effects.
  *
+ * Also verifies extractCoverageTool (parses the `**Coverage toolchain:**`
+ * field out of test-system.md-style markdown) and selectParser (the MTC-1.6
+ * per-repo dispatch from a recorded tool name to its CoverageParser,
+ * defaulting to LcovParser when unset/unrecognized).
+ *
  * Also verifies runCli — the injectable-dependencies orchestrator (mirrors
- * check-coverage-no-decrease.ts's runCli) — via a fake readLcov instead of a
- * real file read, so no process.exit or filesystem I/O is involved. main()'s
- * thin I/O/CLI wiring beyond runCli is intentionally left uncovered,
- * consistent with this repo's process-entrypoint exclusion convention (see
- * EXCLUDE_PREFIXES in check-coverage.ts).
+ * check-coverage-no-decrease.ts's runCli) — via a fake readLcov (and, for the
+ * dispatch wiring, a fake readCoverageToolDoc) instead of real file reads, so
+ * no process.exit or filesystem I/O is involved. main()'s thin I/O/CLI wiring
+ * beyond runCli is intentionally left uncovered, consistent with this repo's
+ * process-entrypoint exclusion convention (see EXCLUDE_PREFIXES in
+ * check-coverage.ts).
  */
 import { describe, expect, test } from "bun:test";
 import type { FileStats } from "./check-coverage";
 import {
-  aggregateStats,
-  computeAggregateLinePct,
-  computeFailures,
   CoveragePyParser,
-  filterRelevantFiles,
   GoCoverParser,
   IstanbulParser,
   JacocoParser,
   LcovParser,
+  aggregateStats,
+  computeAggregateLinePct,
+  computeFailures,
+  extractCoverageTool,
+  filterRelevantFiles,
   percentOf,
   runCli,
+  selectParser,
 } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
@@ -449,10 +457,7 @@ describe("percentOf", () => {
 describe("computeFailures", () => {
   test("reports both lines and functions when both are below threshold", () => {
     const failures = computeFailures(88.77, 88.19, 90, 90);
-    expect(failures).toEqual([
-      "Lines 88.77% < 90%",
-      "Functions 88.19% < 90%",
-    ]);
+    expect(failures).toEqual(["Lines 88.77% < 90%", "Functions 88.19% < 90%"]);
   });
 
   test("reports only lines when only lines are below threshold", () => {
@@ -898,6 +903,71 @@ describe("GoCoverParser.parse", () => {
   });
 });
 
+describe("extractCoverageTool", () => {
+  test("extracts the tool name from a realistic test-system.md-style fixture", () => {
+    const fixture = [
+      "- **Budget:** <15min total per PR — see Speed budgets below.",
+      "- **Coverage toolchain:** `lcov` (Bun's native coverage reporter) — `bun test --coverage",
+      "  --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 80/80 line/function",
+      "  floor parser referenced throughout this document).",
+    ].join("\n");
+
+    expect(extractCoverageTool(fixture)).toBe("lcov");
+  });
+
+  test("extracts each known tool name (jacoco, coverage.py, c8, nyc, go-cover)", () => {
+    for (const tool of ["jacoco", "coverage.py", "c8", "nyc", "go-cover"]) {
+      const fixture = `- **Coverage toolchain:** \`${tool}\` (some description) — details.`;
+      expect(extractCoverageTool(fixture)).toBe(tool);
+    }
+  });
+
+  test("returns undefined when the Coverage toolchain field is absent", () => {
+    const fixture = [
+      "- **Budget:** <15min total per PR — see Speed budgets below.",
+      "- **Some other field:** `lcov` — not the field we want.",
+    ].join("\n");
+
+    expect(extractCoverageTool(fixture)).toBeUndefined();
+  });
+
+  test("returns undefined for empty content", () => {
+    expect(extractCoverageTool("")).toBeUndefined();
+  });
+});
+
+describe("selectParser", () => {
+  test('dispatches "lcov" to LcovParser', () => {
+    expect(selectParser("lcov")).toBe(LcovParser);
+  });
+
+  test('dispatches "jacoco" to JacocoParser', () => {
+    expect(selectParser("jacoco")).toBe(JacocoParser);
+  });
+
+  test('dispatches "coverage.py" to CoveragePyParser', () => {
+    expect(selectParser("coverage.py")).toBe(CoveragePyParser);
+  });
+
+  test('dispatches "c8", "nyc", and "c8-nyc" to IstanbulParser', () => {
+    expect(selectParser("c8")).toBe(IstanbulParser);
+    expect(selectParser("nyc")).toBe(IstanbulParser);
+    expect(selectParser("c8-nyc")).toBe(IstanbulParser);
+  });
+
+  test('dispatches "go-cover" to GoCoverParser', () => {
+    expect(selectParser("go-cover")).toBe(GoCoverParser);
+  });
+
+  test("falls back to LcovParser when the tool is undefined", () => {
+    expect(selectParser(undefined)).toBe(LcovParser);
+  });
+
+  test("falls back to LcovParser for an unrecognized tool string", () => {
+    expect(selectParser("some-unknown-tool")).toBe(LcovParser);
+  });
+});
+
 function makeLogSpy() {
   const messages: string[] = [];
   return { fn: (msg: string) => messages.push(msg), messages };
@@ -932,9 +1002,7 @@ describe("runCli", () => {
       error,
     });
     expect(exitCode).toBe(1);
-    expect(messages.some((m) => m.includes("No coverage file at"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.includes("No coverage file at"))).toBe(true);
   });
 
   test("returns 0 and logs 'no source files' when every file is excluded", async () => {
@@ -979,9 +1047,9 @@ describe("runCli", () => {
       error,
     });
     expect(exitCode).toBe(1);
-    expect(
-      errMessages.some((m) => m.includes("❌ Coverage gate failed")),
-    ).toBe(true);
+    expect(errMessages.some((m) => m.includes("❌ Coverage gate failed"))).toBe(
+      true,
+    );
     expect(errMessages.some((m) => m.includes("Lines"))).toBe(true);
   });
 
@@ -1007,5 +1075,61 @@ describe("runCli", () => {
     expect(failureLine).toBeDefined();
     expect(failureLine).toContain("Lines");
     expect(failureLine).toContain("Functions");
+  });
+
+  test("uses LcovParser (default behavior) when readCoverageToolDoc is not provided", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("uses LcovParser when readCoverageToolDoc resolves to content with no tool field", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      readCoverageToolDoc: () =>
+        Promise.resolve("- **Some other field:** `not-a-tool-field`"),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("uses LcovParser when readCoverageToolDoc throws (e.g. missing doc file)", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      readCoverageToolDoc: () => Promise.reject(new Error("ENOENT")),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("still fails the gate correctly using LcovParser when readCoverageToolDoc records lcov explicitly", async () => {
+    const { fn: error, messages: errMessages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(FAILING_LCOV),
+      readCoverageToolDoc: () =>
+        Promise.resolve(
+          "- **Coverage toolchain:** `lcov` (Bun's native coverage reporter)",
+        ),
+      log: () => {},
+      error,
+    });
+    expect(exitCode).toBe(1);
+    expect(errMessages.some((m) => m.includes("❌ Coverage gate failed"))).toBe(
+      true,
+    );
   });
 });
