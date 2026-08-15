@@ -531,6 +531,25 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain('--arg currentUser "$CURRENT_USER"');
   });
 
+  it("CURRENT_USER is assigned before the gh api graphql call, since Step 14 runs before Step 9.5's own assignment", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const assignIdx = section.indexOf(
+      "CURRENT_USER={the login resolved in Step 3}",
+    );
+    const graphqlIdx = section.indexOf("gh api graphql -f query=");
+
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(graphqlIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeLessThan(graphqlIdx);
+  });
+
   it("the prose references hasFreshNonAgentComment and describes the broadened non-author-only condition", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",

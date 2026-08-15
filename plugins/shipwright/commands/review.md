@@ -1014,7 +1014,14 @@ candidate selection and dispatch, and the case of a human invoking this command 
 with an explicit PR#, both of which the task-store-record dedup further down in Step 14
 can't see.
 
-Query GitHub directly for reviews at the current head commit:
+Query GitHub directly for reviews at the current head commit. This runs before Step 9.5's
+own assignment (Step 14 executes ahead of Step 4/5/9.5 in the actual flow — see the
+Arguments section), so re-resolve it here rather than assuming a shell variable set later
+in the file's step numbering is already populated:
+
+```bash
+CURRENT_USER={the login resolved in Step 3}
+```
 
 ```bash
 precheck=$(gh api graphql -f query='
