@@ -15,24 +15,29 @@
  * script's process.exit side effects.
  *
  * Also verifies runCli — the injectable-dependencies orchestrator (mirrors
- * check-coverage-no-decrease.ts's runCli) — via a fake readLcov instead of a
- * real file read, so no process.exit or filesystem I/O is involved. main()'s
- * thin I/O/CLI wiring beyond runCli is intentionally left uncovered,
- * consistent with this repo's process-entrypoint exclusion convention (see
+ * check-coverage-no-decrease.ts's runCli) — via a fake readLcov (and, for the
+ * MTC-1.6 dispatch wiring, a fake readCoverageToolDoc) instead of real file
+ * reads, so no process.exit or filesystem I/O is involved. main()'s thin
+ * I/O/CLI wiring beyond runCli is intentionally left uncovered, consistent
+ * with this repo's process-entrypoint exclusion convention (see
  * EXCLUDE_PREFIXES in check-coverage.ts).
+ *
+ * extractCoverageTool and selectParser (the MTC-1.6 per-repo coverage-tool
+ * dispatch) live in and are tested by coverage-tool-dispatch.ts /
+ * coverage-tool-dispatch.unit.test.ts.
  */
 import { describe, expect, test } from "bun:test";
 import type { FileStats } from "./check-coverage";
 import {
-  aggregateStats,
-  computeAggregateLinePct,
-  computeFailures,
   CoveragePyParser,
-  filterRelevantFiles,
   GoCoverParser,
   IstanbulParser,
   JacocoParser,
   LcovParser,
+  aggregateStats,
+  computeAggregateLinePct,
+  computeFailures,
+  filterRelevantFiles,
   percentOf,
   runCli,
 } from "./check-coverage";
@@ -449,10 +454,7 @@ describe("percentOf", () => {
 describe("computeFailures", () => {
   test("reports both lines and functions when both are below threshold", () => {
     const failures = computeFailures(88.77, 88.19, 90, 90);
-    expect(failures).toEqual([
-      "Lines 88.77% < 90%",
-      "Functions 88.19% < 90%",
-    ]);
+    expect(failures).toEqual(["Lines 88.77% < 90%", "Functions 88.19% < 90%"]);
   });
 
   test("reports only lines when only lines are below threshold", () => {
@@ -932,9 +934,7 @@ describe("runCli", () => {
       error,
     });
     expect(exitCode).toBe(1);
-    expect(messages.some((m) => m.includes("No coverage file at"))).toBe(
-      true,
-    );
+    expect(messages.some((m) => m.includes("No coverage file at"))).toBe(true);
   });
 
   test("returns 0 and logs 'no source files' when every file is excluded", async () => {
@@ -979,9 +979,9 @@ describe("runCli", () => {
       error,
     });
     expect(exitCode).toBe(1);
-    expect(
-      errMessages.some((m) => m.includes("❌ Coverage gate failed")),
-    ).toBe(true);
+    expect(errMessages.some((m) => m.includes("❌ Coverage gate failed"))).toBe(
+      true,
+    );
     expect(errMessages.some((m) => m.includes("Lines"))).toBe(true);
   });
 
@@ -1008,4 +1008,95 @@ describe("runCli", () => {
     expect(failureLine).toContain("Lines");
     expect(failureLine).toContain("Functions");
   });
+
+  test("uses LcovParser (default behavior) when readCoverageToolDoc is not provided", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("uses LcovParser when readCoverageToolDoc resolves to content with no tool field", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      readCoverageToolDoc: () =>
+        Promise.resolve("- **Some other field:** `not-a-tool-field`"),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("uses LcovParser when readCoverageToolDoc throws (e.g. missing doc file)", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      readCoverageToolDoc: () => Promise.reject(new Error("ENOENT")),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+  });
+
+  test("still fails the gate correctly using LcovParser when readCoverageToolDoc records lcov explicitly", async () => {
+    const { fn: error, messages: errMessages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(FAILING_LCOV),
+      readCoverageToolDoc: () =>
+        Promise.resolve(
+          "- **Coverage toolchain:** `lcov` (Bun's native coverage reporter)",
+        ),
+      log: () => {},
+      error,
+    });
+    expect(exitCode).toBe(1);
+    expect(errMessages.some((m) => m.includes("❌ Coverage gate failed"))).toBe(
+      true,
+    );
+  });
+
+  test.each([
+    ["jacoco", "- **Coverage toolchain:** `jacoco`"],
+    ["coverage.py", "- **Coverage toolchain:** `coverage.py`"],
+    ["c8", "- **Coverage toolchain:** `c8`"],
+    ["nyc", "- **Coverage toolchain:** `nyc`"],
+    ["c8-nyc", "- **Coverage toolchain:** `c8-nyc`"],
+    ["go-cover", "- **Coverage toolchain:** `go-cover`"],
+  ])(
+    "fails loudly instead of silently passing when a %s tool is recorded (no report-path dispatch yet)",
+    async (tool, toolDoc) => {
+      const { fn: error, messages: errMessages } = makeLogSpy();
+      const { fn: log, messages: logMessages } = makeLogSpy();
+      const exitCode = await runCli({
+        // lcov content — the report file check-coverage.ts always reads,
+        // regardless of the recorded tool — fed to a mismatched parser.
+        readLcov: () => Promise.resolve(PASSING_LCOV),
+        readCoverageToolDoc: () => Promise.resolve(toolDoc),
+        log,
+        error,
+      });
+      expect(exitCode).toBe(1);
+      expect(
+        errMessages.some(
+          (m) => m.includes(tool) && m.includes("no report-path dispatch"),
+        ),
+      ).toBe(true);
+      expect(
+        logMessages.some((m) => m.includes("No source files")),
+      ).toBe(false);
+      expect(
+        logMessages.some((m) => m.includes("Coverage gate passed")),
+      ).toBe(false);
+    },
+  );
 });
