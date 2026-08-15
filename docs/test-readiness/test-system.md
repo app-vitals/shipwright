@@ -27,6 +27,7 @@
   Unchanged since the last design pass (re-verified directly against `CLAUDE.md` at
   this commit). Shapes the canary contract section and the repo-configuration section
   below.
+- **Coverage toolchain:** `lcov` (Bun's native coverage reporter).
 - **Repo's own layer convention (used verbatim, per CLAUDE.md fallback):** this repo
   already declares five concrete layer names by filename suffix — `*.unit.test.ts`,
   `*.integration.test.ts`, `*.smoke.test.ts`, `*.spec.ts` (site) / `*.e2e.ts` (metrics,
@@ -379,10 +380,16 @@ change lands inside the existing `ci` job's `task test:coverage` scope.
 - **Budget:** <15min total per PR — see Speed budgets below.
 - **Coverage toolchain:** `lcov` (Bun's native coverage reporter) — `bun test --coverage
   --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 80/80 line/function
-  floor parser referenced throughout this document). Recorded here the same way the rest
-  of this section records CI pipeline shape, per repo: shipwright's own toolchain is
-  Bun/lcov; other repos in this pipeline may record `jacoco`, `coverage.py`, `c8`/`nyc`, or
-  `go-cover` instead, depending on their language/runtime.
+  floor parser referenced throughout this document). **The toolchain is recorded per repo
+  in this document's `## Stack profile` section** — each test-system design doc declares
+  its repo's coverage tool in a `**Coverage toolchain:**` field (either explicitly at the
+  top of the doc or inferred from stack profile). `scripts/check-coverage.ts` reads this
+  field and dispatches to the appropriate parser at check time: recognized tools are
+  `jacoco` (Java), `coverage.py` (Python), `c8`/`nyc`/`c8-nyc` (Node.js Istanbul JSON),
+  `go-cover` (Go), and `lcov` (default). Unrecognized or absent values fall back to lcov,
+  preserving compatibility for repos without a recorded toolchain. For shipwright itself,
+  the toolchain is Bun/lcov (no explicit `**Coverage toolchain:**` field needed, lcov is
+  the default).
 
 ### Naming convention and runner-exclusion config
 
