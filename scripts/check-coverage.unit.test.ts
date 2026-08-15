@@ -14,18 +14,17 @@
  * FileStats[] — nothing here touches the filesystem or triggers the
  * script's process.exit side effects.
  *
- * Also verifies extractCoverageTool (parses the `**Coverage toolchain:**`
- * field out of test-system.md-style markdown) and selectParser (the MTC-1.6
- * per-repo dispatch from a recorded tool name to its CoverageParser,
- * defaulting to LcovParser when unset/unrecognized).
- *
  * Also verifies runCli — the injectable-dependencies orchestrator (mirrors
  * check-coverage-no-decrease.ts's runCli) — via a fake readLcov (and, for the
- * dispatch wiring, a fake readCoverageToolDoc) instead of real file reads, so
- * no process.exit or filesystem I/O is involved. main()'s thin I/O/CLI wiring
- * beyond runCli is intentionally left uncovered, consistent with this repo's
- * process-entrypoint exclusion convention (see EXCLUDE_PREFIXES in
- * check-coverage.ts).
+ * MTC-1.6 dispatch wiring, a fake readCoverageToolDoc) instead of real file
+ * reads, so no process.exit or filesystem I/O is involved. main()'s thin
+ * I/O/CLI wiring beyond runCli is intentionally left uncovered, consistent
+ * with this repo's process-entrypoint exclusion convention (see
+ * EXCLUDE_PREFIXES in check-coverage.ts).
+ *
+ * extractCoverageTool and selectParser (the MTC-1.6 per-repo coverage-tool
+ * dispatch) live in and are tested by coverage-tool-dispatch.ts /
+ * coverage-tool-dispatch.unit.test.ts.
  */
 import { describe, expect, test } from "bun:test";
 import type { FileStats } from "./check-coverage";
@@ -38,11 +37,9 @@ import {
   aggregateStats,
   computeAggregateLinePct,
   computeFailures,
-  extractCoverageTool,
   filterRelevantFiles,
   percentOf,
   runCli,
-  selectParser,
 } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
@@ -900,71 +897,6 @@ describe("GoCoverParser.parse", () => {
   test("returns an empty array for a profile with only the mode line", () => {
     expect(GoCoverParser.parse("mode: set")).toEqual([]);
     expect(GoCoverParser.parse("mode: set\n")).toEqual([]);
-  });
-});
-
-describe("extractCoverageTool", () => {
-  test("extracts the tool name from a realistic test-system.md-style fixture", () => {
-    const fixture = [
-      "- **Budget:** <15min total per PR — see Speed budgets below.",
-      "- **Coverage toolchain:** `lcov` (Bun's native coverage reporter) — `bun test --coverage",
-      "  --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 80/80 line/function",
-      "  floor parser referenced throughout this document).",
-    ].join("\n");
-
-    expect(extractCoverageTool(fixture)).toBe("lcov");
-  });
-
-  test("extracts each known tool name (jacoco, coverage.py, c8, nyc, go-cover)", () => {
-    for (const tool of ["jacoco", "coverage.py", "c8", "nyc", "go-cover"]) {
-      const fixture = `- **Coverage toolchain:** \`${tool}\` (some description) — details.`;
-      expect(extractCoverageTool(fixture)).toBe(tool);
-    }
-  });
-
-  test("returns undefined when the Coverage toolchain field is absent", () => {
-    const fixture = [
-      "- **Budget:** <15min total per PR — see Speed budgets below.",
-      "- **Some other field:** `lcov` — not the field we want.",
-    ].join("\n");
-
-    expect(extractCoverageTool(fixture)).toBeUndefined();
-  });
-
-  test("returns undefined for empty content", () => {
-    expect(extractCoverageTool("")).toBeUndefined();
-  });
-});
-
-describe("selectParser", () => {
-  test('dispatches "lcov" to LcovParser', () => {
-    expect(selectParser("lcov")).toBe(LcovParser);
-  });
-
-  test('dispatches "jacoco" to JacocoParser', () => {
-    expect(selectParser("jacoco")).toBe(JacocoParser);
-  });
-
-  test('dispatches "coverage.py" to CoveragePyParser', () => {
-    expect(selectParser("coverage.py")).toBe(CoveragePyParser);
-  });
-
-  test('dispatches "c8", "nyc", and "c8-nyc" to IstanbulParser', () => {
-    expect(selectParser("c8")).toBe(IstanbulParser);
-    expect(selectParser("nyc")).toBe(IstanbulParser);
-    expect(selectParser("c8-nyc")).toBe(IstanbulParser);
-  });
-
-  test('dispatches "go-cover" to GoCoverParser', () => {
-    expect(selectParser("go-cover")).toBe(GoCoverParser);
-  });
-
-  test("falls back to LcovParser when the tool is undefined", () => {
-    expect(selectParser(undefined)).toBe(LcovParser);
-  });
-
-  test("falls back to LcovParser for an unrecognized tool string", () => {
-    expect(selectParser("some-unknown-tool")).toBe(LcovParser);
   });
 });
 

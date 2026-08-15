@@ -6,6 +6,8 @@
 // on individual low-coverage files regardless of overall coverage — hence
 // this separate aggregate gate.
 
+import { extractCoverageTool, selectParser } from "./coverage-tool-dispatch";
+
 // Live CI aggregate at the time of the last raise attempt (MTC-1.7, 2026-08-14)
 // was Lines 89.77% / Functions 89.72% — just short of 90/90. Rather than merge
 // a gate the repo doesn't clear (which would break `task ci` for every
@@ -416,45 +418,6 @@ export const GoCoverParser: CoverageParser = {
     return files;
   },
 };
-
-// Matches the `- **Coverage toolchain:** \`<tool>\`` field recorded per repo
-// in docs/test-readiness/test-system.md (added by CGT-1.3). Returns
-// undefined when the field is absent — callers should treat that the same
-// as an unrecognized tool (see selectParser's default-to-LcovParser
-// fallback), preserving today's behavior for every repo without a recorded
-// value.
-const COVERAGE_TOOL_RE = /\*\*Coverage toolchain:\*\*\s*`([^`]+)`/;
-
-export function extractCoverageTool(
-  markdownContent: string,
-): string | undefined {
-  const match = markdownContent.match(COVERAGE_TOOL_RE);
-  return match ? match[1] : undefined;
-}
-
-// Dispatches a recorded `tool` value (from extractCoverageTool) to the
-// matching CoverageParser. "c8", "nyc", and "c8-nyc" are all aliases for the
-// same Istanbul JSON format (c8 and nyc both produce it), so all three
-// dispatch to IstanbulParser. Unset or unrecognized values fall back to
-// LcovParser — the pre-MTC-1.6 default — so every repo without an explicit
-// recorded tool keeps behaving exactly as it did before this dispatch
-// existed.
-export function selectParser(tool: string | undefined): CoverageParser {
-  switch (tool) {
-    case "jacoco":
-      return JacocoParser;
-    case "coverage.py":
-      return CoveragePyParser;
-    case "c8":
-    case "nyc":
-    case "c8-nyc":
-      return IstanbulParser;
-    case "go-cover":
-      return GoCoverParser;
-    default:
-      return LcovParser;
-  }
-}
 
 const COVERAGE_TOOL_DOC_PATH = "docs/test-readiness/test-system.md";
 
