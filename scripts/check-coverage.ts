@@ -347,15 +347,33 @@ export const GoCoverParser: CoverageParser = {
   },
 };
 
-async function main() {
-  const lcov = await Bun.file(LCOV_PATH)
-    .text()
-    .catch(() => {
-      console.error(
-        `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
-      );
-      process.exit(1);
-    });
+export type CliDeps = {
+  readLcov?: () => Promise<string>;
+  log?: (msg: string) => void;
+  error?: (msg: string) => void;
+};
+
+// Orchestrates the CLI end to end and returns an exit code, rather than
+// calling process.exit directly — the same injectable-dependencies pattern
+// as check-coverage-no-decrease.ts's runCli, so this can be unit tested
+// without a real filesystem/process.exit. import.meta.main below is the only
+// caller that still needs a real process exit code.
+export async function runCli(deps: CliDeps = {}): Promise<number> {
+  const {
+    readLcov = () => Bun.file(LCOV_PATH).text(),
+    log = console.log,
+    error = console.error,
+  } = deps;
+
+  let lcov: string;
+  try {
+    lcov = await readLcov();
+  } catch {
+    error(
+      `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
+    );
+    return 1;
+  }
 
   const files = LcovParser.parse(lcov);
 
@@ -366,8 +384,8 @@ async function main() {
   );
 
   if (relevant.length === 0) {
-    console.log("No source files in coverage report.");
-    process.exit(0);
+    log("No source files in coverage report.");
+    return 0;
   }
 
   let totalLf = 0;
@@ -383,13 +401,13 @@ async function main() {
 
     const linePct = lf === 0 ? 100 : (lh / lf) * 100;
     const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
-    console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
+    log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
   }
 
   const overallLines = computeAggregateLinePct(files);
   const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
 
-  console.log(`
+  log(`
 Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
@@ -402,12 +420,13 @@ Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — thresho
     );
 
   if (failures.length > 0) {
-    console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
-    process.exit(1);
+    error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
+    return 1;
   }
-  console.log("✅ Coverage gate passed");
+  log("✅ Coverage gate passed");
+  return 0;
 }
 
 if (import.meta.main) {
-  await main();
+  process.exit(await runCli());
 }

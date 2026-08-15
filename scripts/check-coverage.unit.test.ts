@@ -11,6 +11,10 @@
  * weighted aggregation. Pure logic, no I/O: parse(content) takes raw string
  * content and returns FileStats[] — nothing here touches the filesystem or
  * triggers the script's process.exit side effects.
+ *
+ * Also verifies runCli — the injectable-dependencies orchestrator (mirrors
+ * check-coverage-no-decrease.ts's runCli) — via a fake readLcov instead of a
+ * real file read, so no process.exit or filesystem I/O is involved.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -20,6 +24,7 @@ import {
   JacocoParser,
   LcovParser,
   computeAggregateLinePct,
+  runCli,
 } from "./check-coverage";
 
 describe("LcovParser.parse", () => {
@@ -728,5 +733,117 @@ describe("GoCoverParser.parse", () => {
   test("returns an empty array for a profile with only the mode line", () => {
     expect(GoCoverParser.parse("mode: set")).toEqual([]);
     expect(GoCoverParser.parse("mode: set\n")).toEqual([]);
+  });
+});
+
+function makeLogSpy() {
+  const messages: string[] = [];
+  return { fn: (msg: string) => messages.push(msg), messages };
+}
+
+// lf=10/lh=9 => 90% lines (>= 80% threshold), fnf=2/fnh=2 => 100% functions.
+const PASSING_LCOV = [
+  "SF:agent/src/example.ts",
+  "FNF:2",
+  "FNH:2",
+  "LF:10",
+  "LH:9",
+  "end_of_record",
+].join("\n");
+
+// lf=10/lh=5 => 50% lines (< 80% threshold) — fails the gate on lines alone.
+const FAILING_LCOV = [
+  "SF:agent/src/example.ts",
+  "FNF:2",
+  "FNH:2",
+  "LF:10",
+  "LH:5",
+  "end_of_record",
+].join("\n");
+
+describe("runCli", () => {
+  test("returns 1 and logs an error when the lcov file can't be read", async () => {
+    const { fn: error, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.reject(new Error("ENOENT")),
+      log: () => {},
+      error,
+    });
+    expect(exitCode).toBe(1);
+    expect(messages.some((m) => m.includes("No coverage file at"))).toBe(
+      true,
+    );
+  });
+
+  test("returns 0 and logs 'no source files' when every file is excluded", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const excludedOnlyLcov = [
+      "SF:node_modules/foo/index.js",
+      "FNF:1",
+      "FNH:1",
+      "LF:1",
+      "LH:1",
+      "end_of_record",
+    ].join("\n");
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(excludedOnlyLcov),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(
+      messages.some((m) => m.includes("No source files in coverage report")),
+    ).toBe(true);
+  });
+
+  test("returns 0 and logs success when lines and functions both meet threshold", async () => {
+    const { fn: log, messages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(PASSING_LCOV),
+      log,
+    });
+    expect(exitCode).toBe(0);
+    expect(messages.some((m) => m.includes("✅ Coverage gate passed"))).toBe(
+      true,
+    );
+    expect(messages.some((m) => m.includes("Lines:"))).toBe(true);
+    expect(messages.some((m) => m.includes("Functions:"))).toBe(true);
+  });
+
+  test("returns 1 and logs the failure reason when line coverage is below threshold", async () => {
+    const { fn: error, messages: errMessages } = makeLogSpy();
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(FAILING_LCOV),
+      log: () => {},
+      error,
+    });
+    expect(exitCode).toBe(1);
+    expect(
+      errMessages.some((m) => m.includes("❌ Coverage gate failed")),
+    ).toBe(true);
+    expect(errMessages.some((m) => m.includes("Lines"))).toBe(true);
+  });
+
+  test("returns 1 and reports both lines and functions when both are below threshold", async () => {
+    const { fn: error, messages: errMessages } = makeLogSpy();
+    const bothFailingLcov = [
+      "SF:agent/src/example.ts",
+      "FNF:10",
+      "FNH:1",
+      "LF:10",
+      "LH:1",
+      "end_of_record",
+    ].join("\n");
+    const exitCode = await runCli({
+      readLcov: () => Promise.resolve(bothFailingLcov),
+      log: () => {},
+      error,
+    });
+    expect(exitCode).toBe(1);
+    const failureLine = errMessages.find((m) =>
+      m.includes("❌ Coverage gate failed"),
+    );
+    expect(failureLine).toBeDefined();
+    expect(failureLine).toContain("Lines");
+    expect(failureLine).toContain("Functions");
   });
 });
