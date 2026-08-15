@@ -204,7 +204,7 @@ describe("bootstrap sequencing (composed)", () => {
     // that reaches runPreflight() here is the same HitlStep[] the real
     // entrypoint would build and execute.
     const cfg = buildHitlConfig(
-      { SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright,app-vitals/vitals-os" },
+      { SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright,some-org/other-repo" },
       "/home/dev",
       "/repo-root",
     );
@@ -215,7 +215,7 @@ describe("bootstrap sequencing (composed)", () => {
     const cloneSteps = steps.filter((s) => s.kind === "clone");
     expect(cloneSteps.map((s) => s.argv?.[3])).toEqual([
       "app-vitals/shipwright",
-      "app-vitals/vitals-os",
+      "some-org/other-repo",
     ]);
 
     const seen: string[] = [];
