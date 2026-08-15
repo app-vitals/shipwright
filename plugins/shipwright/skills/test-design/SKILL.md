@@ -80,6 +80,10 @@ Document:
 - **Fail-fast**: unit failures skip integration. Integration failures skip smoke.
 - **Parallelism**: per-layer worker count.
 - **Budget**: <15min total per PR (agent-readiness checklist Condition 4).
+- **Coverage toolchain**: detect and record the repo's actual coverage tool alongside the
+  above — one of `lcov` (Bun/Jest/Vitest native), `jacoco` (JVM), `coverage.py` (Python),
+  `c8`/`nyc` (Node), or `go-cover` (Go). Recorded the same way as the other CI pipeline
+  shape fields — per repo, not a fixed default.
 
 **Per-workspace matrix sharding — explicit override, not the default.** The default CI shape is **one job per layer** — `unit-all`, `integration-all`, `smoke-all` — each running its layer's full suite across every workspace in a single combined job. Splitting a layer into a per-workspace matrix (one job per workspace, per layer) is an **explicit override** that must be justified against the conditions below, not a default granularity choice. Per-job overhead — checkout, dependency install, environment setup, and (for integration jobs) container init for dependencies like Postgres — is fixed cost paid by every job in the matrix regardless of how little work that job actually does; at low per-workspace test volume this overhead routinely dwarfs the real test execution time, and job-level CI queuing delays are multiplied by every extra job added to a PR.
 
