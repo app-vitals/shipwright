@@ -255,6 +255,18 @@ Anything the audit couldn't determine without a human call. Common entries:
      pipeline that doesn't exist.
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
+
+   **Sequencing rule — feature-coverage gaps ahead of line-coverage filler (within the same
+   milestone).** A milestone can contain two distinct gap types: **feature-coverage-closing**
+   tasks (a task whose outcome closes an actual untested feature/critical-path item — e.g. a
+   `critical`/`high` tier row from the inventory buckets, or any row whose outcome closes a
+   named feature/error-path gap) and **line-coverage filler** tasks (a task whose only
+   justification is raising the aggregate `line_coverage_pct`, with no feature/error-path gap
+   behind it). Whenever both types are being generated for the same milestone, order every
+   feature-coverage-closing task ahead of every line-coverage filler task in that milestone's
+   emitted `T-NNN` sequence — line-coverage filler never precedes a feature-coverage-closing
+   task within the same milestone. This is a no-op when a milestone contains only one gap type
+   (all feature-coverage-closing, or all line-coverage filler): there is nothing to reorder.
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
 8. **Compute the coverage_gate block by invoking `scripts/check-coverage-gate.ts` — never
@@ -333,6 +345,10 @@ Anything the audit couldn't determine without a human call. Common entries:
   canary-plumbing tasks for a pipeline that doesn't exist, requiring 8 tasks to be
   manually cancelled. When not staged, emit the `canary not applicable -- deploy_model={value}`
   note in section 4 and skip the milestone — zero tasks, not a smaller pile of tasks.
+- **Don't sequence a line-coverage filler task ahead of a feature-coverage-closing task within
+  the same milestone.** When both gap types are present in a milestone, the feature-coverage
+  gap is the real gap; a line-coverage filler task only moves the aggregate percentage. Order
+  feature-coverage-closing tasks first.
 - **Don't bundle "build a never-proven capability" and "automate it on a schedule" into one
   task.** This is not hypothetical either: one target repo's cycle-3 roadmap asked for the
   whole recorded-fixture-refresh loop (~15 services, ~8 net-new production credentials) in a
