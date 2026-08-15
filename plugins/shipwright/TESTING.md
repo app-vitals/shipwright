@@ -1358,6 +1358,24 @@ opted out. This is the fix for an incident where a target repo's roadmap sat a s
 `pending`/HITL for multiple cycles, asking for the entire ~15-service loop (~8 net-new
 production credentials) in one shot, with no prior live-recording precedent to automate.
 
+### TR-28 — Feature-coverage gaps sequenced ahead of line-coverage filler + anti-gaming citation rule
+**Steps:** No automated test covers the sequencing/rejection judgment itself — both are
+prompt-only generation/filing logic (content-assertion tests in `SKILL.content.test.ts`
+cover only that the instruction text exists, not that an LLM run obeys it). Verify via two
+dry runs: (a) run `/test-roadmap` against a repo whose Phase 3 migration output has, within
+the same milestone, both a feature-coverage-gap-closing row (a `critical`/`high` tier item
+closing a named feature/error-path gap) and a line-coverage-filler row (a row whose only
+stated justification is raising `line_coverage_pct`). (b) run `/test-fix` against a
+`test-readiness-plan.md` whose task list contains a line-coverage-bucket row with no cited
+feature/error-path mapping in its outcome column (assertion-free filler, e.g. "add a test for
+a trivial getter to raise line coverage").
+**Expected:** (a) In the generated task list, every feature-coverage-closing `T-NNN` row for
+that milestone is sequenced ahead of every line-coverage-filler `T-NNN` row for the same
+milestone — a milestone with only one gap type is unaffected (no-op). (b) `/test-fix` skips
+filing the uncited row and prints `Skipping {T-NNN} — line-coverage task has no cited
+feature/error-path mapping (possible coverage gaming)`; a line-coverage row that does cite a
+genuine uncovered error path (e.g. an untested `catch` block) files normally.
+
 ---
 
 ## Versioning Checklist (for every PR to this repo)

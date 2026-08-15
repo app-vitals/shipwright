@@ -23,6 +23,7 @@ import {
   type PrRecord,
   buildProductionDeps,
   getReviewCandidates,
+  hasFreshNonAgentComment,
   traceReviewCandidacyDecision,
 } from "./check-review.ts";
 
@@ -1296,7 +1297,13 @@ describe("getReviewCandidates", () => {
     expect(result[0].commitSha).toBe("sha111");
   });
 
-  test("RVG-2.1 regression: a review-thread reply from someone other than the PR author does not flip the outcome", async () => {
+  test("RCT-1.1: a review-thread reply from a third-party reviewer (not the PR author, not the reviewing agent) DOES flip the outcome back to candidate", async () => {
+    // Prior to RCT-1.1 this fixture asserted the opposite (result stays
+    // []) — the old author-equality filter only ever counted a reply from
+    // pr.author.login. Under the broadened, currentUser-exclusive filter, a
+    // third-party reviewer's inline thread reply now counts as fresh too,
+    // since "some-other-agent" is neither the PR author nor the reviewing
+    // agent ("bodhi-agent").
     const pr = makePr({
       headRefOid: "sha111",
       author: { login: "danmcaulay" },
@@ -1322,6 +1329,66 @@ describe("getReviewCandidates", () => {
                 {
                   author: { login: "some-other-agent" },
                   body: "I'll take this one.",
+                  createdAt: "2026-07-20T00:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: { nodes: [] },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RCT-1.1: a review-thread reply from the reviewing agent itself does not flip the outcome (prevents self-retrigger)", async () => {
+    // The identity excluded from counting as "fresh" is currentUser (the
+    // reviewing agent), not pr.author.login — this guards against the
+    // agent's own comments causing it to endlessly re-trigger review on its
+    // own PR.
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "bodhi-agent" },
+                  body: "Self-note, not a real reply.",
                   createdAt: "2026-07-20T00:00:00.000Z",
                 },
               ],
@@ -1471,7 +1538,13 @@ describe("getReviewCandidates", () => {
     expect(result[0].commitSha).toBe("sha111");
   });
 
-  test("a comment from a non-author (another reviewer or bot) does not trigger re-candidacy", async () => {
+  test("RCT-1.1: a comment from a non-author, non-agent commenter (another reviewer or bot) now DOES trigger re-candidacy", async () => {
+    // Prior to RCT-1.1 this fixture asserted the opposite (result stays
+    // []) — the old author-equality filter only ever counted a comment from
+    // pr.author.login. Under the broadened, currentUser-exclusive filter, a
+    // third-party reviewer's or bot's plain PR comment now counts as fresh
+    // too, since neither "some-reviewer" nor "some-bot" is the reviewing
+    // agent ("bodhi-agent").
     const pr = makePr({
       headRefOid: "sha111",
       author: { login: "danmcaulay" },
@@ -1502,6 +1575,58 @@ describe("getReviewCandidates", () => {
             author: { login: "some-bot" },
             body: "CI passed",
             createdAt: "2026-07-21T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => ({
+          commitSha: "sha111",
+          reviewedCommitSha: "sha111",
+          reviewState: "posted",
+          reviewedAt: "2026-07-15T00:00:00.000Z",
+        }),
+        "bodhi-agent",
+        false,
+        async () => null,
+        undefined,
+        undefined,
+        undefined,
+        async () => reviewData,
+      ),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].commitSha).toBe("sha111");
+  });
+
+  test("RCT-1.1: a comment from the reviewing agent itself does not trigger re-candidacy (prevents self-retrigger)", async () => {
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            commit: { oid: "sha111" },
+            body: "Please fix this",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [{ isResolved: false, comments: { nodes: [] } }],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "bodhi-agent" },
+            body: "Self-note, not a real reply.",
+            createdAt: "2026-07-20T00:00:00.000Z",
           },
         ],
       },
@@ -1780,32 +1905,14 @@ describe("traceReviewCandidacyDecision", () => {
 
   // ─── RVG-2.1: fresh author reply sourced from an inline review-thread reply ──
   //
-  // Mirrors production hasFreshAuthorReply's OR condition (check-review.ts
-  // ~460-471): true when EITHER a top-level PR comment OR a reviewThreads
-  // reply is authored by the PR author after record.reviewedAt. This block
-  // recomputes that boolean from the fixture the same way production does,
-  // rather than hardcoding `true`, so the computation itself is exercised —
-  // not just traceReviewCandidacyDecision's pass-through of a given boolean.
-  function computeHasFreshAuthorReply(
-    reviewData: PrReviewData,
-    authorLogin: string,
-    reviewedAtMs: number,
-  ): boolean {
-    const topLevelFresh = reviewData.comments.nodes.some(
-      (c) =>
-        c.author.login === authorLogin &&
-        new Date(c.createdAt).getTime() > reviewedAtMs,
-    );
-    const threadReplyFresh = reviewData.reviewThreads.nodes.some((t) =>
-      t.comments.nodes.some(
-        (c) =>
-          c.author.login === authorLogin &&
-          c.createdAt !== undefined &&
-          new Date(c.createdAt).getTime() > reviewedAtMs,
-      ),
-    );
-    return topLevelFresh || threadReplyFresh;
-  }
+  // hasFreshNonAgentComment (check-review.ts, RCT-1.1) is the production,
+  // exported pure function that replaces this block's former local mirror:
+  // true when EITHER a top-level PR comment OR a reviewThreads reply is
+  // authored by anyone other than the passed identity, after
+  // record.reviewedAt. Calling the real production function here (rather
+  // than a local re-implementation) means these tests exercise the actual
+  // computation, not just traceReviewCandidacyDecision's pass-through of a
+  // given boolean.
 
   test("already-reviewed-live: a fresh author reply posted inline on a review thread bypasses the live-review exclusion (eligible)", () => {
     const pr = makePr({
@@ -1862,9 +1969,15 @@ describe("traceReviewCandidacyDecision", () => {
     );
     expect(oldComputation).toBe(false);
 
-    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+    // "bodhi-agent" (the reviewing agent's identity, not the PR author) is
+    // the identity being excluded here — the fresh comment is from
+    // "danmcaulay" (the PR author), who is not "bodhi-agent", so it counts
+    // under the broadened inequality-based filter, exactly as it did under
+    // the old author-equality filter (both agree for this fixture).
+    const currentUser = "bodhi-agent";
+    const hasFreshAuthorReply = hasFreshNonAgentComment(
       reviewData,
-      pr.author.login,
+      currentUser,
       reviewedAtMs,
     );
     expect(hasFreshAuthorReply).toBe(true);
@@ -1875,7 +1988,17 @@ describe("traceReviewCandidacyDecision", () => {
     expect(trace).toEqual({ check: "eligible" });
   });
 
-  test("already-reviewed-live: a review-thread reply from someone other than the PR author, or before reviewedAt, does not flip hasFreshAuthorReply (still excluded)", () => {
+  test("already-reviewed-live: a review-thread reply from a third-party reviewer (not the PR author, not the current agent) DOES flip hasFreshAuthorReply and re-opens candidacy (RCT-1.1 broadening)", () => {
+    // Prior to RCT-1.1, hasFreshAuthorReply only ever fired for a comment
+    // from pr.author.login — a third-party reviewer's plain PR comment
+    // never tripped it, so a PR with an already-terminal review never got
+    // re-reviewed even when a reviewer left substantive follow-up feedback
+    // as a plain comment rather than a formal review submission. The
+    // broadened function counts ANY commenter except the reviewing agent's
+    // own identity (currentUser) as a fresh reply — this fixture proves a
+    // third-party reviewer's fresh reply now bypasses the exclusion (this
+    // is the entire point of the change, and is the inverse of this test's
+    // pre-RCT-1.1 assertion).
     const pr = makePr({
       headRefOid: "sha111",
       author: { login: "danmcaulay" },
@@ -1884,6 +2007,7 @@ describe("traceReviewCandidacyDecision", () => {
       reviewedAt: "2026-07-15T09:00:00.000Z",
     } as PrRecord;
     const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+    const currentUser = "bodhi-agent";
 
     const reviewData = makeReviewData({
       headRefOid: "sha111",
@@ -1902,13 +2026,16 @@ describe("traceReviewCandidacyDecision", () => {
             isResolved: false,
             comments: {
               nodes: [
-                // Fresh, but NOT the PR author.
+                // Fresh, from a third-party reviewer (not the PR author,
+                // not the reviewing agent) — now counts under the
+                // broadened, currentUser-exclusive filter.
                 {
                   author: { login: "some-other-agent" },
                   body: "I'll take this one.",
                   createdAt: "2026-07-15T10:00:00.000Z",
                 },
-                // The PR author, but BEFORE reviewedAt (stale).
+                // The PR author, but BEFORE reviewedAt (stale) — still
+                // does not count on its own.
                 {
                   author: { login: "danmcaulay" },
                   body: "Old reply from before the last review.",
@@ -1921,15 +2048,83 @@ describe("traceReviewCandidacyDecision", () => {
       },
     });
 
-    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+    const hasFreshNonAgentReply = hasFreshNonAgentComment(
       reviewData,
-      pr.author.login,
+      currentUser,
       reviewedAtMs,
     );
-    expect(hasFreshAuthorReply).toBe(false);
+    expect(hasFreshNonAgentReply).toBe(true);
 
     const trace = traceReviewCandidacyDecision(
-      baseArgs({ pr, record, reviewData, hasFreshAuthorReply }),
+      baseArgs({
+        pr,
+        record,
+        reviewData,
+        hasFreshAuthorReply: hasFreshNonAgentReply,
+      }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-live: a review-thread reply from currentUser itself (the reviewing agent) does not flip hasFreshAuthorReply (still excluded)", () => {
+    // Guards against the reviewing agent's own comments (e.g. any reply it
+    // posts) causing it to endlessly re-trigger review on its own PR — the
+    // identity excluded from counting as "fresh" is the agent's own
+    // currentUser, not the PR author.
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const record: PrRecord = {
+      reviewedAt: "2026-07-15T09:00:00.000Z",
+    } as PrRecord;
+    const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
+    const currentUser = "bodhi-agent";
+
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                // Fresh, but authored by the reviewing agent itself.
+                {
+                  author: { login: currentUser },
+                  body: "Self-note, not a real reply.",
+                  createdAt: "2026-07-15T10:00:00.000Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const hasFreshNonAgentReply = hasFreshNonAgentComment(
+      reviewData,
+      currentUser,
+      reviewedAtMs,
+    );
+    expect(hasFreshNonAgentReply).toBe(false);
+
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({
+        pr,
+        record,
+        reviewData,
+        hasFreshAuthorReply: hasFreshNonAgentReply,
+      }),
     );
     expect(trace).toEqual({
       check: "already-reviewed-live",
@@ -2177,9 +2372,12 @@ describe("traceReviewCandidacyDecision", () => {
         ],
       },
     });
-    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+    // "bodhi-agent" is the reviewing agent's identity — danmcaulay's thread
+    // reply is from someone else (the PR author, who is not the agent), so
+    // it counts as fresh under the broadened, currentUser-exclusive filter.
+    const hasFreshAuthorReply = hasFreshNonAgentComment(
       reviewData,
-      pr.author.login,
+      "bodhi-agent",
       reviewedAtMs,
     );
     expect(hasFreshAuthorReply).toBe(true);
@@ -2249,9 +2447,9 @@ describe("traceReviewCandidacyDecision", () => {
         ],
       },
     });
-    const hasFreshAuthorReply = computeHasFreshAuthorReply(
+    const hasFreshAuthorReply = hasFreshNonAgentComment(
       reviewData,
-      pr.author.login,
+      "bodhi-agent",
       reviewedAtMs,
     );
     expect(hasFreshAuthorReply).toBe(true);

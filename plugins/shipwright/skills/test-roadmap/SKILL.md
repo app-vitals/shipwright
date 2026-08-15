@@ -19,7 +19,11 @@ By the `/test-roadmap` command. Requires:
 
 ## Output structure
 
-`docs/test-readiness/test-readiness-plan.md` has six sections:
+`docs/test-readiness/test-readiness-plan.md` opens with a `## Coverage Gate` block — the
+headline machine-checkable verdict (`feature_coverage_pct`, `feature_coverage_source`,
+`line_coverage_pct`, `line_coverage_source`, `verdict`, `targets`), computed by
+`scripts/check-coverage-gate.ts` and rendered verbatim (see Process step 8) — followed by
+six sections:
 
 ### 1. Where we are now
 
@@ -251,10 +255,77 @@ Anything the audit couldn't determine without a human call. Common entries:
      pipeline that doesn't exist.
    - Milestone 4: all `high` tier items (net-new + rebuild + promote)
    - Milestone 5: all `delete (redundant)` items + remaining `rebuild` cleanup + plugin feedback collector
+
+   **Sequencing rule — feature-coverage gaps ahead of line-coverage filler (within the same
+   milestone).** A milestone can contain two distinct gap types: **feature-coverage-closing**
+   tasks (a task whose outcome closes an actual untested feature/critical-path item — e.g. a
+   `critical`/`high` tier row from the inventory buckets, or any row whose outcome closes a
+   named feature/error-path gap) and **line-coverage filler** tasks (a task whose only
+   justification is raising the aggregate `line_coverage_pct`, with no feature/error-path gap
+   behind it). Whenever both types are being generated for the same milestone, order every
+   feature-coverage-closing task ahead of every line-coverage filler task in that milestone's
+   emitted `T-NNN` sequence — line-coverage filler never precedes a feature-coverage-closing
+   task within the same milestone. This is a no-op when a milestone contains only one gap type
+   (all feature-coverage-closing, or all line-coverage filler): there is nothing to reorder.
+
+   **Note on line-coverage filler provenance:** the five migration buckets this walk pulls
+   from (reuse/promote/rebuild/delete/net-new) are all inventory-derived — every row this walk
+   emits traces to a concrete `test-inventory.md`/`test-migration.md` item, so this walk itself
+   has no path that emits a line-coverage-filler row. Line-coverage filler rows are the kind a
+   human or an agent adds by hand to a milestone outside this walk (e.g. padding a milestone to
+   hit a line-coverage target before merge). This sequencing rule — and the matching
+   `test-fix/SKILL.md` anti-gaming check — exists to catch that ad-hoc row if and when one is
+   added, not to reorder anything this walk generates on its own.
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
-8. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
+8. **Compute the coverage_gate block by invoking `scripts/check-coverage-gate.ts` — never
+   hand-compute the verdict.** Source the four required inputs the same way Step 4c of
+   `skills/test-migration/SKILL.md` sources its coverage numbers — mirrors that step's
+   mechanism exactly, applied here to feed the gate script instead of `test-migration.md`:
+   - `linePct` / `lineSource`: locate the most recent green CI run of the
+     `lint / typecheck / test` job (`gh run list` / `gh run view --log`), scope the log
+     read to that run's `Test` step, and grep for the `Lines:` line printed by
+     `scripts/check-coverage.ts` (shape: `Lines:     88.84% (12345/13897) — threshold: 80%`).
+     `linePct` is the parsed percentage; `lineSource` cites the CI run URL and the commit
+     SHA it ran against.
+   - `featurePct` / `featureSource`: read `feature_coverage_pct` from
+     `docs/test-readiness/test-inventory.md` (already a Process step 1 prerequisite
+     artifact for this run). `featureSource` cites that file.
+   - **Never guess.** If no green CI run can be found, the run has no `Test` step, or
+     `test-inventory.md` is missing or lacks `feature_coverage_pct`, the corresponding
+     input is unavailable — do not substitute an estimated value; proceed to the refusal
+     rule below instead.
+
+   Run the script via Bash with the sourced inputs as a JSON blob (argv or stdin) —
+   the script computes `verdict` itself; the agent does not compose "READY"/"BLOCKED"
+   text by hand:
+   ```bash
+   echo '{"featurePct": 92, "featureSource": "docs/test-readiness/test-inventory.md", "linePct": 87, "lineSource": "CI run <url> @ <sha>"}' \
+     | bun run scripts/check-coverage-gate.ts
+   ```
+   (run from the target repo root, matching how `scripts/check-coverage.ts` itself is
+   invoked by `task test:coverage`)
+   Take the script's JSON stdout output verbatim — `feature_coverage_pct`,
+   `feature_coverage_source`, `line_coverage_pct`, `line_coverage_source`, `verdict`,
+   `targets.feature`, `targets.line` — into the `{{FEATURE_COVERAGE_PCT}}` /
+   `{{FEATURE_COVERAGE_SOURCE}}` / `{{LINE_COVERAGE_PCT}}` / `{{LINE_COVERAGE_SOURCE}}` /
+   `{{COVERAGE_VERDICT}}` / `{{FEATURE_TARGET}}` / `{{LINE_TARGET}}` template placeholders.
+   Do not paraphrase the `READY` / `BLOCKED: ...` verdict text — render it verbatim.
+
+   **Abort if the script call fails — do not write `test-readiness-plan.md`.** This is the
+   correctness backstop the script enforces: if the script exits nonzero (missing required
+   input field, or a self-consistency check failure), if its stdout is not valid JSON
+   matching the six-field `coverage_gate` shape, or if any of the six fields ends up
+   missing/null in a way that makes the block inconsistent, stop here. Do not proceed to
+   step 9 and do not write a partial or fabricated `test-readiness-plan.md` — mirrors
+   Process step 1's "Abort if any missing" failure mode, applied to the coverage_gate
+   computation instead of the three prior-artifact reads.
+9. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
    Write to `docs/test-readiness/test-readiness-plan.md`.
+   - Fill the `## Coverage Gate` section's seven placeholders
+     (`{{FEATURE_COVERAGE_PCT}}`, `{{FEATURE_COVERAGE_SOURCE}}`, `{{LINE_COVERAGE_PCT}}`,
+     `{{LINE_COVERAGE_SOURCE}}`, `{{COVERAGE_VERDICT}}`, `{{FEATURE_TARGET}}`,
+     `{{LINE_TARGET}}`) verbatim from step 8's script output.
    - **`{{M3_HEADING_AND_DOD}}` is gated on `deploy_model`** (Process step 1) — the
      template has no static text for this milestone precisely because it must reflect
      the gate:
@@ -283,6 +354,10 @@ Anything the audit couldn't determine without a human call. Common entries:
   canary-plumbing tasks for a pipeline that doesn't exist, requiring 8 tasks to be
   manually cancelled. When not staged, emit the `canary not applicable -- deploy_model={value}`
   note in section 4 and skip the milestone — zero tasks, not a smaller pile of tasks.
+- **Don't sequence a line-coverage filler task ahead of a feature-coverage-closing task within
+  the same milestone.** When both gap types are present in a milestone, the feature-coverage
+  gap is the real gap; a line-coverage filler task only moves the aggregate percentage. Order
+  feature-coverage-closing tasks first.
 - **Don't bundle "build a never-proven capability" and "automate it on a schedule" into one
   task.** This is not hypothetical either: one target repo's cycle-3 roadmap asked for the
   whole recorded-fixture-refresh loop (~15 services, ~8 net-new production credentials) in a
