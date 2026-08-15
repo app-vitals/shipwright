@@ -77,7 +77,12 @@ A unit test over 200 ms is a suspected hidden integration test (audit its import
 
 ## CI gates
 
-CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+. The coverage gate (89% lines + 89% functions on an aggregate basis) is enforced by `scripts/check-coverage.ts` on the LCOV report produced by `task test:coverage`.
+CI runs the exact `task ci` chain: **lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan**, layer order unit → integration → smoke → e2e (a lower-layer failure fails fast and skips higher layers). Unit and integration run in parallel across packages; smoke (metrics + agent) runs after all integration jobs pass; e2e (Playwright — metrics dashboard + admin UI) runs last and only in Phase B+.
+
+The coverage gate has two components:
+
+1. **Absolute threshold** (`scripts/check-coverage.ts`): enforced by the main `ci` job on the LCOV report produced by `task test:coverage`, requiring 89% lines + 89% functions on an aggregate basis.
+2. **No-decrease delta** (`scripts/check-coverage-no-decrease.ts`): enforced by the `coverage-no-decrease` job (pull_request only), which checks out the base branch into an isolated worktree, runs its coverage suite, and fails if the PR's aggregate line-coverage percentage is strictly less than the base branch's. Allows PRs that hold coverage flat or improve it, but rejects decreases to catch backsliding over time.
 
 ## References
 

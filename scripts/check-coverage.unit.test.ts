@@ -7,17 +7,20 @@
  * implementation for coverage.py's `coverage json` output), and GoCoverParser
  * (the CoverageParser implementation for go cover's text profile format)
  * against hand-built fixtures, plus the pure filtering/aggregation/failure-
- * computation logic extracted out of main() (MTC-1.7): the file itself
- * measures coverage but was, until this refactor, not meaningfully covered
- * by it. Nothing here touches the filesystem or triggers the script's
- * process.exit side effects — main()'s thin I/O/CLI wiring is intentionally
- * left uncovered, consistent with this repo's process-entrypoint exclusion
- * convention (see EXCLUDE_PREFIXES in check-coverage.ts).
+ * computation logic extracted out of main() (MTC-1.7) and
+ * computeAggregateLinePct's EXCLUDE-filtered weighted aggregation: the file
+ * itself measures coverage but was, until this refactor, not meaningfully
+ * covered by it. Nothing here touches the filesystem or triggers the
+ * script's process.exit side effects — main()'s thin I/O/CLI wiring is
+ * intentionally left uncovered, consistent with this repo's
+ * process-entrypoint exclusion convention (see EXCLUDE_PREFIXES in
+ * check-coverage.ts).
  */
 import { describe, expect, test } from "bun:test";
 import type { FileStats } from "./check-coverage";
 import {
   aggregateStats,
+  computeAggregateLinePct,
   computeFailures,
   CoveragePyParser,
   filterRelevantFiles,
@@ -311,6 +314,61 @@ describe("computeFailures", () => {
   test("treats the lf === 0 / fnf === 0 100% convention as passing", () => {
     // percentOf(0, 0) yields 100, which should never trigger a failure.
     expect(computeFailures(100, 100, 90, 90)).toEqual([]);
+  });
+});
+
+describe("computeAggregateLinePct", () => {
+  test("computes the weighted aggregate line percentage across relevant files", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 38, fnf: 4, fnh: 4 },
+      { path: "metrics/src/bar.ts", lf: 60, lh: 30, fnf: 6, fnh: 3 },
+    ];
+
+    // (38 + 30) / (40 + 60) * 100 = 68
+    expect(computeAggregateLinePct(files)).toBe(68);
+  });
+
+  test("excludes files matching EXCLUDE_PREFIXES from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 40, fnf: 4, fnh: 4 },
+      {
+        path: "node_modules/some-dep/index.js",
+        lf: 1000,
+        lh: 0,
+        fnf: 100,
+        fnh: 0,
+      },
+    ];
+
+    // node_modules/ is excluded, so only foo.ts counts: 40/40 = 100
+    expect(computeAggregateLinePct(files)).toBe(100);
+  });
+
+  test("excludes files matching EXCLUDE_SUBSTRINGS from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 10, lh: 5, fnf: 1, fnh: 1 },
+      {
+        path: "task-store/prisma/client/index.js",
+        lf: 500,
+        lh: 500,
+        fnf: 50,
+        fnh: 50,
+      },
+    ];
+
+    // prisma/client/ is excluded, so only foo.ts counts: 5/10 = 50
+    expect(computeAggregateLinePct(files)).toBe(50);
+  });
+
+  test("returns 100 when there are no relevant files (no lines found, not a failure)", () => {
+    expect(computeAggregateLinePct([])).toBe(100);
+  });
+
+  test("returns 100 when total lines-found across relevant files is zero", () => {
+    const files = [
+      { path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 },
+    ];
+    expect(computeAggregateLinePct(files)).toBe(100);
   });
 });
 

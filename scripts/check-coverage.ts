@@ -156,6 +156,24 @@ export function computeFailures(
   return failures;
 }
 
+// Applies the same EXCLUDE_PREFIXES/EXCLUDE_SUBSTRINGS filtering as main()'s
+// report, then returns the weighted aggregate line-coverage percentage
+// (sum of LH / sum of LF across relevant files) — the single number both
+// this gate and check-coverage-no-decrease.ts's PR-vs-base comparison need.
+// 100 when there are no relevant files or no lines found, mirroring the
+// "nothing to fail on" convention used throughout this module.
+export function computeAggregateLinePct(files: FileStats[]): number {
+  const relevant = filterRelevantFiles(
+    files,
+    EXCLUDE_PREFIXES,
+    EXCLUDE_SUBSTRINGS,
+  );
+
+  const { totalLf, totalLh } = aggregateStats(relevant);
+
+  return percentOf(totalLh, totalLf);
+}
+
 // Raw Istanbul coverage shapes (c8/nyc's native `coverage-final.json`), pared
 // down to the fields FileStats derivation needs. branchMap/b are present in
 // real output but irrelevant here.
