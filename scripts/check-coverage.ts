@@ -91,6 +91,72 @@ export const LcovParser: CoverageParser = {
   },
 };
 
+// Matches one <class ...> ... </class> block (non-greedy so consecutive
+// classes don't merge into a single match), capturing its attributes and
+// inner body separately so nested <method> counters can be stripped before
+// scanning for the class's own direct <counter> children.
+const CLASS_BLOCK_RE = /<class\b([^>]*)>([\s\S]*?)<\/class>/g;
+const NAME_ATTR_RE = /\bname="([^"]*)"/;
+const METHOD_BLOCK_RE = /<method\b[^>]*>[\s\S]*?<\/method>/g;
+
+// Extracts a class-level `<counter type="TYPE" missed="M" covered="C"/>`
+// pair from XML already stripped of nested <method> blocks. Returns
+// { missed: 0, covered: 0 } if the counter type is absent — JaCoCo omits
+// counters for types that don't apply (e.g. no METHOD counter on an
+// interface with no method bodies).
+function readCounter(
+  body: string,
+  type: string,
+): { missed: number; covered: number } {
+  const re = new RegExp(
+    `<counter\\s+type="${type}"\\s+missed="(\\d+)"\\s+covered="(\\d+)"`,
+  );
+  const match = body.match(re);
+  if (!match) return { missed: 0, covered: 0 };
+  return {
+    missed: Number.parseInt(match[1], 10),
+    covered: Number.parseInt(match[2], 10),
+  };
+}
+
+// Parses JaCoCo XML report content into an ordered FileStats[] — one entry
+// per <class> element, in document order. Uses the class's `name` attribute
+// (a slash-separated fully-qualified class name) as the FileStats `path`,
+// the closest JaCoCo analog to LCOV's SF: path. Only class-level counters
+// (direct children of <class>) are counted; per-method nested counters and
+// package/report-level rollup counters are ignored to avoid double-counting.
+// String/regex-based, no XML parsing library — mirrors LcovParser's
+// lightweight, dependency-free style. DOCTYPE and other non-<class> content
+// is inert text that's simply never matched.
+export const JacocoParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    const files: FileStats[] = [];
+
+    for (const classMatch of content.matchAll(CLASS_BLOCK_RE)) {
+      const [, attrs, body] = classMatch;
+      const nameMatch = attrs.match(NAME_ATTR_RE);
+      const path = nameMatch ? nameMatch[1] : "";
+
+      // Strip nested <method> blocks so only the class's own direct
+      // <counter> children remain for readCounter to scan.
+      const classOwnBody = body.replace(METHOD_BLOCK_RE, "");
+
+      const line = readCounter(classOwnBody, "LINE");
+      const method = readCounter(classOwnBody, "METHOD");
+
+      files.push({
+        path,
+        lf: line.missed + line.covered,
+        lh: line.covered,
+        fnf: method.missed + method.covered,
+        fnh: method.covered,
+      });
+    }
+
+    return files;
+  },
+};
+
 // Filters out files that match an exclude prefix or substring, preserving
 // the input order. Mirrors the EXCLUDE_PREFIXES ("process entrypoints")
 // and EXCLUDE_SUBSTRINGS (e.g. generated Prisma client code) exclusion
@@ -351,15 +417,33 @@ export const GoCoverParser: CoverageParser = {
   },
 };
 
-async function main() {
-  const lcov = await Bun.file(LCOV_PATH)
-    .text()
-    .catch(() => {
-      console.error(
-        `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
-      );
-      process.exit(1);
-    });
+export type CliDeps = {
+  readLcov?: () => Promise<string>;
+  log?: (msg: string) => void;
+  error?: (msg: string) => void;
+};
+
+// Orchestrates the CLI end to end and returns an exit code, rather than
+// calling process.exit directly — the same injectable-dependencies pattern
+// as check-coverage-no-decrease.ts's runCli, so this can be unit tested
+// without a real filesystem/process.exit. import.meta.main below is the only
+// caller that still needs a real process exit code.
+export async function runCli(deps: CliDeps = {}): Promise<number> {
+  const {
+    readLcov = () => Bun.file(LCOV_PATH).text(),
+    log = console.log,
+    error = console.error,
+  } = deps;
+
+  let lcov: string;
+  try {
+    lcov = await readLcov();
+  } catch {
+    error(
+      `No coverage file at ${LCOV_PATH}. Run: bun test --coverage --coverage-reporter=lcov`,
+    );
+    return 1;
+  }
 
   const files = LcovParser.parse(lcov);
 
@@ -370,21 +454,21 @@ async function main() {
   );
 
   if (relevant.length === 0) {
-    console.log("No source files in coverage report.");
-    process.exit(0);
+    log("No source files in coverage report.");
+    return 0;
   }
 
   for (const { path, lf, lh } of relevant) {
     const linePct = percentOf(lh, lf);
     const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
-    console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
+    log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
   }
 
   const { totalLf, totalLh, totalFnf, totalFnh } = aggregateStats(relevant);
   const overallLines = percentOf(totalLh, totalLf);
   const overallFunctions = percentOf(totalFnh, totalFnf);
 
-  console.log(`
+  log(`
 Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
@@ -396,12 +480,13 @@ Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — thresho
   );
 
   if (failures.length > 0) {
-    console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
-    process.exit(1);
+    error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);
+    return 1;
   }
-  console.log("✅ Coverage gate passed");
+  log("✅ Coverage gate passed");
+  return 0;
 }
 
 if (import.meta.main) {
-  await main();
+  process.exit(await runCli());
 }
