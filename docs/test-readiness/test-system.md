@@ -377,6 +377,12 @@ change lands inside the existing `ci` job's `task test:coverage` scope.
   none of the three override conditions hold, and this cycle's delta doesn't move any
   of them.
 - **Budget:** <15min total per PR — see Speed budgets below.
+- **Coverage toolchain:** `lcov` (Bun's native coverage reporter) — `bun test --coverage
+  --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 80/80 line/function
+  floor parser referenced throughout this document). Recorded here the same way the rest
+  of this section records CI pipeline shape, per repo: shipwright's own toolchain is
+  Bun/lcov; other repos in this pipeline may record `jacoco`, `coverage.py`, `c8`/`nyc`, or
+  `go-cover` instead, depending on their language/runtime.
 
 ### Naming convention and runner-exclusion config
 
