@@ -10,7 +10,20 @@
  * runPreflight() → startServices() → ensureHitlAgent() → seedAgentToken() →
  * fetchReadyTasks() compose in the documented order and propagate failures
  * the same way the real (non-test) wiring does, without spawning gh, prisma,
- * or the long-running task-store/admin services.
+ * or the long-running task-store/admin services. The "bootstrap sequencing
+ * (composed)" describe block below drives the real buildPreflightSteps()
+ * (including its clone sub-sequence, not a synthetic step list) through
+ * runPreflight(), so the clone step is exercised by production planning
+ * code, not just asserted to exist as a HitlStep shape.
+ *
+ * Scope note: this file covers clone→seed→boot→poll (preflight through the
+ * first task fetch). It deliberately does NOT cover runLoop()'s dispatch
+ * step (the `claude` Bun.spawn at hitl.ts:1057) — runLoop() is a monolithic,
+ * non-exported function that reaches directly into Bun.spawn, a live
+ * TaskStoreClient, and buildReviewDeps/buildPatchDeps rather than composing
+ * through an injectable seam like startServices() does. Making dispatch
+ * testable needs the same seam-extraction runLoop() hasn't had yet; that's
+ * a follow-up, not a same-cycle bolt-on here.
  *
  * The pure planning helpers this sequence is built from (buildHitlConfig,
  * computeMissingClones, computeProvisionPlan, buildProvisionSteps,
@@ -18,7 +31,8 @@
  * buildPreflightSteps, buildServiceSpecs, parseTasksResponse,
  * buildTaskCommand, buildPrCommand, buildClaudeSpawnEnv) are already fully
  * unit-tested in hitl.unit.test.ts / hitl.bootstrap.unit.test.ts — this file
- * does not re-test them.
+ * does not re-test their pure output, only that runPreflight/startServices
+ * actually drive them in the documented composed order.
  *
  * No mock.module(), no global.fetch/global.* overrides — every fake is
  * passed as an explicit parameter, per this repo's isolation contract.
@@ -26,8 +40,10 @@
 
 import { describe, expect, test } from "bun:test";
 import {
-  type HitlStep,
+  buildHitlConfig,
+  buildPreflightSteps,
   fetchReadyTasks,
+  type HitlStep,
   runPreflight,
   startServices,
 } from "./hitl.ts";
@@ -50,12 +66,7 @@ describe("runPreflight", () => {
       seen.push(step.kind);
     });
 
-    expect(seen).toEqual([
-      "mkdir",
-      "clone",
-      "install-plugins",
-      "exec",
-    ]);
+    expect(seen).toEqual(["mkdir", "clone", "install-plugins", "exec"]);
   });
 
   test("propagates a step failure and stops the sequence, matching runSteps()'s contract", async () => {
@@ -185,11 +196,81 @@ describe("fetchReadyTasks", () => {
 // ---------------------------------------------------------------------------
 
 describe("bootstrap sequencing (composed)", () => {
+  test("buildPreflightSteps' real clone sub-sequence runs through runPreflight, in clone order", async () => {
+    // Uses the actual production planner (buildPreflightSteps -> ...
+    // buildCloneSteps -> computeMissingClones), not a synthetic literal step
+    // list — this is what closes the "clone" half of docs/test-readiness's
+    // "full clone->seed->boot->poll sequence" debt item: the clone step
+    // that reaches runPreflight() here is the same HitlStep[] the real
+    // entrypoint would build and execute.
+    const cfg = buildHitlConfig(
+      { SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright,app-vitals/vitals-os" },
+      "/home/dev",
+      "/repo-root",
+    );
+    // Neither repo exists on disk yet -> both should be planned for clone.
+    const exists = () => false;
+
+    const steps = buildPreflightSteps(cfg, exists);
+    const cloneSteps = steps.filter((s) => s.kind === "clone");
+    expect(cloneSteps.map((s) => s.argv?.[3])).toEqual([
+      "app-vitals/shipwright",
+      "app-vitals/vitals-os",
+    ]);
+
+    const seen: string[] = [];
+    await runPreflight(steps, (step) => {
+      seen.push(step.kind);
+    });
+
+    // provision (mkdir/seed-file) steps, then both clones, then
+    // install-plugins, then the migrate/seed exec steps — in that order.
+    const cloneIndices = seen
+      .map((kind, i) => (kind === "clone" ? i : -1))
+      .filter((i) => i >= 0);
+    expect(cloneIndices).toHaveLength(2);
+    const installIndex = seen.indexOf("install-plugins");
+    expect(installIndex).toBeGreaterThan(Math.max(...cloneIndices));
+  });
+
+  test("a failing clone step stops the preflight sequence before install-plugins/migrate run", async () => {
+    const cfg = buildHitlConfig(
+      { SHIPWRIGHT_HITL_REPOS: "app-vitals/shipwright" },
+      "/home/dev",
+      "/repo-root",
+    );
+    const steps = buildPreflightSteps(cfg, () => false);
+
+    const seen: string[] = [];
+    await expect(
+      runPreflight(steps, (step) => {
+        seen.push(step.kind);
+        if (step.kind === "clone") throw new Error("gh repo clone failed");
+      }),
+    ).rejects.toThrow("gh repo clone failed");
+
+    expect(seen).not.toContain("install-plugins");
+    expect(seen).not.toContain("exec");
+  });
+
   test("preflight completes before services start, and services start before the first task poll", async () => {
     const order: string[] = [];
 
     await runPreflight(
-      [{ kind: "mkdir", label: "mkdir /ws", path: "/ws" }],
+      [
+        { kind: "mkdir", label: "mkdir /ws", path: "/ws" },
+        {
+          kind: "clone",
+          label: "clone failed",
+          argv: [
+            "gh",
+            "repo",
+            "clone",
+            "app-vitals/shipwright",
+            "/ws/repos/shipwright",
+          ],
+        },
+      ],
       (step) => {
         order.push(`preflight:${step.kind}`);
       },
@@ -218,6 +299,7 @@ describe("bootstrap sequencing (composed)", () => {
 
     expect(order).toEqual([
       "preflight:mkdir",
+      "preflight:clone",
       "spawn:task-store/src/main.ts",
       "spawn:admin/src/main.ts",
       "poll:fetchReadyTasks",

@@ -636,7 +636,12 @@ export function buildServiceSpecs(
  */
 type SpawnLike = (
   argv: string[],
-  opts: { cwd: string; env: Record<string, string> },
+  opts: {
+    cwd: string;
+    env: Record<string, string>;
+    stdout?: string;
+    stderr?: string;
+  },
 ) => { kill: (signal?: string) => void };
 
 /**
