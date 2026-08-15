@@ -267,6 +267,15 @@ Anything the audit couldn't determine without a human call. Common entries:
    emitted `T-NNN` sequence — line-coverage filler never precedes a feature-coverage-closing
    task within the same milestone. This is a no-op when a milestone contains only one gap type
    (all feature-coverage-closing, or all line-coverage filler): there is nothing to reorder.
+
+   **Note on line-coverage filler provenance:** the five migration buckets this walk pulls
+   from (reuse/promote/rebuild/delete/net-new) are all inventory-derived — every row this walk
+   emits traces to a concrete `test-inventory.md`/`test-migration.md` item, so this walk itself
+   has no path that emits a line-coverage-filler row. Line-coverage filler rows are the kind a
+   human or an agent adds by hand to a milestone outside this walk (e.g. padding a milestone to
+   hit a line-coverage target before merge). This sequencing rule — and the matching
+   `test-fix/SKILL.md` anti-gaming check — exists to catch that ad-hoc row if and when one is
+   added, not to reorder anything this walk generates on its own.
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
 8. **Compute the coverage_gate block by invoking `scripts/check-coverage-gate.ts` — never
