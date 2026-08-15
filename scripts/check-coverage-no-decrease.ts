@@ -2,7 +2,7 @@
 // Fails CI if a PR's aggregate line-coverage percentage decreased relative
 // to its base branch. This is the concrete "coverage must not decrease"
 // check the PRD's Feature 4 AC #1 depends on — check-coverage.ts (MTC-1.1)
-// only gates on an absolute 80% threshold, which says nothing about
+// only gates on an absolute 89% threshold, which says nothing about
 // direction of change once a repo is already above it. No new GitHub
 // secret is provisioned: the base ref's coverage is computed by checking it
 // out into an isolated git worktree (default token / plain git only).

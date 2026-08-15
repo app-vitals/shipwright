@@ -27,7 +27,7 @@ tasks:
       - bun test
 
   test:coverage:
-    desc: Run all tests with coverage, then gate on aggregate 80/80 lines/functions (scripts/check-coverage.ts)
+    desc: Run all tests with coverage, then gate on aggregate 89/89 lines/functions (scripts/check-coverage.ts)
     cmds:
       - bun test --coverage --coverage-reporter=lcov
       - bun run scripts/check-coverage.ts

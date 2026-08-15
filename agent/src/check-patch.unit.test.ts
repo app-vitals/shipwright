@@ -11,9 +11,13 @@
  * first-match gate).
  */
 
-import { describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
+  buildProductionDeps,
   type CheckPatchDeps,
   type CiCheckStatus,
   type MergeStatusInfo,
@@ -407,6 +411,57 @@ describe("getPatchCandidates", () => {
     });
     const commits: CommitInfo[] = [
       { sha: "review-sha", parents: [{ sha: "p0" }] },
+      { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
+    ];
+    const result = await getPatchCandidates(
+      makeDeps({
+        ownPrs: [pr],
+        reviewDataByPr: { 10: reviewData },
+        ciStatusByPr: {},
+        mergeStatusByPr: {},
+        listPrCommits: async () => commits,
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("with multiple stale reviews, anchors on the most recently submitted one (sort comparator)", async () => {
+    // Two stale (non-head-commit) reviews with findings, submitted at
+    // different times and different commits — hasMergeOnlyStaleFindings
+    // must sort by submittedAt desc and use the LATEST one's commit as the
+    // isMergeOnlyUpdate anchor. Exercises the multi-element branch of the
+    // `[...staleReviews].sort(...)` comparator, which a single-review
+    // fixture never reaches.
+    const pr = makeOwnPr({ headRefOid: "merge-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "merge-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-20T10:00:00Z",
+            commit: { oid: "older-review-sha" },
+            body: "Earlier finding",
+          },
+          {
+            author: { login: "reviewer2" },
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "newer-review-sha" },
+            body: "Later finding",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+    });
+    // Commits since the LATEST stale review's commit (newer-review-sha) are
+    // all merge-only — this must qualify. If the comparator anchored on the
+    // wrong (older) review's commit instead, isMergeOnlyUpdate would see a
+    // different (non-merge-only) commit range and behavior could differ.
+    const commits: CommitInfo[] = [
+      { sha: "older-review-sha", parents: [{ sha: "p0" }] },
+      { sha: "newer-review-sha", parents: [{ sha: "p1" }] },
       { sha: "merge-sha", parents: [{ sha: "a" }, { sha: "b" }] },
     ];
     const result = await getPatchCandidates(
@@ -1070,5 +1125,339 @@ describe("findCancelledRuns", () => {
     const result = findCancelledRuns(runs);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ id: 302, workflow_id: 1 });
+  });
+});
+
+// ─── buildProductionDeps ────────────────────────────────────────────────────
+//
+// Exercises the closures buildProductionDeps wires up against a fake
+// ghJson/ghGraphql (no real `gh` process, no real GitHub API) — the same
+// injection pattern the rest of this file uses for getPatchCandidates. Only
+// the deps' own request-shaping/response-parsing/error-fallback logic is
+// under test here; downstream helpers they delegate to (hasFailingCi,
+// findCancelledRuns, createPrRecordQuery, createTaskStatusQuery,
+// createBundleCompleteQuery) are already covered by their own dedicated
+// tests (above, and in check-helpers.unit.test.ts) and are not re-verified.
+describe("buildProductionDeps", () => {
+  let savedWorkspacePath: string | undefined;
+  let savedAgentHome: string | undefined;
+
+  beforeEach(() => {
+    savedWorkspacePath = process.env.WORKSPACE_PATH;
+    savedAgentHome = process.env.AGENT_HOME;
+    // Point resolveWorkspacePath() at a directory with no repos/ subfolder,
+    // so resolveAllRepos() deterministically returns [] regardless of what
+    // this sandbox's real workspace layout looks like — listOwnOpenPrs then
+    // maps over zero repos, which is fine since these tests call the other
+    // deps functions directly, not listOwnOpenPrs's repo-scanning path.
+    process.env.WORKSPACE_PATH = "/tmp/check-patch-buildProductionDeps-stub";
+    // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+    delete process.env.AGENT_HOME;
+  });
+
+  afterEach(() => {
+    if (savedWorkspacePath !== undefined) {
+      process.env.WORKSPACE_PATH = savedWorkspacePath;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.WORKSPACE_PATH;
+    }
+    if (savedAgentHome !== undefined) {
+      process.env.AGENT_HOME = savedAgentHome;
+    } else {
+      // biome-ignore lint/performance/noDelete: process.env deletion is intentional — assignment stringifies to "undefined"
+      delete process.env.AGENT_HOME;
+    }
+  });
+
+  test("listOwnOpenPrs maps gh pr list output onto each scanned repo (empty repo scan → empty result)", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+    // resolveAllRepos() sees no repos/ dir under the stub workspace, so
+    // mapReposTolerant has nothing to map over.
+    expect(await deps.listOwnOpenPrs("default")).toEqual([]);
+  });
+
+  test("listOwnOpenPrs queries gh pr list for each scanned repo and tags each returned PR with its repo (real repos/ scan)", async () => {
+    // Point WORKSPACE_PATH at a real scratch dir with one fake git clone so
+    // resolveAllRepos() finds a non-empty repo list — exercises the
+    // mapReposTolerant(...) closure body that the empty-scan test above
+    // can't reach.
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-patch-listOwnOpenPrs-"),
+    );
+    try {
+      const repoDir = join(scratchDir, "repos", "example-repo");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/example-repo.git\n`,
+      );
+      process.env.WORKSPACE_PATH = scratchDir;
+
+      const seenArgs: string[][] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          seenArgs.push(args);
+          return [
+            {
+              number: 5,
+              title: "Fix thing",
+              headRefName: "fix/thing",
+              headRefOid: "sha5",
+              createdAt: "2026-05-01T00:00:00Z",
+            },
+          ] as unknown as T;
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "agent-login",
+      });
+
+      const prs = await deps.listOwnOpenPrs("default");
+
+      expect(prs).toEqual([
+        {
+          number: 5,
+          title: "Fix thing",
+          headRefName: "fix/thing",
+          headRefOid: "sha5",
+          createdAt: "2026-05-01T00:00:00Z",
+          repo: "acme/example-repo",
+        },
+      ]);
+      expect(seenArgs).toHaveLength(1);
+      expect(seenArgs[0]).toEqual([
+        "pr",
+        "list",
+        "--state",
+        "open",
+        "--repo",
+        "acme/example-repo",
+        "--author",
+        "agent-login",
+        "--json",
+        "number,title,headRefName,headRefOid,createdAt",
+      ]);
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  });
+
+  test("fetchPrReviews sends a GraphQL query and unwraps repository.pullRequest from the response", async () => {
+    const fakePrData = {
+      headRefOid: "abc123",
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+    };
+    let seenQuery = "";
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>(query: string) => {
+        seenQuery = query;
+        return { data: { repository: { pullRequest: fakePrData } } } as T;
+      },
+      getCurrentUser: async () => "the-agent",
+    });
+
+    const result = await deps.fetchPrReviews("acme", "widgets", 42);
+
+    expect(result).toEqual(fakePrData);
+    expect(seenQuery).toContain('owner: "acme"');
+    expect(seenQuery).toContain('name: "widgets"');
+    expect(seenQuery).toContain("pullRequest(number: 42)");
+  });
+
+  test("fetchCiStatus reports hasFailing/hasCancelled from workflow_runs and picks the highest run_number cancelled run", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        expect(args).toContain("repos/acme/widgets/actions/runs?head_sha=deadbeef");
+        return {
+          workflow_runs: [
+            {
+              id: 1,
+              status: "completed",
+              conclusion: "failure",
+              workflow_id: 10,
+              run_number: 1,
+            },
+            {
+              id: 2,
+              status: "completed",
+              conclusion: "cancelled",
+              workflow_id: 20,
+              run_number: 1,
+            },
+            {
+              id: 3,
+              status: "completed",
+              conclusion: "cancelled",
+              workflow_id: 20,
+              run_number: 2,
+            },
+          ],
+        } as unknown as T;
+      },
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+
+    const status = await deps.fetchCiStatus(
+      "acme",
+      "widgets",
+      42,
+      "deadbeef",
+    );
+
+    expect(status.hasFailing).toBe(true);
+    expect(status.hasCancelled).toBe(true);
+    // Two cancelled entries share workflow_id 20; run_number 2 (id 3) is the
+    // latest and should win, and id 1's earlier cancelled run_number 1 must
+    // NOT surface via a different workflow — this exercises the
+    // `cancelledRuns.sort(...)` tie-break, not just latestRunPerWorkflow.
+    expect(status.cancelledRunId).toBe(3);
+  });
+
+  test("fetchCiStatus falls back to hasFailing:false/hasCancelled:false and logs to stderr when the API call throws", async () => {
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const written: string[] = [];
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(): Promise<T> => {
+          throw new Error("gh api failed");
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "the-agent",
+      });
+
+      const status = await deps.fetchCiStatus("acme", "widgets", 42, "sha1");
+
+      expect(status).toEqual({ hasFailing: false, hasCancelled: false });
+      expect(written.join("")).toContain(
+        "check-patch: actions/runs query failed for PR 42 sha sha1",
+      );
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  test("fetchMergeStatus reports isDirty true only when mergeStateStatus is DIRTY", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        expect(args).toContain("mergeStateStatus");
+        return { mergeStateStatus: "DIRTY" } as unknown as T;
+      },
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+
+    expect(await deps.fetchMergeStatus("acme", "widgets", 42)).toEqual({
+      isDirty: true,
+    });
+  });
+
+  test("fetchMergeStatus reports isDirty false for a non-DIRTY mergeStateStatus", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => ({ mergeStateStatus: "BEHIND" }) as unknown as T,
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+
+    expect(await deps.fetchMergeStatus("acme", "widgets", 42)).toEqual({
+      isDirty: false,
+    });
+  });
+
+  test("fetchMergeStatus falls back to isDirty:false and logs to stderr when the gh call throws", async () => {
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const written: string[] = [];
+    process.stderr.write = ((chunk: string) => {
+      written.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(): Promise<T> => {
+          throw new Error("gh pr view failed");
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "the-agent",
+      });
+
+      const status = await deps.fetchMergeStatus("acme", "widgets", 99);
+
+      expect(status).toEqual({ isDirty: false });
+      expect(written.join("")).toContain(
+        "check-patch: gh merge status query failed for PR 99",
+      );
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  test("listPrCommits fetches paginated commits for the given repo", async () => {
+    const fakeCommits: CommitInfo[] = [
+      { sha: "c1", parents: [{ sha: "p0" }] },
+    ];
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        expect(args).toContain("repos/acme/widgets/pulls/7/commits");
+        expect(args).toContain("--paginate");
+        return fakeCommits as unknown as T;
+      },
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+
+    expect(await deps.listPrCommits(7, "acme/widgets")).toEqual(fakeCommits);
+  });
+
+  test("getCurrentUser delegates directly to the injected getCurrentUser callback", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "specific-agent-login",
+    });
+
+    expect(await deps.getCurrentUser()).toBe("specific-agent-login");
+  });
+
+  test("getScopedRepos/hasScopeSynced default to the shared agentReposRef when not overridden", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+    });
+
+    // Both are functions wired to agentReposRef's own get/hasSynced — just
+    // confirm the shape is present and callable without throwing, since the
+    // ref's actual sync state is exercised by check-review.unit.test.ts's
+    // buildProductionDeps suites (shared ref, not check-patch-specific).
+    expect(typeof deps.getScopedRepos).toBe("function");
+    expect(typeof deps.hasScopeSynced).toBe("function");
+    expect(() => deps.getScopedRepos()).not.toThrow();
+    expect(() => deps.hasScopeSynced()).not.toThrow();
+  });
+
+  test("an explicit opts.getScopedRepos/hasScopeSynced override the agentReposRef default", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => [] as unknown as T,
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+      getScopedRepos: () => ["acme/widgets"],
+      hasScopeSynced: () => true,
+    });
+
+    expect(deps.getScopedRepos()).toEqual(["acme/widgets"]);
+    expect(deps.hasScopeSynced()).toBe(true);
   });
 });

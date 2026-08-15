@@ -107,6 +107,51 @@ describe("createSupervisor", () => {
 });
 
 // ---------------------------------------------------------------------------
+// start() — spawns every configured child via the injected spawnFn, and
+// resolves once every child's `exited` promise settles
+// ---------------------------------------------------------------------------
+
+describe("start", () => {
+  test("spawns every child via the injected spawnFn and awaits their exit", async () => {
+    const spawned: ChildConfig[] = [];
+    const fakeHandles = new Map<string, FakeChild>();
+
+    const supervisor = createSupervisor(
+      [
+        { cmd: ["bun", "run", "metrics/src/server.ts"], label: "metrics-api" },
+        { cmd: ["bun", "run", "agent/src/server.ts"], label: "agent" },
+      ],
+      (config: ChildConfig) => {
+        spawned.push(config);
+        const fake = makeFakeChild(config.label);
+        fakeHandles.set(config.label, fake);
+        return fake;
+      },
+    );
+
+    const startPromise = supervisor.start();
+
+    // Resolve every spawned child's exit so start()'s Promise.all settles.
+    for (const fake of fakeHandles.values()) {
+      fake.kill();
+    }
+
+    await startPromise;
+
+    expect(spawned.map((c) => c.label)).toEqual(["metrics-api", "agent"]);
+    expect(fakeHandles.size).toBe(2);
+  });
+
+  test("resolves immediately when there are no configured children", async () => {
+    const supervisor = createSupervisor([], () => {
+      throw new Error("spawnFn should not be called with zero children");
+    });
+
+    await expect(supervisor.start()).resolves.toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ChildConfig type shape
 // ---------------------------------------------------------------------------
 
