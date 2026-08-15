@@ -6,8 +6,14 @@
 // on individual low-coverage files regardless of overall coverage — hence
 // this separate aggregate gate.
 
-const THRESHOLD_LINES = 80;
-const THRESHOLD_FUNCTIONS = 80;
+// Live CI aggregate at the time of the last raise attempt (MTC-1.7, 2026-08-14)
+// was Lines 89.77% / Functions 89.72% — just short of 90/90. Rather than merge
+// a gate the repo doesn't clear (which would break `task ci` for every
+// subsequent PR), the floor was landed at 89/89: a real raise from the prior
+// 80/80 floor, with margin over the measured baseline. See PR #2659 for the
+// full 90/90 attempt and follow-up discussion on closing the remaining gap.
+const THRESHOLD_LINES = 89;
+const THRESHOLD_FUNCTIONS = 89;
 
 const EXCLUDE_PREFIXES = [
   // Generated / vendor code
@@ -85,6 +91,71 @@ export const LcovParser: CoverageParser = {
   },
 };
 
+// Filters out files that match an exclude prefix or substring, preserving
+// the input order. Mirrors the EXCLUDE_PREFIXES ("process entrypoints")
+// and EXCLUDE_SUBSTRINGS (e.g. generated Prisma client code) exclusion
+// rules documented above those constants.
+export function filterRelevantFiles(
+  files: FileStats[],
+  excludePrefixes: string[],
+  excludeSubstrings: string[],
+): FileStats[] {
+  return files.filter(
+    (file) =>
+      !excludePrefixes.some((ex) => file.path.startsWith(ex)) &&
+      !excludeSubstrings.some((sub) => file.path.includes(sub)),
+  );
+}
+
+export type AggregateStats = {
+  totalLf: number;
+  totalLh: number;
+  totalFnf: number;
+  totalFnh: number;
+};
+
+// Sums LF/LH/FNF/FNH across every file into aggregate totals.
+export function aggregateStats(files: FileStats[]): AggregateStats {
+  let totalLf = 0;
+  let totalLh = 0;
+  let totalFnf = 0;
+  let totalFnh = 0;
+
+  for (const { lf, lh, fnf, fnh } of files) {
+    totalLf += lf;
+    totalLh += lh;
+    totalFnf += fnf;
+    totalFnh += fnh;
+  }
+
+  return { totalLf, totalLh, totalFnf, totalFnh };
+}
+
+// A file (or the aggregate) with zero countable lines/functions is treated
+// as 100% by convention — there's nothing to have missed.
+export function percentOf(hit: number, found: number): number {
+  return found === 0 ? 100 : (hit / found) * 100;
+}
+
+// Builds the list of human-readable gate failure messages for the overall
+// line/function percentages against their thresholds. Returns an empty
+// array when both are at or above threshold (gate passes).
+export function computeFailures(
+  overallLines: number,
+  overallFunctions: number,
+  thresholdLines: number,
+  thresholdFunctions: number,
+): string[] {
+  const failures: string[] = [];
+  if (overallLines < thresholdLines)
+    failures.push(`Lines ${overallLines.toFixed(2)}% < ${thresholdLines}%`);
+  if (overallFunctions < thresholdFunctions)
+    failures.push(
+      `Functions ${overallFunctions.toFixed(2)}% < ${thresholdFunctions}%`,
+    );
+  return failures;
+}
+
 // Applies the same EXCLUDE_PREFIXES/EXCLUDE_SUBSTRINGS filtering as main()'s
 // report, then returns the weighted aggregate line-coverage percentage
 // (sum of LH / sum of LF across relevant files) — the single number both
@@ -92,16 +163,15 @@ export const LcovParser: CoverageParser = {
 // 100 when there are no relevant files or no lines found, mirroring the
 // "nothing to fail on" convention used throughout this module.
 export function computeAggregateLinePct(files: FileStats[]): number {
-  const relevant = files.filter(
-    (file) =>
-      !EXCLUDE_PREFIXES.some((ex) => file.path.startsWith(ex)) &&
-      !EXCLUDE_SUBSTRINGS.some((sub) => file.path.includes(sub)),
+  const relevant = filterRelevantFiles(
+    files,
+    EXCLUDE_PREFIXES,
+    EXCLUDE_SUBSTRINGS,
   );
 
-  const totalLf = relevant.reduce((sum, f) => sum + f.lf, 0);
-  const totalLh = relevant.reduce((sum, f) => sum + f.lh, 0);
+  const { totalLf, totalLh } = aggregateStats(relevant);
 
-  return totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
+  return percentOf(totalLh, totalLf);
 }
 
 // Raw Istanbul coverage shapes (c8/nyc's native `coverage-final.json`), pared
@@ -293,10 +363,10 @@ async function main() {
 
   const files = LcovParser.parse(lcov);
 
-  const relevant = files.filter(
-    (file) =>
-      !EXCLUDE_PREFIXES.some((ex) => file.path.startsWith(ex)) &&
-      !EXCLUDE_SUBSTRINGS.some((sub) => file.path.includes(sub)),
+  const relevant = filterRelevantFiles(
+    files,
+    EXCLUDE_PREFIXES,
+    EXCLUDE_SUBSTRINGS,
   );
 
   if (relevant.length === 0) {
@@ -304,36 +374,26 @@ async function main() {
     process.exit(0);
   }
 
-  let totalLf = 0;
-  let totalLh = 0;
-  let totalFnf = 0;
-  let totalFnh = 0;
-
-  for (const { path, lf, lh, fnf, fnh } of relevant) {
-    totalLf += lf;
-    totalLh += lh;
-    totalFnf += fnf;
-    totalFnh += fnh;
-
-    const linePct = lf === 0 ? 100 : (lh / lf) * 100;
+  for (const { path, lf, lh } of relevant) {
+    const linePct = percentOf(lh, lf);
     const icon = linePct >= THRESHOLD_LINES ? "✅" : "⚠️";
     console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
   }
 
-  const overallLines = computeAggregateLinePct(files);
-  const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
+  const { totalLf, totalLh, totalFnf, totalFnh } = aggregateStats(relevant);
+  const overallLines = percentOf(totalLh, totalLf);
+  const overallFunctions = percentOf(totalFnh, totalFnf);
 
   console.log(`
 Lines:     ${overallLines.toFixed(2)}% (${totalLh}/${totalLf}) — threshold: ${THRESHOLD_LINES}%
 Functions: ${overallFunctions.toFixed(2)}% (${totalFnh}/${totalFnf}) — threshold: ${THRESHOLD_FUNCTIONS}%`);
 
-  const failures: string[] = [];
-  if (overallLines < THRESHOLD_LINES)
-    failures.push(`Lines ${overallLines.toFixed(2)}% < ${THRESHOLD_LINES}%`);
-  if (overallFunctions < THRESHOLD_FUNCTIONS)
-    failures.push(
-      `Functions ${overallFunctions.toFixed(2)}% < ${THRESHOLD_FUNCTIONS}%`,
-    );
+  const failures = computeFailures(
+    overallLines,
+    overallFunctions,
+    THRESHOLD_LINES,
+    THRESHOLD_FUNCTIONS,
+  );
 
   if (failures.length > 0) {
     console.error(`\n❌ Coverage gate failed: ${failures.join(", ")}`);

@@ -179,7 +179,7 @@ jobs:
 
   # Compares this PR's aggregate line-coverage percentage against the base
   # branch's and fails if it decreased (scripts/check-coverage-no-decrease.ts).
-  # check-coverage.ts (in the `ci` job above) only gates on an absolute 80%
+  # check-coverage.ts (in the `ci` job above) only gates on an absolute 89%
   # threshold — this catches an already-passing repo backsliding over time.
   # Only meaningful on a pull_request (there's no "base to compare against"
   # on a push to main). No new secret: base-ref coverage is computed by
@@ -222,8 +222,8 @@ jobs:
       - name: Install Playwright chromium-headless-shell
         run: ./agent/node_modules/.bin/playwright install --with-deps chromium-headless-shell
 
-      - name: Test with coverage
-        run: task test:coverage
+      - name: Generate coverage report
+        run: bun test --coverage --coverage-reporter=lcov
 
       - name: Check coverage did not decrease vs base branch
         env:
