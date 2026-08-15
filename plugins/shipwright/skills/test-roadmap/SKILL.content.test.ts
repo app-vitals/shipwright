@@ -279,6 +279,41 @@ describe("SKILL.md — template placeholders wired from the script output", () =
   });
 });
 
+describe("SKILL.md — feature-coverage gaps sequenced ahead of line-coverage filler", () => {
+  function step5Section(): string {
+    const idx = content.indexOf(
+      "5. Generate the task list by walking the migration buckets",
+    );
+    const nextStepIdx = content.indexOf(
+      "6. **Apply the pairing rule**",
+    );
+    expect(idx).toBeGreaterThan(-1);
+    expect(nextStepIdx).toBeGreaterThan(idx);
+    return content.slice(idx, nextStepIdx);
+  }
+
+  it("states that within a milestone, feature-coverage-closing tasks are sequenced ahead of line-coverage filler tasks", () => {
+    const section = step5Section();
+    expect(section).toMatch(/feature-coverage/i);
+    expect(section).toMatch(/ahead of/i);
+    expect(section).toMatch(/line-coverage/i);
+    expect(section).toMatch(/filler/i);
+  });
+
+  it("scopes the sequencing rule to when both gap types coexist in the same milestone", () => {
+    const section = step5Section();
+    expect(section).toMatch(/same milestone/i);
+    expect(section).toMatch(/both/i);
+  });
+
+  it("reinforces the sequencing rule in Failure modes to avoid", () => {
+    const failureModesIdx = content.indexOf("## Failure modes to avoid");
+    expect(failureModesIdx).toBeGreaterThan(-1);
+    const section = content.slice(failureModesIdx);
+    expect(section).toMatch(/line-coverage filler task ahead of a feature-coverage-closing task/i);
+  });
+});
+
 describe("test-readiness-plan.md.tmpl — file exists and has content", () => {
   it("file exists", () => {
     expect(existsSync(TEMPLATE_PATH)).toBe(true);

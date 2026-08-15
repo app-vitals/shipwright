@@ -174,6 +174,53 @@ export const IstanbulParser: CoverageParser = {
   },
 };
 
+// Shape of a single entry in coverage.py's `coverage json` `files` map —
+// only the fields this parser reads.
+type CoveragePyFileEntry = {
+  summary?: {
+    num_statements?: unknown;
+    covered_lines?: unknown;
+  };
+};
+
+// Parses coverage.py's `coverage json` report format into an ordered
+// FileStats[] — one entry per key in the top-level `files` object, in the
+// order those keys appear in the parsed JSON (Object.entries() preserves
+// string-key insertion order, matching the file's original ordering).
+//   - `lf`/`lh` map to each file's `summary.num_statements` /
+//     `summary.covered_lines` — the closest analog to "lines found/hit"
+//     this format supports.
+//   - `fnf`/`fnh` are always 0: coverage.py's JSON report carries no
+//     function-level granularity in its default/summary form.
+// The whole document is parsed as JSON up front, so unlike the line-oriented
+// parsers above, defensive handling happens at the whole-input level: any
+// JSON.parse failure, or a missing/non-object `files` key, yields [].
+export const CoveragePyParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return [];
+    }
+
+    if (typeof parsed !== "object" || parsed === null) return [];
+
+    const files = (parsed as { files?: unknown }).files;
+    if (typeof files !== "object" || files === null || Array.isArray(files))
+      return [];
+
+    return Object.entries(files as Record<string, CoveragePyFileEntry>).map(
+      ([path, fileData]) => {
+        const summary = fileData?.summary ?? {};
+        const lf = Number(summary.num_statements) || 0;
+        const lh = Number(summary.covered_lines) || 0;
+        return { path, lf, lh, fnf: 0, fnh: 0 };
+      },
+    );
+  },
+};
+
 // Matches a single go cover text-profile data line:
 //   <file>:<startLine>.<startCol>,<endLine>.<endCol> <numStmt> <count>
 // e.g. "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1"
