@@ -105,6 +105,52 @@ export interface PrRecord {
   reviewedAt?: string | null;
 }
 
+// ─── RCT-1.1: fresh non-agent comment detection ───────────────────────────────
+//
+// Broadens the original RFR-1.1/RVG-2.1 "fresh author reply" signal from
+// "a comment authored by pr.author.login" to "a comment authored by anyone
+// other than the reviewing agent's own identity". A third-party reviewer's
+// plain PR comment (not a formal GitHub review submission) previously never
+// tripped the exception, so a PR with an already-terminal review never got
+// re-reviewed even when a reviewer left substantive follow-up feedback as a
+// comment rather than a review. Excluding currentUser (rather than requiring
+// equality with pr.author.login) means a comment from the PR author, a
+// third-party reviewer, or anyone else now counts — except the reviewing
+// agent's own comments, which must never count (otherwise the agent's own
+// replies would cause it to endlessly re-trigger review on its own PR).
+//
+// Checks both top-level PR conversation comments AND inline review-thread
+// replies (RVG-2.1) — GitHub represents an inline thread reply as its own
+// zero-body PullRequestReview record stamped to head, counted by
+// hasAnyReviewAtHead() as "a review at head" like any other, so without this
+// OR the one signal meant to override that skip never fires when the reply
+// was posted inline instead of as a new top-level comment. createdAt is
+// optional on thread comments (only this file's fetchPrReviews query
+// requests it), so a missing value is treated as not-fresh rather than
+// throwing.
+export function hasFreshNonAgentComment(
+  reviewData: PrReviewData | undefined,
+  currentUser: string,
+  reviewedAtMs: number,
+): boolean {
+  const hasFreshTopLevelReply =
+    reviewData?.comments.nodes.some(
+      (c) =>
+        c.author.login !== currentUser &&
+        new Date(c.createdAt).getTime() > reviewedAtMs,
+    ) ?? false;
+  const hasFreshThreadReply =
+    reviewData?.reviewThreads.nodes.some((t) =>
+      t.comments.nodes.some(
+        (c) =>
+          c.author.login !== currentUser &&
+          c.createdAt !== undefined &&
+          new Date(c.createdAt).getTime() > reviewedAtMs,
+      ),
+    ) ?? false;
+  return hasFreshTopLevelReply || hasFreshThreadReply;
+}
+
 // ─── RCO-1.3: review-candidacy tracing ────────────────────────────────────────
 //
 // Structured trace of WHY a PR was or wasn't a review candidate — added after
@@ -493,57 +539,37 @@ export async function getReviewCandidates(
     // above failed — the RVG-1.1 check treats that the same as "no eligible
     // author comment found" (old skip behavior preserved).
     //
-    // hasFreshAuthorReply (RFR-1.1) is computed once here, right after
-    // reviewData is fetched, and reused by BOTH this check and the RVG-1.1
-    // check below. It must be available here, not just at RVG-1.1: a clean/
-    // no-finding review (classifyReviewState() returns "approved" or
-    // "posted", not null — e.g. "no new issues found, posting as COMMENT
-    // only") makes THIS check `continue` unconditionally, before control
-    // ever reaches RVG-1.1's terminal-skip block further down — so without
-    // the exception here too, RVG-1.1's own fresh-reply exception is
-    // unreachable for exactly the case it exists to handle (confirmed live
-    // on PR #2456). Uses pr.author.login (the PR's own author), NOT the
-    // reviewing agent's identity — matches RVG-1.1's existing convention,
-    // since this file reviews PRs from arbitrary authors. Uses
+    // hasFreshAuthorReply (RFR-1.1, broadened by RCT-1.1 to
+    // hasFreshNonAgentComment) is computed once here, right after reviewData
+    // is fetched, and reused by BOTH this check and the RVG-1.1 check below.
+    // It must be available here, not just at RVG-1.1: a clean/no-finding
+    // review (classifyReviewState() returns "approved" or "posted", not
+    // null — e.g. "no new issues found, posting as COMMENT only") makes THIS
+    // check `continue` unconditionally, before control ever reaches
+    // RVG-1.1's terminal-skip block further down — so without the exception
+    // here too, RVG-1.1's own fresh-reply exception is unreachable for
+    // exactly the case it exists to handle (confirmed live on PR #2456).
+    //
+    // RCT-1.1 broadens the identity filter from pr.author.login (the PR's
+    // own author) to currentUser (the reviewing agent's own identity,
+    // excluded rather than required) — a third-party reviewer's plain PR
+    // comment, not just the PR author's, now counts as a fresh reply,
+    // provided it isn't the reviewing agent's own comment. Uses
     // record?.reviewedAt as the watermark (record is already in scope from
     // the queryPrRecord call above); record may be null here (no task-store
-    // record yet), in which case the `?? 0` epoch fallback makes any author
-    // comment count, mirroring RVG-1.1's existing null-safety.
-    //
-    // RVG-2.1: also OR's in any reply the PR author posted inline on a
-    // review thread (reviewThreads[].comments.nodes[]), not just top-level
-    // PR conversation comments. GitHub represents an inline thread reply as
-    // its own zero-body PullRequestReview record stamped to head — counted
-    // by hasAnyReviewAtHead() as "a review at head" like any other, so
-    // without this the one signal meant to override that skip (a genuine
-    // author response) never fires when the reply was posted inline instead
-    // of as a new top-level comment (confirmed live on
-    // verygood-ops/skills#80). createdAt is optional on thread comments
-    // (only this file's fetchPrReviews query requests it — check-patch.ts's
-    // and pr-state-reconciler.ts's queries don't), so a missing value is
-    // treated as not-fresh rather than throwing.
+    // record yet), in which case the `?? 0` epoch fallback makes any
+    // non-agent comment count, mirroring RVG-1.1's existing null-safety.
     const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
     let reviewData: PrReviewData | undefined;
     let hasFreshAuthorReply = false;
     try {
       const [org, repoName] = splitOrgRepo(pr.repo ?? "");
       reviewData = await deps.fetchPrReviews(org, repoName, pr.number);
-      const hasFreshTopLevelReply =
-        reviewData?.comments.nodes.some(
-          (c) =>
-            c.author.login === pr.author.login &&
-            new Date(c.createdAt).getTime() > reviewedAtMs,
-        ) ?? false;
-      const hasFreshThreadReply =
-        reviewData?.reviewThreads.nodes.some((t) =>
-          t.comments.nodes.some(
-            (c) =>
-              c.author.login === pr.author.login &&
-              c.createdAt !== undefined &&
-              new Date(c.createdAt).getTime() > reviewedAtMs,
-          ),
-        ) ?? false;
-      hasFreshAuthorReply = hasFreshTopLevelReply || hasFreshThreadReply;
+      hasFreshAuthorReply = hasFreshNonAgentComment(
+        reviewData,
+        currentUser,
+        reviewedAtMs,
+      );
       // Live-GitHub review dedup (RVD-1.1) short-circuits right here, inside
       // the try block, before the task-store lookups below — traced via the
       // same traceReviewCandidacyDecision used for the later checks (RCO-1.3)

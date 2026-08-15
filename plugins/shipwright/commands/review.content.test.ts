@@ -506,6 +506,67 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("check-review.ts");
   });
 
+  it("the jq program's fresh-reply filter is broadened to any non-currentUser commenter, not just the PR author (RCT-1.1 mirror)", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain(".author.login != $currentUser");
+    expect(section).not.toContain(".author.login == $pr.author.login");
+  });
+
+  it("the gh api graphql call threads the resolved CURRENT_USER into the jq program", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain('--arg currentUser "$CURRENT_USER"');
+  });
+
+  it("CURRENT_USER is assigned before the gh api graphql call, since Step 14 runs before Step 9.5's own assignment", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const assignIdx = section.indexOf(
+      "CURRENT_USER={the login resolved in Step 3}",
+    );
+    const graphqlIdx = section.indexOf("gh api graphql -f query=");
+
+    expect(assignIdx).toBeGreaterThan(-1);
+    expect(graphqlIdx).toBeGreaterThan(-1);
+    expect(assignIdx).toBeLessThan(graphqlIdx);
+  });
+
+  it("the prose references hasFreshNonAgentComment and describes the broadened non-author-only condition", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).toContain("hasFreshNonAgentComment");
+    // Should describe the broadened condition (anyone other than the
+    // reviewing agent), not just the PR author.
+    expect(section.toLowerCase()).toMatch(
+      /anyone other than|not just the pr author|other than the reviewing agent/,
+    );
+  });
+
   it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
