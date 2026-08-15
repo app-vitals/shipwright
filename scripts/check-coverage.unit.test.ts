@@ -1064,4 +1064,39 @@ describe("runCli", () => {
       true,
     );
   });
+
+  test.each([
+    ["jacoco", "- **Coverage toolchain:** `jacoco`"],
+    ["coverage.py", "- **Coverage toolchain:** `coverage.py`"],
+    ["c8", "- **Coverage toolchain:** `c8`"],
+    ["nyc", "- **Coverage toolchain:** `nyc`"],
+    ["c8-nyc", "- **Coverage toolchain:** `c8-nyc`"],
+    ["go-cover", "- **Coverage toolchain:** `go-cover`"],
+  ])(
+    "fails loudly instead of silently passing when a %s tool is recorded (no report-path dispatch yet)",
+    async (tool, toolDoc) => {
+      const { fn: error, messages: errMessages } = makeLogSpy();
+      const { fn: log, messages: logMessages } = makeLogSpy();
+      const exitCode = await runCli({
+        // lcov content — the report file check-coverage.ts always reads,
+        // regardless of the recorded tool — fed to a mismatched parser.
+        readLcov: () => Promise.resolve(PASSING_LCOV),
+        readCoverageToolDoc: () => Promise.resolve(toolDoc),
+        log,
+        error,
+      });
+      expect(exitCode).toBe(1);
+      expect(
+        errMessages.some(
+          (m) => m.includes(tool) && m.includes("no report-path dispatch"),
+        ),
+      ).toBe(true);
+      expect(
+        logMessages.some((m) => m.includes("No source files")),
+      ).toBe(false);
+      expect(
+        logMessages.some((m) => m.includes("Coverage gate passed")),
+      ).toBe(false);
+    },
+  );
 });

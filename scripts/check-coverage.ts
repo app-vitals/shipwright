@@ -463,6 +463,21 @@ export async function runCli(deps: CliDeps = {}): Promise<number> {
   const tool = extractCoverageTool(toolDoc);
   const parser = selectParser(tool);
 
+  // MTC-1.6 only wires parser *selection* — readLcov always reads the fixed
+  // LCOV_PATH regardless of which tool was recorded, and no per-tool
+  // report-path dispatch exists yet. Feeding lcov-format content into a
+  // non-lcov parser (Jacoco/CoveragePy/Istanbul/GoCover) produces zero
+  // matches — filterRelevantFiles below would then hit the
+  // relevant.length === 0 branch and the gate would silently pass instead of
+  // evaluating real coverage. Fail loudly here instead until report-path
+  // dispatch is added.
+  if (parser !== LcovParser) {
+    error(
+      `Coverage toolchain "${tool}" is recorded, but check-coverage.ts only reads the lcov report file (${LCOV_PATH}) — no report-path dispatch exists yet for non-lcov tools. Refusing to parse lcov content with the ${tool} parser (would silently produce a false-positive pass).`,
+    );
+    return 1;
+  }
+
   const files = parser.parse(lcov);
 
   const relevant = filterRelevantFiles(
