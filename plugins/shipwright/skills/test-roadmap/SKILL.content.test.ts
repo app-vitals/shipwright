@@ -422,6 +422,12 @@ describe("SKILL.md — Process step 9 auto-emits the stage-3 coverage-promotion 
     expect(section).toMatch(/never-decrease/i);
     expect(section).toMatch(/step 6/i);
   });
+
+  it("emits the stage-3 row with no depends_on when the scan finds no stage-2 task (onboarding-skip rule applied)", () => {
+    const section = step9Section();
+    expect(section).toMatch(/onboarding-skip/i);
+    expect(section).toMatch(/no stage-2 task is found|no depends_on/i);
+  });
 });
 
 describe("SKILL.md — Failure modes to avoid covers the stage-3 promotion task", () => {

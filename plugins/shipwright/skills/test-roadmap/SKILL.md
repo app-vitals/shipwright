@@ -351,6 +351,12 @@ Anything the audit couldn't determine without a human call. Common entries:
          wires `depends_on` for workflow-task → branch-protection-task pairs, so
          `test-fix`'s existing `depends_on:` parsing (Step 2.3 / Step 5.4) requires zero
          changes to pick up this new row.
+       - **Onboarding-skip fallback:** if no stage-2 task is found in the scan, this
+         means the onboarding-skip rule applied — the repo was already at ≥90% line
+         coverage at onboarding time and never had a stage-2 never-decrease task filed
+         (see `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)"
+         section, "Onboarding skip rule"). In that case, emit the stage-3 row with no
+         `depends_on` — there is no stage-2 predecessor task to wire it to.
    This preserves the existing division of responsibility: `test-roadmap` stays
    markdown-only (no new task-store write path, no new skill) — it just adds one more row
    to the same Section 5 walk that step 6 already populates, and `test-fix` files it
