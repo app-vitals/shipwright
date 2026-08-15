@@ -197,7 +197,10 @@ jobs:
     timeout-minutes: 15
     runs-on: ubuntu-latest
     needs: changes
-    if: github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
+    # always() so this still runs (fail-open) if the changes job itself
+    # errored rather than auto-skipping, matching every other needs: changes
+    # job in this file.
+    if: always() && github.event_name == 'pull_request' && (needs.changes.result != 'success' || needs.changes.outputs.app == 'true')
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
