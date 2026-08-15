@@ -94,6 +94,21 @@ Before starting, check for flags:
      here beyond noting the overlap.
    This runs once, here in Step 2, so both the `--dry-run` preview (Step 6) and the real queue
    path (Step 7) operate on the same already-verified row set.
+6. **Anti-gaming check — reject an uncited line-coverage row.** A `bucket`/`layer` row whose
+   only justification is raising `line_coverage_pct` (a **line-coverage** task, per
+   `test-roadmap/SKILL.md`'s sequencing rule in its own Process step 5) must cite, in its
+   `outcome` column or paired description text, the specific feature or genuine uncovered
+   error path it maps to — e.g. a named feature from `test-inventory.md`, or a specific
+   uncovered error path/branch (an untested `catch` block, an untested validation branch). This
+   is a structural check only: it confirms a citation is present, it does not verify the
+   citation is true. If a line-coverage row has no such citation — assertion-free filler added
+   just to move the aggregate line-coverage number, e.g. testing a trivial getter with no real
+   behavior at stake — **reject it: skip filing the row**, the same silent-skip convention used
+   for the Checklist Items 1–2 drops above. Print: `Skipping {T-NNN} — line-coverage task has no
+   cited feature/error-path mapping (possible coverage gaming)`. A line-coverage row that cites
+   a genuine uncovered error path (e.g. "closes the untested retry-exhaustion catch block in
+   `paymentsGatewayClient.ts`") is not gaming and files normally — this check targets
+   citation-less filler, not every line-coverage-bucket row.
 
 ---
 

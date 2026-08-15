@@ -31,6 +31,25 @@ describe("test-fix — SKILL.md exists", () => {
   });
 });
 
+describe("test-fix — anti-gaming rejection rule for uncited line-coverage tasks", () => {
+  it("requires a line-coverage task to cite the specific feature or genuine uncovered error path it maps to", () => {
+    const lower = readSkill().toLowerCase();
+    expect(lower).toContain("line-coverage");
+    expect(lower).toMatch(/cite (the )?specific feature|cite.{0,60}error path/s);
+  });
+
+  it("rejects or flags a citation-less line-coverage row instead of filing it as a normal task", () => {
+    const lower = readSkill().toLowerCase();
+    expect(lower).toMatch(/assertion-free filler/);
+    expect(lower).toMatch(/(reject|flag)/);
+  });
+
+  it("names the gaming pattern of padding coverage without closing a real gap", () => {
+    const lower = readSkill().toLowerCase();
+    expect(lower).toMatch(/gam(e|ing)/);
+  });
+});
+
 describe("test-fix — Step 4 dedup query is pagination-safe", () => {
   it("raises the dedup query limit well above the API's default page size", () => {
     expect(readSkill()).toContain("limit=1000");
