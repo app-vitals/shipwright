@@ -166,7 +166,7 @@ describe("SKILL.md — coverage_gate Process step invokes the CLI script", () =>
       "Compute the coverage_gate block by invoking",
     );
     const nextStepIdx = content.indexOf(
-      '9. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`',
+      "9. **Auto-emit the stage-3 coverage-promotion task",
     );
     expect(idx).toBeGreaterThan(-1);
     expect(nextStepIdx).toBeGreaterThan(idx);
@@ -223,7 +223,7 @@ describe("SKILL.md — refuses to write test-readiness-plan.md on script failure
       "Compute the coverage_gate block by invoking",
     );
     const nextStepIdx = content.indexOf(
-      '9. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`',
+      "9. **Auto-emit the stage-3 coverage-promotion task",
     );
     expect(idx).toBeGreaterThan(-1);
     expect(nextStepIdx).toBeGreaterThan(idx);
@@ -261,7 +261,7 @@ describe("SKILL.md — refuses to write test-readiness-plan.md on script failure
 describe("SKILL.md — template placeholders wired from the script output", () => {
   it("lists all seven Coverage Gate placeholders in the render step", () => {
     const renderIdx = content.indexOf(
-      "Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
+      "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
     );
     expect(renderIdx).toBeGreaterThan(-1);
     const section = content.slice(renderIdx, renderIdx + 800);
@@ -311,6 +311,148 @@ describe("SKILL.md — feature-coverage gaps sequenced ahead of line-coverage fi
     expect(failureModesIdx).toBeGreaterThan(-1);
     const section = content.slice(failureModesIdx);
     expect(section).toMatch(/line-coverage filler task ahead of a feature-coverage-closing task/i);
+  });
+});
+
+describe("SKILL.md — step 6 cross-references the 3rd auto-emitted coverage-pairing stage", () => {
+  function step6Section(): string {
+    const idx = content.indexOf("6. **Apply the pairing rule**");
+    const nextStepIdx = content.indexOf(
+      "7. **Apply the E2E classification guardrail**",
+    );
+    expect(idx).toBeGreaterThan(-1);
+    expect(nextStepIdx).toBeGreaterThan(idx);
+    return content.slice(idx, nextStepIdx);
+  }
+
+  it("mentions the coverage-check pairing has a 3rd, auto-emitted stage", () => {
+    const section = step6Section();
+    expect(section).toMatch(/3(?:rd|-stage)/i);
+    expect(section).toMatch(/auto-emit/i);
+  });
+
+  it("references repo-config/SKILL.md's Coverage-check pairing (3-stage lifecycle) section", () => {
+    const section = step6Section();
+    expect(section).toContain("repo-config/SKILL.md");
+    expect(section).toContain("Coverage-check pairing (3-stage lifecycle)");
+  });
+});
+
+describe("SKILL.md — Process step 9 auto-emits the stage-3 coverage-promotion task", () => {
+  function step9Section(): string {
+    const idx = content.indexOf(
+      "9. **Auto-emit the stage-3 coverage-promotion task",
+    );
+    const nextStepIdx = content.indexOf(
+      "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
+    );
+    expect(idx).toBeGreaterThan(-1);
+    expect(nextStepIdx).toBeGreaterThan(idx);
+    return content.slice(idx, nextStepIdx);
+  }
+
+  it("exists as a numbered Process step between the coverage_gate step and the template-render step", () => {
+    const coverageGateIdx = content.indexOf(
+      "Compute the coverage_gate block by invoking",
+    );
+    const step9Idx = content.indexOf(
+      "9. **Auto-emit the stage-3 coverage-promotion task",
+    );
+    const step10Idx = content.indexOf(
+      "10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`",
+    );
+    expect(coverageGateIdx).toBeGreaterThan(-1);
+    expect(step9Idx).toBeGreaterThan(coverageGateIdx);
+    expect(step10Idx).toBeGreaterThan(step9Idx);
+  });
+
+  it("gates emission on coverage_gate.line_coverage_pct >= 90 (only emitted when the gate closes)", () => {
+    const section = step9Section();
+    expect(section).toContain("line_coverage_pct");
+    expect(section).toMatch(/>=\s*90|≥\s*90/);
+  });
+
+  it("does not emit a promotion task when line_coverage_pct < 90", () => {
+    const section = step9Section();
+    expect(section).toMatch(/<\s*90/);
+    expect(section).toMatch(/no promotion task|nothing to do/i);
+  });
+
+  it("states the never-decrease check (stage 2) remains the active gate below 90%", () => {
+    const section = step9Section();
+    expect(section).toMatch(/never-decrease/i);
+    expect(section).toMatch(/still the active gate|remains the active gate/i);
+  });
+
+  it("follows the existing auto-pairing emission mechanism with no manual trigger step", () => {
+    const section = step9Section();
+    expect(section).toMatch(/auto-pairing/i);
+    expect(section).toMatch(/no manual (step|trigger)/i);
+  });
+
+  it("requires a dedup/already-filed check before emitting, to stay idempotent across re-runs", () => {
+    const section = step9Section();
+    expect(section).toMatch(/already been filed|already filed|already exists/i);
+    expect(section).toMatch(/idempoten/i);
+  });
+
+  it("reuses step 4's existing paginated task-store query result set for the dedup scan", () => {
+    const section = step9Section();
+    expect(section).toMatch(/step 4/i);
+    expect(section).toMatch(/scan/i);
+  });
+
+  it("skips emission (no duplicate row) when a matching stage-3 promotion task is found", () => {
+    const section = step9Section();
+    expect(section).toMatch(/skip/i);
+    expect(section).toMatch(/duplicate/i);
+  });
+
+  it("emits exactly one new T-NNN row into Milestone 1 with bucket: infra when the gate closes", () => {
+    const section = step9Section();
+    expect(section).toMatch(/exactly one/i);
+    expect(section).toContain("T-NNN");
+    expect(section).toMatch(/Milestone 1/);
+    expect(section).toContain("bucket: infra");
+  });
+
+  it("wires depends_on the stage-2 never-decrease task, mirroring step 6's pairing depends_on mechanism", () => {
+    const section = step9Section();
+    expect(section).toContain("depends_on");
+    expect(section).toMatch(/never-decrease/i);
+    expect(section).toMatch(/step 6/i);
+  });
+
+  it("emits the stage-3 row with no depends_on when the scan finds no stage-2 task (onboarding-skip rule applied)", () => {
+    const section = step9Section();
+    expect(section).toMatch(/onboarding-skip/i);
+    expect(section).toMatch(/no stage-2 task is found|no depends_on/i);
+  });
+});
+
+describe("SKILL.md — Failure modes to avoid covers the stage-3 promotion task", () => {
+  function failureModesSection(): string {
+    const idx = content.indexOf("## Failure modes to avoid");
+    expect(idx).toBeGreaterThan(-1);
+    return content.slice(idx);
+  }
+
+  it("warns against refiling the stage-3 promotion task on every re-run once already emitted", () => {
+    const section = failureModesSection();
+    const hasBullet =
+      /refile/i.test(section) &&
+      /stage-3|promotion task/i.test(section) &&
+      /already/i.test(section);
+    expect(hasBullet).toBe(true);
+  });
+
+  it("warns against emitting the stage-3 promotion task before the gate has actually closed", () => {
+    const section = failureModesSection();
+    const hasBullet =
+      /before the gate/i.test(section) &&
+      /(closed|closes)/i.test(section) &&
+      /90/.test(section);
+    expect(hasBullet).toBe(true);
   });
 });
 

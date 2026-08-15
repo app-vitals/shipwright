@@ -277,6 +277,13 @@ Anything the audit couldn't determine without a human call. Common entries:
    `test-fix/SKILL.md` anti-gaming check — exists to catch that ad-hoc row if and when one is
    added, not to reorder anything this walk generates on its own.
 6. **Apply the pairing rule** from `${CLAUDE_PLUGIN_ROOT}/skills/repo-config/SKILL.md`: every task that creates or modifies a CI workflow file MUST emit a paired branch-protection task that `depends_on` the workflow task. Without this, the audit ships as advisory rather than enforced. The pairing rule is non-negotiable; skipping it is the failure mode the user will catch and the plugin will be blamed for.
+
+   **Note — the coverage-check pairing has a 3rd, auto-emitted stage.** The general
+   2-stage pairing pattern above (workflow task → paired branch-protection task) has a
+   third stage specific to the coverage-required-check: `test-roadmap` itself
+   auto-emits a stage-3 promotion task on a later re-run once the coverage gate closes.
+   See `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)" section for
+   the full 3-stage table; Process step 9 below is where this repo implements stage 3.
 7. **Apply the E2E classification guardrail** (non-negotiable): Before emitting any task with `layer: e2e`, verify against test-system.md's "Classifying a new test" step that the proposed test journey actually exercises a real browser (step 4: "Does it test a multi-step browser flow? → e2e (Playwright)"). If the journey is a backend orchestration flow, an API contract test, or any other non-browser interaction, downgrade the task to `layer: integration` or `layer: smoke` with a one-line note explaining why (e.g., "backend orchestration flow — moved to smoke"). This guardrail prevents shipping e2e tasks that violate the test classification rules, ensuring the e2e layer contains only true multi-step browser-driven flows.
 8. **Compute the coverage_gate block by invoking `scripts/check-coverage-gate.ts` — never
    hand-compute the verdict.** Source the four required inputs the same way Step 4c of
@@ -320,22 +327,56 @@ Anything the audit couldn't determine without a human call. Common entries:
    step 9 and do not write a partial or fabricated `test-readiness-plan.md` — mirrors
    Process step 1's "Abort if any missing" failure mode, applied to the coverage_gate
    computation instead of the three prior-artifact reads.
-9. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
-   Write to `docs/test-readiness/test-readiness-plan.md`.
-   - Fill the `## Coverage Gate` section's seven placeholders
+9. **Auto-emit the stage-3 coverage-promotion task when the gate closes.** Using step 8's
+   just-computed `line_coverage_pct`, this is the auto-pairing mechanism firing for the
+   coverage-check's 3rd stage (see the step-6 note above and `repo-config/SKILL.md`'s
+   "Coverage-check pairing (3-stage lifecycle)" section) — it follows the existing
+   auto-pairing emission mechanism, no manual trigger step:
+   - **If `line_coverage_pct < 90`:** no promotion task. The never-decrease check (stage 2)
+     is still the active gate. Nothing to do — proceed to step 10.
+   - **If `line_coverage_pct >= 90`:** before emitting, check whether a stage-3 promotion
+     task has already been filed for this repo, so a later re-run doesn't refile it every
+     cycle once the gate has closed — idempotency matters here (see
+     `plugins/shipwright/CLAUDE.md`'s "6. Skills Are Idempotent" principle). Reuse step 4's
+     existing task-store query result set (it already fetches every task for this repo,
+     paginated past the 500-row default) — scan that same result set for a task whose
+     title/outcome matches the stage-3 promotion pattern (e.g. "Promote coverage required
+     check from never-decrease to hard ≥90% gate").
+     - **If found:** skip — no duplicate row.
+     - **If not found:** emit exactly one new `T-NNN` row into the Section 5 task list
+       (Milestone 1, `bucket: infra`) with:
+       - Outcome: "Promote coverage required check from never-decrease to hard ≥90% gate"
+       - `depends_on` the stage-2 never-decrease task's `T-NNN` (found via the same scan,
+         matching its title pattern) — mirrors exactly how step 6's pairing rule already
+         wires `depends_on` for workflow-task → branch-protection-task pairs, so
+         `test-fix`'s existing `depends_on:` parsing (Step 2.3 / Step 5.4) requires zero
+         changes to pick up this new row.
+       - **Onboarding-skip fallback:** if no stage-2 task is found in the scan, this
+         means the onboarding-skip rule applied — the repo was already at ≥90% line
+         coverage at onboarding time and never had a stage-2 never-decrease task filed
+         (see `repo-config/SKILL.md`'s "Coverage-check pairing (3-stage lifecycle)"
+         section, "Onboarding skip rule"). In that case, emit the stage-3 row with no
+         `depends_on` — there is no stage-2 predecessor task to wire it to.
+   This preserves the existing division of responsibility: `test-roadmap` stays
+   markdown-only (no new task-store write path, no new skill) — it just adds one more row
+   to the same Section 5 walk that step 6 already populates, and `test-fix` files it
+   exactly like any other paired row.
+10. Load `${CLAUDE_PLUGIN_ROOT}/assets/templates/test-readiness-plan.md.tmpl`. Fill.
+    Write to `docs/test-readiness/test-readiness-plan.md`.
+    - Fill the `## Coverage Gate` section's seven placeholders
      (`{{FEATURE_COVERAGE_PCT}}`, `{{FEATURE_COVERAGE_SOURCE}}`, `{{LINE_COVERAGE_PCT}}`,
      `{{LINE_COVERAGE_SOURCE}}`, `{{COVERAGE_VERDICT}}`, `{{FEATURE_TARGET}}`,
-     `{{LINE_TARGET}}`) verbatim from step 8's script output.
-   - **`{{M3_HEADING_AND_DOD}}` is gated on `deploy_model`** (Process step 1) — the
-     template has no static text for this milestone precisely because it must reflect
-     the gate:
-     - When `deploy_model == 'staged'`: fill with
-       `### Milestone 3 — Canary suite live\n**DOD:** Smoke + E2E canary-eligible tests run green against the deployed env in <60s wall time.`
-     - When `deploy_model != 'staged'` (declared `direct`, declared `none`, or
-       undeclared): fill with the single note line —
-       `### Milestone 3 — Canary suite live\n**DOD:** canary not applicable -- deploy_model={value}`
-       (no task list, no DOD beyond the note) — where `{value}` is `direct`, `none`, or
-       `undeclared`.
+      `{{LINE_TARGET}}`) verbatim from step 8's script output.
+    - **`{{M3_HEADING_AND_DOD}}` is gated on `deploy_model`** (Process step 1) — the
+      template has no static text for this milestone precisely because it must reflect
+      the gate:
+      - When `deploy_model == 'staged'`: fill with
+        `### Milestone 3 — Canary suite live\n**DOD:** Smoke + E2E canary-eligible tests run green against the deployed env in <60s wall time.`
+      - When `deploy_model != 'staged'` (declared `direct`, declared `none`, or
+        undeclared): fill with the single note line —
+        `### Milestone 3 — Canary suite live\n**DOD:** canary not applicable -- deploy_model={value}`
+        (no task list, no DOD beyond the note) — where `{value}` is `direct`, `none`, or
+        `undeclared`.
 
 ## Failure modes to avoid
 
@@ -368,3 +409,11 @@ Anything the audit couldn't determine without a human call. Common entries:
   "deferred — not implemented" note is meant to block. Check `recorded_fixture_automation`
   (Process step 1) before emitting any recorded-fixture-refresh task; when it's `not planned`,
   emit zero tasks per the Milestone 1 exception above rather than one monolithic task.
+- **Don't refile the stage-3 coverage-promotion task on every re-run once it's already been
+  emitted.** Process step 9's dedup scan (reusing step 4's task-store query result set) exists
+  precisely to make this idempotent — a re-run that finds a matching promotion task already
+  filed must skip emission, not add a duplicate `T-NNN` row each cycle.
+- **Don't emit the stage-3 coverage-promotion task before the gate has actually closed.**
+  Process step 9 is gated on `coverage_gate.line_coverage_pct >= 90` (step 8's freshly
+  computed value) — a repo still below 90% keeps the never-decrease check (stage 2) as its
+  active gate; do not promote to the hard ≥90% gate early.
