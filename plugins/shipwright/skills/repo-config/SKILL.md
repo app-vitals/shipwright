@@ -92,6 +92,31 @@ Pattern:
 
 The branch-protection task `depends_on` the workflow task. Land workflow first; verify green on main for a few days; then enable protection. Sequencing is in this order to avoid the chicken-and-egg block.
 
+## Coverage-check pairing (3-stage lifecycle)
+
+The coverage-required-check is a specific instance of the pairing rule above, extending the
+general 2-stage pattern (job lands → dependent task enables it as required) to a 3-stage
+lifecycle. The general 2-stage table still governs `test.yml`/canary/deploy workflow tasks
+unchanged — this section adds a third stage for the coverage gate only, because jumping
+straight from "no coverage check" to "hard ≥90% required check" would instantly break every
+repo currently below that floor. `test-roadmap` (Phase 4) is the component that detects gap
+closure and auto-emits the stage-3 promotion task, mirroring the same role it plays applying
+the pairing rule above.
+
+Stages:
+
+| Stage | Trigger | What happens |
+|---|---|---|
+| 1. Coverage CI job lands | `test.yml` gains a coverage-computing job | No required check yet — signal only |
+| 2. Never-decrease required (immediately) | Paired task, same mechanism as the pairing rule above | Branch protection requires a "coverage must not decrease" status check as soon as the coverage CI job lands — `depends_on` the job-lands task, enabled immediately, not deferred |
+| 3. Hard ≥90% required (auto-emitted) | `test-roadmap` re-run detects `coverage_gate.line_coverage_pct >= 90` | `test-roadmap` automatically emits a repo-config task promoting the required check from never-decrease to a hard ≥90% gate — no manual step |
+
+**Onboarding skip rule:** a repo already at ≥90% line coverage at onboarding time skips
+stage 2 entirely and goes straight to stage 3 — the hard ≥90% gate. Passing through the
+never-decrease stage first would be unnecessary when the repo already clears the target
+floor; only repos onboarding below 90% need the never-decrease stage as an interim gate
+while their roadmap closes the gap.
+
 ## The closing checklist (Phase 5 — test-fix)
 
 Every task-store task `test-fix` queues must carry closing-checklist concerns in its

@@ -151,6 +151,202 @@ export const JacocoParser: CoverageParser = {
   },
 };
 
+// Applies the same EXCLUDE_PREFIXES/EXCLUDE_SUBSTRINGS filtering as main()'s
+// report, then returns the weighted aggregate line-coverage percentage
+// (sum of LH / sum of LF across relevant files) — the single number both
+// this gate and check-coverage-no-decrease.ts's PR-vs-base comparison need.
+// 100 when there are no relevant files or no lines found, mirroring the
+// "nothing to fail on" convention used throughout this module.
+export function computeAggregateLinePct(files: FileStats[]): number {
+  const relevant = files.filter(
+    (file) =>
+      !EXCLUDE_PREFIXES.some((ex) => file.path.startsWith(ex)) &&
+      !EXCLUDE_SUBSTRINGS.some((sub) => file.path.includes(sub)),
+  );
+
+  const totalLf = relevant.reduce((sum, f) => sum + f.lf, 0);
+  const totalLh = relevant.reduce((sum, f) => sum + f.lh, 0);
+
+  return totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
+}
+
+// Raw Istanbul coverage shapes (c8/nyc's native `coverage-final.json`), pared
+// down to the fields FileStats derivation needs. branchMap/b are present in
+// real output but irrelevant here.
+type IstanbulStatement = { start: { line: number } };
+type IstanbulFileCoverage = {
+  path: string;
+  statementMap: Record<string, IstanbulStatement>;
+  fnMap: Record<string, unknown>;
+  s: Record<string, number>;
+  f: Record<string, number>;
+};
+
+// Derives line coverage the same way istanbul-lib-coverage does: Istanbul
+// tracks coverage per *statement*, not per line, so a single line with
+// multiple statements (e.g. a chained expression split across `;`s on one
+// line) must be deduplicated onto its starting line number rather than
+// counted per statement. A line counts as "found" once if any statement
+// starts on it, and as "hit" if at least one statement starting on that
+// line has a hit count > 0.
+function deriveLineCoverage(
+  statementMap: Record<string, IstanbulStatement>,
+  hits: Record<string, number>,
+): { lf: number; lh: number } {
+  const maxHitsByLine = new Map<number, number>();
+
+  for (const [id, statement] of Object.entries(statementMap)) {
+    const line = statement.start.line;
+    const hit = hits[id] ?? 0;
+    const current = maxHitsByLine.get(line) ?? 0;
+    maxHitsByLine.set(line, Math.max(current, hit));
+  }
+
+  let lh = 0;
+  for (const maxHit of maxHitsByLine.values()) {
+    if (maxHit > 0) lh++;
+  }
+
+  return { lf: maxHitsByLine.size, lh };
+}
+
+// Parses c8/nyc's native Istanbul JSON format (e.g. `c8 --reporter=json` or
+// `nyc report --reporter=json`, a.k.a. `coverage-final.json`): a JSON object
+// keyed by absolute file path, each value carrying statementMap/s (statement
+// hit counts) and fnMap/f (function hit counts). Line coverage is NOT a raw
+// statement count — see deriveLineCoverage above.
+export const IstanbulParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    if (!content.trim()) return [];
+
+    let raw: Record<string, IstanbulFileCoverage>;
+    try {
+      raw = JSON.parse(content);
+    } catch {
+      return [];
+    }
+
+    const files: FileStats[] = [];
+
+    for (const [, file] of Object.entries(raw)) {
+      const { lf, lh } = deriveLineCoverage(file.statementMap, file.s);
+      const fnf = Object.keys(file.fnMap).length;
+      const fnh = Object.values(file.f).filter((hit) => hit > 0).length;
+
+      files.push({ path: file.path, lf, lh, fnf, fnh });
+    }
+
+    return files;
+  },
+};
+
+// Shape of a single entry in coverage.py's `coverage json` `files` map —
+// only the fields this parser reads.
+type CoveragePyFileEntry = {
+  summary?: {
+    num_statements?: unknown;
+    covered_lines?: unknown;
+  };
+};
+
+// Parses coverage.py's `coverage json` report format into an ordered
+// FileStats[] — one entry per key in the top-level `files` object, in the
+// order those keys appear in the parsed JSON (Object.entries() preserves
+// string-key insertion order, matching the file's original ordering).
+//   - `lf`/`lh` map to each file's `summary.num_statements` /
+//     `summary.covered_lines` — the closest analog to "lines found/hit"
+//     this format supports.
+//   - `fnf`/`fnh` are always 0: coverage.py's JSON report carries no
+//     function-level granularity in its default/summary form.
+// The whole document is parsed as JSON up front, so unlike the line-oriented
+// parsers above, defensive handling happens at the whole-input level: any
+// JSON.parse failure, or a missing/non-object `files` key, yields [].
+export const CoveragePyParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      return [];
+    }
+
+    if (typeof parsed !== "object" || parsed === null) return [];
+
+    const files = (parsed as { files?: unknown }).files;
+    if (typeof files !== "object" || files === null || Array.isArray(files))
+      return [];
+
+    return Object.entries(files as Record<string, CoveragePyFileEntry>).map(
+      ([path, fileData]) => {
+        const summary = fileData?.summary ?? {};
+        const lf = Number(summary.num_statements) || 0;
+        const lh = Number(summary.covered_lines) || 0;
+        return { path, lf, lh, fnf: 0, fnh: 0 };
+      },
+    );
+  },
+};
+
+// Matches a single go cover text-profile data line:
+//   <file>:<startLine>.<startCol>,<endLine>.<endCol> <numStmt> <count>
+// e.g. "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1"
+// Columns and numStmt aren't needed for line-level FileStats; only the file
+// path, the line range, and the hit count matter here.
+const GO_COVER_LINE_RE = /^(.+):(\d+)\.\d+,(\d+)\.\d+ \d+ (\d+)$/;
+
+// Parses go cover's text profile format (`go test -coverprofile=cover.out`):
+// a `mode: <set|count|atomic>` header line followed by one block-coverage
+// record per line. Unlike LCOV/Istanbul, go cover reports coverage per
+// *block* (a span of lines), not per line or per statement — there is no
+// per-line hit count in the source format. Line coverage is derived by
+// expanding each block's [startLine, endLine] span across a per-file
+// Map<lineNumber, maxHitCount>, mirroring how IstanbulParser's
+// deriveLineCoverage dedupes multiple statements landing on the same line:
+// a line is "found" if any block touches it, and "hit" if the max hit count
+// of any block touching it is > 0. Go's blocks don't normally overlap, but
+// taking the max is defensive in case they ever do.
+// go cover's text profile carries no function-level granularity, so fnf/fnh
+// are always 0 (same limitation as CoveragePyParser's statement-only format).
+export const GoCoverParser: CoverageParser = {
+  parse(content: string): FileStats[] {
+    const lineHitsByFile = new Map<string, Map<number, number>>();
+
+    for (const line of content.split("\n")) {
+      if (!line.trim() || line.startsWith("mode:")) continue;
+
+      const match = line.match(GO_COVER_LINE_RE);
+      if (!match) continue;
+
+      const [, path, startLineStr, endLineStr, countStr] = match;
+      const startLine = Number.parseInt(startLineStr, 10);
+      const endLine = Number.parseInt(endLineStr, 10);
+      const count = Number.parseInt(countStr, 10);
+
+      let lineHits = lineHitsByFile.get(path);
+      if (!lineHits) {
+        lineHits = new Map<number, number>();
+        lineHitsByFile.set(path, lineHits);
+      }
+
+      for (let lineNum = startLine; lineNum <= endLine; lineNum++) {
+        const current = lineHits.get(lineNum) ?? 0;
+        lineHits.set(lineNum, Math.max(current, count));
+      }
+    }
+
+    const files: FileStats[] = [];
+    for (const [path, lineHits] of lineHitsByFile.entries()) {
+      let lh = 0;
+      for (const hit of lineHits.values()) {
+        if (hit > 0) lh++;
+      }
+      files.push({ path, lf: lineHits.size, lh, fnf: 0, fnh: 0 });
+    }
+
+    return files;
+  },
+};
+
 async function main() {
   const lcov = await Bun.file(LCOV_PATH)
     .text()
@@ -190,7 +386,7 @@ async function main() {
     console.log(`${icon}  ${linePct.toFixed(1).padStart(5)}%  ${path}`);
   }
 
-  const overallLines = totalLf === 0 ? 100 : (totalLh / totalLf) * 100;
+  const overallLines = computeAggregateLinePct(files);
   const overallFunctions = totalFnf === 0 ? 100 : (totalFnh / totalFnf) * 100;
 
   console.log(`

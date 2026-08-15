@@ -2,13 +2,25 @@
  * Unit tests for scripts/check-coverage.ts
  *
  * Verifies LcovParser (the CoverageParser implementation for the lcov.info
- * format) and JacocoParser (the CoverageParser implementation for JaCoCo's
- * XML report format) against hand-built fixtures. Pure logic, no I/O:
- * parse(content) takes a raw string and returns FileStats[] — nothing here
- * touches the filesystem or triggers the script's process.exit side effects.
+ * format), JacocoParser (the CoverageParser implementation for JaCoCo's XML
+ * report format), IstanbulParser (the CoverageParser implementation for
+ * c8/nyc's native Istanbul JSON format), CoveragePyParser (the CoverageParser
+ * implementation for coverage.py's `coverage json` output), and GoCoverParser
+ * (the CoverageParser implementation for go cover's text profile format)
+ * against hand-built fixtures, plus computeAggregateLinePct's EXCLUDE-filtered
+ * weighted aggregation. Pure logic, no I/O: parse(content) takes raw string
+ * content and returns FileStats[] — nothing here touches the filesystem or
+ * triggers the script's process.exit side effects.
  */
 import { describe, expect, test } from "bun:test";
-import { JacocoParser, LcovParser } from "./check-coverage";
+import {
+  CoveragePyParser,
+  GoCoverParser,
+  IstanbulParser,
+  JacocoParser,
+  LcovParser,
+  computeAggregateLinePct,
+} from "./check-coverage";
 
 describe("LcovParser.parse", () => {
   test("parses a single-file lcov record into FileStats", () => {
@@ -297,5 +309,424 @@ describe("JacocoParser.parse", () => {
 </report>`;
 
     expect(JacocoParser.parse(fixture)).toEqual([]);
+  });
+});
+
+describe("computeAggregateLinePct", () => {
+  test("computes the weighted aggregate line percentage across relevant files", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 38, fnf: 4, fnh: 4 },
+      { path: "metrics/src/bar.ts", lf: 60, lh: 30, fnf: 6, fnh: 3 },
+    ];
+
+    // (38 + 30) / (40 + 60) * 100 = 68
+    expect(computeAggregateLinePct(files)).toBe(68);
+  });
+
+  test("excludes files matching EXCLUDE_PREFIXES from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 40, lh: 40, fnf: 4, fnh: 4 },
+      {
+        path: "node_modules/some-dep/index.js",
+        lf: 1000,
+        lh: 0,
+        fnf: 100,
+        fnh: 0,
+      },
+    ];
+
+    // node_modules/ is excluded, so only foo.ts counts: 40/40 = 100
+    expect(computeAggregateLinePct(files)).toBe(100);
+  });
+
+  test("excludes files matching EXCLUDE_SUBSTRINGS from the aggregate", () => {
+    const files = [
+      { path: "agent/src/foo.ts", lf: 10, lh: 5, fnf: 1, fnh: 1 },
+      {
+        path: "task-store/prisma/client/index.js",
+        lf: 500,
+        lh: 500,
+        fnf: 50,
+        fnh: 50,
+      },
+    ];
+
+    // prisma/client/ is excluded, so only foo.ts counts: 5/10 = 50
+    expect(computeAggregateLinePct(files)).toBe(50);
+  });
+
+  test("returns 100 when there are no relevant files (no lines found, not a failure)", () => {
+    expect(computeAggregateLinePct([])).toBe(100);
+  });
+
+  test("returns 100 when total lines-found across relevant files is zero", () => {
+    const files = [
+      { path: "agent/src/empty.ts", lf: 0, lh: 0, fnf: 0, fnh: 0 },
+    ];
+    expect(computeAggregateLinePct(files)).toBe(100);
+  });
+});
+
+describe("CoveragePyParser.parse", () => {
+  test("parses a single-file JSON report into FileStats", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {
+        "mypackage/module.py": {
+          executed_lines: [1, 2, 3, 5, 6],
+          summary: {
+            covered_lines: 5,
+            num_statements: 7,
+            percent_covered: 71.42857142857143,
+            percent_covered_display: "71",
+            missing_lines: 2,
+            excluded_lines: 0,
+          },
+          missing_lines: [4, 7],
+          excluded_lines: [],
+        },
+      },
+      totals: {
+        covered_lines: 5,
+        num_statements: 7,
+        percent_covered: 71.42857142857143,
+        percent_covered_display: "71",
+        missing_lines: 2,
+        excluded_lines: 0,
+      },
+    });
+
+    const result = CoveragePyParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "mypackage/module.py", lf: 7, lh: 5, fnf: 0, fnh: 0 },
+    ]);
+  });
+
+  test("parses multiple files, preserving the order they appear in the files object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {
+        "a/first.py": {
+          executed_lines: [1, 2],
+          summary: { covered_lines: 2, num_statements: 4 },
+          missing_lines: [3, 4],
+          excluded_lines: [],
+        },
+        "b/second.py": {
+          executed_lines: [1, 2, 3],
+          summary: { covered_lines: 3, num_statements: 3 },
+          missing_lines: [],
+          excluded_lines: [],
+        },
+        "c/third.py": {
+          executed_lines: [],
+          summary: { covered_lines: 0, num_statements: 0 },
+          missing_lines: [],
+          excluded_lines: [],
+        },
+      },
+      totals: { covered_lines: 5, num_statements: 7 },
+    });
+
+    const result = CoveragePyParser.parse(fixture);
+
+    expect(result).toEqual([
+      { path: "a/first.py", lf: 4, lh: 2, fnf: 0, fnh: 0 },
+      { path: "b/second.py", lf: 3, lh: 3, fnf: 0, fnh: 0 },
+      { path: "c/third.py", lf: 0, lh: 0, fnf: 0, fnh: 0 },
+    ]);
+  });
+
+  test("returns an empty array for a report with an empty files object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: {},
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+  });
+
+  test("returns an empty array for malformed/invalid JSON input without throwing", () => {
+    expect(CoveragePyParser.parse("{not valid json")).toEqual([]);
+    expect(CoveragePyParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array if the parsed JSON has no files key", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+  });
+
+  test("returns an empty array if files is not an object", () => {
+    const fixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: "not-an-object",
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(fixture)).toEqual([]);
+
+    const arrayFixture = JSON.stringify({
+      meta: { format: 3, version: "7.4.0" },
+      files: [],
+      totals: { covered_lines: 0, num_statements: 0 },
+    });
+
+    expect(CoveragePyParser.parse(arrayFixture)).toEqual([]);
+  });
+});
+
+describe("IstanbulParser.parse", () => {
+  test("derives line coverage from statement starting lines, not a raw statement count", () => {
+    // Two statements on line 1 (one hit, one not — line still counts as
+    // covered because at least one statement on it was hit), one statement
+    // on line 3 (not hit). Distinct starting lines = 2 (line 1, line 3), so
+    // lf must be 2, not 3 (the raw statementMap count).
+    const fixture = {
+      "/abs/path/to/file.js": {
+        path: "/abs/path/to/file.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+          "1": { start: { line: 1, column: 12 }, end: { line: 1, column: 20 } },
+          "2": { start: { line: 3, column: 2 }, end: { line: 3, column: 30 } },
+        },
+        fnMap: {
+          "0": { name: "foo" },
+        },
+        s: { "0": 5, "1": 0, "2": 0 },
+        f: { "0": 3 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/file.js", lf: 2, lh: 1, fnf: 1, fnh: 1 },
+    ]);
+  });
+
+  test("counts function coverage from fnMap size and hit count in f", () => {
+    const fixture = {
+      "/abs/path/to/multi-fn.js": {
+        path: "/abs/path/to/multi-fn.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 10 } },
+        },
+        fnMap: {
+          "0": { name: "hitFn" },
+          "1": { name: "missedFn" },
+        },
+        s: { "0": 1 },
+        f: { "0": 4, "1": 0 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/multi-fn.js", lf: 1, lh: 1, fnf: 2, fnh: 1 },
+    ]);
+  });
+
+  test("parses multiple files, preserving Object.entries key order", () => {
+    const fixture = {
+      "/abs/path/to/first.js": {
+        path: "/abs/path/to/first.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+          "1": { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
+        },
+        fnMap: {},
+        s: { "0": 1, "1": 1 },
+        f: {},
+        branchMap: {},
+        b: {},
+      },
+      "/abs/path/to/second.js": {
+        path: "/abs/path/to/second.js",
+        statementMap: {
+          "0": { start: { line: 1, column: 0 }, end: { line: 1, column: 5 } },
+        },
+        fnMap: {
+          "0": { name: "bar" },
+        },
+        s: { "0": 0 },
+        f: { "0": 0 },
+        branchMap: {},
+        b: {},
+      },
+    };
+
+    const result = IstanbulParser.parse(JSON.stringify(fixture));
+
+    expect(result).toEqual([
+      { path: "/abs/path/to/first.js", lf: 2, lh: 2, fnf: 0, fnh: 0 },
+      { path: "/abs/path/to/second.js", lf: 1, lh: 0, fnf: 1, fnh: 0 },
+    ]);
+  });
+
+  test("returns an empty array for empty content", () => {
+    expect(IstanbulParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array for an empty JSON object", () => {
+    expect(IstanbulParser.parse("{}")).toEqual([]);
+  });
+});
+
+describe("GoCoverParser.parse", () => {
+  test("parses a single file, single block, fully covered", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("parses a single file, single block, uncovered", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:14.2,14.20 1 0",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 0,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("a block spanning multiple physical lines counts every line in range", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/bar.go:5.10,7.2 2 3",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    // lines 5, 6, 7 => lf 3; count 3 > 0 => all hit => lh 3
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/bar.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("a multi-line uncovered block counts every line as found but none hit", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/baz.go:20.1,23.2 3 0",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    // lines 20, 21, 22, 23 => lf 4; count 0 => lh 0
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/baz.go",
+        lf: 4,
+        lh: 0,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("parses multiple files in first-appearance order", () => {
+    const fixture = [
+      "mode: set",
+      "github.com/example/repo/pkg/foo.go:10.13,12.2 1 1",
+      "github.com/example/repo/pkg/foo.go:14.2,14.20 1 0",
+      "github.com/example/repo/pkg/bar.go:5.10,7.2 2 3",
+    ].join("\n");
+
+    const result = GoCoverParser.parse(fixture);
+
+    expect(result).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        // block1: lines 10,11,12 hit; block2: line 14 not hit => lf 4, lh 3
+        lf: 4,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+      {
+        path: "github.com/example/repo/pkg/bar.go",
+        lf: 3,
+        lh: 3,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("mode: count / mode: atomic header lines are skipped, not treated as data or errors", () => {
+    const countFixture = [
+      "mode: count",
+      "github.com/example/repo/pkg/foo.go:1.1,1.10 1 5",
+    ].join("\n");
+    const atomicFixture = [
+      "mode: atomic",
+      "github.com/example/repo/pkg/foo.go:1.1,1.10 1 5",
+    ].join("\n");
+
+    expect(GoCoverParser.parse(countFixture)).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+    expect(GoCoverParser.parse(atomicFixture)).toEqual([
+      {
+        path: "github.com/example/repo/pkg/foo.go",
+        lf: 1,
+        lh: 1,
+        fnf: 0,
+        fnh: 0,
+      },
+    ]);
+  });
+
+  test("returns an empty array for empty content", () => {
+    expect(GoCoverParser.parse("")).toEqual([]);
+  });
+
+  test("returns an empty array for a profile with only the mode line", () => {
+    expect(GoCoverParser.parse("mode: set")).toEqual([]);
+    expect(GoCoverParser.parse("mode: set\n")).toEqual([]);
   });
 });
