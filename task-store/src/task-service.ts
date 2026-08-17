@@ -129,6 +129,7 @@ function matchesTaskFilters(task: Task, filters: TaskListPostFilters): boolean {
     return false;
   if (filters.assignee !== undefined && task.assignee !== filters.assignee)
     return false;
+  if (filters.hitl !== undefined && task.hitl !== filters.hitl) return false;
   if (!matchesRepoOrg(task, filters.repo, filters.org)) return false;
   return true;
 }
@@ -145,12 +146,22 @@ export type TaskWithBlockedBy = Task & { blockedBy: BlockedByEntry[] };
  * still be a dependency of an in-scope task, and must still contribute a
  * blockedBy entry for it).
  *
- * Deliberately excludes status/state/hitl/limit/
- * offset/sort/updatedSince/agentScope: the ready/blocked sets' status/hitl
- * semantics are structural (see ready.ts / listBlocked()'s doc comment),
- * pagination/sort don't apply to these whole-graph convenience endpoints
- * (see docs/task-store.md), and agentId/repos scoping already has its own
- * dedicated parameters mirroring the pre-existing signatures.
+ * Deliberately excludes status/state/limit/offset/sort/updatedSince/
+ * agentScope: the ready/blocked sets' status semantics are structural (see
+ * ready.ts / listBlocked()'s doc comment) — status/state itself is never a
+ * user-settable narrowing filter here, since it's what defines the ready/
+ * blocked set in the first place. Pagination/sort don't apply to these
+ * whole-graph convenience endpoints (see docs/task-store.md), and
+ * agentId/repos scoping already has its own dedicated parameters mirroring
+ * the pre-existing signatures.
+ *
+ * `hitl` IS included, unlike the structural fields above: computeBlockedBy()
+ * already sets a {type:"hitl"} blockedBy entry whenever task.hitl === true
+ * (blocked-by.ts:66-68), so narrowing the already-resolved ready/blocked set
+ * by task.hitl is a plain equality AND-filter — the same shape as the other
+ * fields below (session/source/claimedBy/pr/branch/assignee), not a
+ * structural change to which tasks are considered ready/blocked in the
+ * first place.
  */
 export interface TaskListPostFilters {
   session?: string;
@@ -163,6 +174,7 @@ export interface TaskListPostFilters {
   pr?: number;
   branch?: string;
   assignee?: string;
+  hitl?: boolean;
 }
 
 /** Filters accepted by TaskService.list. */

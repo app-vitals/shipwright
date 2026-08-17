@@ -333,6 +333,78 @@ describe("GET /tasks state filter (smoke)", () => {
     });
   });
 
+  // ─── hitl filter for state=ready (HTF-1.1) ─────────────────────────────────
+
+  it("GET /tasks?state=ready&hitl=true forwards hitl: true to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+    const baseFake = fakeTaskService({});
+    const taskService: TaskServiceLike = {
+      ...baseFake,
+      async listReady(
+        agentId?: string,
+        repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=ready&hitl=true", {
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]).toMatchObject({ hitl: true });
+  });
+
+  it("GET /tasks?state=ready&hitl=false forwards hitl: false to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+    const baseFake = fakeTaskService({});
+    const taskService: TaskServiceLike = {
+      ...baseFake,
+      async listReady(
+        agentId?: string,
+        repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=ready&hitl=false", {
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]).toMatchObject({ hitl: false });
+  });
+
+  it("GET /tasks?state=ready without ?hitl forwards hitl: undefined to listReady", async () => {
+    const capturedFilters: Array<Record<string, unknown> | undefined> = [];
+    const baseFake = fakeTaskService({});
+    const taskService: TaskServiceLike = {
+      ...baseFake,
+      async listReady(
+        agentId?: string,
+        repos?: string[],
+        filters?: Record<string, unknown>,
+      ) {
+        capturedFilters.push(filters);
+        return [];
+      },
+    };
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=ready", { headers: auth() });
+
+    expect(res.status).toBe(200);
+    expect(capturedFilters[0]).toMatchObject({ hitl: undefined });
+  });
+
   // ─── state=in_progress ───────────────────────────────────────────────────────
 
   it("GET /tasks?state=in_progress returns 200", async () => {
@@ -594,5 +666,50 @@ describe("GET /tasks state filter (smoke)", () => {
       branch: undefined,
       assignee: undefined,
     });
+  });
+
+  // ─── hitl filter for state=blocked (HTF-1.1) ───────────────────────────────
+
+  it("GET /tasks?state=blocked&hitl=true forwards hitl: true to listBlocked", async () => {
+    const capturedListBlockedFilters: Array<
+      Record<string, unknown> | undefined
+    > = [];
+    const taskService = fakeTaskService({ capturedListBlockedFilters });
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=blocked&hitl=true", {
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedListBlockedFilters[0]).toMatchObject({ hitl: true });
+  });
+
+  it("GET /tasks?state=blocked&hitl=false forwards hitl: false to listBlocked", async () => {
+    const capturedListBlockedFilters: Array<
+      Record<string, unknown> | undefined
+    > = [];
+    const taskService = fakeTaskService({ capturedListBlockedFilters });
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=blocked&hitl=false", {
+      headers: auth(),
+    });
+
+    expect(res.status).toBe(200);
+    expect(capturedListBlockedFilters[0]).toMatchObject({ hitl: false });
+  });
+
+  it("GET /tasks?state=blocked without ?hitl forwards hitl: undefined to listBlocked", async () => {
+    const capturedListBlockedFilters: Array<
+      Record<string, unknown> | undefined
+    > = [];
+    const taskService = fakeTaskService({ capturedListBlockedFilters });
+    const app = makeApp(taskService);
+
+    const res = await app.request("/tasks?state=blocked", { headers: auth() });
+
+    expect(res.status).toBe(200);
+    expect(capturedListBlockedFilters[0]).toMatchObject({ hitl: undefined });
   });
 });
