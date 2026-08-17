@@ -131,11 +131,12 @@ consumers, gated on human sign-off rather than a technical dependency.
 [START]
   └─ PFL-1.1
         └─ PFL-1.2
-              ├─ PFL-2.1 ──────────────┐
-              ├─ PFL-2.2 ──┐           │
-              │            ├─ PFL-3.1 ─┤
-              │            │           ├─ PFL-4.1 (⚠ HITL — human unblocks after bake period)
-              └────────────┴─ PFL-3.2 ─┘
+              ├─ PFL-2.2
+              │     └─ PFL-3.1
+              │           └─ PFL-4.1 (⚠ HITL — human unblocks after bake period)
+              └─ PFL-2.1
+                    └─ PFL-3.2
+                          └─ PFL-4.1 (⚠ HITL — human unblocks after bake period)
 ```
 
 ### Test Decisions (per task)
