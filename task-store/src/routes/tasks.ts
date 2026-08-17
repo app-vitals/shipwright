@@ -98,7 +98,10 @@ function assertNoLifecycleFieldWrite(
 //   hitlNotifiedAt — dropped in HSR-1; Task.hitl itself is unchanged and stays writable.
 //   requiresHumanApproval — dropped in RHA-1.4; the merge-approval gate that consulted
 //   it was removed from the deploy workflow in RHA-1.1.
-const REMOVED_TASK_FIELDS = ["hitlNotifiedAt", "requiresHumanApproval"] as const;
+const REMOVED_TASK_FIELDS = [
+  "hitlNotifiedAt",
+  "requiresHumanApproval",
+] as const;
 
 function stripRemovedFields(body: Record<string, unknown>): void {
   for (const key of REMOVED_TASK_FIELDS) {
@@ -552,15 +555,21 @@ export function createTasksRoutes(
     const scopeDegraded = c.get("scopeDegraded");
     const stateRaw = c.req.query("state");
     const prRaw = c.req.query("pr");
+    const hitl =
+      c.req.query("hitl") === "true"
+        ? true
+        : c.req.query("hitl") === "false"
+          ? false
+          : undefined;
 
     // Note: ?updatedSince, ?limit, and ?offset are intentionally NOT
     // threaded into listReady()/listBlocked() below (?sort applies only to
     // the ?state=blocked branch). Both are convenience endpoints computed
     // over the *entire* task graph (dependency resolution needs every task,
     // not a recency-windowed or paginated subset). session/source/repo/org/
-    // claimedBy/pr/branch/assignee DO apply to both listReady() (TRF-1.1)
-    // and listBlocked() (ATB-1.2) — same parsing as the fallback branch
-    // below, just also forwarded here.
+    // claimedBy/pr/branch/assignee/hitl DO apply to both listReady()
+    // (TRF-1.1) and listBlocked() (ATB-1.2, HTF-1.1) — same parsing as the
+    // fallback branch below, just also forwarded here.
     // ?ready=true is the legacy spelling; ?state=ready is the new form.
     if (c.req.query("ready") === "true" || stateRaw === "ready") {
       // Pass repos to listReady for repo-scoped agent tokens.
@@ -576,6 +585,7 @@ export function createTasksRoutes(
           pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
+          hitl,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -596,6 +606,7 @@ export function createTasksRoutes(
           pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
           branch: c.req.query("branch"),
           assignee: c.req.query("assignee"),
+          hitl,
         },
       );
       return c.json({ tasks, total: tasks.length, scopeDegraded }, 200);
@@ -624,12 +635,7 @@ export function createTasksRoutes(
       claimedBy: c.req.query("claimedBy"),
       pr: prRaw !== undefined ? Number.parseInt(prRaw, 10) : undefined,
       branch: c.req.query("branch"),
-      hitl:
-        c.req.query("hitl") === "true"
-          ? true
-          : c.req.query("hitl") === "false"
-            ? false
-            : undefined,
+      hitl,
       limit:
         limitRaw !== undefined
           ? Number.parseInt(limitRaw, 10) || undefined

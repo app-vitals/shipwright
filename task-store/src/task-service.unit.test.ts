@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
+import { FixedClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import type { PrismaClient, Task } from "./index.ts";
 import type { ReadyTaskLike } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
 import { type TaskListFilters, TaskService } from "./task-service.ts";
-import { FixedClock } from "./clock.ts";
 
 // ─── Minimal in-memory stub matching only the logic under test ────────────────
 
@@ -1210,6 +1210,54 @@ describe("TaskService.listReady() filters (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t1"]);
   });
 
+  // ─── hitl (HTF-1.1) ───────────────────────────────────────────────────────
+  //
+  // resolveReadyTasks() already excludes task.hitl === true from the ready
+  // set entirely (see ready.ts:80) — hitl:true tasks are never ready
+  // regardless of this filter. The new post-filter narrows among the
+  // *already-ready* set (hitl: false or hitl: null), so hitl: true here
+  // always yields [], and hitl: false narrows out hitl: null tasks.
+
+  it("listReady({ hitl: true }) returns no tasks — hitl:true tasks are never ready", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", hitl: false }),
+      makeReadyTask({ id: "t2", hitl: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      hitl: true,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  it("listReady({ hitl: false }) returns only tasks with hitl === false", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", hitl: false }),
+      makeReadyTask({ id: "t2", hitl: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {
+      hitl: false,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listReady() with hitl unset returns every ready task regardless of hitl value (back-compat)", async () => {
+    const prisma = makeReadyPrismaDouble([
+      makeReadyTask({ id: "t1", hitl: false }),
+      makeReadyTask({ id: "t2", hitl: null }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listReady(undefined, undefined, {});
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
   // ─── assignee ─────────────────────────────────────────────────────────────
 
   it("listReady({ assignee }) returns only tasks matching the assignee", async () => {
@@ -1649,6 +1697,61 @@ describe("TaskService.listBlocked() filters (unit)", () => {
     expect(result.map((t) => t.id)).toEqual(["t1"]);
   });
 
+  // ─── hitl (HTF-1.1) ───────────────────────────────────────────────────────
+  //
+  // Unlike listReady(), hitl:true tasks DO appear in the blocked set —
+  // computeBlockedBy() sets a {type:"hitl"} blockedBy entry whenever
+  // task.hitl === true (blocked-by.ts:66-68), so a pending hitl:true task is
+  // blocked. Both fixtures below use status:"blocked" explicitly so they're
+  // included in the blocked set regardless of hitl-driven blockedBy content,
+  // isolating the hitl post-filter itself from listBlocked()'s inclusion
+  // rules.
+
+  it("listBlocked({ hitl: true }) returns only tasks with hitl === true", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", status: "blocked", hitl: true }),
+      makeBlockedFilterTask({ id: "t2", status: "blocked", hitl: false }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      hitl: true,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t1"]);
+  });
+
+  it("listBlocked({ hitl: false }) returns only tasks with hitl === false", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", status: "blocked", hitl: true }),
+      makeBlockedFilterTask({ id: "t2", status: "blocked", hitl: false }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(undefined, undefined, undefined, {
+      hitl: false,
+    });
+
+    expect(result.map((t) => t.id)).toEqual(["t2"]);
+  });
+
+  it("listBlocked() with hitl unset returns every blocked task regardless of hitl value (back-compat)", async () => {
+    const prisma = makeBlockedFilterPrismaDouble([
+      makeBlockedFilterTask({ id: "t1", status: "blocked", hitl: true }),
+      makeBlockedFilterTask({ id: "t2", status: "blocked", hitl: false }),
+    ]);
+    const service = new TaskService(prisma);
+
+    const result = await service.listBlocked(
+      undefined,
+      undefined,
+      undefined,
+      {},
+    );
+
+    expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
   // ─── assignee ─────────────────────────────────────────────────────────────
 
   it("listBlocked({ assignee }) returns only tasks matching the assignee", async () => {
@@ -1928,7 +2031,12 @@ describe("TaskService.listBlocked() filters (unit)", () => {
     ]);
     const service = new TaskService(prisma);
 
-    const result = await service.listBlocked(undefined, undefined, undefined, {});
+    const result = await service.listBlocked(
+      undefined,
+      undefined,
+      undefined,
+      {},
+    );
 
     expect(result.map((t) => t.id).sort()).toEqual(["t1", "t2"]);
   });
