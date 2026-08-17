@@ -125,8 +125,12 @@ spec:
             {{- end }}
             {{- if or (eq .Values.auth.mode "open") (eq .Values.auth.mode "none") }}
             # auth.mode=open (or deprecated alias "none") — dev auth, NO OAuth.
-            # Insecure: do not expose publicly. NODE_ENV is intentionally NOT set
-            # to production so the dev-auth path stays enabled.
+            # Insecure: do not expose publicly. NODE_ENV must be explicitly
+            # overridden to a non-production value: the admin image bakes
+            # NODE_ENV=production (admin/Dockerfile), which would hard-block the
+            # dev-auth path if left to the image default.
+            - name: NODE_ENV
+              value: "development"
             - name: ADMIN_DEV_AUTH
               value: "true"
             {{- else if eq .Values.auth.mode "google" }}

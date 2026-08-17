@@ -317,7 +317,8 @@ chart does not provision deployment-wide Claude credentials.
 
 None — Minikube runs plain HTTP (`tls.certManager.enabled=false`, the default).
 
-> ⚠️ The Minikube profile sets `auth.mode=open`, which sets `ADMIN_DEV_AUTH=true`:
+> ⚠️ The Minikube profile sets `auth.mode=open`, which sets `ADMIN_DEV_AUTH=true`
+> (plus `NODE_ENV=development`, overriding the image's baked-in production default):
 > **anyone who can reach the admin service is treated as authenticated.** It also
 > sets a known literal PostgreSQL password. Never expose this install publicly.
 > For real access control use `auth.mode=google` (see the GKE section).
@@ -666,8 +667,11 @@ The admin service's `auth.mode` selects how users authenticate to the admin UI.
 
 ### `auth.mode=open` — dev auth (default)
 
-Sets `ADMIN_DEV_AUTH=true`: a working UI with **no real authentication**. Anyone
-who can reach the service is authenticated. This is the Minikube/dev default.
+Sets `ADMIN_DEV_AUTH=true` and `NODE_ENV=development`: a working UI with **no
+real authentication**. Anyone who can reach the service is authenticated. This is
+the Minikube/dev default. The explicit `NODE_ENV=development` matters — the admin
+image bakes `NODE_ENV=production`, which hard-blocks the dev-auth path unless the
+deployment overrides it.
 
 > ⚠️ **Security warning — do not expose `auth.mode=open` publicly.** It performs
 > no authentication: any client that can reach the admin service is treated as a
