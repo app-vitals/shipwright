@@ -236,6 +236,12 @@ enum PrFindingSource {
 // at is an ISO timestamp of when the finding was triaged, stamped by the
 // caller at insert time — following the same "String for JS-interface-
 // originated timestamps" convention as the rest of this schema.
+//
+// The pullRequest relation intentionally omits onDelete (defaulting to
+// RESTRICT) rather than the Cascade/SetNull used elsewhere in this repo —
+// findings are a triage record and should never silently disappear if their
+// parent PullRequest row were ever deleted. Nothing deletes PullRequest rows
+// today, so this has no live effect.
 
 model PrFinding {
   id          String               @id @default(cuid())
