@@ -205,7 +205,7 @@ describeOrSkip("PrFinding model (integration)", () => {
     expect(all).toHaveLength(5);
   });
 
-  it("cascades or otherwise correctly associates when the PullRequest FK is deleted separately", async () => {
+  it("enforces the PullRequest FK — findings must be deleted before their parent PR", async () => {
     const pr = await prisma.pullRequest.create({
       data: { repo: "app-vitals/shipwright", prNumber: 4205 },
     });
