@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.11.55] - 2026-08-17
+
+### Fixed
+
+- `auth.mode=open`/`none` deployments no longer have dev auth blocked by the admin image's baked-in `NODE_ENV=production` default — set explicitly in `admin-deployment.yaml`
+
 ## [1.11.54] - 2026-08-15
 
 ### Changed
