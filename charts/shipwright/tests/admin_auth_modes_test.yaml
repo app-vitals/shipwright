@@ -1,5 +1,7 @@
 suite: admin auth modes (open vs google)
-# HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true and NO NODE_ENV.
+# HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true + NODE_ENV=development
+# (the image bakes NODE_ENV=production, which would hard-block dev auth if the
+# deployment left it to the image default).
 # auth.mode=google → NODE_ENV=production + Google OAuth env (from the admin
 # Secret) + SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
 templates:
@@ -17,10 +19,15 @@ tests:
             name: ADMIN_DEV_AUTH
             value: "true"
 
-  - it: open mode does NOT set NODE_ENV=production (keeps dev auth enabled)
+  - it: open mode sets NODE_ENV=development (overrides the image's baked-in production default)
     set:
       auth.mode: open
     asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_ENV
+            value: "development"
       - notContains:
           path: spec.template.spec.containers[0].env
           content:
