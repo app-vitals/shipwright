@@ -374,7 +374,7 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
 | `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
 | `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains `"consecutive skips"`), also clears `blocked=false` and `blockedReason=null` in the same update — otherwise `blocked`/`blockedReason` are left untouched (e.g. a block set by the CI-failure-streak mechanism in `POST /prs/:id/patch` is not cleared) |
-| `POST /prs/:id/findings` | Append a review/patch finding to the PR. Request body: `{ref, disposition, source, evidence, at?}` where `disposition` is one of `resolved`, `superseded`, `rejected`; `source` is one of `review`, `patch`. Authority rule (server-enforced): `source:"patch"` may only submit `disposition:"rejected"` (returns `400` otherwise); `source:"review"` may submit any disposition. Returns `201` with the created `PrFinding` record. |
+| `POST /prs/:id/findings` | Append a review/patch finding to the PR. Request body: `{ref, disposition, source, evidence, at?, agentId?}` where `disposition` is one of `resolved`, `superseded`, `rejected`; `source` is one of `review`, `patch`. Authority rule (server-enforced): `source:"patch"` may only submit `disposition:"rejected"` (returns `400` otherwise); `source:"review"` may submit any disposition. Returns `201` with the created `PrFinding` record. |
 
 #### PR state enums
 
@@ -413,6 +413,7 @@ A `PrFinding` object represents a single code finding that has been triaged duri
 | `source` | enum | Which pipeline recorded this finding: `review` (code review phase) or `patch` (automated patch/fix phase). Authority rule (enforced server-side): `source:"patch"` may only submit `disposition:"rejected"`; `source:"review"` may submit any disposition. |
 | `evidence` | string | Human-readable explanation of the triage decision (e.g., `"Fixed the null check in commit abc123"`, `"Already superseded by the bounds-check fix"`, `"This is intentional — caller guarantees non-null"`) |
 | `at` | string | ISO timestamp of when the finding was triaged / resolved (defaults to current time if omitted on creation) |
+| `agentId` | string \| null | Optional agent instance that triaged this finding (e.g., the agent ID that performed the review or submitted the patch fix). Set via the `POST /prs/:id/findings` request body; defaults to `null` when omitted. |
 | `createdAt` | string | ISO timestamp when the task-store record itself was created |
 
 #### PR timestamp fields
