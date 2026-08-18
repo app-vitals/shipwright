@@ -123,6 +123,9 @@ const stubPrService: PullRequestServiceLike = {
   async claimNext() {
     return null;
   },
+  async appendFinding() {
+    return {} as never;
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────

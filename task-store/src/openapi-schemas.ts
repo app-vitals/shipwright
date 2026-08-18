@@ -245,6 +245,34 @@ export const TaskSchema = z
 
 export type Task = z.infer<typeof TaskSchema>;
 
+// ─── PR Finding ───────────────────────────────────────────────────────────────
+// Defined ahead of PullRequestSchema so PullRequestSchema's `findings` field
+// can reference it directly (no z.lazy — there's no circular reference here,
+// and zod-to-openapi can't introspect a z.lazy() wrapper without an explicit
+// `type` annotation via .openapi()).
+
+export const PrFindingSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxfinding123456" }),
+    prRecordId: z.string().openapi({ example: "clx0987654321" }),
+    ref: z.string().openapi({ example: "src/foo.ts:42" }),
+    disposition: z
+      .enum(["resolved", "superseded", "rejected"])
+      .openapi({ example: "resolved" }),
+    source: z.enum(["review", "patch"]).openapi({ example: "review" }),
+    evidence: z.string().openapi({
+      example: "Fixed the null check in the follow-up commit.",
+    }),
+    at: z.string().openapi({ example: "2026-08-17T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-08-17T12:00:00.000Z" }),
+  })
+  .openapi("PrFinding");
+
+export type PrFinding = z.infer<typeof PrFindingSchema>;
+
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 
 export const PullRequestSchema = z
@@ -364,6 +392,13 @@ export const PullRequestSchema = z
       .string()
       .datetime()
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
+    findings: z
+      .array(PrFindingSchema)
+      .optional()
+      .openapi({
+        description:
+          "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
+      }),
   })
   .openapi("PullRequest");
 
@@ -710,3 +745,30 @@ export const ClaimNextResponseSchema = z
     phase: z.enum(["review", "patch", "deploy"]).openapi({ example: "review" }),
   })
   .openapi("ClaimNextResponse");
+
+/** Request body for POST /prs/:id/findings. */
+export const CreateFindingBodySchema = z
+  .object({
+    ref: z.string().openapi({
+      example: "src/foo.ts:42",
+      description: "Identifier for the finding (e.g. file:line or a slug).",
+    }),
+    disposition: z.enum(["resolved", "superseded", "rejected"]).openapi({
+      example: "resolved",
+      description:
+        "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
+    }),
+    source: z.enum(["review", "patch"]).openapi({
+      example: "review",
+      description: "Which pipeline phase is recording this finding.",
+    }),
+    evidence: z.string().openapi({
+      example: "Fixed the null check in the follow-up commit.",
+    }),
+    at: z.string().optional().openapi({
+      example: "2026-08-17T12:00:00.000Z",
+      description:
+        "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
+    }),
+  })
+  .openapi("CreateFindingBody");

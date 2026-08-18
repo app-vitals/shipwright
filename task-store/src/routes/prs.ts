@@ -23,6 +23,9 @@
  *   POST   /prs/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /prs/:id/skip/reset  reset skipCount back to 0; also clears blocked/blockedReason
  *                                but only when blockedReason matches the skip-auto-block pattern
+ *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
+ *                              — source:"patch" may only submit disposition:"rejected" (400
+ *                              otherwise); source:"review" may submit any disposition
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -34,8 +37,10 @@ import {
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
   ClaimPrBodySchema,
+  CreateFindingBodySchema,
   ErrorSchema,
   PatchPrBodySchema,
+  PrFindingSchema,
   PrIdParamSchema,
   PrListQuerySchema,
   PrListResponseSchema,
@@ -297,6 +302,36 @@ const skipResetRoute = createRoute({
     200: {
       content: { "application/json": { schema: PullRequestSchema } },
       description: "Updated PR",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const findingsRoute = createRoute({
+  method: "post",
+  path: "/:id/findings",
+  tags: ["PRs"],
+  summary:
+    "Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'",
+  request: {
+    params: PrIdParamSchema,
+    body: {
+      content: { "application/json": { schema: CreateFindingBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    201: {
+      content: { "application/json": { schema: PrFindingSchema } },
+      description: "Finding recorded",
+    },
+    400: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description:
+        "Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected'",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -582,6 +617,53 @@ export function createPrsRoutes(
   app.openapi(skipResetRoute, async (c): Promise<any> => {
     const pr = await prService.resetSkip(c.req.param("id"));
     return c.json(pr, 200);
+  });
+
+  // ─── Findings ──────────────────────────────────────────────────────────────
+  // Server-side source/disposition authority enforcement — mirrors the
+  // PATCH_ALLOWED_FIELDS allowlist pattern above: the API layer, not command
+  // prose, is the sole arbiter. source:"patch" cannot unilaterally resolve or
+  // supersede a finding it didn't originate (only "rejected" is permitted);
+  // source:"review" may write any disposition.
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(findingsRoute, async (c): Promise<any> => {
+    const body = await readJson(c);
+    const { ref, disposition, source, evidence, at } = body;
+
+    if (typeof ref !== "string" || !ref) {
+      throw new BadRequestError("ref is required");
+    }
+    if (
+      disposition !== "resolved" &&
+      disposition !== "superseded" &&
+      disposition !== "rejected"
+    ) {
+      throw new BadRequestError(
+        "disposition must be one of: resolved, superseded, rejected",
+      );
+    }
+    if (source !== "review" && source !== "patch") {
+      throw new BadRequestError("source must be one of: review, patch");
+    }
+    if (typeof evidence !== "string" || !evidence) {
+      throw new BadRequestError("evidence is required");
+    }
+    if (source === "patch" && disposition !== "rejected") {
+      throw new BadRequestError(
+        "source:'patch' may only submit disposition:'rejected' — only source:'review' may resolve or supersede a finding",
+      );
+    }
+
+    const resolvedAt = typeof at === "string" && at ? at : undefined;
+
+    const finding = await prService.appendFinding(c.req.param("id"), {
+      ref,
+      disposition,
+      source,
+      evidence,
+      at: resolvedAt,
+    });
+    return c.json(finding, 201);
   });
 
   return app;
