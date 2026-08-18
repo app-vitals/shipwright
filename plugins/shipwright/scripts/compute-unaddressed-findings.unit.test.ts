@@ -21,6 +21,7 @@ import {
   isResolvedByPriorFindingsStatus,
   isSelfCleanApprove,
   isSupersededBySelfReview,
+  parseCliInput,
   type PrFinding,
   type PrReviewData,
   type ReviewNode,
@@ -1233,6 +1234,102 @@ describe("isResolvedByLedger", () => {
 
   test("false when findings is empty", () => {
     expect(isResolvedByLedger(ref, [])).toBe(false);
+  });
+});
+
+// ─── parseCliInput (direct calls — validation branches, not exercised by the
+// subprocess-spawn CLI entrypoint tests below, which only cover the happy
+// path per scenario) ────────────────────────────────────────────────────────
+
+describe("parseCliInput", () => {
+  function validInput(overrides: Record<string, unknown> = {}) {
+    return {
+      currentUser: "the-agent",
+      headRefOid: "current-head-sha",
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+      ...overrides,
+    };
+  }
+
+  test("parses valid input, defaulting priorFindingsStatus and findings to [] when absent", () => {
+    const result = parseCliInput(JSON.stringify(validInput()));
+    expect(result.currentUser).toBe("the-agent");
+    expect(result.headRefOid).toBe("current-head-sha");
+    expect(result.priorFindingsStatus).toEqual([]);
+    expect(result.findings).toEqual([]);
+  });
+
+  test("passes findings through when present", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: "sha@2026-05-26T10:00:00Z",
+        disposition: "resolved",
+        source: "review",
+        evidence: "fixed",
+        at: "2026-05-26T11:00:00Z",
+        createdAt: "2026-05-26T11:00:00Z",
+      },
+    ];
+    const result = parseCliInput(JSON.stringify(validInput({ findings })));
+    expect(result.findings).toEqual(findings);
+  });
+
+  test("throws when currentUser is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).currentUser = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a string "currentUser" field',
+    );
+  });
+
+  test("throws when headRefOid is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).headRefOid = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a string "headRefOid" field',
+    );
+  });
+
+  test("throws when reviews is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).reviews = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "reviews" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when reviewThreads is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).reviewThreads = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "reviewThreads" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when comments is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).comments = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "comments" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when priorFindingsStatus is present but not an array", () => {
+    const input = validInput({ priorFindingsStatus: "not-an-array" });
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON "priorFindingsStatus" field, when present, must be an array',
+    );
+  });
+
+  test("throws when findings is present but not an array", () => {
+    const input = validInput({ findings: "not-an-array" });
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON "findings" field, when present, must be an array',
+    );
   });
 });
 

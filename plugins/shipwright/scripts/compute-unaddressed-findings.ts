@@ -427,9 +427,9 @@ export function hasUnaddressedFindings(
 
 // ─── CLI ──────────────────────────────────────────────────────────────────────
 
-type CliInput = PrReviewData & { currentUser: string };
+export type CliInput = PrReviewData & { currentUser: string };
 
-function parseCliInput(raw: string): CliInput {
+export function parseCliInput(raw: string): CliInput {
   const parsed = JSON.parse(raw) as Partial<CliInput>;
   if (typeof parsed.currentUser !== "string") {
     throw new Error('Input JSON must have a string "currentUser" field');
