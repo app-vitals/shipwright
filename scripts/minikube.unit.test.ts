@@ -18,6 +18,8 @@ import {
   buildTeardownCommands,
   type Command,
   hostsEntryPresent,
+  ingressHostResolves,
+  openInBrowser,
   DEPLOYMENTS,
   missingBinaries,
   runCommands,
@@ -296,6 +298,56 @@ describe("hostsEntryPresent", () => {
 
   it("returns false for an empty hosts file", () => {
     expect(hostsEntryPresent("", "shipwright.local")).toBe(false);
+  });
+});
+
+describe("ingressHostResolves", () => {
+  it("returns true when the injected reader finds the host mapped", () => {
+    expect(
+      ingressHostResolves(() => "127.0.0.1 shipwright.local\n"),
+    ).toBe(true);
+  });
+
+  it("returns false when the injected reader finds no mapping", () => {
+    expect(
+      ingressHostResolves(() => "127.0.0.1 localhost\n"),
+    ).toBe(false);
+  });
+
+  it("returns false (not throw) when the injected reader fails", () => {
+    // Mirrors an unreadable /etc/hosts — the try/catch swallows the error.
+    expect(
+      ingressHostResolves(() => {
+        throw new Error("EACCES");
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("openInBrowser", () => {
+  it("execs the argv built by buildOpenCommand for the given platform", () => {
+    const calls: string[][] = [];
+    openInBrowser("http://x/y", (argv) => calls.push(argv), "darwin");
+    expect(calls).toEqual([["open", "http://x/y"]]);
+  });
+
+  it("does not call exec when buildOpenCommand has no known opener", () => {
+    const calls: string[][] = [];
+    openInBrowser("http://x/y", (argv) => calls.push(argv), "win32");
+    expect(calls).toEqual([]);
+  });
+
+  it("swallows a failing exec instead of throwing", () => {
+    // No browser to launch (headless, no DISPLAY) — the caller must not crash.
+    expect(() =>
+      openInBrowser(
+        "http://x/y",
+        () => {
+          throw new Error("no display");
+        },
+        "linux",
+      ),
+    ).not.toThrow();
   });
 });
 

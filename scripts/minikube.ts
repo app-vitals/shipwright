@@ -471,20 +471,27 @@ function printNextSteps(): void {
 }
 
 /** True when /etc/hosts maps the ingress host. Unreadable file → assume no. */
-function ingressHostResolves(): boolean {
+export function ingressHostResolves(
+  readFile: (path: string, encoding: string) => string = (p, e) =>
+    readFileSync(p, e),
+): boolean {
   try {
-    return hostsEntryPresent(readFileSync("/etc/hosts", "utf8"), INGRESS_HOST);
+    return hostsEntryPresent(readFile("/etc/hosts", "utf8"), INGRESS_HOST);
   } catch {
     return false;
   }
 }
 
 /** Best-effort browser launch — never fails the bring-up. */
-function openInBrowser(url: string): void {
-  const argv = buildOpenCommand(url);
+export function openInBrowser(
+  url: string,
+  exec: ExecFn = realExec,
+  platform: string = process.platform,
+): void {
+  const argv = buildOpenCommand(url, platform);
   if (argv === null) return;
   try {
-    realExec(argv);
+    exec(argv);
   } catch {
     // No browser to launch (headless, no DISPLAY). The URL is printed above.
   }
