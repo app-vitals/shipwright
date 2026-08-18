@@ -1529,3 +1529,93 @@ describe("review.md — Step 9.5 wires the fourth exclusion via priorFindingsSta
     expect(step95Section).toContain("CPF-2.3");
   });
 });
+
+describe("review.md — findings ledger persistence (PFL-2.1)", () => {
+  let step5Section: string;
+  let step7Section: string;
+
+  beforeAll(() => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(step5Idx);
+    step5Section = content.slice(step5Idx, step6Idx);
+
+    const step7Idx = content.indexOf("## Step 7: Deep Review");
+    const step8Idx = content.indexOf("## Step 8: Score and Classify Findings");
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step8Idx).toBeGreaterThan(step7Idx);
+    step7Section = content.slice(step7Idx, step8Idx);
+  });
+
+  it("Step 5.5 has a Findings Ledger Persistence subsection tagged PFL-2.1", () => {
+    expect(step5Section).toContain("PFL-2.1");
+    expect(step5Section.toLowerCase()).toContain("findings ledger");
+  });
+
+  it("posts a resolved ledger entry for each isSelfCleanApprove prior review, with source: review", () => {
+    const ledgerIdx = step5Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step5Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("isSelfCleanApprove");
+    expect(ledgerSection).toContain('"disposition": "resolved"');
+    expect(ledgerSection).toContain('"source": "review"');
+    expect(ledgerSection).toContain("/findings");
+    expect(ledgerSection).toContain("reviewRef(review)");
+  });
+
+  it("posts a superseded ledger entry for each isSupersededBySelfReview prior review, with source: review", () => {
+    const ledgerIdx = step5Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step5Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("isSupersededBySelfReview");
+    expect(ledgerSection).toContain('"disposition": "superseded"');
+    expect(ledgerSection).toContain('"source": "review"');
+  });
+
+  it("documents the ledger POST is best-effort persistence, not a new decision, and non-fatal on failure", () => {
+    const ledgerIdx = step5Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step5Section.slice(ledgerIdx);
+
+    expect(ledgerSection.toLowerCase()).toContain("best-effort");
+    expect(ledgerSection.toLowerCase()).toContain("non-fatal");
+  });
+
+  it("Step 7 posts a resolved ledger entry for each priorFindingsStatus[] entry with resolved: true", () => {
+    expect(step7Section).toContain("PFL-2.1");
+    const ledgerIdx = step7Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step7Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("resolved === true");
+    expect(ledgerSection).toContain('"disposition": "resolved"');
+    expect(ledgerSection).toContain('"source": "review"');
+    expect(ledgerSection).toContain("/findings");
+    expect(ledgerSection).toContain("entry.evidence");
+  });
+
+  it("Step 7's ledger write is scoped to entries already parsed from the subagent, not a new decision", () => {
+    const ledgerIdx = step7Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step7Section.slice(ledgerIdx);
+
+    expect(ledgerSection.toLowerCase()).toContain("best-effort");
+    expect(ledgerSection.toLowerCase()).toContain("non-fatal");
+  });
+
+  it("uses the standard task-store curl convention with Authorization bearer and Content-Type json", () => {
+    const step5LedgerIdx = step5Section.indexOf("PFL-2.1");
+    const step5Ledger = step5Section.slice(step5LedgerIdx);
+    const step7LedgerIdx = step7Section.indexOf("PFL-2.1");
+    const step7Ledger = step7Section.slice(step7LedgerIdx);
+
+    for (const section of [step5Ledger, step7Ledger]) {
+      expect(section).toContain("Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN");
+      expect(section).toContain("Content-Type: application/json");
+      expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings");
+    }
+  });
+});

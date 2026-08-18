@@ -297,6 +297,51 @@ back to `'sonnet'`.
    or superseded self-reviews), the field is simply empty and Step 7 omits the corresponding
    prompt input entirely (see Step 7).
 
+   #### Findings Ledger Persistence — Self-Review Judgments (PFL-2.1)
+
+   The two exclusions just applied above (`isSelfCleanApprove`, `isSupersededBySelfReview`) are
+   real judgments — a review is being decided as resolved or superseded right now, in order to
+   exclude it from `priorQualifyingReviews`. This subsection makes that judgment durable by
+   persisting it to the findings ledger (`POST /prs/:id/findings`, PFL-1.2). **This does not
+   change what was just decided above** — it is purely additive logging of a decision already
+   made; `priorQualifyingReviews` itself is unaffected by whether these POSTs succeed.
+
+   For every CURRENT_USER review considered above (`author.login === CURRENT_USER`,
+   `commit.oid !== headRefOid`) that was excluded from `priorQualifyingReviews` because
+   `isSelfCleanApprove(review, CURRENT_USER)` is true, POST a `resolved` ledger entry:
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
+     -d '{"ref": "{reviewRef(review)}", "disposition": "resolved", "source": "review", "evidence": "Self-review is a clean APPROVE with no blocking findings."}' \
+     >/dev/null 2>&1 || echo "⚠ ledger POST failed for {reviewRef(review)} — continuing (non-fatal)"
+   ```
+   `ref` is `reviewRef(review)` (the same full-`commit.oid`+`submittedAt` format used
+   throughout this step); `evidence` is a short description of the clean-APPROVE judgment, not
+   freehand — it need not restate the review body.
+
+   For every CURRENT_USER review considered above that was instead excluded because
+   `isSupersededBySelfReview(review, allReviews, CURRENT_USER)` is true, POST a `superseded`
+   ledger entry:
+   ```bash
+   curl -sf -X POST \
+     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     -H "Content-Type: application/json" \
+     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
+     -d '{"ref": "{reviewRef(review)}", "disposition": "superseded", "source": "review", "evidence": "Superseded by a later clean self-review submitted at {laterReview.submittedAt}."}' \
+     >/dev/null 2>&1 || echo "⚠ ledger POST failed for {reviewRef(review)} — continuing (non-fatal)"
+   ```
+   `{laterReview.submittedAt}` is the `submittedAt` of the later, genuinely-clean self-review
+   that `isSupersededBySelfReview` matched — cite it so the ledger entry's evidence is
+   self-contained.
+
+   **Best-effort, not a new decision.** These POSTs persist judgments `isSelfCleanApprove` and
+   `isSupersededBySelfReview` already computed above — they do not gate, delay, or alter
+   `priorQualifyingReviews`, Step 7's subagent dispatch, or any later step. A failed POST (non-2xx,
+   timeout, or any other curl error) is non-fatal: log the warning shown above and continue: the
+   review pipeline must never block on a ledger write.
+
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
 7. **Test-readiness context** (optional): try to read `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/docs/test-readiness/test-system.md`. If absent, note that no repo-specific test-readiness doc exists. When the changed files include any path that looks like a test file — by common conventions across languages (e.g. files named or located in a way that signals they contain tests, such as files in `test/`, `tests/`, `spec/`, or `__tests__/` directories, or files whose names follow typical test-naming conventions for the project's language), also extract the "## Testing" section from the root CLAUDE.md (if present). Use the project's language and toolchain (visible from the diff and CLAUDE.md) to recognise test files — do not apply a fixed set of glob patterns. Combine both pieces into `testReadinessContext`. If neither produces content, `testReadinessContext` is absent — omit it entirely from the subagent prompt.
@@ -441,6 +486,35 @@ identifies which prior review the entry addresses (matching the `ref` passed in 
 explaining why the issue is not resolved. Parse the full response and carry the data into
 Step 8 and Step 9 (Step 9's Re-Review "Prior Findings Resolution" table is populated from
 `priorFindingsStatus[]` — see Step 9).
+
+#### Findings Ledger Persistence — Prior Findings Attestations (PFL-2.1)
+
+Once `priorFindingsStatus[]` has been parsed above, persist each `resolved: true` attestation
+to the findings ledger. **This does not change the attestation itself** — Step 9's Re-Review
+table and Step 9.5's `isResolvedByPriorFindingsStatus` exclusion still consume
+`priorFindingsStatus[]` exactly as parsed; this is purely additive logging of the subagent's
+own determination, using its own evidence string verbatim:
+
+```bash
+for entry in priorFindingsStatus[] where entry.resolved === true:
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
+    -d '{"ref": "{entry.ref}", "disposition": "resolved", "source": "review", "evidence": "{entry.evidence}"}' \
+    >/dev/null 2>&1 || echo "⚠ ledger POST failed for {entry.ref} — continuing (non-fatal)"
+```
+
+`{entry.ref}` and `{entry.evidence}` are the same `ref`/`evidence` values from the parsed
+`priorFindingsStatus[]` entry — `evidence` is passed through verbatim, not rewritten.
+Entries with `resolved: false` are not posted here (there is nothing resolved to persist;
+they remain a normal unaddressed finding via the qualifying-review path).
+
+**Best-effort, not a new decision.** These POSTs persist attestations the subagent already
+made in its response above — they do not gate Step 8, Step 9, or Step 9.5's own consumption
+of `priorFindingsStatus[]`. A failed POST (non-2xx, timeout, or any other curl error) is
+non-fatal: log the warning shown above and continue — the actual review-posting logic must
+not be gated on ledger-write success.
 
 If the subagent returns malformed JSON, retry once with a reminder of the schema. If it
 still fails, fall back to an inline review in the main thread using the same rules
