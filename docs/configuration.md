@@ -172,6 +172,10 @@ Controls how the admin service provisions the Kubernetes workload backing each a
 | `MISE_CACHE_DIR` | `string` | `<AGENT_HOME>/mise/cache` | Override the mise cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_CACHE_HOME` | `string` | `<AGENT_HOME>/cache` | Override the XDG cache directory. Auto-derived from `AGENT_HOME`. |
 | `XDG_DATA_HOME` | `string` | `$HOME/.local/share` | Override the XDG data directory. Used to locate the mise data dir (`$XDG_DATA_HOME/mise`) when seeding a fresh PVC. |
+| `GOPATH` | `string` | `<AGENT_HOME>/go` | Go workspace root. Auto-derived from `AGENT_HOME`. Go ignores `XDG_CACHE_HOME` for modules, so leaving this at its `$HOME/go` default puts the module cache on the container's ephemeral overlay, where a single large dependency tree can exceed the pod's ephemeral-storage limit and evict it mid-run. |
+| `GOMODCACHE` | `string` | `<AGENT_HOME>/go/pkg/mod` | Go module cache. Auto-derived from `AGENT_HOME`; set explicitly so it stays on the PVC even if `GOPATH` is overridden. |
+| `npm_config_cache` | `string` | `<AGENT_HOME>/cache/npm` | npm cache directory. Auto-derived from `AGENT_HOME` — npm does not honour `XDG_CACHE_HOME` and would otherwise write to `$HOME/.npm` on ephemeral storage. |
+| `BUN_INSTALL_CACHE_DIR` | `string` | `<AGENT_HOME>/cache/bun` | Bun install cache directory. Auto-derived from `AGENT_HOME` — bun does not honour `XDG_CACHE_HOME` and would otherwise write to `$HOME/.bun/install/cache` on ephemeral storage. |
 | `SHIPWRIGHT_STARTUP_TIMEOUT_MS` | `number` | `180000` | Maximum milliseconds the entrypoint startup sequence may take before the agent exits. Override to a lower value (e.g. `10000`) in dev for faster fail-fast feedback. |
 | `AGENT_ALLOWED_TOOLS` | `string` (JSON array) | — | JSON array of allowed Claude tool patterns. Set by the admin service config sync; do not set manually in production. |
 

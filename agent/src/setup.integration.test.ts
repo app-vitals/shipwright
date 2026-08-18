@@ -558,6 +558,10 @@ describe("runMiseStartup", () => {
   const originalMiseCacheDir = process.env.MISE_CACHE_DIR;
   const originalXdgCacheHome = process.env.XDG_CACHE_HOME;
   const originalXdgDataHome = process.env.XDG_DATA_HOME;
+  const originalGoPath = process.env.GOPATH;
+  const originalGoModCache = process.env.GOMODCACHE;
+  const originalNpmCache = process.env.npm_config_cache;
+  const originalBunCache = process.env.BUN_INSTALL_CACHE_DIR;
   const originalHome = process.env.HOME;
   const originalPath = process.env.PATH;
 
@@ -573,6 +577,10 @@ describe("runMiseStartup", () => {
     process.env.MISE_CACHE_DIR = originalMiseCacheDir;
     process.env.XDG_CACHE_HOME = originalXdgCacheHome;
     process.env.XDG_DATA_HOME = originalXdgDataHome;
+    process.env.GOPATH = originalGoPath;
+    process.env.GOMODCACHE = originalGoModCache;
+    process.env.npm_config_cache = originalNpmCache;
+    process.env.BUN_INSTALL_CACHE_DIR = originalBunCache;
     process.env.HOME = originalHome;
     process.env.PATH = originalPath;
   });
@@ -610,6 +618,36 @@ describe("runMiseStartup", () => {
     expect(process.env.XDG_CACHE_HOME).toBe(join(testHome, "cache"));
     expect(existsSync(process.env.MISE_CACHE_DIR ?? "")).toBe(true);
     expect(existsSync(process.env.XDG_CACHE_HOME ?? "")).toBe(true);
+  });
+
+  it("pins the Go, npm and bun caches to the PVC (they ignore XDG)", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+
+    // GOMODCACHE defaults to $GOPATH/pkg/mod, which is under $HOME on the
+    // container's ephemeral overlay — a Terratest module tree there (~1.7GiB)
+    // blows the pod's ephemeral-storage limit and evicts it mid-run.
+    expect(process.env.GOPATH).toBe(join(testHome, "go"));
+    expect(process.env.GOMODCACHE).toBe(join(testHome, "go", "pkg", "mod"));
+    expect(process.env.npm_config_cache).toBe(join(testHome, "cache", "npm"));
+    expect(process.env.BUN_INSTALL_CACHE_DIR).toBe(
+      join(testHome, "cache", "bun"),
+    );
+
+    // Created eagerly so the first tool invocation writes to the PVC rather
+    // than falling back to a default path when the dir is missing.
+    expect(existsSync(process.env.GOMODCACHE ?? "")).toBe(true);
+    expect(existsSync(process.env.npm_config_cache ?? "")).toBe(true);
+    expect(existsSync(process.env.BUN_INSTALL_CACHE_DIR ?? "")).toBe(true);
+  });
+
+  it("leaves CARGO_HOME unset so mise owns the Rust toolchain install", async () => {
+    mkdirSync(join(testHome, "workspace"), { recursive: true });
+    const before = process.env.CARGO_HOME;
+    const mockExec = async () => ({ stdout: "", exitCode: 0 });
+    await runMiseStartup(testHome, mockExec);
+    expect(process.env.CARGO_HOME).toBe(before);
   });
 
   it("skips mise install when mise.toml absent", async () => {

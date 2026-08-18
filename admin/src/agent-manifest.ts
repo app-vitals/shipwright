@@ -43,10 +43,18 @@ export const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`
  * grow until the kubelet evicts neighbouring pods under node memory pressure
  * (observed: ~11.6Gi used against the 2Gi request). No CPU limit — CPU
  * contention throttles instead of evicting.
+ *
+ * ephemeral-storage is 4Gi, not the 1Gi Autopilot default: 1Gi left no room for
+ * a single build step's scratch space, and agents were evicted mid-run ("Pod
+ * ephemeral local storage usage exceeds the total limit of containers 1Gi"),
+ * losing the in-flight task. Tool caches are pinned to the PVC in the agent's
+ * runMiseStartup, so this budget only has to cover genuinely transient writes —
+ * e.g. a scan skill staging tool binaries in a mktemp dir. Requests and limits
+ * are kept equal because Autopilot bills the request either way.
  */
 export const AGENT_CONTAINER_RESOURCES = {
-  requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "1Gi" },
-  limits: { memory: "8Gi", "ephemeral-storage": "1Gi" },
+  requests: { cpu: "500m", memory: "2Gi", "ephemeral-storage": "4Gi" },
+  limits: { memory: "8Gi", "ephemeral-storage": "4Gi" },
 };
 
 /** Non-root uid/gid the agent runs as (matches the agent image). */

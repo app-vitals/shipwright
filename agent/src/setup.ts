@@ -617,6 +617,9 @@ export function ensureAgentHome(home: string): void {
  * - Sets MISE_DATA_DIR so installs land on the PVC
  * - Sets MISE_CACHE_DIR + XDG_CACHE_HOME so download tarballs and tool caches
  *   land on the PVC instead of ephemeral storage
+ * - Sets GOPATH/GOMODCACHE + npm/bun cache dirs, which ignore XDG, for the same
+ *   reason — an unpinned Go module cache alone can exceed the pod's
+ *   ephemeral-storage limit and get it evicted mid-run
  * - Runs `mise install` when workspace/mise.toml is present (idempotent)
  * - Prepends mise shim paths to process.env.PATH so subprocesses find tools
  *
@@ -642,6 +645,29 @@ export async function runMiseStartup(
   process.env.XDG_CACHE_HOME = join(home, "cache");
   mkdirSync(process.env.MISE_CACHE_DIR, { recursive: true });
   mkdirSync(process.env.XDG_CACHE_HOME, { recursive: true });
+
+  // XDG_CACHE_HOME covers most tooling, but three package managers ignore XDG
+  // and default to fixed paths under $HOME — which is the container's ephemeral
+  // overlay, not the PVC. Left unpinned they are charged against the pod's
+  // ephemeral-storage limit and evict it mid-run ("Pod ephemeral local storage
+  // usage exceeds the total limit of containers"). Go is the worst offender:
+  // GOMODCACHE defaults to $GOPATH/pkg/mod (NOT $XDG_CACHE_HOME), and a single
+  // `go mod download` on a Terratest module fetches ~1.7GiB. Note GOCACHE (the
+  // build cache) already follows XDG_CACHE_HOME, so only the module cache leaks.
+  //
+  // Pinning these to the PVC also means the caches survive a pod restart
+  // instead of being re-downloaded from scratch on every boot.
+  //
+  // CARGO_HOME is deliberately NOT pinned here: mise manages the Rust toolchain
+  // for workspaces that declare it and sets CARGO_HOME itself, so pre-setting it
+  // would fight the toolchain install.
+  process.env.GOPATH = join(home, "go");
+  process.env.GOMODCACHE = join(home, "go", "pkg", "mod");
+  process.env.npm_config_cache = join(home, "cache", "npm");
+  process.env.BUN_INSTALL_CACHE_DIR = join(home, "cache", "bun");
+  mkdirSync(process.env.GOMODCACHE, { recursive: true });
+  mkdirSync(process.env.npm_config_cache, { recursive: true });
+  mkdirSync(process.env.BUN_INSTALL_CACHE_DIR, { recursive: true });
 
   // Activate mise in any bash session the agent spawns (e.g. Claude Code's Bash
   // tool). The shims-on-PATH prepend below only reaches direct subprocesses;
