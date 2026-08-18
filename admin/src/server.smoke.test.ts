@@ -122,6 +122,7 @@ function buildComposedApp() {
     agentWorkQueueService: { push: notImplemented, get: notImplemented },
     prisma: stubPrisma,
     provisioner: {
+      canProvision: false,
       provision: notImplemented,
       deprovision: notImplemented,
       reconcile: notImplemented,
@@ -192,6 +193,7 @@ function buildComposedApp() {
       updateFields: notImplemented,
     },
     provisioner: {
+      canProvision: false,
       provision: notImplemented,
       deprovision: notImplemented,
       reconcile: notImplemented,

@@ -201,6 +201,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
     },
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",

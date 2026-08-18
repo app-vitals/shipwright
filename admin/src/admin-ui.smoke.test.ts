@@ -333,6 +333,7 @@ function makeMockDeps(
     googleClient: makeGoogleClient(),
     slackClient: { ...BASE_SLACK_CLIENT, ...slackClientOverride },
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",
@@ -629,6 +630,22 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Tokens");
     expect(html).toContain("Plugins");
     expect(html).toContain("admin@example.com");
+  });
+
+  it("authenticated GET /admin/agents/new returns 200 with a required type select listing the agent types", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Regression coverage for a bug where a consumer wiring up AdminUIDeps
+    // without the required `provisioner` field (it has no default, unlike
+    // agentTypeRegistry) caused this route to throw on `provisioner.canProvision`
+    // — a 500 that left the type picker (and its "required" select[name=type])
+    // missing entirely rather than merely disabled.
+    expect(html).toContain('<select id="type" name="type" class="form-input" required>');
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
   });
 
   it("nests shipwright-loop phase crons under the loop row instead of listing them flat", async () => {
@@ -2342,6 +2359,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async (id: string, opts: { slug: string }) => {
           provisionArgs = { id, opts };
           return { resourceName: "r", secretName: "s", deploymentName: "d" };
@@ -2445,6 +2463,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async () => {
           throw new Error("provisioning exploded");
         },
@@ -2530,6 +2549,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3022,6 +3042,7 @@ describe("admin UI — agent delete route", () => {
     const chatThreadsDeletedFor: string[] = [];
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3130,6 +3151,7 @@ describe("admin UI — agent delete route", () => {
     let deleted: string | null = null;
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3217,6 +3239,7 @@ describe("admin UI — agent delete route", () => {
   it("admin POST /admin/agents/:id/delete → surfaces manualStepsRequired on the success redirect when the agent has secret env rows", async () => {
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",

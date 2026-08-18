@@ -79,6 +79,15 @@ export interface ReconcileResult {
 }
 
 export interface AgentProvisioner {
+  /**
+   * Whether this provisioner actually creates cluster resources. `false` on the
+   * no-op implementation (Kubernetes provisioning disabled), where provision()
+   * returns plausible names without touching a cluster. Callers that offer an
+   * "in-cluster" runtime choice must check this first — otherwise an operator
+   * picks it, provision() silently succeeds, and they get an agent row with no
+   * pod behind it.
+   */
+  readonly canProvision: boolean;
   /** Mint a token and create the agent's Secret + Deployment. Idempotent. */
   provision(
     agentId: string,
@@ -222,6 +231,8 @@ function isNotFound(err: unknown): boolean {
 // ─── Kubernetes implementation ──────────────────────────────────────────────
 
 export class KubernetesAgentProvisioner implements AgentProvisioner {
+  readonly canProvision = true;
+
   private readonly tokenKey: string;
 
   constructor(
@@ -611,6 +622,8 @@ export class KubernetesAgentProvisioner implements AgentProvisioner {
  * admin service construct and run unchanged without a cluster.
  */
 export class NoopAgentProvisioner implements AgentProvisioner {
+  readonly canProvision = false;
+
   async provision(
     agentId: string,
     _opts?: { slug?: string },

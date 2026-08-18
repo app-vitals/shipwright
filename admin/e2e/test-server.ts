@@ -233,6 +233,21 @@ function buildMockDeps(): AdminUIDeps {
         missingRequiredEnv: [],
       }),
     },
+    provisioner: {
+      canProvision: false,
+      provision: async () => ({
+        resourceName: "r",
+        secretName: "s",
+        deploymentName: "d",
+      }),
+      deprovision: async () => {},
+      reconcile: async () => ({
+        recreated: [],
+        updated: [],
+        orphans: [],
+        failed: [],
+      }),
+    },
     sessionSecret: ADMIN_E2E_SESSION_SECRET,
     googleClientId: "e2e-google-client-id",
     googleClientSecret: "e2e-google-client-secret",

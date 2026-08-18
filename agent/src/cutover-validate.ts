@@ -4,7 +4,8 @@
  * runtime API for required credentials and crons.
  *
  * Checks:
- *  - SLACK_BOT_TOKEN present in env bundle
+ *  - SLACK_BOT_TOKEN reported (informational — absence means a chat-only agent,
+ *    which is a supported configuration, so this check never fails)
  *  - GitHub auth credentials present (App: GH_APP_ID + GH_APP_PRIVATE_KEY +
  *    GH_APP_INSTALLATION_ID; or PAT: GH_TOKEN)
  *  - At least one cron job configured
@@ -55,11 +56,15 @@ export async function validateCutover(
 
   return [
     {
+      // Slack is an optional interaction surface, not a requirement: an agent
+      // with no Slack credentials runs in offline mode (agent/src/index.ts) and
+      // is driven from the admin chat UI instead. Absence is reported, not
+      // failed — otherwise every chat-only agent fails cutover by design.
       name: "SLACK_BOT_TOKEN",
-      passed: hasSlack,
+      passed: true,
       message: hasSlack
         ? "SLACK_BOT_TOKEN is present"
-        : "SLACK_BOT_TOKEN is missing from env bundle",
+        : "SLACK_BOT_TOKEN is not set — chat-only agent (interact via /admin/chat)",
     },
     {
       name: "github_auth",

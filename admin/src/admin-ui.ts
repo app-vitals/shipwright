@@ -775,19 +775,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     invalid_author_allowlist_format:
       "Author allowlist entries must be valid GitHub logins.",
     invalid_type: "Select a valid agent type.",
+    provisioning_disabled:
+      "In-cluster provisioning is not enabled on this admin service — create a self-hosted agent instead.",
+    provision_failed:
+      "Failed to provision the agent's cluster resources — the agent was not created.",
   };
 
-  // ─── New local agent form (MUST be before /:id to avoid "new" being captured as param)
+  // ─── New agent form (MUST be before /:id to avoid "new" being captured as param)
 
   app.get("/admin/agents/new", requireAuth, (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const rawError = c.req.query("error") ?? undefined;
     const error = rawError ? (ERROR_MESSAGES[rawError] ?? rawError) : undefined;
     const types = agentTypeRegistry.listTypes();
-    return html(renderNewLocalAgentPage(c.var.userEmail, types, { error }));
+    return html(
+      renderNewLocalAgentPage(c.var.userEmail, types, {
+        error,
+        canProvision: provisioner.canProvision,
+      }),
+    );
   });
 
-  // ─── Create agent (local / self-hosted) ──────────────────────────────────
+  // ─── Create agent (self-hosted or provisioned in-cluster) ────────────────
 
   app.post("/admin/agents", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
@@ -795,12 +804,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let runtime: string | undefined;
+    let claudeCodeOauthToken: string | undefined;
     try {
       const formData = await c.req.formData();
       name = formData.get("name")?.toString()?.trim();
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      runtime = formData.get("runtime")?.toString()?.trim();
+      claudeCodeOauthToken = formData
+        .get("claudeCodeOauthToken")
+        ?.toString()
+        ?.trim();
     } catch {
       return c.redirect("/admin/agents/new", 302);
     }
@@ -813,9 +829,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!typeName || !agentTypeRegistry.tryGetManifest(typeName)) {
       return c.redirect("/admin/agents/new?error=invalid_type", 302);
     }
+    // Absent/unrecognized runtime means self-hosted — the historical behavior of
+    // this form, and what `task stack` depends on.
+    const inCluster = runtime === "in-cluster";
+    // Same "validate before creating any row" rule as the type check above: a
+    // no-op provisioner would let provision() succeed while creating nothing,
+    // leaving an agent row with no workload behind it.
+    if (inCluster && !provisioner.canProvision) {
+      return c.redirect("/admin/agents/new?error=provisioning_disabled", 302);
+    }
     const agent = await agentService.create({
       name,
-      selfHosted: true,
+      selfHosted: !inCluster,
       typeName,
     });
     // Attach repos if provided
@@ -854,6 +879,42 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (authorAllowlist.length > 0) {
         await agentService.updateFields(agent.id, { authorAllowlist });
       }
+    }
+    // Store the Claude credential before provisioning so the pod comes up with
+    // it already in its env bundle rather than failing its first turn.
+    if (claudeCodeOauthToken) {
+      await agentEnvService.patch(
+        agent.id,
+        { CLAUDE_CODE_OAUTH_TOKEN: claudeCodeOauthToken },
+        new Set(SECRET_ENV_VARS),
+      );
+    }
+    if (inCluster) {
+      // Roll the row back on failure so a retry with the same name doesn't
+      // collide with a half-created agent — mirrors POST /admin/provision/start.
+      try {
+        await provisioner.provision(agent.id, { slug: agent.name });
+      } catch (err) {
+        console.error("[admin-ui] provisioning failed, rolling back:", err);
+        await agentService.delete(agent.id).catch((cleanupErr) => {
+          console.error(
+            "[admin-ui] failed to roll back agent after provision error:",
+            cleanupErr,
+          );
+        });
+        return c.redirect("/admin/agents/new?error=provision_failed", 302);
+      }
+    }
+    // Best-effort, mirroring the same call at agent boot (agent/src/index.ts).
+    // reconcileSystemCrons is a full three-pass reconcile, so a second run is a
+    // no-op — and failing here would strand the operator next to a live agent.
+    try {
+      await agentCronJobService.reconcileSystemCrons(agent.id);
+    } catch (err) {
+      console.error(
+        "[admin-ui] failed to seed system crons (non-fatal):",
+        err,
+      );
     }
     return c.redirect(`/admin/agents/${agent.id}`, 302);
   });

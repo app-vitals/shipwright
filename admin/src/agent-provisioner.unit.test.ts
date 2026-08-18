@@ -15,6 +15,7 @@ import {
 import {
   KubernetesAgentProvisioner,
   type KubernetesAgentProvisionerConfig,
+  NoopAgentProvisioner,
   containerDrifted,
 } from "./agent-provisioner.ts";
 import type { AgentTokenService } from "./agent-tokens.ts";
@@ -944,5 +945,22 @@ describe("KubernetesAgentProvisioner — chat-service token minting", () => {
     expect(minted).toHaveLength(1);
     // Deployment conflict rolled back the Secret — chat-service token must also be revoked.
     expect(revoked).toEqual([minted[0].id]);
+  });
+});
+
+// ─── canProvision ─────────────────────────────────────────────────────────────
+
+describe("canProvision", () => {
+  it("is false on the no-op provisioner — it creates no cluster resources", () => {
+    expect(new NoopAgentProvisioner().canProvision).toBe(false);
+  });
+
+  it("is true on the Kubernetes provisioner", () => {
+    const provisioner = new KubernetesAgentProvisioner(
+      emptyClient(),
+      stubTokens() as AgentTokenService,
+      BASE_CONFIG,
+    );
+    expect(provisioner.canProvision).toBe(true);
   });
 });

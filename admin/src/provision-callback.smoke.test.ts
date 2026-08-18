@@ -287,6 +287,7 @@ function makeMockDeps(
     },
     slackClient: makeMockSlackClient(),
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",

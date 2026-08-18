@@ -109,7 +109,12 @@ interface CronRequest {
 }
 
 export interface CronHandlerDeps {
-  slack: WebClient;
+  /**
+   * Slack client, or `undefined` on a chat-only agent (no Slack credentials).
+   * When absent, a job with a channel/user delivery target still runs and is
+   * recorded as completed — the delivery step is skipped, not failed.
+   */
+  slack: WebClient | undefined;
   runner: ClaudeRunner;
   formatter?: (text: string) => string;
   /** Called after a successful post so the caller can track the thread. */
@@ -278,7 +283,7 @@ export async function handleCronRequest(
       console.error(
         `[agent:cron] preCheck for job "${jobId}" crashed (exit ${checkExitCode})${detail ? `: ${detail}` : ""} — session suppressed`,
       );
-      if (deps.alertsChannel) {
+      if (deps.alertsChannel && deps.slack) {
         try {
           await deps.slack.chat.postMessage({
             channel: deps.alertsChannel,
@@ -431,6 +436,20 @@ export async function handleCronRequest(
     // [silent] marker suppresses channel posts (and channel-wins-over-user posts)
     // DMs always get a reply — [silent] is ignored when routing to a DM
     console.log(`[agent:cron] job "${jobId}" completed (silent — no post)`);
+    await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
+      ...buildTokenPayload(usage, modelUsage),
+      sessionId,
+    });
+    return;
+  }
+
+  // Chat-only agent: the job produced output but there is no Slack client to
+  // deliver it with. Record the run as completed — the work happened — and skip
+  // delivery rather than throwing invalid_auth on the first postMessage.
+  if (!slack) {
+    console.warn(
+      `[agent:cron] job "${jobId}" completed but Slack is not configured — delivery skipped (set SLACK_BOT_TOKEN + SLACK_APP_TOKEN, or mark the job silent)`,
+    );
     await cronRunReporter?.completeRun(jobId, runId, clock.now(), "completed", {
       ...buildTokenPayload(usage, modelUsage),
       sessionId,

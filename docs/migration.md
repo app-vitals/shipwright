@@ -4,6 +4,26 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## New: `AgentProvisioner.canProvision`
+
+**Version**: next
+
+The `AgentProvisioner` interface gained a required `readonly canProvision: boolean`.
+It reports whether the implementation actually creates cluster resources:
+`KubernetesAgentProvisioner` sets it to `true`, `NoopAgentProvisioner` to `false`.
+
+This exists because `NoopAgentProvisioner.provision()` returns plausible resource
+names without touching a cluster. The admin console's **New Agent** form now offers
+an "in-cluster" runtime, and without this flag an operator could pick it on a
+deployment where provisioning is off, get a successful-looking create, and end up
+with an agent row that has no pod behind it.
+
+**For custom `AgentProvisioner` implementations**: add the property. Set it to
+`true` if your `provision()` really creates the workload, `false` if it is a stub.
+Nothing else in the interface changed.
+
+---
+
 ## New: `TaskService.list()` multi-repo/org filters and distinct `orgs` field
 
 **Version**: next (ORF-1.2)

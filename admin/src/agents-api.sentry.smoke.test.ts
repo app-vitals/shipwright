@@ -33,6 +33,8 @@ const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 
 /** No-op AgentProvisioner double — provisioning is not exercised by these tests. */
 class NoopProvisioner implements AgentProvisioner {
+  readonly canProvision = false;
+
   async provision(): Promise<ProvisionResult> {
     return {
       resourceName: AGENT_ID,

@@ -344,6 +344,7 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       },
     },
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",

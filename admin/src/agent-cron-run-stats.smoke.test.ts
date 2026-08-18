@@ -470,6 +470,7 @@ function makeMockDeps(): AdminDeps {
       },
     } as unknown as AdminDeps["prisma"],
     provisioner: {
+      canProvision: false,
       provision: async (agentId) => ({
         resourceName: agentId,
         secretName: `${agentId}-token`,

@@ -590,14 +590,19 @@ export function renderAgentsPage(
 </html>`;
 }
 
-// ─── New local agent page ─────────────────────────────────────────────────────
+// ─── New agent page ───────────────────────────────────────────────────────────
 
 export function renderNewLocalAgentPage(
   userName: string,
   types: AgentTypeOption[],
-  opts?: { error?: string },
+  opts?: { error?: string; canProvision?: boolean },
 ): string {
   const error = opts?.error;
+  // Whether the admin service can actually create cluster resources. When it
+  // can't (NoopAgentProvisioner — SHIPWRIGHT_K8S_PROVISIONING unset), offering
+  // "in-cluster" would silently produce an agent row with no pod, so the option
+  // is rendered disabled and self-hosted is preselected.
+  const canProvision = opts?.canProvision ?? false;
   const errorHtml = error
     ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
     : "";
@@ -612,7 +617,7 @@ export function renderNewLocalAgentPage(
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>New Local Agent — Shipwright Admin</title>
+  <title>New Agent — Shipwright Admin</title>
   <style>${baseStyles()}</style>
 </head>
 <body>
@@ -621,14 +626,15 @@ export function renderNewLocalAgentPage(
     <div class="page-header">
       <div>
         <a href="/admin/agents" style="font-size:13px;color:#6b7280;text-decoration:none">← Agents</a>
-        <h1 class="page-title" style="margin-top:4px">New Local Agent</h1>
+        <h1 class="page-title" style="margin-top:4px">New Agent</h1>
       </div>
     </div>
     ${errorHtml}
     <div class="card">
       <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
-        Create a self-hosted agent. The agent will run on your own infrastructure.
-        Slack provisioning can be done separately from the agent detail page.
+        Create an agent and choose where it runs. No Slack credentials are needed —
+        talk to the agent from the <a href="/admin/chat">Chat</a> tab. Slack can be
+        connected later from the <span class="mono">/admin/provision</span> wizard.
       </p>
       <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
         <div class="form-group">
@@ -648,6 +654,46 @@ export function renderNewLocalAgentPage(
           <select id="type" name="type" class="form-input" required>
             ${typeOptions}
           </select>
+        </div>
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">Runtime</legend>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="runtime" value="in-cluster" ${canProvision ? "checked" : "disabled"} />
+              Provisioned in-cluster
+              <span style="font-weight:400;color:#6b7280">
+                — the admin service creates the Deployment, Secret, and PVC for you.
+              </span>
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500">
+              <input type="radio" name="runtime" value="self-hosted" ${canProvision ? "" : "checked"} />
+              Self-hosted
+              <span style="font-weight:400;color:#6b7280">
+                — you run the container yourself (<span class="mono">task stack</span>, local Docker).
+              </span>
+            </label>
+            ${
+              canProvision
+                ? ""
+                : `<p style="font-size:12px;color:#6b7280;margin-top:8px">
+              In-cluster provisioning is unavailable — <span class="mono">SHIPWRIGHT_K8S_PROVISIONING</span> is not enabled on this admin service.
+            </p>`
+            }
+          </div>
+        </fieldset>
+        <div class="form-group">
+          <label class="form-label" for="claudeCodeOauthToken">Claude Code OAuth Token (optional)</label>
+          <input
+            id="claudeCodeOauthToken"
+            name="claudeCodeOauthToken"
+            type="password"
+            class="form-input"
+            placeholder="sk-ant-oat01-..."
+          />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">
+            Stored as the agent's <span class="mono">CLAUDE_CODE_OAUTH_TOKEN</span>. Required for the agent
+            to run — set it here or from the agent detail page.
+          </p>
         </div>
         <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
