@@ -2256,6 +2256,267 @@ describe("traceReviewCandidacyDecision", () => {
     expect(trace).toEqual({ check: "eligible" });
   });
 
+  // ─── PFL-3.1: ledger-timestamp candidacy trigger ─────────────────────────
+  //
+  // A second, independent bypass of the already-reviewed-terminal exclusion,
+  // alongside hasFreshAuthorReply: a PrFinding written after the last review
+  // pass (PFL-1.2's POST /prs/:id/findings, PFL-2.2's rebuttal write) means
+  // there's new ledger activity worth re-reviewing even though the head
+  // commit hasn't moved. Computed locally from record.findings/reviewedAt —
+  // no new function parameter, since both fields already live on `record`.
+
+  test("already-reviewed-terminal: a fresh ledger finding (at > reviewedAt) bypasses the terminal-skip exclusion (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "rejected",
+          source: "patch",
+          evidence: "Disagree with this finding.",
+          at: "2026-08-02T00:00:00.000Z",
+          createdAt: "2026-08-02T00:00:00.000Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-terminal: no findings newer than reviewedAt preserves the terminal-skip exclusion", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "rejected",
+          source: "patch",
+          evidence: "Old finding, before the last review.",
+          at: "2026-07-31T00:00:00.000Z",
+          createdAt: "2026-07-31T00:00:00.000Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+  });
+
+  test("already-reviewed-terminal: an empty/undefined findings array preserves the terminal-skip exclusion", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+
+    const recordNoFindings: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+    };
+    const traceNoFindings = traceReviewCandidacyDecision(
+      baseArgs({ pr, record: recordNoFindings }),
+    );
+    expect(traceNoFindings).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+  });
+
+  test("already-reviewed-terminal: a finding with at exactly equal to reviewedAt is NOT fresh (strict inequality)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "resolved",
+          source: "review",
+          evidence: "Same timestamp as reviewedAt.",
+          at: "2026-08-01T00:00:00.000Z",
+          createdAt: "2026-08-01T00:00:00.000Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+  });
+
+  test("already-reviewed-terminal: reviewedAt unset falls back to epoch 0, so any finding.at counts as fresh (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "resolved",
+          source: "review",
+          evidence: "reviewedAt was never set on this record.",
+          at: "2026-01-01T00:00:00.000Z",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-terminal: multiple findings where only one is fresh still bypasses (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "resolved",
+          source: "review",
+          evidence: "Stale finding.",
+          at: "2026-07-01T00:00:00.000Z",
+          createdAt: "2026-07-01T00:00:00.000Z",
+        },
+        {
+          id: "f2",
+          prRecordId: "pr1",
+          ref: "src/bar.ts:2",
+          disposition: "rejected",
+          source: "patch",
+          evidence: "Fresh finding.",
+          at: "2026-08-05T00:00:00.000Z",
+          createdAt: "2026-08-05T00:00:00.000Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  // ─── PFL-3.1: ledger-finding bypass reachable through the live-review dedup ──
+  //
+  // The 7 tests above exercise the terminal-skip bypass by calling
+  // traceReviewCandidacyDecision() directly with reviewData left at its
+  // baseArgs() default of undefined — none of them combine a populated
+  // reviewData (hasAnyReviewAtHead(reviewData) === true) with a fresh ledger
+  // finding, which is exactly the scenario the live-GitHub review dedup's
+  // early return (above, near the top of this function) can otherwise
+  // shadow. These two tests close that gap.
+
+  test("already-reviewed-live: a fresh ledger finding bypasses the live-review exclusion even with no fresh author reply (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "rejected",
+          source: "patch",
+          evidence: "Fresh rebuttal finding recorded after the last review.",
+          at: "2026-08-02T00:00:00.000Z",
+          createdAt: "2026-08-02T00:00:00.000Z",
+        },
+      ],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-live: no fresh ledger finding preserves the live-review exclusion (dedup still applies)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
+  });
+
   test("staged: staged:true with matching reviewedCommitSha excludes regardless of reviewState", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const record: PrRecord = {

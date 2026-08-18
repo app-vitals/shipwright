@@ -62,6 +62,24 @@ import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// ─── PFL-3.1: ledger-timestamp candidacy trigger ──────────────────────────────
+//
+// Minimal local mirror of task-store's PrFinding shape
+// (task-store/src/openapi-schemas.ts) — only `at` is consumed here, but the
+// full shape is mirrored (rather than an ad-hoc `{ at: string }`) to match
+// this file's existing local-mirror-type convention (see PrRecord.reviewedAt
+// above). Not imported from task-store: agent/src has no dependency on it.
+export interface PrFinding {
+  id: string;
+  prRecordId: string;
+  ref: string;
+  disposition: "resolved" | "superseded" | "rejected";
+  source: "review" | "patch";
+  evidence: string;
+  at: string;
+  createdAt: string;
+}
+
 export interface PrInfo {
   number: number;
   title: string;
@@ -103,6 +121,16 @@ export interface PrRecord {
    * parse.
    */
   reviewedAt?: string | null;
+  /**
+   * Ledger findings for this PR (PFL-1.2's POST /prs/:id/findings, written
+   * for both review-authored findings and PFL-2.2's patch-rebuttal
+   * entries). Already present on the task-store /prs record (see
+   * task-store/src/openapi-schemas.ts's PrFinding); only newly declared
+   * here so this file's local PrRecord interface carries it through
+   * createPrRecordQuery's generic JSON parse — see the ledger-timestamp
+   * trigger (PFL-3.1) in traceReviewCandidacyDecision below.
+   */
+  findings?: PrFinding[];
 }
 
 // ─── RCT-1.1: fresh non-agent comment detection ───────────────────────────────
@@ -239,6 +267,27 @@ export function traceReviewCandidacyDecision(args: {
     isBundleComplete,
   } = args;
 
+  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings, including
+  // PFL-2.2's rebuttal writes) newer than the last review pass is a bypass
+  // of BOTH exclusion checks below — the live-GitHub review dedup
+  // immediately following this block, and the terminal-skip check further
+  // down — alongside hasFreshAuthorReply. Hoisted to the very top of the
+  // function, ahead of the live-review dedup's early return, because that
+  // return fires (and `continue`s the caller's loop) before a lower
+  // placement would ever be reached in the exact scenario PFL-3.1 targets:
+  // a review already live at the PR's current head commit, no fresh author
+  // reply, but a fresh ledger finding recorded since. Computed against
+  // `record` via optional chaining since this now runs before the `!record`
+  // null check below. Mirrors the `new Date(record?.reviewedAt ?? 0)`
+  // epoch-0 fallback pattern used for reviewedAtMs elsewhere in this file,
+  // and uses the same strict `>` inequality as hasFreshAuthorReply's own
+  // freshness check (a finding stamped exactly at reviewedAt does not
+  // count).
+  const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
+  const hasFreshLedgerFinding =
+    record?.findings?.some((f) => new Date(f.at).getTime() > reviewedAtMs) ??
+    false;
+
   // Live-GitHub review dedup (RVD-1.1, widened by RVD-2.1) —
   // identity-agnostic: ANY review at the PR's current head commit excludes
   // it from candidacy, independent of the task-store record. Deliberately
@@ -250,9 +299,14 @@ export function traceReviewCandidacyDecision(args: {
   // treating it as candidate here just wastes a tick reselecting a PR that
   // will bounce right back). hasAnyReviewAtHead() disambiguates the two,
   // matching review.md's RVD-1.2 rule exactly: any review at head + no
-  // fresh author reply -> excluded, regardless of finding content.
+  // fresh author reply and no fresh ledger finding (PFL-3.1) -> excluded,
+  // regardless of finding content.
   if (reviewData) {
-    if (hasAnyReviewAtHead(reviewData) && !hasFreshAuthorReply) {
+    if (
+      hasAnyReviewAtHead(reviewData) &&
+      !hasFreshAuthorReply &&
+      !hasFreshLedgerFinding
+    ) {
       return {
         check: "already-reviewed-live",
         classifiedState: classifyReviewState(reviewData),
@@ -288,11 +342,13 @@ export function traceReviewCandidacyDecision(args: {
   }
 
   // Terminal-skip (RCO-1.2): reviewedCommitSha matches head and reviewState
-  // is not pending, unless the author has a fresh reply (RVG-1.1).
+  // is not pending, unless the author has a fresh reply (RVG-1.1) or a fresh
+  // ledger finding has been recorded since the last review (PFL-3.1).
   if (
     record.reviewedCommitSha === pr.headRefOid &&
     record.reviewState !== "pending" &&
-    !hasFreshAuthorReply
+    !hasFreshAuthorReply &&
+    !hasFreshLedgerFinding
   ) {
     return {
       check: "already-reviewed-terminal",
