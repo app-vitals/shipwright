@@ -526,6 +526,68 @@ describe("patch.md — reset reviewState to pending after a no-push, rebuttal-co
   });
 });
 
+describe("patch.md — POST a rejected ledger entry on rebuttal, alongside the existing manual reviewState reset (PFL-2.2)", () => {
+  it("Step 5c.5 POSTs a source:patch, disposition:rejected ledger entry to /prs/:id/findings for each REJECTed finding", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    expect(step5c5Idx).toBeGreaterThan(-1);
+    expect(step5dIdx).toBeGreaterThan(-1);
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings"');
+    expect(section).toContain('\\"source\\": \\"patch\\"');
+    expect(section).toContain('\\"disposition\\": \\"rejected\\"');
+  });
+
+  it("the ledger POST runs alongside the existing rebuttal comment + thread resolution, not gated on the no-push reviewState-reset condition", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    // The ledger POST must fire whenever findings were REJECTed this cycle, independent of
+    // NO_PUSH_REBUTTAL_CONFIRMED (which additionally requires no push happened) — it is not
+    // nested inside that gate.
+    const findingsIdx = section.indexOf("/prs/$PR_RECORD_ID/findings");
+    expect(findingsIdx).toBeGreaterThan(-1);
+    const reviewStateIdx = section.indexOf('"reviewState": "pending"');
+    expect(reviewStateIdx).toBeGreaterThan(-1);
+    expect(findingsIdx).not.toBe(reviewStateIdx);
+
+    const before = section.slice(Math.max(0, findingsIdx - 400), findingsIdx);
+    expect(before).not.toContain('if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]');
+  });
+
+  it("Step 5c tracks REJECTed findings this cycle (ref + rejection reason) separately from NO_PUSH_REBUTTAL_CONFIRMED, for Step 5c.5 to loop over", () => {
+    const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
+    const step5c5Idx = content.indexOf("### Step 5c.5:");
+    const section = content.slice(step5cIdx, step5c5Idx);
+
+    expect(section).toContain("REJECTED_FINDINGS_THIS_CYCLE");
+  });
+
+  it("does not modify the existing manual reviewState:pending PATCH — still present, still conditional on NO_PUSH_REBUTTAL_CONFIRMED", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    expect(section).toContain('if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]');
+    expect(section).toContain("-X PATCH");
+    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
+    expect(section).toContain('-d \'{"reviewState": "pending"}\'');
+    expect(section).toContain("⚠ PATCH /prs/$PR_RECORD_ID reviewState reset failed — continuing");
+  });
+
+  it("the ledger POST call follows the same warn-and-continue error-handling idiom as the other Step 5c.5 task-store calls", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    const findingsIdx = section.indexOf("/prs/$PR_RECORD_ID/findings");
+    const after = section.slice(findingsIdx, findingsIdx + 400);
+    expect(after).toMatch(/\|\|\s*\\?\s*\n\s*echo "⚠/);
+  });
+});
+
 describe("patch.md — escalate to HITL instead of looping on a second-round disagreement (RPF-1.3)", () => {
   function getStep5a7Section() {
     const step5a7Idx = content.indexOf("### Step 5a.7: Second-Round Escalation Check (RPF-1.3)");

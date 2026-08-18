@@ -1074,6 +1074,21 @@ Parse the subagent's STATUS:
   literal shell test — evaluate it the same way you just evaluated the "confirm ... rebuttal
   ... AND ... resolved the inline threads" check earlier in this bullet, then set the
   variable accordingly before Step 5c.5 reads it.
+
+  Separately from `NO_PUSH_REBUTTAL_CONFIRMED`, also record the set of REJECTed findings
+  from this cycle for Step 5c.5's ledger write, whenever the rebuttal-confirmation check
+  above found at least one REJECTed finding (independent of push/no-push — a mixed
+  ACCEPT+REJECT run that also pushed a commit still has REJECTed findings needing a ledger
+  entry). For each REJECTed finding in the subagent's CONCERNS, capture:
+  - **`ref`**: the same identifier already used to resolve that finding's thread in Step 5b
+    Instructions [D] — the inline thread's `path:line` for inline findings, or a short slug
+    for PR-body-level findings with no inline thread.
+  - **`evidence`**: the rejection reason already written into the rebuttal comment for that
+    finding.
+
+  Set `REJECTED_FINDINGS_THIS_CYCLE` to this list (empty if no finding was REJECTed this
+  cycle, e.g. the plain `DONE` case above or a `DONE_WITH_CONCERNS` run with only
+  non-REJECT concerns) before proceeding to Step 5c.5.
 - **BLOCKED**: This is a first-round BLOCKED report from the fix subagent itself — distinct
   from Step 5a.7's (RPF-1.3) second-round-disagreement escalation, which fires *before*
   dispatch when the same finding was already rebutted once. Here the subagent was dispatched
@@ -1114,6 +1129,15 @@ if [ -n "$PR_RECORD_ID" ]; then
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/patch" \
     -d "{\"commitSha\": \"$HEAD_SHA_POST_PATCH\"}" > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/patch failed — continuing"
+  # Run once per entry in REJECTED_FINDINGS_THIS_CYCLE (from Step 5c) — {finding.ref} is
+  # that finding's path:line (or slug); {finding.evidence} is its rejection reason.
+  curl -sf -X POST \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings" \
+    -d "{\"ref\": \"{finding.ref}\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{finding.evidence}\"}" \
+    > /dev/null 2>&1 || \
+    echo "⚠ POST /prs/$PR_RECORD_ID/findings (rejected) failed — continuing"
   if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]; then
     curl -sf -X PATCH \
       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -1126,6 +1150,21 @@ else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
 ```
+
+Run the ledger-write `curl` once for each entry in `REJECTED_FINDINGS_THIS_CYCLE` (assigned
+in Step 5c — see there for how it's populated), POSTing one `source: "patch"`,
+`disposition: "rejected"` finding per REJECTed finding this cycle to
+`/prs/$PR_RECORD_ID/findings`, with `ref` set to that finding's identifying `path:line` (or
+slug, for PR-body-level findings) and `evidence` set to the rejection reason already used in
+the rebuttal comment. If `REJECTED_FINDINGS_THIS_CYCLE` is empty, skip this call entirely —
+there is nothing to record. This runs unconditionally whenever
+`REJECTED_FINDINGS_THIS_CYCLE` is non-empty — independent of `NO_PUSH_REBUTTAL_CONFIRMED`,
+so it also fires on a mixed ACCEPT+REJECT run that pushed a commit, not only the no-push
+case. This is additive: it does not replace or gate the existing manual
+`reviewState: "pending"` reset below, which stays exactly as it was and remains the only
+mechanism that makes a no-push rebuttal cycle re-qualify for review today (that dependency
+is removed in a later task, PFL-4.1, only after PFL-3.1 makes the ledger the read-side
+source of truth for re-review eligibility).
 
 `NO_PUSH_REBUTTAL_CONFIRMED` is assigned in Step 5c, before this step runs — see there for
 the exact condition. It does not require every finding in the run to be REJECTed — a mixed
