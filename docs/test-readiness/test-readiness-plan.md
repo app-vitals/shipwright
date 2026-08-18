@@ -91,17 +91,18 @@ same finding) — no roadmap task material. The Coverage Gate's stage-3 promotio
 |---|---|---|---|
 | Unit | 132 `.unit.test.ts` | Dominant category-1 surface (`lib/`, decision/classification logic, mutable-box refs, crypto helpers, parsing/validation, coverage-gate tooling) | None — every inventory item mapped to unit has a matching test file |
 | Integration | 66 `.integration.test.ts` | Every category-2/5 service-boundary and external-integration item | None — new `PrFinding` model (PFL-1.1/PFL-2.1) landed with matching integration coverage this cycle |
-| Smoke | 43 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None — new `POST /prs/:id/findings` route and `?hitl` filter both landed with matching smoke coverage this cycle |
+| Smoke | 44 `.smoke.test.ts` | Every category-3 HTTP route across 5 services | None — new `POST /prs/:id/findings` route and `?hitl` filter both landed with matching smoke coverage this cycle |
 | E2E | 21 `site/tests/*.spec.ts` + 3 `{admin,metrics}/e2e/*.e2e.ts` | 4 of 5 identified journeys are browser-driven or partially so (journey #5, HITL bootstrap, is integration-composed, not E2E) | None |
 | Content | 41 `.content.test.ts` | `plugins/shipwright/{commands,agents,skills,references}/*` | None — unchanged this cycle |
 | Shell (unofficial 6th layer) | 2 `test-*.sh` bash assertion suites | `.github/workflows/lib/chart-tag-utils.sh`, `chart-drift-check.sh` | None — coverage exists; only a documentation-completeness question is open (see Open risks) |
 | Compile-time-only (unformalized) | 1 `*.check.ts` (`blocked-by-type-parity.check.ts`) | `admin/src/blocked-by-type-parity.check.ts` | None — wired into CI's `typecheck` step, confirmed passing; only a taxonomy question open (see Open risks) |
 
-**Total: 306 test files** (282 `bun test`-scanned + 21 `site/tests/*.spec.ts` + 3
-Playwright `*.e2e.ts`), +1 from the 2026-08-16 pass. Growth this cycle is exactly one new
-file — `task-store/src/pr-finding.integration.test.ts`, backing the new `PrFinding` model
-(PFL-1.1/PFL-2.1) — already-correct, already-passing coverage landed in the same commits
-as the production change (see `test-migration.md`'s Method note steps 1-4).
+**Total: 307 test files** (283 `bun test`-scanned + 21 `site/tests/*.spec.ts` + 3
+Playwright `*.e2e.ts`), +2 from the 2026-08-16 pass: `task-store/src/pr-finding.integration.test.ts`,
+backing the new `PrFinding` model (PFL-1.1/PFL-2.1) — already-correct, already-passing
+coverage landed in the same commits as the production change (see `test-migration.md`'s
+Method note steps 1-4) — and `task-store/src/state-filter.smoke.test.ts`, backing the
+new `?hitl` filter, whose count was previously omitted from the smoke bucket.
 
 **`## Features` section in `test-inventory.md` unchanged this cycle:** 23 features,
 `feature_coverage_pct` still 100% (23/23) — no new feature introduced (`PrFinding` folds
@@ -110,7 +111,7 @@ Coverage Gate block above.
 
 ### Local-runnable status
 
-**100%** of the 282 `bun test`-scanned files run locally with zero external network.
+**100%** of the 283 `bun test`-scanned files run locally with zero external network.
 Phase 3's isolation-contract grep sweep (`mock.module(`, `global.fetch =`,
 `global.console =`, stray `DATABASE_URL` inside `*.unit.test.ts`) found zero real
 violations this cycle (41 `mock.module(` matches, all in comments, unchanged; 3

@@ -178,22 +178,24 @@ for the full investigation writeup. No new evidence this cycle changes that verd
 
 | Bucket | Test count | Infra count | Effort |
 |---|---|---|---|
-| Reuse as-is | ~306 | 7 | — |
+| Reuse as-is | ~307 | 7 | — |
 | Promote / deepen | 0 | 0 | — |
 | Rebuild | 0 | 0 | — |
 | Delete (redundant) | 0 | 0 | — |
 | Net-new | 1 | 0 | trivial, optional |
 
 **Total existing test files discovered (this cycle, 2026-08-18):** 132 unit + 66
-integration + 43 smoke + 41 content = 282 `bun test`-scanned files, + 21
+integration + 44 smoke + 41 content = 283 `bun test`-scanned files, + 21
 `site/tests/*.spec.ts` + 3 Playwright `*.e2e.ts` (2 `admin/e2e/`, 1 `metrics/e2e/`) =
-**306 test files total** — +1 from the 2026-08-16 pass
+**307 test files total** — +2 from the 2026-08-16 pass
 (`task-store/src/pr-finding.integration.test.ts`, backing the new `PrFinding` model,
-correctly landed at the integration layer alongside its production code). This 1 file
-folds into "Reuse as-is" (already-correct, already-passing coverage for this cycle's
-delta). The Promote/deepen and Rebuild buckets remain empty for a second consecutive
-cycle (first reached 2026-08-16). Only the long-standing, explicitly-optional
-`admin/src/clock.ts` item remains in Net-new.
+correctly landed at the integration layer alongside its production code, and
+`task-store/src/state-filter.smoke.test.ts`, backing the new `?hitl` filter, whose
+count was previously omitted from the smoke bucket — corrected here to match the
+CI-reported 283-file total). Both fold into "Reuse as-is" (already-correct,
+already-passing coverage for this cycle's delta). The Promote/deepen and Rebuild
+buckets remain empty for a second consecutive cycle (first reached 2026-08-16). Only
+the long-standing, explicitly-optional `admin/src/clock.ts` item remains in Net-new.
 
 **Headline finding:** every real source change in this cycle's 16-commit / 53-file Phase
 1 delta already has matching test coverage at the correct layer, landed in the same
@@ -224,7 +226,7 @@ as-is (Method note step 3). Only the long-standing, explicitly-optional
 
 ## Isolation contract audit
 
-Grepped the full current suite (306 files) for the three hard-rule signals from root
+Grepped the full current suite (307 files) for the three hard-rule signals from root
 `CLAUDE.md`'s Test isolation section and `references/principles.md`'s `t1_no_global_mocking`:
 
 | Signal | Files matched | Real violations |
