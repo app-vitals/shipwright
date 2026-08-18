@@ -62,6 +62,24 @@ import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+// ─── PFL-3.1: ledger-timestamp candidacy trigger ──────────────────────────────
+//
+// Minimal local mirror of task-store's PrFinding shape
+// (task-store/src/openapi-schemas.ts) — only `at` is consumed here, but the
+// full shape is mirrored (rather than an ad-hoc `{ at: string }`) to match
+// this file's existing local-mirror-type convention (see PrRecord.reviewedAt
+// above). Not imported from task-store: agent/src has no dependency on it.
+export interface PrFinding {
+  id: string;
+  prRecordId: string;
+  ref: string;
+  disposition: "resolved" | "superseded" | "rejected";
+  source: "review" | "patch";
+  evidence: string;
+  at: string;
+  createdAt: string;
+}
+
 export interface PrInfo {
   number: number;
   title: string;
@@ -103,6 +121,16 @@ export interface PrRecord {
    * parse.
    */
   reviewedAt?: string | null;
+  /**
+   * Ledger findings for this PR (PFL-1.2's POST /prs/:id/findings, written
+   * for both review-authored findings and PFL-2.2's patch-rebuttal
+   * entries). Already present on the task-store /prs record (see
+   * task-store/src/openapi-schemas.ts's PrFinding); only newly declared
+   * here so this file's local PrRecord interface carries it through
+   * createPrRecordQuery's generic JSON parse — see the ledger-timestamp
+   * trigger (PFL-3.1) in traceReviewCandidacyDecision below.
+   */
+  findings?: PrFinding[];
 }
 
 // ─── RCT-1.1: fresh non-agent comment detection ───────────────────────────────
@@ -287,12 +315,29 @@ export function traceReviewCandidacyDecision(args: {
     return { check: "pr-record-blocked" };
   }
 
+  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings, including
+  // PFL-2.2's rebuttal writes) newer than the last review pass is a second,
+  // independent bypass of the terminal-skip exclusion below, alongside
+  // hasFreshAuthorReply — new ledger activity since the last review means
+  // there's something worth re-reviewing even though the head commit hasn't
+  // moved. Mirrors the `new Date(record?.reviewedAt ?? 0).getTime()` epoch-0
+  // fallback pattern used for reviewedAtMs elsewhere in this file, and uses
+  // the same strict `>` inequality as hasFreshAuthorReply's own freshness
+  // check (a finding stamped exactly at reviewedAt does not count).
+  const reviewedAtMs = new Date(record.reviewedAt ?? 0).getTime();
+  const hasFreshLedgerFinding =
+    record.findings?.some(
+      (f) => new Date(f.at).getTime() > reviewedAtMs,
+    ) ?? false;
+
   // Terminal-skip (RCO-1.2): reviewedCommitSha matches head and reviewState
-  // is not pending, unless the author has a fresh reply (RVG-1.1).
+  // is not pending, unless the author has a fresh reply (RVG-1.1) or a fresh
+  // ledger finding has been recorded since the last review (PFL-3.1).
   if (
     record.reviewedCommitSha === pr.headRefOid &&
     record.reviewState !== "pending" &&
-    !hasFreshAuthorReply
+    !hasFreshAuthorReply &&
+    !hasFreshLedgerFinding
   ) {
     return {
       check: "already-reviewed-terminal",
