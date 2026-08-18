@@ -650,6 +650,7 @@ describe("admin UI — new local agent create flow", () => {
     canProvision?: boolean;
     provisionError?: Error;
     reconcileError?: Error;
+    deleteError?: Error;
   }) {
     const calls = {
       created: null as { name: string; selfHosted?: boolean } | null,
@@ -683,6 +684,7 @@ describe("admin UI — new local agent create flow", () => {
         },
         delete: async (id: string) => {
           calls.deleted.push(id);
+          if (opts?.deleteError) throw opts.deleteError;
         },
       },
       agentEnvService: {
@@ -798,6 +800,27 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.headers.get("Location")).toBe(
       "/admin/agents/new?error=provision_failed",
     );
+    expect(calls.deleted).toEqual([NEW_AGENT_ID]);
+    expect(calls.reconciled).toEqual([]);
+  });
+
+  it("provisioning failure still redirects with provision_failed even when the rollback delete itself fails", async () => {
+    const { deps, calls } = makeProvisioningDeps({
+      provisionError: new Error("no cluster"),
+      deleteError: new Error("db unreachable"),
+    });
+    const res = await postAgent(deps, {
+      name: "doubly-doomed",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=provision_failed",
+    );
+    // The rollback was attempted (and failed) but the create flow still
+    // reports provision_failed rather than throwing — the cleanup error is
+    // swallowed (logged), not propagated.
     expect(calls.deleted).toEqual([NEW_AGENT_ID]);
     expect(calls.reconciled).toEqual([]);
   });
