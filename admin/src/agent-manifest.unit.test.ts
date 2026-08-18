@@ -151,7 +151,16 @@ describe("buildAgentDeploymentManifest", () => {
     const resources = d.spec.template.spec.containers[0].resources;
     expect(resources?.requests?.memory).toBe("2Gi");
     expect(resources?.limits?.memory).toBe("8Gi");
-    expect(resources?.limits?.["ephemeral-storage"]).toBe("1Gi");
+  });
+
+  it("budgets 4Gi of ephemeral storage, matched across request and limit", () => {
+    const d = buildAgentDeploymentManifest(deployOpts);
+    const resources = d.spec.template.spec.containers[0].resources;
+    // 1Gi (the Autopilot default) evicted agents mid-run once a build step
+    // wrote any real scratch space. Request and limit stay equal — Autopilot
+    // bills the request regardless, so a lower request buys nothing.
+    expect(resources?.limits?.["ephemeral-storage"]).toBe("4Gi");
+    expect(resources?.requests?.["ephemeral-storage"]).toBe("4Gi");
   });
 
   it("defines liveness and readiness probes on the health port", () => {
