@@ -264,6 +264,10 @@ export const PrFindingSchema = z
       example: "Fixed the null check in the follow-up commit.",
     }),
     at: z.string().openapi({ example: "2026-08-17T12:00:00.000Z" }),
+    agentId: z.string().nullable().openapi({
+      example: "agent-abc123",
+      description: "Agent instance that triaged this finding, if any.",
+    }),
     createdAt: z
       .string()
       .datetime()
@@ -769,6 +773,10 @@ export const CreateFindingBodySchema = z
       example: "2026-08-17T12:00:00.000Z",
       description:
         "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
+    }),
+    agentId: z.string().optional().openapi({
+      example: "agent-abc123",
+      description: "Agent instance that triaged this finding.",
     }),
   })
   .openapi("CreateFindingBody");

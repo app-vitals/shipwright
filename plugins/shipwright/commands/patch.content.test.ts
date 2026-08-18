@@ -586,6 +586,14 @@ describe("patch.md — POST a rejected ledger entry on rebuttal, alongside the e
     const after = section.slice(findingsIdx, findingsIdx + 400);
     expect(after).toMatch(/\|\|\s*\\?\s*\n\s*echo "⚠/);
   });
+
+  it("Step 5c.5 findings POST includes agentId set to $SHIPWRIGHT_AGENT_ID", () => {
+    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
+    const step5dIdx = content.indexOf("### Step 5d:");
+    const section = content.slice(step5c5Idx, step5dIdx);
+
+    expect(section).toContain('\\\"agentId\\\": \\\"$SHIPWRIGHT_AGENT_ID\\\"');
+  });
 });
 
 describe("patch.md — escalate to HITL instead of looping on a second-round disagreement (RPF-1.3)", () => {
