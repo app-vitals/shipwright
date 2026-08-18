@@ -374,6 +374,7 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 | `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
 | `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
 | `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains `"consecutive skips"`), also clears `blocked=false` and `blockedReason=null` in the same update — otherwise `blocked`/`blockedReason` are left untouched (e.g. a block set by the CI-failure-streak mechanism in `POST /prs/:id/patch` is not cleared) |
+| `POST /prs/:id/findings` | Append a review/patch finding to the PR. Request body: `{ref, disposition, source, evidence, at?}` where `disposition` is one of `resolved`, `superseded`, `rejected`; `source` is one of `review`, `patch`. Authority rule (server-enforced): `source:"patch"` may only submit `disposition:"rejected"` (returns `400` otherwise); `source:"review"` may submit any disposition. Returns `201` with the created `PrFinding` record. |
 
 #### PR state enums
 
@@ -396,6 +397,23 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 `consecutiveCiFailureCount`: integer (default `0`) — consecutive count of patch cycles whose `ciFailureSignature` matched the stored `lastCiFailureSignature`. When a new, differing signature arrives (or none was previously stored), the count resets to 1 and the new signature is stored. When it crosses the threshold (3, matching `SPIN_DETECTION_THRESHOLD` and `SKIP_BLOCK_THRESHOLD`), the service auto-sets `blocked=true` and `blockedReason="Auto-blocked after {count} consecutive CI failures: {signature}"` to halt repeated dispatch cycles. Updated by `POST /prs/:id/patch` when `ciFailureSignature` is provided; left untouched when the field is omitted.
 
 `reviewedCommitSha`: optional string — the review pipeline's exclusive commit-tracking field, separate from the shared `commitSha` field written by claim()/patch()/deploy for their own multi-phase bookkeeping. Set via `PATCH /prs/:id`. Used by the review phase to independently track the commit at which a review was conducted, allowing review state to persist across pipeline transitions without interference from concurrent patch/deploy phase operations updating `commitSha`.
+
+`findings`: optional array of `PrFinding` objects — review/patch findings recorded against this PR. Appended via `POST /prs/:id/findings`. Always included in responses from `GET /prs/:id` and list queries; omitted from responses if the finding population is disabled or if findings have not been recorded. Each finding records a specific review or patch action that addressed a code finding (e.g., "resolved null-check bug in follow-up commit", "rejected as out-of-scope").
+
+#### PR Finding type
+
+A `PrFinding` object represents a single code finding that has been triaged during the review or patch phase:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (auto-generated, e.g., `clxfinding123456`) |
+| `prRecordId` | string | Reference to the parent PR record's ID |
+| `ref` | string | Identifier for the finding location (e.g., `src/foo.ts:42`, or a slug like `null-check-bug`) |
+| `disposition` | enum | Triage outcome: `resolved` (the finding was fixed), `superseded` (another fix addressed it), or `rejected` (out-of-scope/not a real issue) |
+| `source` | enum | Which pipeline recorded this finding: `review` (code review phase) or `patch` (automated patch/fix phase). Authority rule (enforced server-side): `source:"patch"` may only submit `disposition:"rejected"`; `source:"review"` may submit any disposition. |
+| `evidence` | string | Human-readable explanation of the triage decision (e.g., `"Fixed the null check in commit abc123"`, `"Already superseded by the bounds-check fix"`, `"This is intentional — caller guarantees non-null"`) |
+| `at` | string | ISO timestamp of when the finding was triaged / resolved (defaults to current time if omitted on creation) |
+| `createdAt` | string | ISO timestamp when the task-store record itself was created |
 
 #### PR timestamp fields
 
