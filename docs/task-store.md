@@ -400,6 +400,8 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 
 `findings`: optional array of `PrFinding` objects — review/patch findings recorded against this PR. Appended via `POST /prs/:id/findings`. Always included in responses from `GET /prs/:id` and list queries; omitted from responses if the finding population is disabled or if findings have not been recorded. Each finding records a specific review or patch action that addressed a code finding (e.g., "resolved null-check bug in follow-up commit", "rejected as out-of-scope").
 
+`events`: optional array of `PullRequestEvent` objects — field-level state transitions recorded in an append-only audit trail for this PR. Each event captures which field changed, its old/new values, which actor and method performed the write, and when. Always included in responses from `GET /prs/:id` and list queries; omitted from responses if event population is disabled or if events have not been recorded. Events are never deleted even if the PR record itself is removed.
+
 #### PR Finding type
 
 A `PrFinding` object represents a single code finding that has been triaged during the review or patch phase:
@@ -414,6 +416,27 @@ A `PrFinding` object represents a single code finding that has been triaged duri
 | `evidence` | string | Human-readable explanation of the triage decision (e.g., `"Fixed the null check in commit abc123"`, `"Already superseded by the bounds-check fix"`, `"This is intentional — caller guarantees non-null"`) |
 | `at` | string | ISO timestamp of when the finding was triaged / resolved (defaults to current time if omitted on creation) |
 | `createdAt` | string | ISO timestamp when the task-store record itself was created |
+
+#### PR Event type
+
+A `PullRequestEvent` object represents a single field-level state transition on a pull request, recorded in an append-only audit trail:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (auto-generated, e.g., `clxevent123456`) |
+| `prRecordId` | string | Reference to the parent PR record's ID |
+| `field` | string | Name of the field that changed (e.g., `reviewState`, `commitSha`, `blocked`). Stored as a plain string to allow new fields to be auditable without requiring schema migrations. |
+| `oldValue` | string (nullable) | The previous value of the field before this transition. When `null`, the field did not previously exist. |
+| `newValue` | string (nullable) | The new value of the field after this transition. When `null`, the field was cleared/deleted. |
+| `actor` | string (nullable) | The agent ID or system identifier that performed the transition (e.g., `"agent-42"`, `"system"`). When `null`, the actor was not recorded. |
+| `method` | string | The service method or API endpoint that performed the write (e.g., `"claim"`, `"complete"`, `"patch"`, `"PATCH /prs/:id"`) — a stable identifier for tracing which code path made the change. |
+| `at` | string | ISO timestamp of when the transition occurred, stamped by the caller at insert time. Distinct from `createdAt`, which records when the task-store record itself was persisted. |
+| `createdAt` | string | ISO timestamp when the task-store event record was created (auto-managed). |
+
+**Design notes:**
+- Events are written incrementally as service methods mutate the parent PR — a plain `INSERT` is race-safe, whereas a JSON-array read-modify-write `PATCH` on the PR itself would not be (mirrors the `PrFinding` rationale).
+- Events form an append-only log and are never deleted — even if the parent `PullRequest` row were removed, the audit trail would survive (the relation omits `onDelete=Cascade` to enforce retention).
+- Field, actor, and method are plain strings (not enums) — new fields and call sites can be auditable without requiring schema migrations.
 
 #### PR timestamp fields
 
