@@ -1164,3 +1164,115 @@ describe("PullRequestService.complete() claim release", () => {
     expect(data.readyForPatchAt).toBe(NOW.toISOString());
   });
 });
+
+// ─── appendFinding() ────────────────────────────────────────────────────────
+//
+// Unlike the DB-backed race test in pull-request-service.integration.test.ts
+// (which requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST and self-skips
+// without it), this exercises appendFinding()'s own two code paths — the
+// existence check and the create() call — against a hand-built Prisma
+// double, no real Postgres required. Mirrors makePrismaDouble above but adds
+// the prFinding.create() surface appendFinding() depends on.
+
+interface CreateFindingCall {
+  data: Record<string, unknown>;
+}
+
+function makeFindingPrismaDouble(prExists: boolean) {
+  const createCalls: CreateFindingCall[] = [];
+
+  const prisma = {
+    pullRequest: {
+      findUnique(_args: unknown): Promise<{ id: string } | null> {
+        return Promise.resolve(prExists ? { id: "pr-1" } : null);
+      },
+    },
+    prFinding: {
+      create(args: CreateFindingCall): Promise<Record<string, unknown>> {
+        createCalls.push(args);
+        return Promise.resolve({ id: "finding-1", ...args.data });
+      },
+    },
+    _createCalls: createCalls,
+  };
+
+  return prisma as unknown as {
+    pullRequest: { findUnique: (args: unknown) => Promise<{ id: string } | null> };
+    prFinding: { create: (args: CreateFindingCall) => Promise<Record<string, unknown>> };
+    _createCalls: CreateFindingCall[];
+  };
+}
+
+describe("PullRequestService.appendFinding()", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("inserts a PrFinding row scoped to prRecordId when the PR exists", async () => {
+    const prisma = makeFindingPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const finding = await svc.appendFinding("pr-1", {
+      ref: "src/foo.ts:42",
+      disposition: "resolved",
+      source: "review",
+      evidence: "Fixed in the follow-up commit.",
+    });
+
+    expect(prisma._createCalls).toHaveLength(1);
+    const { data } = prisma._createCalls[0];
+    expect(data.prRecordId).toBe("pr-1");
+    expect(data.ref).toBe("src/foo.ts:42");
+    expect(data.disposition).toBe("resolved");
+    expect(data.source).toBe("review");
+    expect(data.evidence).toBe("Fixed in the follow-up commit.");
+    expect(finding.id).toBe("finding-1");
+  });
+
+  test("defaults `at` to clock.now() when the caller omits it", async () => {
+    const prisma = makeFindingPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.appendFinding("pr-1", {
+      ref: "src/foo.ts:42",
+      disposition: "rejected",
+      source: "patch",
+      evidence: "Not a real issue.",
+    });
+
+    const { data } = prisma._createCalls[0];
+    expect(data.at).toBe(NOW.toISOString());
+  });
+
+  test("uses the caller-supplied `at` when provided, rather than clock.now()", async () => {
+    const prisma = makeFindingPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+    const explicitAt = "2026-06-01T00:00:00.000Z";
+
+    await svc.appendFinding("pr-1", {
+      ref: "src/foo.ts:42",
+      disposition: "resolved",
+      source: "review",
+      evidence: "Fixed.",
+      at: explicitAt,
+    });
+
+    const { data } = prisma._createCalls[0];
+    expect(data.at).toBe(explicitAt);
+  });
+
+  test("throws NotFoundError and never calls prFinding.create() when the PR does not exist", async () => {
+    const prisma = makeFindingPrismaDouble(false);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(
+      svc.appendFinding("missing-pr", {
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed.",
+      }),
+    ).rejects.toThrow(NotFoundError);
+
+    expect(prisma._createCalls).toHaveLength(0);
+  });
+});

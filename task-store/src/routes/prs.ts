@@ -32,7 +32,11 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { readJson } from "@shipwright/lib/http";
 import type { TaskStoreAuthEnv } from "../auth.ts";
 import { BadRequestError, NotFoundError } from "../errors.ts";
-import type { PullRequest } from "../index.ts";
+import type {
+  PrFindingDisposition,
+  PrFindingSource,
+  PullRequest,
+} from "../index.ts";
 import {
   ClaimNextBodySchema,
   ClaimNextResponseSchema,
@@ -628,22 +632,21 @@ export function createPrsRoutes(
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(findingsRoute, async (c): Promise<any> => {
     const body = await readJson(c);
-    const { ref, disposition, source, evidence, at } = body;
+    const { ref, evidence, at } = body;
+
+    // disposition/source are already constrained to their valid enum values
+    // by CreateFindingBodySchema's z.enum() — the OpenAPIHono request
+    // validator rejects any other value with its own 400 before this handler
+    // ever runs, so re-checking them here would be dead code; the cast below
+    // just recovers the type narrowing the validator already enforced at
+    // runtime. ref/evidence are schema-typed as z.string() (no .min(1)), so
+    // an empty string still reaches the handler — these two checks are the
+    // only ones that matter.
+    const disposition = body.disposition as PrFindingDisposition;
+    const source = body.source as PrFindingSource;
 
     if (typeof ref !== "string" || !ref) {
       throw new BadRequestError("ref is required");
-    }
-    if (
-      disposition !== "resolved" &&
-      disposition !== "superseded" &&
-      disposition !== "rejected"
-    ) {
-      throw new BadRequestError(
-        "disposition must be one of: resolved, superseded, rejected",
-      );
-    }
-    if (source !== "review" && source !== "patch") {
-      throw new BadRequestError("source must be one of: review, patch");
     }
     if (typeof evidence !== "string" || !evidence) {
       throw new BadRequestError("evidence is required");

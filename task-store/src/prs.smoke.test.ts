@@ -1758,6 +1758,57 @@ describe("/prs routes (smoke)", () => {
     expect([200, 201]).toContain(res.status);
   });
 
+  it("POST /prs/:id/findings returns 400 when ref is an empty string", async () => {
+    // Zod's z.string() body-schema check accepts an empty string (it isn't
+    // .min(1)), so this exercises the handler's own `!ref` truthiness check
+    // rather than being intercepted by the OpenAPIHono request validator.
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed in the follow-up commit.",
+      }),
+    });
+    expect(res.status).toBe(400);
+    // The service must never be called — validation fails before persistence.
+    expect(appendFindingCalls).toHaveLength(0);
+  });
+
+  it("POST /prs/:id/findings returns 400 when evidence is an empty string", async () => {
+    // Same rationale as the empty-ref case above — z.string() lets an empty
+    // string reach the handler, which is where evidence's `!evidence` check
+    // actually rejects it.
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(appendFindingCalls).toHaveLength(0);
+  });
+
   it("POST /prs/:id/findings returns 404 when the PR does not exist", async () => {
     const app = makeApp({
       prService: fakePrService({
