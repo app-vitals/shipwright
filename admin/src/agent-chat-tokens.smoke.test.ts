@@ -38,6 +38,7 @@ async function makeSessionCookie(secret = SESSION_SECRET): Promise<string> {
 // ─── Minimal provisioner stub ─────────────────────────────────────────────────
 
 const noopProvisioner: AgentProvisioner = {
+  canProvision: false,
   async provision(agentId: string): Promise<ProvisionResult> {
     return {
       resourceName: agentId,

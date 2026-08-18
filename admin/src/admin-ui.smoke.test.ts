@@ -333,6 +333,7 @@ function makeMockDeps(
     googleClient: makeGoogleClient(),
     slackClient: { ...BASE_SLACK_CLIENT, ...slackClientOverride },
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",
@@ -2342,6 +2343,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async (id: string, opts: { slug: string }) => {
           provisionArgs = { id, opts };
           return { resourceName: "r", secretName: "s", deploymentName: "d" };
@@ -2445,6 +2447,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async () => {
           throw new Error("provisioning exploded");
         },
@@ -2530,6 +2533,7 @@ describe("admin UI — provision start form", () => {
         }),
       },
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3022,6 +3026,7 @@ describe("admin UI — agent delete route", () => {
     const chatThreadsDeletedFor: string[] = [];
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3130,6 +3135,7 @@ describe("admin UI — agent delete route", () => {
     let deleted: string | null = null;
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",
@@ -3217,6 +3223,7 @@ describe("admin UI — agent delete route", () => {
   it("admin POST /admin/agents/:id/delete → surfaces manualStepsRequired on the success redirect when the agent has secret env rows", async () => {
     const deps = makeMockDeps({
       provisioner: {
+        canProvision: false,
         provision: async () => ({
           resourceName: "r",
           secretName: "s",

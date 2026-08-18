@@ -79,6 +79,8 @@ function fakeAgentTypeRegistry(
  * call. Injected via deps — no mock.module, no global overrides.
  */
 class RecordingProvisioner implements AgentProvisioner {
+  readonly canProvision = true;
+
   readonly provisioned: string[] = [];
   readonly deprovisioned: string[] = [];
   reconcileResult: {
@@ -1713,6 +1715,7 @@ describe("admin API — delete agent", () => {
     // step) rather than throwing, so the row must survive and the response
     // must be 200 with agentDeleted: false — NOT a 500.
     const provisioner: AgentProvisioner = {
+      canProvision: false,
       async provision(agentId: string): Promise<ProvisionResult> {
         return {
           resourceName: agentId,
@@ -2352,6 +2355,7 @@ describe("admin API — selfHosted field", () => {
     // Track which agents are passed to reconcile
     const agentsPassed: Array<{ id: string; slug?: string }> = [];
     const trackingProvisioner: AdminDeps["provisioner"] = {
+      canProvision: false,
       async provision(agentId, opts) {
         return provisioner.provision(agentId, opts);
       },

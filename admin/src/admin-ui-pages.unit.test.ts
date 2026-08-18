@@ -668,6 +668,75 @@ describe("renderNewLocalAgentPage", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
   });
+
+  test("renders both runtime radios", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    expect(html).toMatch(
+      /<input[^>]*name="runtime"[^>]*value="in-cluster"[^>]*>/,
+    );
+    expect(html).toMatch(
+      /<input[^>]*name="runtime"[^>]*value="self-hosted"[^>]*>/,
+    );
+  });
+
+  test("canProvision: true preselects in-cluster and leaves it enabled", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const inCluster = html.match(
+      /<input[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inCluster).toContain("checked");
+    expect(inCluster).not.toContain("disabled");
+    const selfHosted = html.match(
+      /<input[^>]*value="self-hosted"[^>]*\/>/,
+    )?.[0] as string;
+    expect(selfHosted).not.toContain("checked");
+  });
+
+  test("canProvision: false disables in-cluster, preselects self-hosted, and explains why", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: false,
+    });
+    const inCluster = html.match(
+      /<input[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inCluster).toContain("disabled");
+    expect(inCluster).not.toContain("checked");
+    const selfHosted = html.match(
+      /<input[^>]*value="self-hosted"[^>]*\/>/,
+    )?.[0] as string;
+    expect(selfHosted).toContain("checked");
+    expect(html).toContain("SHIPWRIGHT_K8S_PROVISIONING");
+  });
+
+  test("omitted canProvision defaults to unavailable", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const inCluster = html.match(
+      /<input[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inCluster).toContain("disabled");
+  });
+
+  test("renders an optional CLAUDE_CODE_OAUTH_TOKEN input", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="claudeCodeOauthToken"[^>]*type="password"[^>]*>/,
+    );
+    expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
+  });
+
+  test("asks for no Slack credentials and points at the chat UI", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    expect(html).not.toContain("xoxp");
+    expect(html).not.toContain("xoxb");
+    expect(html).not.toMatch(/name="xoxpToken"/);
+    expect(html).toContain("/admin/chat");
+  });
 });
 
 // ─── renderAgentDetailPage — env vars section ────────────────────────────────

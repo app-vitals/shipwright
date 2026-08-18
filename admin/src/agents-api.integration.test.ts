@@ -717,6 +717,7 @@ describeOrSkip("admin CRUD API (integration)", () => {
 
   it("POST /agents with provisioner failure rolls back seeded AgentTool and AgentPlugin rows via cascade delete", async () => {
     const throwingProvisioner: AgentProvisioner = {
+      canProvision: false,
       provision: async () => {
         throw new Error("provisioner failure");
       },

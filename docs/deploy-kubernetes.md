@@ -325,9 +325,21 @@ kubectl port-forward svc/shipwright-chat       3002:3000 -n shipwright
 ### Creating your first agent
 
 **The chart creates no agents.** Agents are provisioned at runtime by the admin
-service, so make one at `http://shipwright.local/admin/agents/new`, and set its
-Claude credential (`ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`) there — this
-chart does not provision deployment-wide Claude credentials.
+service, so make one at `http://shipwright.local/admin/agents/new`:
+
+- Pick **Provisioned in-cluster** for the runtime — the admin service creates the
+  agent's Deployment, Secret, and PVC for you. (The option is disabled unless
+  `agent.provisioning.enabled` is set, which puts `SHIPWRIGHT_K8S_PROVISIONING=enabled`
+  on the admin service.) **Self-hosted** is for agents whose container you run
+  yourself.
+- Paste a Claude credential (`CLAUDE_CODE_OAUTH_TOKEN`) into the form — this chart
+  does not provision deployment-wide Claude credentials. You can also set
+  `ANTHROPIC_API_KEY` from the agent's detail page afterwards.
+
+**No Slack credentials are required.** An agent with no Slack tokens boots in
+offline mode and is driven from the admin console's **Chat** tab
+(`http://shipwright.local/admin/chat`). Slack is optional and can be connected
+later from the `/admin/provision` wizard.
 
 ### TLS and security
 

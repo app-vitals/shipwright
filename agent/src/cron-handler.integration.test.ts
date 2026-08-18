@@ -428,3 +428,109 @@ describe("handleCronRequest + sessionId wiring into completeRun (CSI-2.2)", () =
     expect(completeCalls[0]?.opts?.sessionId).toBeUndefined();
   });
 });
+
+// ─── Chat-only agent (no Slack client) ────────────────────────────────────────
+
+describe("cron dispatch on an agent with no Slack credentials", () => {
+  /**
+   * A chat-only agent gets `slack: undefined` from index.ts rather than a
+   * WebClient wrapped around an empty token. The job must still run and be
+   * recorded as completed — only the delivery step is skipped.
+   */
+  test("a channel-targeted job completes and posts nothing", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+    let posted = false;
+    const runner = async (): Promise<ClaudeRunResult> => {
+      posted = false;
+      return { result: "work happened", sessionId: "s1" };
+    };
+
+    await handleCronRequest(
+      { jobId: "chat-only-channel", prompt: "hello", channel: "C-X" },
+      {
+        slack: undefined,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+    expect(posted).toBe(false);
+  });
+
+  test("a DM-targeted job completes and opens no conversation", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => ({
+      result: "work happened",
+      sessionId: "s1",
+    });
+
+    await handleCronRequest(
+      { jobId: "chat-only-dm", prompt: "hello", user: "U-X" },
+      {
+        slack: undefined,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+  });
+
+  test("a silent job is unaffected — it never reached delivery anyway", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+    const runner = async (): Promise<ClaudeRunResult> => ({
+      result: "quiet work",
+      sessionId: "s1",
+    });
+
+    await handleCronRequest(
+      { jobId: "chat-only-silent", prompt: "hello", silent: true },
+      {
+        slack: undefined,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(completeCalls).toHaveLength(1);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+  });
+
+  test("with a Slack client present, a channel job still delivers", async () => {
+    const { reporter, completeCalls } = makeRecordingReporter();
+    const channels: string[] = [];
+    const recordingSlack = {
+      chat: {
+        postMessage: async (args: { channel: string }) => {
+          channels.push(args.channel);
+          return { ok: true, ts: "1234567890.000001" };
+        },
+      },
+      conversations: { open: async () => ({ channel: { id: "D_DM" } }) },
+    } as unknown as WebClient;
+    const runner = async (): Promise<ClaudeRunResult> => ({
+      result: "work happened",
+      sessionId: "s1",
+    });
+
+    await handleCronRequest(
+      { jobId: "slack-present", prompt: "hello", channel: "C-X" },
+      {
+        slack: recordingSlack,
+        runner,
+        cronRunReporter: reporter,
+        clock: makeMutableClock(new Date("2026-07-20T00:00:00Z")),
+      },
+    );
+
+    expect(channels).toEqual(["C-X"]);
+    expect(completeCalls[0]?.outcome).toBe("completed");
+  });
+});
+

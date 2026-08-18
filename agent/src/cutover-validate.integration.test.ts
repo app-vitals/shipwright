@@ -96,7 +96,7 @@ describe("validateCutover", () => {
     expect(results.every((r) => r.passed)).toBe(true);
   });
 
-  it("fails when SLACK_BOT_TOKEN is missing", async () => {
+  it("does NOT fail when SLACK_BOT_TOKEN is missing — a chat-only agent is a supported configuration", async () => {
     const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
     const client = new RecordedShipwrightConfigClient(makeConfig(env), [
       makeCron("cron-1"),
@@ -104,18 +104,30 @@ describe("validateCutover", () => {
     const results = await validateCutover(client, AGENT_ID);
     const slackCheck = results.find((r) => r.name === "SLACK_BOT_TOKEN");
     expect(slackCheck).toBeDefined();
-    expect(slackCheck?.passed).toBe(false);
+    expect(slackCheck?.passed).toBe(true);
+    expect(slackCheck?.message).toContain("chat-only");
+    // The whole run still passes — nothing else depended on Slack.
+    expect(results.every((r) => r.passed)).toBe(true);
   });
 
-  it("names the failing check when SLACK_BOT_TOKEN is missing", async () => {
+  it("reports SLACK_BOT_TOKEN as present when it is set", async () => {
+    const client = new RecordedShipwrightConfigClient(
+      makeConfig(makeAppAuthEnv()),
+      [makeCron("cron-1")],
+    );
+    const results = await validateCutover(client, AGENT_ID);
+    const slackCheck = results.find((r) => r.name === "SLACK_BOT_TOKEN");
+    expect(slackCheck?.passed).toBe(true);
+    expect(slackCheck?.message).toBe("SLACK_BOT_TOKEN is present");
+  });
+
+  it("names no failing check when only SLACK_BOT_TOKEN is missing", async () => {
     const { SLACK_BOT_TOKEN: _s, ...env } = makeAppAuthEnv();
     const client = new RecordedShipwrightConfigClient(makeConfig(env), [
       makeCron("cron-1"),
     ]);
     const results = await validateCutover(client, AGENT_ID);
-    const failed = results.filter((r) => !r.passed);
-    expect(failed.length).toBe(1);
-    expect(failed[0].name).toBe("SLACK_BOT_TOKEN");
+    expect(results.filter((r) => !r.passed)).toEqual([]);
   });
 
   it("fails when GitHub auth credentials are missing", async () => {
@@ -144,11 +156,12 @@ describe("validateCutover", () => {
     const client = new RecordedShipwrightConfigClient(makeConfig({}), []);
     const results = await validateCutover(client, AGENT_ID);
     const failed = results.filter((r) => !r.passed);
-    expect(failed.length).toBeGreaterThanOrEqual(3);
+    expect(failed.length).toBeGreaterThanOrEqual(2);
     const names = failed.map((r) => r.name);
-    expect(names).toContain("SLACK_BOT_TOKEN");
     expect(names).toContain("github_auth");
     expect(names).toContain("crons");
+    // Slack is informational — an empty env does not fail it.
+    expect(names).not.toContain("SLACK_BOT_TOKEN");
   });
 
   it("fails when GH_APP_INSTALLATION_ID is missing (partial App creds)", async () => {

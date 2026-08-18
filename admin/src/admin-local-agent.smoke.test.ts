@@ -255,6 +255,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     googleClient: makeGoogleClient(),
     slackClient: BASE_SLACK_CLIENT,
     provisioner: {
+      canProvision: false,
       provision: async () => ({
         resourceName: "r",
         secretName: "s",
@@ -308,7 +309,7 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('name="name"');
-    expect(html).toContain("New Local Agent");
+    expect(html).toContain("New Agent");
   });
 
   it("GET /admin/agents/new — renders a required type select listing the registry's built-in types", async () => {
@@ -636,5 +637,207 @@ describe("admin UI — new local agent create flow", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).not.toContain("New local agent");
+  });
+
+  // ── runtime=in-cluster (Slack-free provisioning) ──────────────────────────
+
+  /**
+   * Builds deps with a recording provisioner / cron service / env service so a
+   * test can assert exactly what the create path did. `canProvision` defaults
+   * to true because these cases exercise the in-cluster branch.
+   */
+  function makeProvisioningDeps(opts?: {
+    canProvision?: boolean;
+    provisionError?: Error;
+    reconcileError?: Error;
+  }) {
+    const calls = {
+      created: null as { name: string; selfHosted?: boolean } | null,
+      provisioned: [] as Array<{ id: string; slug?: string }>,
+      reconciled: [] as string[],
+      deleted: [] as string[],
+      envPatches: [] as Array<{
+        agentId: string;
+        env: Record<string, string>;
+        secretKeys: Set<string> | undefined;
+      }>,
+    };
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      agentService: {
+        ...base.agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => {
+          calls.created = input;
+          return {
+            id: NEW_AGENT_ID,
+            name: input.name,
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: [],
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+        delete: async (id: string) => {
+          calls.deleted.push(id);
+        },
+      },
+      agentEnvService: {
+        ...base.agentEnvService,
+        patch: async (
+          agentId: string,
+          env: Record<string, string>,
+          secretKeys?: Set<string>,
+        ) => {
+          calls.envPatches.push({ agentId, env, secretKeys });
+        },
+      },
+      agentCronJobService: {
+        ...base.agentCronJobService,
+        reconcileSystemCrons: async (agentId: string) => {
+          calls.reconciled.push(agentId);
+          if (opts?.reconcileError) throw opts.reconcileError;
+          return { created: 3, updated: 0, deleted: 0 };
+        },
+      },
+      provisioner: {
+        ...base.provisioner,
+        canProvision: opts?.canProvision ?? true,
+        provision: async (id: string, o?: { slug?: string }) => {
+          calls.provisioned.push({ id, slug: o?.slug });
+          if (opts?.provisionError) throw opts.provisionError;
+          return {
+            resourceName: "r",
+            secretName: "s",
+            deploymentName: "d",
+          };
+        },
+      },
+    });
+    return { deps, calls };
+  }
+
+  async function postAgent(
+    deps: AdminUIDeps,
+    fields: Record<string, string>,
+  ): Promise<Response> {
+    return createAdminUIApp(deps).request("/admin/agents", {
+      method: "POST",
+      body: new URLSearchParams(fields).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+  }
+
+  it("runtime=in-cluster creates a non-self-hosted agent, provisions it, and seeds system crons", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "minikube-agent",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(calls.created?.selfHosted).toBe(false);
+    expect(calls.provisioned).toEqual([
+      { id: NEW_AGENT_ID, slug: "minikube-agent" },
+    ]);
+    expect(calls.reconciled).toEqual([NEW_AGENT_ID]);
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("runtime=self-hosted keeps the historical behavior — selfHosted:true, provisioner untouched", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "docker-agent",
+      type: "coding",
+      runtime: "self-hosted",
+    });
+    expect(res.status).toBe(302);
+    expect(calls.created?.selfHosted).toBe(true);
+    expect(calls.provisioned).toEqual([]);
+  });
+
+  it("omitted runtime defaults to self-hosted", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    await postAgent(deps, { name: "no-runtime-field", type: "coding" });
+    expect(calls.created?.selfHosted).toBe(true);
+    expect(calls.provisioned).toEqual([]);
+  });
+
+  it("runtime=in-cluster is rejected before any row is created when provisioning is disabled", async () => {
+    const { deps, calls } = makeProvisioningDeps({ canProvision: false });
+    const res = await postAgent(deps, {
+      name: "nope",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=provisioning_disabled",
+    );
+    expect(calls.created).toBeNull();
+    expect(calls.provisioned).toEqual([]);
+  });
+
+  it("provisioning failure rolls the agent row back and redirects with provision_failed", async () => {
+    const { deps, calls } = makeProvisioningDeps({
+      provisionError: new Error("no cluster"),
+    });
+    const res = await postAgent(deps, {
+      name: "doomed",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=provision_failed",
+    );
+    expect(calls.deleted).toEqual([NEW_AGENT_ID]);
+    expect(calls.reconciled).toEqual([]);
+  });
+
+  it("a cron-seeding failure is non-fatal — the agent survives and the redirect succeeds", async () => {
+    const { deps, calls } = makeProvisioningDeps({
+      reconcileError: new Error("db down"),
+    });
+    const res = await postAgent(deps, {
+      name: "crons-broke",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("a supplied Claude token is stored as a secret env var before provisioning", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    await postAgent(deps, {
+      name: "with-creds",
+      type: "coding",
+      runtime: "in-cluster",
+      claudeCodeOauthToken: "sk-ant-oat01-example",
+    });
+    expect(calls.envPatches).toHaveLength(1);
+    const patch = calls.envPatches[0];
+    expect(patch?.agentId).toBe(NEW_AGENT_ID);
+    expect(patch?.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat01-example");
+    expect(patch?.secretKeys?.has("CLAUDE_CODE_OAUTH_TOKEN")).toBe(true);
+  });
+
+  it("no Claude token supplied → no env patch at all", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    await postAgent(deps, {
+      name: "no-creds",
+      type: "coding",
+      runtime: "in-cluster",
+    });
+    expect(calls.envPatches).toEqual([]);
   });
 });

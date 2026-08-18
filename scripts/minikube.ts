@@ -457,6 +457,14 @@ function printNextSteps(): void {
   console.log("\n────────────────────────────────────────────────────────────");
   console.log("Shipwright is up.\n");
   console.log(`  ${urls.devLogin}\n`);
+  console.log("Then create an agent:\n");
+  console.log(`  ${urls.agentNew}\n`);
+  console.log(
+    "  Runtime: pick 'Provisioned in-cluster' and paste a Claude credential.",
+  );
+  console.log(
+    "  No Slack needed — chat with the agent from the console's Chat tab.\n",
+  );
 
   if (!ingressHostResolves()) {
     console.log(`${INGRESS_HOST} is not in /etc/hosts yet — add it, then open`);

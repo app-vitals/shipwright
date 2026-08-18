@@ -118,7 +118,18 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
 
-const slack = new WebClient(config.slack.botToken ?? "");
+// Slack is optional (see Step 7). Building a WebClient around an empty token
+// would make every downstream call fail with `invalid_auth` instead of being
+// skipped, so a chat-only agent gets no client at all and callers branch on
+// `undefined`.
+const slackAppConfig = {
+  botToken: config.slack.botToken ?? "",
+  appToken: config.slack.appToken ?? "",
+  signingSecret: config.slack.signingSecret ?? "",
+};
+const slack = hasSlackCredentials(slackAppConfig)
+  ? new WebClient(slackAppConfig.botToken)
+  : undefined;
 const runner = createRunClaude(
   Bun.spawn,
   sessions,
@@ -525,12 +536,6 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
 // without an appToken, so the agent runs Slack ONLY when both tokens are present.
 // Absent creds → offline mode: skip Slack, keep health green, interact via the chat UI.
 
-const slackAppConfig = {
-  botToken: config.slack.botToken ?? "",
-  appToken: config.slack.appToken ?? "",
-  signingSecret: config.slack.signingSecret ?? "",
-};
-
 let app: ReturnType<typeof createSlackApp> | undefined;
 
 if (hasSlackCredentials(slackAppConfig)) {
@@ -557,7 +562,9 @@ if (hasSlackCredentials(slackAppConfig)) {
   markSlackConnected();
   console.log("[agent] Slack app started — running");
 
-  await sendBackOnlineDm(slack, config.owner.user);
+  // `slack` is non-undefined whenever hasSlackCredentials() held, but TypeScript
+  // cannot narrow it across this distance.
+  if (slack) await sendBackOnlineDm(slack, config.owner.user);
 } else {
   console.warn(
     "[agent] Slack credentials absent (need SLACK_BOT_TOKEN + SLACK_APP_TOKEN) — " +

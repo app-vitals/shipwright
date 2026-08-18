@@ -135,6 +135,10 @@ A browser window opens automatically to the admin dev-login page. The **agent** 
 
 In the admin console, go to **Agents → New** (<http://localhost:3001/admin/agents/new>) and create an agent, picking a type from the picker (e.g. **Coding Agent**).
 
+Leave the runtime on **Self-hosted** — `task stack` runs the agent's container for you in the agent pane. (The **Provisioned in-cluster** option is disabled here anyway: it needs `SHIPWRIGHT_K8S_PROVISIONING`, which only the Helm chart sets. See [deploy-kubernetes.md](./deploy-kubernetes.md) for that path.)
+
+No Slack credentials are needed — you'll talk to the agent from the Chat tab in Step 4.
+
 The agent pane's wait-loop polls the database and detects the new agent automatically — no stack restart needed. Once detected, it seeds the agent's chat token and starts the Docker container with that agent's id.
 
 Relaunching the stack later with an agent already created proceeds immediately — the wait-loop resolves on its first check, so you never need to delete and recreate an agent just to restart `task stack`.
