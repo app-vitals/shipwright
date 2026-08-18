@@ -20,7 +20,7 @@
 // asking the LLM to recompute the definition by hand.
 //
 // A qualifying review is excluded from counting as an unaddressed finding by
-// any of four exclusions:
+// any of five exclusions:
 //   1. isSelfCleanApprove (CPF-2.1) — a self-authored clean-APPROVE review.
 //   2. isAddressedByAuthorReply (CPF-2.3) — a third-party review addressed by a
 //      subsequent PR-author reply.
@@ -32,11 +32,17 @@
 //      self-authored COMMENT finding could never be superseded. Each entry is
 //      judged independently (Option B) — no coupling to other findings in the
 //      pass.
+//   5. isResolvedByLedger (PFL-3.2) — a review whose ref has a matching
+//      task-store ledger entry (source: "review") with disposition "resolved"
+//      or "superseded". Unlike exclusion 4, this is NOT gated on
+//      self-authorship — ledger entries are written by the code-reviewer
+//      subagent independent of whose review is being resolved, so this
+//      exclusion applies to third-party reviews too.
 //
 // CLI:
-//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...]}'
-// or pipe the same JSON blob via stdin. `priorFindingsStatus` is optional and
-// defaults to [] when absent.
+//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...]}'
+// or pipe the same JSON blob via stdin. `priorFindingsStatus` and `findings`
+// are both optional and default to [] when absent.
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
@@ -88,6 +94,29 @@ export interface PriorFindingStatus {
   evidence: string;
 }
 
+/**
+ * One durable, task-store-backed ledger entry for a PR finding (PFL-3.2).
+ * Mirrors the fields this module needs from task-store/src/openapi-schemas.ts's
+ * `PrFindingSchema` (duplicated here, not imported — see this file's header
+ * comment for the rationale). Written by the code-reviewer subagent
+ * (`source: "review"`) or the patch pipeline (`source: "patch"`) when a
+ * finding's disposition is settled — as opposed to `priorFindingsStatus[]`,
+ * which is an ephemeral, single-pass attestation scoped to the CURRENT review
+ * invocation only, the ledger persists across passes in the task store.
+ */
+export interface PrFinding {
+  id: string;
+  prRecordId: string;
+  /** Matches `reviewRef(review)` (or a `file:line` ref for inline findings). */
+  ref: string;
+  disposition: "resolved" | "superseded" | "rejected";
+  /** Which pipeline stage recorded this disposition. */
+  source: "review" | "patch";
+  evidence: string;
+  at: string;
+  createdAt: string;
+}
+
 export interface PrReviewData {
   headRefOid: string;
   reviews: { nodes: ReviewNode[] };
@@ -100,6 +129,12 @@ export interface PrReviewData {
    * callers that never build this field keep their current behavior exactly.
    */
   priorFindingsStatus?: PriorFindingStatus[];
+  /**
+   * Durable task-store ledger entries for this PR (PFL-3.2). Optional —
+   * defaults to `[]` when absent, so all existing callers that never build
+   * this field keep their current behavior exactly.
+   */
+  findings?: PrFinding[];
 }
 
 // ─── Self-review body matching ────────────────────────────────────────────────
@@ -293,6 +328,32 @@ export function isResolvedByPriorFindingsStatus(
 }
 
 /**
+ * Returns true when a durable task-store ledger entry exists for `ref` with
+ * `source: "review"` and a disposition of `"resolved"` or `"superseded"`
+ * (PFL-3.2 — the fifth exclusion, alongside isSelfCleanApprove/CPF-2.1,
+ * isAddressedByAuthorReply/CPF-2.3, isSupersededBySelfReview/DRO-1.2, and
+ * isResolvedByPriorFindingsStatus/PVD-1.3).
+ *
+ * Unlike isResolvedByPriorFindingsStatus, this predicate is deliberately NOT
+ * gated on self-authorship: ledger entries are written by the code-reviewer
+ * subagent (`source: "review"`) independent of whose review is being
+ * resolved, so a third-party review's finding can be excluded here too — the
+ * caller does not need to (and should not) filter `findings` by review author
+ * before calling this. `source: "patch"` entries never exclude — only the
+ * review pipeline's own dispositions count for this gate. A `"rejected"`
+ * disposition also never excludes, since the finding was disputed rather than
+ * fixed or superseded.
+ */
+export function isResolvedByLedger(ref: string, findings: PrFinding[]): boolean {
+  return findings.some(
+    (f) =>
+      f.ref === ref &&
+      f.source === "review" &&
+      (f.disposition === "resolved" || f.disposition === "superseded"),
+  );
+}
+
+/**
  * Returns true if the PR has unaddressed findings:
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
@@ -310,7 +371,7 @@ export function isResolvedByPriorFindingsStatus(
  * review's finding as addressed, since only the review's own author can edit
  * its body.
  *
- * Finally, a prior self-authored review is excluded when the current pass's
+ * A prior self-authored review is excluded when the current pass's
  * `priorFindingsStatus[]` attests it resolved with evidence (see
  * isResolvedByPriorFindingsStatus, PVD-1.3) — the fourth exclusion, which
  * breaks the review-verdict deadlock where a self-authored COMMENT finding
@@ -318,6 +379,12 @@ export function isResolvedByPriorFindingsStatus(
  * `priorFindingsStatus[]` entry is judged independently (Option B): a fresh
  * unrelated blocking finding in the same pass does not prevent an
  * already-verified resolution from being excluded.
+ *
+ * Finally, ANY qualifying review (self-authored or third-party) is excluded
+ * when a durable task-store ledger entry marks its ref resolved or superseded
+ * (see isResolvedByLedger, PFL-3.2) — the fifth exclusion, not gated on
+ * self-authorship since ledger entries are written by the code-reviewer
+ * subagent independent of whose review is being resolved.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
@@ -325,18 +392,21 @@ export function hasUnaddressedFindings(
 ): boolean {
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const priorFindingsStatus = data.priorFindingsStatus ?? [];
+  const findings = data.findings ?? [];
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
   // excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
-  // superseded by a later clean self-review (DRO-1.2), and prior self-reviews
-  // attested resolved by the current pass's priorFindingsStatus[] (PVD-1.3).
+  // superseded by a later clean self-review (DRO-1.2), prior self-reviews
+  // attested resolved by the current pass's priorFindingsStatus[] (PVD-1.3),
+  // and reviews resolved/superseded per the task-store ledger (PFL-3.2).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
       !isSelfCleanApprove(r, currentUser) &&
       !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
-      !isResolvedByPriorFindingsStatus(r, priorFindingsStatus, currentUser),
+      !isResolvedByPriorFindingsStatus(r, priorFindingsStatus, currentUser) &&
+      !isResolvedByLedger(reviewRef(r), findings),
   );
 
   if (qualifyingReviews.length === 0) return false;
@@ -394,6 +464,15 @@ function parseCliInput(raw: string): CliInput {
       'Input JSON "priorFindingsStatus" field, when present, must be an array',
     );
   }
+  // findings is optional (PFL-3.2) — absent when no task-store ledger entries
+  // exist yet for this PR. When present it must be an array; individual
+  // entries are trusted as shaped by the task-store's PrFinding record, same
+  // as priorFindingsStatus entries above.
+  if (parsed.findings !== undefined && !Array.isArray(parsed.findings)) {
+    throw new Error(
+      'Input JSON "findings" field, when present, must be an array',
+    );
+  }
   return {
     currentUser: parsed.currentUser,
     headRefOid: parsed.headRefOid,
@@ -401,6 +480,7 @@ function parseCliInput(raw: string): CliInput {
     reviewThreads: parsed.reviewThreads,
     comments: parsed.comments,
     priorFindingsStatus: parsed.priorFindingsStatus ?? [],
+    findings: parsed.findings ?? [],
   };
 }
 
@@ -416,6 +496,7 @@ if (import.meta.main) {
       reviewThreads: input.reviewThreads,
       comments: input.comments,
       priorFindingsStatus: input.priorFindingsStatus,
+      findings: input.findings,
     },
     input.currentUser,
   );
