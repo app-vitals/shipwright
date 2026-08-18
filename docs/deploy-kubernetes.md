@@ -97,15 +97,23 @@ The chat service requires:
   a database connection.
 - **Admin-token wiring** (`chat.adminToken`) to light up the admin console's
   Chat tab (`/admin/chat`). Without it the tab renders "Chat service not
-  configured". Add a raw token to a Secret (key
-  `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` by default), then:
+  configured". Leave `chat.adminToken.existingSecret` unset and the chart
+  **generates the token for you**, into its own chart-managed chat Secret
+  (reused across `helm upgrade` via the same `lookup`-based idiom as the
+  auto-generated DB secrets above — nothing to create by hand):
+
+```bash
+helm upgrade shipwright charts/shipwright --set chat.enabled=true
+```
+
+  To supply your own token instead, add a raw one to a Secret (key
+  `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` by default), then point
+  `chat.adminToken.existingSecret` at it:
 
 ```bash
 kubectl -n shipwright patch secret shipwright-secrets --type merge \
   -p "{\"stringData\":{\"SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN\":\"$(openssl rand -hex 32)\"}}"
 ```
-
-Then upgrade the chart:
 
 ```bash
 helm upgrade shipwright charts/shipwright \
@@ -113,14 +121,14 @@ helm upgrade shipwright charts/shipwright \
   --set chat.adminToken.existingSecret=shipwright-secrets
 ```
 
-  The chart injects the **same raw token** into both sides: the chat container
-  gets it as `CHAT_SEED_ADMIN_TOKEN` (the service upserts the SHA-256 hash into
-  its DB at every boot — idempotent), and the admin container gets it as
-  `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` plus `SHIPWRIGHT_CHAT_SERVICE_URL`
-  pointing at the in-cluster chat Service. This also enables per-agent
-  chat-token minting during agent provisioning, which injects
-  `SHIPWRIGHT_CHAT_SERVICE_URL`/`SHIPWRIGHT_CHAT_SERVICE_TOKEN` into each
-  provisioned agent pod so its chat poll loop starts. Agents provisioned
+  Either way, the chart injects the **same raw token** into both sides: the
+  chat container gets it as `CHAT_SEED_ADMIN_TOKEN` (the service upserts the
+  SHA-256 hash into its DB at every boot — idempotent), and the admin
+  container gets it as `SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN` plus
+  `SHIPWRIGHT_CHAT_SERVICE_URL` pointing at the in-cluster chat Service. This
+  also enables per-agent chat-token minting during agent provisioning, which
+  injects `SHIPWRIGHT_CHAT_SERVICE_URL`/`SHIPWRIGHT_CHAT_SERVICE_TOKEN` into
+  each provisioned agent pod so its chat poll loop starts. Agents provisioned
   **before** this wiring existed need a re-provision to pick up the chat env.
 - **Optional agent scope resolution:** when agents create chat tokens, the chat
   service can query which repos a token may access. Pass these via `chat.extraEnv`
@@ -238,8 +246,11 @@ echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
 
 ### Sizing
 
-The agent pod dominates: **500m CPU / 2Gi memory requests, 8Gi limit**
-(`admin/src/agent-manifest.ts`). Everything else is small.
+The agent pod dominates: **500m CPU / 2Gi memory requests, 8Gi memory limit,
+4Gi ephemeral-storage** (`admin/src/agent-manifest.ts`). Ephemeral-storage was
+raised from a 1Gi default that left no room for a build step's scratch space
+and caused mid-run evictions; tool caches are pinned to the PVC, so this
+budget only covers genuinely transient writes. Everything else is small.
 
 | VM size | Good for |
 |---|---|
@@ -293,9 +304,14 @@ browsable URL is `/dashboard/dashboard`, not `/dashboard`:
 - Metrics dashboard: `http://shipwright.local/dashboard/dashboard`
 - Task store: `http://shipwright.local/task-store/health`
 
-`task minikube:up` prints these exact URLs (via `buildAccessUrls()` in
-`scripts/minikube.ts`) once the stack is reachable, rather than requiring you
-to work them out by hand.
+`task minikube:up` doesn't print this whole list — the console root (`/`)
+redirects to a Google sign-in page the Minikube profile never configures, a
+dead end for a fresh stack. Instead it prints and auto-opens exactly one link,
+`/admin/dev-login` (via `buildAccessUrls()` in `scripts/minikube.ts`), which
+mints a dev session outright and lands on `/admin/agents`; every other surface
+above is reachable from the console once you're signed in. If `/etc/hosts`
+isn't mapped yet it prints the `echo … | sudo tee -a /etc/hosts` line instead
+of opening the browser.
 
 Or port-forward instead (works with the default `networking.type=ClusterIP`):
 
