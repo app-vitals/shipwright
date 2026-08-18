@@ -244,21 +244,23 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- end }}
-            {{- if and .Values.chat.enabled .Values.chat.adminToken.existingSecret }}
+            {{- with (include "shipwright.chat.adminTokenSecretName" .) }}
             # ── Chat-service wiring ───────────────────────────────────────────
             # Enables the admin console's Chat tab (/admin/chat) and per-agent
             # chat-token minting during provisioning. The URL is the in-cluster
             # chat Service; the token is the same raw value the chat service
             # seeds at boot via CHAT_SEED_ADMIN_TOKEN, so the pair works out of
-            # the box. Override the URL via admin.extraEnv if needed (extraEnv
-            # is appended last and wins).
+            # the box — from the caller's chat.adminToken.existingSecret when
+            # set, otherwise from the chart-managed chat Secret. Override the
+            # URL via admin.extraEnv if needed (extraEnv is appended last and
+            # wins).
             - name: SHIPWRIGHT_CHAT_SERVICE_URL
-              value: {{ printf "http://%s:%v" (include "shipwright.chat.fullname" .) .Values.chat.service.port | quote }}
+              value: {{ printf "http://%s:%v" (include "shipwright.chat.fullname" $) $.Values.chat.service.port | quote }}
             - name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.chat.adminToken.existingSecret }}
-                  key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
+                  name: {{ . }}
+                  key: {{ include "shipwright.chat.adminTokenSecretKey" $ }}
             {{- end }}
             {{- if .Values.admin.sentry.dsn.existingSecret }}
             - name: SENTRY_DSN

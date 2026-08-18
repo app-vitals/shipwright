@@ -230,6 +230,7 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
 
 export type AccessUrls = {
   admin: string;
+  devLogin: string;
   metrics: string;
   taskStore: string;
   agentNew: string;
@@ -244,11 +245,17 @@ export type AccessUrls = {
  * is itself named "/dashboard", so the two compose. See
  * charts/shipwright/templates/metrics-deployment.yaml's probe paths, which
  * hit the same basePath-prefixed shape for /health.
+ *
+ * devLogin is the entry point to hand a developer, NOT admin. This profile runs
+ * auth.mode=open, and "/" redirects to /admin/login — a page that only offers a
+ * Google sign-in button, which this profile never configures. That is a dead end.
+ * /admin/dev-login mints the dev session outright and lands on /admin/agents.
  */
 export function buildAccessUrls(host: string, port: number): AccessUrls {
   const base = `http://${host}:${port}`;
   return {
     admin: `${base}/`,
+    devLogin: `${base}/admin/dev-login`,
     metrics: `${base}/dashboard/dashboard`,
     taskStore: `${base}/task-store/health`,
     agentNew: `${base}/admin/agents/new`,
@@ -412,9 +419,17 @@ function printNextSteps(): void {
   console.log("Shipwright is up.\n");
   console.log("Add the ingress host to /etc/hosts (once):");
   console.log(`  echo "127.0.0.1 ${INGRESS_HOST}" | sudo tee -a /etc/hosts\n`);
+  console.log(
+    "Log in (auth.mode=open — this mints a dev session, no password):",
+  );
+  console.log(`  ${urls.devLogin}\n`);
   console.log(`  admin console   ${urls.admin}`);
   console.log(`  metrics         ${urls.metrics}`);
   console.log(`  task store      ${urls.taskStore}\n`);
+  console.log(
+    "Visit the dev-login link FIRST — the admin console redirects to a Google",
+  );
+  console.log("sign-in page that this profile does not configure.\n");
   console.log("No agent exists yet — create one at:");
   console.log(`  ${urls.agentNew}\n`);
   console.log(
