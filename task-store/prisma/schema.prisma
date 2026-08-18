@@ -1,5 +1,5 @@
 // Shipwright — Task Store Service Schema
-// Owns: Task, TaskToken, PullRequest.
+// Owns: Task, TaskToken, PullRequest, PrFinding.
 //
 // WARNING: This schema uses DATABASE_URL_SHIPWRIGHT_TASK_STORE — a dedicated
 // database for the task-store service. Do NOT point this at a shared database.
@@ -200,11 +200,63 @@ model PullRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  findings PrFinding[]
+
   @@unique([repo, prNumber])
   @@index([taskId])
   @@index([state])
   @@index([reviewState])
   @@index([updatedAt])
+}
+
+// ─── PR Finding Disposition ───────────────────────────────────────────────────
+// Outcome of a review/patch finding once triaged.
+
+enum PrFindingDisposition {
+  resolved
+  superseded
+  rejected
+}
+
+// ─── PR Finding Source ────────────────────────────────────────────────────────
+// Which pipeline phase recorded the finding.
+
+enum PrFindingSource {
+  review
+  patch
+}
+
+// ─── PR Finding ───────────────────────────────────────────────────────────────
+// A single review/patch finding on a PR, written incrementally (and
+// potentially concurrently) by the review and patch pipelines. Modeled as a
+// dedicated table rather than a JSON blob on PullRequest — entries are
+// appended via a plain INSERT, which is race-safe, whereas a JSON-array
+// read-modify-write PATCH on PullRequest is not.
+//
+// at is an ISO timestamp of when the finding was triaged, stamped by the
+// caller at insert time — following the same "String for JS-interface-
+// originated timestamps" convention as the rest of this schema.
+//
+// The pullRequest relation intentionally omits onDelete (defaulting to
+// RESTRICT) rather than the Cascade/SetNull used elsewhere in this repo —
+// findings are a triage record and should never silently disappear if their
+// parent PullRequest row were ever deleted. Nothing deletes PullRequest rows
+// today, so this has no live effect.
+
+model PrFinding {
+  id          String               @id @default(cuid())
+  prRecordId  String
+  pullRequest PullRequest          @relation(fields: [prRecordId], references: [id])
+  ref         String
+  disposition PrFindingDisposition
+  source      PrFindingSource
+  evidence    String
+  at          String
+
+  createdAt DateTime @default(now())
+
+  @@index([prRecordId, ref])
+  @@index([prRecordId, source])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────
