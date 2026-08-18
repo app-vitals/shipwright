@@ -123,20 +123,23 @@ tests:
 
   # ── Admin-token seeding (chat.adminToken) ────────────────────────────────
 
-  - it: does not inject CHAT_SEED_ADMIN_TOKEN by default (adminToken unset)
+  - it: seeds CHAT_SEED_ADMIN_TOKEN from the chart-managed Secret by default (adminToken unset)
+    # With no caller-supplied Secret the chart generates the token itself, so the
+    # admin console's Chat tab works without a hand-created Secret. The admin
+    # Deployment reads the same name/key — see admin_workload_test.yaml.
     template: templates/chat-deployment.yaml
     set:
       chat.enabled: true
     release:
       name: r
     asserts:
-      - notContains:
+      - contains:
           path: spec.template.spec.containers[0].env
           content:
             name: CHAT_SEED_ADMIN_TOKEN
             valueFrom:
               secretKeyRef:
-                name: shipwright-secrets
+                name: r-shipwright-chat
                 key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
 
   - it: seeds CHAT_SEED_ADMIN_TOKEN from chat.adminToken.existingSecret (default key)

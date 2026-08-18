@@ -230,6 +230,7 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
 
 export type AccessUrls = {
   admin: string;
+  devLogin: string;
   metrics: string;
   taskStore: string;
   agentNew: string;
@@ -244,15 +245,50 @@ export type AccessUrls = {
  * is itself named "/dashboard", so the two compose. See
  * charts/shipwright/templates/metrics-deployment.yaml's probe paths, which
  * hit the same basePath-prefixed shape for /health.
+ *
+ * devLogin is the entry point to hand a developer, NOT admin. This profile runs
+ * auth.mode=open, and "/" redirects to /admin/login — a page that only offers a
+ * Google sign-in button, which this profile never configures. That is a dead end.
+ * /admin/dev-login mints the dev session outright and lands on /admin/agents.
  */
 export function buildAccessUrls(host: string, port: number): AccessUrls {
   const base = `http://${host}:${port}`;
   return {
     admin: `${base}/`,
+    devLogin: `${base}/admin/dev-login`,
     metrics: `${base}/dashboard/dashboard`,
     taskStore: `${base}/task-store/health`,
     agentNew: `${base}/admin/agents/new`,
   };
+}
+
+/**
+ * Command that hands `url` to the OS browser, or null on a platform with no
+ * known opener. Best-effort by design — a headless box (CI, no DISPLAY, SSH)
+ * must still finish the bring-up, so the caller ignores failures here.
+ */
+export function buildOpenCommand(
+  url: string,
+  platform: string = process.platform,
+): string[] | null {
+  if (platform === "darwin") return ["open", url];
+  if (platform === "linux") return ["xdg-open", url];
+  return null;
+}
+
+/**
+ * Whether /etc/hosts still needs the ingress-host line. The whole stack is
+ * reached through `http://<host>:<port>`, so without this mapping the URL does
+ * not resolve and auto-open lands on a browser error page.
+ *
+ * Matches a real mapping only: the host must be a whole field on a line that is
+ * not commented out. A bare substring test would accept "#127.0.0.1 host".
+ */
+export function hostsEntryPresent(hostsFile: string, host: string): boolean {
+  return hostsFile
+    .split("\n")
+    .map((line) => line.split("#")[0])
+    .some((line) => line.trim().split(/\s+/).includes(host));
 }
 
 /**
@@ -406,28 +442,59 @@ function stopPortForward(): void {
   }
 }
 
+/**
+ * Final output: ONE url, opened for you.
+ *
+ * Deliberately just the dev-login link. Every other surface (admin console,
+ * metrics, task store, agent creation) is reachable from the console once you
+ * are signed in, and listing them here buried the only link that does anything
+ * useful on a cold stack — the console root redirects to a Google sign-in page
+ * this profile never configures, so it is a dead end. /admin/dev-login mints
+ * the dev session outright and lands on /admin/agents.
+ */
 function printNextSteps(): void {
   const urls = buildAccessUrls(INGRESS_HOST, INGRESS_LOCAL_PORT);
   console.log("\n────────────────────────────────────────────────────────────");
   console.log("Shipwright is up.\n");
-  console.log("Add the ingress host to /etc/hosts (once):");
-  console.log(`  echo "127.0.0.1 ${INGRESS_HOST}" | sudo tee -a /etc/hosts\n`);
-  console.log(`  admin console   ${urls.admin}`);
-  console.log(`  metrics         ${urls.metrics}`);
-  console.log(`  task store      ${urls.taskStore}\n`);
-  console.log("No agent exists yet — create one at:");
-  console.log(`  ${urls.agentNew}\n`);
-  console.log(
-    "Set that agent's ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN in the",
-  );
-  console.log("admin UI before it can work.");
-  console.log(
-    "\nThe stack is reachable through a `kubectl port-forward` this script",
-  );
-  console.log(
-    `started in the background (pid file: ${PORT_FORWARD_PID_FILE}). It is`,
-  );
-  console.log("torn down automatically by: task minikube:down");
+  console.log(`  ${urls.devLogin}\n`);
+
+  if (!ingressHostResolves()) {
+    console.log(`${INGRESS_HOST} is not in /etc/hosts yet — add it, then open`);
+    console.log("the link above:");
+    console.log(
+      `  echo "127.0.0.1 ${INGRESS_HOST}" | sudo tee -a /etc/hosts\n`,
+    );
+    return;
+  }
+
+  openInBrowser(urls.devLogin);
+}
+
+/** True when /etc/hosts maps the ingress host. Unreadable file → assume no. */
+export function ingressHostResolves(
+  readFile: (path: string, encoding: string) => string = (p, e) =>
+    readFileSync(p, e),
+): boolean {
+  try {
+    return hostsEntryPresent(readFile("/etc/hosts", "utf8"), INGRESS_HOST);
+  } catch {
+    return false;
+  }
+}
+
+/** Best-effort browser launch — never fails the bring-up. */
+export function openInBrowser(
+  url: string,
+  exec: ExecFn = realExec,
+  platform: string = process.platform,
+): void {
+  const argv = buildOpenCommand(url, platform);
+  if (argv === null) return;
+  try {
+    exec(argv);
+  } catch {
+    // No browser to launch (headless, no DISPLAY). The URL is printed above.
+  }
 }
 
 async function main(): Promise<void> {

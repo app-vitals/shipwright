@@ -14,8 +14,12 @@ import { describe, expect, it } from "bun:test";
 import {
   buildAccessUrls,
   buildMinikubeCommands,
+  buildOpenCommand,
   buildTeardownCommands,
   type Command,
+  hostsEntryPresent,
+  ingressHostResolves,
+  openInBrowser,
   DEPLOYMENTS,
   missingBinaries,
   runCommands,
@@ -147,7 +151,9 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(buildMinikubeCommands());
     for (const deployment of DEPLOYMENTS) {
       expect(
-        lines.some((l) => l.includes(`rollout status deployment/${deployment}`)),
+        lines.some((l) =>
+          l.includes(`rollout status deployment/${deployment}`),
+        ),
       ).toBe(true);
     }
   });
@@ -170,13 +176,15 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(
       buildMinikubeCommands({ release: "sw2", namespace: "other" }),
     );
-    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(true);
-    expect(lines.some((l) => l.includes("helm test sw2 --namespace other"))).toBe(
+    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(
       true,
     );
     expect(
-      lines.every((l) => !l.includes("--namespace shipwright")),
+      lines.some((l) => l.includes("helm test sw2 --namespace other")),
     ).toBe(true);
+    expect(lines.every((l) => !l.includes("--namespace shipwright"))).toBe(
+      true,
+    );
   });
 });
 
@@ -190,7 +198,9 @@ describe("buildTeardownCommands", () => {
   });
 
   it("targets the configured release and namespace", () => {
-    const lines = argvLines(buildTeardownCommands({ release: "sw2", namespace: "n" }));
+    const lines = argvLines(
+      buildTeardownCommands({ release: "sw2", namespace: "n" }),
+    );
     expect(lines[0]).toBe("helm uninstall sw2 --namespace n");
   });
 });
@@ -202,14 +212,26 @@ describe("buildAccessUrls", () => {
     // dashboard route is itself named "/dashboard" — the two compose. A bare
     // "/dashboard" 404s; only "/dashboard/dashboard" resolves.
     const urls = buildAccessUrls("shipwright.local", 8080);
-    expect(urls.metrics).toBe("http://shipwright.local:8080/dashboard/dashboard");
+    expect(urls.metrics).toBe(
+      "http://shipwright.local:8080/dashboard/dashboard",
+    );
   });
 
   it("builds the admin, task-store, and agent-creation URLs against the given host and port", () => {
     const urls = buildAccessUrls("shipwright.local", 8080);
     expect(urls.admin).toBe("http://shipwright.local:8080/");
-    expect(urls.taskStore).toBe("http://shipwright.local:8080/task-store/health");
+    expect(urls.taskStore).toBe(
+      "http://shipwright.local:8080/task-store/health",
+    );
     expect(urls.agentNew).toBe("http://shipwright.local:8080/admin/agents/new");
+  });
+
+  it("points the login URL at /admin/dev-login, not the OAuth login page", () => {
+    // auth.mode=open configures no Google OAuth, so /admin/login is a dead end.
+    // Only /admin/dev-login mints a session on this profile.
+    const urls = buildAccessUrls("shipwright.local", 8080);
+    expect(urls.devLogin).toBe("http://shipwright.local:8080/admin/dev-login");
+    expect(urls.devLogin).not.toContain("/admin/login");
   });
 
   it("honors an arbitrary host and port", () => {
@@ -219,19 +241,133 @@ describe("buildAccessUrls", () => {
   });
 });
 
+describe("buildOpenCommand", () => {
+  it("uses `open` on macOS and `xdg-open` on Linux", () => {
+    expect(buildOpenCommand("http://x/y", "darwin")).toEqual([
+      "open",
+      "http://x/y",
+    ]);
+    expect(buildOpenCommand("http://x/y", "linux")).toEqual([
+      "xdg-open",
+      "http://x/y",
+    ]);
+  });
+
+  it("returns null on a platform with no known opener", () => {
+    // The caller treats null as "skip"; bringing the stack up must not depend
+    // on being able to launch a browser.
+    expect(buildOpenCommand("http://x/y", "win32")).toBeNull();
+    expect(buildOpenCommand("http://x/y", "aix")).toBeNull();
+  });
+});
+
+describe("hostsEntryPresent", () => {
+  it("finds the host as a whole field on an active line", () => {
+    expect(
+      hostsEntryPresent("127.0.0.1 shipwright.local", "shipwright.local"),
+    ).toBe(true);
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1\tlocalhost shipwright.local\n",
+        "shipwright.local",
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores commented-out mappings", () => {
+    // A bare substring test would accept this and then auto-open a dead link.
+    expect(
+      hostsEntryPresent("# 127.0.0.1 shipwright.local", "shipwright.local"),
+    ).toBe(false);
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1 other # shipwright.local",
+        "shipwright.local",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not match a host that merely contains the name", () => {
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1 not-shipwright.local.example",
+        "shipwright.local",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false for an empty hosts file", () => {
+    expect(hostsEntryPresent("", "shipwright.local")).toBe(false);
+  });
+});
+
+describe("ingressHostResolves", () => {
+  it("returns true when the injected reader finds the host mapped", () => {
+    expect(
+      ingressHostResolves(() => "127.0.0.1 shipwright.local\n"),
+    ).toBe(true);
+  });
+
+  it("returns false when the injected reader finds no mapping", () => {
+    expect(
+      ingressHostResolves(() => "127.0.0.1 localhost\n"),
+    ).toBe(false);
+  });
+
+  it("returns false (not throw) when the injected reader fails", () => {
+    // Mirrors an unreadable /etc/hosts — the try/catch swallows the error.
+    expect(
+      ingressHostResolves(() => {
+        throw new Error("EACCES");
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("openInBrowser", () => {
+  it("execs the argv built by buildOpenCommand for the given platform", () => {
+    const calls: string[][] = [];
+    openInBrowser("http://x/y", (argv) => calls.push(argv), "darwin");
+    expect(calls).toEqual([["open", "http://x/y"]]);
+  });
+
+  it("does not call exec when buildOpenCommand has no known opener", () => {
+    const calls: string[][] = [];
+    openInBrowser("http://x/y", (argv) => calls.push(argv), "win32");
+    expect(calls).toEqual([]);
+  });
+
+  it("swallows a failing exec instead of throwing", () => {
+    // No browser to launch (headless, no DISPLAY) — the caller must not crash.
+    expect(() =>
+      openInBrowser(
+        "http://x/y",
+        () => {
+          throw new Error("no display");
+        },
+        "linux",
+      ),
+    ).not.toThrow();
+  });
+});
+
 describe("missingBinaries", () => {
   it("returns nothing when every required binary is present", () => {
     expect(missingBinaries(() => "/usr/local/bin/x")).toEqual([]);
   });
 
   it("reports every missing binary, not just the first", () => {
-    expect(missingBinaries(() => null)).toEqual(["minikube", "helm", "kubectl"]);
+    expect(missingBinaries(() => null)).toEqual([
+      "minikube",
+      "helm",
+      "kubectl",
+    ]);
   });
 
   it("reports only the ones actually absent", () => {
-    expect(missingBinaries((bin) => (bin === "helm" ? null : "/bin/x"))).toEqual([
-      "helm",
-    ]);
+    expect(
+      missingBinaries((bin) => (bin === "helm" ? null : "/bin/x")),
+    ).toEqual(["helm"]);
   });
 });
 

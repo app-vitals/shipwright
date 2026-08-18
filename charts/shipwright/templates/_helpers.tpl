@@ -490,6 +490,27 @@ DATABASE_URL_SHIPWRIGHT_CHAT on the bundled-PostgreSQL path).
 {{- end }}
 
 {{/*
+Name of the Secret holding the raw chat admin token, or "" when chat is
+disabled. Prefers a caller-supplied chat.adminToken.existingSecret; otherwise
+the chart manages the token itself in its own chat Secret (see
+chat-secret.yaml). Both the chat container (CHAT_SEED_ADMIN_TOKEN) and the
+admin container (SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN) resolve through this so
+the two always read the same value — that shared value is what makes the admin
+console's Chat tab work without a hand-created Secret.
+*/}}
+{{- define "shipwright.chat.adminTokenSecretName" -}}
+{{- if .Values.chat.enabled }}{{- .Values.chat.adminToken.existingSecret | default (include "shipwright.chat.secretName" .) }}{{- end }}
+{{- end }}
+
+{{/*
+Key within the chat admin-token Secret. One expression shared by the chart-managed
+Secret and both consumers, so a custom chat.adminToken.key stays consistent.
+*/}}
+{{- define "shipwright.chat.adminTokenSecretKey" -}}
+{{- .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
+{{- end }}
+
+{{/*
 Chat database name: a SEPARATE database from admin, metrics and task-store
 (default "shipwright_chat"). See shipwright.taskStore.databaseName for why each
 Prisma service must own its own database.
