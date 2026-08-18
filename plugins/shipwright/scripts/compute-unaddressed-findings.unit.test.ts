@@ -17,9 +17,12 @@ import {
   hasUnaddressedFindings,
   type IssueCommentNode,
   isAddressedByAuthorReply,
+  isResolvedByLedger,
   isResolvedByPriorFindingsStatus,
   isSelfCleanApprove,
   isSupersededBySelfReview,
+  parseCliInput,
+  type PrFinding,
   type PrReviewData,
   type ReviewNode,
   reviewRef,
@@ -578,6 +581,204 @@ describe("hasUnaddressedFindings", () => {
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
   });
 
+  // ─── Ledger-based resolved/superseded exclusion (PFL-3.2) ─────────────────
+  //
+  // A fifth exclusion, additive to the first four: a qualifying review is also
+  // excluded when a task-store ledger entry (source: "review") exists for its
+  // ref with disposition "resolved" or "superseded" — independent of
+  // self-authorship, unlike isResolvedByPriorFindingsStatus (PVD-1.3), since
+  // ledger entries are written by the code-reviewer subagent regardless of
+  // whose review is being resolved.
+
+  test("returns false when a qualifying review's ledger entry has disposition resolved (source: review)", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — found a race condition in the retry logic.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "resolved",
+        source: "review",
+        evidence: "src/retry.ts:42 — guard added.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("returns false when a qualifying review's ledger entry has disposition superseded (source: review)", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — found a race condition in the retry logic.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "superseded",
+        source: "review",
+        evidence: "later pass covers this.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("does NOT exclude when the matching ledger entry has source: patch", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — found a race condition in the retry logic.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "resolved",
+        source: "patch",
+        evidence: "fixed via patch run.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude when the matching ledger entry has disposition rejected", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — found a race condition in the retry logic.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "rejected",
+        source: "review",
+        evidence: "not a real issue.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude when the ledger entry's ref does not match the review", () => {
+    const finding: ReviewNode = {
+      author: { login: "the-agent" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Verdict: COMMENT — found a race condition in the retry logic.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: "some-other-ref",
+        disposition: "resolved",
+        source: "review",
+        evidence: "unrelated.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("excludes a THIRD-PARTY review's finding via a matching ledger entry (unlike isResolvedByPriorFindingsStatus, no self-authorship gate)", () => {
+    const finding: ReviewNode = {
+      author: { login: "dodizzle" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Missing plugin.json/marketplace.json version bump.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "resolved",
+        source: "review",
+        evidence: "bumped both files.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({ reviews: { nodes: [finding] }, findings });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("excludes a finding via the ledger even when none of the first four exclusions apply (genuine fifth path)", () => {
+    // Third-party review (so isSelfCleanApprove/isSupersededBySelfReview/
+    // isResolvedByPriorFindingsStatus all structurally can't apply — they are
+    // self-authorship-gated), and no author reply (so isAddressedByAuthorReply
+    // can't apply either). Only the ledger entry resolves it.
+    const finding: ReviewNode = {
+      author: { login: "dodizzle" },
+      state: "COMMENTED",
+      submittedAt: "2026-05-26T10:00:00Z",
+      commit: { oid: "current-head-sha" },
+      body: "Missing plugin.json/marketplace.json version bump.",
+    };
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: reviewRef(finding),
+        disposition: "resolved",
+        source: "review",
+        evidence: "bumped both files.",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    const data = makeData({
+      reviews: { nodes: [finding] },
+      comments: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      priorFindingsStatus: [],
+      findings,
+    });
+    // None of isSelfCleanApprove/isAddressedByAuthorReply/
+    // isSupersededBySelfReview/isResolvedByPriorFindingsStatus can exclude this
+    // (proven above: the same shape without `findings` returns true).
+    const dataWithoutLedger = makeData({
+      reviews: { nodes: [finding] },
+      comments: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      priorFindingsStatus: [],
+    });
+    expect(hasUnaddressedFindings(dataWithoutLedger, "the-agent")).toBe(true);
+    // With the ledger entry present, it is excluded — a genuine fifth path.
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
   // ─── Third-party review addressed via author reply (CPF-2.3) ──────────────
 
   test("returns false when a third-party COMMENTED review's non-empty body is followed by a PR-author reply (mirrors PR #1432)", () => {
@@ -948,6 +1149,190 @@ describe("isResolvedByPriorFindingsStatus", () => {
   });
 });
 
+describe("isResolvedByLedger", () => {
+  const ref = "current-head-sha@2026-05-26T10:00:00Z";
+
+  test("true when a matching entry has source review and disposition resolved", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref,
+        disposition: "resolved",
+        source: "review",
+        evidence: "fixed",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    expect(isResolvedByLedger(ref, findings)).toBe(true);
+  });
+
+  test("true when a matching entry has source review and disposition superseded", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref,
+        disposition: "superseded",
+        source: "review",
+        evidence: "superseded by later pass",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    expect(isResolvedByLedger(ref, findings)).toBe(true);
+  });
+
+  test("false when the matching entry has source patch", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref,
+        disposition: "resolved",
+        source: "patch",
+        evidence: "fixed via patch",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    expect(isResolvedByLedger(ref, findings)).toBe(false);
+  });
+
+  test("false when the matching entry has disposition rejected", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref,
+        disposition: "rejected",
+        source: "review",
+        evidence: "not a real issue",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    expect(isResolvedByLedger(ref, findings)).toBe(false);
+  });
+
+  test("false when no entry ref matches", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: "some-other-ref",
+        disposition: "resolved",
+        source: "review",
+        evidence: "fixed",
+        at: "2026-05-27T10:00:00Z",
+        createdAt: "2026-05-27T10:00:00Z",
+      },
+    ];
+    expect(isResolvedByLedger(ref, findings)).toBe(false);
+  });
+
+  test("false when findings is empty", () => {
+    expect(isResolvedByLedger(ref, [])).toBe(false);
+  });
+});
+
+// ─── parseCliInput (direct calls — validation branches, not exercised by the
+// subprocess-spawn CLI entrypoint tests below, which only cover the happy
+// path per scenario) ────────────────────────────────────────────────────────
+
+describe("parseCliInput", () => {
+  function validInput(overrides: Record<string, unknown> = {}) {
+    return {
+      currentUser: "the-agent",
+      headRefOid: "current-head-sha",
+      reviews: { nodes: [] },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+      ...overrides,
+    };
+  }
+
+  test("parses valid input, defaulting priorFindingsStatus and findings to [] when absent", () => {
+    const result = parseCliInput(JSON.stringify(validInput()));
+    expect(result.currentUser).toBe("the-agent");
+    expect(result.headRefOid).toBe("current-head-sha");
+    expect(result.priorFindingsStatus).toEqual([]);
+    expect(result.findings).toEqual([]);
+  });
+
+  test("passes findings through when present", () => {
+    const findings: PrFinding[] = [
+      {
+        id: "f1",
+        prRecordId: "pr1",
+        ref: "sha@2026-05-26T10:00:00Z",
+        disposition: "resolved",
+        source: "review",
+        evidence: "fixed",
+        at: "2026-05-26T11:00:00Z",
+        createdAt: "2026-05-26T11:00:00Z",
+      },
+    ];
+    const result = parseCliInput(JSON.stringify(validInput({ findings })));
+    expect(result.findings).toEqual(findings);
+  });
+
+  test("throws when currentUser is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).currentUser = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a string "currentUser" field',
+    );
+  });
+
+  test("throws when headRefOid is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).headRefOid = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a string "headRefOid" field',
+    );
+  });
+
+  test("throws when reviews is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).reviews = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "reviews" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when reviewThreads is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).reviewThreads = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "reviewThreads" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when comments is missing", () => {
+    const input = validInput();
+    (input as Record<string, unknown>).comments = undefined;
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON must have a "comments" field shaped { nodes: [...] }',
+    );
+  });
+
+  test("throws when priorFindingsStatus is present but not an array", () => {
+    const input = validInput({ priorFindingsStatus: "not-an-array" });
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON "priorFindingsStatus" field, when present, must be an array',
+    );
+  });
+
+  test("throws when findings is present but not an array", () => {
+    const input = validInput({ findings: "not-an-array" });
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON "findings" field, when present, must be an array',
+    );
+  });
+});
+
 // ─── CLI entrypoint (argv/stdin JSON parsing) ──────────────────────────────
 
 const SCRIPT_PATH = new URL("./compute-unaddressed-findings.ts", import.meta.url)
@@ -1008,6 +1393,50 @@ describe("CLI entrypoint", () => {
           ref: "current-head-sha@2026-05-26T10:00:00Z",
           resolved: true,
           evidence: "src/retry.ts:42 — guard added.",
+        },
+      ],
+    });
+    const proc = Bun.spawn(["bun", "run", SCRIPT_PATH, input], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual({ unaddressedFindings: false });
+    expect(stderr).toBe("");
+  });
+
+  test("passes findings through and prints {unaddressedFindings: false} when a ledger entry resolves the only finding (PFL-3.2)", async () => {
+    const input = JSON.stringify({
+      currentUser: "the-agent",
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "dodizzle" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Missing plugin.json/marketplace.json version bump.",
+          },
+        ],
+      },
+      reviewThreads: { nodes: [] },
+      comments: { nodes: [] },
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "current-head-sha@2026-05-26T10:00:00Z",
+          disposition: "resolved",
+          source: "review",
+          evidence: "bumped both files.",
+          at: "2026-05-27T10:00:00Z",
+          createdAt: "2026-05-27T10:00:00Z",
         },
       ],
     });
