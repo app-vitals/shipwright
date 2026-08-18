@@ -14,8 +14,10 @@ import { describe, expect, it } from "bun:test";
 import {
   buildAccessUrls,
   buildMinikubeCommands,
+  buildOpenCommand,
   buildTeardownCommands,
   type Command,
+  hostsEntryPresent,
   DEPLOYMENTS,
   missingBinaries,
   runCommands,
@@ -147,7 +149,9 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(buildMinikubeCommands());
     for (const deployment of DEPLOYMENTS) {
       expect(
-        lines.some((l) => l.includes(`rollout status deployment/${deployment}`)),
+        lines.some((l) =>
+          l.includes(`rollout status deployment/${deployment}`),
+        ),
       ).toBe(true);
     }
   });
@@ -170,13 +174,15 @@ describe("buildMinikubeCommands — install shape", () => {
     const lines = argvLines(
       buildMinikubeCommands({ release: "sw2", namespace: "other" }),
     );
-    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(true);
-    expect(lines.some((l) => l.includes("helm test sw2 --namespace other"))).toBe(
+    expect(lines.some((l) => l.includes("helm upgrade --install sw2"))).toBe(
       true,
     );
     expect(
-      lines.every((l) => !l.includes("--namespace shipwright")),
+      lines.some((l) => l.includes("helm test sw2 --namespace other")),
     ).toBe(true);
+    expect(lines.every((l) => !l.includes("--namespace shipwright"))).toBe(
+      true,
+    );
   });
 });
 
@@ -190,7 +196,9 @@ describe("buildTeardownCommands", () => {
   });
 
   it("targets the configured release and namespace", () => {
-    const lines = argvLines(buildTeardownCommands({ release: "sw2", namespace: "n" }));
+    const lines = argvLines(
+      buildTeardownCommands({ release: "sw2", namespace: "n" }),
+    );
     expect(lines[0]).toBe("helm uninstall sw2 --namespace n");
   });
 });
@@ -202,13 +210,17 @@ describe("buildAccessUrls", () => {
     // dashboard route is itself named "/dashboard" — the two compose. A bare
     // "/dashboard" 404s; only "/dashboard/dashboard" resolves.
     const urls = buildAccessUrls("shipwright.local", 8080);
-    expect(urls.metrics).toBe("http://shipwright.local:8080/dashboard/dashboard");
+    expect(urls.metrics).toBe(
+      "http://shipwright.local:8080/dashboard/dashboard",
+    );
   });
 
   it("builds the admin, task-store, and agent-creation URLs against the given host and port", () => {
     const urls = buildAccessUrls("shipwright.local", 8080);
     expect(urls.admin).toBe("http://shipwright.local:8080/");
-    expect(urls.taskStore).toBe("http://shipwright.local:8080/task-store/health");
+    expect(urls.taskStore).toBe(
+      "http://shipwright.local:8080/task-store/health",
+    );
     expect(urls.agentNew).toBe("http://shipwright.local:8080/admin/agents/new");
   });
 
@@ -227,19 +239,83 @@ describe("buildAccessUrls", () => {
   });
 });
 
+describe("buildOpenCommand", () => {
+  it("uses `open` on macOS and `xdg-open` on Linux", () => {
+    expect(buildOpenCommand("http://x/y", "darwin")).toEqual([
+      "open",
+      "http://x/y",
+    ]);
+    expect(buildOpenCommand("http://x/y", "linux")).toEqual([
+      "xdg-open",
+      "http://x/y",
+    ]);
+  });
+
+  it("returns null on a platform with no known opener", () => {
+    // The caller treats null as "skip"; bringing the stack up must not depend
+    // on being able to launch a browser.
+    expect(buildOpenCommand("http://x/y", "win32")).toBeNull();
+    expect(buildOpenCommand("http://x/y", "aix")).toBeNull();
+  });
+});
+
+describe("hostsEntryPresent", () => {
+  it("finds the host as a whole field on an active line", () => {
+    expect(
+      hostsEntryPresent("127.0.0.1 shipwright.local", "shipwright.local"),
+    ).toBe(true);
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1\tlocalhost shipwright.local\n",
+        "shipwright.local",
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores commented-out mappings", () => {
+    // A bare substring test would accept this and then auto-open a dead link.
+    expect(
+      hostsEntryPresent("# 127.0.0.1 shipwright.local", "shipwright.local"),
+    ).toBe(false);
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1 other # shipwright.local",
+        "shipwright.local",
+      ),
+    ).toBe(false);
+  });
+
+  it("does not match a host that merely contains the name", () => {
+    expect(
+      hostsEntryPresent(
+        "127.0.0.1 not-shipwright.local.example",
+        "shipwright.local",
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false for an empty hosts file", () => {
+    expect(hostsEntryPresent("", "shipwright.local")).toBe(false);
+  });
+});
+
 describe("missingBinaries", () => {
   it("returns nothing when every required binary is present", () => {
     expect(missingBinaries(() => "/usr/local/bin/x")).toEqual([]);
   });
 
   it("reports every missing binary, not just the first", () => {
-    expect(missingBinaries(() => null)).toEqual(["minikube", "helm", "kubectl"]);
+    expect(missingBinaries(() => null)).toEqual([
+      "minikube",
+      "helm",
+      "kubectl",
+    ]);
   });
 
   it("reports only the ones actually absent", () => {
-    expect(missingBinaries((bin) => (bin === "helm" ? null : "/bin/x"))).toEqual([
-      "helm",
-    ]);
+    expect(
+      missingBinaries((bin) => (bin === "helm" ? null : "/bin/x")),
+    ).toEqual(["helm"]);
   });
 });
 
