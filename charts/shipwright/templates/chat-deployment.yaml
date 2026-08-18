@@ -74,16 +74,18 @@ spec:
             {{- else }}
             {{- fail "chat.database.existingSecret is required when postgresql.enabled=false" }}
             {{- end }}
-            {{- if .Values.chat.adminToken.existingSecret }}
+            {{- with (include "shipwright.chat.adminTokenSecretName" .) }}
             # Seed the admin token (stored hashed) at boot so the admin console
             # can authenticate without manual token minting. Idempotent upsert —
             # the same raw value is injected into the admin Deployment as
-            # SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN.
+            # SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN. Sourced from the caller's
+            # chat.adminToken.existingSecret when set, otherwise from the
+            # chart-managed chat Secret.
             - name: CHAT_SEED_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.chat.adminToken.existingSecret }}
-                  key: {{ .Values.chat.adminToken.key | default "SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN" }}
+                  name: {{ . }}
+                  key: {{ include "shipwright.chat.adminTokenSecretKey" $ }}
             {{- end }}
             {{- with .Values.chat.extraEnv }}
             # chat.extraEnv: caller-supplied env vars appended last so they can

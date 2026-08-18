@@ -212,6 +212,14 @@ describe("buildAccessUrls", () => {
     expect(urls.agentNew).toBe("http://shipwright.local:8080/admin/agents/new");
   });
 
+  it("points the login URL at /admin/dev-login, not the OAuth login page", () => {
+    // auth.mode=open configures no Google OAuth, so /admin/login is a dead end.
+    // Only /admin/dev-login mints a session on this profile.
+    const urls = buildAccessUrls("shipwright.local", 8080);
+    expect(urls.devLogin).toBe("http://shipwright.local:8080/admin/dev-login");
+    expect(urls.devLogin).not.toContain("/admin/login");
+  });
+
   it("honors an arbitrary host and port", () => {
     const urls = buildAccessUrls("127.0.0.1", 9999);
     expect(urls.admin).toBe("http://127.0.0.1:9999/");

@@ -377,10 +377,37 @@ tests:
             name: SHIPWRIGHT_CHAT_SERVICE_URL
             value: http://r-shipwright-chat:3000
 
-  - it: does not inject chat-service env when chat.enabled but adminToken unset
+  - it: injects chat-service env from the chart-managed Secret when chat.enabled and adminToken unset
+    # No caller Secret required: the chart generates the token into its own chat
+    # Secret and both Deployments read it, so /admin/chat works out of the box.
+    # The chat side of the same pair is asserted in chat_workload_test.yaml.
     template: templates/admin-deployment.yaml
     set:
       chat.enabled: true
+    release:
+      name: r
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_URL
+            value: http://r-shipwright-chat:3000
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-chat
+                key: SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN
+
+  - it: does not inject chat-service env when chat is disabled, even with adminToken set
+    # chat.enabled gates the wiring: without a chat Service to talk to, pointing
+    # admin at one would be wiring to nothing.
+    template: templates/admin-deployment.yaml
+    set:
+      chat.enabled: false
+      chat.adminToken.existingSecret: shipwright-secrets
     release:
       name: r
     asserts:
