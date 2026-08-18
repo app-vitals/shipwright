@@ -267,6 +267,27 @@ export function traceReviewCandidacyDecision(args: {
     isBundleComplete,
   } = args;
 
+  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings, including
+  // PFL-2.2's rebuttal writes) newer than the last review pass is a bypass
+  // of BOTH exclusion checks below — the live-GitHub review dedup
+  // immediately following this block, and the terminal-skip check further
+  // down — alongside hasFreshAuthorReply. Hoisted to the very top of the
+  // function, ahead of the live-review dedup's early return, because that
+  // return fires (and `continue`s the caller's loop) before a lower
+  // placement would ever be reached in the exact scenario PFL-3.1 targets:
+  // a review already live at the PR's current head commit, no fresh author
+  // reply, but a fresh ledger finding recorded since. Computed against
+  // `record` via optional chaining since this now runs before the `!record`
+  // null check below. Mirrors the `new Date(record?.reviewedAt ?? 0)`
+  // epoch-0 fallback pattern used for reviewedAtMs elsewhere in this file,
+  // and uses the same strict `>` inequality as hasFreshAuthorReply's own
+  // freshness check (a finding stamped exactly at reviewedAt does not
+  // count).
+  const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
+  const hasFreshLedgerFinding =
+    record?.findings?.some((f) => new Date(f.at).getTime() > reviewedAtMs) ??
+    false;
+
   // Live-GitHub review dedup (RVD-1.1, widened by RVD-2.1) —
   // identity-agnostic: ANY review at the PR's current head commit excludes
   // it from candidacy, independent of the task-store record. Deliberately
@@ -278,9 +299,14 @@ export function traceReviewCandidacyDecision(args: {
   // treating it as candidate here just wastes a tick reselecting a PR that
   // will bounce right back). hasAnyReviewAtHead() disambiguates the two,
   // matching review.md's RVD-1.2 rule exactly: any review at head + no
-  // fresh author reply -> excluded, regardless of finding content.
+  // fresh author reply and no fresh ledger finding (PFL-3.1) -> excluded,
+  // regardless of finding content.
   if (reviewData) {
-    if (hasAnyReviewAtHead(reviewData) && !hasFreshAuthorReply) {
+    if (
+      hasAnyReviewAtHead(reviewData) &&
+      !hasFreshAuthorReply &&
+      !hasFreshLedgerFinding
+    ) {
       return {
         check: "already-reviewed-live",
         classifiedState: classifyReviewState(reviewData),
@@ -314,21 +340,6 @@ export function traceReviewCandidacyDecision(args: {
   if (isPrRecordBlockedForDispatch(record)) {
     return { check: "pr-record-blocked" };
   }
-
-  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings, including
-  // PFL-2.2's rebuttal writes) newer than the last review pass is a second,
-  // independent bypass of the terminal-skip exclusion below, alongside
-  // hasFreshAuthorReply — new ledger activity since the last review means
-  // there's something worth re-reviewing even though the head commit hasn't
-  // moved. Mirrors the `new Date(record?.reviewedAt ?? 0).getTime()` epoch-0
-  // fallback pattern used for reviewedAtMs elsewhere in this file, and uses
-  // the same strict `>` inequality as hasFreshAuthorReply's own freshness
-  // check (a finding stamped exactly at reviewedAt does not count).
-  const reviewedAtMs = new Date(record.reviewedAt ?? 0).getTime();
-  const hasFreshLedgerFinding =
-    record.findings?.some(
-      (f) => new Date(f.at).getTime() > reviewedAtMs,
-    ) ?? false;
 
   // Terminal-skip (RCO-1.2): reviewedCommitSha matches head and reviewState
   // is not pending, unless the author has a fresh reply (RVG-1.1) or a fresh

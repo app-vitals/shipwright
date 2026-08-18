@@ -2438,6 +2438,85 @@ describe("traceReviewCandidacyDecision", () => {
     expect(trace).toEqual({ check: "eligible" });
   });
 
+  // ─── PFL-3.1: ledger-finding bypass reachable through the live-review dedup ──
+  //
+  // The 7 tests above exercise the terminal-skip bypass by calling
+  // traceReviewCandidacyDecision() directly with reviewData left at its
+  // baseArgs() default of undefined — none of them combine a populated
+  // reviewData (hasAnyReviewAtHead(reviewData) === true) with a fresh ledger
+  // finding, which is exactly the scenario the live-GitHub review dedup's
+  // early return (above, near the top of this function) can otherwise
+  // shadow. These two tests close that gap.
+
+  test("already-reviewed-live: a fresh ledger finding bypasses the live-review exclusion even with no fresh author reply (eligible)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "rejected",
+          source: "patch",
+          evidence: "Fresh rebuttal finding recorded after the last review.",
+          at: "2026-08-02T00:00:00.000Z",
+          createdAt: "2026-08-02T00:00:00.000Z",
+        },
+      ],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({ check: "eligible" });
+  });
+
+  test("already-reviewed-live: no fresh ledger finding preserves the live-review exclusion (dedup still applies)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-01T00:00:00.000Z",
+      findings: [],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
+  });
+
   test("staged: staged:true with matching reviewedCommitSha excludes regardless of reviewState", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const record: PrRecord = {
