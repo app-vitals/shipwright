@@ -1591,10 +1591,19 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
     const ledgerSection = step7Section.slice(ledgerIdx);
 
     expect(ledgerSection).toContain("resolved === true");
-    expect(ledgerSection).toContain('"disposition": "resolved"');
-    expect(ledgerSection).toContain('"source": "review"');
+    expect(ledgerSection).toContain('disposition: "resolved"');
+    expect(ledgerSection).toContain('source: "review"');
     expect(ledgerSection).toContain("/findings");
     expect(ledgerSection).toContain("entry.evidence");
+  });
+
+  it("Step 7 builds the ledger POST body via jq -n --arg to safely escape subagent-authored free-text evidence", () => {
+    const ledgerIdx = step7Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step7Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("jq -n --arg");
+    expect(ledgerSection).toContain('--arg evidence "{entry.evidence}"');
   });
 
   it("Step 7's ledger write is scoped to entries already parsed from the subagent, not a new decision", () => {

@@ -497,18 +497,24 @@ own determination, using its own evidence string verbatim:
 
 ```bash
 for entry in priorFindingsStatus[] where entry.resolved === true:
+  BODY=$(jq -n --arg ref "{entry.ref}" --arg evidence "{entry.evidence}" \
+    '{ref: $ref, disposition: "resolved", source: "review", evidence: $evidence}')
   curl -sf -X POST \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
-    -d '{"ref": "{entry.ref}", "disposition": "resolved", "source": "review", "evidence": "{entry.evidence}"}' \
+    -d "$BODY" \
     >/dev/null 2>&1 || echo "⚠ ledger POST failed for {entry.ref} — continuing (non-fatal)"
 ```
 
 `{entry.ref}` and `{entry.evidence}` are the same `ref`/`evidence` values from the parsed
-`priorFindingsStatus[]` entry — `evidence` is passed through verbatim, not rewritten.
-Entries with `resolved: false` are not posted here (there is nothing resolved to persist;
-they remain a normal unaddressed finding via the qualifying-review path).
+`priorFindingsStatus[]` entry — `evidence` is passed through verbatim, not rewritten, but
+`entry.evidence` is subagent-authored free text (a `file:line` reference, diff excerpt, or
+explanation — see Step 7's Output Format above), so it is built via `jq -n --arg` rather than
+interpolated directly into a JSON string literal — the same escaping pattern Step 9.5 and
+Step 10.5 use for LLM-authored free text elsewhere in this file. Entries with `resolved: false`
+are not posted here (there is nothing resolved to persist; they remain a normal unaddressed
+finding via the qualifying-review path).
 
 **Best-effort, not a new decision.** These POSTs persist attestations the subagent already
 made in its response above — they do not gate Step 8, Step 9, or Step 9.5's own consumption
