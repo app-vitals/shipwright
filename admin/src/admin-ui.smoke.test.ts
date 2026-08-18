@@ -632,6 +632,22 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
+  it("authenticated GET /admin/agents/new returns 200 with a required type select listing the agent types", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/agents/new", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Regression coverage for a bug where a consumer wiring up AdminUIDeps
+    // without the required `provisioner` field (it has no default, unlike
+    // agentTypeRegistry) caused this route to throw on `provisioner.canProvision`
+    // — a 500 that left the type picker (and its "required" select[name=type])
+    // missing entirely rather than merely disabled.
+    expect(html).toContain('<select id="type" name="type" class="form-input" required>');
+    expect(html).toContain('<option value="coding">Coding Agent</option>');
+  });
+
   it("nests shipwright-loop phase crons under the loop row instead of listing them flat", async () => {
     const LOOP_ID = "cron-loop-1";
     const PHASES = [
