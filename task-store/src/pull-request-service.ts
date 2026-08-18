@@ -22,6 +22,9 @@ import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
   Prisma,
+  type PrFinding,
+  type PrFindingDisposition,
+  type PrFindingSource,
   type PrismaClient,
   type PrPhase,
   type PullRequest,
@@ -172,6 +175,16 @@ export interface PullRequestListResult {
   offset: number;
 }
 
+/** Input for PullRequestService.appendFinding. */
+export interface AppendFindingInput {
+  ref: string;
+  disposition: PrFindingDisposition;
+  source: PrFindingSource;
+  evidence: string;
+  /** ISO timestamp. Defaults to the service's Clock.now() when omitted. */
+  at?: string;
+}
+
 /** The subset of PullRequestService the routes depend on. */
 export interface PullRequestServiceLike {
   list(filters?: PullRequestListFilters): Promise<PullRequestListResult>;
@@ -201,6 +214,7 @@ export interface PullRequestServiceLike {
     maxConcurrent: number,
     repos?: string[],
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
+  appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -253,6 +267,7 @@ export class PullRequestService implements PullRequestServiceLike {
       const candidates = await this.prisma.pullRequest.findMany({
         where,
         orderBy,
+        include: { findings: true },
       });
 
       const taskIds = [
@@ -288,6 +303,7 @@ export class PullRequestService implements PullRequestServiceLike {
         orderBy,
         take: limit,
         skip: offset,
+        include: { findings: true },
       }),
       this.prisma.pullRequest.count({ where }),
     ]);
@@ -296,7 +312,10 @@ export class PullRequestService implements PullRequestServiceLike {
   }
 
   async get(id: string): Promise<PullRequest | null> {
-    return this.prisma.pullRequest.findUnique({ where: { id } });
+    return this.prisma.pullRequest.findUnique({
+      where: { id },
+      include: { findings: true },
+    });
   }
 
   // ─── Writes ────────────────────────────────────────────────────────────────
@@ -895,6 +914,48 @@ export class PullRequestService implements PullRequestServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
+  }
+
+  /**
+   * Append a PrFinding row to a PR — a single unlocked INSERT, race-safe
+   * against concurrent writers (see the schema.prisma comment on PrFinding
+   * for the rationale: a JSON-array read-modify-write PATCH is not race-safe,
+   * a plain INSERT is). Validates the PR exists first via an explicit
+   * findUnique() check (rather than letting a bad prRecordId surface as a
+   * Prisma P2003 FK-violation error) so callers get a clean 404 via
+   * NotFoundError, matching the translateNotFound pattern used elsewhere.
+   *
+   * Server-side source/disposition authority enforcement (source:'patch' may
+   * only submit disposition:'rejected') lives in the route handler
+   * (routes/prs.ts), consistent with this codebase's existing pattern of
+   * validating request fields inline in the handler before calling the
+   * service (see claimRoute's repo/prNumber/commitSha checks).
+   *
+   * `at` defaults to this.clock.now() when the caller omits it, keeping the
+   * route handler thin (mirrors this.clock usage elsewhere in this class).
+   */
+  async appendFinding(
+    prId: string,
+    data: AppendFindingInput,
+  ): Promise<PrFinding> {
+    const existing = await this.prisma.pullRequest.findUnique({
+      where: { id: prId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("pr not found");
+    }
+
+    return this.prisma.prFinding.create({
+      data: {
+        prRecordId: prId,
+        ref: data.ref,
+        disposition: data.disposition,
+        source: data.source,
+        evidence: data.evidence,
+        at: data.at ?? this.clock.now().toISOString(),
+      },
+    });
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

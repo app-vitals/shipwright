@@ -13,8 +13,15 @@ export {
   PrState,
   PrReviewState,
   PrPhase,
+  PrFindingDisposition,
+  PrFindingSource,
 } from "../prisma/client/index.js";
-export type { Task, TaskToken, PullRequest } from "../prisma/client/index.js";
+export type {
+  Task,
+  TaskToken,
+  PullRequest,
+  PrFinding,
+} from "../prisma/client/index.js";
 export type {
   BlockedByEntry,
   TaskWithBlockedBy,

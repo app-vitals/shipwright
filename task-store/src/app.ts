@@ -66,6 +66,9 @@ const noopPrService: PullRequestServiceLike = {
   async claimNext(_agentId, _maxConcurrent, _repos?) {
     return null;
   },
+  async appendFinding(_prId, _data) {
+    return {} as never;
+  },
 };
 
 export interface TaskStoreDeps {

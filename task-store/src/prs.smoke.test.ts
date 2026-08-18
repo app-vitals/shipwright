@@ -16,12 +16,18 @@
  *   - GET /prs/:id → 404 when missing
  *   - POST /prs/:id/heartbeat → updates heartbeatAt
  *   - POST /prs/:id/release → clears claim, reviewState=pending
+ *   - POST /prs/:id/findings → persists a finding (source:"review")
+ *   - POST /prs/:id/findings → 400 when source:"patch" submits a disposition
+ *     other than "rejected" (server-side authority enforcement)
+ *   - POST /prs/:id/findings → 200/201 when source:"patch" submits
+ *     disposition:"rejected" (patch's one allowed disposition)
+ *   - GET /prs/:id → response includes findings: PrFinding[]
  */
 
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
-import type { PullRequest } from "./index.ts";
+import type { PrFinding, PullRequest } from "./index.ts";
 import type {
   PullRequestListFilters,
   PullRequestListResult,
@@ -72,6 +78,20 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     updatedAt: new Date(),
     ...overrides,
   } as PullRequest;
+}
+
+function makeFinding(overrides: Partial<PrFinding> = {}): PrFinding {
+  return {
+    id: "finding-1",
+    prRecordId: "pr-1",
+    ref: "src/foo.ts:1",
+    disposition: "resolved",
+    source: "review",
+    evidence: "fixed in follow-up commit",
+    at: "2026-08-17T00:00:00.000Z",
+    createdAt: new Date(),
+    ...overrides,
+  } as PrFinding;
 }
 
 /** Admin token service (agentId: null). */
@@ -153,6 +173,16 @@ interface CapturedClaimCall {
   prCreatedAt?: string;
 }
 
+/** Captured args from each fakePrService.appendFinding() call. */
+interface CapturedAppendFindingCall {
+  prId: string;
+  ref: string;
+  disposition: "resolved" | "superseded" | "rejected";
+  source: "review" | "patch";
+  evidence: string;
+  at?: string;
+}
+
 /** Minimal in-memory PullRequestServiceLike fake. */
 function fakePrService(
   opts: {
@@ -165,6 +195,8 @@ function fakePrService(
       phase: "review" | "patch" | "deploy";
     } | null;
     claimCalls?: CapturedClaimCall[];
+    appendFindingCalls?: CapturedAppendFindingCall[];
+    appendFindingResult?: PrFinding | Error;
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -363,6 +395,35 @@ function fakePrService(
     } | null> {
       if ("claimNextResult" in opts) return opts.claimNextResult ?? null;
       return null;
+    },
+
+    async appendFinding(
+      prId: string,
+      data: {
+        ref: string;
+        disposition: "resolved" | "superseded" | "rejected";
+        source: "review" | "patch";
+        evidence: string;
+        at?: string;
+      },
+    ): Promise<PrFinding> {
+      opts.appendFindingCalls?.push({ prId, ...data });
+      if (opts.appendFindingResult !== undefined) {
+        if (opts.appendFindingResult instanceof Error) {
+          throw opts.appendFindingResult;
+        }
+        return opts.appendFindingResult;
+      }
+      if (!store.has(prId)) throw new NotFoundError("pr not found");
+      return makeFinding({
+        id: `finding-${prId}-${Date.now()}`,
+        prRecordId: prId,
+        ref: data.ref,
+        disposition: data.disposition,
+        source: data.source,
+        evidence: data.evidence,
+        at: data.at ?? new Date().toISOString(),
+      });
     },
   };
 }
@@ -1579,5 +1640,219 @@ describe("/prs routes (smoke)", () => {
     expect(res.status).toBe(200);
     // Admin tokens bypass scope — repos must be undefined
     expect(capturedRepos).toBeUndefined();
+  });
+
+  // ─── POST /prs/:id/findings ───────────────────────────────────────────────
+
+  it('POST /prs/:id/findings with source:"review", disposition:"resolved" persists the finding (200/201)', async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed in the follow-up commit.",
+      }),
+    });
+    expect([200, 201]).toContain(res.status);
+    const body = (await res.json()) as PrFinding;
+    expect(body.ref).toBe("src/foo.ts:42");
+    expect(body.disposition).toBe("resolved");
+    expect(body.source).toBe("review");
+    expect(appendFindingCalls).toHaveLength(1);
+    expect(appendFindingCalls[0]?.prId).toBe("pr-1");
+    expect(appendFindingCalls[0]?.disposition).toBe("resolved");
+    expect(appendFindingCalls[0]?.source).toBe("review");
+  });
+
+  it('POST /prs/:id/findings with source:"patch", disposition:"resolved" returns 400 (authority violation)', async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "patch",
+        evidence: "Claims to have fixed it.",
+      }),
+    });
+    expect(res.status).toBe(400);
+    // The service must never be called — the rejection is enforced server-side
+    // before persistence, not merely a downstream validation.
+    expect(appendFindingCalls).toHaveLength(0);
+  });
+
+  it('POST /prs/:id/findings with source:"patch", disposition:"superseded" returns 400 (authority violation)', async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "superseded",
+        source: "patch",
+        evidence: "Claims a later fix superseded this.",
+      }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('POST /prs/:id/findings with source:"patch", disposition:"rejected" succeeds (patch\'s one allowed disposition)', async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "rejected",
+        source: "patch",
+        evidence: "Not a real issue — false positive.",
+      }),
+    });
+    expect([200, 201]).toContain(res.status);
+    const body = (await res.json()) as PrFinding;
+    expect(body.disposition).toBe("rejected");
+    expect(body.source).toBe("patch");
+    expect(appendFindingCalls).toHaveLength(1);
+  });
+
+  it('POST /prs/:id/findings with source:"review", disposition:"superseded" succeeds (review has no restriction)', async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = makeApp({ prService: fakePrService({ store }) });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "superseded",
+        source: "review",
+        evidence: "Superseded by a later review finding.",
+      }),
+    });
+    expect([200, 201]).toContain(res.status);
+  });
+
+  it("POST /prs/:id/findings returns 400 when ref is an empty string", async () => {
+    // Zod's z.string() body-schema check accepts an empty string (it isn't
+    // .min(1)), so this exercises the handler's own `!ref` truthiness check
+    // rather than being intercepted by the OpenAPIHono request validator.
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed in the follow-up commit.",
+      }),
+    });
+    expect(res.status).toBe(400);
+    // The service must never be called — validation fails before persistence.
+    expect(appendFindingCalls).toHaveLength(0);
+  });
+
+  it("POST /prs/:id/findings returns 400 when evidence is an empty string", async () => {
+    // Same rationale as the empty-ref case above — z.string() lets an empty
+    // string reach the handler, which is where evidence's `!evidence` check
+    // actually rejects it.
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(appendFindingCalls).toHaveLength(0);
+  });
+
+  it("POST /prs/:id/findings returns 404 when the PR does not exist", async () => {
+    const app = makeApp({
+      prService: fakePrService({
+        store: new Map(),
+        appendFindingResult: new NotFoundError("pr not found"),
+      }),
+    });
+
+    const res = await app.request("/prs/missing/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "evidence",
+      }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  // ─── GET /prs/:id includes findings[] ─────────────────────────────────────
+
+  it("GET /prs/:id response includes findings: PrFinding[]", async () => {
+    const findings = [
+      makeFinding({ id: "finding-1", prRecordId: "pr-1" }),
+      makeFinding({
+        id: "finding-2",
+        prRecordId: "pr-1",
+        ref: "src/bar.ts:7",
+        disposition: "rejected",
+        source: "patch",
+      }),
+    ];
+    const app = makeApp({
+      prService: fakePrService({
+        getResult: makePr({ id: "pr-1", findings } as Partial<PullRequest>),
+      }),
+    });
+    const res = await app.request("/prs/pr-1", { headers: adminAuth() });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PullRequest & { findings: PrFinding[] };
+    expect(body.findings).toHaveLength(2);
+    expect(body.findings[0].ref).toBe("src/foo.ts:1");
+    expect(body.findings[1].disposition).toBe("rejected");
   });
 });

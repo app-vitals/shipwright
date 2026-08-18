@@ -208,6 +208,10 @@ function fakePrService(
     } | null> {
       return null;
     },
+
+    async appendFinding() {
+      return {} as never;
+    },
   };
 }
 

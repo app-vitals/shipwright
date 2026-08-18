@@ -17,7 +17,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
-import { ConflictError } from "./errors.ts";
+import { ConflictError, NotFoundError } from "./errors.ts";
 import { PullRequestService } from "./pull-request-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST;
@@ -208,3 +208,108 @@ describeOrSkip(
     });
   },
 );
+
+describeOrSkip("PullRequestService.appendFinding() (integration)", () => {
+  let prisma: PrismaClient;
+  let service: PullRequestService;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    service = new PullRequestService(prisma);
+    await prisma.prFinding.deleteMany();
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("persists a finding via the service and a subsequent get() returns it in findings[]", async () => {
+    const pr = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 6100 },
+    });
+
+    const finding = await service.appendFinding(pr.id, {
+      ref: "src/foo.ts:42",
+      disposition: "resolved",
+      source: "review",
+      evidence: "Fixed the null check in the follow-up commit.",
+      at: "2026-08-17T12:00:00.000Z",
+    });
+
+    expect(finding.prRecordId).toBe(pr.id);
+    expect(finding.ref).toBe("src/foo.ts:42");
+    expect(finding.disposition).toBe("resolved");
+    expect(finding.source).toBe("review");
+
+    const fetched = await service.get(pr.id);
+    expect(fetched).not.toBeNull();
+    if (!fetched) return;
+    const withFindings = fetched as typeof fetched & {
+      findings: Array<{ id: string; ref: string }>;
+    };
+    expect(withFindings.findings).toHaveLength(1);
+    expect(withFindings.findings[0].id).toBe(finding.id);
+    expect(withFindings.findings[0].ref).toBe("src/foo.ts:42");
+  });
+
+  it("stamps `at` with the current time via the injected Clock when omitted by the caller", async () => {
+    const fixedNow = new Date("2026-08-18T00:00:00.000Z");
+    const fixedService = new PullRequestService(prisma, {
+      now: () => fixedNow,
+    });
+    const pr = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 6101 },
+    });
+
+    const finding = await fixedService.appendFinding(pr.id, {
+      ref: "src/bar.ts:1",
+      disposition: "rejected",
+      source: "patch",
+      evidence: "Not a real issue.",
+    });
+
+    expect(finding.at).toBe(fixedNow.toISOString());
+  });
+
+  it("throws NotFoundError when the PR does not exist", async () => {
+    let caught: unknown;
+    try {
+      await service.appendFinding("does-not-exist", {
+        ref: "src/foo.ts:1",
+        disposition: "resolved",
+        source: "review",
+        evidence: "evidence",
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("allows concurrent appendFinding calls for the same PR (race-safe plain INSERT)", async () => {
+    const pr = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 6102 },
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        service.appendFinding(pr.id, {
+          ref: `src/concurrent.ts:${i}`,
+          disposition: "resolved",
+          source: i % 2 === 0 ? "review" : "patch",
+          evidence: `finding ${i}`,
+          at: "2026-08-17T05:00:00.000Z",
+        }),
+      ),
+    );
+
+    expect(results).toHaveLength(5);
+
+    const fetched = await service.get(pr.id);
+    const withFindings = fetched as typeof fetched & {
+      findings: unknown[];
+    };
+    expect(withFindings?.findings).toHaveLength(5);
+  });
+});
