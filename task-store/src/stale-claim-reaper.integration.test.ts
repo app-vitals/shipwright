@@ -40,6 +40,10 @@ describeOrSkip("StaleClaimReaper PR reaping (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, in case another test file
+    // sharing TEST_DB left rows behind.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 

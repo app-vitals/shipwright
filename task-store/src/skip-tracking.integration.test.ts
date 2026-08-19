@@ -163,6 +163,10 @@ describeOrSkip("PullRequestService.recordSkip/resetSkip (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since recordSkip/resetSkip
+    // now write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
