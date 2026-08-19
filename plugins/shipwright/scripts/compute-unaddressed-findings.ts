@@ -23,7 +23,8 @@
 // any of five exclusions:
 //   1. isSelfCleanApprove (CPF-2.1) — a self-authored clean-APPROVE review.
 //   2. isAddressedByAuthorReply (CPF-2.3) — a third-party review addressed by a
-//      subsequent PR-author reply.
+//      subsequent PR-author reply. Scoped to the real PR author via `prAuthor`
+//      (RAS-1.1), which defaults to `currentUser` when absent.
 //   3. isSupersededBySelfReview (DRO-1.2) — an earlier self-review superseded by
 //      a later, genuinely clean self-review.
 //   4. isResolvedByPriorFindingsStatus (PVD-1.3) — a prior self-authored review
@@ -40,9 +41,12 @@
 //      exclusion applies to third-party reviews too.
 //
 // CLI:
-//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...]}'
+//   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...],"prAuthor":"pr-author-login"}'
 // or pipe the same JSON blob via stdin. `priorFindingsStatus` and `findings`
-// are both optional and default to [] when absent.
+// are both optional and default to [] when absent. `prAuthor` is optional and
+// defaults to `currentUser` when absent (RAS-1.1) — pass it explicitly when
+// `currentUser` is not the PR's author (e.g. review.md's Step 9.5, which
+// gates verdicts on any PR the bot reviews, including third-party PRs).
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 //
@@ -135,6 +139,21 @@ export interface PrReviewData {
    * this field keep their current behavior exactly.
    */
   findings?: PrFinding[];
+  /**
+   * The PR's actual author login, used by `isAddressedByAuthorReply` (CPF-2.3)
+   * to recognize a reply as addressing a finding (RAS-1.1). Optional —
+   * defaults to `currentUser` when absent, preserving check-patch.ts's own-PR
+   * call sites exactly (there, `currentUser` IS the PR author, since `patch`
+   * only ever acts on the authenticated user's own open PRs). review.md's
+   * Step 9.5 reuses this same function to gate review verdicts on ANY PR the
+   * bot reviews, including third-party PRs — there, `currentUser` is the
+   * reviewer, not the author, so `prAuthor` must be passed explicitly with
+   * the PR's real `author.login` for the reply exclusion to mean anything
+   * (root-caused from the ok-wow-agency PR #80 incident, where a third-party
+   * PR author's reply never matched `currentUser` and forced the verdict to
+   * COMMENT despite zero remaining findings).
+   */
+  prAuthor?: string;
 }
 
 // ─── Self-review body matching ────────────────────────────────────────────────
@@ -197,16 +216,23 @@ export function isSelfCleanApprove(
  * top-level PR comment posted after the review) is the only available
  * signal in that case, so we treat it as evidence the finding was addressed
  * (fixed or rebutted) even though the review body itself never changes.
+ *
+ * `prAuthor` is the PR's actual author login — NOT necessarily `currentUser`
+ * (RAS-1.1). check-patch.ts's own-PR call sites pass `currentUser` here
+ * (correct there, since `currentUser` IS the PR author), but review.md's
+ * Step 9.5 gates verdicts on any PR the bot reviews, including third-party
+ * PRs where `currentUser` is the reviewer, not the author — only the PR's
+ * actual author can "address" a finding via reply.
  */
 export function isAddressedByAuthorReply(
   review: Pick<ReviewNode, "submittedAt">,
   comments: IssueCommentNode[],
-  currentUser: string,
+  prAuthor: string,
 ): boolean {
   const reviewedAt = new Date(review.submittedAt).getTime();
   return comments.some(
     (c) =>
-      c.author.login === currentUser &&
+      c.author.login === prAuthor &&
       new Date(c.createdAt).getTime() > reviewedAt,
   );
 }
@@ -369,7 +395,10 @@ export function isResolvedByLedger(ref: string, findings: PrFinding[]): boolean 
  * threads AND the PR author has replied after the review (see
  * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
  * review's finding as addressed, since only the review's own author can edit
- * its body.
+ * its body. The PR author's identity for this check is `data.prAuthor`,
+ * defaulting to `currentUser` when absent (RAS-1.1) — preserving
+ * check-patch.ts's own-PR behavior exactly, while letting review.md's
+ * Step 9.5 pass the PR's real author for third-party PRs the bot reviews.
  *
  * A prior self-authored review is excluded when the current pass's
  * `priorFindingsStatus[]` attests it resolved with evidence (see
@@ -393,6 +422,7 @@ export function hasUnaddressedFindings(
   const { headRefOid, reviews, reviewThreads, comments } = data;
   const priorFindingsStatus = data.priorFindingsStatus ?? [];
   const findings = data.findings ?? [];
+  const prAuthor = data.prAuthor ?? currentUser;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current HEAD,
   // excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
@@ -421,7 +451,7 @@ export function hasUnaddressedFindings(
   return qualifyingReviews.some(
     (r) =>
       r.body.trim().length > 0 &&
-      !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+      !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
   );
 }
 
@@ -473,6 +503,15 @@ export function parseCliInput(raw: string): CliInput {
       'Input JSON "findings" field, when present, must be an array',
     );
   }
+  // prAuthor is optional (RAS-1.1) — absent for callers (e.g. check-patch.ts's
+  // own-PR scope, via agent/src, not this CLI) that don't need to distinguish
+  // the PR author from currentUser. When present it must be a string;
+  // hasUnaddressedFindings defaults it to currentUser when absent.
+  if (parsed.prAuthor !== undefined && typeof parsed.prAuthor !== "string") {
+    throw new Error(
+      'Input JSON "prAuthor" field, when present, must be a string',
+    );
+  }
   return {
     currentUser: parsed.currentUser,
     headRefOid: parsed.headRefOid,
@@ -481,6 +520,7 @@ export function parseCliInput(raw: string): CliInput {
     comments: parsed.comments,
     priorFindingsStatus: parsed.priorFindingsStatus ?? [],
     findings: parsed.findings ?? [],
+    prAuthor: parsed.prAuthor,
   };
 }
 
@@ -497,6 +537,7 @@ if (import.meta.main) {
       comments: input.comments,
       priorFindingsStatus: input.priorFindingsStatus,
       findings: input.findings,
+      prAuthor: input.prAuthor,
     },
     input.currentUser,
   );
