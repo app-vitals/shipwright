@@ -25,22 +25,44 @@ interface EventCall {
 }
 
 /**
+ * Attaches the PullRequestEvent audit-write stub (`pullRequestEvent.create`)
+ * and a callback-form `$transaction` (invokes the callback with the composed
+ * double itself as `tx`) to a Prisma double's `pullRequest`-stub base object.
+ * Shared by makePrismaDouble and recordSkip()'s own double below so both wire
+ * up PSA-1.2's event-recording surface identically instead of duplicating it.
+ */
+function attachEventStub<TBase extends Record<string, unknown>>(base: TBase) {
+  const eventCalls: EventCall[] = [];
+  const prisma = {
+    ...base,
+    pullRequestEvent: {
+      create(args: EventCall): Promise<Record<string, unknown>> {
+        eventCalls.push(args);
+        return Promise.resolve({ id: "event-1", ...args.data });
+      },
+    },
+    $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return fn(prisma);
+    },
+    _eventCalls: eventCalls,
+  };
+  return prisma;
+}
+
+/**
  * makePrismaDouble — configurable findUnique return value, records update()
  * calls so tests can assert on the exact data payload passed to Prisma.
  *
  * Several mutation methods now wrap their update in this.prisma.$transaction()
- * and write PullRequestEvent audit rows inside it (PSA-1.2). The double
- * therefore exposes a callback-form `$transaction` (invoking the callback with
- * the double itself as `tx`) and a `pullRequestEvent.create` stub whose calls
- * are captured in `_eventCalls`.
+ * and write PullRequestEvent audit rows inside it (PSA-1.2) — see
+ * attachEventStub for that wiring.
  */
 function makePrismaDouble(
   findUniqueResult: Partial<PullRequest> | null = null,
 ) {
   const updateCalls: UpdateCall[] = [];
-  const eventCalls: EventCall[] = [];
 
-  const prisma = {
+  const prisma = attachEventStub({
     pullRequest: {
       findUnique(_args: unknown): Promise<Partial<PullRequest> | null> {
         return Promise.resolve(findUniqueResult);
@@ -54,18 +76,8 @@ function makePrismaDouble(
         } as Partial<PullRequest>);
       },
     },
-    pullRequestEvent: {
-      create(args: EventCall): Promise<Record<string, unknown>> {
-        eventCalls.push(args);
-        return Promise.resolve({ id: "event-1", ...args.data });
-      },
-    },
-    $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-      return fn(prisma);
-    },
     _updateCalls: updateCalls,
-    _eventCalls: eventCalls,
-  };
+  });
 
   return prisma as unknown as {
     pullRequest: {
@@ -669,7 +681,6 @@ describe("PullRequestService.recordSkip()", () => {
    */
   function makeRecordSkipPrismaDouble(initialSkipCount: number) {
     const updateCalls: UpdateCall[] = [];
-    const eventCalls: EventCall[] = [];
     const record: Partial<PullRequest> = {
       id: "pr-1",
       skipCount: initialSkipCount,
@@ -677,7 +688,7 @@ describe("PullRequestService.recordSkip()", () => {
       blockedReason: null,
     };
 
-    const prisma = {
+    const prisma = attachEventStub({
       pullRequest: {
         // recordSkip() now snapshots the before-state via findUnique inside the
         // transaction. Return the current mutable record so the audit diff sees
@@ -705,18 +716,8 @@ describe("PullRequestService.recordSkip()", () => {
           return Promise.resolve({ ...record });
         },
       },
-      pullRequestEvent: {
-        create(args: EventCall): Promise<Record<string, unknown>> {
-          eventCalls.push(args);
-          return Promise.resolve({ id: "event-1", ...args.data });
-        },
-      },
-      $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
-        return fn(prisma);
-      },
       _updateCalls: updateCalls,
-      _eventCalls: eventCalls,
-    };
+    });
 
     return prisma as unknown as {
       pullRequest: {
