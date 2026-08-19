@@ -1173,6 +1173,12 @@ describe("review.md — Step 9.5 invokes compute-unaddressed-findings.ts mechani
     expect(step95Section).toContain("do not re-fetch or re-shape");
   });
 
+  it("passes the PR's real author login as prAuthor, not CURRENT_USER (RAS-1.1 — third-party review scope)", () => {
+    expect(step95Section).toContain("PR_AUTHOR");
+    expect(step95Section).toContain("prAuthor");
+    expect(step95Section).toContain('--arg prAuthor "$PR_AUTHOR"');
+  });
+
   it("assigns the script's boolean output to UNADDRESSED_FINDINGS for Step 10 to consume", () => {
     expect(step95Section).toContain("UNADDRESSED_FINDINGS=");
     expect(step95Section).toContain('{"unaddressedFindings":true|false}');

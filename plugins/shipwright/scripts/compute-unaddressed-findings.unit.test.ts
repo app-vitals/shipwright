@@ -833,6 +833,73 @@ describe("hasUnaddressedFindings", () => {
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
   });
 
+  // ─── prAuthor scoping (RAS-1.1, ok-wow-agency PR #80 incident) ─────────────
+  //
+  // Before RAS-1.1, isAddressedByAuthorReply always compared a reply's author
+  // against currentUser (the bot) — correct for check-patch.ts's own-PR scope
+  // (currentUser IS the PR author there), but wrong for review.md's Step 9.5,
+  // which reuses hasUnaddressedFindings for third-party PRs the bot reviews.
+  // On ok-wow-agency PR #80, round-3 automated review was forced to COMMENT
+  // despite zero findings and both prior issues confirmed fixed, because the
+  // reply came from the real PR author (zayyen-p), not currentUser (the-agent)
+  // — the reply never matched. These tests mirror that incident directly.
+
+  test("excludes a third-party review's finding when the real PR author (not currentUser) replies after it, given explicit prAuthor (mirrors ok-wow-agency PR #80)", () => {
+    const data = makeData({
+      prAuthor: "zayyen-p",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            submittedAt: "2026-08-19T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Two issues found in round 2.",
+          },
+        ],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "zayyen-p" },
+            body: "Both issues fixed in this round.",
+            createdAt: "2026-08-19T11:00:00Z", // after the review's submittedAt
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("does NOT exclude a third-party review's finding when currentUser (not the explicit prAuthor) replies after it — proves prAuthor actually changes behavior", () => {
+    const data = makeData({
+      prAuthor: "zayyen-p",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "some-reviewer" },
+            state: "COMMENTED",
+            submittedAt: "2026-08-19T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Two issues found in round 2.",
+          },
+        ],
+      },
+      comments: {
+        nodes: [
+          {
+            // currentUser replies, but the real PR author (zayyen-p) never
+            // did — this must NOT count as the author addressing the finding.
+            author: { login: "the-agent" },
+            body: "Investigating.",
+            createdAt: "2026-08-19T11:00:00Z", // after the review's submittedAt
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
   test("returns true when a third-party review has a non-empty body, no unresolved threads, and no PR-author reply at all", () => {
     const data = makeData({
       reviews: {

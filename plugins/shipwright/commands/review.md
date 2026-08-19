@@ -182,6 +182,12 @@ back to `'sonnet'`.
      --json number,title,author,headRefName,baseRefName,headRefOid,additions,deletions,changedFiles,body
    ```
 
+   Capture the PR's author login from this response as `PR_AUTHOR` — used by both Step 9.5
+   (as `prAuthor`, RAS-1.1) and Step 10 (to derive `selfReview`):
+   ```bash
+   PR_AUTHOR={the .author.login from the metadata above}
+   ```
+
 2. **Diff against the correct base branch** (not always main):
    ```bash
    base=$(gh pr view {pr} --repo {org}/{repo} --json baseRefName -q '.baseRefName')
@@ -675,8 +681,7 @@ subsection when there was nothing to check.
 Immediately before Step 10 finalizes the verdict, this step determines whether this PR has
 **unaddressed findings**, using the exact definition `/shipwright:patch`'s `### Step 3a: Check
 for Unaddressed Review Findings` (`commands/patch.md`) already applies — reuse that definition
-rather than re-deriving it in different language here (a fourth divergent copy of this logic
-is exactly the drift PRB-2.1 previously fixed between `check-deploy.ts` and
+rather than re-deriving it (the drift PRB-2.1 previously fixed between `check-deploy.ts` and
 `check-patch.ts`/`check-review.ts`).
 
 **This is computed mechanically, not freehand.** `compute-unaddressed-findings.ts`
@@ -684,7 +689,8 @@ is exactly the drift PRB-2.1 previously fixed between `check-deploy.ts` and
 helpers — extracted from `agent/src/check-patch.ts`'s List A qualification logic, mirroring
 `compute-review-verdict.ts`'s CLI pattern (DRO-1.1). Invoke it with the `reviews`,
 `reviewThreads`, `comments`, and `headRefOid` fetched in Step 5.5, plus `CURRENT_USER`
-resolved in Step 3 — do not decide `unaddressedFindings` by narrative judgment:
+resolved in Step 3 — do not decide `unaddressedFindings` by narrative judgment. Pass
+`PR_AUTHOR` as `prAuthor`, not `CURRENT_USER` (RAS-1.1):
 
 ```bash
 CURRENT_USER={the login resolved in Step 3}
@@ -693,12 +699,13 @@ CURRENT_USER={the login resolved in Step 3}
 ```bash
 bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-unaddressed-findings.ts" \
   "$(jq -n --arg currentUser "$CURRENT_USER" \
+    --arg prAuthor "$PR_AUTHOR" \
     --argjson headRefOid "$(jq -Rs . <<< "$HEAD_REF_OID")" \
     --argjson reviews "$REVIEWS_JSON" \
     --argjson reviewThreads "$REVIEW_THREADS_JSON" \
     --argjson comments "$COMMENTS_JSON" \
     --argjson priorFindingsStatus "$PRIOR_FINDINGS_STATUS_JSON" \
-    '{currentUser: $currentUser, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus}')"
+    '{currentUser: $currentUser, prAuthor: $prAuthor, headRefOid: $headRefOid, reviews: $reviews, reviewThreads: $reviewThreads, comments: $comments, priorFindingsStatus: $priorFindingsStatus}')"
 # -> {"unaddressedFindings":true|false}
 ```
 
@@ -793,7 +800,8 @@ Follow `references/post-review-guide.md` for the full mechanics.
 
 **The event/verdict decision is mechanical, not freehand.** Three inputs are already computed
 by this point in the procedure:
-- `selfReview` = `true` if the PR's `author.login == CURRENT_USER`, else `false`.
+- `selfReview` = `true` if `PR_AUTHOR == CURRENT_USER` (captured in Step 5 from the PR
+  metadata's `author.login`), else `false`.
 - `unaddressedFindings` = the boolean Step 9.5's hard gate computed (real unresolved findings
   from BEFORE this review pass — unresolved prior GitHub review threads/comments — present at
   head, per that step's exact definition).
