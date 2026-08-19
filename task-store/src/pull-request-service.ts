@@ -281,7 +281,7 @@ export class PullRequestService implements PullRequestServiceLike {
       const candidates = await this.prisma.pullRequest.findMany({
         where,
         orderBy,
-        include: { findings: true },
+        include: { findings: true, events: true },
       });
 
       const taskIds = [
@@ -317,7 +317,7 @@ export class PullRequestService implements PullRequestServiceLike {
         orderBy,
         take: limit,
         skip: offset,
-        include: { findings: true },
+        include: { findings: true, events: true },
       }),
       this.prisma.pullRequest.count({ where }),
     ]);
@@ -328,7 +328,7 @@ export class PullRequestService implements PullRequestServiceLike {
   async get(id: string): Promise<PullRequest | null> {
     return this.prisma.pullRequest.findUnique({
       where: { id },
-      include: { findings: true },
+      include: { findings: true, events: true },
     });
   }
 

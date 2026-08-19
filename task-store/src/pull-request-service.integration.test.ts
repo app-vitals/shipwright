@@ -434,6 +434,76 @@ describeOrSkip(
       expect(await events(pr.id)).toHaveLength(0);
     });
 
+    // Guards against the events-field gap flagged on PR #2713: the audit
+    // trail is only reachable through the API surface docs/task-store.md
+    // describes if get()/list() actually `include` it — a direct
+    // prisma.pullRequestEvent.findMany() query (as `events()` above does)
+    // would pass even if the service's own include clauses were wrong.
+    it("get() includes events[] alongside the audit rows a real transition wrote", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 7004;
+      const commitSha = "sha-get-events";
+      await prisma.pullRequest.create({
+        data: { repo, prNumber, commitSha, reviewState: "pending" },
+      });
+
+      const { record } = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-a",
+        undefined,
+        "review",
+      );
+
+      const fetched = await service.get(record.id);
+      expect(fetched).not.toBeNull();
+      if (!fetched) return;
+      const withEvents = fetched as typeof fetched & {
+        events: Array<{ field: string; method: string }>;
+      };
+      expect(withEvents.events.length).toBeGreaterThan(0);
+      const byField = Object.fromEntries(
+        withEvents.events.map((e) => [e.field, e]),
+      );
+      expect(byField.reviewState).toMatchObject({
+        oldValue: "pending",
+        newValue: "in_progress",
+        method: "claim",
+      });
+    });
+
+    it("list() includes events[] on each PR returned, matching the underlying PullRequestEvent rows", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 7005;
+      const commitSha = "sha-list-events";
+      await prisma.pullRequest.create({
+        data: { repo, prNumber, commitSha, reviewState: "pending" },
+      });
+
+      const { record } = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-a",
+        undefined,
+        "review",
+      );
+
+      const { prs } = await service.list({ repo, prNumber });
+      expect(prs).toHaveLength(1);
+      const withEvents = prs[0] as (typeof prs)[0] & {
+        events: Array<{ field: string }>;
+      };
+
+      const directRows = await events(record.id);
+      expect(withEvents.events.length).toBe(directRows.length);
+      expect(withEvents.events.length).toBeGreaterThan(0);
+      expect(new Set(withEvents.events.map((e) => e.field))).toEqual(
+        new Set(directRows.map((r) => r.field)),
+      );
+    });
+
     it("complete() logs the review-post transition, actor = prior claimant, no heartbeatAt row", async () => {
       const pr = await prisma.pullRequest.create({
         data: {
