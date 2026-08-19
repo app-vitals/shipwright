@@ -1135,7 +1135,7 @@ if [ -n "$PR_RECORD_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/findings" \
-    -d "{\"ref\": \"{finding.ref}\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{finding.evidence}\"}" \
+    -d "{\"ref\": \"{finding.ref}\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{finding.evidence}\", \"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" \
     > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/findings (rejected) failed — continuing"
   if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]; then

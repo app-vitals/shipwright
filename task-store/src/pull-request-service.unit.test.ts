@@ -1275,4 +1275,35 @@ describe("PullRequestService.appendFinding()", () => {
 
     expect(prisma._createCalls).toHaveLength(0);
   });
+
+  test("includes agentId in the create() data when provided by the caller", async () => {
+    const prisma = makeFindingPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.appendFinding("pr-1", {
+      ref: "src/foo.ts:42",
+      disposition: "resolved",
+      source: "review",
+      evidence: "Fixed in the follow-up commit.",
+      agentId: "agent-abc123",
+    });
+
+    const { data } = prisma._createCalls[0];
+    expect(data.agentId).toBe("agent-abc123");
+  });
+
+  test("defaults `agentId` to null when the caller omits it", async () => {
+    const prisma = makeFindingPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.appendFinding("pr-1", {
+      ref: "src/foo.ts:42",
+      disposition: "resolved",
+      source: "review",
+      evidence: "Fixed in the follow-up commit.",
+    });
+
+    const { data } = prisma._createCalls[0];
+    expect(data.agentId).toBe(null);
+  });
 });

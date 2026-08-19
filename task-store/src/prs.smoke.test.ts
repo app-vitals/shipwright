@@ -89,6 +89,7 @@ function makeFinding(overrides: Partial<PrFinding> = {}): PrFinding {
     source: "review",
     evidence: "fixed in follow-up commit",
     at: "2026-08-17T00:00:00.000Z",
+    agentId: null,
     createdAt: new Date(),
     ...overrides,
   } as PrFinding;
@@ -181,6 +182,7 @@ interface CapturedAppendFindingCall {
   source: "review" | "patch";
   evidence: string;
   at?: string;
+  agentId?: string;
 }
 
 /** Minimal in-memory PullRequestServiceLike fake. */
@@ -405,6 +407,7 @@ function fakePrService(
         source: "review" | "patch";
         evidence: string;
         at?: string;
+        agentId?: string;
       },
     ): Promise<PrFinding> {
       opts.appendFindingCalls?.push({ prId, ...data });
@@ -423,6 +426,7 @@ function fakePrService(
         source: data.source,
         evidence: data.evidence,
         at: data.at ?? new Date().toISOString(),
+        agentId: data.agentId ?? null,
       });
     },
   };
@@ -1828,6 +1832,56 @@ describe("/prs routes (smoke)", () => {
       }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("POST /prs/:id/findings includes agentId in the response when provided in the request body", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed in the follow-up commit.",
+        agentId: "agent-xyz789",
+      }),
+    });
+    expect([200, 201]).toContain(res.status);
+    const body = (await res.json()) as PrFinding;
+    expect(body.agentId).toBe("agent-xyz789");
+    expect(appendFindingCalls).toHaveLength(1);
+    expect(appendFindingCalls[0]?.agentId).toBe("agent-xyz789");
+  });
+
+  it("POST /prs/:id/findings succeeds when agentId is omitted from the request body", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const appendFindingCalls: CapturedAppendFindingCall[] = [];
+    const app = makeApp({
+      prService: fakePrService({ store, appendFindingCalls }),
+    });
+
+    const res = await app.request("/prs/pr-1/findings", {
+      method: "POST",
+      headers: { ...adminAuth(), "content-type": "application/json" },
+      body: JSON.stringify({
+        ref: "src/foo.ts:42",
+        disposition: "resolved",
+        source: "review",
+        evidence: "Fixed in the follow-up commit.",
+      }),
+    });
+    expect([200, 201]).toContain(res.status);
+    const body = (await res.json()) as PrFinding;
+    expect(appendFindingCalls).toHaveLength(1);
+    expect(appendFindingCalls[0]?.agentId).toBeUndefined();
   });
 
   // ─── GET /prs/:id includes findings[] ─────────────────────────────────────
