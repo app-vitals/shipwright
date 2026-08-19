@@ -1869,6 +1869,128 @@
           }
         }
       }
+    },
+    "/prs/{id}/findings": {
+      "post": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFindingBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Finding recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrFinding"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected'",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prs/{id}/events": {
+      "get": {
+        "tags": [
+          "PRs"
+        ],
+        "summary": "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx0987654321"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Max records to return",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination offset",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "PR's event history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrEventsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2566,6 +2688,134 @@
           }
         }
       },
+      "PrFinding": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxfinding123456"
+          },
+          "prRecordId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "ref": {
+            "type": "string",
+            "example": "src/foo.ts:42"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "superseded",
+              "rejected"
+            ],
+            "example": "resolved"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "review",
+              "patch"
+            ],
+            "example": "review"
+          },
+          "evidence": {
+            "type": "string",
+            "example": "Fixed the null check in the follow-up commit."
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-08-17T12:00:00.000Z"
+          },
+          "agentId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Agent instance that triaged this finding, if any.",
+            "example": "agent-abc123"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "prRecordId",
+          "ref",
+          "disposition",
+          "source",
+          "evidence",
+          "at",
+          "agentId",
+          "createdAt"
+        ]
+      },
+      "PullRequestEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxevent123456"
+          },
+          "prRecordId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "field": {
+            "type": "string",
+            "example": "reviewState"
+          },
+          "oldValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pending"
+          },
+          "newValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "in_progress"
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-abc123"
+          },
+          "method": {
+            "type": "string",
+            "example": "claim"
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-08-17T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "prRecordId",
+          "field",
+          "oldValue",
+          "newValue",
+          "actor",
+          "method",
+          "at",
+          "createdAt"
+        ]
+      },
       "PullRequest": {
         "type": "object",
         "properties": {
@@ -2777,6 +3027,20 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-01-06T12:00:00.000Z"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PrFinding"
+            },
+            "description": "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestEvent"
+            },
+            "description": "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array)."
           }
         },
         "required": [
@@ -2921,6 +3185,85 @@
             "example": "npm-test-failed-foo.unit.test.ts"
           }
         }
+      },
+      "CreateFindingBody": {
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "Identifier for the finding (e.g. file:line or a slug).",
+            "example": "src/foo.ts:42"
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "superseded",
+              "rejected"
+            ],
+            "description": "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
+            "example": "resolved"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "review",
+              "patch"
+            ],
+            "description": "Which pipeline phase is recording this finding.",
+            "example": "review"
+          },
+          "evidence": {
+            "type": "string",
+            "example": "Fixed the null check in the follow-up commit."
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
+            "example": "2026-08-17T12:00:00.000Z"
+          },
+          "agentId": {
+            "type": "string",
+            "description": "Agent instance that triaged this finding.",
+            "example": "agent-abc123"
+          }
+        },
+        "required": [
+          "ref",
+          "disposition",
+          "source",
+          "evidence"
+        ]
+      },
+      "PrEventsResponse": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PullRequestEvent"
+            },
+            "description": "This PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "events",
+          "total",
+          "limit",
+          "offset"
+        ]
       }
     }
   }

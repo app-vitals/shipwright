@@ -27,8 +27,9 @@
 import { describe, expect, it } from "bun:test";
 import { createTaskStoreApp } from "./app.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
-import type { PrFinding, PullRequest } from "./index.ts";
+import type { PrFinding, PullRequest, PullRequestEvent } from "./index.ts";
 import type {
+  GetEventsResult,
   PullRequestListFilters,
   PullRequestListResult,
   PullRequestServiceLike,
@@ -93,6 +94,23 @@ function makeFinding(overrides: Partial<PrFinding> = {}): PrFinding {
     createdAt: new Date(),
     ...overrides,
   } as PrFinding;
+}
+
+function makeEvent(
+  overrides: Partial<PullRequestEvent> = {},
+): PullRequestEvent {
+  return {
+    id: "event-1",
+    prRecordId: "pr-1",
+    field: "reviewState",
+    oldValue: "pending",
+    newValue: "in_progress",
+    actor: "agent-abc123",
+    method: "claim",
+    at: "2026-08-17T00:00:00.000Z",
+    createdAt: new Date().toISOString(),
+    ...overrides,
+  } as PullRequestEvent;
 }
 
 /** Admin token service (agentId: null). */
@@ -199,6 +217,11 @@ function fakePrService(
     claimCalls?: CapturedClaimCall[];
     appendFindingCalls?: CapturedAppendFindingCall[];
     appendFindingResult?: PrFinding | Error;
+    eventsResult?: GetEventsResult | Error;
+    getEventsCalls?: Array<{
+      prId: string;
+      opts?: { limit?: number; offset?: number };
+    }>;
   } = {},
 ): PullRequestServiceLike {
   const store = opts.store ?? new Map<string, PullRequest>();
@@ -428,6 +451,19 @@ function fakePrService(
         at: data.at ?? new Date().toISOString(),
         agentId: data.agentId ?? null,
       });
+    },
+
+    async getEvents(
+      prId: string,
+      eventsOpts?: { limit?: number; offset?: number },
+    ): Promise<GetEventsResult> {
+      opts.getEventsCalls?.push({ prId, opts: eventsOpts });
+      if (opts.eventsResult !== undefined) {
+        if (opts.eventsResult instanceof Error) throw opts.eventsResult;
+        return opts.eventsResult;
+      }
+      if (!store.has(prId)) throw new NotFoundError("pr not found");
+      return { events: [], total: 0 };
     },
   };
 }
@@ -1908,5 +1944,146 @@ describe("/prs routes (smoke)", () => {
     expect(body.findings).toHaveLength(2);
     expect(body.findings[0].ref).toBe("src/foo.ts:1");
     expect(body.findings[1].disposition).toBe("rejected");
+  });
+
+  // ─── GET /prs/:id/events ───────────────────────────────────────────────────
+
+  it("GET /prs/:id/events returns 401 without auth", async () => {
+    const app = makeApp();
+    const res = await app.request("/prs/pr-1/events");
+    expect(res.status).toBe(401);
+  });
+
+  it("GET /prs/:id/events returns 404 when the PR does not exist", async () => {
+    const app = makeApp({
+      prService: fakePrService({
+        store: new Map(),
+        eventsResult: new NotFoundError("pr not found"),
+      }),
+    });
+
+    const res = await app.request("/prs/missing/events", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("GET /prs/:id/events returns 200 with an events array in ascending `at` order, plus total/limit/offset", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const events = [
+      makeEvent({
+        id: "event-1",
+        field: "reviewState",
+        oldValue: "pending",
+        newValue: "in_progress",
+        method: "claim",
+        at: "2026-08-17T00:00:00.000Z",
+      }),
+      makeEvent({
+        id: "event-2",
+        field: "reviewState",
+        oldValue: "in_progress",
+        newValue: "posted",
+        method: "complete",
+        at: "2026-08-17T01:00:00.000Z",
+      }),
+    ];
+    const app = makeApp({
+      prService: fakePrService({
+        store,
+        eventsResult: { events, total: 2 },
+      }),
+    });
+
+    const res = await app.request("/prs/pr-1/events", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      events: PullRequestEvent[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.events[0]?.id).toBe("event-1");
+    expect(body.events[0]?.at).toBe("2026-08-17T00:00:00.000Z");
+    expect(body.events[1]?.id).toBe("event-2");
+    expect(body.events[1]?.at).toBe("2026-08-17T01:00:00.000Z");
+    expect(body.total).toBe(2);
+    expect(typeof body.limit).toBe("number");
+    expect(typeof body.offset).toBe("number");
+  });
+
+  it("GET /prs/:id/events returns 200 with an empty array when the PR has zero events (not 404)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = makeApp({
+      prService: fakePrService({
+        store,
+        eventsResult: { events: [], total: 0 },
+      }),
+    });
+
+    const res = await app.request("/prs/pr-1/events", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      events: PullRequestEvent[];
+      total: number;
+    };
+    expect(body.events).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("GET /prs/:id/events?limit=&offset= parses limit/offset and forwards them to the service", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const getEventsCalls: Array<{
+      prId: string;
+      opts?: { limit?: number; offset?: number };
+    }> = [];
+    const app = makeApp({
+      prService: fakePrService({
+        store,
+        eventsResult: { events: [], total: 0 },
+        getEventsCalls,
+      }),
+    });
+
+    const res = await app.request("/prs/pr-1/events?limit=10&offset=5", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    expect(getEventsCalls).toHaveLength(1);
+    expect(getEventsCalls[0]?.prId).toBe("pr-1");
+    expect(getEventsCalls[0]?.opts?.limit).toBe(10);
+    expect(getEventsCalls[0]?.opts?.offset).toBe(5);
+  });
+
+  it("GET /prs/:id/events without limit/offset leaves them undefined (service applies defaults)", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const getEventsCalls: Array<{
+      prId: string;
+      opts?: { limit?: number; offset?: number };
+    }> = [];
+    const app = makeApp({
+      prService: fakePrService({
+        store,
+        eventsResult: { events: [], total: 0 },
+        getEventsCalls,
+      }),
+    });
+
+    const res = await app.request("/prs/pr-1/events", {
+      headers: adminAuth(),
+    });
+    expect(res.status).toBe(200);
+    expect(getEventsCalls).toHaveLength(1);
+    expect(getEventsCalls[0]?.opts?.limit).toBeUndefined();
+    expect(getEventsCalls[0]?.opts?.offset).toBeUndefined();
   });
 });

@@ -69,6 +69,9 @@ const noopPrService: PullRequestServiceLike = {
   async appendFinding(_prId, _data) {
     return {} as never;
   },
+  async getEvents(_prId, _opts?) {
+    return { events: [], total: 0 };
+  },
 };
 
 export interface TaskStoreDeps {

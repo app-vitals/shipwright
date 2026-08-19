@@ -212,6 +212,10 @@ function fakePrService(
     async appendFinding() {
       return {} as never;
     },
+
+    async getEvents() {
+      return { events: [], total: 0 };
+    },
   };
 }
 
@@ -471,6 +475,14 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     store.set("pr-1", makePr({ id: "pr-1" }));
     const app = createPrsRoutes(fakePrService({ store }));
     const res = await app.request("/pr-1/skip/reset", { method: "POST" });
+    expect(res.status).not.toBe(404);
+  });
+
+  it("GET /:id/events route is registered", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const res = await app.request("/pr-1/events");
     expect(res.status).not.toBe(404);
   });
 });
