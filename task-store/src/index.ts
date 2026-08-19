@@ -21,6 +21,7 @@ export type {
   TaskToken,
   PullRequest,
   PrFinding,
+  PullRequestEvent,
 } from "../prisma/client/index.js";
 export type {
   BlockedByEntry,

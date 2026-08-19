@@ -20,14 +20,25 @@ interface UpdateCall {
   data: Record<string, unknown>;
 }
 
+interface EventCall {
+  data: Record<string, unknown>;
+}
+
 /**
  * makePrismaDouble — configurable findUnique return value, records update()
  * calls so tests can assert on the exact data payload passed to Prisma.
+ *
+ * Several mutation methods now wrap their update in this.prisma.$transaction()
+ * and write PullRequestEvent audit rows inside it (PSA-1.2). The double
+ * therefore exposes a callback-form `$transaction` (invoking the callback with
+ * the double itself as `tx`) and a `pullRequestEvent.create` stub whose calls
+ * are captured in `_eventCalls`.
  */
 function makePrismaDouble(
   findUniqueResult: Partial<PullRequest> | null = null,
 ) {
   const updateCalls: UpdateCall[] = [];
+  const eventCalls: EventCall[] = [];
 
   const prisma = {
     pullRequest: {
@@ -43,7 +54,17 @@ function makePrismaDouble(
         } as Partial<PullRequest>);
       },
     },
+    pullRequestEvent: {
+      create(args: EventCall): Promise<Record<string, unknown>> {
+        eventCalls.push(args);
+        return Promise.resolve({ id: "event-1", ...args.data });
+      },
+    },
+    $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+      return fn(prisma);
+    },
     _updateCalls: updateCalls,
+    _eventCalls: eventCalls,
   };
 
   return prisma as unknown as {
@@ -51,7 +72,12 @@ function makePrismaDouble(
       findUnique: (args: unknown) => Promise<Partial<PullRequest> | null>;
       update: (args: UpdateCall) => Promise<Partial<PullRequest>>;
     };
+    pullRequestEvent: {
+      create: (args: EventCall) => Promise<Record<string, unknown>>;
+    };
+    $transaction: <T>(fn: (tx: unknown) => Promise<T>) => Promise<T>;
     _updateCalls: UpdateCall[];
+    _eventCalls: EventCall[];
   };
 }
 
@@ -62,7 +88,9 @@ describe("PullRequestService.patch()", () => {
   const clock = FixedClock(NOW);
 
   test("commitSha omitted — unconditionally resets reviewState=pending (backward compat)", async () => {
-    const prisma = makePrismaDouble();
+    // patch() now always reads the before-state (for the audit diff), so even
+    // the no-arg path needs an existing record; a missing one is a 404.
+    const prisma = makePrismaDouble({ id: "pr-1" } as Partial<PullRequest>);
     const svc = new PullRequestService(prisma as never, clock);
 
     await svc.patch("pr-1");
@@ -641,6 +669,7 @@ describe("PullRequestService.recordSkip()", () => {
    */
   function makeRecordSkipPrismaDouble(initialSkipCount: number) {
     const updateCalls: UpdateCall[] = [];
+    const eventCalls: EventCall[] = [];
     const record: Partial<PullRequest> = {
       id: "pr-1",
       skipCount: initialSkipCount,
@@ -650,6 +679,12 @@ describe("PullRequestService.recordSkip()", () => {
 
     const prisma = {
       pullRequest: {
+        // recordSkip() now snapshots the before-state via findUnique inside the
+        // transaction. Return the current mutable record so the audit diff sees
+        // the pre-update values.
+        findUnique(_args: unknown): Promise<Partial<PullRequest> | null> {
+          return Promise.resolve({ ...record });
+        },
         update(args: UpdateCall): Promise<Partial<PullRequest>> {
           updateCalls.push(args);
           const { data } = args;
@@ -670,14 +705,30 @@ describe("PullRequestService.recordSkip()", () => {
           return Promise.resolve({ ...record });
         },
       },
+      pullRequestEvent: {
+        create(args: EventCall): Promise<Record<string, unknown>> {
+          eventCalls.push(args);
+          return Promise.resolve({ id: "event-1", ...args.data });
+        },
+      },
+      $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+        return fn(prisma);
+      },
       _updateCalls: updateCalls,
+      _eventCalls: eventCalls,
     };
 
     return prisma as unknown as {
       pullRequest: {
+        findUnique: (args: unknown) => Promise<Partial<PullRequest> | null>;
         update: (args: UpdateCall) => Promise<Partial<PullRequest>>;
       };
+      pullRequestEvent: {
+        create: (args: EventCall) => Promise<Record<string, unknown>>;
+      };
+      $transaction: <T>(fn: (tx: unknown) => Promise<T>) => Promise<T>;
       _updateCalls: UpdateCall[];
+      _eventCalls: EventCall[];
     };
   }
 
@@ -1162,6 +1213,122 @@ describe("PullRequestService.complete() claim release", () => {
     expect(data.reviewState).toBe("posted");
     expect(data.reviewedAt).toBe(NOW.toISOString());
     expect(data.readyForPatchAt).toBe(NOW.toISOString());
+  });
+});
+
+// ─── recordTransition() audit wiring ──────────────────────────────────────────
+//
+// These assert the PullRequestEvent rows written through the shared
+// recordTransition() helper (PSA-1.2). Integration tests
+// (pull-request-service.integration.test.ts) cover the real-Postgres landing;
+// these cover the in-process wiring against the hand-built double's captured
+// _eventCalls (populated by its pullRequestEvent.create stub).
+
+describe("PullRequestService recordTransition() audit events", () => {
+  const NOW = new Date("2026-07-10T12:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("heartbeat() writes zero event rows (bare liveness ping)", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      claimedBy: "agent-a",
+      heartbeatAt: "2026-07-10T11:00:00.000Z",
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.heartbeat("pr-1");
+
+    expect(prisma._eventCalls).toHaveLength(0);
+  });
+
+  test("complete() writes one event per changed non-heartbeat field, actor = prior claimant", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      reviewState: "in_progress",
+      reviewCycles: 0,
+      claimedBy: "agent-a",
+      claimedAt: "2026-07-10T10:00:00.000Z",
+      heartbeatAt: "2026-07-10T11:00:00.000Z",
+      phase: "review",
+      reviewedAt: null,
+      readyForPatchAt: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.complete("pr-1");
+
+    const fields = prisma._eventCalls.map((c) => c.data.field);
+    // heartbeatAt changed too (11:00 → null) but must NOT be logged.
+    expect(fields).not.toContain("heartbeatAt");
+    // The real transitions are all audited.
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        "reviewState",
+        "reviewCycles",
+        "reviewedAt",
+        "readyForPatchAt",
+        "claimedBy",
+        "claimedAt",
+        "phase",
+      ]),
+    );
+    // Every row carries the method, actor, and a matching old/new value.
+    for (const call of prisma._eventCalls) {
+      expect(call.data.method).toBe("complete");
+      expect(call.data.actor).toBe("agent-a");
+      expect(call.data.at).toBe(NOW.toISOString());
+    }
+    const claimedByEvent = prisma._eventCalls.find(
+      (c) => c.data.field === "claimedBy",
+    );
+    expect(claimedByEvent?.data.oldValue).toBe("agent-a");
+    expect(claimedByEvent?.data.newValue).toBeNull();
+  });
+
+  test("patch() records the reviewState + commitSha transition with old/new values", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      commitSha: "old-sha",
+      reviewState: "posted",
+      claimedBy: "agent-b",
+      patchCycles: 0,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.patch("pr-1", "new-sha");
+
+    const byField = Object.fromEntries(
+      prisma._eventCalls.map((c) => [c.data.field, c.data]),
+    );
+    expect(byField.commitSha).toMatchObject({
+      oldValue: "old-sha",
+      newValue: "new-sha",
+      method: "patch",
+      actor: "agent-b",
+    });
+    expect(byField.reviewState).toMatchObject({
+      oldValue: "posted",
+      newValue: "pending",
+    });
+    expect("heartbeatAt" in byField).toBe(false);
+  });
+
+  test("recordSkip() on an unclaimed PR attributes the actor to 'system'", async () => {
+    const prisma = makePrismaDouble({
+      id: "pr-1",
+      skipCount: 0,
+      claimedBy: null,
+    } as Partial<PullRequest>);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.recordSkip("pr-1");
+
+    const skipEvent = prisma._eventCalls.find(
+      (c) => c.data.field === "skipCount",
+    );
+    expect(skipEvent).toBeDefined();
+    expect(skipEvent?.data.actor).toBe("system");
+    expect(skipEvent?.data.method).toBe("recordSkip");
   });
 });
 
