@@ -21,13 +21,14 @@ import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
 import {
-  Prisma,
   type PrFinding,
   type PrFindingDisposition,
   type PrFindingSource,
-  type PrismaClient,
   type PrPhase,
+  Prisma,
+  type PrismaClient,
   type PullRequest,
+  type PullRequestEvent,
 } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { computePrTransitionDiff } from "./pr-transition-diff.ts";
@@ -187,6 +188,12 @@ export interface PullRequestListResult {
   offset: number;
 }
 
+/** Result from PullRequestService.getEvents. */
+export interface GetEventsResult {
+  events: PullRequestEvent[];
+  total: number;
+}
+
 /** Input for PullRequestService.appendFinding. */
 export interface AppendFindingInput {
   ref: string;
@@ -229,6 +236,10 @@ export interface PullRequestServiceLike {
     repos?: string[],
   ): Promise<{ pr: PullRequest; phase: PrPhase } | null>;
   appendFinding(prId: string, data: AppendFindingInput): Promise<PrFinding>;
+  getEvents(
+    prId: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<GetEventsResult>;
 }
 
 export class PullRequestService implements PullRequestServiceLike {
@@ -1068,6 +1079,41 @@ export class PullRequestService implements PullRequestServiceLike {
         agentId: data.agentId ?? null,
       },
     });
+  }
+
+  /**
+   * Fetch a PR's PullRequestEvent audit trail (PSA-1.2), ordered by `at`
+   * ascending (oldest first) — uses the (prRecordId, at) index (PSA-1.1).
+   * Existence-checks the PR first (mirrors appendFinding()) so a missing PR
+   * surfaces as a clean NotFoundError rather than an empty result being
+   * indistinguishable from "PR exists but has zero events".
+   */
+  async getEvents(
+    prId: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<GetEventsResult> {
+    const existing = await this.prisma.pullRequest.findUnique({
+      where: { id: prId },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("pr not found");
+    }
+
+    const limit = opts.limit ?? 50;
+    const offset = opts.offset ?? 0;
+
+    const [events, total] = await this.prisma.$transaction([
+      this.prisma.pullRequestEvent.findMany({
+        where: { prRecordId: prId },
+        orderBy: { at: "asc" },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.pullRequestEvent.count({ where: { prRecordId: prId } }),
+    ]);
+
+    return { events, total };
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -285,18 +285,9 @@ export const PullRequestEventSchema = z
     id: z.string().openapi({ example: "clxevent123456" }),
     prRecordId: z.string().openapi({ example: "clx0987654321" }),
     field: z.string().openapi({ example: "reviewState" }),
-    oldValue: z
-      .string()
-      .nullable()
-      .openapi({ example: "pending" }),
-    newValue: z
-      .string()
-      .nullable()
-      .openapi({ example: "in_progress" }),
-    actor: z
-      .string()
-      .nullable()
-      .openapi({ example: "agent-abc123" }),
+    oldValue: z.string().nullable().openapi({ example: "pending" }),
+    newValue: z.string().nullable().openapi({ example: "in_progress" }),
+    actor: z.string().nullable().openapi({ example: "agent-abc123" }),
     method: z.string().openapi({ example: "claim" }),
     at: z.string().openapi({ example: "2026-08-17T12:00:00.000Z" }),
     createdAt: z
@@ -427,20 +418,14 @@ export const PullRequestSchema = z
       .string()
       .datetime()
       .openapi({ example: "2026-01-06T12:00:00.000Z" }),
-    findings: z
-      .array(PrFindingSchema)
-      .optional()
-      .openapi({
-        description:
-          "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
-      }),
-    events: z
-      .array(PullRequestEventSchema)
-      .optional()
-      .openapi({
-        description:
-          "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
-      }),
+    findings: z.array(PrFindingSchema).optional().openapi({
+      description:
+        "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
+    }),
+    events: z.array(PullRequestEventSchema).optional().openapi({
+      description:
+        "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
+    }),
   })
   .openapi("PullRequest");
 
@@ -711,6 +696,33 @@ export const PrListResponseSchema = z
     offset: z.number().int().openapi({ example: 0 }),
   })
   .openapi("PrListResponse");
+
+/** Query params for GET /prs/:id/events */
+export const PrEventsQuerySchema = z
+  .object({
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+  })
+  .openapi("PrEventsQuery");
+
+/** Response for GET /prs/:id/events */
+export const PrEventsResponseSchema = z
+  .object({
+    events: z.array(PullRequestEventSchema).openapi({
+      description:
+        "This PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("PrEventsResponse");
 
 export const ClaimPrBodySchema = z
   .object({

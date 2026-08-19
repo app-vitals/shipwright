@@ -1848,3 +1848,161 @@ describeOrSkip(
     });
   },
 );
+
+// ─── PSA-2.1: PullRequestService.getEvents() ──────────────────────────────────
+
+describeOrSkip("PullRequestService.getEvents() (integration)", () => {
+  let prisma: PrismaClient;
+
+  beforeEach(async () => {
+    prisma = makePrisma();
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
+    await prisma.pullRequest.deleteMany();
+  });
+
+  afterEach(async () => {
+    await prisma.$disconnect();
+  });
+
+  it("returns events seeded via instrumented service methods (claim, complete, patch) in ascending `at` order", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 9100;
+    const commitSha = "sha-events-1";
+
+    // Seed an existing, unclaimed record so the first claim() below takes the
+    // UPDATE path (existing !== null) — the CREATE path produces zero rows
+    // (see computePrTransitionDiff), so it wouldn't exercise the audit trail.
+    const seeded = await prisma.pullRequest.create({
+      data: {
+        repo,
+        prNumber,
+        commitSha,
+        reviewState: "pending",
+        state: "open",
+      },
+    });
+
+    const t1 = new Date("2026-08-18T10:00:00.000Z");
+    const t2 = new Date("2026-08-18T10:05:00.000Z");
+    const t3 = new Date("2026-08-18T10:10:00.000Z");
+
+    // 1. claim() — reviewState pending -> in_progress.
+    const svc1 = new PullRequestService(prisma, FixedClock(t1));
+    const claimed = await svc1.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-a",
+      undefined,
+      "review",
+    );
+    expect(claimed.status).toBe(200);
+
+    // 2. complete() — reviewState in_progress -> posted.
+    const svc2 = new PullRequestService(prisma, FixedClock(t2));
+    await svc2.complete(seeded.id);
+
+    // 3. patch() — patchCycles 0 -> 1, reviewState -> pending.
+    const svc3 = new PullRequestService(prisma, FixedClock(t3));
+    await svc3.patch(seeded.id);
+
+    const result = await svc3.getEvents(seeded.id);
+
+    expect(result.total).toBeGreaterThanOrEqual(3);
+    expect(result.events.length).toBe(result.total);
+
+    // Ascending `at` order — oldest first.
+    const ats = result.events.map((e) => e.at);
+    const sortedAts = [...ats].sort();
+    expect(ats).toEqual(sortedAts);
+    expect(ats[0]).toBe(t1.toISOString());
+    expect(ats.at(-1)).toBe(t3.toISOString());
+
+    // Every event row belongs to this PR.
+    for (const event of result.events) {
+      expect(event.prRecordId).toBe(seeded.id);
+    }
+
+    // Sanity: the methods that drove each write are represented.
+    const methods = result.events.map((e) => e.method);
+    expect(methods).toContain("claim");
+    expect(methods).toContain("complete");
+    expect(methods).toContain("patch");
+  });
+
+  it("returns an empty array (not a 404-equivalent error) for a PR with zero events", async () => {
+    const created = await prisma.pullRequest.create({
+      data: { repo: "app-vitals/shipwright", prNumber: 9101 },
+    });
+
+    const service = new PullRequestService(prisma);
+    const result = await service.getEvents(created.id);
+    expect(result.events).toEqual([]);
+    expect(result.total).toBe(0);
+  });
+
+  it("throws NotFoundError when the PR does not exist", async () => {
+    const service = new PullRequestService(prisma);
+    let caught: unknown;
+    try {
+      await service.getEvents("00000000-0000-0000-0000-000000000000");
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(NotFoundError);
+  });
+
+  it("respects limit/offset pagination while preserving ascending `at` order", async () => {
+    const repo = "app-vitals/shipwright";
+    const prNumber = 9102;
+    const commitSha = "sha-events-paginate";
+
+    const seeded = await prisma.pullRequest.create({
+      data: {
+        repo,
+        prNumber,
+        commitSha,
+        reviewState: "pending",
+        state: "open",
+      },
+    });
+
+    const times = [
+      new Date("2026-08-18T11:00:00.000Z"),
+      new Date("2026-08-18T11:05:00.000Z"),
+      new Date("2026-08-18T11:10:00.000Z"),
+    ];
+
+    // claim() (pending -> in_progress), complete() (in_progress -> posted),
+    // patch() (posted -> pending) — three distinct auditable transitions.
+    const svcClaim = new PullRequestService(prisma, FixedClock(times[0]));
+    await svcClaim.claim(
+      repo,
+      prNumber,
+      commitSha,
+      "agent-a",
+      undefined,
+      "review",
+    );
+
+    const svcComplete = new PullRequestService(prisma, FixedClock(times[1]));
+    await svcComplete.complete(seeded.id);
+
+    const svcPatch = new PullRequestService(prisma, FixedClock(times[2]));
+    await svcPatch.patch(seeded.id);
+
+    const full = await svcPatch.getEvents(seeded.id);
+    expect(full.total).toBeGreaterThanOrEqual(3);
+
+    const page1 = await svcPatch.getEvents(seeded.id, { limit: 1, offset: 0 });
+    expect(page1.events).toHaveLength(1);
+    expect(page1.total).toBe(full.total);
+    expect(page1.events[0]?.at).toBe(full.events[0]?.at);
+
+    const page2 = await svcPatch.getEvents(seeded.id, { limit: 1, offset: 1 });
+    expect(page2.events).toHaveLength(1);
+    expect(page2.events[0]?.at).toBe(full.events[1]?.at);
+  });
+});

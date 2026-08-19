@@ -1593,3 +1593,143 @@ describe("PullRequestService.appendFinding()", () => {
     expect(data.agentId).toBe(null);
   });
 });
+
+// ─── getEvents() ────────────────────────────────────────────────────────────
+//
+// Unlike the DB-backed ordering test in pull-request-service.integration.test.ts
+// (which requires DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST and self-skips
+// without it), this exercises getEvents()'s own two code paths — the
+// existence check and the findMany/count $transaction — against a hand-built
+// Prisma double, no real Postgres required. Mirrors makeListPrismaDouble
+// above but scoped to the pullRequestEvent model.
+
+function makeEventsPrismaDouble(
+  prExists: boolean,
+  events: Array<Record<string, unknown>> = [],
+) {
+  const findManyCalls: Array<{
+    where?: unknown;
+    orderBy?: unknown;
+    take?: unknown;
+    skip?: unknown;
+  }> = [];
+
+  const prisma = {
+    pullRequest: {
+      findUnique(_args: unknown): Promise<{ id: string } | null> {
+        return Promise.resolve(prExists ? { id: "pr-1" } : null);
+      },
+    },
+    pullRequestEvent: {
+      findMany(args: {
+        where?: unknown;
+        orderBy?: unknown;
+        take?: unknown;
+        skip?: unknown;
+      }) {
+        findManyCalls.push(args);
+        return Promise.resolve(events);
+      },
+      count() {
+        return Promise.resolve(events.length);
+      },
+    },
+    $transaction(ops: Promise<unknown>[]) {
+      return Promise.all(ops);
+    },
+    _findManyCalls: findManyCalls,
+  };
+
+  return prisma as unknown as {
+    pullRequest: {
+      findUnique: (args: unknown) => Promise<{ id: string } | null>;
+    };
+    pullRequestEvent: {
+      findMany: (args: {
+        where?: unknown;
+        orderBy?: unknown;
+        take?: unknown;
+        skip?: unknown;
+      }) => Promise<unknown[]>;
+      count: () => Promise<number>;
+    };
+    $transaction: (ops: Promise<unknown>[]) => Promise<unknown[]>;
+    _findManyCalls: Array<{
+      where?: unknown;
+      orderBy?: unknown;
+      take?: unknown;
+      skip?: unknown;
+    }>;
+  };
+}
+
+describe("PullRequestService.getEvents()", () => {
+  const NOW = new Date("2026-08-19T00:00:00.000Z");
+  const clock = FixedClock(NOW);
+
+  test("throws NotFoundError and never queries events when the PR does not exist", async () => {
+    const prisma = makeEventsPrismaDouble(false);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await expect(svc.getEvents("missing-pr")).rejects.toThrow(NotFoundError);
+    expect(prisma._findManyCalls).toHaveLength(0);
+  });
+
+  test("queries pullRequestEvent scoped to prRecordId, ordered by `at` ascending", async () => {
+    const prisma = makeEventsPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.getEvents("pr-1");
+
+    expect(prisma._findManyCalls).toHaveLength(1);
+    const call = prisma._findManyCalls[0];
+    expect(call.where).toEqual({ prRecordId: "pr-1" });
+    expect(call.orderBy).toEqual({ at: "asc" });
+  });
+
+  test("defaults limit to 50 and offset to 0 when the caller omits opts", async () => {
+    const prisma = makeEventsPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.getEvents("pr-1");
+
+    const call = prisma._findManyCalls[0];
+    expect(call.take).toBe(50);
+    expect(call.skip).toBe(0);
+  });
+
+  test("forwards caller-supplied limit/offset to the findMany() call", async () => {
+    const prisma = makeEventsPrismaDouble(true);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.getEvents("pr-1", { limit: 10, offset: 5 });
+
+    const call = prisma._findManyCalls[0];
+    expect(call.take).toBe(10);
+    expect(call.skip).toBe(5);
+  });
+
+  test("returns events and total from the underlying findMany()/count() results", async () => {
+    const events = [
+      { id: "event-1", prRecordId: "pr-1", at: "2026-08-17T00:00:00.000Z" },
+      { id: "event-2", prRecordId: "pr-1", at: "2026-08-17T01:00:00.000Z" },
+    ];
+    const prisma = makeEventsPrismaDouble(true, events);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.getEvents("pr-1");
+
+    expect(result.events).toEqual(events as never);
+    expect(result.total).toBe(2);
+  });
+
+  test("returns an empty array and total 0 when the PR has no events", async () => {
+    const prisma = makeEventsPrismaDouble(true, []);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.getEvents("pr-1");
+
+    expect(result.events).toEqual([]);
+    expect(result.total).toBe(0);
+  });
+});

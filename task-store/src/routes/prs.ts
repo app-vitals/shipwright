@@ -26,6 +26,8 @@
  *   POST   /prs/:id/findings  append a PrFinding row {ref, disposition, source, evidence, at?}
  *                              — source:"patch" may only submit disposition:"rejected" (400
  *                              otherwise); source:"review" may submit any disposition
+ *   GET    /prs/:id/events    fetch a PR's PullRequestEvent audit trail (?limit, ?offset),
+ *                              ordered by `at` ascending (oldest first)
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -44,6 +46,8 @@ import {
   CreateFindingBodySchema,
   ErrorSchema,
   PatchPrBodySchema,
+  PrEventsQuerySchema,
+  PrEventsResponseSchema,
   PrFindingSchema,
   PrIdParamSchema,
   PrListQuerySchema,
@@ -336,6 +340,28 @@ const findingsRoute = createRoute({
       content: { "application/json": { schema: ErrorSchema } },
       description:
         "Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected'",
+    },
+    404: {
+      content: { "application/json": { schema: ErrorSchema } },
+      description: "Not found",
+    },
+  },
+});
+
+const eventsRoute = createRoute({
+  method: "get",
+  path: "/:id/events",
+  tags: ["PRs"],
+  summary:
+    "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
+  request: {
+    params: PrIdParamSchema,
+    query: PrEventsQuerySchema,
+  },
+  responses: {
+    200: {
+      content: { "application/json": { schema: PrEventsResponseSchema } },
+      description: "PR's event history",
     },
     404: {
       content: { "application/json": { schema: ErrorSchema } },
@@ -658,7 +684,8 @@ export function createPrsRoutes(
     }
 
     const resolvedAt = typeof at === "string" && at ? at : undefined;
-    const resolvedAgentId = typeof agentId === "string" && agentId ? agentId : undefined;
+    const resolvedAgentId =
+      typeof agentId === "string" && agentId ? agentId : undefined;
 
     const finding = await prService.appendFinding(c.req.param("id"), {
       ref,
@@ -669,6 +696,36 @@ export function createPrsRoutes(
       agentId: resolvedAgentId,
     });
     return c.json(finding, 201);
+  });
+
+  // ─── Events ────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(eventsRoute, async (c): Promise<any> => {
+    const limitRaw = c.req.query("limit");
+    const offsetRaw = c.req.query("offset");
+    const limit =
+      limitRaw !== undefined
+        ? Number.parseInt(limitRaw, 10) || undefined
+        : undefined;
+    const offset =
+      offsetRaw !== undefined
+        ? Number.parseInt(offsetRaw, 10) || undefined
+        : undefined;
+
+    const result = await prService.getEvents(c.req.param("id"), {
+      limit,
+      offset,
+    });
+
+    return c.json(
+      {
+        events: result.events,
+        total: result.total,
+        limit: limit ?? 50,
+        offset: offset ?? 0,
+      },
+      200,
+    );
   });
 
   return app;
