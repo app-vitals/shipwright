@@ -201,6 +201,7 @@ model PullRequest {
   updatedAt DateTime @updatedAt
 
   findings PrFinding[]
+  events   PullRequestEvent[]
 
   @@unique([repo, prNumber])
   @@index([taskId])
@@ -258,6 +259,45 @@ model PrFinding {
 
   @@index([prRecordId, ref])
   @@index([prRecordId, source])
+}
+
+// ─── Pull Request Event ───────────────────────────────────────────────────────
+// A single field-level state transition on a PullRequest, written
+// incrementally (and potentially concurrently) as service methods mutate a PR.
+// Modeled as a dedicated append-only table rather than a JSON blob on
+// PullRequest — entries are appended via a plain INSERT, which is race-safe,
+// whereas a JSON-array read-modify-write PATCH on PullRequest is not (mirrors
+// the PrFinding rationale above).
+//
+// Each row captures which field changed, its old/new values, which actor
+// (agentId or "system") and service method wrote it, and when. field, actor,
+// and method are plain strings — deliberately not enums — so new fields and
+// call sites don't require a schema migration to be auditable.
+//
+// at is an ISO timestamp of when the transition occurred, stamped by the
+// caller at insert time — following the same "String for JS-interface-
+// originated timestamps" convention as the rest of this schema.
+//
+// The pullRequest relation intentionally omits onDelete (defaulting to
+// RESTRICT) rather than the Cascade/SetNull used elsewhere in this repo — an
+// audit trail should never silently disappear if its parent PullRequest row
+// were ever deleted. Nothing deletes PullRequest rows today, so this has no
+// live effect.
+
+model PullRequestEvent {
+  id          String      @id @default(cuid())
+  prRecordId  String
+  pullRequest PullRequest @relation(fields: [prRecordId], references: [id])
+  field       String
+  oldValue    String?
+  newValue    String?
+  actor       String?
+  method      String
+  at          String
+
+  createdAt DateTime @default(now())
+
+  @@index([prRecordId, at])
 }
 
 // ─── Task Token ───────────────────────────────────────────────────────────────

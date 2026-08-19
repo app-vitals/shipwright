@@ -313,11 +313,11 @@ Body:
 | `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
 Claim semantics (atomic via Postgres row locking):
-- No existing record → creates and returns `201`; a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint → `409`
+- No existing record → creates and returns `201`; a concurrent INSERT loser hits the `@@unique([repo, prNumber])` constraint → `409`. PR creation does not produce an audit event (the creation itself is captured by the PullRequest row's `createdAt`).
 - Existing record with conflict conditions re-checked in the UPDATE's WHERE clause (Postgres holds the row lock, ensuring only one writer wins):
   - Same `commitSha`, same `phase`, and already claimed by another agent → no rows affected → `409` (phase already locked)
   - Already claimed (claimedBy !== null) AND same `commitSha` AND `reviewState !== pending` (review phase only) → no rows affected → `409` (already reviewed at this commit)
-- Not claimed, OR different `commitSha`, OR `reviewState === pending` → row affected → updates and returns `200` (new cycle)
+- Not claimed, OR different `commitSha`, OR `reviewState === pending` → row affected → updates and returns `200` (new cycle). Records field-level transitions as `PullRequestEvent` rows (one per changed field that is not `heartbeatAt`).
 
 The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
@@ -358,6 +358,8 @@ PATCH /prs/:id
 
 Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
+**Note:** PATCH does not record an audit event; only the lifecycle endpoints (`POST /prs/:id/claim`, `POST /prs/:id/complete`, `POST /prs/:id/patch`, `POST /prs/:id/release`, `POST /prs/:id/skip`, `POST /prs/:id/skip/reset`) record field-level transitions as `PullRequestEvent` rows. PATCH is designed for late-stage corrections (e.g., force-setting `state=merged` after GitHub confirms it) where the transactional guarantees and field-diff auditing of a lifecycle endpoint are not needed.
+
 **Side effect:** When `state` is set to `merged` or `closed`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are automatically cleared. This ensures that merged or closed PRs are no longer held by an agent claim.
 
 **Side effect:** When `reviewState` is set to `posted` or `approved`, the claim fields (`claimedBy`, `claimedAt`, `heartbeatAt`, `phase`) are cleared in the same write. This releases the review claim as soon as the review is done, so a PR awaiting patch/deploy is not held by a stale claim that the reaper would otherwise reap (which would regress `reviewState` and re-dispatch a duplicate review).
@@ -368,12 +370,12 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 
 | Endpoint | Effect |
 |----------|--------|
-| `POST /prs/:id/heartbeat` | Touch `heartbeatAt` |
-| `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt` |
-| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). Optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure: when it matches the stored `lastCiFailureSignature`, `consecutiveCiFailureCount` increments; when it differs (or none is stored), the count resets to 1. Crossing the threshold (3, matching `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` and a descriptive `blockedReason`. When omitted, CI-failure tracking fields are left untouched. |
-| `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched |
-| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"` |
-| `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains `"consecutive skips"`), also clears `blocked=false` and `blockedReason=null` in the same update — otherwise `blocked`/`blockedReason` are left untouched (e.g. a block set by the CI-failure-streak mechanism in `POST /prs/:id/patch` is not cleared) |
+| `POST /prs/:id/heartbeat` | Touch `heartbeatAt`. **Does not record an audit event** — a bare heartbeat only updates liveness (excluded from the audit trail); recording would be a guaranteed no-op and keeping this path cheap (single UPDATE) avoids dominating write volume with liveness pings. |
+| `POST /prs/:id/complete` | `reviewState=posted`, increment `reviewCycles`, set `reviewedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Records field-level transitions as `PullRequestEvent` rows. |
+| `POST /prs/:id/patch` | Increment `patchCycles`, set `patchedAt`, clear `claimedBy`/`claimedAt`/`heartbeatAt`/`phase`. Conditionally reset `reviewState=pending` based on optional `commitSha` in body: if omitted, unconditionally reset to pending; if provided and differs from record's stored `commitSha`, reset to pending and update `commitSha`; if provided and matches, leave `reviewState` untouched (no-op patch cycle). Optional `ciFailureSignature` field tracks consecutive patch cycles hitting the same CI failure: when it matches the stored `lastCiFailureSignature`, `consecutiveCiFailureCount` increments; when it differs (or none is stored), the count resets to 1. Crossing the threshold (3, matching `SPIN_DETECTION_THRESHOLD`) auto-sets `blocked=true` and a descriptive `blockedReason`. When omitted, CI-failure tracking fields are left untouched. Records field-level transitions as `PullRequestEvent` rows. |
+| `POST /prs/:id/release` | Clear `claimedBy`/`claimedAt`/`heartbeatAt`. Resets `reviewState=pending` unless it is already a terminal value (`posted`/`approved`), in which case `reviewState` is left untouched. Records field-level transitions as `PullRequestEvent` rows. |
+| `POST /prs/:id/skip` | Increment `skipCount`, update `lastSkippedAt` to now. When `skipCount` crosses threshold (3), auto-set `blocked=true` and `blockedReason="Auto-blocked after {skipCount} consecutive skips (dispatched but found nothing to do)"`. Records field-level transitions as `PullRequestEvent` rows. |
+| `POST /prs/:id/skip/reset` | Reset `skipCount` back to 0 and clear `lastSkippedAt`. If the PR is currently blocked with a `blockedReason` matching the skip-auto-block message (contains `"consecutive skips"`), also clears `blocked=false` and `blockedReason=null` in the same update — otherwise `blocked`/`blockedReason` are left untouched (e.g. a block set by the CI-failure-streak mechanism in `POST /prs/:id/patch` is not cleared). Records field-level transitions as `PullRequestEvent` rows. |
 | `POST /prs/:id/findings` | Append a review/patch finding to the PR. Request body: `{ref, disposition, source, evidence, at?, agentId?}` where `disposition` is one of `resolved`, `superseded`, `rejected`; `source` is one of `review`, `patch`. Authority rule (server-enforced): `source:"patch"` may only submit `disposition:"rejected"` (returns `400` otherwise); `source:"review"` may submit any disposition. Returns `201` with the created `PrFinding` record. |
 
 #### PR state enums
@@ -400,6 +402,8 @@ Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`
 
 `findings`: optional array of `PrFinding` objects — review/patch findings recorded against this PR. Appended via `POST /prs/:id/findings`. Always included in responses from `GET /prs/:id` and list queries; omitted from responses if the finding population is disabled or if findings have not been recorded. Each finding records a specific review or patch action that addressed a code finding (e.g., "resolved null-check bug in follow-up commit", "rejected as out-of-scope").
 
+`events`: optional array of `PullRequestEvent` objects — field-level state transitions recorded in an append-only audit trail for this PR. Each event captures which field changed, its old/new values, which actor and method performed the write, and when. Always included in responses from `GET /prs/:id` and list queries; omitted from responses if event population is disabled or if events have not been recorded. Events are never deleted even if the PR record itself is removed.
+
 #### PR Finding type
 
 A `PrFinding` object represents a single code finding that has been triaged during the review or patch phase:
@@ -415,6 +419,27 @@ A `PrFinding` object represents a single code finding that has been triaged duri
 | `at` | string | ISO timestamp of when the finding was triaged / resolved (defaults to current time if omitted on creation) |
 | `agentId` | string \| null | Optional agent instance that triaged this finding (e.g., the agent ID that performed the review or submitted the patch fix). Set via the `POST /prs/:id/findings` request body; defaults to `null` when omitted. |
 | `createdAt` | string | ISO timestamp when the task-store record itself was created |
+
+#### PR Event type
+
+A `PullRequestEvent` object represents a single field-level state transition on a pull request, recorded in an append-only audit trail:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier (auto-generated, e.g., `clxevent123456`) |
+| `prRecordId` | string | Reference to the parent PR record's ID |
+| `field` | string | Name of the field that changed (e.g., `reviewState`, `commitSha`, `blocked`). Stored as a plain string to allow new fields to be auditable without requiring schema migrations. |
+| `oldValue` | string (nullable) | The previous value of the field before this transition. When `null`, the field did not previously exist. |
+| `newValue` | string (nullable) | The new value of the field after this transition. When `null`, the field was cleared/deleted. |
+| `actor` | string (nullable) | The agent ID or system identifier that performed the transition (e.g., `"agent-42"`, `"system"`). When `null`, the actor was not recorded. |
+| `method` | string | The service method or API endpoint that performed the write (e.g., `"claim"`, `"complete"`, `"patch"`, `"PATCH /prs/:id"`) — a stable identifier for tracing which code path made the change. |
+| `at` | string | ISO timestamp of when the transition occurred, stamped by the caller at insert time. Distinct from `createdAt`, which records when the task-store record itself was persisted. |
+| `createdAt` | string | ISO timestamp when the task-store event record was created (auto-managed). |
+
+**Design notes:**
+- Events are written incrementally as service methods mutate the parent PR — a plain `INSERT` is race-safe, whereas a JSON-array read-modify-write `PATCH` on the PR itself would not be (mirrors the `PrFinding` rationale).
+- Events form an append-only log and are never deleted — even if the parent `PullRequest` row were removed, the audit trail would survive (the relation omits `onDelete=Cascade` to enforce retention).
+- Field, actor, and method are plain strings (not enums) — new fields and call sites can be auditable without requiring schema migrations.
 
 #### PR timestamp fields
 

@@ -39,6 +39,10 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new PullRequestService(prisma);
+      // claim() now writes PullRequestEvent rows (PSA-1.2); the FK is
+      // ON DELETE RESTRICT (see schema.prisma), so events must be cleared
+      // before their parent PullRequest rows.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
     });
 
@@ -217,6 +221,9 @@ describeOrSkip("PullRequestService.appendFinding() (integration)", () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
     await prisma.prFinding.deleteMany();
+    // PullRequestEvent's FK is ON DELETE RESTRICT — clear before pullRequest,
+    // in case an earlier test (this file or another sharing TEST_DB) left rows.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -313,3 +320,334 @@ describeOrSkip("PullRequestService.appendFinding() (integration)", () => {
     expect(withFindings?.findings).toHaveLength(5);
   });
 });
+
+// ─── recordTransition() audit trail (PSA-1.2) ─────────────────────────────────
+//
+// Exercises each mutation method against a real Postgres DB and asserts the
+// PullRequestEvent rows it lands (field/oldValue/newValue/method/actor), plus
+// that a bare heartbeat() writes zero rows. Guarded by describeOrSkip like the
+// rest of this file — self-skips without DATABASE_URL_SHIPWRIGHT_TASK_STORE_TEST.
+
+describeOrSkip(
+  "PullRequestService audit trail — PullRequestEvent rows (integration)",
+  () => {
+    let prisma: PrismaClient;
+    let service: PullRequestService;
+
+    beforeEach(async () => {
+      prisma = makePrisma();
+      service = new PullRequestService(prisma);
+      await prisma.pullRequestEvent.deleteMany();
+      await prisma.prFinding.deleteMany();
+      await prisma.pullRequest.deleteMany();
+    });
+
+    afterEach(async () => {
+      await prisma.$disconnect();
+    });
+
+    async function events(prRecordId: string) {
+      return prisma.pullRequestEvent.findMany({
+        where: { prRecordId },
+        orderBy: { field: "asc" },
+      });
+    }
+
+    it("claim() on an existing released record logs the claim transition", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 7000;
+      const commitSha = "sha-claim-audit";
+      await prisma.pullRequest.create({
+        data: { repo, prNumber, commitSha, reviewState: "pending" },
+      });
+
+      const { record } = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-a",
+        undefined,
+        "review",
+      );
+
+      const rows = await events(record.id);
+      const byField = Object.fromEntries(rows.map((r) => [r.field, r]));
+      // heartbeatAt must never be logged.
+      expect(byField.heartbeatAt).toBeUndefined();
+      expect(byField.reviewState).toMatchObject({
+        oldValue: "pending",
+        newValue: "in_progress",
+        method: "claim",
+        actor: "agent-a",
+      });
+      expect(byField.claimedBy).toMatchObject({
+        oldValue: null,
+        newValue: "agent-a",
+      });
+    });
+
+    it("claim() creating a brand-new record logs zero events (creation is not audited)", async () => {
+      const { record } = await service.claim(
+        "app-vitals/shipwright",
+        7001,
+        "sha-new",
+        "agent-a",
+      );
+      expect(await events(record.id)).toHaveLength(0);
+    });
+
+    it("claimNext() logs the claim transition with actor = agentId", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7002,
+          reviewState: "pending",
+          state: "open",
+        },
+      });
+
+      const result = await service.claimNext("agent-z", 5);
+      expect(result).not.toBeNull();
+
+      const rows = await events(pr.id);
+      const byField = Object.fromEntries(rows.map((r) => [r.field, r]));
+      expect(byField.claimedBy).toMatchObject({
+        newValue: "agent-z",
+        method: "claimNext",
+        actor: "agent-z",
+      });
+      expect(byField.heartbeatAt).toBeUndefined();
+    });
+
+    it("heartbeat() writes zero event rows", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7003,
+          claimedBy: "agent-a",
+          heartbeatAt: "2026-08-01T00:00:00.000Z",
+        },
+      });
+
+      await service.heartbeat(pr.id);
+
+      expect(await events(pr.id)).toHaveLength(0);
+    });
+
+    // Guards against the events-field gap flagged on PR #2713: the audit
+    // trail is only reachable through the API surface docs/task-store.md
+    // describes if get()/list() actually `include` it — a direct
+    // prisma.pullRequestEvent.findMany() query (as `events()` above does)
+    // would pass even if the service's own include clauses were wrong.
+    it("get() includes events[] alongside the audit rows a real transition wrote", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 7004;
+      const commitSha = "sha-get-events";
+      await prisma.pullRequest.create({
+        data: { repo, prNumber, commitSha, reviewState: "pending" },
+      });
+
+      const { record } = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-a",
+        undefined,
+        "review",
+      );
+
+      const fetched = await service.get(record.id);
+      expect(fetched).not.toBeNull();
+      if (!fetched) return;
+      const withEvents = fetched as typeof fetched & {
+        events: Array<{ field: string; method: string }>;
+      };
+      expect(withEvents.events.length).toBeGreaterThan(0);
+      const byField = Object.fromEntries(
+        withEvents.events.map((e) => [e.field, e]),
+      );
+      expect(byField.reviewState).toMatchObject({
+        oldValue: "pending",
+        newValue: "in_progress",
+        method: "claim",
+      });
+    });
+
+    it("list() includes events[] on each PR returned, matching the underlying PullRequestEvent rows", async () => {
+      const repo = "app-vitals/shipwright";
+      const prNumber = 7005;
+      const commitSha = "sha-list-events";
+      await prisma.pullRequest.create({
+        data: { repo, prNumber, commitSha, reviewState: "pending" },
+      });
+
+      const { record } = await service.claim(
+        repo,
+        prNumber,
+        commitSha,
+        "agent-a",
+        undefined,
+        "review",
+      );
+
+      const { prs } = await service.list({ repo, prNumber });
+      expect(prs).toHaveLength(1);
+      const withEvents = prs[0] as (typeof prs)[0] & {
+        events: Array<{ field: string }>;
+      };
+
+      const directRows = await events(record.id);
+      expect(withEvents.events.length).toBe(directRows.length);
+      expect(withEvents.events.length).toBeGreaterThan(0);
+      expect(new Set(withEvents.events.map((e) => e.field))).toEqual(
+        new Set(directRows.map((r) => r.field)),
+      );
+    });
+
+    it("complete() logs the review-post transition, actor = prior claimant, no heartbeatAt row", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7004,
+          reviewState: "in_progress",
+          claimedBy: "agent-a",
+          claimedAt: "2026-08-01T00:00:00.000Z",
+          heartbeatAt: "2026-08-01T01:00:00.000Z",
+          phase: "review",
+        },
+      });
+
+      await service.complete(pr.id);
+
+      const rows = await events(pr.id);
+      const fields = rows.map((r) => r.field);
+      expect(fields).not.toContain("heartbeatAt");
+      expect(fields).toEqual(
+        expect.arrayContaining([
+          "reviewState",
+          "reviewCycles",
+          "reviewedAt",
+          "readyForPatchAt",
+          "claimedBy",
+          "claimedAt",
+          "phase",
+        ]),
+      );
+      for (const r of rows) {
+        expect(r.method).toBe("complete");
+        expect(r.actor).toBe("agent-a");
+      }
+    });
+
+    it("patch() logs the commitSha + reviewState transition", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7005,
+          commitSha: "old-sha",
+          reviewState: "posted",
+          claimedBy: "agent-b",
+        },
+      });
+
+      await service.patch(pr.id, "new-sha");
+
+      const byField = Object.fromEntries(
+        (await events(pr.id)).map((r) => [r.field, r]),
+      );
+      expect(byField.commitSha).toMatchObject({
+        oldValue: "old-sha",
+        newValue: "new-sha",
+        method: "patch",
+        actor: "agent-b",
+      });
+      expect(byField.reviewState).toMatchObject({
+        oldValue: "posted",
+        newValue: "pending",
+      });
+    });
+
+    it("release() logs the claim-clear transition, actor = prior claimant", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7006,
+          reviewState: "in_progress",
+          claimedBy: "agent-c",
+          claimedAt: "2026-08-01T00:00:00.000Z",
+        },
+      });
+
+      await service.release(pr.id);
+
+      const byField = Object.fromEntries(
+        (await events(pr.id)).map((r) => [r.field, r]),
+      );
+      expect(byField.claimedBy).toMatchObject({
+        oldValue: "agent-c",
+        newValue: null,
+        method: "release",
+        actor: "agent-c",
+      });
+      expect(byField.reviewState).toMatchObject({
+        oldValue: "in_progress",
+        newValue: "pending",
+      });
+    });
+
+    it("recordSkip() crossing the block threshold logs skipCount + blocked in one method", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7007,
+          skipCount: 2,
+        },
+      });
+
+      await service.recordSkip(pr.id);
+
+      const byField = Object.fromEntries(
+        (await events(pr.id)).map((r) => [r.field, r]),
+      );
+      expect(byField.skipCount).toMatchObject({
+        oldValue: "2",
+        newValue: "3",
+        method: "recordSkip",
+        // Unclaimed PR → actor attributed to "system".
+        actor: "system",
+      });
+      expect(byField.blocked).toMatchObject({
+        oldValue: "false",
+        newValue: "true",
+      });
+    });
+
+    it("resetSkip() logs skipCount reset and block-clear", async () => {
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 7008,
+          skipCount: 3,
+          blocked: true,
+          blockedReason:
+            "Auto-blocked after 3 consecutive skips (dispatched but found nothing to do)",
+        },
+      });
+
+      await service.resetSkip(pr.id);
+
+      const byField = Object.fromEntries(
+        (await events(pr.id)).map((r) => [r.field, r]),
+      );
+      expect(byField.skipCount).toMatchObject({
+        oldValue: "3",
+        newValue: "0",
+        method: "resetSkip",
+      });
+      expect(byField.blocked).toMatchObject({
+        oldValue: "true",
+        newValue: "false",
+      });
+    });
+  },
+);

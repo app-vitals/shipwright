@@ -30,6 +30,18 @@ import {
   type PullRequest,
 } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
+import { computePrTransitionDiff } from "./pr-transition-diff.ts";
+
+/**
+ * The Prisma client surface shared by the top-level client and a $transaction
+ * callback's `tx`. recordTransition() accepts this so it can run against either
+ * — the write path always hands it the same `tx` that performed the source
+ * update, keeping the event insert(s) atomic with it.
+ */
+type PrismaTxClient = Pick<
+  Prisma.TransactionClient,
+  "pullRequest" | "pullRequestEvent"
+>;
 
 /**
  * Parses an `updatedSince` filter value into a Date, matching the
@@ -269,7 +281,7 @@ export class PullRequestService implements PullRequestServiceLike {
       const candidates = await this.prisma.pullRequest.findMany({
         where,
         orderBy,
-        include: { findings: true },
+        include: { findings: true, events: true },
       });
 
       const taskIds = [
@@ -305,7 +317,7 @@ export class PullRequestService implements PullRequestServiceLike {
         orderBy,
         take: limit,
         skip: offset,
-        include: { findings: true },
+        include: { findings: true, events: true },
       }),
       this.prisma.pullRequest.count({ where }),
     ]);
@@ -316,7 +328,7 @@ export class PullRequestService implements PullRequestServiceLike {
   async get(id: string): Promise<PullRequest | null> {
     return this.prisma.pullRequest.findUnique({
       where: { id },
-      include: { findings: true },
+      include: { findings: true, events: true },
     });
   }
 
@@ -481,6 +493,10 @@ export class PullRequestService implements PullRequestServiceLike {
             },
             data: updateData,
           });
+          // Audit the claim transition against the pre-update snapshot, inside
+          // the same tx (the CRF-1.1 WHERE-guard/conflict-detection logic above
+          // is untouched — recordTransition only runs once the update succeeds).
+          await this.recordTransition(tx, existing, record, "claim", claimedBy);
           return { status: 200 as const, record };
         } catch (err: unknown) {
           // The combined WHERE matched 0 rows → Prisma throws P2025. Distinguish
@@ -554,7 +570,16 @@ export class PullRequestService implements PullRequestServiceLike {
     return result;
   }
 
-  /** Touch heartbeatAt for liveness. Errors if the PR is missing. */
+  /**
+   * Touch heartbeatAt for liveness. Errors if the PR is missing.
+   *
+   * Deliberately writes NO audit event and stays outside a $transaction: a bare
+   * heartbeat only ever changes heartbeatAt, which is excluded from the audit
+   * trail (see computePrTransitionDiff), so recordTransition() would be a
+   * guaranteed no-op here. Skipping it entirely keeps this hot liveness path a
+   * single cheap UPDATE. (This is the concrete realization of acceptance
+   * criterion 3: a bare heartbeat() writes zero event rows.)
+   */
   async heartbeat(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
@@ -571,24 +596,37 @@ export class PullRequestService implements PullRequestServiceLike {
   async complete(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
-      return await this.prisma.pullRequest.update({
-        where: { id },
-        data: {
-          reviewCycles: { increment: 1 },
-          reviewState: "posted",
-          reviewedAt: now,
-          readyForPatchAt: now,
-          // The review session is done with the record, so release its claim in
-          // the same write — mirroring update()'s posted/approved release. This
-          // is the path the review flow actually uses (POST /prs/:id/complete),
-          // so without the clear the claim lingers until the reaper TTL and the
-          // stale-claim reap re-dispatches a duplicate review
-          // (app-vitals/shipwright#1016).
-          claimedBy: null,
-          claimedAt: null,
-          heartbeatAt: null,
-          phase: null,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        // Capture the before-state up front — the actor is the current
+        // claimant, which the same update clears to null.
+        const before = await tx.pullRequest.findUnique({ where: { id } });
+        const record = await tx.pullRequest.update({
+          where: { id },
+          data: {
+            reviewCycles: { increment: 1 },
+            reviewState: "posted",
+            reviewedAt: now,
+            readyForPatchAt: now,
+            // The review session is done with the record, so release its claim
+            // in the same write — mirroring update()'s posted/approved release.
+            // This is the path the review flow actually uses
+            // (POST /prs/:id/complete), so without the clear the claim lingers
+            // until the reaper TTL and the stale-claim reap re-dispatches a
+            // duplicate review (app-vitals/shipwright#1016).
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+            phase: null,
+          },
+        });
+        await this.recordTransition(
+          tx,
+          before,
+          record,
+          "complete",
+          before?.claimedBy ?? null,
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
@@ -647,45 +685,56 @@ export class PullRequestService implements PullRequestServiceLike {
       phase: null,
     };
 
-    // Not a Prisma error — thrown directly, must bypass translateNotFound.
-    const needsExisting =
-      commitSha !== undefined || ciFailureSignature !== undefined;
-    const existing = needsExisting
-      ? await this.prisma.pullRequest.findUnique({ where: { id } })
-      : null;
-    if (needsExisting && !existing) {
-      throw new NotFoundError("pr not found");
-    }
+    // Always read the before-state (rather than only when commitSha/
+    // ciFailureSignature is provided as before): recordTransition needs a
+    // "before" snapshot to diff against, and reading it inside the tx keeps the
+    // audit atomic with the update. When neither optional arg is provided the
+    // read also stands in for the update's own existence check.
+    return await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.pullRequest.findUnique({ where: { id } });
 
-    if (commitSha === undefined) {
-      updateData.reviewState = "pending";
-    } else if (existing && existing.commitSha !== commitSha) {
-      updateData.reviewState = "pending";
-      updateData.commitSha = commitSha;
-    }
-
-    if (ciFailureSignature !== undefined && existing) {
-      if (existing.lastCiFailureSignature === ciFailureSignature) {
-        updateData.consecutiveCiFailureCount = { increment: 1 };
-        const newCount = existing.consecutiveCiFailureCount + 1;
-        if (newCount >= CI_FAILURE_BLOCK_THRESHOLD) {
-          updateData.blocked = true;
-          updateData.blockedReason = `Auto-blocked after ${newCount} consecutive patch cycles hitting the same CI failure (${ciFailureSignature})`;
-        }
-      } else {
-        updateData.consecutiveCiFailureCount = 1;
-        updateData.lastCiFailureSignature = ciFailureSignature;
+      // A missing record is a NotFoundError regardless of which args were
+      // passed. (Previously the no-arg path let the update's own P2025 surface
+      // via translateNotFound; reading the record up front for the audit diff
+      // means we detect the absence here and throw the same NotFoundError.)
+      if (!existing) {
+        throw new NotFoundError("pr not found");
       }
-    }
 
-    try {
-      return await this.prisma.pullRequest.update({
+      if (commitSha === undefined) {
+        updateData.reviewState = "pending";
+      } else if (existing.commitSha !== commitSha) {
+        updateData.reviewState = "pending";
+        updateData.commitSha = commitSha;
+      }
+
+      if (ciFailureSignature !== undefined) {
+        if (existing.lastCiFailureSignature === ciFailureSignature) {
+          updateData.consecutiveCiFailureCount = { increment: 1 };
+          const newCount = existing.consecutiveCiFailureCount + 1;
+          if (newCount >= CI_FAILURE_BLOCK_THRESHOLD) {
+            updateData.blocked = true;
+            updateData.blockedReason = `Auto-blocked after ${newCount} consecutive patch cycles hitting the same CI failure (${ciFailureSignature})`;
+          }
+        } else {
+          updateData.consecutiveCiFailureCount = 1;
+          updateData.lastCiFailureSignature = ciFailureSignature;
+        }
+      }
+
+      const record = await tx.pullRequest.update({
         where: { id },
         data: updateData,
       });
-    } catch (err: unknown) {
-      throw this.translateNotFound(err, "pr not found");
-    }
+      await this.recordTransition(
+        tx,
+        existing,
+        record,
+        "patch",
+        existing.claimedBy ?? null,
+      );
+      return record;
+    });
   }
 
   /**
@@ -800,6 +849,10 @@ export class PullRequestService implements PullRequestServiceLike {
         data: updateData,
       });
 
+      // Audit the claim transition against the pre-claim snapshot (`target`),
+      // inside the same tx as the update above. Actor is the claiming agent.
+      await this.recordTransition(tx, target, pr, "claimNext", agentId);
+
       return { pr, phase };
     });
   }
@@ -820,29 +873,50 @@ export class PullRequestService implements PullRequestServiceLike {
    * equivalent SQL CASE expression.
    */
   async release(id: string): Promise<PullRequest> {
-    const existing = await this.prisma.pullRequest.findUnique({
+    // Existence check stays outside the transaction (preserves the existing
+    // synchronous-NotFoundError-before-any-write behavior), but is used only
+    // for that check now — the audit `before` snapshot is re-read inside the
+    // transaction below so a concurrent write in the gap can't produce a
+    // stale `oldValue` in the persisted PullRequestEvent row.
+    const existsCheck = await this.prisma.pullRequest.findUnique({
       where: { id },
     });
-    if (!existing) {
+    if (!existsCheck) {
       throw new NotFoundError("pr not found");
     }
 
-    const updateData: Prisma.PullRequestUpdateInput = {
-      claimedBy: null,
-      claimedAt: null,
-      heartbeatAt: null,
-    };
-    if (
-      existing.reviewState !== "posted" &&
-      existing.reviewState !== "approved"
-    ) {
-      updateData.reviewState = "pending";
-    }
-
     try {
-      return await this.prisma.pullRequest.update({
-        where: { id },
-        data: updateData,
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.pullRequest.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError("pr not found");
+        }
+
+        const updateData: Prisma.PullRequestUpdateInput = {
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+        };
+        if (
+          existing.reviewState !== "posted" &&
+          existing.reviewState !== "approved"
+        ) {
+          updateData.reviewState = "pending";
+        }
+
+        const record = await tx.pullRequest.update({
+          where: { id },
+          data: updateData,
+        });
+        // Actor is whoever held the claim being given up.
+        await this.recordTransition(
+          tx,
+          existing,
+          record,
+          "release",
+          existing.claimedBy ?? null,
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
@@ -860,20 +934,35 @@ export class PullRequestService implements PullRequestServiceLike {
   async recordSkip(id: string): Promise<PullRequest> {
     const now = this.clock.now().toISOString();
     try {
-      const updated = await this.prisma.pullRequest.update({
-        where: { id },
-        data: { skipCount: { increment: 1 }, lastSkippedAt: now },
-      });
-      if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
-        return await this.prisma.pullRequest.update({
+      return await this.prisma.$transaction(async (tx) => {
+        // Snapshot before the first update so the audit diff spans the whole
+        // recordSkip (both the increment and any threshold auto-block).
+        const before = await tx.pullRequest.findUnique({ where: { id } });
+        let updated = await tx.pullRequest.update({
           where: { id },
-          data: {
-            blocked: true,
-            blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
-          },
+          data: { skipCount: { increment: 1 }, lastSkippedAt: now },
         });
-      }
-      return updated;
+        if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+          updated = await tx.pullRequest.update({
+            where: { id },
+            data: {
+              blocked: true,
+              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+            },
+          });
+        }
+        // Actor is the claim holder if any; recordSkip can fire on unclaimed
+        // PRs (no actor in scope at the route), in which case attribute to
+        // "system".
+        await this.recordTransition(
+          tx,
+          before,
+          updated,
+          "recordSkip",
+          before?.claimedBy ?? "system",
+        );
+        return updated;
+      });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
     }
@@ -889,29 +978,49 @@ export class PullRequestService implements PullRequestServiceLike {
    * streak auto-block in patch()) is left untouched.
    */
   async resetSkip(id: string): Promise<PullRequest> {
-    const existing = await this.prisma.pullRequest.findUnique({
+    // Existence check stays outside the transaction (preserves the existing
+    // synchronous-NotFoundError-before-any-write behavior), but is used only
+    // for that check now — the audit `before` snapshot is re-read inside the
+    // transaction below so a concurrent write in the gap can't produce a
+    // stale `oldValue` in the persisted PullRequestEvent row.
+    const existsCheck = await this.prisma.pullRequest.findUnique({
       where: { id },
     });
-    if (!existing) {
+    if (!existsCheck) {
       throw new NotFoundError("pr not found");
     }
 
-    const updateData: Prisma.PullRequestUpdateInput = {
-      skipCount: 0,
-      lastSkippedAt: null,
-    };
-    if (
-      existing.blocked &&
-      existing.blockedReason?.includes("consecutive skips")
-    ) {
-      updateData.blocked = false;
-      updateData.blockedReason = null;
-    }
-
     try {
-      return await this.prisma.pullRequest.update({
-        where: { id },
-        data: updateData,
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.pullRequest.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError("pr not found");
+        }
+
+        const updateData: Prisma.PullRequestUpdateInput = {
+          skipCount: 0,
+          lastSkippedAt: null,
+        };
+        if (
+          existing.blocked &&
+          existing.blockedReason?.includes("consecutive skips")
+        ) {
+          updateData.blocked = false;
+          updateData.blockedReason = null;
+        }
+
+        const record = await tx.pullRequest.update({
+          where: { id },
+          data: updateData,
+        });
+        await this.recordTransition(
+          tx,
+          existing,
+          record,
+          "resetSkip",
+          existing.claimedBy ?? "system",
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "pr not found");
@@ -962,6 +1071,43 @@ export class PullRequestService implements PullRequestServiceLike {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Write the audit trail for a single mutation: diff `before` vs `after` and
+   * insert one PullRequestEvent row per changed, auditable field. Runs on the
+   * same `tx` the source update ran on, so the event rows land atomically with
+   * the field change (or not at all).
+   *
+   * heartbeatAt-only changes produce zero rows (see computePrTransitionDiff);
+   * a create-path `before === null` also produces zero rows. Every row is
+   * stamped with the same `at` timestamp from the injected Clock so an entire
+   * transition's rows share one instant, and carries the `method` name and
+   * `actor` that drove the write for later diagnostics.
+   */
+  private async recordTransition(
+    tx: PrismaTxClient,
+    before: PullRequest | null,
+    after: PullRequest,
+    method: string,
+    actor: string | null,
+  ): Promise<void> {
+    const changes = computePrTransitionDiff(before, after);
+    if (changes.length === 0) return;
+    const at = this.clock.now().toISOString();
+    for (const change of changes) {
+      await tx.pullRequestEvent.create({
+        data: {
+          prRecordId: after.id,
+          field: change.field,
+          oldValue: change.oldValue,
+          newValue: change.newValue,
+          actor,
+          method,
+          at,
+        },
+      });
+    }
+  }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */
   private translateNotFound(err: unknown, message: string): unknown {

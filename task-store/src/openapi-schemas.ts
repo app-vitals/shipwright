@@ -277,6 +277,37 @@ export const PrFindingSchema = z
 
 export type PrFinding = z.infer<typeof PrFindingSchema>;
 
+// Defined ahead of PullRequestSchema so PullRequestSchema's `events` field can
+// reference it directly, mirroring the PrFindingSchema pattern above.
+
+export const PullRequestEventSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxevent123456" }),
+    prRecordId: z.string().openapi({ example: "clx0987654321" }),
+    field: z.string().openapi({ example: "reviewState" }),
+    oldValue: z
+      .string()
+      .nullable()
+      .openapi({ example: "pending" }),
+    newValue: z
+      .string()
+      .nullable()
+      .openapi({ example: "in_progress" }),
+    actor: z
+      .string()
+      .nullable()
+      .openapi({ example: "agent-abc123" }),
+    method: z.string().openapi({ example: "claim" }),
+    at: z.string().openapi({ example: "2026-08-17T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-08-17T12:00:00.000Z" }),
+  })
+  .openapi("PullRequestEvent");
+
+export type PullRequestEvent = z.infer<typeof PullRequestEventSchema>;
+
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 
 export const PullRequestSchema = z
@@ -402,6 +433,13 @@ export const PullRequestSchema = z
       .openapi({
         description:
           "Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
+      }),
+    events: z
+      .array(PullRequestEventSchema)
+      .optional()
+      .openapi({
+        description:
+          "Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array).",
       }),
   })
   .openapi("PullRequest");

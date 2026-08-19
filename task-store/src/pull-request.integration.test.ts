@@ -31,6 +31,9 @@ describeOrSkip("PullRequest model (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -205,6 +208,9 @@ describeOrSkip("PullRequestService.claim() atomicity (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -320,6 +326,9 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -566,6 +575,9 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new PullRequestService(prisma);
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
     });
 
@@ -654,6 +666,9 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new PullRequestService(prisma);
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
     });
 
@@ -753,6 +768,9 @@ describeOrSkip("PullRequestService.claimNext() (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -975,6 +993,9 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     service = new PullRequestService(prisma);
+    // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+    // rows before their parent PullRequest rows, since claim()/etc. write them.
+    await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
   });
 
@@ -1313,11 +1334,17 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new PullRequestService(prisma);
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
       await prisma.task.deleteMany();
     });
 
     afterEach(async () => {
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
       await prisma.task.deleteMany();
       await prisma.$disconnect();
@@ -1500,6 +1527,9 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new PullRequestService(prisma);
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
     });
 
@@ -1714,6 +1744,9 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       await prisma.taskToken.deleteMany();
+      // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
+      // rows before their parent PullRequest rows, since claim()/etc. write them.
+      await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
 
       const tokenService = new TaskTokenService(prisma);
