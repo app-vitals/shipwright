@@ -1398,6 +1398,23 @@ describe("parseCliInput", () => {
       'Input JSON "findings" field, when present, must be an array',
     );
   });
+
+  test("throws when prAuthor is present but not a string (RAS-1.1)", () => {
+    const input = validInput({ prAuthor: 123 });
+    expect(() => parseCliInput(JSON.stringify(input))).toThrow(
+      'Input JSON "prAuthor" field, when present, must be a string',
+    );
+  });
+
+  test("passes prAuthor through when present, and leaves it undefined when absent (RAS-1.1)", () => {
+    const withPrAuthor = parseCliInput(
+      JSON.stringify(validInput({ prAuthor: "zayyen-p" })),
+    );
+    expect(withPrAuthor.prAuthor).toBe("zayyen-p");
+
+    const withoutPrAuthor = parseCliInput(JSON.stringify(validInput()));
+    expect(withoutPrAuthor.prAuthor).toBeUndefined();
+  });
 });
 
 // ─── CLI entrypoint (argv/stdin JSON parsing) ──────────────────────────────
