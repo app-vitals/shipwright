@@ -871,27 +871,37 @@ export class PullRequestService implements PullRequestServiceLike {
    * equivalent SQL CASE expression.
    */
   async release(id: string): Promise<PullRequest> {
-    const existing = await this.prisma.pullRequest.findUnique({
+    // Existence check stays outside the transaction (preserves the existing
+    // synchronous-NotFoundError-before-any-write behavior), but is used only
+    // for that check now — the audit `before` snapshot is re-read inside the
+    // transaction below so a concurrent write in the gap can't produce a
+    // stale `oldValue` in the persisted PullRequestEvent row.
+    const existsCheck = await this.prisma.pullRequest.findUnique({
       where: { id },
     });
-    if (!existing) {
+    if (!existsCheck) {
       throw new NotFoundError("pr not found");
-    }
-
-    const updateData: Prisma.PullRequestUpdateInput = {
-      claimedBy: null,
-      claimedAt: null,
-      heartbeatAt: null,
-    };
-    if (
-      existing.reviewState !== "posted" &&
-      existing.reviewState !== "approved"
-    ) {
-      updateData.reviewState = "pending";
     }
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.pullRequest.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError("pr not found");
+        }
+
+        const updateData: Prisma.PullRequestUpdateInput = {
+          claimedBy: null,
+          claimedAt: null,
+          heartbeatAt: null,
+        };
+        if (
+          existing.reviewState !== "posted" &&
+          existing.reviewState !== "approved"
+        ) {
+          updateData.reviewState = "pending";
+        }
+
         const record = await tx.pullRequest.update({
           where: { id },
           data: updateData,
@@ -966,27 +976,37 @@ export class PullRequestService implements PullRequestServiceLike {
    * streak auto-block in patch()) is left untouched.
    */
   async resetSkip(id: string): Promise<PullRequest> {
-    const existing = await this.prisma.pullRequest.findUnique({
+    // Existence check stays outside the transaction (preserves the existing
+    // synchronous-NotFoundError-before-any-write behavior), but is used only
+    // for that check now — the audit `before` snapshot is re-read inside the
+    // transaction below so a concurrent write in the gap can't produce a
+    // stale `oldValue` in the persisted PullRequestEvent row.
+    const existsCheck = await this.prisma.pullRequest.findUnique({
       where: { id },
     });
-    if (!existing) {
+    if (!existsCheck) {
       throw new NotFoundError("pr not found");
-    }
-
-    const updateData: Prisma.PullRequestUpdateInput = {
-      skipCount: 0,
-      lastSkippedAt: null,
-    };
-    if (
-      existing.blocked &&
-      existing.blockedReason?.includes("consecutive skips")
-    ) {
-      updateData.blocked = false;
-      updateData.blockedReason = null;
     }
 
     try {
       return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.pullRequest.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError("pr not found");
+        }
+
+        const updateData: Prisma.PullRequestUpdateInput = {
+          skipCount: 0,
+          lastSkippedAt: null,
+        };
+        if (
+          existing.blocked &&
+          existing.blockedReason?.includes("consecutive skips")
+        ) {
+          updateData.blocked = false;
+          updateData.blockedReason = null;
+        }
+
         const record = await tx.pullRequest.update({
           where: { id },
           data: updateData,

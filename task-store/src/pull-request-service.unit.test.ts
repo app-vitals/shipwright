@@ -1331,6 +1331,120 @@ describe("PullRequestService recordTransition() audit events", () => {
     expect(skipEvent?.data.actor).toBe("system");
     expect(skipEvent?.data.method).toBe("recordSkip");
   });
+
+  // ─── release()/resetSkip() in-tx before-snapshot ──────────────────────────
+  //
+  // release() and resetSkip() do a pre-transaction findUnique() purely to
+  // preserve the synchronous NotFoundError-before-any-write contract, then
+  // must re-read the before-state INSIDE the $transaction and use THAT read
+  // (not the pre-tx one) as recordTransition()'s `before` snapshot — closing
+  // the concurrent-write race window a stale outside-tx snapshot would leave
+  // open. This double returns a different row on each successive
+  // findUnique() call to simulate a concurrent write landing between the
+  // outside-tx existence check and the in-tx read, so these tests fail if
+  // the stale (first) snapshot is ever used for the audit event.
+
+  interface SequencedEventCall {
+    data: Record<string, unknown>;
+  }
+
+  function makeSequencedPrismaDouble(
+    findUniqueResults: (Partial<PullRequest> | null)[],
+  ) {
+    let call = 0;
+    const updateCalls: UpdateCall[] = [];
+    const eventCalls: SequencedEventCall[] = [];
+
+    const prisma = {
+      pullRequest: {
+        findUnique(_args: unknown): Promise<Partial<PullRequest> | null> {
+          const result =
+            findUniqueResults[Math.min(call, findUniqueResults.length - 1)];
+          call += 1;
+          return Promise.resolve(result);
+        },
+        update(args: UpdateCall): Promise<Partial<PullRequest>> {
+          updateCalls.push(args);
+          const latest = findUniqueResults[findUniqueResults.length - 1];
+          return Promise.resolve({
+            id: "pr-1",
+            ...(latest ?? {}),
+            ...args.data,
+          } as Partial<PullRequest>);
+        },
+      },
+      pullRequestEvent: {
+        create(args: SequencedEventCall): Promise<Record<string, unknown>> {
+          eventCalls.push(args);
+          return Promise.resolve({ id: "event-1", ...args.data });
+        },
+      },
+      $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+        return fn(prisma);
+      },
+      _updateCalls: updateCalls,
+      _eventCalls: eventCalls,
+    };
+
+    return prisma as unknown as {
+      pullRequest: {
+        findUnique: (args: unknown) => Promise<Partial<PullRequest> | null>;
+        update: (args: UpdateCall) => Promise<Partial<PullRequest>>;
+      };
+      pullRequestEvent: {
+        create: (args: SequencedEventCall) => Promise<Record<string, unknown>>;
+      };
+      $transaction: <T>(fn: (tx: unknown) => Promise<T>) => Promise<T>;
+      _updateCalls: UpdateCall[];
+      _eventCalls: SequencedEventCall[];
+    };
+  }
+
+  test("release() audits the before-snapshot read INSIDE the transaction, not the pre-tx existence check", async () => {
+    // Simulates a concurrent claimedBy change landing between release()'s
+    // outside-tx existence check and its in-tx before-read: the outside-tx
+    // read still shows the old claimant, but the in-tx read (which must be
+    // the one recordTransition() uses) shows the new one.
+    const prisma = makeSequencedPrismaDouble([
+      {
+        id: "pr-1",
+        reviewState: "in_progress",
+        claimedBy: "agent-stale",
+      } as Partial<PullRequest>,
+      {
+        id: "pr-1",
+        reviewState: "in_progress",
+        claimedBy: "agent-fresh",
+      } as Partial<PullRequest>,
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.release("pr-1");
+
+    const claimedByEvent = prisma._eventCalls.find(
+      (c) => c.data.field === "claimedBy",
+    );
+    expect(claimedByEvent?.data.oldValue).toBe("agent-fresh");
+    expect(claimedByEvent?.data.actor).toBe("agent-fresh");
+  });
+
+  test("resetSkip() audits the before-snapshot read INSIDE the transaction, not the pre-tx existence check", async () => {
+    // Simulates a concurrent skipCount increment landing between
+    // resetSkip()'s outside-tx existence check and its in-tx before-read.
+    const prisma = makeSequencedPrismaDouble([
+      { id: "pr-1", skipCount: 1 } as Partial<PullRequest>,
+      { id: "pr-1", skipCount: 2 } as Partial<PullRequest>,
+    ]);
+    const svc = new PullRequestService(prisma as never, clock);
+
+    await svc.resetSkip("pr-1");
+
+    const skipEvent = prisma._eventCalls.find(
+      (c) => c.data.field === "skipCount",
+    );
+    expect(skipEvent?.data.oldValue).toBe("2");
+    expect(skipEvent?.data.newValue).toBe("0");
+  });
 });
 
 // ─── appendFinding() ────────────────────────────────────────────────────────
@@ -1365,8 +1479,12 @@ function makeFindingPrismaDouble(prExists: boolean) {
   };
 
   return prisma as unknown as {
-    pullRequest: { findUnique: (args: unknown) => Promise<{ id: string } | null> };
-    prFinding: { create: (args: CreateFindingCall) => Promise<Record<string, unknown>> };
+    pullRequest: {
+      findUnique: (args: unknown) => Promise<{ id: string } | null>;
+    };
+    prFinding: {
+      create: (args: CreateFindingCall) => Promise<Record<string, unknown>>;
+    };
     _createCalls: CreateFindingCall[];
   };
 }
