@@ -350,6 +350,29 @@ GET /prs/:id
 
 Returns `404` if not found.
 
+#### Get PR events
+
+```
+GET /prs/:id/events
+```
+
+Fetch a PR's `PullRequestEvent` audit trail — a complete history of field-level state transitions recorded in append-only order.
+
+Query params:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `limit` | number | Page size. Defaults to `50` when omitted. |
+| `offset` | number | Page offset. Defaults to `0` when omitted. |
+
+Returns `{ events: PullRequestEvent[], total: number, limit: number, offset: number }` where:
+- `events` — the PR's `PullRequestEvent` objects, ordered by `at` ascending (oldest first)
+- `total` — count of all events for this PR (independent of `limit`/`offset`)
+- `limit` — the limit applied (defaults to 50)
+- `offset` — the offset applied (defaults to 0)
+
+Returns `404` if the PR doesn't exist.
+
 #### Update PR
 
 ```
