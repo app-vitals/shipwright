@@ -632,7 +632,7 @@ export function createPrsRoutes(
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(findingsRoute, async (c): Promise<any> => {
     const body = await readJson(c);
-    const { ref, evidence, at } = body;
+    const { ref, evidence, at, agentId } = body;
 
     // disposition/source are already constrained to their valid enum values
     // by CreateFindingBodySchema's z.enum() — the OpenAPIHono request
@@ -658,6 +658,7 @@ export function createPrsRoutes(
     }
 
     const resolvedAt = typeof at === "string" && at ? at : undefined;
+    const resolvedAgentId = typeof agentId === "string" && agentId ? agentId : undefined;
 
     const finding = await prService.appendFinding(c.req.param("id"), {
       ref,
@@ -665,6 +666,7 @@ export function createPrsRoutes(
       source,
       evidence,
       at: resolvedAt,
+      agentId: resolvedAgentId,
     });
     return c.json(finding, 201);
   });

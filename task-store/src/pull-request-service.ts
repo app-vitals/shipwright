@@ -195,6 +195,8 @@ export interface AppendFindingInput {
   evidence: string;
   /** ISO timestamp. Defaults to the service's Clock.now() when omitted. */
   at?: string;
+  /** Agent instance that triaged this finding. */
+  agentId?: string;
 }
 
 /** The subset of PullRequestService the routes depend on. */
@@ -1063,6 +1065,7 @@ export class PullRequestService implements PullRequestServiceLike {
         source: data.source,
         evidence: data.evidence,
         at: data.at ?? this.clock.now().toISOString(),
+        agentId: data.agentId ?? null,
       },
     });
   }

@@ -253,6 +253,7 @@ model PrFinding {
   source      PrFindingSource
   evidence    String
   at          String
+  agentId     String?
 
   createdAt DateTime @default(now())
 
