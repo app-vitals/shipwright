@@ -201,3 +201,54 @@ tests:
     asserts:
       - failedTemplate:
           errorPattern: "clientId"
+
+  - it: accepts auth.mode=okta (new enum member)
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: dev@example.com
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects okta mode with missing required auth.okta.* fields
+    set:
+      auth.mode: okta
+    asserts:
+      - failedTemplate:
+          errorPattern: "issuer"
+
+  - it: rejects okta mode with empty allowedEmails (conditional minLength)
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "allowedEmails"
+
+  - it: accepts okta mode with existingSecret set and empty clientId (existingSecret bypasses inline-field requirement)
+    set:
+      auth.mode: okta
+      auth.okta.existingSecret: my-okta-secret
+      auth.okta.issuer: ""
+      auth.okta.clientId: ""
+      auth.okta.clientSecret: ""
+      auth.okta.allowedEmails: ""
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects okta mode with existingSecret empty and empty issuer (existing enforcement still holds)
+    set:
+      auth.mode: okta
+      auth.okta.existingSecret: ""
+      auth.okta.issuer: ""
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: user@example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "issuer"

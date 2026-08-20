@@ -1,9 +1,13 @@
-suite: admin auth modes (open vs google)
+suite: admin auth modes (open vs google vs okta)
 # HD-3.1 auth modes. auth.mode=open → ADMIN_DEV_AUTH=true + NODE_ENV=development
 # (the image bakes NODE_ENV=production, which would hard-block dev auth if the
 # deployment left it to the image default).
 # auth.mode=google → NODE_ENV=production + Google OAuth env (from the admin
 # Secret) + SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
+# auth.mode=okta → NODE_ENV=production + Okta OIDC env (from the admin
+# Secret) + SHIPWRIGHT_ADMIN_ALLOWED_EMAILS. Mirrors the google mode exactly,
+# with OKTA_ISSUER additionally required (Okta OIDC needs the tenant issuer URL;
+# Google's issuer is implicit/well-known so it has no equivalent field).
 templates:
   - templates/admin-deployment.yaml
 release:
@@ -109,3 +113,95 @@ tests:
           content:
             name: ADMIN_DEV_AUTH
             value: "true"
+
+  - it: okta mode sets NODE_ENV=production
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: dev@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_ENV
+            value: "production"
+
+  - it: okta mode sources OKTA_ISSUER / OKTA_CLIENT_ID / OKTA_CLIENT_SECRET from the admin Secret
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: dev@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OKTA_ISSUER
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: OKTA_ISSUER
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OKTA_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: OKTA_CLIENT_ID
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OKTA_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: OKTA_CLIENT_SECRET
+
+  - it: okta mode passes SHIPWRIGHT_ADMIN_ALLOWED_EMAILS from values
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: a@example.com,b@example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+            value: a@example.com,b@example.com
+
+  - it: okta mode does NOT set ADMIN_DEV_AUTH (dev auth is off)
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: dev@example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ADMIN_DEV_AUTH
+            value: "true"
+
+  - it: okta mode does NOT set any Google OAuth env
+    set:
+      auth.mode: okta
+      auth.okta.issuer: https://dev-123.okta.com
+      auth.okta.clientId: cid
+      auth.okta.clientSecret: csec
+      auth.okta.allowedEmails: dev@example.com
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                name: r-shipwright-admin
+                key: GOOGLE_CLIENT_ID

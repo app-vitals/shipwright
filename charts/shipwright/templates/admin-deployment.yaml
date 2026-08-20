@@ -168,6 +168,53 @@ spec:
             - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
               value: {{ .Values.auth.google.allowedEmails | quote }}
             {{- end }}
+            {{- else if eq .Values.auth.mode "okta" }}
+            # auth.mode=okta — Okta OIDC env wiring (chart-only; admin app has
+            # no Okta login handler yet, see values.yaml auth.mode comment).
+            # Production hardening (NODE_ENV=production) on regardless.
+            - name: NODE_ENV
+              value: "production"
+            {{- if .Values.auth.okta.existingSecret }}
+            # auth.okta.existingSecret: source all four OIDC vars from caller-managed Secret.
+            - name: OKTA_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.okta.existingSecret }}
+                  key: {{ .Values.auth.okta.issuerRef | default "OKTA_ISSUER" }}
+            - name: OKTA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.okta.existingSecret }}
+                  key: {{ .Values.auth.okta.clientIdRef | default "OKTA_CLIENT_ID" }}
+            - name: OKTA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.okta.existingSecret }}
+                  key: {{ .Values.auth.okta.clientSecretRef | default "OKTA_CLIENT_SECRET" }}
+            - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.okta.existingSecret }}
+                  key: {{ .Values.auth.okta.allowedEmailsRef | default "SHIPWRIGHT_ADMIN_ALLOWED_EMAILS" }}
+            {{- else }}
+            - name: OKTA_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: OKTA_ISSUER
+            - name: OKTA_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: OKTA_CLIENT_ID
+            - name: OKTA_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "shipwright.admin.secretName" . }}
+                  key: OKTA_CLIENT_SECRET
+            - name: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+              value: {{ .Values.auth.okta.allowedEmails | quote }}
+            {{- end }}
             {{- end }}
             {{- if .Values.agent.provisioning.enabled }}
             # ── Agent-provisioning env contract (HD-4.2) ──────────────────────
