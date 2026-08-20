@@ -386,13 +386,19 @@ If **any** of the following are true, this PR has substantive unresolved feedbac
 If substantive unresolved feedback is found: print
 `Skipping #{pr} — unresolved feedback from @{login} ({type} on {date}). No commits since.`,
 mark the PR as reviewed-at-this-commit (without staging) so the record is not re-evaluated at the
-same commit:
+same commit. Also advance `reviewedAt` to the current time (captured once as `{now}`, an
+ISO-8601 UTC timestamp, e.g. `date -u +"%Y-%m-%dT%H:%M:%SZ"`) — this closes the
+`hasFreshNonAgentComment` perpetual-retrigger gap (RCT-1.1/RVG-1.1): `agent/src/check-review.ts`'s
+`hasFreshNonAgentComment` uses `reviewedAt` as its "is there new activity since we last looked"
+watermark, and without advancing it here, the very comment that triggered this skip (or any
+comment after it) would look perpetually fresh against a frozen watermark, causing this PR to be
+re-selected for review on every subsequent tick indefinitely:
 ```bash
 curl -sf -X PATCH \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
-  -d '{"reviewState": "posted", "commitSha": "{headRefOid}", "reviewedCommitSha": "{headRefOid}"}' >/dev/null
+  -d '{"reviewState": "posted", "commitSha": "{headRefOid}", "reviewedCommitSha": "{headRefOid}", "reviewedAt": "{now}"}' >/dev/null
 ```
 Note: `staged` is NOT set here, so this does not interact with `/shipwright:review-staged`'s
 staged-record flow — this is purely a commit-level dedup to prevent re-review at the same head
@@ -1202,14 +1208,21 @@ Only PATCH when the record doesn't already reflect this outcome — avoid a doub
 it's already correct. The record is already correct when `reviewState` is `posted` or
 `approved` AND `reviewedCommitSha` already equals `headRefOid`; a `posted`/`approved` record
 still pinned to an older commit (`reviewedCommitSha != headRefOid`) is stale and needs the
-write:
+write. The PATCH also advances `reviewedAt` to the current time, computed once as `$NOW` —
+this closes the `hasFreshNonAgentComment` perpetual-retrigger gap (RCT-1.1/RVG-1.1):
+`agent/src/check-review.ts`'s `hasFreshNonAgentComment` uses `reviewedAt` as its "is there new
+activity since we last looked" watermark, and without advancing it here, any comment at or
+after this head commit — including the terminal review itself — would look perpetually fresh
+against a frozen watermark, causing this PR to be re-selected for review on every subsequent
+tick indefinitely:
 ```bash
 if [ -n "$PR_RECORD_ID" ] && ! { [ "$recordReviewState" = "posted" -o "$recordReviewState" = "approved" ] && [ "$recordReviewedCommitSha" = "$headRefOid" ]; }; then
+  NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}" \
-    -d '{"reviewState": "posted", "reviewedCommitSha": "'"$headRefOid"'"}' >/dev/null
+    -d '{"reviewState": "posted", "reviewedCommitSha": "'"$headRefOid"'", "reviewedAt": "'"$NOW"'"}' >/dev/null
 fi
 ```
 Note this PATCH sets `reviewedCommitSha` only, not `commitSha` — `commitSha` is the separate
@@ -1347,13 +1360,18 @@ gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid'
      unconditional (mirroring the Step 5 precedent), not guarded on `record.reviewState`:
      the entry condition above already requires `record.reviewState` to be `posted` or
      `approved` to reach this point, so a guard re-checking the same unmutated field would
-     be dead code:
+     be dead code. Also advance `reviewedAt` to the current time (captured once as `{now}`,
+     an ISO-8601 UTC timestamp, e.g. `date -u +"%Y-%m-%dT%H:%M:%SZ"`) — this closes the
+     `hasFreshNonAgentComment` perpetual-retrigger gap (RCT-1.1/RVG-1.1): without advancing
+     it here, any activity at or after this head commit would look perpetually fresh against
+     a frozen watermark in `agent/src/check-review.ts`'s `hasFreshNonAgentComment`, causing
+     this PR to be re-selected for review on every subsequent tick indefinitely:
      ```bash
      curl -sf -X PATCH \
        -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
        -H "Content-Type: application/json" \
        "$SHIPWRIGHT_TASK_STORE_URL/prs/{PR_RECORD_ID}" \
-       -d '{"reviewState": "posted", "reviewedCommitSha": "{headRefOid}"}' >/dev/null
+       -d '{"reviewState": "posted", "reviewedCommitSha": "{headRefOid}", "reviewedAt": "{now}"}' >/dev/null
      ```
    - Respond `[silent]`. Stop.
 

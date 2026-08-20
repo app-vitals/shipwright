@@ -558,6 +558,13 @@ export function createPrsRoutes(
     "state",
     "mergedAt",
     "reviewState",
+    // reviewedAt is normally set by POST /:id/complete, but review.md's terminal-skip
+    // write-back paths (Step 5, Step 14.3, Live-Review Pre-Check) need to advance it
+    // directly via PATCH too — it's the watermark hasFreshNonAgentComment
+    // (agent/src/check-review.ts) uses to decide whether PR activity is "fresh"; without
+    // this, a PR skipped via those paths keeps a frozen reviewedAt and gets re-selected
+    // for review on every subsequent tick (RWA-1.2).
+    "reviewedAt",
     "phase",
     "readyForReviewAt",
     "readyForPatchAt",

@@ -293,6 +293,22 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(patchBlock).not.toContain("'staged': true");
   });
 
+  it("Step 5's Unresolved Comment Check PATCH call advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+
+    const patchBlock = section.slice(patchIdx, patchIdx + 500);
+    expect(patchBlock).toContain("reviewedAt");
+
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+    const unresolvedSection = section.slice(unresolvedIdx);
+    expect(unresolvedSection).toContain("hasFreshNonAgentComment");
+  });
+
   it("Step 5's Unresolved Comment Check documentation notes that this does not interact with review-staged flow", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
@@ -726,6 +742,18 @@ describe("review.md — RVD-1.2 terminal-review skip writes back task-store revi
 
     expect(section).not.toContain("/release");
   });
+
+  it("the PATCH body also advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+    const patchBlock = section.slice(patchIdx, patchIdx + 700);
+    expect(patchBlock).toContain("reviewedAt");
+    expect(section).toContain("hasFreshNonAgentComment");
+  });
 });
 
 describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
@@ -823,6 +851,21 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
     const dedupSection = section.slice(dedupIdx);
 
     expect(dedupSection).toContain("no extra query");
+  });
+
+  it("the PATCH body also advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain('"reviewedAt"');
+    expect(dedupSection).toContain("hasFreshNonAgentComment");
   });
 });
 
