@@ -614,22 +614,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(destination, 302);
   }
 
-  app.get("/admin/login", (c) => {
-    const error = c.req.query("error") ?? undefined;
-    const returnTo = c.req.query("returnTo") ?? undefined;
-    return html(renderLoginPage({ error, returnTo }));
-  });
-
-  app.get("/admin/auth/google", (c) => {
-    if (!googleClientId) {
-      return c.redirect("/admin/login?error=server_error", 302);
-    }
-
+  /**
+   * Shared OAuth-start step for every provider (Google, Okta): mints a CSRF
+   * nonce, validates `returnTo` as a same-origin relative path (dropping
+   * malformed/absolute values), and stores both in the oauth_state cookie.
+   */
+  function beginOAuthFlow(
+    // biome-ignore lint/suspicious/noExplicitAny: matches each OAuth start route's own path-string literal type; the path itself is irrelevant here.
+    c: Context<AdminUIEnv, any>,
+  ): { nonce: string; returnTo: string | undefined } {
     const nonce = crypto.randomUUID();
 
-    // Carry returnTo through the OAuth flow by encoding it alongside the nonce.
-    // Validate that returnTo is a same-origin relative path (starts with /) to
-    // prevent open redirect attacks. Malformed or absolute values are silently dropped.
     const rawReturnTo = c.req.query("returnTo");
     const returnTo =
       rawReturnTo?.startsWith("/") && !rawReturnTo.startsWith("//")
@@ -643,6 +638,57 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       maxAge: OAUTH_STATE_TTL_SECONDS,
       path: "/admin/auth",
     });
+
+    return { nonce, returnTo };
+  }
+
+  /**
+   * Shared OAuth-callback CSRF check for every provider: reads + clears the
+   * oauth_state cookie, and confirms its nonce matches the `state` query
+   * param. Returns the carried `returnTo` on success, or `null` if the
+   * cookie is missing/malformed or the nonce doesn't match.
+   */
+  function validateOAuthState(
+    // biome-ignore lint/suspicious/noExplicitAny: matches each OAuth callback route's own path-string literal type; the path itself is irrelevant here.
+    c: Context<AdminUIEnv, any>,
+    state: string | undefined,
+  ): { returnTo: string | undefined } | null {
+    const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
+
+    let storedNonce: string | undefined;
+    let returnTo: string | undefined;
+    try {
+      if (storedStateCookie) {
+        const parsed = JSON.parse(storedStateCookie) as {
+          nonce?: string;
+          returnTo?: string;
+        };
+        storedNonce = parsed.nonce;
+        returnTo = parsed.returnTo;
+      }
+    } catch {
+      // Malformed cookie — treat as missing
+    }
+
+    if (!storedNonce || !state || storedNonce !== state) {
+      return null;
+    }
+    return { returnTo };
+  }
+
+  app.get("/admin/login", (c) => {
+    const error = c.req.query("error") ?? undefined;
+    const returnTo = c.req.query("returnTo") ?? undefined;
+    return html(renderLoginPage({ error, returnTo }));
+  });
+
+  app.get("/admin/auth/google", (c) => {
+    if (!googleClientId) {
+      return c.redirect("/admin/login?error=server_error", 302);
+    }
+
+    const { nonce } = beginOAuthFlow(c);
 
     const params = new URLSearchParams({
       client_id: googleClientId,
@@ -667,27 +713,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
-    const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
-    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
-
-    let storedNonce: string | undefined;
-    let returnTo: string | undefined;
-    try {
-      if (storedStateCookie) {
-        const parsed = JSON.parse(storedStateCookie) as {
-          nonce?: string;
-          returnTo?: string;
-        };
-        storedNonce = parsed.nonce;
-        returnTo = parsed.returnTo;
-      }
-    } catch {
-      // Malformed cookie — treat as missing
-    }
-
-    if (!storedNonce || !state || storedNonce !== state) {
+    const validated = validateOAuthState(c, state);
+    if (!validated) {
       return c.redirect("/admin/login?error=invalid_state", 302);
     }
+    const { returnTo } = validated;
 
     if (!googleClientId || !googleClientSecret) {
       return c.redirect("/admin/login?error=server_error", 302);
@@ -732,24 +762,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/login?error=server_error", 302);
     }
 
-    const nonce = crypto.randomUUID();
-
-    // Carry returnTo through the OAuth flow by encoding it alongside the nonce.
-    // Validate that returnTo is a same-origin relative path (starts with /) to
-    // prevent open redirect attacks. Malformed or absolute values are silently dropped.
-    const rawReturnTo = c.req.query("returnTo");
-    const returnTo =
-      rawReturnTo?.startsWith("/") && !rawReturnTo.startsWith("//")
-        ? rawReturnTo
-        : undefined;
-
-    const oauthState = JSON.stringify({ nonce, returnTo });
-    setCookie(c, OAUTH_STATE_COOKIE, oauthState, {
-      httpOnly: true,
-      sameSite: "Lax",
-      maxAge: OAUTH_STATE_TTL_SECONDS,
-      path: "/admin/auth",
-    });
+    const { nonce } = beginOAuthFlow(c);
 
     const authUrl = oktaClient.getAuthorizationUrl({
       clientId: oktaClientId,
@@ -772,27 +785,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
-    const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
-    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
-
-    let storedNonce: string | undefined;
-    let returnTo: string | undefined;
-    try {
-      if (storedStateCookie) {
-        const parsed = JSON.parse(storedStateCookie) as {
-          nonce?: string;
-          returnTo?: string;
-        };
-        storedNonce = parsed.nonce;
-        returnTo = parsed.returnTo;
-      }
-    } catch {
-      // Malformed cookie — treat as missing
-    }
-
-    if (!storedNonce || !state || storedNonce !== state) {
+    const validated = validateOAuthState(c, state);
+    if (!validated) {
       return c.redirect("/admin/login?error=invalid_state", 302);
     }
+    const { returnTo } = validated;
 
     if (!oktaClientId || !oktaClientSecret || !oktaIssuer || !oktaClient) {
       return c.redirect("/admin/login?error=server_error", 302);
