@@ -432,6 +432,10 @@ auth:
   #               Minikube/dev default. Do NOT expose publicly.
   #    "google" — real Google OAuth (NODE_ENV=production). Requires
   #               auth.google.{clientId,clientSecret,allowedEmails}.
+  #    "okta"   — real Okta OIDC (NODE_ENV=production). Requires
+  #               auth.okta.{issuer,clientId,clientSecret,allowedEmails}.
+  # One Helm deployment runs exactly one provider at a time — this stays a
+  # single-value enum rather than a list of enabled providers.
   mode: open
   # -- Google OAuth settings (used only when auth.mode=google).
   google:
@@ -449,6 +453,32 @@ auth:
     # -- Google OAuth client ID (used when existingSecret is empty).
     clientId: ""
     # -- Google OAuth client secret (kept in the chart-managed admin Secret).
+    clientSecret: ""
+    # -- Comma-separated allow-list of emails permitted to sign in.
+    allowedEmails: ""
+  # -- Okta OIDC settings (used only when auth.mode=okta). Mirrors auth.google
+  # exactly, plus an issuer (Okta's OIDC issuer URL is tenant-specific and has
+  # no well-known default the way Google's does).
+  okta:
+    # -- Name of an existing Secret holding Okta OIDC credentials and the
+    # allowed-emails list. When set, issuer/clientId/clientSecret/allowedEmails
+    # below are ignored and the Deployment sources those four vars via
+    # secretKeyRef from this Secret. Leave empty to use the inline values below.
+    existingSecret: ""
+    # -- Key in existingSecret for OKTA_ISSUER.
+    issuerRef: OKTA_ISSUER
+    # -- Key in existingSecret for OKTA_CLIENT_ID.
+    clientIdRef: OKTA_CLIENT_ID
+    # -- Key in existingSecret for OKTA_CLIENT_SECRET.
+    clientSecretRef: OKTA_CLIENT_SECRET
+    # -- Key in existingSecret for SHIPWRIGHT_ADMIN_ALLOWED_EMAILS.
+    allowedEmailsRef: SHIPWRIGHT_ADMIN_ALLOWED_EMAILS
+    # -- Okta OIDC issuer URL, e.g. "https://dev-123456.okta.com" (used when
+    # existingSecret is empty).
+    issuer: ""
+    # -- Okta OIDC client ID (used when existingSecret is empty).
+    clientId: ""
+    # -- Okta OIDC client secret (kept in the chart-managed admin Secret).
     clientSecret: ""
     # -- Comma-separated allow-list of emails permitted to sign in.
     allowedEmails: ""

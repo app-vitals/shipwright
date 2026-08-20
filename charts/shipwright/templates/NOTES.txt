@@ -122,6 +122,10 @@ Provision your first agent:
 
   auth.mode=google — Google OAuth is enabled (NODE_ENV=production). Only emails
   in auth.google.allowedEmails ("{{ .Values.auth.google.allowedEmails }}") may sign in.
+{{- else if eq .Values.auth.mode "okta" }}
+
+  auth.mode=okta — Okta OIDC is enabled (NODE_ENV=production). Only emails
+  in auth.okta.allowedEmails ("{{ .Values.auth.okta.allowedEmails }}") may sign in.
 {{- end }}
 
 Minikube tip: with networking.type=ClusterIP, reach a service via

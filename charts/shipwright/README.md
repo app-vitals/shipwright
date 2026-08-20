@@ -156,10 +156,14 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `agent.voice.elevenlabs.apiKey` | `""` | ElevenLabs TTS key → `ELEVENLABS_API_KEY` (voice Secret). Empty = in-pod Piper TTS fallback. |
 | `agent.voice.elevenlabs.voiceId` | `""` | Optional ElevenLabs voice id → `ELEVENLABS_VOICE_ID`. |
 | `agent.voice.groq.apiKey` | `""` | Groq STT key → `GROQ_API_KEY` (voice Secret); used only when `provider=groq`. |
-| `auth.mode` | `open` | Admin auth: `open` (dev auth, **no OAuth — insecure, do not expose publicly**) \| `google` (Google OAuth, `NODE_ENV=production`). |
+| `auth.mode` | `open` | Admin auth: `open` (dev auth, **no OAuth — insecure, do not expose publicly**) \| `google` (Google OAuth, `NODE_ENV=production`) \| `okta` (Okta OIDC, `NODE_ENV=production`). One deployment runs exactly one provider at a time. |
 | `auth.google.clientId` | `""` | Google OAuth client ID (used when `auth.mode=google`). |
 | `auth.google.clientSecret` | `""` | Google OAuth client secret (kept in the chart-managed admin Secret). |
 | `auth.google.allowedEmails` | `""` | Comma-separated allow-list of emails permitted to sign in. |
+| `auth.okta.issuer` | `""` | Okta OIDC issuer URL, e.g. `https://dev-123456.okta.com` (used when `auth.mode=okta`). |
+| `auth.okta.clientId` | `""` | Okta OIDC client ID (used when `auth.mode=okta`). |
+| `auth.okta.clientSecret` | `""` | Okta OIDC client secret (kept in the chart-managed admin Secret). |
+| `auth.okta.allowedEmails` | `""` | Comma-separated allow-list of emails permitted to sign in. |
 | `admin.service.type` | `ClusterIP` | Admin Service type. |
 | `admin.serviceAccount.create` | `true` | Whether to create the admin ServiceAccount. |
 | `admin.serviceAccount.name` | `""` | Admin ServiceAccount name (generated if empty). |

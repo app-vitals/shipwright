@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.12.0] - 2026-08-20
+
+### Added
+
+- `auth.mode=okta` — Okta OIDC support mirroring `auth.mode=google` (new
+  `auth.okta.*` values block with `existingSecret` support, `values.schema.json`
+  enum + conditional required fields, `OKTA_ISSUER`/`OKTA_CLIENT_ID`/
+  `OKTA_CLIENT_SECRET`/`SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` wiring in the admin
+  Secret and Deployment, and `NOTES.txt` messaging).
+
 ## [1.11.64] - 2026-08-19
 
 ### Changed
