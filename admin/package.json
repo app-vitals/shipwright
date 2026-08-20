@@ -20,7 +20,6 @@
     "@sentry/hono": "^10.63.0",
     "@shipwright/lib": "*",
     "hono": "^4.13.1",
-    "openid-client": "^6.8.1",
     "yaml": "^2.9.0",
     "zod": "^3",
     "zod-to-json-schema": "^3.25.2"
