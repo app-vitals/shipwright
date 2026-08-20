@@ -725,31 +725,29 @@ Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. This is the
 required mode for the GKE and EKS targets above.
 
-### `auth.mode=okta` — Okta OIDC (chart-only, not yet a working login path)
+### `auth.mode=okta` — Okta OIDC (production)
 
-> ⚠️ **Do not deploy this expecting a working login.** This mode wires the
-> `OKTA_ISSUER`/`OKTA_CLIENT_ID`/`OKTA_CLIENT_SECRET`/
-> `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` env vars into the admin Deployment and sets
-> `NODE_ENV=production` (which also hard-blocks the dev-only escapes like
-> `ADMIN_DEV_AUTH`), but the admin application does not yet have an Okta OIDC
-> client — only `auth.mode=google` has a working login path in the app today.
-> Deploying with `auth.mode=okta` as-is will lock you out of the admin UI:
-> `NODE_ENV=production` blocks dev auth, and there is no Okta handler to log
-> in with. Use `auth.mode=google` (production) or `auth.mode=open`
-> (non-public only) until application-side Okta support ships.
-
-The values below are accepted and validated by the chart so that
-`auth.okta.*` config can be prepared ahead of application support landing:
+Sets `NODE_ENV=production` and enables Okta OIDC authentication. Okta is an optional
+alternative to Google OAuth; both providers can be configured simultaneously (see below
+for how sign-in works when both are enabled).
+Requires:
 
 ```yaml
 auth:
   mode: okta
   okta:
-    issuer: https://your-tenant.okta.com      # your Okta tenant's OIDC issuer URL
+    issuer: https://your-org.okta.com/oauth2/default
     clientId: <your-okta-client-id>
-    clientSecret: <your-okta-client-secret>   # stored in the chart-managed admin Secret
+    clientSecret: <your-okta-client-secret>      # stored in the chart-managed admin Secret
     allowedEmails: you@your-domain.example,teammate@your-domain.example   # comma-separated allow-list
 ```
+
+Only emails on `allowedEmails` may sign in. The client secret is kept in the
+chart-managed admin Secret, never in plaintext Deployment env. Okta sign-in is
+available at `/admin/auth/okta`; the login page itself currently only surfaces
+the Google sign-in button — an Okta-configured operator needs to navigate to
+`/admin/auth/okta` directly (no second button is rendered on `/admin/login`
+yet).
 
 ---
 

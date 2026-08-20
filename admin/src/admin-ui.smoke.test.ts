@@ -16,12 +16,20 @@ import type {
   GoogleTokenResponse,
   GoogleUserInfo,
 } from "./google-auth-client.ts";
+import type {
+  OktaAuthClient,
+  OktaTokenResponse,
+  OktaUserInfo,
+} from "./okta-auth-client.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 const GOOGLE_CLIENT_ID = "test-google-client-id";
 const GOOGLE_CLIENT_SECRET = "test-google-client-secret";
+const OKTA_CLIENT_ID = "test-okta-client-id";
+const OKTA_CLIENT_SECRET = "test-okta-client-secret";
+const OKTA_ISSUER = "https://example.okta.com/oauth2/default";
 const ADMIN_ALLOWED_EMAILS = ["admin@example.com", "other@example.com"];
 const AGENT_ID = "agent-test-123";
 const CRON_ID = "cron-test-456";
@@ -106,6 +114,51 @@ function makeGoogleClient(overrides?: {
       (() =>
         Promise.resolve({
           sub: "google-sub-123",
+          email: "admin@example.com",
+          email_verified: true,
+          name: "Admin User",
+        })),
+  };
+}
+
+// ─── Mock Okta client ─────────────────────────────────────────────────────────
+
+function makeOktaClient(overrides?: {
+  getAuthorizationUrl?: (params: unknown) => string;
+  exchangeCode?: (params: unknown) => Promise<OktaTokenResponse>;
+  getUserInfo?: (accessToken: string) => Promise<OktaUserInfo>;
+}): OktaAuthClient {
+  return {
+    getAuthorizationUrl:
+      overrides?.getAuthorizationUrl ??
+      ((params: {
+        clientId: string;
+        redirectUri: string;
+        state: string;
+        scope?: string;
+      }) => {
+        const query = new URLSearchParams({
+          client_id: params.clientId,
+          redirect_uri: params.redirectUri,
+          response_type: "code",
+          scope: params.scope ?? "openid profile email",
+          state: params.state,
+        });
+        return `${OKTA_ISSUER}/v1/authorize?${query.toString()}`;
+      }),
+    exchangeCode:
+      overrides?.exchangeCode ??
+      (() =>
+        Promise.resolve({
+          accessToken: "test-okta-access-token",
+          refreshToken: "test-okta-refresh-token",
+          expiresIn: 3600,
+        })),
+    getUserInfo:
+      overrides?.getUserInfo ??
+      (() =>
+        Promise.resolve({
+          sub: "okta-sub-123",
           email: "admin@example.com",
           email_verified: true,
           name: "Admin User",
@@ -331,6 +384,10 @@ function makeMockDeps(
     googleClientSecret: GOOGLE_CLIENT_SECRET,
     adminAllowedEmails: ADMIN_ALLOWED_EMAILS,
     googleClient: makeGoogleClient(),
+    oktaClientId: OKTA_CLIENT_ID,
+    oktaClientSecret: OKTA_CLIENT_SECRET,
+    oktaIssuer: OKTA_ISSUER,
+    oktaClient: makeOktaClient(),
     slackClient: { ...BASE_SLACK_CLIENT, ...slackClientOverride },
     provisioner: {
       canProvision: false,
@@ -572,6 +629,199 @@ describe("admin UI — GET /admin/auth/callback", () => {
       }),
     );
     const res = await app.request(callbackRequest(nonce));
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("admin UI — GET /admin/auth/okta", () => {
+  it("redirects to the Okta authorization URL and sets oauth_state cookie", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/auth/okta");
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain(OKTA_ISSUER);
+    expect(location).toContain("v1/authorize");
+    expect(location).toContain("openid");
+    expect(location).toContain("profile");
+    expect(location).toContain("email");
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("oauth_state=");
+    expect(cookie).toContain("HttpOnly");
+  });
+
+  it("redirects to /admin/login?error=server_error when oktaClientId is empty", async () => {
+    const app = createAdminUIApp(makeMockDeps({ oktaClientId: "" }));
+    const res = await app.request("/admin/auth/okta");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+
+  it("redirects to /admin/login?error=server_error when oktaIssuer is empty", async () => {
+    const app = createAdminUIApp(makeMockDeps({ oktaIssuer: "" }));
+    const res = await app.request("/admin/auth/okta");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+});
+
+describe("admin UI — GET /admin/auth/okta/callback", () => {
+  // Mirrors callbackRequest() from the Google callback describe block above.
+  function oktaCallbackRequest(
+    nonce: string,
+    queryOverrides?: Record<string, string>,
+    returnTo?: string,
+  ): Request {
+    const params = new URLSearchParams({
+      state: nonce,
+      code: "auth-code-123",
+      ...queryOverrides,
+    });
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce, returnTo }));
+    return new Request(
+      `https://example.com/admin/auth/okta/callback?${params.toString()}`,
+      {
+        headers: { Cookie: `oauth_state=${oauthState}` },
+      },
+    );
+  }
+
+  it("happy path — valid state, code exchanged, email in allowlist → sets session cookie and redirects to /admin/agents", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents");
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("admin_session=");
+    expect(cookie).toContain("HttpOnly");
+  });
+
+  it("happy path with returnTo — redirects to the stored returnTo path after auth", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      oktaCallbackRequest(nonce, {}, "/admin/agents/agent-test-123"),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents/agent-test-123");
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("admin_session=");
+  });
+
+  it("resolves isAdmin via the same allowlist check as Google — allowlisted email → isAdmin true session", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    const cookie = res.headers.get("Set-Cookie") ?? "";
+    expect(cookie).toContain("admin_session=");
+  });
+
+  it("state mismatch → redirects to /admin/login?error=invalid_state", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const oauthState = encodeURIComponent(
+      JSON.stringify({ nonce: "stored-nonce" }),
+    );
+    const res = await app.request(
+      new Request(
+        "https://example.com/admin/auth/okta/callback?state=wrong-state&code=auth-code",
+        {
+          headers: { Cookie: `oauth_state=${oauthState}` },
+        },
+      ),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=invalid_state");
+  });
+
+  it("missing oauth_state cookie → redirects to /admin/login?error=invalid_state", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      new Request(
+        "https://example.com/admin/auth/okta/callback?state=some-state&code=code",
+      ),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=invalid_state");
+  });
+
+  it("missing OKTA_CLIENT_ID → redirects to /admin/login?error=server_error", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps({ oktaClientId: "" }));
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+
+  it("missing OKTA_ISSUER → redirects to /admin/login?error=server_error", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps({ oktaIssuer: "" }));
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=server_error");
+  });
+
+  it("access_denied param → redirects to /admin/login?error=access_denied", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(makeMockDeps());
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const res = await app.request(
+      new Request(
+        `https://example.com/admin/auth/okta/callback?error=access_denied&state=${nonce}`,
+        {
+          headers: { Cookie: `oauth_state=${oauthState}` },
+        },
+      ),
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=access_denied");
+  });
+
+  it("token exchange failure → redirects to /admin/login?error=auth_failed", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        oktaClient: makeOktaClient({
+          exchangeCode: () =>
+            Promise.reject(new Error("token exchange failed")),
+        }),
+      }),
+    );
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=auth_failed");
+  });
+
+  it("userinfo fetch failure → redirects to /admin/login?error=auth_failed", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        oktaClient: makeOktaClient({
+          getUserInfo: () => Promise.reject(new Error("userinfo failed")),
+        }),
+      }),
+    );
+    const res = await app.request(oktaCallbackRequest(nonce));
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toContain("error=auth_failed");
+  });
+
+  it("email not in allowlist → returns 403", async () => {
+    const nonce = "test-okta-nonce-abc";
+    const app = createAdminUIApp(
+      makeMockDeps({
+        oktaClient: makeOktaClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "okta-sub-999",
+              email: "notallowed@example.com",
+              email_verified: true,
+              name: "Not Allowed",
+            }),
+        }),
+      }),
+    );
+    const res = await app.request(oktaCallbackRequest(nonce));
     expect(res.status).toBe(403);
   });
 });

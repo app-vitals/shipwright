@@ -138,17 +138,17 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_MCP_SERVER_TOKEN` | `string` | — | Bearer token required on every inbound request to the MCP server (except `/health`). Read by `mcp-server/src/main.ts` at startup; the service fails closed and refuses to start if unset. Prevents unauthorized access to the tool proxy surface, since the server holds `SHIPWRIGHT_TASK_STORE_TOKEN` and proxies authenticated calls into the task store on behalf of any connected client. Bearer auth uses constant-time comparison to avoid side-channel leaks. Env-var-only (secret). |
 | `SHIPWRIGHT_SESSION_SECRET` | `string` | — | HS256 secret for the `admin_session` cookie. The admin service signs it on Google-OAuth login; the metrics service verifies it to reuse the same session (the two must share the value). |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | `string` | — | 64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. **If unset, secrets are stored in plain text** — always set this in any real deployment. |
-| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
-| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the Google OAuth redirect URI. |
+| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of email addresses permitted to log in to the admin UI via either Google OAuth or Okta OIDC. |
+| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the OAuth/OIDC redirect URIs for both Google and Okta. |
 | `SHIPWRIGHT_ADMIN_PUBLIC_REPO` | `string` | — | Repository slug (format: `org/repo`) scoped for the public read-only task board. When set, `GET /public/tasks` displays tasks for this repo only, unauthenticated. When unset, the board renders in degraded mode (empty table + warning). Optional — omit to disable the public board. |
 | `SHIPWRIGHT_ADMIN_TZ` | `string` | `America/Los_Angeles` | IANA timezone name (e.g. `America/New_York`) for date/time display in the admin UI. When unset, defaults to `America/Los_Angeles`. |
 | `METRICS_DASHBOARD_URL` | `string` | `/dashboard` | URL for the "Metrics" toolbar link in the admin UI. Defaults to `/dashboard` (same-host relative path, suitable when the ingress routes `/dashboard` to the metrics service on the same public hostname). Set to an absolute URL when the metrics service runs on a different host or port (e.g. in local dev: `http://localhost:3460/dashboard`). |
 | `METRICS_ADMIN_APP_URL` | `string` | `""` | The reverse of `METRICS_DASHBOARD_URL`: base URL of the admin console for the metrics **dashboard** toolbar's Agents/Tasks/PRs links. Defaults to empty (same-host relative links, suitable for single-host ingress). Set to an absolute URL when the admin console runs on a different origin than the metrics dashboard (e.g. in local `task stack`: `http://localhost:3001`), otherwise those links 404 on the metrics origin. Distinct from the server-to-server `METRICS_ADMIN_URL`. |
 | `GOOGLE_CLIENT_ID` | `string` | — | Google OAuth 2.0 client ID. Required for the admin UI login flow. |
 | `GOOGLE_CLIENT_SECRET` | `string` | — | Google OAuth 2.0 client secret. Required for the admin UI login flow. |
-| `OKTA_ISSUER` | `string` | — | Okta OIDC issuer URL (e.g. `https://dev-123456.okta.com`). Wired into the admin Deployment by the Helm chart's `auth.mode=okta`, but **not yet read by the admin app** — no Okta login handler exists in `admin/src/` today. Chart-only plumbing ahead of application support. |
-| `OKTA_CLIENT_ID` | `string` | — | Okta OIDC client ID. Same chart-only caveat as `OKTA_ISSUER` above — not yet consumed by the admin app. |
-| `OKTA_CLIENT_SECRET` | `string` | — | Okta OIDC client secret. Same chart-only caveat as `OKTA_ISSUER` above — not yet consumed by the admin app. |
+| `OKTA_ISSUER` | `string` | — | Okta OIDC issuer URL (e.g. `https://your-org.okta.com/oauth2/default`). Required to enable the admin UI's `/admin/auth/okta` login flow — when unset, those routes redirect to the login page with `error=server_error` and Google login is unaffected. |
+| `OKTA_CLIENT_ID` | `string` | — | Okta OIDC client ID. Required for the admin UI Okta login flow. |
+| `OKTA_CLIENT_SECRET` | `string` | — | Okta OIDC client secret. Required for the admin UI Okta login flow. |
 
 ### Agent provisioning (admin service)
 
@@ -204,7 +204,7 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Blocked when `NODE_ENV=production`. |
+| `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses OAuth/OIDC provider login, mints a dev session). Blocked when `NODE_ENV=production`. |
 | `METRICS_DASHBOARD_DEV_AUTH` | `bool` | `false` | Bypasses `/dashboard` session auth and `/metrics/*` API auth for local dev. Must not be enabled in production — exits with an error if `NODE_ENV=production`. |
 | `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack` and `task hitl`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 | `CHAT_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the chat service on startup. Used only in local dev to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
