@@ -6,6 +6,8 @@
  *   GET  /admin/login                 — login page (Google sign-in button)
  *   GET  /admin/auth/google           — redirect to Google OAuth consent
  *   GET  /admin/auth/callback         — Google OAuth callback → set session cookie
+ *   GET  /admin/auth/okta             — redirect to Okta OIDC consent
+ *   GET  /admin/auth/okta/callback    — Okta OAuth callback → set session cookie
  *   POST /admin/logout                — clear cookie → redirect to login
  *   GET  /admin/agents                — list all agents (auth required)
  *   GET  /admin/agents/:id            — agent detail (auth required)
@@ -16,14 +18,16 @@
  *   GET  /admin/provision/complete    — OAuth callback → store credentials
  *
  * Auth: httpOnly JWT cookie named "admin_session".
- * Login is Google OAuth — no password, no DB user lookup.
+ * Login is OAuth (Google or Okta) — no password, no DB user lookup. Both
+ * providers share a common post-auth step (completeLogin()): verified-email
+ * check, admin-allowlist/AgentMember-fallback check, session JWT + cookie.
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
-import { Hono, type MiddlewareHandler } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
 import {
@@ -74,6 +78,7 @@ import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { ChatClient, ChatThread } from "./http-chat-client.ts";
+import type { OktaAuthClient } from "./okta-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -267,6 +272,16 @@ export interface AdminUIDeps {
   googleClient: GoogleAuthClient;
   googleClientId: string;
   googleClientSecret: string;
+  /**
+   * Okta OIDC client for GET /admin/auth/okta and GET /admin/auth/okta/callback.
+   * Optional — when oktaClientId/oktaIssuer are unset (or oktaClient is absent),
+   * both Okta routes redirect to /admin/login?error=server_error without
+   * attempting any external call, mirroring Google's own missing-config guard.
+   */
+  oktaClient?: OktaAuthClient;
+  oktaClientId?: string;
+  oktaClientSecret?: string;
+  oktaIssuer?: string;
   adminAllowedEmails: string[];
   slackClient: AdminUISlackClient;
   appBaseUrl: string;
@@ -499,6 +514,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     googleClient,
     googleClientId,
     googleClientSecret,
+    oktaClient,
+    oktaClientId = "",
+    oktaClientSecret = "",
+    oktaIssuer = "",
     adminAllowedEmails,
     slackClient,
     appBaseUrl,
@@ -532,6 +551,68 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   }
 
   // ─── Login / OAuth / Logout ───────────────────────────────────────────────
+
+  /**
+   * Shared post-authentication step for every OAuth provider (Google, Okta):
+   * checks the verified-email + admin-allowlist/AgentMember-fallback rules,
+   * mints the session JWT, sets the session cookie, and redirects to
+   * `returnTo` (or the default landing page). Each provider's callback route
+   * normalizes its own userinfo shape into this common `{sub, email,
+   * email_verified}` input before calling in — callers never see a
+   * provider-specific type here.
+   *
+   * Returns a Response in every case (a redirect or a 403), matching each
+   * inline early-return the Google callback used before this was extracted.
+   */
+  async function completeLogin(
+    // biome-ignore lint/suspicious/noExplicitAny: matches each OAuth callback route's own path-string literal type; the path itself is irrelevant here.
+    c: Context<AdminUIEnv, any>,
+    userInfo: { sub: string; email?: string; email_verified?: boolean },
+    returnTo: string | undefined,
+  ): Promise<Response> {
+    if (!userInfo.email) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    if (!userInfo.email_verified) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    // Check admin allowlist first, then fall back to member access
+    const isAdmin = adminAllowedEmails
+      .map((e) => e.toLowerCase())
+      .includes(userInfo.email.toLowerCase());
+
+    if (!isAdmin) {
+      const memberships = await agentMemberService.listByEmail(
+        userInfo.email.toLowerCase(),
+      );
+      if (memberships.length === 0) {
+        return new Response("Forbidden", { status: 403 });
+      }
+    }
+
+    // Create session
+    const token = await createSessionToken(
+      sessionSecret,
+      userInfo.sub,
+      userInfo.email,
+      isAdmin,
+    );
+    setCookie(c, SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: appBaseUrl.startsWith("https://"),
+      sameSite: "Lax",
+      maxAge: SESSION_TTL_SECONDS,
+      path: "/",
+    });
+    // Redirect to returnTo if it's a valid same-origin relative path, otherwise default.
+    const destination =
+      returnTo?.startsWith("/") && !returnTo.startsWith("//")
+        ? returnTo
+        : "/admin/agents";
+    return c.redirect(destination, 302);
+  }
 
   app.get("/admin/login", (c) => {
     const error = c.req.query("error") ?? undefined;
@@ -643,48 +724,113 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect("/admin/login?error=auth_failed", 302);
     }
 
-    if (!userInfo.email) {
-      return c.redirect("/admin/login?error=auth_failed", 302);
+    return completeLogin(c, userInfo, returnTo);
+  });
+
+  app.get("/admin/auth/okta", (c) => {
+    if (!oktaClientId || !oktaIssuer || !oktaClient) {
+      return c.redirect("/admin/login?error=server_error", 302);
     }
 
-    if (!userInfo.email_verified) {
-      return c.redirect("/admin/login?error=auth_failed", 302);
-    }
+    const nonce = crypto.randomUUID();
 
-    // Check admin allowlist first, then fall back to member access
-    const isAdmin = adminAllowedEmails
-      .map((e) => e.toLowerCase())
-      .includes(userInfo.email.toLowerCase());
+    // Carry returnTo through the OAuth flow by encoding it alongside the nonce.
+    // Validate that returnTo is a same-origin relative path (starts with /) to
+    // prevent open redirect attacks. Malformed or absolute values are silently dropped.
+    const rawReturnTo = c.req.query("returnTo");
+    const returnTo =
+      rawReturnTo?.startsWith("/") && !rawReturnTo.startsWith("//")
+        ? rawReturnTo
+        : undefined;
 
-    if (!isAdmin) {
-      const memberships = await agentMemberService.listByEmail(
-        userInfo.email.toLowerCase(),
-      );
-      if (memberships.length === 0) {
-        return new Response("Forbidden", { status: 403 });
-      }
-    }
-
-    // Create session
-    const token = await createSessionToken(
-      sessionSecret,
-      userInfo.sub,
-      userInfo.email,
-      isAdmin,
-    );
-    setCookie(c, SESSION_COOKIE, token, {
+    const oauthState = JSON.stringify({ nonce, returnTo });
+    setCookie(c, OAUTH_STATE_COOKIE, oauthState, {
       httpOnly: true,
-      secure: appBaseUrl.startsWith("https://"),
       sameSite: "Lax",
-      maxAge: SESSION_TTL_SECONDS,
-      path: "/",
+      maxAge: OAUTH_STATE_TTL_SECONDS,
+      path: "/admin/auth",
     });
-    // Redirect to returnTo if it's a valid same-origin relative path, otherwise default.
-    const destination =
-      returnTo?.startsWith("/") && !returnTo.startsWith("//")
-        ? returnTo
-        : "/admin/agents";
-    return c.redirect(destination, 302);
+
+    const authUrl = oktaClient.getAuthorizationUrl({
+      clientId: oktaClientId,
+      redirectUri: `${appBaseUrl}/admin/auth/okta/callback`,
+      state: nonce,
+      scope: "openid profile email",
+    });
+
+    return c.redirect(authUrl, 302);
+  });
+
+  app.get("/admin/auth/okta/callback", async (c) => {
+    const { code, state, error: oktaError } = c.req.query();
+
+    // Okta returned an error (e.g. access_denied)
+    if (oktaError) {
+      const slug =
+        oktaError === "access_denied" ? "access_denied" : "auth_failed";
+      return c.redirect(`/admin/login?error=${slug}`, 302);
+    }
+
+    // CSRF: validate state nonce. The oauth_state cookie is JSON: {nonce, returnTo?}.
+    const storedStateCookie = getCookie(c, OAUTH_STATE_COOKIE);
+    deleteCookie(c, OAUTH_STATE_COOKIE, { path: "/admin/auth" });
+
+    let storedNonce: string | undefined;
+    let returnTo: string | undefined;
+    try {
+      if (storedStateCookie) {
+        const parsed = JSON.parse(storedStateCookie) as {
+          nonce?: string;
+          returnTo?: string;
+        };
+        storedNonce = parsed.nonce;
+        returnTo = parsed.returnTo;
+      }
+    } catch {
+      // Malformed cookie — treat as missing
+    }
+
+    if (!storedNonce || !state || storedNonce !== state) {
+      return c.redirect("/admin/login?error=invalid_state", 302);
+    }
+
+    if (!oktaClientId || !oktaClientSecret || !oktaIssuer || !oktaClient) {
+      return c.redirect("/admin/login?error=server_error", 302);
+    }
+
+    if (!code) {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    // Exchange authorization code for tokens
+    let accessToken: string;
+    try {
+      const tokens = await oktaClient.exchangeCode({
+        code,
+        clientId: oktaClientId,
+        clientSecret: oktaClientSecret,
+        redirectUri: `${appBaseUrl}/admin/auth/okta/callback`,
+      });
+      accessToken = tokens.accessToken;
+    } catch {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    // Fetch user info from Okta
+    let userInfo: {
+      sub: string;
+      email?: string;
+      email_verified?: boolean;
+      name: string;
+      picture?: string;
+    };
+    try {
+      userInfo = await oktaClient.getUserInfo(accessToken);
+    } catch {
+      return c.redirect("/admin/login?error=auth_failed", 302);
+    }
+
+    return completeLogin(c, userInfo, returnTo);
   });
 
   app.post("/admin/logout", (c) => {

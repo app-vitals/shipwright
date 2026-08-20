@@ -53,6 +53,7 @@ import { isDevAuthAllowed } from "./dev-auth-guard.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
+import { HttpOktaAuthClient } from "./okta-auth-client.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
@@ -363,6 +364,9 @@ async function startServer(): Promise<void> {
   const sessionSecret = process.env.SHIPWRIGHT_SESSION_SECRET ?? "";
   const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
   const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+  const oktaIssuer = process.env.OKTA_ISSUER ?? "";
+  const oktaClientId = process.env.OKTA_CLIENT_ID ?? "";
+  const oktaClientSecret = process.env.OKTA_CLIENT_SECRET ?? "";
   const adminAllowedEmails = (process.env.SHIPWRIGHT_ADMIN_ALLOWED_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim())
@@ -376,6 +380,14 @@ async function startServer(): Promise<void> {
   const publicRepo = resolvePublicRepo(process.env);
 
   const googleClient = new HttpGoogleAuthClient();
+  // Constructed only when an issuer is configured — HttpOktaAuthClient requires
+  // `issuer` in its constructor, and an empty issuer would produce nonsensical
+  // (double-slash-free but bogus) endpoint URLs. When unset, oktaClient stays
+  // undefined and both Okta routes redirect to /admin/login?error=server_error
+  // without attempting any external call (see admin-ui.ts's AdminUIDeps doc).
+  const oktaClient = oktaIssuer
+    ? new HttpOktaAuthClient({ issuer: oktaIssuer })
+    : undefined;
   const slackClient = new HttpSlackProvisioningClient();
 
   // Task-store + chat-service clients for deleteAgentFully() cleanup, shared
@@ -620,6 +632,10 @@ async function startServer(): Promise<void> {
     googleClientSecret,
     adminAllowedEmails,
     googleClient,
+    oktaClientId,
+    oktaClientSecret,
+    oktaIssuer,
+    ...(oktaClient ? { oktaClient } : {}),
     slackClient,
     appBaseUrl,
     publicRepo,
