@@ -39,7 +39,13 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -390,7 +396,10 @@ describe("createAppendLineSink", () => {
 // ---------------------------------------------------------------------------
 
 const TEE_FIXTURE_DIR = mkdtempSync(join(tmpdir(), "hitl-tee-fixture-"));
-const TEE_FIXTURE_PATH = join(TEE_FIXTURE_DIR, "install-log-file-tee.harness.ts");
+const TEE_FIXTURE_PATH = join(
+  TEE_FIXTURE_DIR,
+  "install-log-file-tee.harness.ts",
+);
 
 describe("installLogFileTee (subprocess)", () => {
   beforeAll(() => {
@@ -433,7 +442,10 @@ console.error("marker error line");
         proc.exited,
       ]);
 
-      expect(exitCode, `fixture process failed:\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
+      expect(
+        exitCode,
+        `fixture process failed:\nstdout:\n${stdout}\nstderr:\n${stderr}`,
+      ).toBe(0);
 
       // Terminal output is unaffected by the tee.
       expect(stdout).toContain("marker line");

@@ -40,6 +40,19 @@ const EXCLUDE_PREFIXES = [
   "scripts/seed-dev-agent.ts",
   "scripts/wait-for-agent.ts",
 
+  // hitl.ts's real (production) global-patching target for its log-file
+  // tee (installLogFileTee()) — every line here does nothing but read or
+  // reassign real process.stdout.write/process.stderr.write/console.log/
+  // warn/error, which can't be exercised safely in-process (this repo's
+  // isolation contract forbids patching real process/console state in the
+  // shared `bun test` process; see hitl.integration.test.ts's subprocess
+  // fixture for how it's actually exercised). All of installLogFileTee()'s
+  // own pure logic (the guard, sink-building, wrapping sequencing) is
+  // unit-tested in-process in hitl.unit.test.ts via an injected fake
+  // LogFileTeeTarget — only this one small, dedicated, inherently-untestable
+  // file is excluded, not hitl.ts as a whole (HTL-1.1 / PR review, 2026-08-20).
+  "scripts/hitl-log-file-tee-target.ts",
+
   // Browser-loaded dashboard client — a plain (non-module) <script>, mostly
   // DOM manipulation and chart rendering with no in-process request seam to
   // unit test. Its pure, injectable-fetch logic (fetchSequential) is
