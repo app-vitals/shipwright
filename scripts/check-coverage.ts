@@ -229,10 +229,9 @@ export function computeFailures(
 
 // Applies the same EXCLUDE_PREFIXES/EXCLUDE_SUBSTRINGS filtering as main()'s
 // report, then returns the weighted aggregate line-coverage percentage
-// (sum of LH / sum of LF across relevant files) — the single number both
-// this gate and check-coverage-no-decrease.ts's PR-vs-base comparison need.
-// 100 when there are no relevant files or no lines found, mirroring the
-// "nothing to fail on" convention used throughout this module.
+// (sum of LH / sum of LF across relevant files). 100 when there are no
+// relevant files or no lines found, mirroring the "nothing to fail on"
+// convention used throughout this module.
 export function computeAggregateLinePct(files: FileStats[]): number {
   const relevant = filterRelevantFiles(
     files,
@@ -432,10 +431,9 @@ export type CliDeps = {
 };
 
 // Orchestrates the CLI end to end and returns an exit code, rather than
-// calling process.exit directly — the same injectable-dependencies pattern
-// as check-coverage-no-decrease.ts's runCli, so this can be unit tested
-// without a real filesystem/process.exit. import.meta.main below is the only
-// caller that still needs a real process exit code.
+// calling process.exit directly — the injectable-dependencies pattern allows
+// unit testing without a real filesystem or process.exit. import.meta.main
+// below is the only caller that still needs a real process exit code.
 export async function runCli(deps: CliDeps = {}): Promise<number> {
   const {
     readLcov = () => Bun.file(LCOV_PATH).text(),

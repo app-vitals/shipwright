@@ -96,6 +96,11 @@ enforceable check.
 | RAT-1.2 | Auto-emit promotion task on gap closure | Shared | 2 | 3 | sonnet | RAT-1.1, CVG-1.3 |
 | RAT-1.3 | "Coverage must not decrease" CI check | CLI | 4 | 4 | sonnet | MTC-1.1 |
 
+**RAT-1.3 update**: shipped as `check-coverage-no-decrease.ts` + the
+`coverage-no-decrease` CI job, then retired (script, tests, and job deleted) once
+stage-3 promotion landed and branch protection no longer required it — see
+CND-1.1.
+
 **Bundle**: CVG-1.2 + CVG-1.3 share branch `feat/cvg-gate-script-and-render` (script
 has no independent value without its caller).
 

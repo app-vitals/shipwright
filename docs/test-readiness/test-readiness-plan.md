@@ -176,12 +176,12 @@ identified. Net-new remains at 1 — only the long-standing, explicitly-optional
   CI service container for the three Prisma-backed services, a real locally-launched
   Chromium binary for `agent/src/browser.ts`). No blockers.
 - **Coverage targets** — single 90/89 line/function CI floor (`scripts/check-coverage.ts`,
-  raised from 80/80 by MTC-1.7, then to 90% lines by CLG-1.1), already enforced, plus a companion coverage-must-not-decrease
-  gate (`scripts/check-coverage-no-decrease.ts`, new this cycle); tiered targets (critical
-  ~95%, high ~80%, medium spot-check) direct prioritization, not a second CI gate. **New
-  this cycle: a dual feature+line `coverage_gate` block** (`scripts/check-coverage-gate.ts`)
-  combines Phase 1's new `feature_coverage_pct` with the line-coverage floor into a single
-  self-consistency-checked verdict — see Coverage Gate section above.
+  raised from 80/80 by MTC-1.7, then to 90% lines by CLG-1.1), already enforced.
+  Tiered targets (critical ~95%, high ~80%, medium spot-check) direct prioritization, not a
+  second CI gate. **New this cycle: a dual feature+line `coverage_gate` block**
+  (`scripts/check-coverage-gate.ts`) combines Phase 1's new `feature_coverage_pct` with
+  the line-coverage floor into a single self-consistency-checked verdict — see Coverage Gate
+  section above.
 - **Canary suite definition** — not applicable under the current `direct` deploy model;
   deferred until a staged-deploy model exists.
 - **Speed budgets per layer** — Unit <50ms p95 / Integration <2s / Smoke <5s / E2E <30s /

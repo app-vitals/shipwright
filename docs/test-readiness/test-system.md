@@ -476,15 +476,7 @@ already enforces an aggregate **90/89** line/function floor via `task test:cover
 (raised from 80/80 by MTC-1.7 to 89/89 per PR #2659, then to 90% lines by CLG-1.1 — live CI aggregate at the time was 89.77%/89.72%, just short of 90/90 across four review cycles, so the floor initially landed at 89/89 rather than merging a gate the repo didn't yet clear), with no per-file or per-criticality carve-out.
 Criticality (critical ~95%, high ~80%, medium smoke-only) drives **prioritization** during
 Phase 4/5 task ordering, not a separate CI gate — writing critical-tier tests first, not a
-different enforced threshold per tier. A companion **coverage-must-not-decrease** check
-(`scripts/check-coverage-no-decrease.ts`, PR #2657) runs alongside the absolute floor: it
-fails CI if a PR's aggregate line coverage drops relative to its base branch, computed by
-checking out the base ref into an isolated temp git worktree and re-running coverage there
-— this closes the direction-of-change gap the absolute floor alone doesn't cover once a
-repo is already above threshold. It intentionally runs without a test DB (so its own
-no-DB aggregate, ~82-84% lines, can never be compared against the 90% absolute floor —
-that's `task test:coverage`'s job, with a real Postgres DB in CI), reading only
-`coverage/lcov.info` and never the absolute gate's exit code.
+different enforced threshold per tier.
 
 | Tier | Layer | Target | Notes |
 |---|---|---|---|
