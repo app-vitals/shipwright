@@ -146,9 +146,9 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `METRICS_ADMIN_APP_URL` | `string` | `""` | The reverse of `METRICS_DASHBOARD_URL`: base URL of the admin console for the metrics **dashboard** toolbar's Agents/Tasks/PRs links. Defaults to empty (same-host relative links, suitable for single-host ingress). Set to an absolute URL when the admin console runs on a different origin than the metrics dashboard (e.g. in local `task stack`: `http://localhost:3001`), otherwise those links 404 on the metrics origin. Distinct from the server-to-server `METRICS_ADMIN_URL`. |
 | `GOOGLE_CLIENT_ID` | `string` | — | Google OAuth 2.0 client ID. Required for the admin UI login flow. |
 | `GOOGLE_CLIENT_SECRET` | `string` | — | Google OAuth 2.0 client secret. Required for the admin UI login flow. |
-| `OKTA_ISSUER` | `string` | — | Okta OIDC issuer URL (e.g. `https://dev-123456.okta.com`). Required for the admin UI login flow when `auth.mode=okta`. |
-| `OKTA_CLIENT_ID` | `string` | — | Okta OIDC client ID. Required for the admin UI login flow when `auth.mode=okta`. |
-| `OKTA_CLIENT_SECRET` | `string` | — | Okta OIDC client secret. Required for the admin UI login flow when `auth.mode=okta`. |
+| `OKTA_ISSUER` | `string` | — | Okta OIDC issuer URL (e.g. `https://dev-123456.okta.com`). Wired into the admin Deployment by the Helm chart's `auth.mode=okta`, but **not yet read by the admin app** — no Okta login handler exists in `admin/src/` today. Chart-only plumbing ahead of application support. |
+| `OKTA_CLIENT_ID` | `string` | — | Okta OIDC client ID. Same chart-only caveat as `OKTA_ISSUER` above — not yet consumed by the admin app. |
+| `OKTA_CLIENT_SECRET` | `string` | — | Okta OIDC client secret. Same chart-only caveat as `OKTA_ISSUER` above — not yet consumed by the admin app. |
 
 ### Agent provisioning (admin service)
 

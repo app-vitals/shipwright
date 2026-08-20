@@ -169,7 +169,9 @@ spec:
               value: {{ .Values.auth.google.allowedEmails | quote }}
             {{- end }}
             {{- else if eq .Values.auth.mode "okta" }}
-            # auth.mode=okta — real Okta OIDC. Production hardening on.
+            # auth.mode=okta — Okta OIDC env wiring (chart-only; admin app has
+            # no Okta login handler yet, see values.yaml auth.mode comment).
+            # Production hardening (NODE_ENV=production) on regardless.
             - name: NODE_ENV
               value: "production"
             {{- if .Values.auth.okta.existingSecret }}

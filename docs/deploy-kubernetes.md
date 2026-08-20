@@ -725,10 +725,21 @@ Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. This is the
 required mode for the GKE and EKS targets above.
 
-### `auth.mode=okta` — Okta OIDC (production)
+### `auth.mode=okta` — Okta OIDC (chart-only, not yet a working login path)
 
-Sets `NODE_ENV=production` (which also hard-blocks the dev-only escapes like
-`ADMIN_DEV_AUTH`) and enables real Okta OIDC. Requires:
+> ⚠️ **Do not deploy this expecting a working login.** This mode wires the
+> `OKTA_ISSUER`/`OKTA_CLIENT_ID`/`OKTA_CLIENT_SECRET`/
+> `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` env vars into the admin Deployment and sets
+> `NODE_ENV=production` (which also hard-blocks the dev-only escapes like
+> `ADMIN_DEV_AUTH`), but the admin application does not yet have an Okta OIDC
+> client — only `auth.mode=google` has a working login path in the app today.
+> Deploying with `auth.mode=okta` as-is will lock you out of the admin UI:
+> `NODE_ENV=production` blocks dev auth, and there is no Okta handler to log
+> in with. Use `auth.mode=google` (production) or `auth.mode=open`
+> (non-public only) until application-side Okta support ships.
+
+The values below are accepted and validated by the chart so that
+`auth.okta.*` config can be prepared ahead of application support landing:
 
 ```yaml
 auth:
@@ -739,11 +750,6 @@ auth:
     clientSecret: <your-okta-client-secret>   # stored in the chart-managed admin Secret
     allowedEmails: you@your-domain.example,teammate@your-domain.example   # comma-separated allow-list
 ```
-
-Only emails on `allowedEmails` may sign in. The client secret is kept in the
-chart-managed admin Secret, never in plaintext Deployment env. This is an
-alternative to `auth.mode=google` for deployments where Okta is the identity
-provider.
 
 ---
 

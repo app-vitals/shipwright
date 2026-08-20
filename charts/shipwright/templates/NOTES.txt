@@ -124,8 +124,13 @@ Provision your first agent:
   in auth.google.allowedEmails ("{{ .Values.auth.google.allowedEmails }}") may sign in.
 {{- else if eq .Values.auth.mode "okta" }}
 
-  auth.mode=okta — Okta OIDC is enabled (NODE_ENV=production). Only emails
-  in auth.okta.allowedEmails ("{{ .Values.auth.okta.allowedEmails }}") may sign in.
+  ============================================================================
+  ⚠️  WARNING: auth.mode=okta is CHART-ONLY — the admin app has no Okta login
+      handler yet. NODE_ENV=production is set (blocking dev-auth) with no
+      working login path, which will lock you out of the admin UI. Use
+      auth.mode=google (working today) or auth.mode=open (non-public only)
+      until application-side Okta support ships.
+  ============================================================================
 {{- end }}
 
 Minikube tip: with networking.type=ClusterIP, reach a service via

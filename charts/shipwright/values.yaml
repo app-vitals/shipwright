@@ -432,8 +432,13 @@ auth:
   #               Minikube/dev default. Do NOT expose publicly.
   #    "google" — real Google OAuth (NODE_ENV=production). Requires
   #               auth.google.{clientId,clientSecret,allowedEmails}.
-  #    "okta"   — real Okta OIDC (NODE_ENV=production). Requires
+  #    "okta"   — Okta OIDC env wiring only (NODE_ENV=production). Requires
   #               auth.okta.{issuer,clientId,clientSecret,allowedEmails}.
+  #               ⚠️ CHART-ONLY TODAY: the admin app (admin/src/) has no Okta
+  #               login handler yet, so this mode sets NODE_ENV=production
+  #               (blocking dev-auth) with no working login path. Do not use
+  #               in a real deployment until application-side Okta support
+  #               ships — use "google" or "open" (non-public) instead.
   # One Helm deployment runs exactly one provider at a time — this stays a
   # single-value enum rather than a list of enabled providers.
   mode: open
@@ -459,6 +464,7 @@ auth:
   # -- Okta OIDC settings (used only when auth.mode=okta). Mirrors auth.google
   # exactly, plus an issuer (Okta's OIDC issuer URL is tenant-specific and has
   # no well-known default the way Google's does).
+  # ⚠️ Chart-only today — see the auth.mode comment above.
   okta:
     # -- Name of an existing Secret holding Okta OIDC credentials and the
     # allowed-emails list. When set, issuer/clientId/clientSecret/allowedEmails

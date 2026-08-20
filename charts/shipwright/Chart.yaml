@@ -30,7 +30,7 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
-      description: "auth.mode=okta — Okta OIDC support mirroring auth.mode=google (auth.okta.* block, existingSecret support)"
+      description: "auth.mode=okta — Okta OIDC chart-side plumbing mirroring auth.mode=google (auth.okta.* block, existingSecret support). Chart-only: admin app has no Okta login handler yet, use auth.mode=google for working production login"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
