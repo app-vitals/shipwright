@@ -965,7 +965,32 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
 
 ### If `auto_post_reviews` is true (default):
 
-1. Submit via GitHub API, writing the response to a temp file (NOT a shell variable —
+1. **Re-check freshness immediately before posting** (RHR-1.1). Time has passed since
+   `headRefOid` was captured at claim time (Step 4 or Step 14's Pre-Claim Fast Path) — the
+   review-writing phase (Steps 5-10.5) can take long enough for the author to push a new
+   commit in the meantime. Re-fetch the live head into a new variable and compare against
+   the canonical `headRefOid` captured earlier — do not overwrite `headRefOid` itself, and
+   do not introduce any other new source of truth for it:
+   ```bash
+   currentHeadRefOid=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+   ```
+   - **Match** (`"$currentHeadRefOid" = "$headRefOid"`): head hasn't moved since claim.
+     Continue to step 2 below, unchanged.
+   - **Mismatch** (`"$currentHeadRefOid" != "$headRefOid"`): the review body and inline
+     comments were built against a commit that's no longer HEAD — some other change (often
+     the very fix the review was about to flag) landed in the gap between claim and post.
+     Do not POST. Release the claim so the record returns to `reviewState: "pending"` and
+     the PR gets picked up fresh next pass:
+     ```bash
+     curl -s -o /dev/null -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/release"
+     ```
+     Print: `Aborted stale review for #{pr} -- head moved ({headRefOid[0..7]} -> {currentHeadRefOid[0..7]}) since claim; releasing for re-review.`
+     Stop here — do not proceed to step 2 below, and do not run the record-completion
+     step further down in this Step 11 (see "Mark PullRequest Record Posted"). No review
+     was posted, so `reviewState` must never transition to posted/approved for this pass.
+2. Submit via GitHub API, writing the response to a temp file (NOT a shell variable —
    the response JSON contains embedded newlines that corrupt `echo "$var" | jq` parsing):
    ```bash
    POST_EXIT=0
@@ -976,12 +1001,12 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
    **Never re-execute this POST.** If parsing fails, re-parse the temp file — do not
    re-run `gh api -X POST`, which submits a duplicate review that cannot be deleted or
    dismissed (GitHub does not allow deleting/dismissing COMMENTED reviews via the API).
-2. Capture `html_url` from the temp file:
+3. Capture `html_url` from the temp file:
    ```bash
    REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{pr}.json")
    ```
-3. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
-   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 4-5 below.
+4. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
+   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 5-6 below.
    - **Failure**: the GitHub post did not land, so nothing was actually reviewed at HEAD.
      Do not run Step 11b — marking the record posted here would let
      `check-review.ts`'s `commitSha`/`reviewState` dedup permanently hide this PR from
@@ -994,8 +1019,8 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
         ```
      2. Print a warning: `Warning: review post for #{pr} failed (exit {POST_EXIT}) — released claim, will retry next pass.`
      3. Stop — do not proceed to Step 11b.
-4. Run Step 11b to mark the PR record posted.
-5. Print: `Posted review for #{pr}: {REVIEW_URL}`
+5. Run Step 11b to mark the PR record posted.
+6. Print: `Posted review for #{pr}: {REVIEW_URL}`
 
 ### If `auto_post_reviews` is false (staged):
 

@@ -151,7 +151,10 @@ describe("review.md — RPF-1.4 verify review post before complete", () => {
   it("on post failure, does not proceed to Step 11b", () => {
     const failureIdx = autoPostSection.toLowerCase().indexOf("**failure**");
     expect(failureIdx).toBeGreaterThan(-1);
-    const releaseIdx = autoPostSection.indexOf("/release");
+    // Scope the release-call search to after the failure marker: RHR-1.1 added an
+    // earlier, unrelated /release call (freshness-abort path) before this branch, so a
+    // plain autoPostSection-wide indexOf would find that one instead of this branch's.
+    const releaseIdx = autoPostSection.indexOf("/release", failureIdx);
     expect(releaseIdx).toBeGreaterThan(-1);
     expect(releaseIdx).toBeGreaterThan(failureIdx);
     // The failure branch must explicitly say to stop instead of running Step 11b
@@ -163,6 +166,98 @@ describe("review.md — RPF-1.4 verify review post before complete", () => {
     expect(autoPostSection.includes("Run Step 11b to mark the PR record posted")).toBe(
       true,
     );
+  });
+});
+
+describe("review.md — RHR-1.1 review-post freshness re-check", () => {
+  let autoPostSection: string;
+
+  beforeAll(() => {
+    const startIdx = content.indexOf("### If `auto_post_reviews` is true (default):");
+    const endIdx = content.indexOf("### If `auto_post_reviews` is false (staged):");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    autoPostSection = content.slice(startIdx, endIdx);
+  });
+
+  it("re-fetches headRefOid and compares against the canonical headRefOid variable before the POST call", () => {
+    const postIdx = autoPostSection.indexOf("gh api -X POST");
+    expect(postIdx).toBeGreaterThan(-1);
+    const beforePost = autoPostSection.slice(0, postIdx);
+
+    // Must re-fetch via gh pr view ... headRefOid before the POST call.
+    expect(beforePost).toMatch(/gh pr view [^\n]*headRefOid/);
+    // Must compare the fresh value against the existing canonical `headRefOid`
+    // variable — not a newly-named variable standing in as a second source of truth.
+    expect(beforePost).toContain("$headRefOid");
+  });
+
+  it("comes after the hard-gate validation (Step 10.5) and before the POST call", () => {
+    const step105Idx = content.indexOf("### Step 10.5: Hard-Gate Validation (Before Posting)");
+    const postIdx = content.indexOf("gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews");
+    const refetchIdx = content.indexOf("currentHeadRefOid");
+    expect(step105Idx).toBeGreaterThan(-1);
+    expect(postIdx).toBeGreaterThan(-1);
+    expect(refetchIdx).toBeGreaterThan(-1);
+    expect(refetchIdx).toBeGreaterThan(step105Idx);
+    expect(refetchIdx).toBeLessThan(postIdx);
+  });
+
+  it("on mismatch, does not POST, releases the claim via /prs/{id}/release, and prints an abort message naming both SHAs", () => {
+    const refetchIdx = autoPostSection.indexOf("currentHeadRefOid");
+    expect(refetchIdx).toBeGreaterThan(-1);
+    const postIdx = autoPostSection.indexOf("gh api -X POST");
+    expect(postIdx).toBeGreaterThan(refetchIdx);
+
+    const mismatchSection = autoPostSection.slice(refetchIdx, postIdx);
+    expect(mismatchSection).toContain("/release");
+    expect(mismatchSection).toContain("Aborted stale review for");
+  });
+
+  it("the abort message references both the old and new short SHAs", () => {
+    const messageIdx = autoPostSection.indexOf("Aborted stale review for");
+    expect(messageIdx).toBeGreaterThan(-1);
+    const messageLine = autoPostSection.slice(messageIdx, messageIdx + 200);
+    expect(messageLine).toMatch(/head moved/i);
+  });
+
+  it("the freshness re-check precedes Step 11b in file order", () => {
+    const refetchIdx = content.indexOf("currentHeadRefOid");
+    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    expect(refetchIdx).toBeGreaterThan(-1);
+    expect(step11bIdx).toBeGreaterThan(-1);
+    expect(refetchIdx).toBeLessThan(step11bIdx);
+  });
+
+  it("explicitly stops before the record-completion step on mismatch", () => {
+    const refetchIdx = autoPostSection.indexOf("currentHeadRefOid");
+    expect(refetchIdx).toBeGreaterThan(-1);
+    const postIdx = autoPostSection.indexOf("gh api -X POST");
+    const mismatchSection = autoPostSection.slice(refetchIdx, postIdx);
+    expect(mismatchSection).toMatch(/stop/i);
+    expect(mismatchSection).toContain("record-completion");
+  });
+
+  it("on match, the flow continues unmodified into the existing POST step", () => {
+    // The existing POST call, its exit-code capture, and its comment about never
+    // re-executing the POST must still be present and reachable on the match branch.
+    expect(autoPostSection.includes("gh api -X POST /repos/{org}/{repo}/pulls/{pr}/reviews")).toBe(
+      true,
+    );
+    expect(autoPostSection.includes("Never re-execute this POST.")).toBe(true);
+    expect(autoPostSection.includes("POST_EXIT=0")).toBe(true);
+  });
+
+  it("does not introduce a second canonical headRefOid capture point — Step 4 and Step 14 remain the sole capture sites", () => {
+    // The canonical variable is captured via `gh pr view ... --json headRefOid -q '.headRefOid'`.
+    // Count occurrences of this exact capture pattern across the whole file; RHR-1.1's
+    // addition must reuse a differently-named variable (currentHeadRefOid) for its own
+    // re-fetch rather than reassigning `headRefOid` a third time via the same pattern.
+    const captureRegex = /headRefOid=\$\(gh pr view [^\n]*--json headRefOid -q '\.headRefOid'\)/g;
+    const matches = content.match(captureRegex) ?? [];
+    // Step 4 and Step 14's Pre-Claim Fast Path both use this exact pattern already;
+    // RHR-1.1 must not add a third occurrence assigning to `headRefOid` itself.
+    expect(matches.length).toBe(2);
   });
 });
 
