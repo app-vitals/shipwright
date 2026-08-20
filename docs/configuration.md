@@ -138,8 +138,8 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `SHIPWRIGHT_MCP_SERVER_TOKEN` | `string` | — | Bearer token required on every inbound request to the MCP server (except `/health`). Read by `mcp-server/src/main.ts` at startup; the service fails closed and refuses to start if unset. Prevents unauthorized access to the tool proxy surface, since the server holds `SHIPWRIGHT_TASK_STORE_TOKEN` and proxies authenticated calls into the task store on behalf of any connected client. Bearer auth uses constant-time comparison to avoid side-channel leaks. Env-var-only (secret). |
 | `SHIPWRIGHT_SESSION_SECRET` | `string` | — | HS256 secret for the `admin_session` cookie. The admin service signs it on Google-OAuth login; the metrics service verifies it to reuse the same session (the two must share the value). |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | `string` | — | 64-char hex (32 bytes) for AES-256-GCM encryption of secrets at rest. **If unset, secrets are stored in plain text** — always set this in any real deployment. |
-| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of Google email addresses permitted to log in to the admin UI. |
-| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the Google OAuth redirect URI. |
+| `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | `string` | — | Comma-separated list of email addresses permitted to log in to the admin UI via either Google OAuth or Okta OIDC. |
+| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | `string` | `http://localhost:{PORT}` | Public base URL of the admin service, used to construct the OAuth/OIDC redirect URIs for both Google and Okta. |
 | `SHIPWRIGHT_ADMIN_PUBLIC_REPO` | `string` | — | Repository slug (format: `org/repo`) scoped for the public read-only task board. When set, `GET /public/tasks` displays tasks for this repo only, unauthenticated. When unset, the board renders in degraded mode (empty table + warning). Optional — omit to disable the public board. |
 | `SHIPWRIGHT_ADMIN_TZ` | `string` | `America/Los_Angeles` | IANA timezone name (e.g. `America/New_York`) for date/time display in the admin UI. When unset, defaults to `America/Los_Angeles`. |
 | `METRICS_DASHBOARD_URL` | `string` | `/dashboard` | URL for the "Metrics" toolbar link in the admin UI. Defaults to `/dashboard` (same-host relative path, suitable when the ingress routes `/dashboard` to the metrics service on the same public hostname). Set to an absolute URL when the metrics service runs on a different host or port (e.g. in local dev: `http://localhost:3460/dashboard`). |
@@ -204,7 +204,7 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses Google OAuth, mints a dev session). Blocked when `NODE_ENV=production`. |
+| `ADMIN_DEV_AUTH` | `bool` | `false` | Enables `GET /admin/dev-login` (bypasses OAuth/OIDC provider login, mints a dev session). Blocked when `NODE_ENV=production`. |
 | `METRICS_DASHBOARD_DEV_AUTH` | `bool` | `false` | Bypasses `/dashboard` session auth and `/metrics/*` API auth for local dev. Must not be enabled in production — exits with an error if `NODE_ENV=production`. |
 | `TASK_STORE_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the task-store on startup. Used only in local dev (`task stack` and `task hitl`) to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
 | `CHAT_SEED_ADMIN_TOKEN` | `string` | — | Bootstrap admin token seeded into the chat service on startup. Used only in local dev to provision a bootstrapped admin token without manual token creation. Not a real secret — used only against the local dev Postgres instance. Ignored if empty. |
