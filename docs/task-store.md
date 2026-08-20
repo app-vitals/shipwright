@@ -379,7 +379,7 @@ Returns `404` if the PR doesn't exist.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Note:** PATCH does not record an audit event; only the lifecycle endpoints (`POST /prs/:id/claim`, `POST /prs/:id/complete`, `POST /prs/:id/patch`, `POST /prs/:id/release`, `POST /prs/:id/skip`, `POST /prs/:id/skip/reset`) record field-level transitions as `PullRequestEvent` rows. PATCH is designed for late-stage corrections (e.g., force-setting `state=merged` after GitHub confirms it) where the transactional guarantees and field-diff auditing of a lifecycle endpoint are not needed.
 
@@ -476,7 +476,7 @@ The following timestamp fields are managed by the task store:
 | `readyForReviewAt` | `POST /prs/claim` (phase=review) | Set to `now` when `POST /prs/claim` creates a new record with `phase=review`. Records when the PR became eligible for review. |
 | `readyForPatchAt` | (internal use) | Records when the PR transitioned to the patch phase; not currently populated by any Shipwright command but available via `PATCH /prs/:id`. |
 | `readyForDeployAt` | `POST /prs/claim` (phase=deploy) | Set to `now` when `POST /prs/claim` creates a new record with `phase=deploy`. Records when the PR became eligible for deployment. |
-| `reviewedAt` | `POST /prs/:id/complete` | Set when the review cycle completes. |
+| `reviewedAt` | `POST /prs/:id/complete` or `PATCH /prs/:id` | Set when the review cycle completes, or advanced via PATCH by the review command's terminal-skip write-back paths (Step 5, Step 14.3, Pre-Check) to serve as a watermark for `agent/src/check-review.ts`'s `hasFreshNonAgentComment` — without advancing it on terminal transitions, a PR would be perpetually re-selected for review. |
 | `patchedAt` | `POST /prs/:id/patch` | Set when the patch cycle completes. |
 | `mergedAt` | Writable via `PATCH /prs/:id` | Manually set or updated when marking the PR as merged. |
 | `claimedAt` | `POST /prs/claim` | Set when the PR is claimed by an agent. |
