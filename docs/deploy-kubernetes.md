@@ -725,6 +725,26 @@ Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. This is the
 required mode for the GKE and EKS targets above.
 
+### `auth.mode=okta` — Okta OIDC (production)
+
+Sets `NODE_ENV=production` (which also hard-blocks the dev-only escapes like
+`ADMIN_DEV_AUTH`) and enables real Okta OIDC. Requires:
+
+```yaml
+auth:
+  mode: okta
+  okta:
+    issuer: https://your-tenant.okta.com      # your Okta tenant's OIDC issuer URL
+    clientId: <your-okta-client-id>
+    clientSecret: <your-okta-client-secret>   # stored in the chart-managed admin Secret
+    allowedEmails: you@your-domain.example,teammate@your-domain.example   # comma-separated allow-list
+```
+
+Only emails on `allowedEmails` may sign in. The client secret is kept in the
+chart-managed admin Secret, never in plaintext Deployment env. This is an
+alternative to `auth.mode=google` for deployments where Okta is the identity
+provider.
+
 ---
 
 ## Bringing your own PostgreSQL / Bitnami registry fallback
