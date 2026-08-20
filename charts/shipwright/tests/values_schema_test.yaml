@@ -202,7 +202,7 @@ tests:
       - failedTemplate:
           errorPattern: "clientId"
 
-  - it: accepts networking.type=okta (new enum member)
+  - it: accepts auth.mode=okta (new enum member)
     set:
       auth.mode: okta
       auth.okta.issuer: https://dev-123.okta.com
