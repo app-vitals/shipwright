@@ -743,9 +743,11 @@ auth:
 ```
 
 Only emails on `allowedEmails` may sign in. The client secret is kept in the
-chart-managed admin Secret, never in plaintext Deployment env. When both Google
-and Okta are configured, the admin login page displays sign-in buttons for both
-providers.
+chart-managed admin Secret, never in plaintext Deployment env. Okta sign-in is
+available at `/admin/auth/okta`; the login page itself currently only surfaces
+the Google sign-in button — an Okta-configured operator needs to navigate to
+`/admin/auth/okta` directly (no second button is rendered on `/admin/login`
+yet).
 
 ---
 
