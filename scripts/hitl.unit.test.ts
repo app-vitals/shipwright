@@ -8,14 +8,23 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { LogFileTeeTarget } from "./hitl-log-file-tee-target.ts";
 import {
   HITL_ALLOWED_TOOLS,
   type Task,
   buildClaudeSpawnEnv,
+  buildHitlConfig,
   buildTaskCommand,
+  buildTeeConsoleMethod,
   computeMissingClones,
   computeProvisionPlan,
+  createAppendLineSink,
+  createTeeWriter,
   ensureHitlAgent,
+  installLogFileTee,
   parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
@@ -293,6 +302,251 @@ describe("parseHitlRepos", () => {
 
   test("returns a single-entry list for a value with no commas", () => {
     expect(parseHitlRepos("org/solo")).toEqual(["org/solo"]);
+  });
+});
+
+describe("buildHitlConfig — logFilePath", () => {
+  const REPO_ROOT = "/repo";
+  const HOME = "/home/dev";
+
+  test("defaults logFilePath under hitlHome", () => {
+    const c = buildHitlConfig({}, HOME, REPO_ROOT);
+    expect(c.logFilePath).toBe(join(HOME, ".shipwright", "hitl.log"));
+  });
+
+  test("SHIPWRIGHT_HITL_LOG_FILE overrides the default", () => {
+    const c = buildHitlConfig(
+      { SHIPWRIGHT_HITL_LOG_FILE: "/custom/path/hitl.log" },
+      HOME,
+      REPO_ROOT,
+    );
+    expect(c.logFilePath).toBe("/custom/path/hitl.log");
+  });
+});
+
+describe("createTeeWriter", () => {
+  test("calls both original and appendLine with a Buffer chunk, and passes through original's return value", () => {
+    const originalCalls: unknown[][] = [];
+    const appendLineCalls: string[] = [];
+    const original = (...args: unknown[]) => {
+      originalCalls.push(args);
+      return true;
+    };
+    const appendLine = (line: string) => {
+      appendLineCalls.push(line);
+    };
+
+    const tee = createTeeWriter(original, appendLine);
+    const result = tee(Buffer.from("hello from buffer\n"));
+
+    expect(result).toBe(true);
+    expect(originalCalls).toHaveLength(1);
+    expect(appendLineCalls).toEqual(["hello from buffer\n"]);
+  });
+
+  test("calls both original and appendLine with a string chunk, and passes through original's return value", () => {
+    const originalCalls: unknown[][] = [];
+    const appendLineCalls: string[] = [];
+    const original = (...args: unknown[]) => {
+      originalCalls.push(args);
+      return false;
+    };
+    const appendLine = (line: string) => {
+      appendLineCalls.push(line);
+    };
+
+    const tee = createTeeWriter(original, appendLine);
+    const result = tee("plain string chunk\n");
+
+    expect(result).toBe(false);
+    expect(originalCalls).toHaveLength(1);
+    expect(appendLineCalls).toEqual(["plain string chunk\n"]);
+  });
+});
+
+describe("buildTeeConsoleMethod", () => {
+  test("calls the original console method, then appendLine with the util.format()-rendered args", () => {
+    const originalCalls: unknown[][] = [];
+    const appendLineCalls: string[] = [];
+
+    const method = buildTeeConsoleMethod(
+      (...args: unknown[]) => {
+        originalCalls.push(args);
+      },
+      (line) => appendLineCalls.push(line),
+    );
+
+    method("hello", 42, { foo: "bar" });
+
+    expect(originalCalls).toEqual([["hello", 42, { foo: "bar" }]]);
+    expect(appendLineCalls).toHaveLength(1);
+    expect(appendLineCalls[0]).toContain("hello");
+    expect(appendLineCalls[0]).toContain("42");
+    expect(appendLineCalls[0].endsWith("\n")).toBe(true);
+  });
+
+  test("preserves terminal output even when appendLine throws", () => {
+    const originalCalls: unknown[][] = [];
+    const method = buildTeeConsoleMethod(
+      (...args: unknown[]) => {
+        originalCalls.push(args);
+      },
+      () => {
+        throw new Error("sink unavailable");
+      },
+    );
+
+    expect(() => method("still logs to terminal first")).toThrow(
+      "sink unavailable",
+    );
+    expect(originalCalls).toHaveLength(1);
+  });
+});
+
+/**
+ * Builds a fake LogFileTeeTarget backed by plain in-memory state instead of
+ * real process.stdout/stderr/console — lets installLogFileTee()'s guard and
+ * wrapping/assignment sequencing be exercised in-process, without any of the
+ * global-patching risk that requires hitl.integration.test.ts's subprocess
+ * fixture for the *real* target.
+ */
+function makeFakeLogFileTeeTarget(): LogFileTeeTarget & {
+  state: {
+    streams: Record<"stdout" | "stderr", (...args: unknown[]) => boolean>;
+    console: Record<"log" | "warn" | "error", (...args: unknown[]) => void>;
+  };
+} {
+  const state = {
+    streams: {
+      stdout: (() => true) as (...args: unknown[]) => boolean,
+      stderr: (() => true) as (...args: unknown[]) => boolean,
+    },
+    console: {
+      log: (() => {}) as (...args: unknown[]) => void,
+      warn: (() => {}) as (...args: unknown[]) => void,
+      error: (() => {}) as (...args: unknown[]) => void,
+    },
+  };
+
+  return {
+    state,
+    getStreamWrite: (stream) => state.streams[stream],
+    setStreamWrite: (stream, fn) => {
+      state.streams[stream] = fn;
+    },
+    getConsoleMethod: (method) => state.console[method],
+    setConsoleMethod: (method, fn) => {
+      state.console[method] = fn;
+    },
+  };
+}
+
+describe("installLogFileTee", () => {
+  // logFileTeeInstalled is module-scoped, so only the *first* call to
+  // installLogFileTee() across this whole test file actually installs
+  // anything — every call after that (real or fake target) is a documented
+  // no-op per the double-invocation guard. That guard behavior itself is
+  // exercised end-to-end via the real target in
+  // hitl.integration.test.ts's subprocess fixture (which calls
+  // installLogFileTee() twice in a fresh process and asserts no double-wrap).
+  // This single test is this module's one opportunity to exercise the
+  // wrapping/assignment sequencing against a fake target in-process.
+  test("wraps the target's stdout/stderr write and console.log/warn/error, and the wrapped stdout write still calls through and tees to the log file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hitl-install-tee-"));
+    const logPath = join(dir, "hitl.log");
+    const target = makeFakeLogFileTeeTarget();
+    const originalStdoutWrite = target.state.streams.stdout;
+    const originalStderrWrite = target.state.streams.stderr;
+    const originalConsoleLog = target.state.console.log;
+    const originalConsoleWarn = target.state.console.warn;
+    const originalConsoleError = target.state.console.error;
+
+    try {
+      installLogFileTee(logPath, target);
+
+      // Every one of the five targets was reassigned to a wrapper.
+      expect(target.state.streams.stdout).not.toBe(originalStdoutWrite);
+      expect(target.state.streams.stderr).not.toBe(originalStderrWrite);
+      expect(target.state.console.log).not.toBe(originalConsoleLog);
+      expect(target.state.console.warn).not.toBe(originalConsoleWarn);
+      expect(target.state.console.error).not.toBe(originalConsoleError);
+
+      // The wrapped stdout write still calls through to the fake original
+      // (terminal output preserved) and returns its result — proving the
+      // wrapper is a real tee, not a replacement.
+      const result = target.state.streams.stdout("hello from wrapped write\n");
+      expect(result).toBe(true);
+
+      const deadline = Date.now() + 2000;
+      let content = "";
+      while (Date.now() < deadline) {
+        if (existsSync(logPath)) {
+          content = readFileSync(logPath, "utf8");
+          if (content.includes("hello from wrapped write")) break;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(content).toContain("hello from wrapped write");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("createAppendLineSink — error handling", () => {
+  test("an 'error' event on the underlying write stream is reported via onSinkError, not thrown", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hitl-append-sink-err-"));
+
+    try {
+      // Pointing the sink at the directory itself (not a file inside it)
+      // reliably fails the underlying fs open with EISDIR, asynchronously —
+      // createWriteStream() never throws synchronously for this case, so
+      // this deterministically exercises the sink.on('error', ...) handler
+      // this test is asserting on, unlike a synchronous mkdirSync failure
+      // which would never reach it.
+      const sinkErrors: Error[] = [];
+      const appendLine = createAppendLineSink(dir, (err) => {
+        sinkErrors.push(err);
+      });
+
+      // Must not throw synchronously — the whole point of the finding this
+      // test guards against (an unhandled 'error' event crashing the
+      // process) is an *asynchronous* failure mode.
+      expect(() =>
+        appendLine("a line that should not crash the process\n"),
+      ).not.toThrow();
+
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline && sinkErrors.length === 0) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      expect(sinkErrors.length).toBeGreaterThan(0);
+      expect(sinkErrors[0]?.message).toContain(dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("defaults onSinkError to console.error when not provided — does not throw synchronously", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hitl-append-sink-default-"));
+    const logPath = join(dir, "hitl.log");
+
+    try {
+      let appendLine: (line: string) => void = () => {};
+      expect(() => {
+        appendLine = createAppendLineSink(logPath);
+      }).not.toThrow();
+      appendLine("a line\n");
+
+      const deadline = Date.now() + 2000;
+      while (Date.now() < deadline && !existsSync(logPath)) {
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      expect(existsSync(logPath)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -213,6 +213,7 @@ On Kubernetes these env vars are a deploy-time option of the Helm chart rather t
 | `SHIPWRIGHT_HITL_REPOS` | `string` | — | Comma-separated list of `org/repo` strings assigned to the HITL agent record. Controls which task-store tasks the HITL agent token can claim via repo-scoped ownership (e.g. `app-vitals/shipwright`). Repos listed here are automatically cloned into `repos/` during HITL preflight (via `gh repo clone`) if not already present, ensuring all configured repos are available for dev-task work without manual cloning. |
 | `SHIPWRIGHT_HITL_AUTHORS` | `string` | — | Comma-separated list of GitHub login strings; when set, restricts review candidates to PRs authored by one of these users (default: none, unfiltered). Equivalent to the agent's `authorAllowlist` config field; `hitl.ts` syncs this value onto the persisted hitl agent record via `PATCH /agents/:id`. |
 | `SHIPWRIGHT_HITL_POLL_INTERVAL` | `number` | `60` | Polling interval in seconds for the HITL runner's task fetch loop. When no ready tasks are found, the runner waits this many seconds before retrying. |
+| `SHIPWRIGHT_HITL_LOG_FILE` | `string` | `~/.shipwright/hitl.log` | Path to a file for logging HITL runner console output. The runner tees all console output (including `console.log` from in-process modules like check-review.ts) to this file with ISO timestamps, without affecting terminal output. The parent directory is created if it does not exist. |
 
 ---
 
