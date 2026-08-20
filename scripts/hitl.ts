@@ -25,9 +25,11 @@
  *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
  *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered). hitl.ts's local equivalent of the agent's authorAllowlist config field, kept in sync on the persisted hitl agent record via PATCH.
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 60)
+ *   SHIPWRIGHT_HITL_LOG_FILE      — path to tee console output to (default: ~/.shipwright/hitl.log)
  */
 
 import {
+  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -35,7 +37,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { format } from "node:util";
 
 import {
   createTaskStoreClient,
@@ -153,6 +156,7 @@ export type HitlConfig = {
   adminUrl: string;
   adminDatabaseUrl: string;
   taskStoreDatabaseUrl: string;
+  logFilePath: string;
 };
 
 /**
@@ -199,6 +203,7 @@ export function buildHitlConfig(
     adminUrl: `http://${host}:${ADMIN_PORT}`,
     adminDatabaseUrl: `postgresql://${dbPrefix}localhost:5432/shipwright_dev`,
     taskStoreDatabaseUrl: `postgresql://${dbPrefix}localhost:5432/shipwright_task_store_dev`,
+    logFilePath: env.SHIPWRIGHT_HITL_LOG_FILE ?? join(hitlHome, "hitl.log"),
   };
 }
 
@@ -223,6 +228,82 @@ function log(msg: string) {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Log file tee — mirrors in-process console output (this file's own [hitl]
+// lines, plus in-process [check-review]/[check-patch] traces from modules
+// called directly inside runLoop()) to a log file, without disturbing the
+// terminal. See installLogFileTee() for the real-I/O wiring.
+// ---------------------------------------------------------------------------
+
+/**
+ * A stdout/stderr-shaped write function: takes a chunk (plus whatever
+ * encoding/callback args Node's Writable#write overloads pass) and returns a
+ * boolean (backpressure signal).
+ */
+type WriteFn = (chunk: string | Uint8Array, ...args: unknown[]) => boolean;
+
+/**
+ * Builds a replacement `write` function that calls `original` first
+ * (preserving the real terminal output, side effects, and return value —
+ * i.e. backpressure signaling isn't broken) and then forwards the chunk's
+ * string form to `appendLine` (the file sink). Pure — takes both
+ * dependencies as arguments, so it's unit-testable with fakes instead of
+ * real process.stdout/stderr.
+ */
+export function createTeeWriter(
+  original: WriteFn,
+  appendLine: (line: string) => void,
+): WriteFn {
+  return (chunk, ...args) => {
+    const result = original(chunk, ...args);
+    appendLine(chunk.toString());
+    return result;
+  };
+}
+
+/**
+ * Real-I/O glue: ensures the log file's parent dir exists, opens an append
+ * sink, and monkey-patches process.stdout.write/process.stderr.write via
+ * createTeeWriter() so any direct write to either stream lands in the log
+ * file too, each line prefixed with an ISO timestamp. Terminal output is
+ * unaffected.
+ *
+ * Bun's console implementation writes directly to the underlying fd rather
+ * than calling process.stdout.write()/process.stderr.write() (confirmed
+ * empirically — patching only the stream `write` methods does not intercept
+ * console.log in Bun, unlike Node). Since this file's log() helper and
+ * check-review.ts's logSkippedCandidacy() (called directly inside runLoop())
+ * both go through console.log, console.log/warn/error are additionally
+ * wrapped here — calling the original (unchanged terminal output) and then
+ * appendLine with the formatted message — so in-process console output from
+ * any module is actually captured, not just direct stream writes.
+ */
+export function installLogFileTee(path: string): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const sink = createWriteStream(path, { flags: "a" });
+
+  const appendLine = (line: string) => {
+    sink.write(`${new Date().toISOString()} ${line}`);
+  };
+
+  process.stdout.write = createTeeWriter(
+    process.stdout.write.bind(process.stdout),
+    appendLine,
+  ) as typeof process.stdout.write;
+  process.stderr.write = createTeeWriter(
+    process.stderr.write.bind(process.stderr),
+    appendLine,
+  ) as typeof process.stderr.write;
+
+  for (const method of ["log", "warn", "error"] as const) {
+    const original = console[method].bind(console);
+    console[method] = (...args: unknown[]) => {
+      original(...args);
+      appendLine(`${format(...args)}\n`);
+    };
+  }
 }
 
 async function waitForHealth(url: string, label: string): Promise<void> {
@@ -1089,6 +1170,9 @@ async function runLoop(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 if (import.meta.main) {
+  installLogFileTee(CONFIG.logFilePath);
+  log(`logging to ${CONFIG.logFilePath}`);
+
   const handles: ServiceHandle[] = [];
 
   const shutdown = () => {
@@ -1119,7 +1203,7 @@ if (import.meta.main) {
 
     await runLoop();
   } catch (err) {
-    console.error(`[hitl] fatal: ${err}`);
+    log(`fatal: ${err}`);
     killServices(handles);
     process.exit(1);
   }

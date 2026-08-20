@@ -8,13 +8,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import {
   HITL_ALLOWED_TOOLS,
   type Task,
   buildClaudeSpawnEnv,
+  buildHitlConfig,
   buildTaskCommand,
   computeMissingClones,
   computeProvisionPlan,
+  createTeeWriter,
   ensureHitlAgent,
   parseHitlAuthors,
   parseHitlRepos,
@@ -293,6 +296,65 @@ describe("parseHitlRepos", () => {
 
   test("returns a single-entry list for a value with no commas", () => {
     expect(parseHitlRepos("org/solo")).toEqual(["org/solo"]);
+  });
+});
+
+describe("buildHitlConfig — logFilePath", () => {
+  const REPO_ROOT = "/repo";
+  const HOME = "/home/dev";
+
+  test("defaults logFilePath under hitlHome", () => {
+    const c = buildHitlConfig({}, HOME, REPO_ROOT);
+    expect(c.logFilePath).toBe(join(HOME, ".shipwright", "hitl.log"));
+  });
+
+  test("SHIPWRIGHT_HITL_LOG_FILE overrides the default", () => {
+    const c = buildHitlConfig(
+      { SHIPWRIGHT_HITL_LOG_FILE: "/custom/path/hitl.log" },
+      HOME,
+      REPO_ROOT,
+    );
+    expect(c.logFilePath).toBe("/custom/path/hitl.log");
+  });
+});
+
+describe("createTeeWriter", () => {
+  test("calls both original and appendLine with a Buffer chunk, and passes through original's return value", () => {
+    const originalCalls: unknown[][] = [];
+    const appendLineCalls: string[] = [];
+    const original = (...args: unknown[]) => {
+      originalCalls.push(args);
+      return true;
+    };
+    const appendLine = (line: string) => {
+      appendLineCalls.push(line);
+    };
+
+    const tee = createTeeWriter(original, appendLine);
+    const result = tee(Buffer.from("hello from buffer\n"));
+
+    expect(result).toBe(true);
+    expect(originalCalls).toHaveLength(1);
+    expect(appendLineCalls).toEqual(["hello from buffer\n"]);
+  });
+
+  test("calls both original and appendLine with a string chunk, and passes through original's return value", () => {
+    const originalCalls: unknown[][] = [];
+    const appendLineCalls: string[] = [];
+    const original = (...args: unknown[]) => {
+      originalCalls.push(args);
+      return false;
+    };
+    const appendLine = (line: string) => {
+      appendLineCalls.push(line);
+    };
+
+    const tee = createTeeWriter(original, appendLine);
+    const result = tee("plain string chunk\n");
+
+    expect(result).toBe(false);
+    expect(originalCalls).toHaveLength(1);
+    expect(appendLineCalls).toEqual(["plain string chunk\n"]);
   });
 });
 
