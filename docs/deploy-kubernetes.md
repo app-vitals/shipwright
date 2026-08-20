@@ -728,8 +728,8 @@ required mode for the GKE and EKS targets above.
 ### `auth.mode=okta` — Okta OIDC (production)
 
 Sets `NODE_ENV=production` and enables Okta OIDC authentication. Okta is an optional
-alternative to Google OAuth; both providers can be configured simultaneously (users
-see both login options on the login page).
+alternative to Google OAuth; both providers can be configured simultaneously (see below
+for how sign-in works when both are enabled).
 Requires:
 
 ```yaml
