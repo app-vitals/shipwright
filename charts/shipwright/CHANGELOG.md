@@ -10,6 +10,19 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.12.0] - 2026-08-20
+
+### Added
+
+- `auth.mode=okta` — Okta OIDC **chart-side plumbing** mirroring `auth.mode=google`
+  (new `auth.okta.*` values block with `existingSecret` support, `values.schema.json`
+  enum + conditional required fields, `OKTA_ISSUER`/`OKTA_CLIENT_ID`/
+  `OKTA_CLIENT_SECRET`/`SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` wiring in the admin
+  Secret and Deployment, and `NOTES.txt` messaging). ⚠️ Chart-only — the admin
+  application does not yet implement Okta OIDC login; `auth.mode=okta` will
+  lock deployers out of the admin UI until application-side support ships.
+  Use `auth.mode=google` for a working production login today.
+
 ## [1.11.64] - 2026-08-19
 
 ### Changed
