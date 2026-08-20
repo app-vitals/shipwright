@@ -1168,22 +1168,18 @@ review, mirroring `hasFreshNonAgentComment` in `agent/src/check-review.ts`.
 
 **If `$terminal` is `true`** (a terminal review already exists at head on GitHub):
 
-If a pre-claim marker was present (`PRECLAIM_RECORD_ID` is non-empty), release the
-inherited claim first so the PR re-enters the candidate pool:
-```bash
-if [ -n "$PRECLAIM_RECORD_ID" ]; then
-  curl -s -o /dev/null -X POST \
-    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/${PRECLAIM_RECORD_ID}/release"
-fi
-```
-
 Before printing the skip message, write this terminal outcome back to the task-store PR
 record so the same mis-selection doesn't recur every tick — this is the fix for the
 cross-task-store race this whole pre-check exists to catch: if the record's `reviewState`
 doesn't already reflect "reviewed at this head", the next tick's candidate selection
 (`check-review.ts`) or another pre-check run sees a stale `pending` (or a `posted` record
-pinned to an older commit) and re-selects this PR again, indefinitely.
+pinned to an older commit) and re-selects this PR again, indefinitely. This write-back is a
+single atomic step, mirroring Step 5's and Step 14.3's write-backs — neither of them issues
+a separate release call either — because the task-store auto-clears
+`claimedBy`/`claimedAt`/`heartbeatAt`/`phase` server-side whenever `reviewState` transitions
+to `posted`. So any inherited pre-claim (`PRECLAIM_RECORD_ID` non-empty) is cleared as a
+side effect of the very same write below; there is no separate release step, and no window
+where the PR sits claimed but still `pending` in between.
 
 Determine `PR_RECORD_ID`: reuse `PRECLAIM_RECORD_ID` directly if it was set (it already
 names the correct record — no extra fetch needed). Otherwise look the record up by
