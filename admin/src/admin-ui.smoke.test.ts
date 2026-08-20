@@ -6201,3 +6201,362 @@ describe("admin UI — public task board", () => {
     expect(body).not.toContain("github.com//pull/");
   });
 });
+
+// ─── Okta-authenticated access control ────────────────────────────────────────
+//
+// ESR-2.1: verification-only coverage. These duplicate the Google-authenticated
+// access-control cases above (agents-list filtering, per-agent 403s,
+// admin-only-route 403s, /admin/chat 403) under an Okta-issued session, to
+// confirm isAdmin/AgentMember/assertAgentAccess behave identically regardless
+// of which OAuth provider minted the session cookie — completeLogin() in
+// admin-ui.ts is shared across providers, so the session JWT shape (and thus
+// every downstream access check) is provider-agnostic. No new access-control
+// logic is introduced here.
+//
+// The first test below closes the gap flagged in review: rather than minting
+// the session JWT directly via makeSessionCookie() (which never touches Okta
+// code), it drives the real GET /admin/auth/okta/callback handler — token
+// exchange + userinfo normalization via the makeOktaClient mock — and then
+// reuses the cookie that handler actually sets on a subsequent authenticated
+// request, proving the callback-minted session drives access control exactly
+// like the directly-minted ones the remaining tests below use.
+
+describe("admin UI — Okta-authenticated access control", () => {
+  const OKTA_MEMBER_EMAIL = "okta-member@example.com";
+  const OKTA_OTHER_AGENT_ID = "agent-okta-other-456";
+
+  it("session minted by the real Okta callback route grants access like a directly-minted session", async () => {
+    // Drive the actual /admin/auth/okta/callback handler: CSRF state check,
+    // exchangeCode() + getUserInfo() via the makeOktaClient mock, allowlist
+    // check, then completeLogin() mints the session cookie.
+    const nonce = "test-okta-nonce-real-callback";
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const params = new URLSearchParams({ state: nonce, code: "auth-code-123" });
+    const callbackApp = createAdminUIApp(
+      makeMockDeps({
+        oktaClient: makeOktaClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "okta-sub-real-callback",
+              email: "admin@example.com",
+              email_verified: true,
+              name: "Admin User",
+            }),
+        }),
+      }),
+    );
+    const callbackRes = await callbackApp.request(
+      new Request(
+        `https://example.com/admin/auth/okta/callback?${params.toString()}`,
+        { headers: { Cookie: `oauth_state=${oauthState}` } },
+      ),
+    );
+    expect(callbackRes.status).toBe(302);
+    expect(callbackRes.headers.get("Location")).toBe("/admin/agents");
+    // Response.headers.get() folds multiple Set-Cookie headers (here: the
+    // oauth_state deletion + the new admin_session) into one comma-joined
+    // string, so pull out the admin_session value specifically.
+    const setCookieHeader = callbackRes.headers.get("Set-Cookie") ?? "";
+    const sessionCookieMatch = setCookieHeader.match(/admin_session=([^;,]+)/);
+    const sessionCookie = sessionCookieMatch?.[1];
+    expect(sessionCookie).toBeTruthy();
+
+    // Reuse the callback-minted cookie on a subsequent request — same
+    // access-control path (isAdmin from the session) as the
+    // makeSessionCookie()-based tests below, but now proven to originate
+    // from the real Okta callback handler rather than a bypass.
+    const listApp = createAdminUIApp(makeMockDeps());
+    const listRes = await listApp.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${sessionCookie}` },
+    });
+    expect(listRes.status).toBe(200);
+    const listHtml = await listRes.text();
+    expect(listHtml).toContain("Test Agent");
+  });
+
+  it("Okta-authenticated admin sees all agents and can create one", async () => {
+    const adminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "okta-sub-admin",
+      "admin@example.com",
+      true,
+    );
+
+    // AC1a: admin sees all agents in the agents list.
+    const listApp = createAdminUIApp(makeMockDeps());
+    const listRes = await listApp.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(listRes.status).toBe(200);
+    const listHtml = await listRes.text();
+    expect(listHtml).toContain("Test Agent");
+
+    // AC1b: admin can create an agent.
+    const createApp = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({
+      name: "Okta Created Agent",
+      type: "coding",
+    });
+    const createRes = await createApp.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(createRes.status).toBe(302);
+    expect(createRes.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("Okta-authenticated non-admin sees only their AgentMember agent(s), 403s elsewhere", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "okta-sub-member",
+      OKTA_MEMBER_EMAIL,
+      false,
+    );
+
+    // AC2a: agents list is filtered down to the member's own agent(s).
+    const deps = makeMockDeps({
+      prisma: {
+        agent: {
+          findMany: async ({
+            where,
+          }: { where?: { id?: { in?: string[] } } } = {}) => {
+            const allAgents = [
+              {
+                id: AGENT_ID,
+                name: "My Okta Agent",
+                slackId: "U1",
+                createdAt: new Date("2024-01-01"),
+              },
+              {
+                id: OKTA_OTHER_AGENT_ID,
+                name: "Other Okta Agent",
+                slackId: "U2",
+                createdAt: new Date("2024-01-01"),
+              },
+            ];
+            if (where?.id?.in) {
+              return allAgents.filter((a) => where.id?.in?.includes(a.id));
+            }
+            return allAgents;
+          },
+          findUnique: async () => null,
+          create: async () => ({
+            id: AGENT_ID,
+            name: "My Okta Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
+          }),
+          update: async () => ({
+            id: AGENT_ID,
+            name: "My Okta Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
+          }),
+          delete: async () => ({
+            id: AGENT_ID,
+            name: "My Okta Agent",
+            slackId: "U1",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            repos: [],
+          }),
+        },
+        agentEnv: { findMany: async () => [] },
+        agentPlugin: { findMany: async () => [] },
+        agentMember: {
+          findMany: async () => [
+            {
+              id: "m1",
+              agentId: AGENT_ID,
+              email: OKTA_MEMBER_EMAIL,
+              createdAt: new Date(),
+            },
+          ],
+          findUnique: async () => null,
+          create: async () => ({
+            id: "m1",
+            agentId: AGENT_ID,
+            email: OKTA_MEMBER_EMAIL,
+          }),
+          deleteMany: async () => ({ count: 0 }),
+        },
+      },
+      agentMemberService: {
+        listByEmail: async (email: string) =>
+          email === OKTA_MEMBER_EMAIL
+            ? [
+                {
+                  id: "m1",
+                  agentId: AGENT_ID,
+                  email: OKTA_MEMBER_EMAIL,
+                  createdAt: new Date(),
+                },
+              ]
+            : [],
+        exists: async (_agentId: string, email: string) =>
+          email === OKTA_MEMBER_EMAIL,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: OKTA_MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+        listByAgentId: async () => [],
+      },
+      agentService: {
+        listAll: async () => [
+          {
+            id: AGENT_ID,
+            name: "My Okta Agent",
+            slackId: "U1",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+          {
+            id: OKTA_OTHER_AGENT_ID,
+            name: "Other Okta Agent",
+            slackId: "U2",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+        ],
+        listByIds: async (ids: string[]) =>
+          [
+            {
+              id: AGENT_ID,
+              name: "My Okta Agent",
+              slackId: "U1",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+            {
+              id: OKTA_OTHER_AGENT_ID,
+              name: "Other Okta Agent",
+              slackId: "U2",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+          ].filter((a) => ids.includes(a.id)),
+        searchByName: async () => [],
+        listOptions: async () => [
+          { id: AGENT_ID, name: "My Okta Agent" },
+          { id: OKTA_OTHER_AGENT_ID, name: "Other Okta Agent" },
+        ],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
+      },
+    });
+    const listApp = createAdminUIApp(deps);
+    const listRes = await listApp.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(listRes.status).toBe(200);
+    const listHtml = await listRes.text();
+    expect(listHtml).toContain("My Okta Agent");
+    expect(listHtml).not.toContain("Other Okta Agent");
+
+    // AC2b: per-agent access — a non-member gets 403 on an agent they don't belong to.
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "okta-sub-outsider",
+      "okta-outsider@example.com",
+      false,
+    );
+    const detailApp = createAdminUIApp(makeMockDeps());
+    const detailRes = await detailApp.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${outsiderCookie}` },
+    });
+    expect(detailRes.status).toBe(403);
+
+    // AC2c: admin-only-route 403 for a non-admin Okta session.
+    const provisionApp = createAdminUIApp(makeMockDeps());
+    const provisionRes = await provisionApp.request("/admin/provision", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(provisionRes.status).toBe(403);
+  });
+
+  it("Okta-authenticated non-admin can configure their own agent's settings", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "okta-sub-member",
+      OKTA_MEMBER_EMAIL,
+      false,
+    );
+    let upsertCalledWith: unknown[] = [];
+    const deps = makeMockDeps({
+      agentMemberService: {
+        listByEmail: async () => [],
+        exists: async (_agentId: string, email: string) =>
+          email === OKTA_MEMBER_EMAIL,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: OKTA_MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+        listByAgentId: async () => [],
+      },
+      agentEnvService: {
+        getByAgentId: async () => ({ env: { FOO: "bar" }, secretKeys: [] }),
+        upsert: async (...args: unknown[]) => {
+          upsertCalledWith = args;
+        },
+        patch: async (...args: unknown[]) => {
+          upsertCalledWith = args;
+        },
+        deleteKey: async () => {},
+        getConfigBundle: async () => null,
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const form = new FormData();
+    form.append("key", "MY_VAR");
+    form.append("value", "configured-by-okta-member");
+    const res = await app.request(`/admin/agents/${AGENT_ID}/envs`, {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(upsertCalledWith.length).toBeGreaterThan(0);
+  });
+
+  it("/admin/chat returns 403 for an Okta-authenticated non-admin", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "okta-sub-member",
+      OKTA_MEMBER_EMAIL,
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/chat", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(403);
+  });
+});
