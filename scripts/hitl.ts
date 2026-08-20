@@ -264,11 +264,28 @@ export function createTeeWriter(
 }
 
 /**
- * Real-I/O glue: ensures the log file's parent dir exists, opens an append
- * sink, and monkey-patches process.stdout.write/process.stderr.write via
+ * Real-I/O glue (fs half): ensures the log file's parent dir exists, opens
+ * an append sink, and returns an `appendLine` function that writes a line
+ * to it prefixed with an ISO timestamp. Split out from installLogFileTee()
+ * so the actual filesystem behavior (dir creation, append semantics,
+ * timestamp formatting) can be exercised in-process against a real tmpdir —
+ * no global patching involved, so it's safe to unit-test directly (unlike
+ * the console/stream monkey-patching in installLogFileTee(), which needs a
+ * subprocess to test safely — see hitl.integration.test.ts).
+ */
+export function createAppendLineSink(path: string): (line: string) => void {
+  mkdirSync(dirname(path), { recursive: true });
+  const sink = createWriteStream(path, { flags: "a" });
+  return (line: string) => {
+    sink.write(`${new Date().toISOString()} ${line}`);
+  };
+}
+
+/**
+ * Real-I/O glue: builds the log file's append sink via createAppendLineSink()
+ * and monkey-patches process.stdout.write/process.stderr.write via
  * createTeeWriter() so any direct write to either stream lands in the log
- * file too, each line prefixed with an ISO timestamp. Terminal output is
- * unaffected.
+ * file too. Terminal output is unaffected.
  *
  * Bun's console implementation writes directly to the underlying fd rather
  * than calling process.stdout.write()/process.stderr.write() (confirmed
@@ -279,14 +296,20 @@ export function createTeeWriter(
  * wrapped here — calling the original (unchanged terminal output) and then
  * appendLine with the formatted message — so in-process console output from
  * any module is actually captured, not just direct stream writes.
+ *
+ * Guarded against double-invocation: a second call would double-wrap
+ * process.stdout.write/console.log (each wrapping the already-wrapped
+ * version from the first call), causing duplicate log lines. Only called
+ * once today (at top-level entrypoint startup), but the guard makes that
+ * safe against future regressions.
  */
-export function installLogFileTee(path: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const sink = createWriteStream(path, { flags: "a" });
+let logFileTeeInstalled = false;
 
-  const appendLine = (line: string) => {
-    sink.write(`${new Date().toISOString()} ${line}`);
-  };
+export function installLogFileTee(path: string): void {
+  if (logFileTeeInstalled) return;
+  logFileTeeInstalled = true;
+
+  const appendLine = createAppendLineSink(path);
 
   process.stdout.write = createTeeWriter(
     process.stdout.write.bind(process.stdout),
@@ -1203,7 +1226,7 @@ if (import.meta.main) {
 
     await runLoop();
   } catch (err) {
-    log(`fatal: ${err}`);
+    console.error(`[hitl] fatal: ${err}`);
     killServices(handles);
     process.exit(1);
   }

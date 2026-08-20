@@ -38,10 +38,14 @@
  * passed as an explicit parameter, per this repo's isolation contract.
  */
 
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildHitlConfig,
   buildPreflightSteps,
+  createAppendLineSink,
   fetchReadyTasks,
   type HitlStep,
   runPreflight,
@@ -305,4 +309,158 @@ describe("bootstrap sequencing (composed)", () => {
       "poll:fetchReadyTasks",
     ]);
   });
+});
+
+// ---------------------------------------------------------------------------
+// createAppendLineSink — the fs half of installLogFileTee's real-I/O glue
+// (mkdirSync + createWriteStream + ISO-timestamped append), split out
+// specifically so it can be exercised in-process against a real tmpdir, the
+// same way agent/src/setup.integration.test.ts exercises real mkdirSync/
+// writeFileSync calls: real dependency behavior at the fs boundary, no
+// global patching involved, so nothing to leak into sibling suites.
+// ---------------------------------------------------------------------------
+
+describe("createAppendLineSink", () => {
+  test("creates missing parent dirs and appends ISO-timestamped lines to a real file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hitl-append-sink-"));
+    const logPath = join(dir, "nested", "hitl.log");
+
+    try {
+      expect(existsSync(logPath)).toBe(false);
+
+      const appendLine = createAppendLineSink(logPath);
+      appendLine("first line\n");
+      appendLine("second line\n");
+
+      const deadline = Date.now() + 2000;
+      let content = "";
+      while (Date.now() < deadline) {
+        if (existsSync(logPath)) {
+          content = readFileSync(logPath, "utf8");
+          if (content.includes("second line")) break;
+        }
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      const lines = content.trim().split("\n");
+      expect(lines).toHaveLength(2);
+      const isoPrefix = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /;
+      expect(lines[0]).toMatch(isoPrefix);
+      expect(lines[0]).toContain("first line");
+      expect(lines[1]).toMatch(isoPrefix);
+      expect(lines[1]).toContain("second line");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("appends to an existing file rather than truncating it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "hitl-append-sink-"));
+    const logPath = join(dir, "hitl.log");
+    writeFileSync(logPath, "pre-existing line\n", "utf8");
+
+    try {
+      const appendLine = createAppendLineSink(logPath);
+      appendLine("appended line\n");
+
+      const deadline = Date.now() + 2000;
+      let content = "";
+      while (Date.now() < deadline) {
+        content = readFileSync(logPath, "utf8");
+        if (content.includes("appended line")) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+
+      expect(content).toContain("pre-existing line");
+      expect(content).toContain("appended line");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// installLogFileTee — the global-patching half (monkey-patches
+// process.stdout.write/process.stderr.write/console.log/warn/error).
+// Exercised via a real subprocess (a small fixture harness spawned with
+// `bun run`), not in-process — this repo's isolation contract forbids
+// patching process.stdout/stderr/console in the shared test process (it
+// would leak into sibling suites). Mirrors the pattern already established
+// by scripts/test-env-preload.integration.test.ts.
+// ---------------------------------------------------------------------------
+
+const TEE_FIXTURE_DIR = mkdtempSync(join(tmpdir(), "hitl-tee-fixture-"));
+const TEE_FIXTURE_PATH = join(TEE_FIXTURE_DIR, "install-log-file-tee.harness.ts");
+
+describe("installLogFileTee (subprocess)", () => {
+  beforeAll(() => {
+    writeFileSync(
+      TEE_FIXTURE_PATH,
+      `import { installLogFileTee } from "${join(import.meta.dir, "hitl.ts")}";
+
+const logPath = process.argv[2];
+
+// Calls installLogFileTee() twice to prove the double-invocation guard
+// works: without it, "marker line" would appear twice in the log file
+// (once per wrap layer) instead of once.
+installLogFileTee(logPath);
+installLogFileTee(logPath);
+
+console.log("marker line");
+console.error("marker error line");
+`,
+    );
+  });
+
+  afterAll(() => {
+    rmSync(TEE_FIXTURE_DIR, { recursive: true, force: true });
+  });
+
+  test("mirrors console.log/console.error to the log file with an ISO timestamp, creates missing parent dirs, leaves the terminal streams intact, and is safe to call twice", async () => {
+    const logDir = mkdtempSync(join(tmpdir(), "hitl-tee-out-"));
+    const logPath = join(logDir, "nested", "hitl.log");
+
+    try {
+      const proc = Bun.spawn(["bun", "run", TEE_FIXTURE_PATH, logPath], {
+        cwd: import.meta.dir,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+
+      expect(exitCode, `fixture process failed:\nstdout:\n${stdout}\nstderr:\n${stderr}`).toBe(0);
+
+      // Terminal output is unaffected by the tee.
+      expect(stdout).toContain("marker line");
+      expect(stderr).toContain("marker error line");
+
+      const content = readFileSync(logPath, "utf8");
+
+      // Each line appears with an ISO timestamp prefix, and exactly once —
+      // proving the second installLogFileTee() call was a no-op (the
+      // double-invocation guard), not a second wrap layer.
+      const markerLines = content
+        .split("\n")
+        .filter((line) => line.includes("marker line"));
+      expect(markerLines).toHaveLength(1);
+      expect(markerLines[0]).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z .*marker line$/,
+      );
+
+      const errorLines = content
+        .split("\n")
+        .filter((line) => line.includes("marker error line"));
+      expect(errorLines).toHaveLength(1);
+      expect(errorLines[0]).toMatch(
+        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z .*marker error line$/,
+      );
+    } finally {
+      rmSync(logDir, { recursive: true, force: true });
+    }
+  }, 15_000);
 });

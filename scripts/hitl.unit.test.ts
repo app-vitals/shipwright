@@ -8,8 +8,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   HITL_ALLOWED_TOOLS,
@@ -21,7 +19,6 @@ import {
   computeProvisionPlan,
   createTeeWriter,
   ensureHitlAgent,
-  installLogFileTee,
   parseHitlAuthors,
   parseHitlRepos,
   parseTasksResponse,
@@ -358,52 +355,6 @@ describe("createTeeWriter", () => {
     expect(result).toBe(false);
     expect(originalCalls).toHaveLength(1);
     expect(appendLineCalls).toEqual(["plain string chunk\n"]);
-  });
-});
-
-describe("installLogFileTee", () => {
-  // Real file I/O (per this file's header note: real construction over
-  // mocks), but this is the one test in the suite that monkey-patches
-  // process.stdout/stderr.write and console.log/warn/error — exactly what
-  // installLogFileTee() does by design. Mirrors the try/finally
-  // capture-and-restore pattern already used for console.log in
-  // agent/src/loop-orchestrator.unit.test.ts's withCapturedLogs() so no
-  // patched global leaks into sibling tests.
-  test("mirrors console.log to the log file with an ISO timestamp, creating missing parent dirs, terminal unchanged", async () => {
-    const dir = join(tmpdir(), `hitl-tee-test-${process.pid}-${Date.now()}`);
-    const logPath = join(dir, "nested", "hitl.log");
-
-    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-    const originalStderrWrite = process.stderr.write.bind(process.stderr);
-    const originalLog = console.log.bind(console);
-    const originalWarn = console.warn.bind(console);
-    const originalError = console.error.bind(console);
-
-    try {
-      installLogFileTee(logPath);
-      console.log("hitl-tee-test marker line");
-
-      const deadline = Date.now() + 2000;
-      let content = "";
-      while (Date.now() < deadline) {
-        if (existsSync(logPath)) {
-          content = readFileSync(logPath, "utf8");
-          if (content.includes("hitl-tee-test marker line")) break;
-        }
-        await new Promise((r) => setTimeout(r, 20));
-      }
-
-      expect(content).toMatch(
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z .*hitl-tee-test marker line/m,
-      );
-    } finally {
-      process.stdout.write = originalStdoutWrite;
-      process.stderr.write = originalStderrWrite;
-      console.log = originalLog;
-      console.warn = originalWarn;
-      console.error = originalError;
-      rmSync(dir, { recursive: true, force: true });
-    }
   });
 });
 
