@@ -744,10 +744,9 @@ auth:
 
 Only emails on `allowedEmails` may sign in. The client secret is kept in the
 chart-managed admin Secret, never in plaintext Deployment env. Okta sign-in is
-available at `/admin/auth/okta`; the login page itself currently only surfaces
-the Google sign-in button — an Okta-configured operator needs to navigate to
-`/admin/auth/okta` directly (no second button is rendered on `/admin/login`
-yet).
+available at `/admin/auth/okta`. When `OKTA_ISSUER`, `OKTA_CLIENT_ID`, and
+`OKTA_CLIENT_SECRET` are set, the login page (`/admin/login`) renders a "Sign in
+with Okta" button alongside the Google sign-in button.
 
 ---
 
