@@ -189,6 +189,34 @@ describe("renderLoginPage", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
   });
+
+  test("does not show Sign in with Okta when oktaEnabled is not provided", () => {
+    const html = renderLoginPage();
+    expect(html).not.toContain("Sign in with Okta");
+    expect(html).not.toContain('href="/admin/auth/okta"');
+  });
+
+  test("does not show Sign in with Okta when oktaEnabled is false", () => {
+    const html = renderLoginPage({ oktaEnabled: false });
+    expect(html).not.toContain("Sign in with Okta");
+    expect(html).not.toContain('href="/admin/auth/okta"');
+  });
+
+  test("shows Sign in with Okta when oktaEnabled is true", () => {
+    const html = renderLoginPage({ oktaEnabled: true });
+    expect(html).toContain("Sign in with Okta");
+    expect(html).toContain('href="/admin/auth/okta"');
+  });
+
+  test("includes returnTo query param in Okta href when provided", () => {
+    const html = renderLoginPage({
+      oktaEnabled: true,
+      returnTo: "/admin/agents",
+    });
+    expect(html).toContain(
+      'href="/admin/auth/okta?returnTo=%2Fadmin%2Fagents"',
+    );
+  });
 });
 
 // ─── renderAgentsPage ─────────────────────────────────────────────────────────

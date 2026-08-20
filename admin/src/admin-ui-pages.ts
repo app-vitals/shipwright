@@ -475,6 +475,7 @@ function applyInline(s: string): string {
 export function renderLoginPage(opts?: {
   error?: string;
   returnTo?: string;
+  oktaEnabled?: boolean;
 }): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -483,6 +484,14 @@ export function renderLoginPage(opts?: {
   const googleHref = opts?.returnTo
     ? `/admin/auth/google?returnTo=${encodeURIComponent(opts.returnTo)}`
     : "/admin/auth/google";
+
+  const oktaHref = opts?.returnTo
+    ? `/admin/auth/okta?returnTo=${encodeURIComponent(opts.returnTo)}`
+    : "/admin/auth/okta";
+
+  const oktaButtonHtml = opts?.oktaEnabled
+    ? `<a href="${oktaHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Okta</a>`
+    : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -499,6 +508,7 @@ export function renderLoginPage(opts?: {
       <p class="login-subtitle">Sign in to manage your agents.</p>
       ${errorHtml}
       <a href="${googleHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
+      ${oktaButtonHtml}
     </div>
   </div>
 </body>

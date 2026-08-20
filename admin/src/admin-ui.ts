@@ -680,7 +680,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   app.get("/admin/login", (c) => {
     const error = c.req.query("error") ?? undefined;
     const returnTo = c.req.query("returnTo") ?? undefined;
-    return html(renderLoginPage({ error, returnTo }));
+    const oktaEnabled = Boolean(oktaClientId && oktaIssuer && oktaClient);
+    return html(renderLoginPage({ error, returnTo, oktaEnabled }));
   });
 
   app.get("/admin/auth/google", (c) => {
