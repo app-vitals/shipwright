@@ -9,12 +9,15 @@
 import { extractCoverageTool, selectParser } from "./coverage-tool-dispatch";
 
 // Live CI aggregate at the time of the last raise attempt (MTC-1.7, 2026-08-14)
-// was Lines 89.77% / Functions 89.72% — just short of 90/90. Rather than merge
-// a gate the repo doesn't clear (which would break `task ci` for every
-// subsequent PR), the floor was landed at 89/89: a real raise from the prior
-// 80/80 floor, with margin over the measured baseline. See PR #2659 for the
-// full 90/90 attempt and follow-up discussion on closing the remaining gap.
-const THRESHOLD_LINES = 89;
+// was Lines 89.77% / Functions 89.72% — just short of 90/90. The floor was
+// initially landed at 89/89 (PR #2659) with margin over the measured baseline.
+// This follow-up (CLG-1.1, part of stage-3 coverage-check promotion for
+// HITL task test-t-083-shipwright) raises the line-coverage floor to 90.
+// Functions threshold remains at 89 — live functions coverage was measured at
+// 89.77%, still below 90 and not yet ready for promotion. The branch-protection
+// swap to require the new 90% line threshold is separate and human-driven,
+// outside the scope of this code-side change.
+const THRESHOLD_LINES = 90;
 const THRESHOLD_FUNCTIONS = 89;
 
 const EXCLUDE_PREFIXES = [
