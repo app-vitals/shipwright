@@ -293,6 +293,22 @@ describe("review.md — Step 5 unresolved-feedback skip marks reviewed-at-commit
     expect(patchBlock).not.toContain("'staged': true");
   });
 
+  it("Step 5's Unresolved Comment Check PATCH call advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+
+    const patchBlock = section.slice(patchIdx, patchIdx + 500);
+    expect(patchBlock).toContain("reviewedAt");
+
+    const unresolvedIdx = section.indexOf("#### Unresolved Comment Check");
+    expect(unresolvedIdx).toBeGreaterThan(-1);
+    const unresolvedSection = section.slice(unresolvedIdx);
+    expect(unresolvedSection).toContain("hasFreshNonAgentComment");
+  });
+
   it("Step 5's Unresolved Comment Check documentation notes that this does not interact with review-staged flow", () => {
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
@@ -567,7 +583,7 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
   });
 
-  it("when a pre-claim marker was present, the skip branch releases the orphaned claim before stopping", () => {
+  it("when a pre-claim marker was present, the skip branch relies on the single PATCH write-back to clear the orphaned claim, not a separate release call", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
     );
@@ -576,13 +592,14 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
-    // The section must contain a conditional release call referencing PRECLAIM_RECORD_ID
-    expect(section).toContain("/prs/");
-    expect(section).toContain("/release");
+    // No separate release call — the task-store auto-clears the claim
+    // server-side when reviewState transitions to "posted" via the PATCH below.
+    expect(section).not.toContain("/release");
     expect(section).toContain("PRECLAIM_RECORD_ID");
+    expect(section.toLowerCase()).toMatch(/auto-clears|cleared as a side effect/);
   });
 
-  it("the pre-claim release call appears before the 'Skipping' message", () => {
+  it("the write-back PATCH appears before the 'Skipping' message", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
     );
@@ -591,15 +608,15 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
-    const releaseIdx = section.indexOf("/release");
+    const patchIdx = section.indexOf("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}");
     const skippingIdx = section.indexOf("Skipping #{pr}");
 
-    expect(releaseIdx).toBeGreaterThan(-1);
+    expect(patchIdx).toBeGreaterThan(-1);
     expect(skippingIdx).toBeGreaterThan(-1);
-    expect(releaseIdx).toBeLessThan(skippingIdx);
+    expect(patchIdx).toBeLessThan(skippingIdx);
   });
 
-  it("the release call is conditional on PRECLAIM_RECORD_ID being non-empty", () => {
+  it("the write-back PATCH is conditional on not already reflecting the terminal outcome, not on PRECLAIM_RECORD_ID presence", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
     );
@@ -608,11 +625,10 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     );
     const section = step14Section.slice(preCheckIdx, fastPathIdx);
 
-    // Should reference checking if PRECLAIM_RECORD_ID is set
-    const releaseIdx = section.indexOf("/release");
-    const releaseBlock = section.slice(Math.max(0, releaseIdx - 300), releaseIdx + 100);
-
-    expect(releaseBlock).toMatch(/if.*PRECLAIM_RECORD_ID|PRECLAIM_RECORD_ID.*if|-z.*PRECLAIM_RECORD_ID|-n.*PRECLAIM_RECORD_ID/i);
+    expect(section).toContain("avoid a double-write");
+    expect(section).toContain(
+      'if [ -n "$PR_RECORD_ID" ] && ! { [ "$recordReviewState" = "posted"',
+    );
   });
 });
 
@@ -718,6 +734,26 @@ describe("review.md — RVD-1.2 terminal-review skip writes back task-store revi
     expect(section).toContain("hasAnyReviewAtHead");
     expect(section).toContain("reconcilePostedReviewStateRecord");
   });
+
+  it("does not release the inherited pre-claim before the PATCH — the write-back is a single atomic PATCH, not a release-then-patch two-step", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    expect(section).not.toContain("/release");
+  });
+
+  it("the PATCH body also advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const preCheckIdx = content.indexOf("### Live-Review Pre-Check (RVD-1.2)");
+    const fastPathIdx = content.indexOf("### Pre-Claim Fast Path (CBD-1.4)");
+    const section = content.slice(preCheckIdx, fastPathIdx);
+
+    const patchIdx = section.indexOf("PATCH");
+    expect(patchIdx).toBeGreaterThan(-1);
+    const patchBlock = section.slice(patchIdx, patchIdx + 700);
+    expect(patchBlock).toContain("reviewedAt");
+    expect(section).toContain("hasFreshNonAgentComment");
+  });
 });
 
 describe("review.md — Step 14.3 already-reviewed-at-commit skip emits [silent] + skip-reason marker (STD-1.5)", () => {
@@ -815,6 +851,21 @@ describe("review.md — Step 14.3 already-reviewed-at-commit skip writes back te
     const dedupSection = section.slice(dedupIdx);
 
     expect(dedupSection).toContain("no extra query");
+  });
+
+  it("the PATCH body also advances reviewedAt, closing the hasFreshNonAgentComment perpetual retrigger gap (RWA-1.2)", () => {
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    const endIdx = content.indexOf("## Review Quality Rules", step14Idx);
+    const section = content.slice(step14Idx, endIdx);
+
+    const dedupIdx = section.indexOf(
+      "**Check if the PR was already reviewed at the current commit**",
+    );
+    expect(dedupIdx).toBeGreaterThan(-1);
+    const dedupSection = section.slice(dedupIdx);
+
+    expect(dedupSection).toContain('"reviewedAt"');
+    expect(dedupSection).toContain("hasFreshNonAgentComment");
   });
 });
 

@@ -408,6 +408,28 @@ describe("createPrsRoutes — OpenAPIHono migration (TSM-1.3)", () => {
     expect(body.hitlNotifiedAt).toBeUndefined();
   });
 
+  // ─── PATCH_ALLOWED_FIELDS: reviewedAt (RWA-1.2) ──────────────────────────────
+  // reviewedAt is the watermark agent/src/check-review.ts's hasFreshNonAgentComment
+  // uses to decide whether new PR activity is "fresh". The three terminal-skip
+  // write-back paths in review.md need to advance it directly via PATCH (rather
+  // than only via POST /:id/complete), or a PR skipped via those paths keeps a
+  // stale reviewedAt and gets endlessly re-selected for review.
+  it("PATCH /:id accepts 'reviewedAt' and reflects it in the update response", async () => {
+    const store = new Map<string, PullRequest>();
+    store.set("pr-1", makePr({ id: "pr-1" }));
+    const app = createPrsRoutes(fakePrService({ store }));
+    const parent = makeAdminParent(app);
+    const now = new Date().toISOString();
+    const res = await parent.request("/pr-1", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reviewedAt: now }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reviewedAt: string };
+    expect(body.reviewedAt).toBe(now);
+  });
+
   it("POST /:id/heartbeat route is registered", async () => {
     const store = new Map<string, PullRequest>();
     store.set("pr-1", makePr({ id: "pr-1" }));
