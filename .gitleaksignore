@@ -1,0 +1,14 @@
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+4cbdfab16db1e5bb80d6f202cf237235877e54d0:docs/test-readiness/test-system.md:generic-api-key:12
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+4cbdfab16db1e5bb80d6f202cf237235877e54d0:docs/test-readiness/test-system.md:generic-api-key:215
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+d36760ea08f97070d42d1c071c4a33f6064e4fb1:docs/test-readiness/test-system.md:generic-api-key:12
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+d36760ea08f97070d42d1c071c4a33f6064e4fb1:docs/test-readiness/test-system.md:generic-api-key:215
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+1f46b4399ed270a74e082d1b97bf99c6db31c8b2:agent/src/setup-github-auth.integration.test.ts:private-key:83
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+6740dc2794c2c7351ad859b1c979f78a3126e461:agent/src/fixtures/slack-provision-cassette.json:generic-api-key:8
+# Suppressed via HITL task security-gitleaks-secret-shipwright-2026-W32 on 2026-08-20 — confirmed false positive
+6740dc2794c2c7351ad859b1c979f78a3126e461:agent/src/admin-ui.smoke.test.ts:generic-api-key:95
