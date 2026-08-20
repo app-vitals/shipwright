@@ -330,10 +330,10 @@ this cycle — see Method note step 3 and the `scripts/*` row above:
   80/80 by MTC-1.7, then to 90% lines by CLG-1.1, and refactored to a pluggable `CoverageParser` interface
   previously — see the `scripts/*` row above). Confirmed passing this cycle's live CI run at
   90.90%/89.75%.
-- **`scripts/check-coverage-no-decrease.ts`** (new this cycle, PR #2657) — companion
-  coverage-must-not-decrease gate, wired into `.github/workflows/ci.yml`'s coverage-gate
-  step. Runs without a test DB by design (its no-DB aggregate can't be compared to the
-  90% absolute floor, which is `task test:coverage`'s job with a real Postgres DB).
+- **`scripts/check-coverage-no-decrease.ts`** (new in Phase 1, PR #2657; retired after
+  stage-3 promotion, no longer in CI pipeline) — was a companion coverage-must-not-decrease
+  gate wired into `.github/workflows/ci.yml` for PRs. Removed when stage-3 promotion made
+  the never-decrease check no longer required.
 - **`.github/PULL_REQUEST_TEMPLATE.md`** — confirmed present directly, matches
   `test-system.md`'s Repo configuration section's note that this is resolved, not a gap.
 - **`docs/test-readiness/speed-baseline.md`** — not re-refreshed this cycle; its numbers

@@ -134,11 +134,11 @@ Primary consumer: **the autonomous agent itself**. The test-readiness pipeline's
 - Stage (b): once a repo's roadmap actually closes the gap to ≥90% (detected via `coverage_gate.line_coverage_pct >= 90` on a `test-roadmap` re-run), `repo-config` automatically emits a task to promote the required check to a hard ≥90% gate.
 - Promotion is automatic — no manual step. This extends the existing 2-stage branch-protection pairing pattern to a 3-stage lifecycle (job lands → never-decrease required → hard-90%-required).
 
-**Acceptance Criteria**:
-- [ ] A repo newly onboarded through the pipeline gets a required "coverage must not decrease" check as soon as the coverage CI job lands
-- [ ] A repo-config task to promote to a hard ≥90% required check is generated only after `test-roadmap` confirms `line_coverage_pct >= 90` on a re-run
-- [ ] The promotion happens without manual intervention — `test-roadmap` emits the task automatically, following the existing repo-config pairing pattern
-- [ ] A repo already at ≥90% at onboarding time gets the hard gate directly, without unnecessarily passing through the never-decrease stage first
+**Acceptance Criteria** (feature completed in Phase 1, never-decrease stage removed after promotion to stage-3):
+- [x] A repo newly onboarded through the pipeline gets a required "coverage must not decrease" check as soon as the coverage CI job lands — **completed in Phase 1, removed post-promotion**
+- [x] A repo-config task to promote to a hard ≥90% required check is generated only after `test-roadmap` confirms `line_coverage_pct >= 90` on a re-run — **completed; Shipwright now at ≥90% and using hard gate**
+- [x] The promotion happens without manual intervention — `test-roadmap` emits the task automatically, following the existing repo-config pairing pattern — **completed**
+- [x] A repo already at ≥90% at onboarding time gets the hard gate directly, without unnecessarily passing through the never-decrease stage first — **completed**
 
 **Technical Considerations**: Builds directly on `repo-config`'s existing branch-protection pairing pattern (documented in `plugins/shipwright/skills/repo-config/SKILL.md`) — this is an extension of that pattern to a third stage, not a new mechanism.
 

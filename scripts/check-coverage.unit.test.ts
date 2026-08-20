@@ -14,12 +14,11 @@
  * FileStats[] — nothing here touches the filesystem or triggers the
  * script's process.exit side effects.
  *
- * Also verifies runCli — the injectable-dependencies orchestrator (mirrors
- * check-coverage-no-decrease.ts's runCli) — via a fake readLcov (and, for the
- * MTC-1.6 dispatch wiring, a fake readCoverageToolDoc) instead of real file
- * reads, so no process.exit or filesystem I/O is involved. main()'s thin
- * I/O/CLI wiring beyond runCli is intentionally left uncovered, consistent
- * with this repo's process-entrypoint exclusion convention (see
+ * Also verifies runCli — the injectable-dependencies orchestrator — via a
+ * fake readLcov (and, for the MTC-1.6 dispatch wiring, a fake readCoverageToolDoc)
+ * instead of real file reads, so no process.exit or filesystem I/O is involved.
+ * main()'s thin I/O/CLI wiring beyond runCli is intentionally left uncovered,
+ * consistent with this repo's process-entrypoint exclusion convention (see
  * EXCLUDE_PREFIXES in check-coverage.ts).
  *
  * extractCoverageTool and selectParser (the MTC-1.6 per-repo coverage-tool
