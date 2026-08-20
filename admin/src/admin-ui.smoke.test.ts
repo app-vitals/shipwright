@@ -6212,10 +6212,67 @@ describe("admin UI — public task board", () => {
 // admin-ui.ts is shared across providers, so the session JWT shape (and thus
 // every downstream access check) is provider-agnostic. No new access-control
 // logic is introduced here.
+//
+// The first test below closes the gap flagged in review: rather than minting
+// the session JWT directly via makeSessionCookie() (which never touches Okta
+// code), it drives the real GET /admin/auth/okta/callback handler — token
+// exchange + userinfo normalization via the makeOktaClient mock — and then
+// reuses the cookie that handler actually sets on a subsequent authenticated
+// request, proving the callback-minted session drives access control exactly
+// like the directly-minted ones the remaining tests below use.
 
 describe("admin UI — Okta-authenticated access control", () => {
   const OKTA_MEMBER_EMAIL = "okta-member@example.com";
   const OKTA_OTHER_AGENT_ID = "agent-okta-other-456";
+
+  it("session minted by the real Okta callback route grants access like a directly-minted session", async () => {
+    // Drive the actual /admin/auth/okta/callback handler: CSRF state check,
+    // exchangeCode() + getUserInfo() via the makeOktaClient mock, allowlist
+    // check, then completeLogin() mints the session cookie.
+    const nonce = "test-okta-nonce-real-callback";
+    const oauthState = encodeURIComponent(JSON.stringify({ nonce }));
+    const params = new URLSearchParams({ state: nonce, code: "auth-code-123" });
+    const callbackApp = createAdminUIApp(
+      makeMockDeps({
+        oktaClient: makeOktaClient({
+          getUserInfo: () =>
+            Promise.resolve({
+              sub: "okta-sub-real-callback",
+              email: "admin@example.com",
+              email_verified: true,
+              name: "Admin User",
+            }),
+        }),
+      }),
+    );
+    const callbackRes = await callbackApp.request(
+      new Request(
+        `https://example.com/admin/auth/okta/callback?${params.toString()}`,
+        { headers: { Cookie: `oauth_state=${oauthState}` } },
+      ),
+    );
+    expect(callbackRes.status).toBe(302);
+    expect(callbackRes.headers.get("Location")).toBe("/admin/agents");
+    // Response.headers.get() folds multiple Set-Cookie headers (here: the
+    // oauth_state deletion + the new admin_session) into one comma-joined
+    // string, so pull out the admin_session value specifically.
+    const setCookieHeader = callbackRes.headers.get("Set-Cookie") ?? "";
+    const sessionCookieMatch = setCookieHeader.match(/admin_session=([^;,]+)/);
+    const sessionCookie = sessionCookieMatch?.[1];
+    expect(sessionCookie).toBeTruthy();
+
+    // Reuse the callback-minted cookie on a subsequent request — same
+    // access-control path (isAdmin from the session) as the
+    // makeSessionCookie()-based tests below, but now proven to originate
+    // from the real Okta callback handler rather than a bypass.
+    const listApp = createAdminUIApp(makeMockDeps());
+    const listRes = await listApp.request("/admin/agents", {
+      headers: { Cookie: `admin_session=${sessionCookie}` },
+    });
+    expect(listRes.status).toBe(200);
+    const listHtml = await listRes.text();
+    expect(listHtml).toContain("Test Agent");
+  });
 
   it("Okta-authenticated admin sees all agents and can create one", async () => {
     const adminCookie = await makeSessionCookie(
