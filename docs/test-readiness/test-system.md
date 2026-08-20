@@ -416,8 +416,8 @@ change lands inside the existing `ci` job's `task test:coverage` scope.
   of them.
 - **Budget:** <15min total per PR — see Speed budgets below.
 - **Coverage toolchain:** `lcov` (Bun's native coverage reporter) — `bun test --coverage
-  --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 89/89 line/function
-  floor parser referenced throughout this document — raised from 80/80 by MTC-1.7). **The toolchain is recorded per repo
+  --coverage-reporter=lcov`, gated by `scripts/check-coverage.ts` (the 90/89 line/function
+  floor parser referenced throughout this document — raised from 80/80 by MTC-1.7, then to 90 lines by CLG-1.1). **The toolchain is recorded per repo
   in this document's `## Stack profile` section** — each test-system design doc declares
   its repo's coverage tool in a `**Coverage toolchain:**` field (either explicitly at the
   top of the doc or inferred from stack profile). `scripts/check-coverage.ts` reads this
@@ -472,10 +472,8 @@ unresolved for several cycles now.
 
 Single coverage floor per Step 7 — no per-tier CI thresholds in the enforcement
 mechanism itself. This matches the repo's existing gate exactly: `scripts/check-coverage.ts`
-already enforces an aggregate **89/89** line/function floor via `task test:coverage`
-(raised from 80/80 by MTC-1.7, PR #2659 — live CI aggregate at the time was 89.77%/89.72%,
-just short of 90/90 across four review cycles, so the floor landed at 89/89 rather than
-merging a gate the repo doesn't yet clear), with no per-file or per-criticality carve-out.
+already enforces an aggregate **90/89** line/function floor via `task test:coverage`
+(raised from 80/80 by MTC-1.7 to 89/89 per PR #2659, then to 90% lines by CLG-1.1 — live CI aggregate at the time was 89.77%/89.72%, just short of 90/90 across four review cycles, so the floor initially landed at 89/89 rather than merging a gate the repo didn't yet clear), with no per-file or per-criticality carve-out.
 Criticality (critical ~95%, high ~80%, medium smoke-only) drives **prioritization** during
 Phase 4/5 task ordering, not a separate CI gate — writing critical-tier tests first, not a
 different enforced threshold per tier. A companion **coverage-must-not-decrease** check
@@ -484,7 +482,7 @@ fails CI if a PR's aggregate line coverage drops relative to its base branch, co
 checking out the base ref into an isolated temp git worktree and re-running coverage there
 — this closes the direction-of-change gap the absolute floor alone doesn't cover once a
 repo is already above threshold. It intentionally runs without a test DB (so its own
-no-DB aggregate, ~82-84% lines, can never be compared against the 89% absolute floor —
+no-DB aggregate, ~82-84% lines, can never be compared against the 90% absolute floor —
 that's `task test:coverage`'s job, with a real Postgres DB in CI), reading only
 `coverage/lcov.info` and never the absolute gate's exit code.
 
@@ -502,7 +500,7 @@ that's `task test:coverage`'s job, with a real Postgres DB in CI), reading only
 
 **Why a single CI-enforced floor with tiered targets layered on top (per SKILL Step
 7):** per-tier CI thresholds require a maintained criticality mapping in CI that decays
-as files are added/moved/reweighted. A single 89/89 floor enforced by
+as files are added/moved/reweighted. A single 90/89 floor enforced by
 `scripts/check-coverage.ts`'s built-in lcov parsing avoids that maintenance burden,
 while the tiered targets above (critical ~95%, high ~80%, medium smoke-only) still
 direct *what gets written first* and *how thoroughly* during Phase 4/5 planning — a

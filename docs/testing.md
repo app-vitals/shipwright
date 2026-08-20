@@ -22,7 +22,7 @@ go-task (`Taskfile.yml`) is the single local entrypoint:
 task setup        # bun install across all workspaces
 task ci           # lint → check-strings → typecheck → check-config-docs → check-version-sync → test:coverage → secret-scan (the merge-blocking gate)
 task test         # bun test (all packages)
-task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 89/89 lines/functions (scripts/check-coverage.ts)
+task test:coverage  # bun test --coverage --coverage-reporter=lcov, then gate on aggregate 90/89 lines/functions (scripts/check-coverage.ts)
 ```
 
 Run a single package or file directly:
@@ -81,7 +81,7 @@ CI runs the exact `task ci` chain: **lint → check-strings → typecheck → ch
 
 The coverage gate has two components:
 
-1. **Absolute threshold** (`scripts/check-coverage.ts`): enforced by the main `ci` job on the coverage report produced by `task test:coverage`, requiring 89% lines + 89% functions on an aggregate basis. The script automatically detects the repo's coverage toolchain by reading a `**Coverage toolchain:**` field (if declared in the repo's test-system documentation) and dispatches to the appropriate parser (`lcov`, `jacoco`, `coverage.py`, `c8`/`nyc`, `go-cover`); if no toolchain is declared, it defaults to `lcov`.
+1. **Absolute threshold** (`scripts/check-coverage.ts`): enforced by the main `ci` job on the coverage report produced by `task test:coverage`, requiring 90% lines + 89% functions on an aggregate basis. The script automatically detects the repo's coverage toolchain by reading a `**Coverage toolchain:**` field (if declared in the repo's test-system documentation) and dispatches to the appropriate parser (`lcov`, `jacoco`, `coverage.py`, `c8`/`nyc`, `go-cover`); if no toolchain is declared, it defaults to `lcov`.
 2. **No-decrease delta** (`scripts/check-coverage-no-decrease.ts`): enforced by the `coverage-no-decrease` job (pull_request only), which checks out the base branch into an isolated worktree, runs its coverage suite, and fails if the PR's aggregate line-coverage percentage is strictly less than the base branch's. Allows PRs that hold coverage flat or improve it, but rejects decreases to catch backsliding over time.
 
 ## References

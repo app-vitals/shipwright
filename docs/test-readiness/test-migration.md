@@ -326,14 +326,14 @@ this cycle — see Method note step 3 and the `scripts/*` row above:
   `metrics/src/providers/task-store-recorded.ts`,
   `metrics/src/fixtures/task-store-fixtures.ts`, `agent/src/shipwright-config-client.ts` —
   unchanged this cycle; pattern is stable and extending cleanly to new clients.
-- **`scripts/check-coverage.ts`** — the 89/89 line/function-threshold gate (raised from
-  80/80 by MTC-1.7, then refactored to a pluggable `CoverageParser` interface this
-  cycle — see the `scripts/*` row above). Confirmed passing this cycle's live CI run at
+- **`scripts/check-coverage.ts`** — the 90/89 line/function-threshold gate (raised from
+  80/80 by MTC-1.7, then to 90% lines by CLG-1.1, and refactored to a pluggable `CoverageParser` interface
+  previously — see the `scripts/*` row above). Confirmed passing this cycle's live CI run at
   90.90%/89.75%.
 - **`scripts/check-coverage-no-decrease.ts`** (new this cycle, PR #2657) — companion
   coverage-must-not-decrease gate, wired into `.github/workflows/ci.yml`'s coverage-gate
   step. Runs without a test DB by design (its no-DB aggregate can't be compared to the
-  89% absolute floor, which is `task test:coverage`'s job with a real Postgres DB).
+  90% absolute floor, which is `task test:coverage`'s job with a real Postgres DB).
 - **`.github/PULL_REQUEST_TEMPLATE.md`** — confirmed present directly, matches
   `test-system.md`'s Repo configuration section's note that this is resolved, not a gap.
 - **`docs/test-readiness/speed-baseline.md`** — not re-refreshed this cycle; its numbers
@@ -442,7 +442,7 @@ document (2026-08-18 cycle):
    builders) all extended their already-migrated test files at the already-correct
    layer. No Phase 4 action needed.
 2. **Speed measurement re-confirmed in budget** — Tier 1 aggregate ~15% of budget on a
-   fresh data point at this cycle's exact HEAD (90.95%/89.68% coverage, above the 89/89
+   fresh data point at this cycle's exact HEAD (90.95%/89.68% coverage, above the 90/89
    floor), consistent with the growth trajectory (+56 tests over the 1-day gap). No M1
    task needed.
 3. **0 net-new infra items, 0 rebuild candidates, 0 delete/trim candidates, 0
@@ -467,12 +467,12 @@ document (2026-08-18 cycle):
    `check-coverage-gate.ts`/`check-coverage-no-decrease.ts`/`coverage-tool-dispatch.ts`
    cluster and `check-coverage.ts`'s `CoverageParser` refactor all shipped with matching
    test coverage at the correct layer in the same commits. No Phase 4 action needed.
-4. **`test-system.md`'s coverage-floor references corrected this cycle** (80/80 → 89/89,
-   stale since MTC-1.7 raised the floor without touching this doc) — a Phase 2 (not
+4. **`test-system.md`'s coverage-floor references corrected this cycle** (80/80 → 89/89 → 90/89,
+   updated to reflect CLG-1.1 line-threshold raise) — a Phase 2 (not
    Phase 4) correction, already applied in this cycle's `test-system.md` refresh.
 5. **Speed measurement re-confirmed in budget** — Tier 1 aggregate ~16% of budget on a
    fresh data point at this cycle's exact HEAD (90.90%/89.75% coverage, well above the
-   89/89 floor), consistent with the growth trajectory (+363 tests over the 2-day gap).
+   90/89 floor), consistent with the growth trajectory (+363 tests over the 2-day gap).
    No M1 task needed.
 6. **0 net-new infra items, 0 rebuild candidates, 0 delete/trim candidates, 0
    isolation-contract regressions, 0 Promote/deepen items** — the first cycle with an

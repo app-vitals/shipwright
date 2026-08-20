@@ -138,7 +138,7 @@ finding across every cycle to date. See Milestone 3.
 
 Fully green run — no failing jobs. `bun test` step itself: 34.59s. 6,920 tests pass, 0
 fail, across 283 files. Coverage held at 90.95% lines / 89.68% functions (threshold
-89%/89%, unchanged). Consistent with every prior cycle's ~13-18% readings — not trending
+90%/89%, line threshold raised by CLG-1.1). Consistent with every prior cycle's ~13-18% readings — not trending
 toward the escalation trigger. Test-count growth trajectory: 5,762 (2026-07-28) →
 6,041-6,042 (2026-08-01) → 6,070 (2026-08-05) → 6,071 (2026-08-06) → 6,177 (2026-08-09) →
 6,288 (2026-08-11) → 6,501 (2026-08-14) → 6,864 (2026-08-16) → 6,920 (2026-08-18, this
@@ -175,8 +175,8 @@ identified. Net-new remains at 1 — only the long-standing, explicitly-optional
   substitute (recorded-fixture doubles for internal/third-party HTTP, real Postgres via
   CI service container for the three Prisma-backed services, a real locally-launched
   Chromium binary for `agent/src/browser.ts`). No blockers.
-- **Coverage targets** — single 89/89 line/function CI floor (`scripts/check-coverage.ts`,
-  raised from 80/80 by MTC-1.7), already enforced, plus a companion coverage-must-not-decrease
+- **Coverage targets** — single 90/89 line/function CI floor (`scripts/check-coverage.ts`,
+  raised from 80/80 by MTC-1.7, then to 90% lines by CLG-1.1), already enforced, plus a companion coverage-must-not-decrease
   gate (`scripts/check-coverage-no-decrease.ts`, new this cycle); tiered targets (critical
   ~95%, high ~80%, medium spot-check) direct prioritization, not a second CI gate. **New
   this cycle: a dual feature+line `coverage_gate` block** (`scripts/check-coverage-gate.ts`)
