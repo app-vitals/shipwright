@@ -1,0 +1,36 @@
+{
+  "exchangeCode_success": {
+    "status": 200,
+    "body": {
+      "access_token": "okta.test-access-token",
+      "refresh_token": "okta.test-refresh-token",
+      "id_token": "okta.test-id-token-jwt",
+      "expires_in": 3600
+    }
+  },
+  "exchangeCode_success_no_optional_fields": {
+    "status": 200,
+    "body": {
+      "access_token": "okta.test-access-token-minimal",
+      "expires_in": 3600
+    }
+  },
+  "exchangeCode_400": {
+    "status": 400,
+    "body": "{\"error\":\"invalid_grant\",\"error_description\":\"The authorization code is invalid or has expired.\"}"
+  },
+  "getUserInfo_success": {
+    "status": 200,
+    "body": {
+      "sub": "00u1a2b3c4d5e6f7g8h9",
+      "email": "user@example.com",
+      "email_verified": true,
+      "name": "Test User",
+      "picture": "https://example.com/photo.jpg"
+    }
+  },
+  "getUserInfo_401": {
+    "status": 401,
+    "body": "{\"error\":\"invalid_token\"}"
+  }
+}
