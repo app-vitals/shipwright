@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { clearCache, resolveDisplayName } from "./users.ts";
+import { clearCache, resolveDisplayName, resolveUserEmail } from "./users.ts";
 
 const makeClient = (profile: Record<string, string | undefined>) => ({
   users: {
@@ -56,5 +56,53 @@ describe("resolveDisplayName", () => {
     clearCache();
     await resolveDisplayName("U_CLR", client as never);
     expect(client.users.info).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resolveUserEmail", () => {
+  afterEach(() => {
+    clearCache();
+  });
+
+  it("returns profile.email when present", async () => {
+    const client = makeClient({
+      display_name: "Dan",
+      email: "dan@example.com",
+    });
+    expect(await resolveUserEmail("U_EMAIL1", client as never)).toBe(
+      "dan@example.com",
+    );
+  });
+
+  it("returns undefined when profile.email is absent (missing scope)", async () => {
+    const client = makeClient({ display_name: "Dan" });
+    expect(
+      await resolveUserEmail("U_NOEMAIL", client as never),
+    ).toBeUndefined();
+  });
+
+  it("returns undefined when Slack call throws", async () => {
+    const badClient = {
+      users: {
+        info: mock(async () => {
+          throw new Error("missing_scope");
+        }),
+      },
+    };
+    expect(
+      await resolveUserEmail("U_ERR2", badClient as never),
+    ).toBeUndefined();
+  });
+
+  it("shares the cache with resolveDisplayName — only one API call for both name and email", async () => {
+    const client = makeClient({
+      display_name: "Dan",
+      email: "dan@example.com",
+    });
+    const name = await resolveDisplayName("U_SHARED", client as never);
+    const email = await resolveUserEmail("U_SHARED", client as never);
+    expect(name).toBe("Dan");
+    expect(email).toBe("dan@example.com");
+    expect(client.users.info).toHaveBeenCalledTimes(1);
   });
 });
