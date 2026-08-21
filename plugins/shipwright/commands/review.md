@@ -485,6 +485,11 @@ Dispatch via the Agent tool with `subagent_type: "shipwright:code-reviewer"`, pa
 falling back to `'sonnet'` when no task is linked or the lookup failed), and pass
 a single prompt block containing:
 
+**This call is synchronous and blocking** — the Agent tool result returns the subagent's
+full JSON response directly, so Step 7 continues straight to parsing it into Step 8 and
+Step 9. No wait/poll step is needed here: do not schedule a wakeup or background monitor
+for this dispatch.
+
 - **PR metadata** — `number`, `title`, `author`, `headRefName`, `baseRefName`, `headRefOid`
 - **Full diff** — the `git diff "origin/$base"...HEAD` output from Step 5.2
 - **Changed files** — the list extracted in Step 5.3

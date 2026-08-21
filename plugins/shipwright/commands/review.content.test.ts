@@ -1754,3 +1754,30 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
     expect(step11bSection).toContain("must already have completed");
   });
 });
+
+describe("review.md — Step 7 dispatch is synchronous, no ScheduleWakeup/Monitor (RVS-1.1)", () => {
+  function extractStep7Section(md: string): string {
+    const step7Idx = md.indexOf("## Step 7: Deep Review");
+    const step8Idx = md.indexOf("## Step 8: Score and Classify Findings");
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step8Idx).toBeGreaterThan(step7Idx);
+    return md.slice(step7Idx, step8Idx);
+  }
+
+  it("explicitly states the Agent dispatch blocks and returns the subagent's JSON response directly", () => {
+    const step7Section = extractStep7Section(content);
+    const lower = step7Section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("synchronous");
+    expect(lower).toContain("blocking");
+    expect(lower).toContain("returns the subagent's full json response");
+  });
+
+  it("does NOT instruct a ScheduleWakeup/Monitor call or background-wait phrasing for the Step 7 dispatch", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).not.toContain("ScheduleWakeup");
+    expect(step7Section).not.toContain("Monitor");
+    const lower = step7Section.toLowerCase();
+    expect(lower).not.toContain("running in the background");
+    expect(lower).not.toContain("wait for it to complete");
+  });
+});
