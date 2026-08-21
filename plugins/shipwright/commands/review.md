@@ -241,12 +241,13 @@ back to `'sonnet'`.
            nodes {
              id
              isResolved
-             comments(first: 1) {
+             comments(first: 20) {
                nodes {
                  author { login }
                  body
                  path
                  line
+                 createdAt
                }
              }
            }
@@ -264,9 +265,12 @@ back to `'sonnet'`.
    ```
    Extract `reviews.nodes[]` (including each review's `commit.oid`, needed by Step 9.5's
    mechanical gate below to filter reviews at the current `headRefOid`), `reviewThreads.nodes[]`
-   (with `isResolved` and the first comment's `author.login`, `body`, `path`, `line`), and
-   `comments.nodes[]` — the same shape patch.md's Step 3a extracts. Used below by the
-   Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
+   (with `isResolved` and up to 20 comments per thread — `author.login`, `body`, `path`, `line`,
+   and `createdAt` for each, not just the first comment; `createdAt` is what Step 9.5's
+   `isThreadAddressedByAuthorReply` exclusion (URT-1.1) needs to detect a PR-author reply posted
+   after a thread's first, flagging comment), and `comments.nodes[]` — the same shape patch.md's
+   Step 3a extracts. Used below by the Unresolved Comment Check and by the unaddressed-findings
+   gate before Step 10.
 
    #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
 
@@ -748,7 +752,10 @@ UNADDRESSED_FINDINGS={true or false, from the script's output above}
 ```
 
 A PR has **unaddressed findings** when ANY of the following are true:
-- At least one review threads node has `isResolved == false` (any unresolved inline thread)
+- At least one review threads node has `isResolved == false` (unresolved inline thread),
+  excluding one addressed by a later PR-author reply within it (URT-1.1's
+  `isThreadAddressedByAuthorReply` — sixth exclusion, scoped to the thread's own timestamps
+  since no review<->thread correlation exists in the schema; see patch.md's Step 5a.7).
 - At least one review with `state == "COMMENTED"` or `state == "CHANGES_REQUESTED"` has a
   non-empty `body`, excluding:
   - a clean self-APPROVE (per `isCleanApproveBody`/CPF-2.1 — a review whose body starts with
@@ -757,34 +764,30 @@ A PR has **unaddressed findings** when ANY of the following are true:
     PR-level comment with `createdAt` after that review's `submittedAt`, and all inline
     threads are resolved), and
   - an earlier self-authored review superseded by a later, genuinely clean self-review from
-    the same author (per DRO-1.2 — this PR's own review history is the motivating case: a
-    self-authored PR reviewed via a fresh review object each round, rather than a body
-    rewrite, never triggers the clean-self-APPROVE exclusion above for its earlier rounds
-    even after every finding in them is fixed), and
+    the same author (per DRO-1.2 — a self-authored PR reviewed via a fresh review object each
+    round, rather than a body rewrite, never triggers the clean-self-APPROVE exclusion above
+    for earlier rounds even after every finding in them is fixed), and
   - a prior CURRENT_USER review attested resolved by the CURRENT pass's structured
     `priorFindingsStatus[]` (per PVD-1.3 — `isResolvedByPriorFindingsStatus`): when the
     code-reviewer subagent's Step 7 output contains a `{ ref, resolved, evidence }` entry that
     references that review (matched by `reviewRef` — full `commit.oid` + `submittedAt`) with
-    `resolved: true` and non-empty `evidence`, the prior review is excluded. This is the
-    fourth exclusion, and it closes a structural deadlock: because Step 10/11 always posts a
-    NEW review object per pass (never rewriting a prior body), the DRO-1.2 supersession
-    exclusion above can only fire when a LATER self-review is itself a clean `Verdict: APPROVE`
-    — but that later review can only be clean if `unaddressedFindings` was already false for
-    its own pass, so a single self-authored `Verdict: COMMENT` finding pins the PR at COMMENT
-    forever, even after the finding is fixed and every later pass finds nothing new.
-    `priorFindingsStatus[]` breaks the cycle by letting the current pass attest the earlier
-    finding resolved directly.
+    `resolved: true` and non-empty `evidence`, the prior review is excluded. Fourth exclusion;
+    closes a structural deadlock: because Step 10/11 always posts a NEW review object per
+    pass (never rewriting a prior body), the DRO-1.2 supersession exclusion above can only
+    fire when a LATER self-review is itself a clean `Verdict: APPROVE` — but that later review
+    can only be clean if `unaddressedFindings` was already false for its own pass, so a single
+    self-authored `Verdict: COMMENT` finding pins the PR at COMMENT forever, even after the
+    finding is fixed. `priorFindingsStatus[]` breaks the cycle by letting the current pass
+    attest the earlier finding resolved directly.
 
     **Option B — each finding judged independently.** Each `priorFindingsStatus[]` entry is
-    evaluated on its own. A fresh, unrelated blocking finding elsewhere in the same pass does
-    **not** prevent an already-verified resolution from being excluded — there is no coupling
-    to `currentPassHasBlockingFindings` or to other findings in the same pass (that fresh
-    finding still forces `COMMENT` on its own via `currentPassHasBlockingFindings` and/or the
-    normal qualifying-review path). The accepted trade-off: we trust the subagent's
-    evidence-backed, per-finding attestation without requiring the whole pass to be clean.
-    This exclusion applies only to CURRENT_USER's own prior reviews — a distinct third-party
-    reviewer's finding is never self-attested away this way (that path stays governed by the
-    CPF-2.3 author-reply exclusion above).
+    evaluated on its own; a fresh, unrelated blocking finding elsewhere in the same pass does
+    **not** prevent an already-verified resolution from being excluded (that fresh finding
+    still forces `COMMENT` on its own via `currentPassHasBlockingFindings` and/or the normal
+    qualifying-review path). We trust the subagent's evidence-backed, per-finding attestation
+    without requiring the whole pass to be clean. Applies only to CURRENT_USER's own prior
+    reviews — a third-party reviewer's finding is never self-attested away this way (that
+    path stays governed by the CPF-2.3 author-reply exclusion above).
 
 This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
 its List A — see that section for the full clean-APPROVE, author-reply, and

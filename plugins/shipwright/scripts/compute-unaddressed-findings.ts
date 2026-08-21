@@ -40,6 +40,16 @@
 //      subagent independent of whose review is being resolved, so this
 //      exclusion applies to third-party reviews too.
 //
+// Separately, an individual unresolved inline thread is excluded from the
+// unresolved-threads check by a sixth exclusion:
+//   6. isThreadAddressedByAuthorReply (URT-1.1) — a thread whose own comments
+//      contain a reply from `prAuthor` posted after the thread's first
+//      (flagging) comment. Unlike exclusions 1-5, this is scoped to a single
+//      thread's own timestamps rather than any review — there is no
+//      review<->thread correlation available in the current GraphQL schema
+//      (see patch.md's own admission of the same gap), so this exclusion
+//      cannot reuse isAddressedByAuthorReply's review-level comparison.
+//
 // CLI:
 //   bun run plugins/shipwright/scripts/compute-unaddressed-findings.ts '{"currentUser":"the-agent","headRefOid":"abc123","reviews":{"nodes":[...]},"reviewThreads":{"nodes":[...]},"comments":{"nodes":[...]},"priorFindingsStatus":[...],"findings":[...],"prAuthor":"pr-author-login"}'
 // or pipe the same JSON blob via stdin. `priorFindingsStatus` and `findings`
@@ -66,7 +76,22 @@ export interface ReviewNode {
 
 export interface ReviewThread {
   isResolved: boolean;
-  comments: { nodes: Array<{ author: { login: string }; body: string }> };
+  comments: {
+    nodes: Array<{
+      author: { login: string };
+      body: string;
+      /**
+       * Optional (mirrors agent/src/check-patch.ts's RVG-2.1 precedent):
+       * only callers that fetch multiple thread comments with `createdAt`
+       * (review.md's Step 5.5, widened for URT-1.1) can populate this.
+       * Callers whose GraphQL query doesn't request it — or that only fetch
+       * a single (first) comment — leave it undefined, which
+       * isThreadAddressedByAuthorReply treats as "not addressed" (the
+       * default, pre-existing behavior), never throwing.
+       */
+      createdAt?: string;
+    }>;
+  };
 }
 
 export interface IssueCommentNode {
@@ -238,6 +263,38 @@ export function isAddressedByAuthorReply(
 }
 
 /**
+ * Returns true when a single inline review thread has been addressed by a
+ * subsequent PR-author reply posted within that same thread (URT-1.1).
+ *
+ * Mirrors isAddressedByAuthorReply (CPF-2.3) above, but scoped to a single
+ * thread's own comments rather than a review's `submittedAt` — there is no
+ * review<->thread correlation available in the current GraphQL schema (a
+ * thread is not linked back to the specific review that raised it), so this
+ * predicate compares each thread's own first (flagging) comment's
+ * `createdAt` against any LATER comment authored by `prAuthor` in that same
+ * thread. A thread with fewer than two comments, or whose comments lack
+ * `createdAt` (a caller that didn't fetch it, or only fetched the first
+ * comment — the pre-URT-1.1 shape), never matches — this is the
+ * regression-safe default: missing timing data means "not addressed",
+ * preserving the current behavior exactly for every existing caller.
+ */
+export function isThreadAddressedByAuthorReply(
+  thread: Pick<ReviewThread, "comments">,
+  prAuthor: string,
+): boolean {
+  const [first, ...rest] = thread.comments.nodes;
+  if (!first || first.createdAt === undefined) return false;
+
+  const flaggedAt = new Date(first.createdAt).getTime();
+  return rest.some(
+    (c) =>
+      c.author.login === prAuthor &&
+      c.createdAt !== undefined &&
+      new Date(c.createdAt).getTime() > flaggedAt,
+  );
+}
+
+/**
  * Returns true when a self-authored review is superseded by a LATER,
  * genuinely clean self-review from the same identity (DRO-1.2 — mirrors
  * patch.md's Step 3a "Self-review superseded by a later clean self-review"
@@ -370,7 +427,10 @@ export function isResolvedByPriorFindingsStatus(
  * disposition also never excludes, since the finding was disputed rather than
  * fixed or superseded.
  */
-export function isResolvedByLedger(ref: string, findings: PrFinding[]): boolean {
+export function isResolvedByLedger(
+  ref: string,
+  findings: PrFinding[],
+): boolean {
   return findings.some(
     (f) =>
       f.ref === ref &&
@@ -414,6 +474,15 @@ export function isResolvedByLedger(ref: string, findings: PrFinding[]): boolean 
  * (see isResolvedByLedger, PFL-3.2) — the fifth exclusion, not gated on
  * self-authorship since ledger entries are written by the code-reviewer
  * subagent independent of whose review is being resolved.
+ *
+ * Separately, an unresolved inline thread (isResolved == false) is excluded
+ * from the unresolved-threads check when the PR author has replied within
+ * that same thread after its first (flagging) comment (see
+ * isThreadAddressedByAuthorReply, URT-1.1) — the sixth exclusion. Unlike the
+ * five above, this is scoped to the thread's own comments rather than any
+ * review, since no review<->thread correlation is available in the current
+ * GraphQL schema: a thread can only be judged against its own timestamps,
+ * not the review that (may have) raised it.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
@@ -441,8 +510,12 @@ export function hasUnaddressedFindings(
 
   if (qualifyingReviews.length === 0) return false;
 
-  // Check for unresolved threads
-  const unresolvedThreads = reviewThreads.nodes.filter((t) => !t.isResolved);
+  // Check for unresolved threads, excluding ones the PR author has already
+  // replied to and addressed within the thread itself (URT-1.1 — the sixth
+  // exclusion).
+  const unresolvedThreads = reviewThreads.nodes.filter(
+    (t) => !t.isResolved && !isThreadAddressedByAuthorReply(t, prAuthor),
+  );
 
   if (unresolvedThreads.length > 0) return true;
 
