@@ -1,0 +1,44 @@
+{
+  "exchangeManifestCode_success": {
+    "status": 201,
+    "body": {
+      "id": 123456,
+      "slug": "test-agent-app",
+      "node_id": "MDM6QXBwMTIzNDU2",
+      "owner": {
+        "login": "test-org",
+        "id": 987654
+      },
+      "name": "test-agent",
+      "client_id": "Iv1.testclientid1234",
+      "client_secret": "test-client-secret-value",
+      "webhook_secret": "test-webhook-secret-should-never-appear",
+      "pem": "-----BEGIN RSA PRIVATE KEY-----\ntestpemcontents\n-----END RSA PRIVATE KEY-----\n",
+      "html_url": "https://github.com/apps/test-agent-app",
+      "external_url": "https://shipwright.example.com",
+      "created_at": "2026-08-21T00:00:00Z",
+      "updated_at": "2026-08-21T00:00:00Z"
+    }
+  },
+  "exchangeManifestCode_not_found": {
+    "status": 404,
+    "body": {
+      "message": "Not Found",
+      "documentation_url": "https://docs.github.com/rest/apps/apps#create-a-github-app-from-a-manifest"
+    }
+  },
+  "exchangeManifestCode_unprocessable": {
+    "status": 422,
+    "body": {
+      "message": "Validation Failed",
+      "documentation_url": "https://docs.github.com/rest/apps/apps#create-a-github-app-from-a-manifest"
+    }
+  },
+  "exchangeManifestCode_missing_fields": {
+    "status": 201,
+    "body": {
+      "slug": "test-agent-app",
+      "webhook_secret": "test-webhook-secret-should-never-appear"
+    }
+  }
+}
