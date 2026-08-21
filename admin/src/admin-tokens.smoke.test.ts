@@ -9,7 +9,11 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
-import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
+import type {
+  AdminUIDeps,
+  AdminUIGithubAppClient,
+  AdminUISlackClient,
+} from "./admin-ui.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import { resolveTaskStoreBaseUrl } from "./main.ts";
 
@@ -50,6 +54,16 @@ const BASE_SLACK_CLIENT: AdminUISlackClient = {
   }),
   updateAppManifest: async () => {},
   exchangeOAuthCode: async () => ({ botToken: "xoxb-mock" }),
+};
+
+const BASE_GITHUB_APP_CLIENT: AdminUIGithubAppClient = {
+  exchangeManifestCode: async () => ({
+    appId: "999111",
+    slug: "test-shipwright-agent",
+    pem: "-----BEGIN RSA PRIVATE KEY-----\nmock\n-----END RSA PRIVATE KEY-----",
+    clientId: "gh-app-client-id",
+    clientSecret: "gh-app-client-secret",
+  }),
 };
 
 function makeGoogleClient(): GoogleAuthClient {
@@ -310,6 +324,7 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     adminAllowedEmails: ["admin@example.com"],
     googleClient: makeGoogleClient(),
     slackClient: BASE_SLACK_CLIENT,
+    githubAppClient: BASE_GITHUB_APP_CLIENT,
     appBaseUrl: "https://example.com",
     ...overrides,
   };

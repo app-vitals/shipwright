@@ -1672,6 +1672,62 @@ describe("renderProvisionStartPage", () => {
     expect(selectMatch).toBeTruthy();
     expect(selectMatch?.[0]).not.toContain("required");
   });
+
+  // ── new tests for ghAppMode sub-toggle (manual paste vs. auto-provision) ─
+
+  test("renders ghAppMode radio buttons (manual and auto)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="ghAppMode"');
+    expect(html).toContain('value="manual"');
+    expect(html).toContain('value="auto"');
+  });
+
+  test("ghAppMode=manual is checked by default (preserves current behavior)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const manualMatch = html.match(
+      /<input type="radio" name="ghAppMode" value="manual"[^>]*>/,
+    );
+    expect(manualMatch).toBeTruthy();
+    expect(manualMatch?.[0]).toContain("checked");
+  });
+
+  test("ghAppMode=auto is NOT checked by default", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const autoMatch = html.match(
+      /<input type="radio" name="ghAppMode" value="auto"[^>]*>/,
+    );
+    expect(autoMatch).toBeTruthy();
+    expect(autoMatch?.[0]).not.toContain("checked");
+  });
+
+  test("manual fields (ghAppId, ghAppInstallationId, ghAppPrivateKey) still render unchanged", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('id="ghAppId" name="ghAppId"');
+    expect(html).toContain(
+      'id="ghAppInstallationId" name="ghAppInstallationId"',
+    );
+    expect(html).toContain('id="ghAppPrivateKey" name="ghAppPrivateKey"');
+  });
+
+  test("renders a required githubOrg text field for auto-provision", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="githubOrg"');
+    const orgMatch = html.match(/<input id="githubOrg"[^>]*>/);
+    expect(orgMatch).toBeTruthy();
+    expect(orgMatch?.[0]).toContain("required");
+  });
+
+  test("gh-app-manual-fields container wraps the three manual fields", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('id="gh-app-manual-fields"');
+  });
+
+  test("gh-app-auto-fields container wraps the githubOrg field and is hidden by default", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const containerMatch = html.match(/<div id="gh-app-auto-fields"[^>]*>/);
+    expect(containerMatch).toBeTruthy();
+    expect(containerMatch?.[0]).toContain("display:none");
+  });
 });
 
 // ─── renderProvisionPasteForm ─────────────────────────────────────────────────
