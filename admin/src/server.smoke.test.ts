@@ -219,6 +219,9 @@ function buildComposedApp() {
       updateAppManifest: notImplemented,
       exchangeOAuthCode: notImplemented,
     },
+    githubAppClient: {
+      exchangeManifestCode: notImplemented,
+    },
     appBaseUrl: "http://localhost:3000",
   });
   root.route("/", adminUIApp);

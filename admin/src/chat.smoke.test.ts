@@ -9,7 +9,11 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "./admin-ui.ts";
-import type { AdminUIDeps, AdminUISlackClient } from "./admin-ui.ts";
+import type {
+  AdminUIDeps,
+  AdminUIGithubAppClient,
+  AdminUISlackClient,
+} from "./admin-ui.ts";
 import type {
   GoogleAuthClient,
   GoogleTokenResponse,
@@ -218,6 +222,16 @@ const BASE_SLACK_CLIENT: AdminUISlackClient = {
   exchangeOAuthCode: async () => ({ botToken: "xoxb-mock" }),
 };
 
+const BASE_GITHUB_APP_CLIENT: AdminUIGithubAppClient = {
+  exchangeManifestCode: async () => ({
+    appId: "999111",
+    slug: "test-shipwright-agent",
+    pem: "-----BEGIN RSA PRIVATE KEY-----\nmock\n-----END RSA PRIVATE KEY-----",
+    clientId: "gh-app-client-id",
+    clientSecret: "gh-app-client-secret",
+  }),
+};
+
 function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
   return {
     prisma: {
@@ -377,6 +391,7 @@ function makeBaseDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
     adminAllowedEmails: ADMIN_ALLOWED_EMAILS,
     googleClient: makeGoogleClient(),
     slackClient: BASE_SLACK_CLIENT,
+    githubAppClient: BASE_GITHUB_APP_CLIENT,
     appBaseUrl: "http://localhost:3001",
     ...overrides,
   };

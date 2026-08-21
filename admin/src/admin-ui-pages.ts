@@ -1556,18 +1556,41 @@ export function renderProvisionStartPage(
             </div>
           </div>
           <div id="gh-app-fields" style="display:none">
-            <div class="form-group">
-              <label class="form-label" for="ghAppId">App ID</label>
-              <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="123456" />
+            <div class="form-group" style="margin-bottom:12px">
+              <label style="font-size:13px;font-weight:500;margin-right:16px">
+                <input type="radio" name="ghAppMode" value="manual" checked
+                  onchange="document.getElementById('gh-app-manual-fields').style.display='block';document.getElementById('gh-app-auto-fields').style.display='none'"
+                /> Paste manually
+              </label>
+              <label style="font-size:13px;font-weight:500">
+                <input type="radio" name="ghAppMode" value="auto"
+                  onchange="document.getElementById('gh-app-manual-fields').style.display='none';document.getElementById('gh-app-auto-fields').style.display='block'"
+                /> Auto-provision (recommended)
+              </label>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="ghAppInstallationId">Installation ID</label>
-              <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="987654" />
+            <div id="gh-app-manual-fields">
+              <div class="form-group">
+                <label class="form-label" for="ghAppId">App ID</label>
+                <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="123456" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="ghAppInstallationId">Installation ID</label>
+                <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="987654" />
+              </div>
+              <div class="form-group">
+                <label class="form-label" for="ghAppPrivateKey">Private Key (PEM)</label>
+                <textarea id="ghAppPrivateKey" name="ghAppPrivateKey" class="form-input" rows="6"
+                  placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"></textarea>
+              </div>
             </div>
-            <div class="form-group">
-              <label class="form-label" for="ghAppPrivateKey">Private Key (PEM)</label>
-              <textarea id="ghAppPrivateKey" name="ghAppPrivateKey" class="form-input" rows="6"
-                placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"></textarea>
+            <div id="gh-app-auto-fields" style="display:none">
+              <div class="form-group">
+                <label class="form-label" for="githubOrg">GitHub org</label>
+                <input id="githubOrg" name="githubOrg" type="text" class="form-input" placeholder="my-org" required />
+                <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                  You'll be redirected to GitHub to create the App under this organization from a manifest.
+                </p>
+              </div>
             </div>
           </div>
         </fieldset>
@@ -1623,6 +1646,140 @@ export function renderProvisionStartPage(
     <div class="card">
       ${errorHtml}
       ${oauthSection}
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Auto-submitting POST-redirect page for the GitHub "create a GitHub App
+ * from a manifest" flow: https://docs.github.com/apps/creating-github-apps/setting-up-a-github-app/creating-a-github-app-from-a-manifest
+ *
+ * `githubOrg` must already be validated by the caller against the org-name
+ * pattern before this function is called — it's interpolated directly into
+ * the form's `action` URL.
+ */
+export function renderGithubAppManifestRedirectPage(
+  userName: string,
+  opts: { githubOrg: string; manifest: unknown },
+): string {
+  const actionUrl = `https://github.com/organizations/${encodeURIComponent(opts.githubOrg)}/settings/apps/new`;
+  const manifestJson = JSON.stringify(opts.manifest);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provision Agent — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/provision")}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Provision Agent</h1>
+    </div>
+    <div class="provision-steps">
+      <span class="provision-step active">1. Create Slack App</span>
+      <span class="provision-step">2. Authorize</span>
+      <span class="provision-step">3. Complete</span>
+    </div>
+    <div class="card">
+      <p style="font-size:14px;margin-bottom:16px;color:#6b7280">
+        Redirecting to GitHub to create the GitHub App under <strong>${escapeHtml(opts.githubOrg)}</strong>…
+      </p>
+      <form id="github-app-manifest-form" method="POST" action="${escapeHtml(actionUrl)}">
+        <input type="hidden" name="manifest" value="${escapeHtml(manifestJson)}" />
+        <button type="submit" class="btn btn-primary">Continue to GitHub →</button>
+      </form>
+      <script>
+        document.getElementById('github-app-manifest-form').submit();
+      </script>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Shown after GET /admin/provision/github-app/complete succeeds — links the
+ * operator to GitHub's installations/new page for the newly created app.
+ */
+export function renderGithubAppInstallPage(
+  userName: string,
+  opts: { installUrl: string },
+): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provision Agent — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/provision")}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Provision Agent</h1>
+    </div>
+    <div class="provision-steps">
+      <span class="provision-step">1. Create Slack App</span>
+      <span class="provision-step active">2. Install GitHub App</span>
+      <span class="provision-step">3. Complete</span>
+    </div>
+    <div class="card">
+      <div class="alert alert-success">
+        <strong>GitHub App created!</strong> Click the link below to install it.
+      </div>
+      <a href="${escapeHtml(opts.installUrl)}" class="btn btn-primary" rel="noopener noreferrer">
+        Install GitHub App →
+      </a>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Shown after GET /admin/provision/github-app/installed succeeds or fails —
+ * the manifest flow's `setup_url` target.
+ */
+export function renderGithubAppInstalledPage(
+  userName: string,
+  opts: { success: boolean; error?: string },
+): string {
+  const bodyHtml = opts.success
+    ? `<div class="alert alert-success">
+        <strong>GitHub App installed!</strong> — installation ID stored.
+      </div>
+      <a href="/admin/provision" class="btn btn-secondary">Back to Provisioning</a>`
+    : `<div class="alert alert-error">${escapeHtml(opts.error ?? "GitHub App installation failed.")}</div>
+      <a href="/admin/provision" class="btn btn-secondary">Try again</a>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provision Agent — Shipwright Admin</title>
+  <style>${baseStyles()}</style>
+</head>
+<body>
+  ${renderAdminToolbar(userName, "/admin/provision")}
+  <div class="vos-page">
+    <div class="page-header">
+      <h1 class="page-title">Provision Agent</h1>
+    </div>
+    <div class="provision-steps">
+      <span class="provision-step">1. Create Slack App</span>
+      <span class="provision-step">2. Install GitHub App</span>
+      <span class="provision-step active">3. Complete</span>
+    </div>
+    <div class="card">
+      ${bodyHtml}
     </div>
   </div>
 </body>
