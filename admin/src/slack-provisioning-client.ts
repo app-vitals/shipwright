@@ -135,6 +135,7 @@ export const AGENT_BOT_SCOPES: string[] = [
   "reactions:read",
   "reactions:write",
   "users:read",
+  "users:read.email",
 ];
 
 export function buildAgentManifest(
