@@ -342,11 +342,28 @@ back to `'sonnet'`.
    that `isSupersededBySelfReview` matched — cite it so the ledger entry's evidence is
    self-contained.
 
-   **Best-effort, not a new decision.** These POSTs persist judgments `isSelfCleanApprove` and
-   `isSupersededBySelfReview` already computed above — they do not gate, delay, or alter
-   `priorQualifyingReviews`, Step 7's subagent dispatch, or any later step. A failed POST (non-2xx,
-   timeout, or any other curl error) is non-fatal: log the warning shown above and continue: the
-   review pipeline must never block on a ledger write.
+   **Best-effort content, but strictly ordered before Step 11b.** These POSTs persist judgments
+   `isSelfCleanApprove` and `isSupersededBySelfReview` already computed above — they do not gate,
+   delay, or alter `priorQualifyingReviews`, Step 7's subagent dispatch, or any other step's
+   *decision*. A failed POST (non-2xx, timeout, or any other curl error) is still non-fatal: log
+   the warning shown above and continue — the review pipeline must never block on a ledger write
+   *failing*. But issuing the POST at all is not optional busywork to tack on whenever convenient:
+   every findings-ledger POST for this pass — including the ones above — **must complete before
+   Step 11b's `/prs/:id/complete` call** runs later in this same pass. Never defer them to "near
+   the end of the turn" after Step 11b has already run.
+
+   **Why this ordering matters (PR #89 race).** On PR #89, Step 11b's `/complete`
+   call landed at `2026-08-21T04:10:53.901Z` and stamped `reviewedAt=2026-08-21T04:10:53.897Z`.
+   Two `disposition: resolved, source: review` findings from this same PFL-2.1 section, from the
+   very same review pass, were POSTed ~13 seconds later — at `2026-08-21T04:11:06.780Z` and
+   `2026-08-21T04:11:06.820Z` — because the executing agent ran Step 11b first and only tacked the
+   ledger POSTs on near the end of its turn. Since both findings postdated `reviewedAt`,
+   `agent/src/check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) saw them as new information and
+   bypassed the already-reviewed-live exclusion, causing a spurious re-claim of the PR at
+   `2026-08-21T04:12:45.114Z` on the very next loop tick. `hasFreshLedgerFinding`'s rule — a
+   finding timestamped after `reviewedAt` means new information since the last pass — is correct;
+   this ordering requirement is what makes `reviewedAt` a reliable "last write of the pass" marker
+   instead of a false one.
 
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
@@ -1062,6 +1079,8 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
 ## Step 11b: Mark PullRequest Record Posted
 
 Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` (default) path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
+
+**Precondition:** any findings-ledger POSTs from this pass — chiefly Step 5's PFL-2.1 section — must already have completed before the `/complete` call below runs. Do not run this step and then circle back to Step 5's ledger POSTs afterward: that ordering is exactly what produced the PR #89 race (see Step 5's PFL-2.1 subsection for the timeline), where `reviewedAt` got stamped before same-pass ledger findings landed, tricking `hasFreshLedgerFinding` into treating stale self-review judgments as fresh and spuriously re-claiming the PR on the next loop tick.
 
 Use `{verdict}` and `PR_RECORD_ID` — from Step 10 and the claim in Step 4 respectively when called from this command; `record.reviewState == "approved" ? APPROVE : COMMENT` and `record.id` respectively when called from `/shipwright:review-staged`.
 
