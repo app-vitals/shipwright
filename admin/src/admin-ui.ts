@@ -1400,10 +1400,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // ─── Slack access settings (restrictSlackToMembers) ────────────────────────
 
   app.post("/admin/agents/:id/settings", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const agentId = c.req.param("id");
-    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-      return new Response("Forbidden", { status: 403 });
-    }
     let restrictSlackToMembersRaw: string | undefined;
     try {
       const formData = await c.req.formData();

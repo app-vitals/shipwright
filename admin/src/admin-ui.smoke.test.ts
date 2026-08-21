@@ -5643,6 +5643,33 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
     expect(res.status).toBe(403);
   });
 
+  it("POST /admin/agents/:id/settings returns 403 for non-admin AgentMember", async () => {
+    const MEMBER_EMAIL = "member@example.com";
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const deps = makeMockDeps();
+    deps.agentMemberService = {
+      ...deps.agentMemberService,
+      exists: async (_agentId: string, email: string) =>
+        email === MEMBER_EMAIL,
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ restrictSlackToMembers: "true" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${memberCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
   it("POST /admin/agents/:id/settings with restrictSlackToMembers:true and zero members redirects with warning query param", async () => {
     const deps = makeMockDeps();
     deps.agentService = {
