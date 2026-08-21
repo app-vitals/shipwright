@@ -48,6 +48,7 @@ describe("buildAgentManifest", () => {
       expect(scopes).toContain("channels:history");
       expect(scopes).toContain("groups:history");
       expect(scopes).toContain("chat:write");
+      expect(scopes).toContain("users:read.email");
     });
 
     it("omits redirect_urls when no redirectUri provided", () => {
