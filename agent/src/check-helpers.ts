@@ -137,6 +137,28 @@ export const VERDICT_TERMINAL_LABEL =
   /verdict\**\s*:\s*\**(approve|comment)\b/i;
 
 /**
+ * Single source of truth for what `review.md`'s Step 14 Live-Review
+ * Pre-Check (RVD-1.2) mirrors as a bash/jq predicate: a review counts as
+ * "already reviewed, terminal at this commit" when EITHER
+ * `VERDICT_TERMINAL_LABEL` matches its body OR its live GitHub `state` is
+ * `"APPROVED"` — a plain GitHub UI approval (empty/`LGTM` body, no
+ * `Verdict:` line) must count as terminal too, matching
+ * `classifyReviewState()`'s treatment of `state === "APPROVED"`. The bash
+ * mirror in review.md's jq program (`.state == "APPROVED"` ORed into the
+ * `select(...)` predicate alongside the `test(...)` regex) MUST stay in sync
+ * with this function's definition — verified via a content test in
+ * `plugins/shipwright/commands/review.content.test.ts`.
+ */
+export function isTerminalReviewLabel(review: {
+  state: string;
+  body: string;
+}): boolean {
+  return (
+    review.state === "APPROVED" || VERDICT_TERMINAL_LABEL.test(review.body)
+  );
+}
+
+/**
  * True when a review body is a clean APPROVE verdict, matched either by:
  * - a leading `APPROVE` (after stripping leading markdown bold markers), or
  * - a "Verdict: APPROVE" label anywhere in the body (the narrative
