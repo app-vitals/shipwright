@@ -49,8 +49,9 @@ Body:
 | `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
 | `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
 | `authorAllowlist` | no | Array of GitHub login strings — authors permitted to file pull requests scoped to this agent (default empty array = all authenticated users) |
+| `restrictSlackToMembers` | no | `true` to restrict Slack message access to agents with `AgentMember` rows (default `false` = unrestricted). When true and no members are configured, a non-blocking warning is returned. |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, typeName, createdAt, updatedAt, missingRequiredEnv }`. Returns `400` for an unknown `type`.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
 
 ### List agents
 
@@ -66,9 +67,11 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `typeName`, and `missingRequiredEnv`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
 
 `authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty, all authenticated users are allowed.
+
+`restrictSlackToMembers` is a boolean flag that, when `true`, restricts Slack message access to only users listed in the agent's `AgentMember` rows. Defaults to `false` (unrestricted). An optional `warning` field is included in the response when this flag is `true` but no members are configured, alerting the operator that all Slack senders are currently blocked.
 
 `missingRequiredEnv` is an array of required env var keys declared by the agent's type manifest that have no corresponding `AgentEnv` row yet — key names only, never values. This is purely informational (ATS-4.2).
 
@@ -78,7 +81,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `auth
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent). `typeName` is not updatable via this route. Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
