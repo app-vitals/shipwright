@@ -1024,6 +1024,26 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     expect(itemBlock).toContain("reviews(first:");
     expect(itemBlock).toContain("comments(first:");
   });
+
+  it("Step 5.5's GraphQL query fetches multiple thread comments (not just the first) with createdAt, for the URT-1.1 author-reply exclusion", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    const section = content.slice(step5Idx, step6Idx);
+
+    const itemIdx = section.indexOf("Existing reviews, comments, and inline review threads");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = section.slice(itemIdx, itemIdx + 1500);
+
+    // Widened from comments(first: 1) so later PR-author replies within a
+    // thread are visible to isThreadAddressedByAuthorReply, not just the
+    // thread's flagging comment.
+    expect(itemBlock).not.toContain("comments(first: 1)");
+    const threadsIdx = itemBlock.indexOf("reviewThreads(first: 100)");
+    expect(threadsIdx).toBeGreaterThan(-1);
+    const threadsBlock = itemBlock.slice(threadsIdx, threadsIdx + 400);
+    expect(threadsBlock).toMatch(/comments\(first:\s*20\)/);
+    expect(threadsBlock).toContain("createdAt");
+  });
 });
 
 describe("review.md — Unresolved Comment Check includes unresolved inline threads (RUC-1.1)", () => {

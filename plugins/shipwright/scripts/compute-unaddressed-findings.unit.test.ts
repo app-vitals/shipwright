@@ -14,17 +14,19 @@
 import { describe, expect, test } from "bun:test";
 import { computeVerdict } from "./compute-review-verdict.ts";
 import {
-  hasUnaddressedFindings,
   type IssueCommentNode,
+  type PrFinding,
+  type PrReviewData,
+  type ReviewNode,
+  type ReviewThread,
+  hasUnaddressedFindings,
   isAddressedByAuthorReply,
   isResolvedByLedger,
   isResolvedByPriorFindingsStatus,
   isSelfCleanApprove,
   isSupersededBySelfReview,
+  isThreadAddressedByAuthorReply,
   parseCliInput,
-  type PrFinding,
-  type PrReviewData,
-  type ReviewNode,
   reviewRef,
 } from "./compute-unaddressed-findings.ts";
 
@@ -498,7 +500,8 @@ describe("hasUnaddressedFindings", () => {
         {
           ref: reviewRef(oldFinding),
           resolved: true,
-          evidence: "src/retry.ts:42 — in-flight guard added, double-fire gone.",
+          evidence:
+            "src/retry.ts:42 — in-flight guard added, double-fire gone.",
         },
         // Note: no entry resolving freshFinding — it is a new, still-open finding.
       ],
@@ -978,6 +981,223 @@ describe("hasUnaddressedFindings", () => {
     });
     expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
   });
+
+  // ─── Thread addressed by a later PR-author reply (URT-1.1) ────────────────
+  //
+  // The unresolved-threads check previously applied zero of the exclusions
+  // the rest of this function uses — it was a raw pass over
+  // reviewThreads.nodes gated only on GitHub's isResolved flag, which
+  // nothing in the shipwright review pipeline ever sets. Once a thread
+  // existed and wasn't resolved, it blocked the verdict permanently even
+  // when the PR author had replied in that exact thread confirming a fix.
+  // This sixth exclusion mirrors isAddressedByAuthorReply (CPF-2.3) but is
+  // scoped to a single thread's own comments, comparing each thread's first
+  // (flagging) comment's createdAt against later comments from prAuthor — no
+  // cross-review correlation, since none is available in the GraphQL schema.
+
+  test("excludes a thread addressed by a later PR-author reply — hasUnaddressedFindings returns false when it's the only qualifying signal", () => {
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "reviewer1" },
+                  body: "Missing test coverage for the retry path.",
+                  createdAt: "2026-05-26T10:05:00Z",
+                },
+                {
+                  author: { login: "pr-author" },
+                  body: "Added a test covering the retry path in the latest push.",
+                  createdAt: "2026-05-26T12:00:00Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
+
+  test("does NOT exclude a thread when the PR-author reply predates the flagging comment", () => {
+    const data = makeData({
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "pr-author" },
+                  body: "Unrelated earlier comment in this thread.",
+                  createdAt: "2026-05-26T09:00:00Z",
+                },
+                {
+                  author: { login: "reviewer1" },
+                  body: "Missing test coverage for the retry path.",
+                  createdAt: "2026-05-26T10:05:00Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude a thread when the later reply is from someone other than prAuthor", () => {
+    const data = makeData({
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "reviewer1" },
+                  body: "Missing test coverage for the retry path.",
+                  createdAt: "2026-05-26T10:05:00Z",
+                },
+                {
+                  author: { login: "some-other-contributor" },
+                  body: "I can look into this too.",
+                  createdAt: "2026-05-26T12:00:00Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("does NOT exclude a thread when comments are missing createdAt (regression-safe default, same as today)", () => {
+    const data = makeData({
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "reviewer1" },
+                  body: "Missing test coverage for the retry path.",
+                },
+                {
+                  author: { login: "pr-author" },
+                  body: "Added a test covering the retry path in the latest push.",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(true);
+  });
+
+  test("end-to-end repro: a qualifying review plus one unresolved thread with an author reply after the flag resolves to no unaddressed findings", () => {
+    // Reproduces the confirmed live incident: a reviewer flagged missing test
+    // coverage inline, the author pushed a fix and replied in the same thread
+    // confirming it, nobody clicked "Resolve conversation" on GitHub, and the
+    // bot's next re-review concluded APPROVE in its own narrative but posted
+    // COMMENT anyway because of this gate.
+    const data = makeData({
+      prAuthor: "pr-author",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "CHANGES_REQUESTED",
+            submittedAt: "2026-08-20T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Please add test coverage for the new branch.",
+          },
+        ],
+      },
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "reviewer1" },
+                  body: "This new branch has no test coverage.",
+                  createdAt: "2026-08-20T10:01:00Z",
+                },
+                {
+                  author: { login: "pr-author" },
+                  body: "Pushed a fix with a new unit test covering this branch.",
+                  createdAt: "2026-08-21T09:00:00Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+      comments: {
+        nodes: [
+          {
+            author: { login: "pr-author" },
+            body: "Pushed a fix with a new unit test covering this branch.",
+            createdAt: "2026-08-21T09:00:00Z",
+          },
+        ],
+      },
+    });
+    expect(hasUnaddressedFindings(data, "the-agent")).toBe(false);
+  });
 });
 
 // ─── Helper predicates, tested directly ────────────────────────────────────
@@ -1020,9 +1240,7 @@ describe("isAddressedByAuthorReply", () => {
         createdAt: "2026-05-26T11:00:00Z",
       },
     ];
-    expect(isAddressedByAuthorReply(review, comments, "the-agent")).toBe(
-      true,
-    );
+    expect(isAddressedByAuthorReply(review, comments, "the-agent")).toBe(true);
   });
 
   test("false when currentUser's reply predates the review", () => {
@@ -1036,9 +1254,101 @@ describe("isAddressedByAuthorReply", () => {
         createdAt: "2026-05-26T09:00:00Z",
       },
     ];
-    expect(isAddressedByAuthorReply(review, comments, "the-agent")).toBe(
-      false,
-    );
+    expect(isAddressedByAuthorReply(review, comments, "the-agent")).toBe(false);
+  });
+});
+
+describe("isThreadAddressedByAuthorReply", () => {
+  test("true when prAuthor replies after the thread's first (flagging) comment", () => {
+    const thread: ReviewThread = {
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            body: "Missing test coverage.",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+          {
+            author: { login: "pr-author" },
+            body: "Added a test.",
+            createdAt: "2026-05-26T11:00:00Z",
+          },
+        ],
+      },
+    };
+    expect(isThreadAddressedByAuthorReply(thread, "pr-author")).toBe(true);
+  });
+
+  test("false when the prAuthor comment predates the thread's first comment", () => {
+    const thread: ReviewThread = {
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            author: { login: "pr-author" },
+            body: "Unrelated earlier comment.",
+            createdAt: "2026-05-26T09:00:00Z",
+          },
+          {
+            author: { login: "reviewer1" },
+            body: "Missing test coverage.",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+        ],
+      },
+    };
+    expect(isThreadAddressedByAuthorReply(thread, "pr-author")).toBe(false);
+  });
+
+  test("false when the later reply is from someone other than prAuthor", () => {
+    const thread: ReviewThread = {
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            body: "Missing test coverage.",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+          {
+            author: { login: "someone-else" },
+            body: "I can take a look.",
+            createdAt: "2026-05-26T11:00:00Z",
+          },
+        ],
+      },
+    };
+    expect(isThreadAddressedByAuthorReply(thread, "pr-author")).toBe(false);
+  });
+
+  test("false when comments are missing createdAt (regression-safe default)", () => {
+    const thread: ReviewThread = {
+      isResolved: false,
+      comments: {
+        nodes: [
+          { author: { login: "reviewer1" }, body: "Missing test coverage." },
+          { author: { login: "pr-author" }, body: "Added a test." },
+        ],
+      },
+    };
+    expect(isThreadAddressedByAuthorReply(thread, "pr-author")).toBe(false);
+  });
+
+  test("false when the thread has only a single comment (no reply at all)", () => {
+    const thread: ReviewThread = {
+      isResolved: false,
+      comments: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            body: "Missing test coverage.",
+            createdAt: "2026-05-26T10:00:00Z",
+          },
+        ],
+      },
+    };
+    expect(isThreadAddressedByAuthorReply(thread, "pr-author")).toBe(false);
   });
 });
 
@@ -1162,7 +1472,13 @@ describe("isResolvedByPriorFindingsStatus", () => {
     expect(
       isResolvedByPriorFindingsStatus(
         finding,
-        [{ ref: reviewRef(finding), resolved: true, evidence: "file.ts:1 fixed" }],
+        [
+          {
+            ref: reviewRef(finding),
+            resolved: true,
+            evidence: "file.ts:1 fixed",
+          },
+        ],
         "the-agent",
       ),
     ).toBe(true);
@@ -1172,7 +1488,13 @@ describe("isResolvedByPriorFindingsStatus", () => {
     expect(
       isResolvedByPriorFindingsStatus(
         finding,
-        [{ ref: reviewRef(finding), resolved: false, evidence: "still broken" }],
+        [
+          {
+            ref: reviewRef(finding),
+            resolved: false,
+            evidence: "still broken",
+          },
+        ],
         "the-agent",
       ),
     ).toBe(false);
@@ -1192,14 +1514,23 @@ describe("isResolvedByPriorFindingsStatus", () => {
     expect(
       isResolvedByPriorFindingsStatus(
         finding,
-        [{ ref: "some-other-ref", resolved: true, evidence: "file.ts:1 fixed" }],
+        [
+          {
+            ref: "some-other-ref",
+            resolved: true,
+            evidence: "file.ts:1 fixed",
+          },
+        ],
         "the-agent",
       ),
     ).toBe(false);
   });
 
   test("false when the review is not self-authored, even with a matching resolved entry", () => {
-    const thirdParty: ReviewNode = { ...finding, author: { login: "dodizzle" } };
+    const thirdParty: ReviewNode = {
+      ...finding,
+      author: { login: "dodizzle" },
+    };
     expect(
       isResolvedByPriorFindingsStatus(
         thirdParty,
@@ -1419,8 +1750,10 @@ describe("parseCliInput", () => {
 
 // ─── CLI entrypoint (argv/stdin JSON parsing) ──────────────────────────────
 
-const SCRIPT_PATH = new URL("./compute-unaddressed-findings.ts", import.meta.url)
-  .pathname;
+const SCRIPT_PATH = new URL(
+  "./compute-unaddressed-findings.ts",
+  import.meta.url,
+).pathname;
 
 describe("CLI entrypoint", () => {
   test("reads input from argv and prints {unaddressedFindings: true} for a qualifying finding", async () => {
@@ -1564,10 +1897,13 @@ describe("CLI entrypoint", () => {
   });
 
   test("exits non-zero with an error when required fields are missing", async () => {
-    const proc = Bun.spawn(["bun", "run", SCRIPT_PATH, '{"currentUser":"the-agent"}'], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      ["bun", "run", SCRIPT_PATH, '{"currentUser":"the-agent"}'],
+      {
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
     const [_stdout, stderr, exitCode] = await Promise.all([
       new Response(proc.stdout).text(),
       new Response(proc.stderr).text(),
