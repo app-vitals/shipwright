@@ -73,7 +73,7 @@ This repo is **private today but destined to be a public, MIT open-source projec
 
 **The rule:** review every change before staging it. Stage specific files — **never `git add -A`/`-u` blindly**. When unsure whether something is proprietary, **ask before committing.**
 
-**Scrub for:** secrets & credentials (`ANTHROPIC_API_KEY`, `GH_TOKEN`, `SESSION_SECRET`, `.env` contents, private keys) · client/customer/partner names · internal infra identifiers (cloud project names, analytics project IDs, internal hostnames) · internal PR/issue/Slack/Jira links · local filesystem paths revealing usernames (`/Users/<name>/...`) · financials, compensation, PII.
+**Scrub for:** secrets & credentials (`ANTHROPIC_API_KEY`, `GH_TOKEN`, `SESSION_SECRET`, `.env` contents, private keys) · client/customer/partner names · internal infra identifiers (cloud project names, analytics project IDs, internal hostnames) · internal PR/issue/Slack/Jira links · local filesystem paths revealing usernames (`/Users/<name>/...`) · financials, compensation, PII · the identity of whoever operates/deploys this shipwright instance (e.g. an employer/company name), even when it arrives verbatim in an inbound task-store task description (such as an internal org/repo citation like `org-name/repo#123`).
 
 `task check-strings` (banned-strings scan) is the CI backstop — not a substitute for this discipline. Internal, build-time-only notes live in the git-ignored `CLAUDE.local.md`; **read it for operational context before working in this repo.**
 
