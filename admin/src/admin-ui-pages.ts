@@ -547,7 +547,7 @@ export function renderAgentsPage(
 
   const rows =
     agents.length === 0
-      ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/provision">Provision one →</a>' : "No agents."}</td></tr>`
+      ? `<tr><td colspan="4" class="empty-state">${isAdmin ? 'No agents yet. <a href="/admin/agents/new">Create one →</a>' : "No agents."}</td></tr>`
       : agents
           .map(
             (a) => `<tr>
@@ -563,9 +563,13 @@ export function renderAgentsPage(
           )
           .join("\n");
 
-  const provisionButton = isAdmin
-    ? `<a href="/admin/provision" class="btn btn-primary">+ Provision agent</a>
-      <a href="/admin/agents/new" class="btn btn-secondary" style="margin-left:8px">+ New local agent</a>`
+  // Primary path is /admin/agents/new — it creates in-cluster or self-hosted
+  // agents and needs no Slack, so it never dead-ends. /admin/provision is the
+  // Slack-app bootstrap wizard (requires an xoxp token), offered as a secondary
+  // action for setups that use Slack.
+  const createAgentButtons = isAdmin
+    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>
+      <a href="/admin/provision" class="btn btn-secondary" style="margin-left:8px">Connect Slack app</a>`
     : "";
 
   return `<!DOCTYPE html>
@@ -581,7 +585,7 @@ export function renderAgentsPage(
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Agents</h1>
-      ${provisionButton}
+      ${createAgentButtons}
     </div>
     ${successHtml}
     ${manualStepsHtml}
