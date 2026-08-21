@@ -948,6 +948,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
     let claudeCodeOauthToken: string | undefined;
     try {
@@ -956,6 +957,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      restrictSlackToMembersRaw = formData
+        .get("restrictSlackToMembers")
+        ?.toString();
       runtime = formData.get("runtime")?.toString()?.trim();
       claudeCodeOauthToken = formData
         .get("claudeCodeOauthToken")
@@ -982,10 +986,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (inCluster && !provisioner.canProvision) {
       return c.redirect("/admin/agents/new?error=provisioning_disabled", 302);
     }
+    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
     const agent = await agentService.create({
       name,
       selfHosted: !inCluster,
       typeName,
+      restrictSlackToMembers,
     });
     // Attach repos if provided
     if (reposRaw) {
@@ -1060,6 +1066,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         err,
       );
     }
+    // Non-blocking warning: restrictSlackToMembers was just enabled on an
+    // agent with zero AgentMember rows — the create already succeeded above,
+    // this only surfaces a banner on the redirect target.
+    if (restrictSlackToMembers) {
+      const members = await agentMemberService.listByAgentId(agent.id);
+      if (members.length === 0) {
+        return c.redirect(
+          `/admin/agents/${agent.id}?warning=restrict_slack_no_members`,
+          302,
+        );
+      }
+    }
     return c.redirect(`/admin/agents/${agent.id}`, 302);
   });
 
@@ -1078,6 +1096,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       authorAllowlist: agent.authorAllowlist,
+      restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };
@@ -1096,6 +1115,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         : successParam === "reinstalled"
           ? "Slack app reinstalled successfully."
           : undefined;
+    const warningParam = c.req.query("warning");
+    const warning =
+      warningParam === "restrict_slack_no_members"
+        ? "This agent has no members — enabling restrictSlackToMembers will block all Slack senders."
+        : undefined;
 
     const [envResult, crons, tools, tokens, plugins, members] =
       await Promise.all([
@@ -1122,7 +1146,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken, successMsg, timezone },
+        { error, newToken, successMsg, warning, timezone },
       ),
     );
   });
@@ -1355,6 +1379,41 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     },
   );
+
+  // ─── Slack access settings (restrictSlackToMembers) ────────────────────────
+
+  app.post("/admin/agents/:id/settings", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    let restrictSlackToMembersRaw: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      restrictSlackToMembersRaw = formData
+        .get("restrictSlackToMembers")
+        ?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
+    const agent = await agentService.updateFields(agentId, {
+      restrictSlackToMembers,
+    });
+    // Non-blocking warning: the save above already succeeded regardless —
+    // this only surfaces a banner when the flag was just enabled on an
+    // agent with zero AgentMember rows.
+    if (restrictSlackToMembers) {
+      const members = await agentMemberService.listByAgentId(agent.id);
+      if (members.length === 0) {
+        return c.redirect(
+          `/admin/agents/${agentId}?warning=restrict_slack_no_members`,
+          302,
+        );
+      }
+    }
+    return c.redirect(`/admin/agents/${agentId}`, 302);
+  });
 
   // ─── Cron job mutations ───────────────────────────────────────────────────
 
@@ -1615,6 +1674,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       authorAllowlist: agent.authorAllowlist,
+      restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };

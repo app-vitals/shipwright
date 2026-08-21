@@ -145,6 +145,11 @@ export interface AgentDetail {
   updatedAt: Date;
   repos: string[];
   authorAllowlist: string[];
+  /**
+   * When true, only AgentMember emails may message this agent over Slack.
+   * Rendered as a checkbox on both the create and edit forms.
+   */
+  restrictSlackToMembers: boolean;
   /** The agent's type name (e.g. "coding"), resolved at creation time. */
   typeName: string;
   /**
@@ -727,6 +732,14 @@ export function renderNewLocalAgentPage(
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
         </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:6px">
+          <input id="restrictSlackToMembers" name="restrictSlackToMembers" type="checkbox" value="true" />
+          <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin-top:-12px">
+          When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
+          members yet, enabling this will block all Slack senders.
+        </p>
         <div>
           <button type="submit" class="btn btn-primary">Create agent →</button>
           <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
@@ -756,6 +769,12 @@ export function renderAgentDetailPage(
     error?: string;
     newToken?: string;
     successMsg?: string;
+    /**
+     * Non-blocking warning surfaced when restrictSlackToMembers was just set
+     * to true on an agent with zero AgentMember rows — the save already
+     * succeeded, this is purely informational.
+     */
+    warning?: string;
     now?: Date;
     timezone?: string;
   },
@@ -1042,6 +1061,10 @@ export function renderAgentDetailPage(
     ? `<div class="alert alert-success">${escapeHtml(opts.successMsg)}</div>`
     : "";
 
+  const warningHtml = opts?.warning
+    ? `<div class="alert alert-warning">${escapeHtml(opts.warning)}</div>`
+    : "";
+
   const newTokenHtml = opts?.newToken
     ? `<div class="alert alert-success">
         <strong>Token created.</strong> Copy it now — it will not be shown again.<br />
@@ -1093,6 +1116,7 @@ export function renderAgentDetailPage(
     </div>
     ${errorHtml}
     ${successHtml}
+    ${warningHtml}
     ${newTokenHtml}
 
     ${
@@ -1222,6 +1246,31 @@ export function renderAgentDetailPage(
         </table>
       </div>
     </div>
+
+    ${
+      isAdmin
+        ? `<div class="card">
+      <div class="card-title">Slack access</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
+        <div class="form-group" style="display:flex;align-items:center;gap:6px">
+          <input
+            id="restrictSlackToMembers"
+            name="restrictSlackToMembers"
+            type="checkbox"
+            value="true"
+            ${agent.restrictSlackToMembers ? "checked" : ""}
+          />
+          <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+        </div>
+        <p style="font-size:12px;color:#6b7280;margin:4px 0 12px">
+          When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
+          members yet, enabling this will block all Slack senders.
+        </p>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+    </div>`
+        : ""
+    }
 
     <div class="card">
       <div class="card-title">Cron Jobs</div>

@@ -178,6 +178,7 @@ function makeBaseDeps(
     },
     agentMemberService: {
       add: async () => ({}) as never,
+      listByAgentId: async () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async () => ({}) as never,

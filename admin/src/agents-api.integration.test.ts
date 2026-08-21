@@ -487,6 +487,154 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(getBody.authorAllowlist).toEqual(["octocat"]);
   });
 
+  // ─── restrictSlackToMembers field round-trip ───────────────────────────────────
+
+  it("POST /agents with restrictSlackToMembers:true stores and returns the flag (201)", async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Restricted Agent",
+        restrictSlackToMembers: true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(true);
+
+    // GET to confirm persisted value
+    const getRes = await app.request(`/agents/${body.id}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.restrictSlackToMembers).toBe(true);
+  });
+
+  it("POST /agents without restrictSlackToMembers defaults to false (201)", async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Default Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(false);
+  });
+
+  it("PATCH /agents/:id with restrictSlackToMembers:true sets the field; GET /agents/:id returns it", async () => {
+    const patchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.restrictSlackToMembers).toBe(true);
+
+    const getRes = await app.request(`/agents/${agentId}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.restrictSlackToMembers).toBe(true);
+  });
+
+  it("PATCH /agents/:id omitting restrictSlackToMembers leaves the existing value unchanged", async () => {
+    // First set it to true.
+    await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+
+    // A subsequent PATCH that omits the field entirely must not reset it.
+    const patchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(patchBody.restrictSlackToMembers).toBe(true);
+  });
+
+  // ─── restrictSlackToMembers zero-members warning ───────────────────────────────
+
+  it("POST /agents with restrictSlackToMembers:true and zero AgentMember rows returns a warning", async () => {
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "No Members Agent",
+        restrictSlackToMembers: true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(true);
+    expect(typeof body.warning).toBe("string");
+    expect(body.warning).toContain("no members");
+  });
+
+  it("PATCH /agents/:id to restrictSlackToMembers:true with zero AgentMember rows returns a warning; with members present returns no warning", async () => {
+    // No members on this agent — expect a warning.
+    const patchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(patchRes.status).toBe(200);
+    const patchBody = await patchRes.json();
+    expect(typeof patchBody.warning).toBe("string");
+
+    // Reset, add a member, then flip the flag again — expect no warning.
+    await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    await prisma.agentMember.create({
+      data: { agentId, email: "member@example.com" },
+    });
+
+    const secondPatchRes = await app.request(`/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(secondPatchRes.status).toBe(200);
+    const secondPatchBody = await secondPatchRes.json();
+    expect(secondPatchBody.warning).toBeUndefined();
+  });
+
   // ─── Work queue snapshot upsert semantics ─────────────────────────────────────
 
   it("POST /work-queue twice overwrites the row rather than creating a second one", async () => {
