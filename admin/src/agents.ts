@@ -24,6 +24,8 @@ export interface CreateAgentInput {
   repos?: string[];
   /** Initial authorAllowlist[]. */
   authorAllowlist?: string[];
+  /** Initial restrictSlackToMembers flag. Omitted means the column default (false) applies. */
+  restrictSlackToMembers?: boolean;
 }
 
 export interface AgentRecord {
@@ -50,6 +52,7 @@ export interface AgentDetail {
   selfHosted: boolean;
   repos: string[];
   authorAllowlist: string[];
+  restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -73,6 +76,7 @@ export interface UpdateSelfHostedInput {
   selfHosted?: boolean;
   repos?: string[];
   authorAllowlist?: string[];
+  restrictSlackToMembers?: boolean;
 }
 
 export interface AgentIdAndRepos {
@@ -90,6 +94,7 @@ export interface UpdateAgentFieldsInput {
   name?: string;
   repos?: string[];
   authorAllowlist?: string[];
+  restrictSlackToMembers?: boolean;
   selfHosted?: boolean;
   slackId?: string | null;
 }
@@ -110,6 +115,7 @@ const DETAIL_SELECT = {
   selfHosted: true,
   repos: true,
   authorAllowlist: true,
+  restrictSlackToMembers: true,
   typeName: true,
   createdAt: true,
   updatedAt: true,
@@ -138,6 +144,9 @@ export class AgentService {
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
         ...(input.authorAllowlist !== undefined
           ? { authorAllowlist: input.authorAllowlist }
+          : {}),
+        ...(input.restrictSlackToMembers !== undefined
+          ? { restrictSlackToMembers: input.restrictSlackToMembers }
           : {}),
       },
     });
@@ -251,6 +260,9 @@ export class AgentService {
         ...(input.authorAllowlist !== undefined
           ? { authorAllowlist: input.authorAllowlist }
           : {}),
+        ...(input.restrictSlackToMembers !== undefined
+          ? { restrictSlackToMembers: input.restrictSlackToMembers }
+          : {}),
       },
       select: DETAIL_SELECT,
     });
@@ -315,8 +327,9 @@ export class AgentService {
 
   /**
    * Generic partial-field update for an agent's
-   * name/repos/authorAllowlist/selfHosted/slackId. Only fields present in the
-   * input are touched. Returns the full updated detail record.
+   * name/repos/authorAllowlist/restrictSlackToMembers/selfHosted/slackId.
+   * Only fields present in the input are touched. Returns the full updated
+   * detail record.
    */
   async updateFields(
     id: string,
@@ -329,6 +342,9 @@ export class AgentService {
         ...(input.repos !== undefined && { repos: input.repos }),
         ...(input.authorAllowlist !== undefined && {
           authorAllowlist: input.authorAllowlist,
+        }),
+        ...(input.restrictSlackToMembers !== undefined && {
+          restrictSlackToMembers: input.restrictSlackToMembers,
         }),
         ...(input.selfHosted !== undefined && {
           selfHosted: input.selfHosted,

@@ -19,17 +19,18 @@ datasource db {
 // A Shipwright agent: an autonomous runner that picks tasks, builds, and ships PRs.
 
 model Agent {
-  id              String   @id @default(cuid())
-  name            String
-  slackId         String?  @unique
-  slackBotToken   String?  // AES-256-GCM encrypted at the service layer
-  anthropicApiKey String?  // AES-256-GCM encrypted at the service layer
-  selfHosted      Boolean  @default(false)
-  repos           String[] @default([])
-  authorAllowlist String[] @default([])
-  typeName        String   @default("coding")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                     String   @id @default(cuid())
+  name                   String
+  slackId                String?  @unique
+  slackBotToken          String?  // AES-256-GCM encrypted at the service layer
+  anthropicApiKey        String?  // AES-256-GCM encrypted at the service layer
+  selfHosted             Boolean  @default(false)
+  repos                  String[] @default([])
+  authorAllowlist        String[] @default([])
+  restrictSlackToMembers Boolean  @default(false)
+  typeName               String   @default("coding")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   envVars          AgentEnv[]
   cronJobs         AgentCronJob[]

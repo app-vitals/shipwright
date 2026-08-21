@@ -204,6 +204,7 @@ function makeMockDeps(opts?: {
       add: async () => {
         throw new Error("not implemented");
       },
+      listByAgentId: async () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: opts?.agentChatTokenServiceThrows

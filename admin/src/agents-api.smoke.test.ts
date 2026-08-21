@@ -210,6 +210,7 @@ function makeMockDeps(): AdminDeps {
         name: string;
         slackId?: string | null;
         selfHosted?: boolean;
+        restrictSlackToMembers?: boolean;
       }) => ({
         id: "agent-new-id",
         name: input.name,
@@ -217,6 +218,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
@@ -255,6 +257,7 @@ function makeMockDeps(): AdminDeps {
               selfHosted: false,
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               typeName: "coding",
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
@@ -264,7 +267,11 @@ function makeMockDeps(): AdminDeps {
       exists: async (id: string) => id === AGENT_ID,
       updateSelfHosted: async (
         id: string,
-        input: { selfHosted?: boolean; repos?: string[] },
+        input: {
+          selfHosted?: boolean;
+          repos?: string[];
+          restrictSlackToMembers?: boolean;
+        },
       ) => ({
         id,
         name: "Existing Agent",
@@ -272,6 +279,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: input.repos ?? [],
         authorAllowlist: [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
@@ -473,6 +481,17 @@ function makeMockDeps(): AdminDeps {
         email,
         createdAt: new Date("2024-01-01"),
       }),
+      // Default: at least one member, so restrictSlackToMembers tests that
+      // don't care about the zero-members warning path never see one
+      // unexpectedly — tests exercising the warning override this.
+      listByAgentId: async (agentId: string) => [
+        {
+          id: "member-test-id",
+          agentId,
+          email: "member@example.com",
+          createdAt: new Date("2024-01-01"),
+        },
+      ],
     },
     agentTypeRegistry: fakeAgentTypeRegistry(),
     agentChatTokenService: {
@@ -1427,6 +1446,7 @@ describe("admin API — create agent", () => {
           selfHosted: false,
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -1629,6 +1649,7 @@ describe("admin API — create agent", () => {
             selfHosted: false,
             repos: [],
             authorAllowlist: [],
+            restrictSlackToMembers: false,
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
@@ -1746,6 +1767,7 @@ describe("admin API — delete agent", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2227,6 +2249,7 @@ describe("admin API — selfHosted field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2407,6 +2430,272 @@ describe("admin API — selfHosted field", () => {
   });
 });
 
+// ─── restrictSlackToMembers field + zero-members warning banner ───────────────
+
+describe("admin API — restrictSlackToMembers field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents with restrictSlackToMembers:true stores and returns the flag (201)", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          restrictSlackToMembers?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Restricted Agent",
+        restrictSlackToMembers: true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(true);
+  });
+
+  it("POST /agents without restrictSlackToMembers defaults to false (201)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({ name: "Regular Agent" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(false);
+  });
+
+  it("PATCH /agents/:id with {restrictSlackToMembers: true} updates flag and returns 200", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(true);
+  });
+
+  it("POST /agents with restrictSlackToMembers:true and zero AgentMember rows includes a warning banner", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          restrictSlackToMembers?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "No Members Agent",
+        restrictSlackToMembers: true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(typeof body.warning).toBe("string");
+    expect(body.warning).toContain("no members");
+  });
+
+  it("POST /agents with restrictSlackToMembers:true and existing AgentMember rows has no warning", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          restrictSlackToMembers?: boolean;
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [
+          {
+            id: "member-1",
+            agentId: "agent-new-id",
+            email: "member@example.com",
+            createdAt: new Date("2024-01-01"),
+          },
+        ],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Has Members Agent",
+        restrictSlackToMembers: true,
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.warning).toBeUndefined();
+  });
+
+  it("PATCH /agents/:id with restrictSlackToMembers:true and zero AgentMember rows includes a warning banner", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(typeof body.warning).toBe("string");
+    expect(body.warning).toContain("no members");
+  });
+
+  it("PATCH /agents/:id with restrictSlackToMembers:true and existing AgentMember rows has no warning", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [
+          {
+            id: "member-1",
+            agentId: AGENT_ID,
+            email: "member@example.com",
+            createdAt: new Date("2024-01-01"),
+          },
+        ],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.warning).toBeUndefined();
+  });
+
+  it("PATCH /agents/:id with restrictSlackToMembers:false never includes a warning, even with zero members", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentMemberService: {
+        ...base.agentMemberService,
+        listByAgentId: async () => [],
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ restrictSlackToMembers: false }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.warning).toBeUndefined();
+  });
+});
+
 // ─── typeName field smoke tests ───────────────────────────────────────────────
 
 describe("admin API — typeName field", () => {
@@ -2474,6 +2763,7 @@ describe("admin API — missingRequiredEnv field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2520,6 +2810,7 @@ describe("admin API — missingRequiredEnv field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2581,6 +2872,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2597,6 +2889,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2633,6 +2926,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: ["my-org/my-repo"],
                 authorAllowlist: [],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2649,6 +2943,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2727,6 +3022,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: input.authorAllowlist ?? [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2778,6 +3074,7 @@ describe("admin API — authorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2798,6 +3095,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: input.authorAllowlist ?? [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2834,6 +3132,7 @@ describe("admin API — authorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: ["octocat"],
+                restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
                 updatedAt: new Date("2024-01-01"),
@@ -2854,6 +3153,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: input.authorAllowlist ?? [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),

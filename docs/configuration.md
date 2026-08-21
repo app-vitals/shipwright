@@ -47,6 +47,7 @@ Unlike the env vars below, these fields live on the Agent database record, not t
 |---|---|---|---|
 | `repos` | `string[]` | `[]` | `org/repo` strings this agent is scoped to. Seeded from the Agent Type manifest at creation, editable via `PATCH /agents/:id` or the admin UI. |
 | `authorAllowlist` | `string[]` | `[]` | GitHub login strings permitted to trigger this agent's review/dev-task work. **Empty means unfiltered** — every authenticated author is allowed. Settable at creation (admin UI create-form field) and editable afterward (admin UI agent-detail page's add/delete rows, or `PATCH /agents/:id`). For local dev, `hitl.ts`'s `SHIPWRIGHT_HITL_AUTHORS` env var is the equivalent — it stays in sync with the persisted record via `PATCH` (see the `SHIPWRIGHT_HITL_AUTHORS` row under [Dev-only](#dev-only)). |
+| `restrictSlackToMembers` | `boolean` | `false` | When `true`, restricts Slack message access to only users listed in this agent's `AgentMember` rows. When `false` (default), all Slack users can message the agent. Settable at creation (admin UI create-form field) and editable via `PATCH /agents/:id` or the admin UI. If enabled without any members configured, a non-blocking warning is returned to alert the operator. |
 
 ### Claude / Anthropic
 

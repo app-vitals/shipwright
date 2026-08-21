@@ -141,7 +141,7 @@ export interface AdminDeps {
     AgentPluginService,
     "list" | "add" | "remove" | "removeByName"
   >;
-  agentMemberService: Pick<AgentMemberService, "add">;
+  agentMemberService: Pick<AgentMemberService, "add" | "listByAgentId">;
   /**
    * Resolves an agent-type name to its parsed Agent Type manifest — the
    * source of truth for the tools/plugins/members/repos seeded at create
@@ -240,6 +240,7 @@ const GetAgentResultSchema = z
     selfHosted: z.boolean(),
     repos: z.array(z.string()),
     authorAllowlist: z.array(z.string()),
+    restrictSlackToMembers: z.boolean(),
     typeName: z.string(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -249,6 +250,12 @@ const GetAgentResultSchema = z
      * (secrets_in_logs). Always present; informational only (ATS-4.2).
      */
     missingRequiredEnv: z.array(z.string()),
+    /**
+     * Non-blocking warning surfaced when restrictSlackToMembers is set to
+     * true on an agent with zero AgentMember rows — the save still succeeds,
+     * this is informational only.
+     */
+    warning: z.string().optional(),
   })
   .openapi("GetAgentResult");
 
@@ -992,6 +999,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.authorAllowlist !== undefined
         ? { authorAllowlist: body.authorAllowlist }
         : {}),
+      ...(body.restrictSlackToMembers !== undefined
+        ? { restrictSlackToMembers: body.restrictSlackToMembers }
+        : {}),
     });
 
     // Seed AgentTool/AgentPlugin/AgentMember rows from the resolved
@@ -1027,7 +1037,12 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       throw err;
     }
 
-    return c.json(serializeAgent(agent), 201);
+    const warning = await computeRestrictSlackToMembersWarning(
+      agentMemberService,
+      agent.id,
+      agent.restrictSlackToMembers,
+    );
+    return c.json(serializeAgent(agent, warning), 201);
   });
 
   // POST /agents/reconcile — reconcile K8s Deployment state against the DB (admin only)
@@ -1101,8 +1116,16 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.authorAllowlist !== undefined
         ? { authorAllowlist: body.authorAllowlist }
         : {}),
+      ...(body.restrictSlackToMembers !== undefined
+        ? { restrictSlackToMembers: body.restrictSlackToMembers }
+        : {}),
     });
-    return c.json(serializeAgent(agent), 200);
+    const warning = await computeRestrictSlackToMembersWarning(
+      agentMemberService,
+      agentId,
+      agent.restrictSlackToMembers,
+    );
+    return c.json(serializeAgent(agent, warning), 200);
   });
 
   // DELETE /agents/:id — delete an agent and tear down its workload (admin only)
@@ -1724,18 +1747,22 @@ function serializePlugin(plugin: {
   } as z.infer<typeof AgentPluginSchema>;
 }
 
-function serializeAgent(agent: {
-  id: string;
-  name: string;
-  slackId: string | null | undefined;
-  selfHosted: boolean;
-  repos?: string[];
-  authorAllowlist?: string[];
-  typeName: string;
-  createdAt: Date;
-  updatedAt: Date;
-  missingRequiredEnv?: string[];
-}): z.infer<typeof GetAgentResultSchema> {
+function serializeAgent(
+  agent: {
+    id: string;
+    name: string;
+    slackId: string | null | undefined;
+    selfHosted: boolean;
+    repos?: string[];
+    authorAllowlist?: string[];
+    restrictSlackToMembers?: boolean;
+    typeName: string;
+    createdAt: Date;
+    updatedAt: Date;
+    missingRequiredEnv?: string[];
+  },
+  warning?: string,
+): z.infer<typeof GetAgentResultSchema> {
   return {
     id: agent.id,
     name: agent.name,
@@ -1743,11 +1770,32 @@ function serializeAgent(agent: {
     selfHosted: agent.selfHosted,
     repos: agent.repos ?? [],
     authorAllowlist: agent.authorAllowlist ?? [],
+    restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),
     updatedAt: agent.updatedAt.toISOString(),
     missingRequiredEnv: agent.missingRequiredEnv ?? [],
+    ...(warning !== undefined ? { warning } : {}),
   };
+}
+
+/**
+ * Computes the non-blocking "no members" warning surfaced when
+ * restrictSlackToMembers is true on an agent with zero AgentMember rows.
+ * Never blocks the create/update it's called after — callers await this
+ * strictly to enrich the response, not to gate persistence. Returns
+ * undefined (no warning) when the flag is false or the agent has at least
+ * one member.
+ */
+async function computeRestrictSlackToMembersWarning(
+  agentMemberService: Pick<AgentMemberService, "listByAgentId">,
+  agentId: string,
+  restrictSlackToMembers: boolean,
+): Promise<string | undefined> {
+  if (!restrictSlackToMembers) return undefined;
+  const members = await agentMemberService.listByAgentId(agentId);
+  if (members.length > 0) return undefined;
+  return "this agent has no members — enabling this will block all Slack senders";
 }
 
 function serializeWorkQueueSnapshot(snapshot: {

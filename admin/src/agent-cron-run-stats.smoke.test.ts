@@ -337,6 +337,7 @@ function makeMockDeps(): AdminDeps {
         email,
         createdAt: new Date(),
       }),
+      listByAgentId: async () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

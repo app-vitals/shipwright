@@ -58,6 +58,7 @@ const AGENT: AgentDetail = {
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
   authorAllowlist: [],
+  restrictSlackToMembers: false,
   typeName: "coding",
   missingRequiredEnv: [],
 };
@@ -634,6 +635,48 @@ describe("renderAgentDetailPage — overview", () => {
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
   });
+
+  test("renders a restrictSlackToMembers checkbox, unchecked when false", () => {
+    const html = render();
+    expect(html).toMatch(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*type="checkbox"[^>]*>/,
+    );
+    // AGENT fixture has restrictSlackToMembers: false — the input must not carry "checked"
+    const match = html.match(/<input[^>]*name="restrictSlackToMembers"[^>]*>/);
+    expect(match?.[0]).not.toContain("checked");
+  });
+
+  test("renders the restrictSlackToMembers checkbox checked when the agent has it enabled", () => {
+    const restrictedAgent: AgentDetail = {
+      ...AGENT,
+      restrictSlackToMembers: true,
+    };
+    const html = renderAgentDetailPage(
+      restrictedAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    const match = html.match(/<input[^>]*name="restrictSlackToMembers"[^>]*>/);
+    expect(match?.[0]).toContain("checked");
+  });
+
+  test("renders a warning banner when opts.warning is set", () => {
+    const html = render({ warning: "this agent has no members" });
+    expect(html).toContain('class="alert alert-warning"');
+    expect(html).toContain("this agent has no members");
+  });
+
+  test("renders no warning banner when opts.warning is absent", () => {
+    const html = render();
+    expect(html).not.toContain("this agent has no members");
+  });
 });
 
 // ─── renderNewLocalAgentPage ──────────────────────────────────────────────────
@@ -695,6 +738,13 @@ describe("renderNewLocalAgentPage", () => {
   test("renders an authorAllowlist textarea", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
+  });
+
+  test("renders a restrictSlackToMembers checkbox", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*type="checkbox"[^>]*>/,
+    );
   });
 
   test("renders both runtime radios", () => {

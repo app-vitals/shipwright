@@ -348,6 +348,7 @@ function makeMockDeps(
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
@@ -364,6 +365,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
       updateFields: async () => ({
@@ -376,6 +378,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
     },
@@ -1378,6 +1381,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -1475,6 +1479,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -1503,6 +1508,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -1542,6 +1548,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -1599,6 +1606,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -1642,6 +1650,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
           },
@@ -2565,6 +2574,7 @@ describe("admin UI — provision start form", () => {
             selfHosted: input.selfHosted ?? false,
             repos: [],
             authorAllowlist: [],
+            restrictSlackToMembers: false,
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
@@ -2581,6 +2591,7 @@ describe("admin UI — provision start form", () => {
             typeName: "coding",
             repos: input.repos ?? [],
             authorAllowlist: [],
+            restrictSlackToMembers: false,
             createdAt: new Date("2024-01-01"),
             updatedAt: new Date("2024-01-01"),
             missingRequiredEnv: [],
@@ -2596,6 +2607,7 @@ describe("admin UI — provision start form", () => {
           updatedAt: new Date("2024-01-01"),
           repos: ["my-org/repo-one"],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         }),
       },
@@ -2679,6 +2691,7 @@ describe("admin UI — provision start form", () => {
           selfHosted: false,
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2692,6 +2705,7 @@ describe("admin UI — provision start form", () => {
           typeName: "coding",
           repos: input.repos ?? [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           missingRequiredEnv: [],
@@ -2709,6 +2723,7 @@ describe("admin UI — provision start form", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         }),
       },
@@ -2765,6 +2780,7 @@ describe("admin UI — provision start form", () => {
           selfHosted: false,
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
@@ -2778,6 +2794,7 @@ describe("admin UI — provision start form", () => {
           typeName: "coding",
           repos: input.repos ?? [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           missingRequiredEnv: [],
@@ -2795,6 +2812,7 @@ describe("admin UI — provision start form", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         }),
       },
@@ -5227,6 +5245,7 @@ describe("admin UI — create agent with author allowlist", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
       },
@@ -5375,6 +5394,7 @@ describe("admin UI — repos mutation routes", () => {
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
       updateFields: async (id: string, input: { repos?: string[] }) => {
@@ -5389,6 +5409,7 @@ describe("admin UI — repos mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
           authorAllowlist: [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
       },
@@ -5532,6 +5553,7 @@ describe("admin UI — author allowlist mutation routes", () => {
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: ["octocat"],
+        restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
       updateFields: async (
@@ -5549,6 +5571,7 @@ describe("admin UI — author allowlist mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
       },
@@ -5590,6 +5613,190 @@ describe("admin UI — author allowlist mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+});
+
+describe("admin UI — Slack access settings route (restrictSlackToMembers)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/settings returns 403 for non-admin non-member", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ restrictSlackToMembers: "true" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${outsiderCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/agents/:id/settings returns 403 for non-admin AgentMember", async () => {
+    const MEMBER_EMAIL = "member@example.com";
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const deps = makeMockDeps();
+    deps.agentMemberService = {
+      ...deps.agentMemberService,
+      exists: async (_agentId: string, email: string) =>
+        email === MEMBER_EMAIL,
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ restrictSlackToMembers: "true" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${memberCookie}`,
+      },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/agents/:id/settings with restrictSlackToMembers:true and zero members redirects with warning query param", async () => {
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      updateFields: async (
+        id: string,
+        input: { restrictSlackToMembers?: boolean },
+      ) => ({
+        id,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+        missingRequiredEnv: [],
+      }),
+    };
+    deps.agentMemberService = {
+      ...deps.agentMemberService,
+      listByAgentId: async () => [],
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ restrictSlackToMembers: "true" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}?warning=restrict_slack_no_members`,
+    );
+  });
+
+  it("POST /admin/agents/:id/settings with restrictSlackToMembers:true and existing members redirects with no warning param", async () => {
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      updateFields: async (
+        id: string,
+        input: { restrictSlackToMembers?: boolean },
+      ) => ({
+        id,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        restrictSlackToMembers: input.restrictSlackToMembers ?? false,
+        missingRequiredEnv: [],
+      }),
+    };
+    deps.agentMemberService = {
+      ...deps.agentMemberService,
+      listByAgentId: async () => [
+        {
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "member@example.com",
+          createdAt: new Date("2024-01-01"),
+        },
+      ],
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ restrictSlackToMembers: "true" });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/settings with restrictSlackToMembers:false never redirects with a warning, even with zero members", async () => {
+    const deps = makeMockDeps();
+    deps.agentMemberService = {
+      ...deps.agentMemberService,
+      listByAgentId: async () => [],
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({});
+    const res = await app.request(`/admin/agents/${AGENT_ID}/settings`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("GET /admin/agents/:id with warning=restrict_slack_no_members renders a warning banner", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}?warning=restrict_slack_no_members`,
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="alert alert-warning"');
+    expect(html).toContain("no members");
+  });
+
+  it("GET /admin/agents/:id without a warning query param renders no warning banner", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("restrict_slack_no_members");
   });
 });
 
