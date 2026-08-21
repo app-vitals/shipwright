@@ -2517,6 +2517,48 @@ describe("traceReviewCandidacyDecision", () => {
     });
   });
 
+  test("already-reviewed-live: a ledger finding with at BEFORE reviewedAt is not fresh and does not bypass the live-review exclusion (RDR-1.1)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-21T04:10:53.897Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "sha000@2026-08-20T00:00:00.000Z",
+          disposition: "resolved",
+          source: "review",
+          evidence: "Self-review is a clean APPROVE with no blocking findings.",
+          at: "2026-08-21T04:10:53.000Z",
+          createdAt: "2026-08-21T04:10:53.000Z",
+        },
+      ],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
+  });
+
   test("staged: staged:true with matching reviewedCommitSha excludes regardless of reviewState", () => {
     const pr = makePr({ headRefOid: "sha111" });
     const record: PrRecord = {

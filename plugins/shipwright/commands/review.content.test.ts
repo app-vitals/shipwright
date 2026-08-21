@@ -444,6 +444,25 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("commit {");
   });
 
+  it("the graphql query fetches state on reviews.nodes and the jq program treats state == APPROVED as terminal", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const reviewsNodesIdx = section.indexOf("reviews(first: 50) {");
+    const commitIdx = section.indexOf("commit {", reviewsNodesIdx);
+    expect(reviewsNodesIdx).toBeGreaterThan(-1);
+    expect(commitIdx).toBeGreaterThan(reviewsNodesIdx);
+    const reviewsNodesBlock = section.slice(reviewsNodesIdx, commitIdx);
+    expect(reviewsNodesBlock).toContain("state");
+
+    expect(section).toContain('.state == "APPROVED"');
+  });
+
   it("the section prints a cross-task-store skip message and stops before checkout/claim", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
@@ -1683,5 +1702,35 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
       expect(section).toContain("Content-Type: application/json");
       expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings");
     }
+  });
+
+  it("states Step 5's findings-ledger POSTs must complete before Step 11b's /complete call, citing the PR #89 race (RDR-1.1)", () => {
+    const ledgerIdx = step5Section.indexOf("PFL-2.1");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step5Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("must complete before");
+    expect(ledgerSection).toContain("Step 11b");
+    expect(ledgerSection).toContain("/prs/:id/complete");
+
+    // Cites the PR #89 race timeline as rationale for the ordering requirement.
+    expect(ledgerSection).toContain("#89");
+    expect(ledgerSection).toContain("04:10:53");
+    expect(ledgerSection).toContain("04:11:06");
+    expect(ledgerSection).toContain("04:12:45");
+  });
+
+  it("Step 11b's intro notes the precondition that Step 5's findings-ledger POSTs must already have completed (RDR-1.1)", () => {
+    const step11bIdx = content.indexOf(
+      "## Step 11b: Mark PullRequest Record Posted",
+    );
+    const step14Idx = content.indexOf("## Step 14: Resolve and Claim the Target PR");
+    expect(step11bIdx).toBeGreaterThan(-1);
+    expect(step14Idx).toBeGreaterThan(step11bIdx);
+    const step11bSection = content.slice(step11bIdx, step14Idx);
+
+    expect(step11bSection.toLowerCase()).toContain("precondition");
+    expect(step11bSection).toContain("PFL-2.1");
+    expect(step11bSection).toContain("must already have completed");
   });
 });

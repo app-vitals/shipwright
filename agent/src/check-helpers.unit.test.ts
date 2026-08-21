@@ -31,6 +31,7 @@ import {
   isCleanApproveBody,
   isPrRecordBlockedForDispatch,
   isTaskBlockedForDispatch,
+  isTerminalReviewLabel,
   parseCandidateId,
   resolveAllRepos,
   resolveRepos,
@@ -1656,6 +1657,36 @@ describe("VERDICT_TERMINAL_LABEL", () => {
     expect(VERDICT_TERMINAL_LABEL.test("Looks good, no blocking issues.")).toBe(
       false,
     );
+  });
+});
+
+describe("isTerminalReviewLabel", () => {
+  test("a plain APPROVED review with no Verdict: text classifies as terminal", () => {
+    expect(isTerminalReviewLabel({ state: "APPROVED", body: "LGTM" })).toBe(
+      true,
+    );
+    expect(isTerminalReviewLabel({ state: "APPROVED", body: "" })).toBe(true);
+  });
+
+  test("a body carrying a Verdict: APPROVE or Verdict: COMMENT label classifies as terminal regardless of state", () => {
+    expect(
+      isTerminalReviewLabel({ state: "COMMENTED", body: "Verdict: APPROVE" }),
+    ).toBe(true);
+    expect(
+      isTerminalReviewLabel({ state: "COMMENTED", body: "Verdict: COMMENT" }),
+    ).toBe(true);
+  });
+
+  test("a non-approved review with no Verdict label is not terminal", () => {
+    expect(
+      isTerminalReviewLabel({
+        state: "CHANGES_REQUESTED",
+        body: "Please fix this.",
+      }),
+    ).toBe(false);
+    expect(
+      isTerminalReviewLabel({ state: "COMMENTED", body: "Looks good." }),
+    ).toBe(false);
   });
 });
 

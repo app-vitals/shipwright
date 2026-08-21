@@ -342,11 +342,28 @@ back to `'sonnet'`.
    that `isSupersededBySelfReview` matched — cite it so the ledger entry's evidence is
    self-contained.
 
-   **Best-effort, not a new decision.** These POSTs persist judgments `isSelfCleanApprove` and
-   `isSupersededBySelfReview` already computed above — they do not gate, delay, or alter
-   `priorQualifyingReviews`, Step 7's subagent dispatch, or any later step. A failed POST (non-2xx,
-   timeout, or any other curl error) is non-fatal: log the warning shown above and continue: the
-   review pipeline must never block on a ledger write.
+   **Best-effort content, but strictly ordered before Step 11b.** These POSTs persist judgments
+   `isSelfCleanApprove` and `isSupersededBySelfReview` already computed above — they do not gate,
+   delay, or alter `priorQualifyingReviews`, Step 7's subagent dispatch, or any other step's
+   *decision*. A failed POST (non-2xx, timeout, or any other curl error) is still non-fatal: log
+   the warning shown above and continue — the review pipeline must never block on a ledger write
+   *failing*. But issuing the POST at all is not optional busywork to tack on whenever convenient:
+   every findings-ledger POST for this pass — including the ones above — **must complete before
+   Step 11b's `/prs/:id/complete` call** runs later in this same pass. Never defer them to "near
+   the end of the turn" after Step 11b has already run.
+
+   **Why this ordering matters (PR #89 race).** On PR #89, Step 11b's `/complete`
+   call landed at `2026-08-21T04:10:53.901Z` and stamped `reviewedAt=2026-08-21T04:10:53.897Z`.
+   Two `disposition: resolved, source: review` findings from this same PFL-2.1 section, from the
+   very same review pass, were POSTed ~13 seconds later — at `2026-08-21T04:11:06.780Z` and
+   `2026-08-21T04:11:06.820Z` — because the executing agent ran Step 11b first and only tacked the
+   ledger POSTs on near the end of its turn. Since both findings postdated `reviewedAt`,
+   `agent/src/check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) saw them as new information and
+   bypassed the already-reviewed-live exclusion, causing a spurious re-claim of the PR at
+   `2026-08-21T04:12:45.114Z` on the very next loop tick. `hasFreshLedgerFinding`'s rule — a
+   finding timestamped after `reviewedAt` means new information since the last pass — is correct;
+   this ordering requirement is what makes `reviewedAt` a reliable "last write of the pass" marker
+   instead of a false one.
 
 6. **CLAUDE.md files**: read root CLAUDE.md + CLAUDE.md files in directories containing changed files
 
@@ -1063,6 +1080,8 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
 
 Run this step immediately after posting a review. The only place this command posts is Step 11's `auto_post_reviews: true` (default) path; `/shipwright:review-staged`'s `post it` action also runs this step (after its own staged-flag clear, which is the one thing this step doesn't do) since posting-then-completing is identical either way. Skip this step when the review is staged (not posted).
 
+**Precondition:** any findings-ledger POSTs from this pass — chiefly Step 5's PFL-2.1 section — must already have completed before the `/complete` call below runs. Do not run this step and then circle back to Step 5's ledger POSTs afterward: that ordering is exactly what produced the PR #89 race (see Step 5's PFL-2.1 subsection for the timeline), where `reviewedAt` got stamped before same-pass ledger findings landed, tricking `hasFreshLedgerFinding` into treating stale self-review judgments as fresh and spuriously re-claiming the PR on the next loop tick.
+
 Use `{verdict}` and `PR_RECORD_ID` — from Step 10 and the claim in Step 4 respectively when called from this command; `record.reviewState == "approved" ? APPROVE : COMMENT` and `record.id` respectively when called from `/shipwright:review-staged`.
 
 ### 1. Confirm the record ID
@@ -1162,6 +1181,7 @@ precheck=$(gh api graphql -f query='
       reviews(first: 50) {
         nodes {
           body
+          state
           submittedAt
           commit {
             oid
@@ -1170,32 +1190,38 @@ precheck=$(gh api graphql -f query='
       }
     }
   }
-}' --arg currentUser "$CURRENT_USER" --jq '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and (.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i"))) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
+}' --arg currentUser "$CURRENT_USER" --jq '.data.repository.pullRequest as $pr | ([$pr.reviews.nodes[] | select(.commit.oid == $pr.headRefOid and ((.body | test("verdict\\**\\s*:\\s*\\**(approve|comment)\\b"; "i")) or .state == "APPROVED")) | .submittedAt] | max) as $maxTerminalSubmittedAt | {headRefOid: $pr.headRefOid, terminal: (if $maxTerminalSubmittedAt != null then ([$pr.comments.nodes[] | select(.author.login != $currentUser and (.createdAt > $maxTerminalSubmittedAt)) | .createdAt] | length == 0) else false end)}')
 headRefOid=$(echo "$precheck" | jq -r '.headRefOid')
 terminal=$(echo "$precheck" | jq -r '.terminal')
 ```
 
 This filters reviews down to only those submitted at the current `headRefOid`, then tests
-whether ANY of their bodies matches a terminal verdict label. If a terminal review exists,
-the query also fetches the PR's comments (with author and `createdAt`), and the jq program
-computes whether anyone _other than_ the resolved `$CURRENT_USER` (the reviewing agent's
-own identity, threaded in via `--arg currentUser "$CURRENT_USER"`) has posted a comment
-_after_ the latest terminal review's `submittedAt` timestamp. If such a fresh non-agent
-comment exists, `terminal` is set to `false` (mirrors `hasFreshNonAgentComment` in
-`agent/src/check-review.ts`, which applies the same broadened fresh-reply logic — any
-commenter other than the reviewing agent, not just the PR author — at the TypeScript
-layer). The jq program outputs a JSON object with the `headRefOid` string and a `terminal`
-boolean, captured into shell variables of the same names.
+whether ANY of them is terminal — either its body matches a terminal verdict label, or its
+`state` is `APPROVED` (a plain GitHub UI approval, typically with an empty or `LGTM` body
+and no `Verdict:` line, still counts). If a terminal review exists, the query also fetches
+the PR's comments (with author and `createdAt`), and the jq program computes whether anyone
+_other than_ the resolved `$CURRENT_USER` (the reviewing agent's own identity, threaded in
+via `--arg currentUser "$CURRENT_USER"`) has posted a comment _after_ the latest terminal
+review's `submittedAt` timestamp. If such a fresh non-agent comment exists, `terminal` is
+set to `false` (mirrors `hasFreshNonAgentComment` in `agent/src/check-review.ts`, which
+applies the same broadened fresh-reply logic — any commenter other than the reviewing
+agent, not just the PR author — at the TypeScript layer). The jq program outputs a JSON
+object with the `headRefOid` string and a `terminal` boolean, captured into shell variables
+of the same names.
 
-This bash regex mirrors `agent/src/check-helpers.ts`'s exported `VERDICT_TERMINAL_LABEL` —
-a literal `Verdict:` label match rather than the fuller thread/finding-body analysis
-`classifyReviewState()` does. That's acceptable here because review.md's own postings (Step
-10) always carry an explicit `Verdict: APPROVE` or `Verdict: COMMENT` line, so a literal
-label match is sufficient to detect "already reviewed, terminal" at this commit. There is
-no author filtering on the terminal review check itself (any author's review counts) —
-the fresh-reply exception is the only place author identity matters: it checks whether
-anyone other than the reviewing agent itself (`$CURRENT_USER`) has replied after the
-review, mirroring `hasFreshNonAgentComment` in `agent/src/check-review.ts`.
+This bash `select(...)` predicate (`(.body | test(...)) or .state == "APPROVED"`) mirrors
+`agent/src/check-helpers.ts`'s exported `isTerminalReviewLabel()` — the single documented
+source of truth for "already reviewed, terminal at this commit": a literal `Verdict:`
+label match (`VERDICT_TERMINAL_LABEL`) OR a live `state === "APPROVED"`, rather than the
+fuller thread/finding-body analysis `classifyReviewState()` does. The `Verdict:` half is
+sufficient for review.md's own postings (Step 10 always carries an explicit
+`Verdict: APPROVE` or `Verdict: COMMENT` line); the `state === "APPROVED"` half is what
+catches a plain human or bot APPROVE submitted through the GitHub UI with no `Verdict:`
+text, which the label match alone would silently miss and let a duplicate review get
+posted. There is no author filtering on the terminal review check itself (any author's
+review counts) — the fresh-reply exception is the only place author identity matters: it
+checks whether anyone other than the reviewing agent itself (`$CURRENT_USER`) has replied
+after the review, mirroring `hasFreshNonAgentComment` in `agent/src/check-review.ts`.
 
 **If `$terminal` is `true`** (a terminal review already exists at head on GitHub):
 
