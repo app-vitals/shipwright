@@ -1,6 +1,6 @@
 /**
  * admin/src/admin-local-agent.smoke.test.ts
- * Smoke tests for the "New local agent" create flow.
+ * Smoke tests for the "New agent" create flow (/admin/agents/new).
  *
  * Tests:
  * - GET /admin/agents/new — admin session returns 200 with form containing name input
@@ -640,27 +640,27 @@ describe("admin UI — new local agent create flow", () => {
     expect(html).toContain("Repo must be in org/repo format");
   });
 
-  // ── /admin/agents list page has "New local agent" button ──────────────────
+  // ── /admin/agents list page has the primary "New agent" button ────────────
 
-  it("GET /admin/agents — admin sees 'New local agent' button", async () => {
+  it("GET /admin/agents — admin sees the '+ New agent' button linking to /admin/agents/new", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents", {
       headers: { Cookie: `admin_session=${adminCookie}` },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain("New local agent");
+    expect(html).toContain("+ New agent");
     expect(html).toContain("/admin/agents/new");
   });
 
-  it("GET /admin/agents — non-admin does NOT see 'New local agent' button", async () => {
+  it("GET /admin/agents — non-admin does NOT see the '+ New agent' button", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents", {
       headers: { Cookie: `admin_session=${nonAdminCookie}` },
     });
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).not.toContain("New local agent");
+    expect(html).not.toContain("+ New agent");
   });
 
   // ── runtime=in-cluster (Slack-free provisioning) ──────────────────────────

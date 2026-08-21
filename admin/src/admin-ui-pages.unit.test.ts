@@ -235,9 +235,22 @@ describe("renderAgentsPage", () => {
     expect(html).toContain("No agents yet");
   });
 
-  test("empty state includes link to /admin/provision", () => {
+  test("empty state links to /admin/agents/new (not the Slack wizard)", () => {
     const html = renderAgentsPage([], USER_NAME, true, "UTC");
-    expect(html).toContain("/admin/provision");
+    expect(html).toContain('href="/admin/agents/new"');
+    expect(html).toContain("Create one");
+  });
+
+  test("admin: primary CTA is '+ New agent' → /admin/agents/new", () => {
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
+    expect(html).toContain("+ New agent");
+    expect(html).toContain('href="/admin/agents/new"');
+  });
+
+  test("admin: Slack wizard is offered only as a secondary action", () => {
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
+    expect(html).toContain("Connect Slack app");
+    expect(html).toContain('href="/admin/provision"');
   });
 
   test("agent name appears as a link", () => {
@@ -293,15 +306,16 @@ describe("renderAgentsPage", () => {
     expect(html).not.toContain("No agents yet");
   });
 
-  test("non-admin: provision button is hidden", () => {
+  test("non-admin: create buttons are hidden", () => {
     const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, false, "UTC");
-    expect(html).not.toContain("+ Provision agent");
+    expect(html).not.toContain("+ New agent");
+    expect(html).not.toContain("Connect Slack app");
   });
 
-  test("non-admin: empty state shows 'No agents.' without provision link", () => {
+  test("non-admin: empty state shows 'No agents.' without a create link", () => {
     const html = renderAgentsPage([], USER_NAME, false, "UTC");
     expect(html).toContain("No agents.");
-    expect(html).not.toContain("Provision one");
+    expect(html).not.toContain("Create one");
   });
 
   test("createdAt date uses the provided timezone", () => {
