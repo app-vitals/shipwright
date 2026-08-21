@@ -444,6 +444,25 @@ describe("review.md — Step 14 live-review pre-check (RVD-1.2)", () => {
     expect(section).toContain("commit {");
   });
 
+  it("the graphql query fetches state on reviews.nodes and the jq program treats state == APPROVED as terminal", () => {
+    const preCheckIdx = step14Section.indexOf(
+      "### Live-Review Pre-Check (RVD-1.2)",
+    );
+    const fastPathIdx = step14Section.indexOf(
+      "### Pre-Claim Fast Path (CBD-1.4)",
+    );
+    const section = step14Section.slice(preCheckIdx, fastPathIdx);
+
+    const reviewsNodesIdx = section.indexOf("reviews(first: 50) {");
+    const commitIdx = section.indexOf("commit {", reviewsNodesIdx);
+    expect(reviewsNodesIdx).toBeGreaterThan(-1);
+    expect(commitIdx).toBeGreaterThan(reviewsNodesIdx);
+    const reviewsNodesBlock = section.slice(reviewsNodesIdx, commitIdx);
+    expect(reviewsNodesBlock).toContain("state");
+
+    expect(section).toContain('.state == "APPROVED"');
+  });
+
   it("the section prints a cross-task-store skip message and stops before checkout/claim", () => {
     const preCheckIdx = step14Section.indexOf(
       "### Live-Review Pre-Check (RVD-1.2)",
