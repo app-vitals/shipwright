@@ -14,6 +14,10 @@ import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import type { App } from "@slack/bolt";
 import type { WebAPIPlatformError } from "@slack/web-api";
 import {
+  type AgentSlackMembershipRef,
+  agentSlackMembershipRef,
+} from "./agent-slack-membership-ref.ts";
+import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
@@ -145,6 +149,35 @@ export type ResolveUserFn = (
   // biome-ignore lint/suspicious/noExplicitAny: Bolt client is complex
   client: any,
 ) => Promise<string>;
+
+export type ResolveUserEmailFn = (
+  userId: string,
+  // biome-ignore lint/suspicious/noExplicitAny: Bolt client is complex
+  client: any,
+) => Promise<string | undefined>;
+
+/**
+ * The single shared Slack membership gate used by all three event handlers
+ * (message, app_mention, reaction_added) — SMR-4.1.
+ *
+ * Fails OPEN (allow) while the membership ref has never synced, or when
+ * restrict is false, so a persistent config-sync failure or a deliberately
+ * unrestricted config never blocks Slack access. Once restrict is true and
+ * the ref has synced, only a case-insensitive match against the synced
+ * member email list is allowed — an undefined email (resolution failed or
+ * absent) is rejected, never treated as a wildcard.
+ */
+export function isAllowedSlackSender(
+  email: string | undefined,
+  membershipRef: AgentSlackMembershipRef,
+): boolean {
+  if (!membershipRef.hasSynced()) return true;
+  const { restrict, emails } = membershipRef.get();
+  if (!restrict) return true;
+  if (!email) return false;
+  const lowered = email.toLowerCase();
+  return emails.some((e) => e.toLowerCase() === lowered);
+}
 
 // Normalizes text for the speak-marker fallback's duplicate-content check:
 // lowercased, trimmed, trailing punctuation stripped, internal whitespace
@@ -405,6 +438,8 @@ export function createSlackApp(
   getSessionFn: GetSessionFn = async () => undefined,
   blocksConverter: typeof markdownToBlocks = markdownToBlocks,
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
+  resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
+  membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -440,6 +475,16 @@ export function createSlackApp(
       if (!msg.thread_ts) return;
       if (!(await getSessionFn(getThreadKey(msg.channel, msg.thread_ts))))
         return;
+    }
+
+    if (msg.user) {
+      const senderEmail = await resolveUserEmailFn(msg.user, client);
+      if (!isAllowedSlackSender(senderEmail, membershipRef)) {
+        console.log(
+          `[slack] rejected sender (not a member): user=${msg.user}`,
+        );
+        return;
+      }
     }
 
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
@@ -574,6 +619,16 @@ export function createSlackApp(
     // the message handler covers it and would double-respond otherwise.
     if (ev.thread_ts && (await getSessionFn(sessionKey))) {
       return;
+    }
+
+    if (ev.user) {
+      const senderEmail = await resolveUserEmailFn(ev.user, client);
+      if (!isAllowedSlackSender(senderEmail, membershipRef)) {
+        console.log(
+          `[slack] rejected sender (not a member): user=${ev.user}`,
+        );
+        return;
+      }
     }
 
     const setStatus = async (status: string) => {
@@ -715,6 +770,14 @@ export function createSlackApp(
     if (ev.item.type !== "message") return;
     if (!botUserId || ev.item_user !== botUserId) return;
     if (!ev.item.channel.startsWith("D")) return;
+
+    const senderEmail = await resolveUserEmailFn(ev.user, client).catch(
+      () => undefined,
+    );
+    if (!isAllowedSlackSender(senderEmail, membershipRef)) {
+      console.log(`[slack] rejected sender (not a member): user=${ev.user}`);
+      return;
+    }
 
     const sessionKey = getThreadKey(ev.item.channel, ev.item.ts);
     const name = await resolveUserFn(ev.user, client).catch(() => ev.user);
