@@ -4,7 +4,7 @@
  * Unit tests for createAgentSlackMembershipRef() — pure logic, no I/O.
  */
 
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import {
   agentSlackMembershipRef,
   createAgentSlackMembershipRef,
@@ -86,6 +86,10 @@ describe("createAgentSlackMembershipRef", () => {
 });
 
 describe("agentSlackMembershipRef (process-wide singleton)", () => {
+  afterEach(() => {
+    agentSlackMembershipRef.set({ restrict: false, emails: [] });
+  });
+
   it("is a working ref that reflects set() through get(), independent of createAgentSlackMembershipRef() instances", () => {
     const independent = createAgentSlackMembershipRef();
     independent.set({
