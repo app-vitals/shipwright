@@ -3036,6 +3036,11 @@ describe("thread resume after timeout — real createRunClaude wired as runner",
       async (key: string) => realSessions.get(key),
       undefined,
       new NoopChatTokenReporter(),
+      async () => undefined, // resolveUserEmailFn
+      // A fresh, unsynced ref — never the process-wide agentSlackMembershipRef
+      // singleton, which agent-slack-membership-ref.unit.test.ts mutates
+      // directly (see the createSlackApp wrapper above for the identical fix).
+      createAgentSlackMembershipRef(),
     );
     expect(app).toBeInstanceOf(MockApp);
 
