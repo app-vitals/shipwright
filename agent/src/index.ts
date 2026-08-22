@@ -21,6 +21,10 @@ import {
   agentAuthorAllowlistRef,
   resolveAuthorAllowlist,
 } from "./agent-author-allowlist-ref.ts";
+import {
+  agentSlackMembershipRef,
+  resolveSlackMembership,
+} from "./agent-slack-membership-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import { createChatPoller } from "./chat-poller.ts";
 import {
@@ -272,6 +276,11 @@ if (runtimeClient && agentId) {
 
       // Sync the agent's author-allowlist live ref
       agentAuthorAllowlistRef.set(resolveAuthorAllowlist(bundle.authorAllowlist));
+
+      // Sync the agent's Slack-membership-restriction live ref
+      agentSlackMembershipRef.set(
+        resolveSlackMembership(bundle.restrictSlackToMembers, bundle.memberEmails),
+      );
     } catch (err) {
       if (
         (err as { statusCode?: number }).statusCode === 404 &&
