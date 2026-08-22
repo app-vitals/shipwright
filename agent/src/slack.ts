@@ -179,6 +179,27 @@ export function isAllowedSlackSender(
   return emails.some((e) => e.toLowerCase() === lowered);
 }
 
+/**
+ * Resolves the sender's email and checks it against isAllowedSlackSender(),
+ * logging a debug line for rejected senders. Returns true when the handler
+ * should return early (reject) — shared by all three event handlers so the
+ * resolve/check/log sequence isn't repeated per handler.
+ */
+async function shouldRejectSlackSender(
+  userId: string,
+  // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
+  client: any,
+  resolveUserEmailFn: ResolveUserEmailFn,
+  membershipRef: AgentSlackMembershipRef,
+): Promise<boolean> {
+  const senderEmail = await resolveUserEmailFn(userId, client).catch(
+    () => undefined,
+  );
+  if (isAllowedSlackSender(senderEmail, membershipRef)) return false;
+  console.log(`[slack] rejected sender (not a member): user=${userId}`);
+  return true;
+}
+
 // Normalizes text for the speak-marker fallback's duplicate-content check:
 // lowercased, trimmed, trailing punctuation stripped, internal whitespace
 // collapsed. Deliberately simple — not fuzzy matching, just enough to catch
@@ -477,14 +498,16 @@ export function createSlackApp(
         return;
     }
 
-    if (msg.user) {
-      const senderEmail = await resolveUserEmailFn(msg.user, client);
-      if (!isAllowedSlackSender(senderEmail, membershipRef)) {
-        console.log(
-          `[slack] rejected sender (not a member): user=${msg.user}`,
-        );
-        return;
-      }
+    if (
+      msg.user &&
+      (await shouldRejectSlackSender(
+        msg.user,
+        client,
+        resolveUserEmailFn,
+        membershipRef,
+      ))
+    ) {
+      return;
     }
 
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
@@ -621,14 +644,16 @@ export function createSlackApp(
       return;
     }
 
-    if (ev.user) {
-      const senderEmail = await resolveUserEmailFn(ev.user, client);
-      if (!isAllowedSlackSender(senderEmail, membershipRef)) {
-        console.log(
-          `[slack] rejected sender (not a member): user=${ev.user}`,
-        );
-        return;
-      }
+    if (
+      ev.user &&
+      (await shouldRejectSlackSender(
+        ev.user,
+        client,
+        resolveUserEmailFn,
+        membershipRef,
+      ))
+    ) {
+      return;
     }
 
     const setStatus = async (status: string) => {
@@ -771,11 +796,14 @@ export function createSlackApp(
     if (!botUserId || ev.item_user !== botUserId) return;
     if (!ev.item.channel.startsWith("D")) return;
 
-    const senderEmail = await resolveUserEmailFn(ev.user, client).catch(
-      () => undefined,
-    );
-    if (!isAllowedSlackSender(senderEmail, membershipRef)) {
-      console.log(`[slack] rejected sender (not a member): user=${ev.user}`);
+    if (
+      await shouldRejectSlackSender(
+        ev.user,
+        client,
+        resolveUserEmailFn,
+        membershipRef,
+      )
+    ) {
       return;
     }
 
