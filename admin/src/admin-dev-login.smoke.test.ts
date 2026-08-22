@@ -200,6 +200,15 @@ function makeMockDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       updateAppManifest: async () => {},
       exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
     },
+    githubAppClient: {
+      exchangeManifestCode: async () => ({
+        appId: "999111",
+        slug: "test-shipwright-agent",
+        pem: "-----BEGIN RSA PRIVATE KEY-----\nmock\n-----END RSA PRIVATE KEY-----",
+        clientId: "gh-app-client-id",
+        clientSecret: "gh-app-client-secret",
+      }),
+    },
     provisioner: {
       canProvision: false,
       provision: async () => ({

@@ -239,6 +239,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         missingRequiredEnv: [],
       }),
@@ -262,6 +263,15 @@ function makeMockDeps(
       }),
     },
     slackClient,
+    githubAppClient: {
+      exchangeManifestCode: async () => ({
+        appId: "999111",
+        slug: "test-shipwright-agent",
+        pem: "-----BEGIN RSA PRIVATE KEY-----\nmock\n-----END RSA PRIVATE KEY-----",
+        clientId: "gh-app-client-id",
+        clientSecret: "gh-app-client-secret",
+      }),
+    },
     provisioner: {
       canProvision: false,
       provision: async () => ({

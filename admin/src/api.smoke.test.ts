@@ -456,6 +456,7 @@ function buildCombinedApp() {
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -473,6 +474,7 @@ function buildCombinedApp() {
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -692,6 +694,7 @@ function buildCombinedApp() {
         email,
         createdAt: new Date(),
       }),
+      listByAgentId: async () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

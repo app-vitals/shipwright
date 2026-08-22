@@ -56,6 +56,7 @@ function buildSpecApp() {
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -73,6 +74,7 @@ function buildSpecApp() {
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -285,6 +287,7 @@ function buildSpecApp() {
         email,
         createdAt: new Date(),
       }),
+      listByAgentId: async () => [],
     },
     agentChatTokenService: {
       upsertDailyByModel: async (

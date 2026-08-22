@@ -10,11 +10,53 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.12.12] - 2026-08-21
+## [1.12.19] - 2026-08-21
 
 ### Fixed
 
 - `admin-secret.yaml` now generates `SHIPWRIGHT_ENCRYPTION_KEY` as a 64-char-hex string (`randAlphaNum 32 | sha256sum | b64enc`) so admin's AES-256-GCM encryption doesn't fail with "Invalid key length"
+
+## [1.12.18] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.18 triggered by release tag(s): `admin-v1.92.1`
+
+## [1.12.17] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.17 triggered by release tag(s): `admin-v1.92.0`
+
+## [1.12.16] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.16 triggered by release tag(s): `admin-v1.91.0`
+
+## [1.12.15] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.15 triggered by release tag(s): `admin-v1.90.1`, `chat-v1.47.0`, `metrics-v1.50.0`, `task-store-v1.72.0`
+
+## [1.12.14] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.14 triggered by release tag(s): `admin-v1.90.0`
+
+## [1.12.13] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.13 triggered by release tag(s): `agent-v1.177.0`
+
+## [1.12.12] - 2026-08-21
+
+### Changed
+
+- auto-bump to chart v1.12.12 triggered by release tag(s): `admin-v1.89.0`, `agent-v1.177.0`
 
 ## [1.12.11] - 2026-08-21
 

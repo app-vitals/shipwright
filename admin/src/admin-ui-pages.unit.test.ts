@@ -58,6 +58,7 @@ const AGENT: AgentDetail = {
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
   authorAllowlist: [],
+  restrictSlackToMembers: false,
   typeName: "coding",
   missingRequiredEnv: [],
 };
@@ -234,9 +235,22 @@ describe("renderAgentsPage", () => {
     expect(html).toContain("No agents yet");
   });
 
-  test("empty state includes link to /admin/provision", () => {
+  test("empty state links to /admin/agents/new (not the Slack wizard)", () => {
     const html = renderAgentsPage([], USER_NAME, true, "UTC");
-    expect(html).toContain("/admin/provision");
+    expect(html).toContain('href="/admin/agents/new"');
+    expect(html).toContain("Create one");
+  });
+
+  test("admin: primary CTA is '+ New agent' → /admin/agents/new", () => {
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
+    expect(html).toContain("+ New agent");
+    expect(html).toContain('href="/admin/agents/new"');
+  });
+
+  test("admin: Slack wizard is offered only as a secondary action", () => {
+    const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
+    expect(html).toContain("Connect Slack app");
+    expect(html).toContain('href="/admin/provision"');
   });
 
   test("agent name appears as a link", () => {
@@ -292,15 +306,16 @@ describe("renderAgentsPage", () => {
     expect(html).not.toContain("No agents yet");
   });
 
-  test("non-admin: provision button is hidden", () => {
+  test("non-admin: create buttons are hidden", () => {
     const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, false, "UTC");
-    expect(html).not.toContain("+ Provision agent");
+    expect(html).not.toContain("+ New agent");
+    expect(html).not.toContain("Connect Slack app");
   });
 
-  test("non-admin: empty state shows 'No agents.' without provision link", () => {
+  test("non-admin: empty state shows 'No agents.' without a create link", () => {
     const html = renderAgentsPage([], USER_NAME, false, "UTC");
     expect(html).toContain("No agents.");
-    expect(html).not.toContain("Provision one");
+    expect(html).not.toContain("Create one");
   });
 
   test("createdAt date uses the provided timezone", () => {
@@ -634,6 +649,48 @@ describe("renderAgentDetailPage — overview", () => {
     expect(html).not.toContain("Danger Zone");
     expect(html).not.toContain("delete-agent-form");
   });
+
+  test("renders a restrictSlackToMembers checkbox, unchecked when false", () => {
+    const html = render();
+    expect(html).toMatch(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*type="checkbox"[^>]*>/,
+    );
+    // AGENT fixture has restrictSlackToMembers: false — the input must not carry "checked"
+    const match = html.match(/<input[^>]*name="restrictSlackToMembers"[^>]*>/);
+    expect(match?.[0]).not.toContain("checked");
+  });
+
+  test("renders the restrictSlackToMembers checkbox checked when the agent has it enabled", () => {
+    const restrictedAgent: AgentDetail = {
+      ...AGENT,
+      restrictSlackToMembers: true,
+    };
+    const html = renderAgentDetailPage(
+      restrictedAgent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+    const match = html.match(/<input[^>]*name="restrictSlackToMembers"[^>]*>/);
+    expect(match?.[0]).toContain("checked");
+  });
+
+  test("renders a warning banner when opts.warning is set", () => {
+    const html = render({ warning: "this agent has no members" });
+    expect(html).toContain('class="alert alert-warning"');
+    expect(html).toContain("this agent has no members");
+  });
+
+  test("renders no warning banner when opts.warning is absent", () => {
+    const html = render();
+    expect(html).not.toContain("this agent has no members");
+  });
 });
 
 // ─── renderNewLocalAgentPage ──────────────────────────────────────────────────
@@ -695,6 +752,13 @@ describe("renderNewLocalAgentPage", () => {
   test("renders an authorAllowlist textarea", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
+  });
+
+  test("renders a restrictSlackToMembers checkbox", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*type="checkbox"[^>]*>/,
+    );
   });
 
   test("renders both runtime radios", () => {
@@ -1621,6 +1685,62 @@ describe("renderProvisionStartPage", () => {
     const selectMatch = html.match(/<select id="agentId"[^>]*>/);
     expect(selectMatch).toBeTruthy();
     expect(selectMatch?.[0]).not.toContain("required");
+  });
+
+  // ── new tests for ghAppMode sub-toggle (manual paste vs. auto-provision) ─
+
+  test("renders ghAppMode radio buttons (manual and auto)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="ghAppMode"');
+    expect(html).toContain('value="manual"');
+    expect(html).toContain('value="auto"');
+  });
+
+  test("ghAppMode=manual is checked by default (preserves current behavior)", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const manualMatch = html.match(
+      /<input type="radio" name="ghAppMode" value="manual"[^>]*>/,
+    );
+    expect(manualMatch).toBeTruthy();
+    expect(manualMatch?.[0]).toContain("checked");
+  });
+
+  test("ghAppMode=auto is NOT checked by default", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const autoMatch = html.match(
+      /<input type="radio" name="ghAppMode" value="auto"[^>]*>/,
+    );
+    expect(autoMatch).toBeTruthy();
+    expect(autoMatch?.[0]).not.toContain("checked");
+  });
+
+  test("manual fields (ghAppId, ghAppInstallationId, ghAppPrivateKey) still render unchanged", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('id="ghAppId" name="ghAppId"');
+    expect(html).toContain(
+      'id="ghAppInstallationId" name="ghAppInstallationId"',
+    );
+    expect(html).toContain('id="ghAppPrivateKey" name="ghAppPrivateKey"');
+  });
+
+  test("renders a required githubOrg text field for auto-provision", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('name="githubOrg"');
+    const orgMatch = html.match(/<input id="githubOrg"[^>]*>/);
+    expect(orgMatch).toBeTruthy();
+    expect(orgMatch?.[0]).toContain("required");
+  });
+
+  test("gh-app-manual-fields container wraps the three manual fields", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    expect(html).toContain('id="gh-app-manual-fields"');
+  });
+
+  test("gh-app-auto-fields container wraps the githubOrg field and is hidden by default", () => {
+    const html = renderProvisionStartPage(USER_NAME, []);
+    const containerMatch = html.match(/<div id="gh-app-auto-fields"[^>]*>/);
+    expect(containerMatch).toBeTruthy();
+    expect(containerMatch?.[0]).toContain("display:none");
   });
 });
 

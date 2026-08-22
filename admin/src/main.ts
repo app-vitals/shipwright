@@ -50,6 +50,7 @@ import {
   NoopChatServiceProvisioningClient,
 } from "./chat-service-provisioning-client.ts";
 import { isDevAuthAllowed } from "./dev-auth-guard.ts";
+import { HttpGithubAppProvisioningClient } from "./github-app-provisioning-client.ts";
 import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
@@ -389,6 +390,7 @@ async function startServer(): Promise<void> {
     ? new HttpOktaAuthClient({ issuer: oktaIssuer })
     : undefined;
   const slackClient = new HttpSlackProvisioningClient();
+  const githubAppClient = new HttpGithubAppProvisioningClient();
 
   // Task-store + chat-service clients for deleteAgentFully() cleanup, shared
   // by both delete entry points (DELETE /agents/:id and the admin-ui danger
@@ -637,6 +639,7 @@ async function startServer(): Promise<void> {
     oktaIssuer,
     ...(oktaClient ? { oktaClient } : {}),
     slackClient,
+    githubAppClient,
     appBaseUrl,
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),

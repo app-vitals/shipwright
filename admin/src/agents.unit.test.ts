@@ -19,6 +19,7 @@ interface FakeAgentRow {
   selfHosted: boolean;
   repos: string[];
   authorAllowlist: string[];
+  restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
   updatedAt: Date;
@@ -59,6 +60,7 @@ function makeFakePrisma(
         selfHosted: boolean;
         repos?: string[];
         authorAllowlist?: string[];
+        restrictSlackToMembers?: boolean;
       };
     }): Promise<FakeAgentRow> {
       const row: FakeAgentRow = {
@@ -68,6 +70,7 @@ function makeFakePrisma(
         selfHosted: data.selfHosted,
         repos: data.repos ?? [],
         authorAllowlist: data.authorAllowlist ?? [],
+        restrictSlackToMembers: data.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
@@ -142,6 +145,7 @@ function makeFakePrisma(
         selfHosted?: boolean;
         repos?: string[];
         authorAllowlist?: string[];
+        restrictSlackToMembers?: boolean;
       };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
     }): Promise<FakeAgentRow> {
@@ -155,6 +159,9 @@ function makeFakePrisma(
         ...(data.repos !== undefined && { repos: data.repos }),
         ...(data.authorAllowlist !== undefined && {
           authorAllowlist: data.authorAllowlist,
+        }),
+        ...(data.restrictSlackToMembers !== undefined && {
+          restrictSlackToMembers: data.restrictSlackToMembers,
         }),
         updatedAt: new Date("2024-01-02"),
       };
@@ -220,6 +227,7 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     selfHosted: false,
     repos: [],
     authorAllowlist: [],
+    restrictSlackToMembers: false,
     typeName: "coding",
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
@@ -393,6 +401,7 @@ describe("AgentService.getDetail", () => {
       selfHosted: false,
       repos: ["org/repo"],
       authorAllowlist: ["octocat"],
+      restrictSlackToMembers: false,
       typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -805,6 +814,7 @@ describe("AgentService.updateFields", () => {
       selfHosted: true,
       repos: ["org/keep"],
       authorAllowlist: ["octocat"],
+      restrictSlackToMembers: false,
       typeName: "coding",
       createdAt: row.createdAt,
       updatedAt: new Date("2024-01-02"),

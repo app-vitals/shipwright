@@ -114,7 +114,7 @@ function buildComposedApp() {
       remove: notImplemented,
       removeByName: notImplemented,
     },
-    agentMemberService: { add: notImplemented },
+    agentMemberService: { add: notImplemented, listByAgentId: notImplemented },
     agentChatTokenService: {
       upsertDailyByModel: notImplemented,
       queryStats: notImplemented,
@@ -218,6 +218,9 @@ function buildComposedApp() {
       createAppManifest: notImplemented,
       updateAppManifest: notImplemented,
       exchangeOAuthCode: notImplemented,
+    },
+    githubAppClient: {
+      exchangeManifestCode: notImplemented,
     },
     appBaseUrl: "http://localhost:3000",
   });

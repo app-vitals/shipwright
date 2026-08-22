@@ -134,7 +134,7 @@ Not declared in CLAUDE.md but observed since 2026-08-06: `.github/workflows/test
 | `agent/src/analytics.ts` (file-backed JSON event store) | 2. Service-boundary code | integration | medium | n/a |
 | `agent/src/cutover-validate.ts` | 4. Error/failure-path (validation gate) | unit | medium | n/a |
 | `agent/src/http-chat-service-client.ts`, `shipwright-config-client.ts`, `shipwright-runtime-client.ts` | 2. Service-boundary code | integration (recorded fixture) | high | n/a |
-| `agent/src/sessions.ts`, `users.ts` | 2. Service-boundary code | integration | medium | n/a |
+| `agent/src/sessions.ts`, `users.ts` (user display name and email resolver with unified cache, SMR-2.2) | 2. Service-boundary code | integration | medium | n/a |
 | `agent/src/config.ts`, `cli-args.ts`, `test-env.ts` | 1. Pure business logic | unit | medium | n/a |
 | `agent/src/index.ts` (composition entrypoint) | 2. Service-boundary code (composition + sync wiring) | integration | critical | n/a |
 | `admin/src/agents-api.ts` (CRUD API for Agent/Env/Cron/Tool/Token/Plugin/Member) | 3. HTTP route | smoke | critical | n/a |

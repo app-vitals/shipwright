@@ -163,7 +163,7 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
-      <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/provision" class="vos-nav-link">Slack</a>
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
@@ -656,7 +656,7 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
-      <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/provision" class="vos-nav-link">Slack</a>
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
@@ -1149,7 +1149,7 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
-      <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/provision" class="vos-nav-link">Slack</a>
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
@@ -1642,7 +1642,7 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
     <a href="/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
       <a href="/admin/agents" class="vos-nav-link">Agents</a>
-      <a href="/admin/provision" class="vos-nav-link">Provision</a>
+      <a href="/admin/provision" class="vos-nav-link">Slack</a>
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>

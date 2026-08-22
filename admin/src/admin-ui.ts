@@ -43,6 +43,9 @@ import {
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
+  renderGithubAppInstallPage,
+  renderGithubAppInstalledPage,
+  renderGithubAppManifestRedirectPage,
   renderLoginPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
@@ -76,6 +79,7 @@ import type { AgentService } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
+import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import type { ChatClient, ChatThread } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
@@ -116,6 +120,21 @@ export interface AdminUISlackClient {
     clientSecret: string,
     redirectUri: string,
   ): Promise<{ botToken: string }>;
+}
+
+/**
+ * Narrow interface for the admin UI's GitHub App provisioning dependency.
+ * Mirrors AdminUISlackClient's DI pattern — deliberately narrower than the
+ * full GithubAppProvisioningClient in github-app-provisioning-client.ts.
+ */
+export interface AdminUIGithubAppClient {
+  exchangeManifestCode(code: string): Promise<{
+    appId: string;
+    slug: string;
+    pem: string;
+    clientId: string;
+    clientSecret: string;
+  }>;
 }
 
 interface PrismaAgentLike {
@@ -284,6 +303,12 @@ export interface AdminUIDeps {
   oktaIssuer?: string;
   adminAllowedEmails: string[];
   slackClient: AdminUISlackClient;
+  /**
+   * GitHub App manifest-flow provisioning client, used by the auto-provision
+   * sub-flow under ghAuthMode=app: GET /admin/provision/github-app/complete
+   * exchanges the manifest-flow code via exchangeManifestCode().
+   */
+  githubAppClient: AdminUIGithubAppClient;
   appBaseUrl: string;
   /** Enable the /admin/dev-login route. Hard-blocked in production regardless of this value. */
   devAuthEnabled?: boolean;
@@ -490,6 +515,30 @@ function resolveSessionDetailBackHref(fromParam: string | undefined): string {
   return resolveBackHref(fromParam, SESSION_BACK_HREF_PATTERN, "/admin/tasks");
 }
 
+/**
+ * Redirects to the agent detail page, appending the zero-members warning
+ * query param when restrictSlackToMembers was just enabled on an agent with
+ * no AgentMember rows. Non-blocking — the caller's save already succeeded;
+ * this only decides which redirect target to use.
+ */
+async function redirectWithMembersWarning(
+  c: Context<AdminUIEnv>,
+  agentMemberService: Pick<AgentMemberService, "listByAgentId">,
+  agentId: string,
+  restrictSlackToMembers: boolean,
+) {
+  if (restrictSlackToMembers) {
+    const members = await agentMemberService.listByAgentId(agentId);
+    if (members.length === 0) {
+      return c.redirect(
+        `/admin/agents/${agentId}?warning=restrict_slack_no_members`,
+        302,
+      );
+    }
+  }
+  return c.redirect(`/admin/agents/${agentId}`, 302);
+}
+
 // ─── App factory ──────────────────────────────────────────────────────────────
 
 export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
@@ -520,6 +569,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     oktaIssuer = "",
     adminAllowedEmails,
     slackClient,
+    githubAppClient,
     appBaseUrl,
     devAuthEnabled = false,
     fetchTaskStoreTasks,
@@ -948,6 +998,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
     let claudeCodeOauthToken: string | undefined;
     try {
@@ -956,6 +1007,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      restrictSlackToMembersRaw = formData
+        .get("restrictSlackToMembers")
+        ?.toString();
       runtime = formData.get("runtime")?.toString()?.trim();
       claudeCodeOauthToken = formData
         .get("claudeCodeOauthToken")
@@ -982,10 +1036,12 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (inCluster && !provisioner.canProvision) {
       return c.redirect("/admin/agents/new?error=provisioning_disabled", 302);
     }
+    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
     const agent = await agentService.create({
       name,
       selfHosted: !inCluster,
       typeName,
+      restrictSlackToMembers,
     });
     // Attach repos if provided
     if (reposRaw) {
@@ -1055,12 +1111,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     try {
       await agentCronJobService.reconcileSystemCrons(agent.id);
     } catch (err) {
-      console.error(
-        "[admin-ui] failed to seed system crons (non-fatal):",
-        err,
-      );
+      console.error("[admin-ui] failed to seed system crons (non-fatal):", err);
     }
-    return c.redirect(`/admin/agents/${agent.id}`, 302);
+    return redirectWithMembersWarning(
+      c,
+      agentMemberService,
+      agent.id,
+      restrictSlackToMembers,
+    );
   });
 
   app.get("/admin/agents/:id", requireAuth, async (c) => {
@@ -1078,6 +1136,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       authorAllowlist: agent.authorAllowlist,
+      restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };
@@ -1096,6 +1155,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         : successParam === "reinstalled"
           ? "Slack app reinstalled successfully."
           : undefined;
+    const warningParam = c.req.query("warning");
+    const warning =
+      warningParam === "restrict_slack_no_members"
+        ? "This agent has no members — enabling restrictSlackToMembers will block all Slack senders."
+        : undefined;
 
     const [envResult, crons, tools, tokens, plugins, members] =
       await Promise.all([
@@ -1122,7 +1186,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         members,
         c.var.userEmail,
         c.var.isAdmin,
-        { error, newToken, successMsg, timezone },
+        { error, newToken, successMsg, warning, timezone },
       ),
     );
   });
@@ -1355,6 +1419,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       return c.redirect(`/admin/agents/${agentId}`, 302);
     },
   );
+
+  // ─── Slack access settings (restrictSlackToMembers) ────────────────────────
+
+  app.post("/admin/agents/:id/settings", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const agentId = c.req.param("id");
+    let restrictSlackToMembersRaw: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      restrictSlackToMembersRaw = formData
+        .get("restrictSlackToMembers")
+        ?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    }
+    const restrictSlackToMembers = restrictSlackToMembersRaw === "true";
+    const agent = await agentService.updateFields(agentId, {
+      restrictSlackToMembers,
+    });
+    return redirectWithMembersWarning(
+      c,
+      agentMemberService,
+      agent.id,
+      restrictSlackToMembers,
+    );
+  });
 
   // ─── Cron job mutations ───────────────────────────────────────────────────
 
@@ -1615,6 +1705,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       updatedAt: agent.updatedAt,
       repos: agent.repos,
       authorAllowlist: agent.authorAllowlist,
+      restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
     };
@@ -1676,6 +1767,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   const PROVISION_STATE_COOKIE = "slack_provision_state";
   const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
+
+  // GitHub org login name pattern (matches GitHub's own username/org-name
+  // rules: alphanumeric, single hyphens, no leading/trailing hyphen, max 39
+  // chars). Operator-supplied `githubOrg` is validated against this at every
+  // point it's about to be string-interpolated into a github.com redirect
+  // URL — an open-redirect/injection boundary, not defensive-for-no-reason.
+  const GITHUB_ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]){0,38}$/;
 
   // ─── Manifest sync ────────────────────────────────────────────────────────
 
@@ -1797,9 +1895,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let xoxpToken: string | undefined;
     let ghAuthMode: string | undefined;
     let ghPat: string | undefined;
+    let ghAppMode: string | undefined;
     let ghAppId: string | undefined;
     let ghAppInstallationId: string | undefined;
     let ghAppPrivateKey: string | undefined;
+    let githubOrg: string | undefined;
     let anthropicApiKey: string | undefined;
     let claudeCodeOauthToken: string | undefined;
 
@@ -1812,9 +1912,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       xoxpToken = formData.get("xoxpToken")?.toString();
       ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
       ghPat = formData.get("ghPat")?.toString();
+      ghAppMode = formData.get("ghAppMode")?.toString() ?? "manual";
       ghAppId = formData.get("ghAppId")?.toString();
       ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
       ghAppPrivateKey = formData.get("ghAppPrivateKey")?.toString();
+      githubOrg = formData.get("githubOrg")?.toString()?.trim();
       anthropicApiKey = formData.get("anthropicApiKey")?.toString();
       claudeCodeOauthToken = formData.get("claudeCodeOauthToken")?.toString();
     } catch {
@@ -1842,20 +1944,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         return formError("GitHub Personal Access Token is required.");
       }
     } else if (ghAuthMode === "app") {
-      if (!ghAppId || !/^\d+$/.test(ghAppId)) {
-        return formError("GitHub App ID must be a numeric value.");
-      }
-      if (!ghAppInstallationId || !/^\d+$/.test(ghAppInstallationId)) {
-        return formError("GitHub App Installation ID must be a numeric value.");
-      }
-      if (
-        !ghAppPrivateKey ||
-        !ghAppPrivateKey.includes("BEGIN") ||
-        !ghAppPrivateKey.includes("PRIVATE KEY")
-      ) {
-        return formError(
-          "GitHub App Private Key must be a valid PEM-encoded key.",
-        );
+      if (ghAppMode === "auto") {
+        if (!githubOrg || !GITHUB_ORG_PATTERN.test(githubOrg)) {
+          return formError(
+            "GitHub org must be a valid GitHub organization name.",
+          );
+        }
+      } else {
+        if (!ghAppId || !/^\d+$/.test(ghAppId)) {
+          return formError("GitHub App ID must be a numeric value.");
+        }
+        if (!ghAppInstallationId || !/^\d+$/.test(ghAppInstallationId)) {
+          return formError(
+            "GitHub App Installation ID must be a numeric value.",
+          );
+        }
+        if (
+          !ghAppPrivateKey ||
+          !ghAppPrivateKey.includes("BEGIN") ||
+          !ghAppPrivateKey.includes("PRIVATE KEY")
+        ) {
+          return formError(
+            "GitHub App Private Key must be a valid PEM-encoded key.",
+          );
+        }
       }
     } else {
       return formError("Invalid GitHub auth mode.");
@@ -1958,6 +2070,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const { appId, oauthRedirectUrl, clientId, clientSecret, signingSecret } =
       slackResult;
 
+    // GitHub App auto-provision (ghAuthMode=app, ghAppMode=auto): the manifest
+    // flow's own state (githubOrg) rides along in the same signed cookie used
+    // for the Slack OAuth exchange — this flow is strictly additive and never
+    // touches the PAT or manual-App-paste behavior below.
+    const isGithubAppAutoProvision =
+      ghAuthMode === "app" && ghAppMode === "auto";
+
     // ── Sign provision-state cookie ───────────────────────────────────────
 
     const now = Math.floor(Date.now() / 1000);
@@ -1970,6 +2089,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         appId,
         iat: now,
         exp: now + PROVISION_STATE_TTL_SECONDS,
+        ...(isGithubAppAutoProvision ? { githubOrg } : {}),
       },
       sessionSecret,
       "HS256",
@@ -1997,11 +2117,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     if (ghAuthMode === "pat") {
       newEnv.GH_TOKEN = ghPat ?? "";
-    } else {
+    } else if (!isGithubAppAutoProvision) {
+      // Manual GitHub App paste — unchanged from prior behavior.
       newEnv.GH_APP_ID = ghAppId ?? "";
       newEnv.GH_APP_INSTALLATION_ID = ghAppInstallationId ?? "";
       newEnv.GH_APP_PRIVATE_KEY = ghAppPrivateKey ?? "";
     }
+    // isGithubAppAutoProvision: GH_APP_ID/GH_APP_PRIVATE_KEY/GH_APP_INSTALLATION_ID
+    // are written later by the github-app/complete and github-app/installed
+    // routes, once the manifest-flow code and installation_id are known.
 
     if (anthropicApiKey) {
       newEnv.ANTHROPIC_API_KEY = anthropicApiKey;
@@ -2015,6 +2139,22 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       newEnv,
       new Set(SECRET_ENV_VARS),
     );
+
+    if (isGithubAppAutoProvision) {
+      // biome-ignore lint/style/noNonNullAssertion: validated above (ghAppMode === "auto" requires a GITHUB_ORG_PATTERN-valid githubOrg)
+      const org = githubOrg!;
+      const manifest = buildAgentAppManifest(agent.name, {
+        redirectUri: `${appBaseUrl}/admin/provision/github-app/complete`,
+        setupUrl: `${appBaseUrl}/admin/provision/github-app/installed`,
+      });
+      // Use c.html() so the Set-Cookie header from setCookie() is included
+      return c.html(
+        renderGithubAppManifestRedirectPage(c.var.userEmail, {
+          githubOrg: org,
+          manifest,
+        }),
+      );
+    }
 
     // Use c.html() so the Set-Cookie header from setCookie() is included
     return c.html(
@@ -2152,6 +2292,158 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   // POST /admin/provision/complete — removed; returns 404
   app.post("/admin/provision/complete", (c) => {
     return new Response("Not Found", { status: 404 });
+  });
+
+  /**
+   * Reads and verifies the slack_provision_state cookie for the GitHub App
+   * manifest-flow routes below. Unlike GET /admin/provision/complete, these
+   * routes only make sense mid-GitHub-App-flow, so a valid githubOrg
+   * (re-validated against GITHUB_ORG_PATTERN — never trust round-tripped
+   * input blindly, even though the JWT is signed) is required in the payload
+   * shape, not just the base Slack fields.
+   */
+  async function readGithubAppProvisionState(c: Context<AdminUIEnv>): Promise<
+    | {
+        agentId: string;
+        githubOrg: string;
+      }
+    | { error: string }
+  > {
+    const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
+    if (!rawStateCookie) {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return {
+        error:
+          "Provision session expired or missing. Please start the provisioning flow again.",
+      };
+    }
+    try {
+      const payload = (await verify(
+        rawStateCookie,
+        sessionSecret,
+        "HS256",
+      )) as Record<string, unknown>;
+      if (
+        typeof payload.agentId !== "string" ||
+        typeof payload.githubOrg !== "string" ||
+        !GITHUB_ORG_PATTERN.test(payload.githubOrg)
+      ) {
+        throw new Error("invalid payload shape");
+      }
+      return { agentId: payload.agentId, githubOrg: payload.githubOrg };
+    } catch {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return {
+        error:
+          "Provision session expired or invalid. Please start the provisioning flow again.",
+      };
+    }
+  }
+
+  // GET — manifest-flow redirect target: exchange the one-time code for App
+  // credentials, store them, and link the operator to the install page.
+  app.get("/admin/provision/github-app/complete", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const userEmail = c.var.userEmail;
+
+    const state = await readGithubAppProvisionState(c);
+    if ("error" in state) {
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: state.error,
+        }),
+      );
+    }
+
+    // Read the code param before consuming the cookie — if code is absent the
+    // cookie must remain intact so the user can restart the provisioning flow.
+    const code = c.req.query("code");
+    if (!code) {
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error:
+            "GitHub did not return a manifest code. Please restart the provisioning flow from the beginning.",
+        }),
+      );
+    }
+
+    deleteCookie(c, PROVISION_STATE_COOKIE);
+
+    let exchangeResult: {
+      appId: string;
+      slug: string;
+      pem: string;
+      clientId: string;
+      clientSecret: string;
+    };
+    try {
+      exchangeResult = await githubAppClient.exchangeManifestCode(code);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Unknown error exchanging GitHub App manifest code.";
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: `GitHub App creation failed: ${msg}`,
+        }),
+      );
+    }
+
+    await agentEnvService.patch(
+      state.agentId,
+      {
+        GH_APP_ID: exchangeResult.appId,
+        GH_APP_PRIVATE_KEY: exchangeResult.pem,
+      },
+      new Set(SECRET_ENV_VARS),
+    );
+
+    return html(
+      renderGithubAppInstallPage(userEmail, {
+        installUrl: `https://github.com/apps/${exchangeResult.slug}/installations/new`,
+      }),
+    );
+  });
+
+  // GET — the manifest's setup_url target, reached after the operator installs
+  // the newly-created App. Stores GH_APP_INSTALLATION_ID.
+  app.get("/admin/provision/github-app/installed", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    const userEmail = c.var.userEmail;
+
+    const state = await readGithubAppProvisionState(c);
+    if ("error" in state) {
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: state.error,
+        }),
+      );
+    }
+
+    const installationId = c.req.query("installation_id");
+    if (!installationId || !/^\d+$/.test(installationId)) {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error:
+            "GitHub did not return a valid installation ID. Please restart the provisioning flow from the beginning.",
+        }),
+      );
+    }
+
+    deleteCookie(c, PROVISION_STATE_COOKIE);
+
+    await agentEnvService.patch(state.agentId, {
+      GH_APP_INSTALLATION_ID: installationId,
+    });
+
+    return html(renderGithubAppInstalledPage(userEmail, { success: true }));
   });
 
   // POST /admin/provision/xapp-token — save xapp token, create scoped token, seed crons

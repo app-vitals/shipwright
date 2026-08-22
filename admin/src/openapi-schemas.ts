@@ -51,6 +51,15 @@ export const AgentSchema = z
       .string()
       .datetime()
       .openapi({ example: "2026-01-01T00:00:00.000Z" }),
+    /**
+     * Non-blocking warning surfaced when restrictSlackToMembers is set to
+     * true on an agent with zero AgentMember rows — the save still succeeds,
+     * this is informational only.
+     */
+    warning: z.string().optional().openapi({
+      example:
+        "this agent has no members — enabling this will block all Slack senders",
+    }),
   })
   .openapi("Agent");
 
@@ -103,6 +112,16 @@ export const CreateAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["octocat"] }),
+    /**
+     * Initial restrictSlackToMembers flag — when true, only AgentMember
+     * emails may message this agent over Slack. Optional, defaults to the
+     * column default (false). Mirrors PatchAgentBodySchema's
+     * restrictSlackToMembers shape.
+     */
+    restrictSlackToMembers: z
+      .boolean()
+      .optional()
+      .openapi({ example: false }),
   })
   .openapi("CreateAgentBody");
 
@@ -125,6 +144,10 @@ export const PatchAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["octocat"] }),
+    restrictSlackToMembers: z
+      .boolean()
+      .optional()
+      .openapi({ example: false }),
   })
   .openapi("PatchAgentBody");
 
