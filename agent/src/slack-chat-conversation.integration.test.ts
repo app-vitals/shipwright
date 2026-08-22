@@ -18,6 +18,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { createAgentSlackMembershipRef } from "./agent-slack-membership-ref.ts";
 import type { ModelUsage, TokenUsage } from "./claude.ts";
 import { threadKey } from "./sessions.ts";
 import { createSlackApp as _createSlackApp } from "./slack.ts";
@@ -90,6 +91,13 @@ function createSlackApp(
     "UBOT123", // botUserId
     async () => ({ messages: [] }), // conversationsRepliesFn
     getSessionFn,
+    undefined, // blocksConverter — default
+    undefined, // chatTokenReporter — default noop
+    async () => undefined, // resolveUserEmailFn
+    // A fresh, unsynced ref — never the process-wide agentSlackMembershipRef
+    // singleton, which agent-slack-membership-ref.unit.test.ts mutates
+    // directly (see slack.integration.test.ts's identical fix).
+    createAgentSlackMembershipRef(),
   );
 }
 

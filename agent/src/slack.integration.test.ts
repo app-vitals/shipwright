@@ -17,6 +17,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
 import {
+  type AgentSlackMembershipRef,
+  createAgentSlackMembershipRef,
+} from "./agent-slack-membership-ref.ts";
+import {
   type ChatTokenReporter,
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
@@ -144,6 +148,11 @@ function createSlackApp(
     blocksConverter?: typeof markdownToBlocks;
     chatTokenReporter?: ChatTokenReporter;
     sentryClient?: ErrorCapturingClient;
+    resolveUserEmailFn?: (
+      userId: string,
+      client: unknown,
+    ) => Promise<string | undefined>;
+    membershipRef?: AgentSlackMembershipRef;
   } = {},
 ) {
   capturedErrors = [];
@@ -165,6 +174,14 @@ function createSlackApp(
     overrides.getSessionFn ?? (async () => undefined),
     overrides.blocksConverter,
     overrides.chatTokenReporter ?? new NoopChatTokenReporter(),
+    overrides.resolveUserEmailFn ?? (async () => undefined),
+    // A fresh, unsynced ref per call — never the process-wide
+    // agentSlackMembershipRef singleton, which other test files (e.g.
+    // agent-slack-membership-ref.unit.test.ts) mutate directly. Falling
+    // through to that shared singleton would make this suite's outcome
+    // depend on bun test's file execution order (see CLAUDE.md's test
+    // isolation hard rule).
+    overrides.membershipRef ?? createAgentSlackMembershipRef(),
   );
 }
 
@@ -3019,6 +3036,11 @@ describe("thread resume after timeout — real createRunClaude wired as runner",
       async (key: string) => realSessions.get(key),
       undefined,
       new NoopChatTokenReporter(),
+      async () => undefined, // resolveUserEmailFn
+      // A fresh, unsynced ref — never the process-wide agentSlackMembershipRef
+      // singleton, which agent-slack-membership-ref.unit.test.ts mutates
+      // directly (see the createSlackApp wrapper above for the identical fix).
+      createAgentSlackMembershipRef(),
     );
     expect(app).toBeInstanceOf(MockApp);
 

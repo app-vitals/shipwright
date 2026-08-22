@@ -67,7 +67,7 @@ import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 import { createSlackApp, hasSlackCredentials } from "./slack.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
-import { resolveDisplayName } from "./users.ts";
+import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
 import {
   HttpWorkQueueReporter,
@@ -565,6 +565,8 @@ if (hasSlackCredentials(slackAppConfig)) {
     (key) => sessions.get(key),
     undefined, // blocksConverter — default
     chatTokenReporter,
+    (userId, client) => resolveUserEmail(userId, client),
+    agentSlackMembershipRef,
   );
 
   await app.start();
