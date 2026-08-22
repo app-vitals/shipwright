@@ -48,6 +48,10 @@
             "type": "string",
             "format": "date-time",
             "example": "2026-01-01T00:00:00.000Z"
+          },
+          "warning": {
+            "type": "string",
+            "example": "this agent has no members — enabling this will block all Slack senders"
           }
         },
         "required": [
@@ -108,6 +112,10 @@
             "example": [
               "octocat"
             ]
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean",
+            "example": false
           }
         },
         "required": [
@@ -228,6 +236,9 @@
               "type": "string"
             }
           },
+          "restrictSlackToMembers": {
+            "type": "boolean"
+          },
           "typeName": {
             "type": "string"
           },
@@ -244,6 +255,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "warning": {
+            "type": "string"
           }
         },
         "required": [
@@ -252,6 +266,7 @@
           "selfHosted",
           "repos",
           "authorAllowlist",
+          "restrictSlackToMembers",
           "typeName",
           "createdAt",
           "updatedAt",
@@ -282,6 +297,10 @@
             "example": [
               "octocat"
             ]
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean",
+            "example": false
           }
         }
       },
@@ -1899,6 +1918,19 @@
             "example": [
               "octocat"
             ]
+          },
+          "restrictSlackToMembers": {
+            "type": "boolean",
+            "example": false
+          },
+          "memberEmails": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "dev@example.com"
+            ]
           }
         },
         "required": [
@@ -1906,7 +1938,9 @@
           "allowedTools",
           "plugins",
           "repos",
-          "authorAllowlist"
+          "authorAllowlist",
+          "restrictSlackToMembers",
+          "memberEmails"
         ]
       },
       "RuntimeError": {
@@ -2746,6 +2780,24 @@
             },
             "required": false,
             "name": "offset",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "acme/x#123"
+            },
+            "required": false,
+            "name": "itemId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": false,
+            "name": "phaseId",
             "in": "query"
           }
         ],

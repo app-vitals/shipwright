@@ -7,6 +7,7 @@
  */
 
 import type { PrismaClient } from "../prisma/client/index.js";
+import { AgentMemberService } from "./agent-members.ts";
 import {
   type AgentTypeManifestResolver,
   AgentTypeRegistry,
@@ -83,6 +84,8 @@ export interface AgentIdAndRepos {
   id: string;
   repos: string[];
   authorAllowlist: string[];
+  restrictSlackToMembers: boolean;
+  memberEmails: string[];
 }
 
 export interface AgentOption {
@@ -127,6 +130,10 @@ export class AgentService {
   constructor(
     private prisma: PrismaClient,
     private agentTypeRegistry: AgentTypeManifestResolver = new AgentTypeRegistry(),
+    private agentMemberService: Pick<
+      AgentMemberService,
+      "listByAgentId"
+    > = new AgentMemberService(prisma),
   ) {}
 
   /**
@@ -274,14 +281,25 @@ export class AgentService {
   }
 
   /**
-   * Get {id, repos, authorAllowlist} for a single agent — used by the runtime
-   * config/crons routes. Returns null if not found.
+   * Get {id, repos, authorAllowlist, restrictSlackToMembers, memberEmails}
+   * for a single agent — used by the runtime config/crons routes. Returns
+   * null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
-    return this.prisma.agent.findUnique({
+    const row = await this.prisma.agent.findUnique({
       where: { id },
-      select: { id: true, repos: true, authorAllowlist: true },
+      select: {
+        id: true,
+        repos: true,
+        authorAllowlist: true,
+        restrictSlackToMembers: true,
+      },
     });
+    if (!row) return null;
+
+    const members = await this.agentMemberService.listByAgentId(id);
+    const memberEmails = members.map((m) => m.email);
+    return { ...row, memberEmails };
   }
 
   /**

@@ -895,6 +895,8 @@ export const AgentConfigResponseSchema = z
     plugins: z.array(AgentConfigPluginSchema),
     repos: z.array(z.string()).openapi({ example: ["org/repo1", "org/repo2"] }),
     authorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
+    restrictSlackToMembers: z.boolean().openapi({ example: false }),
+    memberEmails: z.array(z.string()).openapi({ example: ["dev@example.com"] }),
   })
   .openapi("AgentConfigResponse");
 

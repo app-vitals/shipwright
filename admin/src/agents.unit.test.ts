@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { AgentMemberService } from "./agent-members.ts";
 import type { AgentTypeManifestResolver } from "./agent-type-manifest-loader.ts";
 import type { AgentTypeManifest } from "./agent-type-registry.ts";
 import { AgentService } from "./agents.ts";
@@ -46,6 +47,10 @@ function applySelect<T extends object>(
 function makeFakePrisma(
   seed: FakeAgentRow[] = [],
   envSeed: Record<string, string[]> = {},
+  memberSeed: Record<
+    string,
+    { id: string; agentId: string; email: string; createdAt: Date }[]
+  > = {},
 ) {
   const rows = new Map<string, FakeAgentRow>(seed.map((r) => [r.id, r]));
   let nextId = 1;
@@ -182,7 +187,17 @@ function makeFakePrisma(
     },
   };
 
-  return { agent, agentEnv, __rows: rows };
+  const agentMember = {
+    async findMany({
+      where,
+    }: {
+      where: { agentId: string };
+    }): Promise<{ id: string; agentId: string; email: string; createdAt: Date }[]> {
+      return memberSeed[where.agentId] ?? [];
+    },
+  };
+
+  return { agent, agentEnv, agentMember, __rows: rows };
 }
 
 type FakePrisma = ReturnType<typeof makeFakePrisma>;
@@ -588,6 +603,8 @@ describe("AgentService.getById", () => {
       id: "a1",
       repos: ["org/repo1", "org/repo2"],
       authorAllowlist: [],
+      restrictSlackToMembers: false,
+      memberEmails: [],
     });
   });
 
@@ -611,7 +628,57 @@ describe("AgentService.getById", () => {
       id: "a1",
       repos: ["org/repo1"],
       authorAllowlist: ["octocat", "hubot"],
+      restrictSlackToMembers: false,
+      memberEmails: [],
     });
+  });
+
+  it("includes memberEmails scoped to the agent, excluding other agents' members", async () => {
+    const row = seedRow({ id: "a1", repos: ["org/repo1"] });
+    const otherRow = seedRow({ id: "a2", repos: [] });
+    const prisma = makeFakePrisma([row, otherRow], undefined, {
+      a1: [
+        {
+          id: "member-1",
+          agentId: "a1",
+          email: "dev@example.com",
+          createdAt: new Date("2024-01-01"),
+        },
+        {
+          id: "member-2",
+          agentId: "a1",
+          email: "ops@example.com",
+          createdAt: new Date("2024-01-01"),
+        },
+      ],
+      a2: [
+        {
+          id: "member-3",
+          agentId: "a2",
+          email: "other@example.com",
+          createdAt: new Date("2024-01-01"),
+        },
+      ],
+    }) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.getById("a1");
+
+    expect(result?.memberEmails).toEqual(["dev@example.com", "ops@example.com"]);
+  });
+
+  it("returns restrictSlackToMembers: true when set on the seeded row", async () => {
+    const row = seedRow({
+      id: "a1",
+      repos: ["org/repo1"],
+      restrictSlackToMembers: true,
+    });
+    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
+    const service = new AgentService(prisma as never);
+
+    const result = await service.getById("a1");
+
+    expect(result?.restrictSlackToMembers).toBe(true);
   });
 });
 

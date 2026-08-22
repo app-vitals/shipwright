@@ -744,6 +744,8 @@ export interface paths {
                 query?: {
                     limit?: string;
                     offset?: string;
+                    itemId?: string;
+                    phaseId?: string;
                 };
                 header?: never;
                 path: {
@@ -1596,6 +1598,8 @@ export interface components {
              * @example 2026-01-01T00:00:00.000Z
              */
             updatedAt: string;
+            /** @example this agent has no members — enabling this will block all Slack senders */
+            warning?: string;
         };
         Error: {
             /** @example not found */
@@ -1622,6 +1626,8 @@ export interface components {
              *     ]
              */
             authorAllowlist?: string[];
+            /** @example false */
+            restrictSlackToMembers?: boolean;
         };
         ReconcileAgentsResult: {
             recreated: string[];
@@ -1649,12 +1655,14 @@ export interface components {
             selfHosted: boolean;
             repos: string[];
             authorAllowlist: string[];
+            restrictSlackToMembers: boolean;
             typeName: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
             missingRequiredEnv: string[];
+            warning?: string;
         };
         PatchAgentBody: {
             /** @example false */
@@ -1671,6 +1679,8 @@ export interface components {
              *     ]
              */
             authorAllowlist?: string[];
+            /** @example false */
+            restrictSlackToMembers?: boolean;
         };
         FailedStep: {
             /** @example k8s */
@@ -1932,6 +1942,11 @@ export interface components {
             /** @example 10 */
             cacheCreationTokens: number | null;
             /**
+             * @description Agent session id this run was executed under. Null for runs with no recorded session.
+             * @example session-abc-123
+             */
+            sessionId: string | null;
+            /**
              * Format: date-time
              * @example 2026-01-01T08:00:00.000Z
              */
@@ -2010,6 +2025,11 @@ export interface components {
             cacheReadTokens?: number | null;
             /** @example 10 */
             cacheCreationTokens?: number | null;
+            /**
+             * @description Agent session id this run was executed under.
+             * @example session-abc-123
+             */
+            sessionId?: string | null;
             /** @description Per-model token breakdown for this run */
             modelBreakdown?: components["schemas"]["ModelBreakdownEntry"][];
         };
@@ -2290,6 +2310,14 @@ export interface components {
              *     ]
              */
             authorAllowlist: string[];
+            /** @example false */
+            restrictSlackToMembers: boolean;
+            /**
+             * @example [
+             *       "dev@example.com"
+             *     ]
+             */
+            memberEmails: string[];
         };
         RuntimeError: {
             /** @example Not found */
