@@ -140,10 +140,9 @@
     Okta mirrors `google-auth-client.ts` structurally; the GitHub App client's
     conversion-response `webhook_secret` is deliberately discarded (no webhook receiver
     in this codebase, per the "Webhook receiver" row's existing "not named — no
-    substitute needed" conclusion, unchanged). New recorded fixtures
-    (`okta-auth-cassette.json`, `github-app-manifest-cassette.json`) slot into the
-    existing per-workspace `src/fixtures/` convention — no new fixture directory or
-    tooling required.
+    substitute needed" conclusion, unchanged). New recorded fixture data for both
+    clients slots into the existing per-workspace `src/fixtures/` convention — no new
+    fixture directory or tooling required.
   - **Slack-membership restriction (`agent/src/agent-slack-membership-ref.ts`)** — a
     pure, zero-I/O mutable-box ref, structurally identical to the already-designed
     `agent-repos-ref.ts`/`agent-author-allowlist-ref.ts` pattern (unit-tested directly,
