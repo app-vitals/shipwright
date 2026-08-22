@@ -26,6 +26,8 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   plugins: [{ marketplace: "my-market", plugin: "my-plugin" }],
   repos: [],
   authorAllowlist: [],
+  restrictSlackToMembers: false,
+  memberEmails: [],
 };
 
 // ─── Temp dir helpers ──────────────────────────────────────────────────────────
@@ -251,6 +253,8 @@ describe("runEntrypoint — config with empty env", () => {
       plugins: [],
       repos: [],
       authorAllowlist: [],
+      restrictSlackToMembers: false,
+      memberEmails: [],
     };
     const configClient = new RecordedShipwrightConfigClient(emptyConfig);
     const { deps, exitCodes, spawnCalls } = makeDeps(configClient);

@@ -44,6 +44,8 @@ export interface AgentConfigResponse {
   plugins: AgentPlugin[];
   repos: string[];
   authorAllowlist: string[];
+  restrictSlackToMembers: boolean;
+  memberEmails: string[];
 }
 
 interface AgentEnvServiceLike {
@@ -68,9 +70,13 @@ interface AgentCronJobServiceLike {
 }
 
 interface AgentServiceLike {
-  getById(
-    agentId: string,
-  ): Promise<{ id: string; repos: string[]; authorAllowlist: string[] } | null>;
+  getById(agentId: string): Promise<{
+    id: string;
+    repos: string[];
+    authorAllowlist: string[];
+    restrictSlackToMembers: boolean;
+    memberEmails: string[];
+  } | null>;
 }
 
 interface AgentPluginServiceLike {
@@ -205,6 +211,8 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       }),
       repos: agent.repos,
       authorAllowlist: agent.authorAllowlist,
+      restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
+      memberEmails: agent.memberEmails ?? [],
     };
 
     return c.json(response, 200);

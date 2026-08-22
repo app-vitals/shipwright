@@ -36,6 +36,8 @@ interface MockAgent {
   name: string;
   repos: string[];
   authorAllowlist: string[];
+  restrictSlackToMembers: boolean;
+  memberEmails: string[];
 }
 
 // ─── Mock factories ───────────────────────────────────────────────────────────
@@ -81,6 +83,8 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
     id: string;
     repos: string[];
     authorAllowlist: string[];
+    restrictSlackToMembers: boolean;
+    memberEmails: string[];
   } | null>;
 } {
   return {
@@ -90,6 +94,8 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
       id: string;
       repos: string[];
       authorAllowlist: string[];
+      restrictSlackToMembers: boolean;
+      memberEmails: string[];
     } | null> {
       const agent = agents.get(agentId);
       return agent
@@ -97,6 +103,8 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
             id: agent.id,
             repos: agent.repos,
             authorAllowlist: agent.authorAllowlist,
+            restrictSlackToMembers: agent.restrictSlackToMembers,
+            memberEmails: agent.memberEmails,
           }
         : null;
     },
@@ -164,6 +172,8 @@ function buildApp(opts?: {
   crons?: AgentCronJob[];
   repos?: string[];
   authorAllowlist?: string[];
+  restrictSlackToMembers?: boolean;
+  memberEmails?: string[];
 }) {
   const hasAgent = opts?.hasAgent ?? true;
   const bundle: AgentEnvBundle | null =
@@ -180,6 +190,8 @@ function buildApp(opts?: {
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
   const repos = opts?.repos ?? ["org/repo1", "org/repo2"];
   const authorAllowlist = opts?.authorAllowlist ?? [];
+  const restrictSlackToMembers = opts?.restrictSlackToMembers ?? false;
+  const memberEmails = opts?.memberEmails ?? [];
 
   const agents = new Map<string, MockAgent>();
   const bundles = new Map<string, AgentEnvBundle | null>();
@@ -192,6 +204,8 @@ function buildApp(opts?: {
       name: "Test Agent",
       repos,
       authorAllowlist,
+      restrictSlackToMembers,
+      memberEmails,
     });
     bundles.set(KNOWN_AGENT_ID, bundle);
     pluginMap.set(KNOWN_AGENT_ID, plugins);
@@ -262,6 +276,33 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.authorAllowlist).toEqual([]);
+  });
+
+  test("200 returns restrictSlackToMembers and memberEmails exactly as stored on the agent", async () => {
+    const app = buildApp({
+      restrictSlackToMembers: true,
+      memberEmails: ["dev@example.com", "ops@example.com"],
+    });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(true);
+    expect(body.memberEmails).toEqual(["dev@example.com", "ops@example.com"]);
+  });
+
+  test("200 returns restrictSlackToMembers false and memberEmails empty when the agent has no members", async () => {
+    const app = buildApp({ restrictSlackToMembers: false, memberEmails: [] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.restrictSlackToMembers).toBe(false);
+    expect(body.memberEmails).toEqual([]);
   });
 
   test("parses the canonical plugin@marketplace spec, defaulting bare names to shipwright", async () => {
@@ -434,7 +475,13 @@ function buildCombinedApp() {
     },
     agentService: {
       async getById() {
-        return { id: COMBINED_AGENT_ID, repos: [], authorAllowlist: [] };
+        return {
+          id: COMBINED_AGENT_ID,
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: false,
+          memberEmails: [],
+        };
       },
     },
     agentPluginService: {
