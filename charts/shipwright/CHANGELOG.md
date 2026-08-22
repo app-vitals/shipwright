@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.12.19] - 2026-08-21
+
+### Fixed
+
+- `admin-secret.yaml` now generates `SHIPWRIGHT_ENCRYPTION_KEY` as a 64-char-hex string (`randAlphaNum 32 | sha256sum | b64enc`) so admin's AES-256-GCM encryption doesn't fail with "Invalid key length"
+
 ## [1.12.18] - 2026-08-21
 
 ### Changed

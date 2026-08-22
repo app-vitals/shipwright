@@ -14,6 +14,16 @@ const ALGORITHM = "aes-256-gcm";
 const IV_BYTES = 12; // 96-bit IV — recommended for GCM
 
 /**
+ * True when `keyHex` is a 64-char hex string (32 bytes) usable as an AES-256-GCM
+ * key. Anything else — wrong length or non-hex characters — is rejected;
+ * `createCipheriv` would otherwise throw an opaque "Invalid key length" only at
+ * the first encrypt. Callers use this to fail fast with an actionable message.
+ */
+export function isValidKeyHex(keyHex: string): boolean {
+  return /^[0-9a-fA-F]{64}$/.test(keyHex);
+}
+
+/**
  * Encrypts a plaintext string with AES-256-GCM.
  *
  * @param plaintext - The string to encrypt.

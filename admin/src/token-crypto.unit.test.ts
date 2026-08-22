@@ -5,7 +5,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { decrypt, encrypt } from "./crypto.ts";
+import { decrypt, encrypt, isValidKeyHex } from "./crypto.ts";
 import { identityCrypto, makeTokenCrypto } from "./token-crypto.ts";
 
 // ─── Test key ─────────────────────────────────────────────────────────────────
@@ -72,6 +72,61 @@ describe("encrypt / decrypt (AES-256-GCM)", () => {
       : "00";
     const tampered = parts.join(":");
     expect(() => decrypt(tampered, TEST_KEY)).toThrow();
+  });
+});
+
+// ─── isValidKeyHex ─────────────────────────────────────────────────────────────
+
+describe("isValidKeyHex", () => {
+  it("accepts a 64-char lowercase hex string", () => {
+    expect(isValidKeyHex(TEST_KEY)).toBe(true);
+  });
+
+  it("accepts uppercase hex", () => {
+    expect(isValidKeyHex("A".repeat(64))).toBe(true);
+  });
+
+  it("rejects a 32-char value (the chart's old randAlphaNum output length)", () => {
+    expect(isValidKeyHex("a".repeat(32))).toBe(false);
+  });
+
+  it("rejects a 64-char string with non-hex characters", () => {
+    expect(isValidKeyHex("z".repeat(64))).toBe(false);
+  });
+
+  it("rejects an empty string", () => {
+    expect(isValidKeyHex("")).toBe(false);
+  });
+});
+
+// ─── makeTokenCrypto — key validation (via injected key, no env mutation) ───────
+
+describe("makeTokenCrypto — key validation", () => {
+  it("returns identityCrypto when the key is undefined", () => {
+    const crypto = makeTokenCrypto(undefined);
+    expect(crypto.encrypt("t")).toBe("t");
+    expect(crypto.decrypt("t")).toBe("t");
+  });
+
+  it("returns identityCrypto when the key is an empty string", () => {
+    expect(makeTokenCrypto("").encrypt("t")).toBe("t");
+  });
+
+  it("throws an actionable error when the key is 32 chars (the old chart bug)", () => {
+    expect(() => makeTokenCrypto("a".repeat(32))).toThrow(
+      /64-character hex string/,
+    );
+  });
+
+  it("throws when the key contains non-hex characters", () => {
+    expect(() => makeTokenCrypto("z".repeat(64))).toThrow(/64-character hex/);
+  });
+
+  it("constructs a working crypto for a valid 64-char hex key", () => {
+    const crypto = makeTokenCrypto(TEST_KEY);
+    const enc = crypto.encrypt("secret");
+    expect(enc).not.toBe("secret");
+    expect(crypto.decrypt(enc)).toBe("secret");
   });
 });
 

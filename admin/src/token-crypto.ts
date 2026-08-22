@@ -7,13 +7,15 @@
  *
  * Key: SHIPWRIGHT_ENCRYPTION_KEY — 64-char hex string (32 bytes for AES-256-GCM).
  * If unset: identity functions (plain text stored, no encryption).
- * If wrong format: encrypt() throws loudly at write time (better than silent failure).
+ * If set but malformed: makeTokenCrypto() throws at construction — fail fast at
+ * boot with an actionable message, instead of an opaque runtime 500 on the
+ * first encrypted write.
  *
  * Legacy plain-text values: decrypt() catches parse errors and returns the stored
  * value as-is, so existing rows continue to work after the key is added.
  */
 
-import { decrypt, encrypt } from "./crypto.ts";
+import { decrypt, encrypt, isValidKeyHex } from "./crypto.ts";
 
 export interface TokenCrypto {
   encrypt(token: string): string;
@@ -30,13 +32,19 @@ export const identityCrypto: TokenCrypto = {
  * Creates a TokenCrypto backed by AES-256-GCM using SHIPWRIGHT_ENCRYPTION_KEY.
  * Falls back to identity (plain text) if the env var is not set.
  */
-export function makeTokenCrypto(): TokenCrypto {
-  const key = process.env.SHIPWRIGHT_ENCRYPTION_KEY;
+export function makeTokenCrypto(
+  key = process.env.SHIPWRIGHT_ENCRYPTION_KEY,
+): TokenCrypto {
   if (!key) {
     console.warn(
-      "[shipwright agent] SHIPWRIGHT_ENCRYPTION_KEY not set — tokens stored in plain text",
+      "[shipwright admin] SHIPWRIGHT_ENCRYPTION_KEY not set — tokens stored in plain text",
     );
     return identityCrypto;
+  }
+  if (!isValidKeyHex(key)) {
+    throw new Error(
+      `SHIPWRIGHT_ENCRYPTION_KEY must be a 64-character hex string (32 bytes for AES-256-GCM), but got ${key.length} character(s). Generate one with: openssl rand -hex 32`,
+    );
   }
   return {
     encrypt: (token) => encrypt(token, key),
