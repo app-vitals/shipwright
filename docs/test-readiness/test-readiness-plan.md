@@ -96,10 +96,10 @@ highest is `test-t-084-shipwright` (confirmed present, now `deployed`). **`start
 (zero Promote/deepen, zero rebuild, zero net-new beyond the same carried-forward optional
 item), **no new task is minted this cycle** — T-085 is reserved but unused.
 
-**This cycle mints exactly one new task: T-084.** Phase 3 (`test-migration.md`) found
-one genuine Promote/deepen item this cycle — `agent-slack-membership-ref.unit.test.ts`'s
-process-wide-singleton test has no `afterEach` reset, a real isolation-contract gap (see
-Method note step 1 there). Zero rebuild items; one trivial/optional carried-forward
+**Zero new tasks minted this cycle.** Phase 3 (`test-migration.md`) found zero genuine
+Promote/deepen items this cycle — last cycle's sole item, `agent-slack-membership-ref.unit.test.ts`'s
+process-wide-singleton test lacking an `afterEach` reset, is now resolved (T-084, PR #2790;
+see Method note step 1 there). Zero rebuild items; one trivial/optional carried-forward
 Net-new item (`admin/src/clock.ts`, explicitly not worth a task per every prior cycle's
 same finding). The Coverage Gate's stage-3 promotion trigger (Process step 9) found
 T-083 already minted and now `done` — no duplicate emitted for it.
