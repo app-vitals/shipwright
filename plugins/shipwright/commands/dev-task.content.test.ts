@@ -501,3 +501,39 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
     expect(content).not.toMatch(/proceed\s+straight\s+to\s+Step 2's Orphan Check/i);
   });
 });
+
+describe("dev-task.md — Step 6 principles override + security domain", () => {
+  function getStep6Section(): string {
+    const step6Idx = content.indexOf("## Step 6: Simplify");
+    expect(step6Idx).toBeGreaterThan(-1);
+    const step65Idx = content.indexOf("## Step 6.5:", step6Idx);
+    expect(step65Idx).toBeGreaterThan(step6Idx);
+    return content.slice(step6Idx, step65Idx);
+  }
+
+  it("checks for a project-level override at .claude/shipwright/principles.md before falling back to the plugin default", () => {
+    const section = getStep6Section();
+    expect(section).toContain(".claude/shipwright/principles.md");
+    expect(section).toContain("plugins/shipwright/references/principles.md");
+
+    const overrideIdx = section.indexOf(".claude/shipwright/principles.md");
+    const fallbackIdx = section.indexOf("plugins/shipwright/references/principles.md");
+    expect(overrideIdx).toBeGreaterThan(-1);
+    expect(fallbackIdx).toBeGreaterThan(-1);
+    expect(overrideIdx).toBeLessThan(fallbackIdx);
+  });
+
+  it("cites the architecture, testing, and security domains in the Step 6 preamble", () => {
+    const section = getStep6Section();
+    expect(section).toMatch(/`architecture`/);
+    expect(section).toMatch(/`testing`/);
+    expect(section).toMatch(/`security`/);
+  });
+
+  it("keeps the existing architecture_layering and t* example callouts, and adds a security_* example callout", () => {
+    const section = getStep6Section();
+    expect(section).toContain("architecture_layering");
+    expect(section).toMatch(/`t\*`/);
+    expect(section).toMatch(/security_[a-z_]+/);
+  });
+});
