@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.12.32
+version: 1.13.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,8 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "default the bundled PostgreSQL image to the bitnamilegacy mirror so a fresh install with default values pulls successfully"
+    - kind: added
+      description: "ingress TLS/cert-manager helpers, validation, and values/schema groundwork (networking.ingress.controller/tls, tls.certManager.issuer) — no render change; nothing new is wired into templates/ingress.yaml yet"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

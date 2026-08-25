@@ -1,0 +1,77 @@
+suite: shipwright.validate cross-field guards (CNH-2.1)
+# shipwright.validate (templates/_validation.tpl) is invoked from NOTES.txt —
+# the ONE render path that is provably excluded from `helm template`'s
+# manifest output (helm-unittest and `helm template` never render NOTES.txt
+# into a Kubernetes object), so wiring it there gives the validation real
+# teeth (a `helm install`/`helm upgrade` surfaces these errors) without
+# affecting acceptance criterion 1's byte-identical `helm template` guarantee
+# for this task. failedTemplate here means "the fail call fired", matched via
+# errorPattern.
+templates:
+  - templates/NOTES.txt
+tests:
+  - it: passes validation with default values
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: fails when controller=nginx but traefik entrypoints are customized (both bundled controllers configured at once)
+    set:
+      networking.ingress.controller: nginx
+      networking.ingress.traefik.entrypoints.web: custom-web
+    asserts:
+      - failedTemplate:
+          errorPattern: "both bundled ingress controllers appear to be configured"
+
+  - it: passes when controller=traefik with customized traefik entrypoints (traefik IS the selected controller)
+    set:
+      networking.ingress.className: traefik
+      networking.ingress.controller: traefik
+      networking.ingress.traefik.entrypoints.web: custom-web
+      networking.ingress.traefik.entrypoints.websecure: custom-websecure
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: fails when className=nginx contradicts controller=traefik
+    set:
+      networking.ingress.className: nginx
+      networking.ingress.controller: traefik
+    asserts:
+      - failedTemplate:
+          errorPattern: "contradicts networking.ingress.controller=traefik"
+
+  - it: fails when className=traefik contradicts controller=nginx
+    set:
+      networking.ingress.className: traefik
+      networking.ingress.controller: nginx
+    asserts:
+      - failedTemplate:
+          errorPattern: "contradicts networking.ingress.controller=nginx"
+
+  - it: passes when className names a controller this chart does not special-case (e.g. alb)
+    set:
+      networking.ingress.className: alb
+      networking.ingress.controller: nginx
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: fails when issuer.create=true with type=letsencrypt and no email
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.certManager.issuer.email is required"
+
+  - it: passes when issuer.create=true with type=letsencrypt and an email set
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: passes when issuer.create=false regardless of email (constraint is create-only)
+    set:
+      tls.certManager.issuer.create: false
+      tls.certManager.issuer.email: ""
+    asserts:
+      - notFailedTemplate: {}

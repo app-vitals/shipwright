@@ -42,7 +42,34 @@
           "properties": {
             "className": { "type": "string" },
             "host": { "type": "string" },
-            "annotations": { "type": "object" }
+            "annotations": { "type": "object" },
+            "controller": {
+              "type": "string",
+              "enum": ["nginx", "traefik"]
+            },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" },
+                "redirect": { "type": "boolean" }
+              }
+            },
+            "traefik": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "entrypoints": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "web": { "type": "string" },
+                    "websecure": { "type": "string" }
+                  }
+                }
+              }
+            }
           }
         },
         "gateway": {
@@ -83,6 +110,23 @@
                   "enum": ["ClusterIssuer", "Issuer"]
                 }
               }
+            },
+            "issuer": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "create": { "type": "boolean" },
+                "kind": {
+                  "type": "string",
+                  "enum": ["ClusterIssuer", "Issuer"]
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["letsencrypt"]
+                },
+                "email": { "type": "string" },
+                "server": { "type": "string" }
+              }
             }
           },
           "if": {
@@ -92,13 +136,40 @@
           "then": {
             "properties": {
               "issuerRef": {
-                "required": ["name"],
                 "properties": {
-                  "name": { "type": "string", "minLength": 1 }
+                  "name": { "type": "string" }
+                }
+              },
+              "issuer": {
+                "properties": {
+                  "create": { "type": "boolean" }
                 }
               }
             },
-            "required": ["issuerRef"]
+            "anyOf": [
+              {
+                "properties": {
+                  "issuerRef": {
+                    "required": ["name"],
+                    "properties": {
+                      "name": { "type": "string", "minLength": 1 }
+                    }
+                  }
+                },
+                "required": ["issuerRef"]
+              },
+              {
+                "properties": {
+                  "issuer": {
+                    "required": ["create"],
+                    "properties": {
+                      "create": { "const": true }
+                    }
+                  }
+                },
+                "required": ["issuer"]
+              }
+            ]
           }
         }
       }
@@ -589,7 +660,7 @@
   "then": {
     "properties": {
       "networking": {
-        "properties": { "type": { "const": "gateway" } }
+        "properties": { "type": { "enum": ["ingress", "gateway"] } }
       }
     }
   },

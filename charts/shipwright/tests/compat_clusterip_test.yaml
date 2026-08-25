@@ -1,0 +1,66 @@
+suite: ClusterIP compatibility (CNH-2.1 groundwork regression guard)
+# CNH-2.1 adds ingress TLS/cert-manager helpers, validation, and schema
+# groundwork but wires NOTHING new into templates/ingress.yaml — no render
+# change. This suite pins down that a realistic non-ingress, non-gateway
+# deployment (bundled Postgres off, external DB via existingSecret, Cloud SQL
+# proxy sidecar on) still renders no Ingress/Certificate and no
+# SHIPWRIGHT_ADMIN_APP_BASE_URL, so the new helpers/schema/values additions in
+# this task cannot regress the default ClusterIP path.
+templates:
+  - templates/ingress.yaml
+  - templates/certificate.yaml
+  - templates/admin-deployment.yaml
+tests:
+  - it: renders NO Ingress under a ClusterIP + external-DB + Cloud SQL proxy deployment
+    template: templates/ingress.yaml
+    set:
+      networking.type: ClusterIP
+      postgresql.enabled: false
+      externalDatabase.existingSecret: shipwright-secrets
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: proj:region:instance
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO Certificate under a ClusterIP + external-DB + Cloud SQL proxy deployment
+    template: templates/certificate.yaml
+    set:
+      networking.type: ClusterIP
+      postgresql.enabled: false
+      externalDatabase.existingSecret: shipwright-secrets
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: proj:region:instance
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: omits SHIPWRIGHT_ADMIN_APP_BASE_URL under a ClusterIP + external-DB + Cloud SQL proxy deployment unless admin.appBaseUrl is set
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ClusterIP
+      postgresql.enabled: false
+      externalDatabase.existingSecret: shipwright-secrets
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: proj:region:instance
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+
+  - it: still injects SHIPWRIGHT_ADMIN_APP_BASE_URL under the same compat deployment when admin.appBaseUrl IS set
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ClusterIP
+      postgresql.enabled: false
+      externalDatabase.existingSecret: shipwright-secrets
+      cloudSqlProxy.enabled: true
+      cloudSqlProxy.connectionName: proj:region:instance
+      admin.appBaseUrl: "https://shipwright.example.com"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "https://shipwright.example.com"

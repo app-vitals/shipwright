@@ -62,6 +62,44 @@ networking:
     # -- Extra annotations for the Ingress (controller-specific). For ALB, e.g.
     # alb.ingress.kubernetes.io/scheme, /target-type; for NGINX, rewrite/ssl rules.
     annotations: {}
+    # -- Which ingress controller flavor networking.ingress.className targets:
+    # "nginx" (the Minikube/NGINX addon default) or "traefik". This is
+    # GROUNDWORK ONLY as of CNH-2.1 — it feeds shipwright.bundled.* /
+    # shipwright.validate helper checks and future controller-specific
+    # annotation/entrypoint wiring, but templates/ingress.yaml does not yet
+    # branch on it. Kept independent from `className` (a free-form string,
+    # e.g. "alb") so validation can flag a className that contradicts this
+    # selector without over-constraining className itself.
+    controller: nginx
+    # -- TLS settings for the Ingress (used ONLY when networking.type=ingress).
+    # GROUNDWORK ONLY as of CNH-2.1 — templates/ingress.yaml does not yet render
+    # a `tls:` stanza; these values back the new shipwright.ingress.tls* helpers
+    # for a follow-up task to wire in.
+    tls:
+      # -- Whether the Ingress should terminate TLS. Default false preserves the
+      # existing plain-HTTP Ingress behavior.
+      enabled: false
+      # -- Name of the Secret holding the TLS certificate/key. Empty →
+      # shipwright.ingress.tlsSecretName falls back to "<fullname>-tls" (the
+      # same naming convention templates/certificate.yaml uses for the Gateway
+      # path), so cert-manager's Certificate and a future Ingress `tls:` block
+      # can share one Secret name by default.
+      secretName: ""
+      # -- Whether to add controller-specific HTTP→HTTPS redirect annotations
+      # when tls.enabled=true. Default true (the standard expectation once TLS
+      # is on); set false if your ingress controller/edge already handles the
+      # redirect.
+      redirect: true
+    # -- Traefik-specific settings (used ONLY when networking.ingress.controller=traefik).
+    traefik:
+      # -- Traefik entrypoint names for HTTP/HTTPS. Traefik (unlike NGINX) routes
+      # by named entrypoint rather than a fixed :80/:443 pair, so these are
+      # configurable. Defaults match Traefik's own conventional entrypoint names.
+      entrypoints:
+        # -- Entrypoint name for plain HTTP.
+        web: web
+        # -- Entrypoint name for TLS-terminated HTTPS.
+        websecure: websecure
   # -- Gateway API settings (used ONLY when networking.type=gateway). Renders a
   # gateway.networking.k8s.io/v1 Gateway plus HTTPRoute(s) routing the admin UI/API
   # at "/" and the metrics dashboard at "/dashboard". Requires the Gateway API CRDs
@@ -98,10 +136,41 @@ tls:
     enabled: false
     # -- Reference to the cert-manager Issuer/ClusterIssuer that signs the cert.
     issuerRef:
-      # -- Name of the (Cluster)Issuer (e.g. "letsencrypt-prod").
+      # -- Name of the (Cluster)Issuer (e.g. "letsencrypt-prod"). Required
+      # unless issuer.create=true (see below), in which case the chart derives
+      # the name it creates instead.
       name: ""
       # -- Issuer kind: "ClusterIssuer" (cluster-scoped) or "Issuer" (namespaced).
       kind: ClusterIssuer
+    # -- Optional CHART-MANAGED (Cluster)Issuer. GROUNDWORK ONLY as of CNH-2.1 —
+    # no template renders an Issuer/ClusterIssuer yet (shipwright.certManager.
+    # issuerManifest is added as groundwork for that). Default create=false
+    # preserves today's bring-your-own-Issuer behavior (issuerRef.name points at
+    # an Issuer/ClusterIssuer you created yourself, outside this chart).
+    issuer:
+      # -- When true, the chart creates a (Cluster)Issuer instead of requiring a
+      # pre-existing one via issuerRef.name. Mutually exclusive in spirit with
+      # issuerRef.name (see shipwright.validate) — set create=true and leave
+      # issuerRef.name empty, or set issuerRef.name and leave create=false.
+      create: false
+      # -- Kind of Issuer to create: "ClusterIssuer" (cluster-scoped) or
+      # "Issuer" (namespaced). Independent from issuerRef.kind so a
+      # chart-created Issuer's scope can differ from a bring-your-own
+      # reference's scope (only one of the two paths is active at a time).
+      kind: ClusterIssuer
+      # -- ACME issuer type. Only "letsencrypt" is supported today (ACME via
+      # Let's Encrypt, HTTP-01 challenge). Reserved as an enum-of-one for
+      # forward compatibility (e.g. a future "selfsigned" or "vault" type).
+      type: letsencrypt
+      # -- ACME account email. REQUIRED when create=true and type=letsencrypt —
+      # Let's Encrypt requires a contact email on every ACME account, and
+      # shipwright.validate fails the render if this is empty in that case.
+      email: ""
+      # -- ACME server URL. Empty → the chart-managed Issuer manifest defaults
+      # to the Let's Encrypt production endpoint. Override with the Let's
+      # Encrypt staging endpoint (https://acme-staging-v02.api.letsencrypt.org/directory)
+      # while testing to avoid production rate limits.
+      server: ""
 
 # -- ServiceAccount for shipwright workloads.
 serviceAccount:

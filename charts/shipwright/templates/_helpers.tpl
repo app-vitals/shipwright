@@ -526,3 +526,242 @@ shipwright.taskStore.useBundledDatabase — see there for the opt-in rationale.
 {{- define "shipwright.chat.useBundledDatabase" -}}
 {{- if and (not .Values.chat.database.existingSecret) .Values.postgresql.enabled }}true{{- end }}
 {{- end }}
+
+{{/*
+CNH-2.1 GROUNDWORK: Ingress TLS / cert-manager helpers below. None of these are
+called from a rendered manifest yet (templates/ingress.yaml is untouched, and
+templates/certificate.yaml's guard is unchanged behaviorally) — they exist so a
+follow-up task can wire the corresponding render logic without re-deriving
+these lookups. See templates/_validation.tpl (shipwright.validate) for the
+cross-field guards that pair with these.
+*/}}
+
+{{/*
+shipwright.bundled.nginx — true when networking.ingress.controller=nginx (the
+long-standing default and only controller flavor this chart has ever
+special-cased before CNH-2.1). "Bundled" here does NOT mean a subchart (this
+chart bundles no ingress controller, unlike postgresql) — it means "one of the
+controller flavors this chart understands and renders controller-specific
+config for." See shipwright.validate for how nginx vs traefik selection is
+cross-checked against className/entrypoints for contradictions.
+*/}}
+{{- define "shipwright.bundled.nginx" -}}
+{{- if eq .Values.networking.ingress.controller "nginx" }}true{{- end }}
+{{- end }}
+
+{{/*
+shipwright.bundled.traefik — true when networking.ingress.controller=traefik.
+See shipwright.bundled.nginx above for what "bundled" means in this chart.
+*/}}
+{{- define "shipwright.bundled.traefik" -}}
+{{- if eq .Values.networking.ingress.controller "traefik" }}true{{- end }}
+{{- end }}
+
+{{/*
+shipwright.bundledIngressClass — the conventional IngressClass name for the
+DECLARED networking.ingress.controller ("nginx" -> "nginx", "traefik" ->
+"traefik"). Used by shipwright.validate to detect a className that names the
+OTHER known controller's class while a different controller is selected. This
+is intentionally NOT the same as shipwright.ingress.className (which resolves
+what actually gets used, defaulting to this value) — this helper always
+reflects the controller-implied default, ignoring any explicit override, so it
+can serve as the "what would we expect className to be" baseline for the
+contradiction check.
+*/}}
+{{- define "shipwright.bundledIngressClass" -}}
+{{- .Values.networking.ingress.controller -}}
+{{- end }}
+
+{{/*
+shipwright.ingress.className — the IngressClass actually used on the rendered
+Ingress. An explicit networking.ingress.className always wins (preserves every
+existing deployment's override, e.g. "alb"); when unset, falls back to the
+bundled class implied by networking.ingress.controller.
+*/}}
+{{- define "shipwright.ingress.className" -}}
+{{- .Values.networking.ingress.className | default (include "shipwright.bundledIngressClass" .) -}}
+{{- end }}
+
+{{/*
+shipwright.ingress.controller — the effective ingress controller flavor
+("nginx" or "traefik"), read straight from networking.ingress.controller. A
+thin named wrapper (rather than reaching into .Values directly everywhere) so
+future controller-specific template logic has one place to read this from.
+*/}}
+{{- define "shipwright.ingress.controller" -}}
+{{- .Values.networking.ingress.controller -}}
+{{- end }}
+
+{{/*
+shipwright.ingress.tlsEnabled — true when the Ingress should terminate TLS
+(networking.ingress.tls.enabled). GROUNDWORK: templates/ingress.yaml does not
+yet render a `tls:` stanza; this exists for a follow-up task to gate that on.
+*/}}
+{{- define "shipwright.ingress.tlsEnabled" -}}
+{{- if .Values.networking.ingress.tls.enabled }}true{{- end }}
+{{- end }}
+
+{{/*
+shipwright.ingress.tlsSecretName — Secret name the Ingress TLS stanza would
+reference. An explicit networking.ingress.tls.secretName always wins;
+otherwise falls back to "<fullname>-tls" — the SAME naming convention
+templates/certificate.yaml already uses for the Gateway path (see
+shipwright.certManager.certificateManifest), so an Ingress deployment using
+cert-manager can share one Secret name with the Certificate resource by
+default without any extra wiring.
+*/}}
+{{- define "shipwright.ingress.tlsSecretName" -}}
+{{- .Values.networking.ingress.tls.secretName | default (printf "%s-tls" (include "shipwright.fullname" .)) -}}
+{{- end }}
+
+{{/*
+shipwright.publicHost — the externally-reachable hostname for whichever
+networking path is active: networking.ingress.host when networking.type=
+ingress, networking.gateway.host when networking.type=gateway, and "" for any
+other networking.type (ClusterIP/NodePort/LoadBalancer have no single public
+hostname the chart can name). GROUNDWORK: a follow-up task can use this to
+assemble admin.appBaseUrl-style values automatically instead of requiring a
+manual override.
+*/}}
+{{- define "shipwright.publicHost" -}}
+{{- if eq .Values.networking.type "ingress" -}}
+{{- .Values.networking.ingress.host -}}
+{{- else if eq .Values.networking.type "gateway" -}}
+{{- .Values.networking.gateway.host -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+shipwright.publicScheme — "https" when TLS terminates on the active networking
+path (networking.type=ingress with networking.ingress.tls.enabled, OR
+networking.type=gateway with tls.certManager.enabled), else "http". Pairs with
+shipwright.publicHost for a follow-up task to assemble a full public base URL.
+*/}}
+{{- define "shipwright.publicScheme" -}}
+{{- $https := false -}}
+{{- if eq .Values.networking.type "ingress" -}}
+{{- $https = .Values.networking.ingress.tls.enabled -}}
+{{- else if eq .Values.networking.type "gateway" -}}
+{{- $https = .Values.tls.certManager.enabled -}}
+{{- end -}}
+{{- if $https }}https{{- else }}http{{- end -}}
+{{- end }}
+
+{{/*
+shipwright.certManager.issuerName — the (Cluster)Issuer name a rendered
+Certificate/Ingress should reference. An explicit tls.certManager.issuerRef.
+name always wins (bring-your-own Issuer, today's only working path); when
+empty and tls.certManager.issuer.create=true, falls back to the chart-managed
+Issuer name shipwright.certManager.issuerManifest would create
+("<fullname>-issuer"). Empty when neither is set (schema validation —see
+values.schema.json's tls.certManager anyOf guard — prevents that combination
+from reaching render time whenever tls.certManager.enabled=true).
+*/}}
+{{- define "shipwright.certManager.issuerName" -}}
+{{- if .Values.tls.certManager.issuerRef.name -}}
+{{- .Values.tls.certManager.issuerRef.name -}}
+{{- else if .Values.tls.certManager.issuer.create -}}
+{{- printf "%s-issuer" (include "shipwright.fullname" .) -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+shipwright.certManager.issuerKind — the Issuer kind a rendered
+Certificate/Ingress should reference. An explicit tls.certManager.issuerRef.
+name wins issuerRef.kind (bring-your-own Issuer's own kind); otherwise, when
+chart-managed (issuer.create=true), uses issuer.kind (the kind the chart WILL
+create — see shipwright.certManager.issuerManifest).
+*/}}
+{{- define "shipwright.certManager.issuerKind" -}}
+{{- if .Values.tls.certManager.issuerRef.name -}}
+{{- .Values.tls.certManager.issuerRef.kind -}}
+{{- else -}}
+{{- .Values.tls.certManager.issuer.kind -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+shipwright.certManager.createIssuer — true when the chart should render its
+own (Cluster)Issuer (tls.certManager.issuer.create=true). Mirrors the value
+directly; named so templates read intent ("should I render an Issuer?")
+instead of reaching into .Values.
+*/}}
+{{- define "shipwright.certManager.createIssuer" -}}
+{{- if .Values.tls.certManager.issuer.create }}true{{- end }}
+{{- end }}
+
+{{/*
+shipwright.certManager.viaHook — reserved for a FUTURE hook-based-issuance path
+(e.g. a pre-install/pre-upgrade Job that requests a cert out-of-band instead of
+a live cert-manager.io/v1 Certificate resource). No values key backs this
+today — it always renders "" (falsy) — so
+shipwright.certManager.certificateManifest's render guard
+(`tls.certManager.enabled && networking.type == "gateway" && !viaHook`) is
+UNCONDITIONALLY equivalent to today's `tls.certManager.enabled &&
+networking.type == "gateway"` guard. Kept as its own helper (rather than
+inlining `false`) so a follow-up task only has to change this one definition
+to light up the hook path everywhere it is checked.
+*/}}
+{{- define "shipwright.certManager.viaHook" -}}
+{{- end }}
+
+{{/*
+shipwright.certManager.issuerManifest — GROUNDWORK: renders a cert-manager.io/v1
+(Cluster)Issuer manifest body (no apiVersion/kind/metadata wrapper decision
+here — a future templates/issuer.yaml would guard-and-include this, mirroring
+how templates/certificate.yaml now guards-and-includes
+shipwright.certManager.certificateManifest below). NOT included from any
+template today. Only supports the ACME/Let's-Encrypt HTTP-01 shape implied by
+tls.certManager.issuer.type=letsencrypt (the only supported type — see
+values.schema.json's enum).
+*/}}
+{{- define "shipwright.certManager.issuerManifest" -}}
+apiVersion: cert-manager.io/v1
+kind: {{ .Values.tls.certManager.issuer.kind }}
+metadata:
+  name: {{ include "shipwright.certManager.issuerName" . }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  acme:
+    email: {{ .Values.tls.certManager.issuer.email | quote }}
+    server: {{ .Values.tls.certManager.issuer.server | default "https://acme-v02.api.letsencrypt.org/directory" | quote }}
+    privateKeySecretRef:
+      name: {{ include "shipwright.certManager.issuerName" . }}-key
+    solvers:
+      - http01:
+          ingress:
+            class: {{ include "shipwright.ingress.className" . }}
+{{- end }}
+
+{{/*
+shipwright.certManager.certificateManifest — the cert-manager.io/v1 Certificate
+body, moved out of templates/certificate.yaml verbatim (CNH-2.1) so the
+guard-vs-body split matches the rest of the chart's "thin template, shared
+helper body" pattern. templates/certificate.yaml now does only:
+`{{- if <guard> }}{{ include "shipwright.certManager.certificateManifest" . }}{{- end }}`.
+Body/output is IDENTICAL to before this task for every input that already
+reached this code (still keys off networking.gateway.host and
+tls.certManager.issuerRef.{name,kind} exactly as before) — this helper does
+NOT yet read shipwright.certManager.issuerName/issuerKind, so a chart-managed
+Issuer (tls.certManager.issuer.create=true) is not yet wired into the actual
+Certificate output. That's left for a follow-up task alongside the render-guard
+wiring, keeping this task's diff behavior-preserving as required.
+*/}}
+{{- define "shipwright.certManager.certificateManifest" -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "shipwright.fullname" . }}-tls
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  # Secret cert-manager populates with the issued certificate + key.
+  secretName: {{ include "shipwright.fullname" . }}-tls
+  dnsNames:
+    - {{ .Values.networking.gateway.host | quote }}
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name | quote }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: cert-manager.io
+{{- end }}
