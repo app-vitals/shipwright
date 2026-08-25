@@ -144,7 +144,8 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     name: "error-patrol-maintenance",
     schedule: "0 4 * * *",
     prompt:
-      '/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nAfter the chain completes, write state/error-patrol-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.',
+      "/shipwright:error-scan\n/shipwright:error-fix\n/shipwright:error-resolve\nThese three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained cron session. Continue automatically through all three commands before doing anything else.\n" +
+      'After the chain completes, write state/error-patrol-ledger.json\'s lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.',
     silent: true,
     preCheck: "shipwright:check-error-patrol.ts",
     enabled: false,

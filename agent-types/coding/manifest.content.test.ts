@@ -202,3 +202,29 @@ describe("agent-types/coding/manifest.yaml — env contract", () => {
     expect(new Set(allKeys).size).toBe(allKeys.length);
   });
 });
+
+// ─── error-patrol-maintenance cron — chaining instruction ──────────────────
+
+describe("agent-types/coding/manifest.yaml — error-patrol-maintenance chaining", () => {
+  it("error-patrol-maintenance prompt contains explicit chaining instruction", () => {
+    const manifest = parseAgentTypeManifest(rawContent);
+    const errorPatrol = manifest.crons.find(
+      (c) => c.name === "error-patrol-maintenance",
+    );
+    expect(errorPatrol).toBeDefined();
+
+    // The prompt should explicitly instruct the model to invoke each command
+    // immediately after the previous one finishes, and not to treat a
+    // command's own "run /X next" output as a stop signal.
+    const chainingKeywords = [
+      "invoke each one immediately",
+      "Do not stop after",
+      "Continue automatically",
+    ];
+
+    const hasAllKeywords = chainingKeywords.every((keyword) =>
+      errorPatrol?.prompt.includes(keyword),
+    );
+    expect(hasAllKeywords).toBe(true);
+  });
+});
