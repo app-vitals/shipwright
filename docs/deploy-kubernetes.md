@@ -510,12 +510,16 @@ networking:
     host: shipwright.example.com
     tls:
       enabled: true                # render spec.tls on the Ingress
-      redirect: false              # ALB handles its own HTTP->HTTPS redirect via listen-ports/annotations; this flag only applies to the nginx controller
+      redirect: false              # no-op here — `redirect` only renders the nginx-specific ssl-redirect annotation, so it has no effect on ALB
     annotations:
       alb.ingress.kubernetes.io/scheme: internet-facing
       alb.ingress.kubernetes.io/target-type: ip
       alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
-      # ALB will see the TLS spec rendered by the chart and handle the listener accordingly
+      # NOTE: listen-ports alone does NOT redirect HTTP->HTTPS on ALB — it only opens
+      # both listeners. To force a redirect, add an actions.ssl-redirect annotation
+      # (protocol: HTTPS, port: "443", statusCode: HTTP_301) plus a matching ingress
+      # rule pointing at the `ssl-redirect` service (servicePort: use-annotation).
+      # Omitted here for brevity; see the AWS Load Balancer Controller docs on SSL redirect.
 tls:
   certManager:
     enabled: true                  # enable cert-manager ingress-shim (controller-agnostic annotation)
