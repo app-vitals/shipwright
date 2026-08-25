@@ -91,15 +91,41 @@ test("every Factory claim carries a citation link, and the page shows a verified
   ).toBeVisible();
 });
 
-test("specific, non-obvious Factory product claims (Tests-first, Slack workflow) carry a citation link in their row", async ({
+// Every dimension row that carries a citation in the page's source data
+// (comparisonRows), mapped to how many citation links that row's Factory
+// cell must render. Rows with no citation (License, Team visibility, Open
+// source) are intentionally excluded — they make no non-obvious Factory
+// claim. Kept in sync manually with site/src/pages/vs/factory.astro's
+// comparisonRows: a future edit that silently drops a citation from any of
+// these rows will fail this test.
+const CITED_ROWS: Record<string, number> = {
+  Deployment: 1,
+  Models: 1,
+  "Plan approval": 1,
+  "Tests-first": 1,
+  Orchestration: 1,
+  // Bundles five distinct Factory claims (SCIM, SOC 2/ISO, Droid Shield,
+  // OpenTelemetry, airgapped) — each cited at its own dedicated source.
+  "Enterprise security": 5,
+  "Slack workflow": 1,
+};
+
+test("every cited Factory claim row renders its citation link(s) — per row, not just anywhere on the page", async ({
   page,
 }) => {
   await page.goto("/vs/factory");
-  for (const dimension of ["Tests-first", "Slack workflow"]) {
-    const row = page.locator("table tr", { hasText: dimension });
+  for (const [dimension, expectedLinkCount] of Object.entries(CITED_ROWS)) {
+    // Scope to the row whose *dimension* (first) cell matches exactly —
+    // `hasText` on the whole row would also match rows whose Factory-side
+    // prose happens to mention another row's label (e.g. "Enterprise
+    // security"'s copy mentions "airgapped deployment", which would
+    // otherwise also match the "Deployment" row filter).
+    const row = page.locator("table tr").filter({
+      has: page.locator("td").first().getByText(dimension, { exact: true }),
+    });
     await expect(
       row.locator('td a[href*="factory.ai"]'),
-    ).toHaveCount(1);
+    ).toHaveCount(expectedLinkCount);
   }
 });
 

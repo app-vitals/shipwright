@@ -18,6 +18,16 @@ const src = {
   missions: "https://factory.ai/news/missions",
   missionsDocs: "https://docs.factory.ai/features/missions/overview",
   slack: "https://docs.factory.ai/integrations/slack",
+  // Dedicated trust/security sources for the Enterprise-security row's
+  // bundled claims — mirrors vs/devin.astro's `src.trust` pattern (a
+  // dedicated trust-center domain, not a general product-launch
+  // announcement) for the compliance claim, plus Factory's docs for the
+  // more specific platform-security claims.
+  trust: "https://trust.factory.ai",
+  identityAndAccess: "https://docs.factory.ai/enterprise/identity-and-access",
+  droidShield: "https://docs.factory.ai/autonomy-and-safety/droid-shield",
+  otel: "https://docs.factory.ai/enterprise/compliance-audit-and-monitoring",
+  deployment: "https://docs.factory.ai/enterprise/network-and-deployment",
 };
 
 const comparisonRows = [
@@ -71,7 +81,18 @@ const comparisonRows = [
       "SSO via Okta OIDC, admin vs. per-agent scoped access (cross-agent calls 403), approval gates, and an auditable review trail.",
     factory:
       "Adds SCIM auto-provisioning, compliance certifications (SOC 2, ISO), Droid Shield secret-scanning, OpenTelemetry, and airgapped deployment.",
-    citation: src.missions,
+    // Five bundled, non-obvious claims — cited individually at their
+    // dedicated trust/docs sources rather than one general announcement
+    // link, per brand/MESSAGING.md D10 and the vs/devin.astro precedent
+    // (src.trust cited directly next to its SOC2/ISO claim).
+    citation: null,
+    citations: [
+      { label: "SCIM", url: src.identityAndAccess },
+      { label: "SOC 2 / ISO", url: src.trust },
+      { label: "Droid Shield", url: src.droidShield },
+      { label: "OpenTelemetry", url: src.otel },
+      { label: "airgapped", url: src.deployment },
+    ],
   },
   {
     dimension: "Slack workflow",
@@ -106,24 +127,40 @@ const dimensionColumns = [
   },
 ];
 
-const dimensionRows = comparisonRows.map((row) => ({
-  cells: [
-    {
-      style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
-      html: ` ${escapeHtml(row.dimension)} `,
-    },
-    {
-      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: ` ${escapeHtml(row.shipwright)} `,
-    },
-    {
-      style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
-      html: row.citation
-        ? ` ${escapeHtml(row.factory)}  <a href="${row.citation}" class="text-sm">\n[source]\n</a>  `
-        : ` ${escapeHtml(row.factory)} `,
-    },
-  ],
-}));
+const dimensionRows = comparisonRows.map((row) => {
+  // Rows with several bundled, non-obvious claims (currently only
+  // "Enterprise security") carry a `citations` array so each sub-claim
+  // links its own dedicated source, instead of one link for the whole row.
+  const citationsHtml = row.citations
+    ? row.citations
+        .map(
+          (c) =>
+            `<a href="${c.url}" class="text-sm">\n[${escapeHtml(c.label)}]\n</a>`,
+        )
+        .join(" ")
+    : row.citation
+      ? `<a href="${row.citation}" class="text-sm">\n[source]\n</a>`
+      : "";
+
+  return {
+    cells: [
+      {
+        style: "padding:0.9rem 1rem 0.9rem 0; vertical-align:top; font-family:var(--sw-font-display); font-weight:600; color:var(--sw-color-text-heading); white-space:nowrap;",
+        html: ` ${escapeHtml(row.dimension)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: ` ${escapeHtml(row.shipwright)} `,
+      },
+      {
+        style: "padding:0.9rem 1rem; vertical-align:top; color:var(--sw-color-text-body);",
+        html: citationsHtml
+          ? ` ${escapeHtml(row.factory)}  ${citationsHtml}  `
+          : ` ${escapeHtml(row.factory)} `,
+      },
+    ],
+  };
+});
 ---
 
 <BaseLayout
