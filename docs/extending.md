@@ -70,7 +70,7 @@ If all you need is to tweak config or data â€” not add a new command or skill â€
 
 **For `plan-session`:** Step 5 (Task Breakdown) automatically checks for a project-level override before loading the default principles file. If `.claude/shipwright/principles.md` exists, it loads and uses that; otherwise, it loads the default. This lets teams define project-specific principles to inform task scope and acceptance criteria.
 
-**For `dev-task`:** Step 6 (Simplify) follows the same pattern as `plan-session`, checking for `.claude/shipwright/principles.md` before using the default. This allows projects to enforce project-specific architecture and testing principles during code simplification.
+**For `dev-task`:** Step 6 (Simplify) follows the same pattern as `plan-session`, checking for `.claude/shipwright/principles.md` before using the default. This allows projects to enforce project-specific architecture, testing, and security principles during code simplification.
 
 See [`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md) for the full pattern.
 
