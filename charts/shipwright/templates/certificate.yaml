@@ -1,24 +1,20 @@
-{{- if and .Values.tls.certManager.enabled (eq .Values.networking.type "gateway") }}
+{{- if and .Values.tls.certManager.enabled (eq .Values.networking.type "gateway") (not (include "shipwright.certManager.viaHook" .)) }}
 # cert-manager Certificate, rendered ONLY when tls.certManager.enabled=true AND
-# networking.type=gateway. The guard prevents accidental rendering when certManager
-# is enabled on a non-gateway setup (networking.type=ingress or ClusterIP), which
-# would produce a Certificate referencing networking.gateway.host (not the ingress
-# host) whose Secret is never mounted or used. Disabled → no Certificate (plain HTTP).
-# cert-manager writes the issued cert into the Secret named here ("<fullname>-tls"),
-# which the Gateway's HTTPS listener references via certificateRefs (templates/gateway.yaml).
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: {{ include "shipwright.fullname" . }}-tls
-  labels:
-    {{- include "shipwright.labels" . | nindent 4 }}
-spec:
-  # Secret cert-manager populates with the issued certificate + key.
-  secretName: {{ include "shipwright.fullname" . }}-tls
-  dnsNames:
-    - {{ .Values.networking.gateway.host | quote }}
-  issuerRef:
-    name: {{ .Values.tls.certManager.issuerRef.name | quote }}
-    kind: {{ .Values.tls.certManager.issuerRef.kind }}
-    group: cert-manager.io
+# networking.type=gateway AND NOT shipwright.certManager.viaHook. The guard
+# prevents accidental rendering when certManager is enabled on a non-gateway
+# setup (networking.type=ingress or ClusterIP), which would produce a
+# Certificate referencing networking.gateway.host (not the ingress host) whose
+# Secret is never mounted or used. Disabled → no Certificate (plain HTTP).
+# shipwright.certManager.viaHook is reserved for a FUTURE hook-based-issuance
+# path and always renders falsy today (no values key backs it yet — see
+# _helpers.tpl), so this guard is UNCONDITIONALLY equivalent to the prior
+# `tls.certManager.enabled && networking.type == "gateway"` guard for every
+# input that reaches this template today (CNH-2.1 groundwork — no render
+# change). cert-manager writes the issued cert into the Secret named here
+# ("<fullname>-tls"), which the Gateway's HTTPS listener references via
+# certificateRefs (templates/gateway.yaml). Body lives in
+# shipwright.certManager.certificateManifest (_helpers.tpl) — moved there
+# verbatim so a future templates/issuer.yaml can follow the same
+# guard-here/body-in-helper split.
+{{ include "shipwright.certManager.certificateManifest" . }}
 {{- end }}

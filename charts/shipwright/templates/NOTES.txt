@@ -1,3 +1,14 @@
+{{- /*
+CNH-2.1: shipwright.validate's cross-field guards (bundled ingress controller
+contradictions, className/controller mismatches, letsencrypt issuer email)
+are invoked here rather than from any Kubernetes manifest template. NOTES.txt
+is provably excluded from `helm template`'s manifest output and from every
+manifest-shaped helm-unittest `template:` target, so this is the one place a
+"fail fast on bad values" check can gain real teeth (surfaced on `helm
+install`/`helm upgrade`) without changing this task's manifest output at all
+— see tests/validation_test.yaml and acceptance criterion 1.
+*/}}
+{{- include "shipwright.validate" . }}
 Thank you for installing {{ .Chart.Name }} (Shipwright Harness) — chart version {{ .Chart.Version }}, app version {{ .Chart.AppVersion }}.
 
 What this release provisions:

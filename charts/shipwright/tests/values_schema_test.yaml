@@ -100,16 +100,15 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
-  - it: rejects certManager enabled with networking.type=ingress (cross-field guard)
+  - it: accepts certManager enabled with networking.type=ingress (CNH-2.1 relaxed the root guard from const gateway to enum [ingress, gateway] — the certificateManifest RENDER guard, not the schema, still restricts actual Certificate output to networking.type=gateway; see tests/certificate_test.yaml)
     set:
       networking.type: ingress
       tls.certManager.enabled: true
       tls.certManager.issuerRef.name: letsencrypt
     asserts:
-      - failedTemplate:
-          errorPattern: "/networking/type"
+      - notFailedTemplate: {}
 
-  - it: rejects certManager enabled with default networking.type (ClusterIP — most common misconfiguration)
+  - it: rejects certManager enabled with default networking.type (ClusterIP — still outside the relaxed enum [ingress, gateway])
     set:
       tls.certManager.enabled: true
       tls.certManager.issuerRef.name: letsencrypt
@@ -124,6 +123,25 @@ tests:
       tls.certManager.issuerRef.name: letsencrypt
     asserts:
       - notFailedTemplate: {}
+
+  - it: accepts certManager enabled with empty issuerRef.name when tls.certManager.issuer.create is true (anyOf branch — chart-managed Issuer, no pre-existing issuer to reference)
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: ""
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: rejects certManager enabled with empty issuerRef.name AND issuer.create false (neither anyOf branch satisfied)
+    set:
+      networking.type: gateway
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: ""
+      tls.certManager.issuer.create: false
+    asserts:
+      - failedTemplate: {}
 
   - it: accepts internalKey with key set and existingSecret empty (guard is existingSecret-triggered)
     set:

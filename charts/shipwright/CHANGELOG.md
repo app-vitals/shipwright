@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.13.0] - 2026-08-25
+
+### Added
+
+- Ingress TLS/cert-manager helpers, validation, and values/schema groundwork (CNH-2.1): new `templates/_validation.tpl` (`shipwright.validate`, invoked from `NOTES.txt`) catching contradictory bundled-ingress-controller config, a `className`/`controller` mismatch, and a missing Let's Encrypt issuer email; new `_helpers.tpl` entries (`shipwright.bundled.*`, `shipwright.bundledIngressClass`, `shipwright.ingress.{className,controller,tlsEnabled,tlsSecretName}`, `shipwright.publicHost`, `shipwright.publicScheme`, `shipwright.certManager.{issuerName,issuerKind,createIssuer,viaHook,issuerManifest,certificateManifest}`); new `values.yaml` keys `networking.ingress.{controller,tls.{enabled,secretName,redirect},traefik.entrypoints.{web,websecure}}` and `tls.certManager.issuer.{create,kind,type,email,server}`, extended additively into `values.schema.json` (`additionalProperties: false` preserved); the root cross-field schema guard is relaxed from `networking.type const gateway` to `enum [ingress, gateway]` when `tls.certManager.enabled=true`, and the `tls.certManager` guard now accepts either `issuerRef.name` or `issuer.create: true`. `templates/certificate.yaml`'s body moved into the new `shipwright.certManager.certificateManifest` helper — no render-output change for existing Gateway users. This is groundwork only: nothing new is wired into `templates/ingress.yaml` yet.
+
 ## [1.12.32] - 2026-08-25
 
 ### Changed
