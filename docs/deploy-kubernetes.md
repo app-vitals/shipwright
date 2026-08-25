@@ -2,7 +2,7 @@
 
 > How to deploy the Shipwright services (admin, metrics, agent, task-store, chat, and
 > MCP server) to Kubernetes with the `shipwright` Helm chart — local on Minikube, and in
-> production on GKE (Gateway API + cert-manager) or EKS (ALB + cert-manager).
+> production on GKE (Gateway API + cert-manager), EKS (ALB + cert-manager), or any cluster with Traefik (ingress + cert-manager).
 
 The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
 published to a Helm repo on every chart version bump (see
@@ -13,12 +13,13 @@ PostgreSQL dependency, with Minikube-friendly defaults throughout. Task-store, c
 MCP server are disabled by default; the agent is provisioned dynamically when
 `agent.provisioning.enabled=true` is set.
 
-This guide covers three deployment targets end-to-end, then the cross-cutting
+This guide covers four deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
 
 - [Minikube (local, full stack, HTTP + nginx ingress)](#minikube-local) — `task minikube:up`
 - [GKE (Gateway API + cert-manager)](#gke-gateway-api--cert-manager)
 - [EKS (ALB ingress + cert-manager)](#eks-alb-ingress--cert-manager)
+- [Traefik (ingress + cert-manager)](#traefik-ingress--cert-manager)
 - [Agent runtime provisioning model](#agent-runtime-provisioning-model)
 - [Authentication modes](#authentication-modes)
 - [Bringing your own PostgreSQL / Bitnami registry fallback](#bringing-your-own-postgresql--bitnami-registry-fallback)
@@ -41,7 +42,7 @@ served at `/` and the metrics dashboard at `/dashboard`, on a single host:
 | `ClusterIP` | Services only; reach via `kubectl port-forward` | Default; any cluster |
 | `NodePort` | NodePort Services | Bare-metal / kind |
 | `LoadBalancer` | LoadBalancer Services | Cloud L4 LB |
-| `ingress` | An `Ingress` routing `/dashboard` → metrics, `/` → admin | Minikube (nginx), EKS (ALB) |
+| `ingress` | An `Ingress` routing `/dashboard` → metrics, `/` → admin | Minikube (nginx), EKS (ALB), or any cluster with Traefik |
 | `gateway` | A Gateway API `Gateway` + `HTTPRoute`s | GKE (managed L7) |
 
 `ingress` and `gateway` are mutually exclusive — only one of the two is ever
@@ -78,6 +79,11 @@ configurable via `taskStore.expose.pathPrefix`.
 > `nginx.ingress.kubernetes.io/rewrite-target` annotation. On EKS/ALB, configure
 > path rewriting via ALB actions (`alb.ingress.kubernetes.io/actions.*`) or
 > expose the task-store on a dedicated host instead.
+>
+> **Traefik caveat:** Traefik uses a `StripPrefix` middleware instead of a
+> rewrite-target annotation. The chart renders this middleware automatically
+> when `networking.ingress.controller=traefik` and `taskStore.expose.enabled=true`
+> (see `templates/ingress-traefik-middleware.yaml`); no manual annotation work is needed.
 
 ### Chat service (opt-in)
 
@@ -572,6 +578,109 @@ On the ingress path, TLS can be terminated via two mechanisms:
    (e.g., `letsencrypt-prod`). The chart does **not** render a `Certificate` CR
    for the ingress path — cert-manager's ingress-shim watches the Ingress
    annotation and creates it automatically.
+
+---
+
+## Traefik (ingress + cert-manager)
+
+Production deployment on any Kubernetes cluster with Traefik as the ingress controller, with TLS issued by cert-manager. A ready-to-apply example lives at
+[`charts/shipwright/examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml).
+
+### Prerequisites
+
+- **Traefik installed** as the cluster's ingress controller, with the Traefik
+  API group CRDs (e.g., `traefik.io/v1alpha1` `Middleware`) applied. Most
+  Traefik Helm charts include these by default.
+- **cert-manager** installed, with a `ClusterIssuer` already created (e.g.
+  `letsencrypt-prod`). cert-manager's CRDs (`cert-manager.io/v1`) must exist
+  before the chart renders the `Certificate`.
+
+### Install
+
+```bash
+helm install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/examples/values-cloud-native-traefik.yaml
+```
+
+### Key values
+
+```yaml
+networking:
+  type: ingress
+  ingress:
+    className: traefik
+    host: shipwright.example.com
+    # Traefik-specific settings: entrypoint names configured on the Traefik
+    # instance itself, plus whether to enable the HTTP→HTTPS redirect route.
+    controller: traefik
+    tls:
+      enabled: true                # render spec.tls on the Ingress
+      redirect: true               # render a separate HTTP redirect Ingress (Traefik TLS-only router pattern)
+    traefik:
+      entrypoints:
+        web: web                   # Traefik's HTTP entrypoint name
+        websecure: websecure       # Traefik's HTTPS entrypoint name
+tls:
+  certManager:
+    enabled: true
+    issuerRef:
+      name: letsencrypt-prod       # a ClusterIssuer that must already exist
+      kind: ClusterIssuer
+auth:
+  mode: google
+  google:
+    clientId: <your-oauth-client-id>
+    clientSecret: <your-oauth-client-secret>
+    allowedEmails: you@your-domain.example
+```
+
+### Networking
+
+`networking.type=ingress` with `className: traefik` and `controller: traefik`
+renders an `Ingress` the Traefik controller watches, plus additional Middleware
+CRs for path stripping (when the task-store is exposed). Unlike nginx and ALB,
+Traefik uses annotations to configure routing behavior:
+
+- `traefik.ingress.kubernetes.io/router.entrypoints` — selects which Traefik
+  entrypoint serves this Ingress (e.g., `web` for HTTP-only, `websecure` for
+  HTTPS). The entrypoint names are operator-defined on the Traefik install
+  itself, so they're configurable via `networking.ingress.traefik.entrypoints`.
+- `traefik.ingress.kubernetes.io/router.tls` — when set to `"true"`, tells
+  Traefik to terminate TLS on this Ingress (distinct from the cert-manager
+  certificate issuance below).
+- `traefik.ingress.kubernetes.io/router.middlewares` — attaches `Middleware`
+  resources (like `StripPrefix`) to the Traefik router; automatically applied
+  when `taskStore.expose.enabled=true`.
+
+When `networking.ingress.tls.enabled=true` and `tls.redirect=true`, the chart
+renders two Ingress objects:
+
+1. A main HTTPS-terminating `Ingress` (on the `websecure` entrypoint) routing
+   traffic to admin and metrics.
+2. A separate HTTP `Ingress` (on the `web` entrypoint) that issues a 301 redirect
+   to HTTPS. This is Traefik's standard pattern because an `Ingress` with
+   `spec.tls` is a TLS-only router and cannot also serve plain HTTP — the
+   separate redirect Ingress bridges that gap.
+
+Point your DNS `A`/`AAAA` record at the Traefik gateway's external address once
+provisioned, then reach:
+
+- Admin UI/API: `https://shipwright.example.com/`
+- Metrics dashboard: `https://shipwright.example.com/dashboard/dashboard`
+  (see the Minikube [Reaching the services](#reaching-the-services) note on
+  why the path is doubled)
+
+### TLS
+
+cert-manager issues the certificate when `tls.certManager.enabled=true`. The
+chart renders the cert-manager ingress-shim annotation
+(`cert-manager.io/cluster-issuer` or `cert-manager.io/issuer`) on the main
+HTTPS-terminating `Ingress`; cert-manager watches the annotation and creates a
+`Certificate` CR automatically. The certificate is stored in the `<release>-tls`
+Secret, which the Ingress's `spec.tls` stanza consumes. This annotation-based
+model is controller-agnostic — it works with Traefik, nginx, ALB, and any other
+ingress controller cert-manager supports.
 
 ---
 
