@@ -53,11 +53,11 @@ function candidate(
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("check-consolidation-patrol", () => {
-  test("exits 1 when the ledger is missing (normal first run — no candidates possible)", async () => {
+  test("exits 0 permissively when the ledger is missing (bootstrap — can't rule out work exists)", async () => {
     const deps = makeDeps({ readLedger: () => null });
     const result = await run(deps);
-    expect(result.exit).toBe(1);
-    expect(result.output).toBe("");
+    expect(result.exit).toBe(0);
+    expect(result.output.length).toBeGreaterThan(0);
   });
 
   test("exits 1 when the ledger has zero candidates", async () => {

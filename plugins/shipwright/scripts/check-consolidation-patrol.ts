@@ -15,8 +15,13 @@
  *     worth surfacing; the consolidation-scan/consolidation-fix skills remain
  *     authoritative on whether there's real work.
  *
- * - A missing ledger is a normal first run (no candidates could possibly
- *   exist yet) → exit 1 (nothing to do).
+ * - A missing ledger → exit 0 (permissive; one-time bootstrap unlock). The
+ *   ledger is only ever written by consolidation-scan, which this precheck
+ *   gates — treating "missing" as "nothing to do" is a permanent deadlock,
+ *   since the scan that would create the ledger never gets a chance to run.
+ *   Once consolidation-scan runs once and writes the ledger, subsequent
+ *   precheck runs correctly gate on occurrence_count/ready_to_propose as
+ *   designed.
  * - A ledger that fails to read/parse → exit 0 (permissive; can't rule out
  *   work exists).
  * - Zero interesting candidates → exit 1 (nothing to do).
@@ -81,9 +86,15 @@ export async function run(deps: Deps): Promise<RunResult> {
     };
   }
 
-  // Missing ledger — normal first run, no candidates could possibly exist yet.
+  // Missing ledger — one-time bootstrap unlock. The ledger is only ever
+  // written by consolidation-scan, which this precheck gates; exiting 1
+  // here would permanently deadlock (the scan that creates the ledger
+  // never gets a chance to run).
   if (ledger === null) {
-    return { exit: 1, output: "" };
+    return {
+      exit: 0,
+      output: "No consolidation ledger yet -- running to bootstrap tracking.",
+    };
   }
 
   const interestingCount = Object.values(ledger.candidates).filter(
