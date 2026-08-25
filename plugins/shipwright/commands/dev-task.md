@@ -555,7 +555,13 @@ curl -s -o /dev/null -X POST \
 
 ## Step 6: Simplify
 
-After implementation completes, run a simplification pass. Ground both the implementation subagent's build (Step 5) and this pass in `plugins/shipwright/references/principles.md` — the shared architecture/testing principles file `plan-session` and `review` also read from. Respect its `architecture` domain entries (e.g. `architecture_layering`) when arranging code across layers, and its `testing` domain entries (e.g. the `t*` rules) when writing or adjusting tests during simplification.
+After implementation completes, run a simplification pass. Ground both the implementation subagent's build (Step 5) and this pass in the shared architecture/testing/security principles file `plan-session` and `review` also read from:
+
+1. Check for a project-level override: `.claude/shipwright/principles.md` in the project root.
+2. If it exists, load it and print: "Using project config: `.claude/shipwright/principles.md`"
+3. If it does not exist, load the default: `plugins/shipwright/references/principles.md` and print: "No project config found. Using default principles."
+
+Respect its `architecture` domain entries (e.g. `architecture_layering`) when arranging code across layers, its `testing` domain entries (e.g. the `t*` rules) when writing or adjusting tests during simplification, and its `security` domain entries (e.g. citing a relevant `security_input_validation`-style entry) when the diff touches security-sensitive code.
 
 1. Review `git diff main...HEAD` to see all changes on this branch
 2. Look for and fix:
