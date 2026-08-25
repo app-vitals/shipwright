@@ -167,7 +167,13 @@ Iterate on feedback. Do not move to task breakdown until the design is approved.
 
 Break the approved design into tasks. Each task should be independently shippable (its own PR) unless they are explicitly bundled (see Bundles below).
 
-Before writing tasks, skim `plugins/shipwright/references/principles.md` — the shared architecture/testing principles file `dev-task` and `review` also read from. Let its `architecture` and `testing` domain entries inform each task's scope and acceptance criteria (e.g. respecting `architecture_layering` when splitting a task across layers, or citing the relevant `t*` testing entry when writing the test decision bullet below).
+Before writing tasks, load the principles file:
+
+1. Check for a project-level override: `.claude/shipwright/principles.md` in the project root.
+2. If it exists, load it and print: "Using project config: `.claude/shipwright/principles.md`"
+3. If it does not exist, load the default: `plugins/shipwright/references/principles.md` and print: "No project config found. Using default principles."
+
+Let its `architecture`, `testing`, and `security` domain entries inform each task's scope and acceptance criteria (e.g. respecting `architecture_layering` when splitting a task across layers, citing a relevant `security_*` principle entry when writing security-specific acceptance criteria, or citing the relevant `t*` testing entry when writing the test decision bullet below).
 
 For each task:
 - **ID**: `{PREFIX}-{N}.{M}` — prefix is 2-3 letters from the feature name
