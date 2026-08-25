@@ -76,6 +76,16 @@ jobs:
                 -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
+      - name: kubeconform validate — traefik profile (strict, k8s + CRD + traefik middleware schemas)
+        run: |
+          helm template shipwright charts/shipwright --namespace shipwright \
+              -f charts/shipwright/examples/values-cloud-native-traefik.yaml \
+            | kubeconform \
+                -strict \
+                -summary \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
   # End-to-end gate: spin a kind cluster and `ct install` the chart per ci/ values
   # variant, running `helm test` against each install.
   helm-e2e:

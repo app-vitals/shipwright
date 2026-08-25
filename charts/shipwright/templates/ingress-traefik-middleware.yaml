@@ -1,0 +1,51 @@
+{{- /* CNH-4.1: Traefik Middleware resources. Traefik's per-router behavior
+       (path-prefix stripping, HTTP->HTTPS redirect) is expressed as separate
+       traefik.io/v1alpha1 Middleware CRs referenced from an Ingress via the
+       traefik.ingress.kubernetes.io/router.middlewares annotation
+       (templates/ingress.yaml), rather than nginx's single shared
+       rewrite-target/ssl-redirect annotations. This file renders 0, 1, or 2
+       Middleware documents depending on which features are active — nothing
+       renders at all unless networking.type=ingress AND the controller is
+       traefik. */}}
+{{- if and (eq .Values.networking.type "ingress") (include "shipwright.bundled.traefik" .) }}
+{{- $exposeTaskStore := and .Values.taskStore.enabled .Values.taskStore.expose.enabled }}
+{{- $tlsEnabled := include "shipwright.ingress.tlsEnabled" . }}
+{{- if $exposeTaskStore }}
+# Strips the task-store pathPrefix before traffic reaches the Service (the
+# task-store app serves /tasks, /tokens, /prs, /health at root) — traefik's
+# analogue of nginx's rewrite-target annotation, referenced from
+# templates/ingress.yaml via router.middlewares.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "shipwright.fullname" . }}-task-store-strip
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  stripPrefix:
+    prefixes:
+      - {{ .Values.taskStore.expose.pathPrefix }}
+{{- end }}
+{{- if and $tlsEnabled .Values.networking.ingress.tls.redirect }}
+{{- if $exposeTaskStore }}
+---
+{{- end }}
+# Redirects plain-HTTP requests to HTTPS. Referenced from the separate
+# plain-HTTP redirect Ingress (templates/ingress-http-redirect.yaml) — an
+# Ingress with spec.tls set is a TLS-only router in Traefik's model, so a
+# SEPARATE Ingress on the "web" entrypoint carries this Middleware to catch
+# and redirect plaintext traffic.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "shipwright.fullname" . }}-redirect-https
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+{{- end }}
+{{- end }}

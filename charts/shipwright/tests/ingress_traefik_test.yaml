@@ -1,0 +1,272 @@
+suite: Ingress traefik dialect (CNH-4.1)
+# templates/ingress.yaml's traefik branch: router.entrypoints/router.tls/
+# router.middlewares annotations, plain Prefix paths (no nginx rewrite-target
+# capture-group trick). Covers the traefik x {TLS off,on} x {task-store
+# exposed off,on} matrix. release.namespace is pinned to "shipwright" (rather
+# than helm-unittest's own default "NAMESPACE") so the router.middlewares
+# assertion matches the literal acceptance-criteria string.
+tests:
+  # ---- entrypoints + router.tls, TLS off / on ----
+  - it: uses the web entrypoint and omits router.tls when TLS is off
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: web
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+
+  - it: uses the websecure entrypoint and sets router.tls=true when TLS is on
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: websecure
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+          value: "true"
+
+  - it: honors configured (non-default) traefik entrypoint names
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.traefik.entrypoints.web: custom-web
+      networking.ingress.traefik.entrypoints.websecure: custom-websecure
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: custom-websecure
+
+  # ---- router.middlewares, task-store exposed off / on ----
+  - it: omits router.middlewares when task-store is not exposed
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+
+  - it: sets router.middlewares to the namespaced task-store-strip middleware reference when task-store is exposed
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+          value: shipwright-r-shipwright-task-store-strip@kubernetescrd
+
+  - it: omits router.middlewares when taskStore.expose.enabled but taskStore.enabled=false (guarded, no dangling middleware ref)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+
+  # ---- full 2x2 matrix: TLS off/on x task-store exposed off/on ----
+  - it: "matrix: TLS off, task-store not exposed"
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: web
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /dashboard
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+
+  - it: "matrix: TLS off, task-store exposed"
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: web
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+          value: shipwright-r-shipwright-task-store-strip@kubernetescrd
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 3
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /dashboard
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /task-store
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[2].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[2].pathType
+          value: Prefix
+
+  - it: "matrix: TLS on, task-store not exposed"
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: websecure
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+          value: "true"
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 2
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+
+  - it: "matrix: TLS on, task-store exposed (with configured pathPrefix override)"
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /tasks-api
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: websecure
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+          value: "true"
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+          value: shipwright-r-shipwright-task-store-strip@kubernetescrd
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+      - lengthEqual:
+          path: spec.rules[0].http.paths
+          count: 3
+      - equal:
+          path: spec.rules[0].http.paths[1].path
+          value: /tasks-api
+      - equal:
+          path: spec.rules[0].http.paths[1].pathType
+          value: Prefix
+
+  # ---- nginx unaffected ----
+  - it: renders none of the traefik annotations for the default (nginx) controller
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      networking.ingress.tls.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.tls"]
+      - notExists:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
+          value: /$2

@@ -1,0 +1,73 @@
+# Example: Traefik ingress controller, with TLS termination and HTTP->HTTPS
+# redirect enabled, and the task-store API exposed externally under
+# /task-store.
+#
+# This is NOT a ct-discovered ci/ values variant. The kind cluster `ct install`
+# uses runs the NGINX ingress addon and has NO Traefik CRDs (traefik.io/v1alpha1
+# Middleware) installed, so a values file that sets
+# networking.ingress.controller=traefik would make `ct install` fail (the
+# Middleware resources reference an unknown CRD). Keep this under examples/ so
+# ct never picks it up; the CI kubeconform gate (.github/workflows/helm.yml)
+# renders this file directly (no cluster involved) against the datreeio
+# CRDs-catalog schema for traefik.io/v1alpha1 Middleware, so its schema
+# correctness is still checked on every PR.
+#
+#   helm template shipwright charts/shipwright \
+#     -f charts/shipwright/examples/values-cloud-native-traefik.yaml
+#
+# Prerequisites on a real cluster:
+#   - Traefik installed as the ingress controller, with the
+#     traefik.io/v1alpha1 CRDs (Middleware, IngressRoute, etc.) applied.
+#   - cert-manager installed, with a ClusterIssuer named below (e.g.
+#     letsencrypt-prod), OR bring your own TLS Secret via
+#     networking.ingress.tls.secretName.
+
+networking:
+  # Render an Ingress (templates/ingress.yaml) plus the Traefik-specific
+  # Middleware resources (templates/ingress-traefik-middleware.yaml) and the
+  # plain-HTTP redirect Ingress (templates/ingress-http-redirect.yaml).
+  type: ingress
+  ingress:
+    className: traefik
+    host: shipwright.example.com
+    # Selects the traefik dialect in templates/ingress.yaml: router.entrypoints
+    # / router.tls / router.middlewares annotations, plain Prefix paths (no
+    # nginx rewrite-target capture-group trick).
+    controller: traefik
+    tls:
+      # Terminates TLS on this Ingress — adds router.tls: "true" and the
+      # cert-manager ingress-shim annotation below.
+      enabled: true
+      # Renders the redirect-https Middleware plus the separate plain-HTTP
+      # redirect Ingress (an Ingress with spec.tls is a TLS-only router in
+      # Traefik, so plain-HTTP traffic needs its own Ingress on the "web"
+      # entrypoint to be caught and redirected).
+      redirect: true
+    traefik:
+      entrypoints:
+        web: web
+        websecure: websecure
+
+tls:
+  # Issue a TLS cert via cert-manager. Adds the cert-manager.io/cluster-issuer
+  # ingress-shim annotation, controller-agnostic (see templates/ingress.yaml).
+  certManager:
+    enabled: true
+    issuerRef:
+      # A ClusterIssuer that must already exist in the cluster.
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # Real Google OAuth for a public deployment.
+  mode: google
+  google:
+    clientId: REPLACE_ME
+    clientSecret: REPLACE_ME
+    allowedEmails: you@example.com

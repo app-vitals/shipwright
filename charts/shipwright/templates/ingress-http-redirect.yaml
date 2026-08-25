@@ -1,0 +1,37 @@
+{{- /* CNH-4.1: plain-HTTP redirect Ingress, Traefik only. An Ingress with
+       spec.tls set is a TLS-only router in Traefik's model — plaintext
+       requests never reach it — so a SEPARATE Ingress bound to the "web"
+       entrypoint (no spec.tls) is required to catch plain-HTTP traffic and
+       redirect it to HTTPS via the redirect-https Middleware
+       (templates/ingress-traefik-middleware.yaml). Renders only when the
+       controller is traefik, TLS is enabled on the main Ingress, and
+       networking.ingress.tls.redirect is true — the same three-way gate the
+       redirect-https Middleware itself uses. */}}
+{{- $tlsEnabled := include "shipwright.ingress.tlsEnabled" . }}
+{{- if and (eq .Values.networking.type "ingress") (include "shipwright.bundled.traefik" .) $tlsEnabled .Values.networking.ingress.tls.redirect }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "shipwright.fullname" . }}-http-redirect
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ .Values.networking.ingress.traefik.entrypoints.web }}
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ include "shipwright.fullname" . }}-redirect-https@kubernetescrd
+spec:
+  {{- with .Values.networking.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.networking.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "shipwright.admin.fullname" . }}
+                port:
+                  name: http
+{{- end }}

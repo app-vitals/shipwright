@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.14.0] - 2026-08-25
+
+### Added
+
+- Traefik ingress controller support (CNH-4.1): `templates/ingress.yaml` grows a traefik dialect branch (guarded on `shipwright.bundled.traefik`, nothing changes for `controller=nginx`) adding `traefik.ingress.kubernetes.io/router.entrypoints` (`websecure` when TLS is on, else `web`, using the configurable `networking.ingress.traefik.entrypoints` names), `router.tls: "true"` when TLS is on, and `router.middlewares` (`<ns>-<fullname>-task-store-strip@kubernetescrd`) when the task-store route is exposed; traefik paths are always plain `Prefix` (`/dashboard`, the configured `taskStore.expose.pathPrefix`, `/`) with no capture-group regex and no `nginx.ingress.kubernetes.io/rewrite-target` annotation, since prefix-stripping is delegated to a Middleware instead. New `templates/ingress-traefik-middleware.yaml` renders a StripPrefix Middleware (`<fullname>-task-store-strip`) when task-store is exposed and a redirectScheme Middleware (`<fullname>-redirect-https`) when TLS + redirect are on, both `traefik.io/v1alpha1` and controller-gated. New `templates/ingress-http-redirect.yaml` renders a separate plain-HTTP Ingress (`<fullname>-http-redirect`, no `spec.tls`, entrypoint `web`) bound to the redirect-https Middleware, needed because a TLS-enabled Ingress is a TLS-only router in Traefik's model. New `tests/ingress_traefik_test.yaml` and `tests/ingress_traefik_middleware_test.yaml` (helm-unittest) cover the full traefik x {TLS off/on} x {task-store exposed off/on} matrix plus the zero-render cases for nginx/ClusterIP. New `examples/values-cloud-native-traefik.yaml` plus a matching kubeconform CI step (`.github/workflows/helm.yml`) and `Taskfile.yml` `helm:validate` command validate the `traefik.io/v1alpha1` Middleware CRD schema via the existing datreeio CRDs-catalog schema-location. No `values.yaml`/`values.schema.json` changes — this consumes `controller`/`tls`/`traefik.entrypoints` keys already added in CNH-2.1/CNH-3.1. Default-values (nginx) render output is unchanged.
+
 ## [1.13.1] - 2026-08-25
 
 ### Added
