@@ -208,6 +208,56 @@ describe("code-reviewer.md — Rule 8 security-domain adherence", () => {
   });
 });
 
+describe("code-reviewer.md — principles.md override check (PCO-1.3)", () => {
+  function rulesPreamble(): string {
+    const start = reviewerContent.indexOf("## Shipwright-specific Rules");
+    const end = reviewerContent.indexOf("1. **Breaking API changes");
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(-1);
+    return reviewerContent.slice(start, end);
+  }
+
+  it("Shipwright-specific Rules preamble checks .claude/shipwright/principles.md before falling back", () => {
+    expect(rulesPreamble()).toContain(".claude/shipwright/principles.md");
+  });
+
+  it("Shipwright-specific Rules preamble mentions fallback to references/principles.md", () => {
+    expect(rulesPreamble()).toContain("references/principles.md");
+  });
+
+  it("Shipwright-specific Rules preamble describes checking/loading project override before falling back", () => {
+    const lower = rulesPreamble().toLowerCase();
+    expect(lower).toMatch(/check.*project|project.*override|override.*check/);
+  });
+
+  it("Rule 6 references the override-aware principles source, not a hardcoded plugin path", () => {
+    const rule6Section = reviewerContent.slice(
+      reviewerContent.indexOf("Test-readiness adherence"),
+      reviewerContent.indexOf("Architecture-layering adherence"),
+    );
+    expect(rule6Section).toContain("principles source");
+    expect(rule6Section).not.toContain("`references/principles.md`");
+  });
+
+  it("Rule 7 references the override-aware principles source, not a hardcoded plugin path", () => {
+    const rule7Section = reviewerContent.slice(
+      reviewerContent.indexOf("Architecture-layering adherence"),
+      reviewerContent.indexOf("Security-domain adherence"),
+    );
+    expect(rule7Section).toContain("principles source");
+    expect(rule7Section).not.toContain("`references/principles.md`");
+  });
+
+  it("Rule 8 references the override-aware principles source, not a hardcoded plugin path", () => {
+    const rule8Section = reviewerContent.slice(
+      reviewerContent.indexOf("Security-domain adherence"),
+      reviewerContent.indexOf("## Confidence Scoring"),
+    );
+    expect(rule8Section).toContain("principles source");
+    expect(rule8Section).not.toContain("`references/principles.md`");
+  });
+});
+
 describe("code-reviewer.md — architecture category in output format", () => {
   it("includes architecture in the category enum", () => {
     expect(reviewerContent).toContain("architecture");
