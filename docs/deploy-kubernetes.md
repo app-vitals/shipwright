@@ -45,9 +45,11 @@ served at `/` and the metrics dashboard at `/dashboard`, on a single host:
 | `gateway` | A Gateway API `Gateway` + `HTTPRoute`s | GKE (managed L7) |
 
 `ingress` and `gateway` are mutually exclusive — only one of the two is ever
-rendered. TLS via cert-manager (`tls.certManager.enabled`) currently applies to
-the **gateway** path only; on the ingress path TLS is configured through
-controller-specific annotations (see the EKS section).
+rendered. TLS via cert-manager (`tls.certManager.enabled`) applies to **both**
+the gateway and ingress paths (see the [GKE](#gke-gateway-api--cert-manager)
+and [EKS](#eks-alb-ingress--cert-manager) sections for details on how each
+implements it). On the ingress path, cert-manager is integrated via the
+ingress-shim annotation mechanism rather than a chart-rendered Certificate.
 
 ### Exposing the task-store externally (opt-in)
 
@@ -473,6 +475,8 @@ In practice prefer a values file for the annotations:
 
 ### Key values
 
+The example below uses **AWS Certificate Manager (ACM)** for TLS — the traditional EKS path that requires no cert-manager:
+
 ```yaml
 networking:
   type: ingress
@@ -487,7 +491,7 @@ networking:
       alb.ingress.kubernetes.io/certificate-arn: <your-acm-certificate-arn>
 tls:
   certManager:
-    enabled: false      # ingress-path TLS is via ALB/ACM annotations, not the Gateway Certificate
+    enabled: false      # ACM path: leave cert-manager off
 auth:
   mode: google
   google:
@@ -495,6 +499,42 @@ auth:
     clientSecret: <your-oauth-client-secret>
     allowedEmails: you@your-domain.example
 ```
+
+Alternatively, use **cert-manager** to fully automate certificate provisioning and renewal:
+
+```yaml
+networking:
+  type: ingress
+  ingress:
+    className: alb
+    host: shipwright.example.com
+    tls:
+      enabled: true                # render spec.tls on the Ingress
+      redirect: false              # no-op here — `redirect` only renders the nginx-specific ssl-redirect annotation, so it has no effect on ALB
+    annotations:
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+      # NOTE: listen-ports alone does NOT redirect HTTP->HTTPS on ALB — it only opens
+      # both listeners. To force a redirect, add an actions.ssl-redirect annotation
+      # (protocol: HTTPS, port: "443", statusCode: HTTP_301) plus a matching ingress
+      # rule pointing at the `ssl-redirect` service (servicePort: use-annotation).
+      # Omitted here for brevity; see the AWS Load Balancer Controller docs on SSL redirect.
+tls:
+  certManager:
+    enabled: true                  # enable cert-manager ingress-shim (controller-agnostic annotation)
+    issuerRef:
+      name: letsencrypt-prod       # a ClusterIssuer that must already exist
+      kind: ClusterIssuer
+auth:
+  mode: google
+  google:
+    clientId: <your-oauth-client-id>
+    clientSecret: <your-oauth-client-secret>
+    allowedEmails: you@your-domain.example
+```
+
+Both paths work on EKS — pick the one that fits your infrastructure. ACM is simpler if you're already using AWS Certificate Manager; cert-manager is more flexible if you prefer a cluster-native certificate controller.
 
 ### Networking
 
@@ -514,14 +554,24 @@ Point your DNS record at the ALB's DNS name once provisioned, then reach:
 
 ### TLS
 
-On the ingress path, TLS is terminated at the ALB via the
-`alb.ingress.kubernetes.io/certificate-arn` annotation (an ACM certificate) and
-`listen-ports`. The chart's cert-manager `Certificate` template applies only to
-the **gateway** path, so leave `tls.certManager.enabled=false` here. If you
-prefer cert-manager-managed certs on EKS, you can still use cert-manager to
-populate a TLS Secret and reference it through the appropriate controller
-annotations, but the chart does not render the `Certificate` for the ingress
-path.
+On the ingress path, TLS can be terminated via two mechanisms:
+
+1. **AWS Certificate Manager (ACM)** — the example above. Requires no
+   cert-manager installation. Set `tls.certManager.enabled=false` and use the
+   `alb.ingress.kubernetes.io/certificate-arn` annotation (an ACM certificate)
+   plus `listen-ports` to configure TLS on the ALB itself. This is the
+   traditional EKS path and requires you to manage the certificate out-of-band.
+
+2. **cert-manager ingress-shim** — when `tls.certManager.enabled=true`, the
+   chart renders the cert-manager ingress-shim annotation
+   (`cert-manager.io/issuer` or `cert-manager.io/cluster-issuer`) on the
+   `Ingress`. cert-manager watches the annotation and automatically creates and
+   manages the TLS Secret. This way the certificate is fully automated and
+   rotated by cert-manager — the `spec.tls` stanza is rendered by the chart, and
+   you only need to configure the Issuer reference via `tls.certManager.issuerRef`
+   (e.g., `letsencrypt-prod`). The chart does **not** render a `Certificate` CR
+   for the ingress path — cert-manager's ingress-shim watches the Ingress
+   annotation and creates it automatically.
 
 ---
 

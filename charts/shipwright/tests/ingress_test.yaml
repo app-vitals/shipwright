@@ -235,6 +235,94 @@ tests:
       - notExists:
           path: metadata.annotations["nginx.ingress.kubernetes.io/rewrite-target"]
 
+  # ---- TLS + cert-manager ingress-shim (CNH-3.1) ----
+  - it: renders spec.tls and the cert-manager cluster-issuer ingress-shim annotation when tls.certManager is enabled with a bring-your-own ClusterIssuer
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.host: shipwright.example.com
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt-prod
+      tls.certManager.issuerRef.kind: ClusterIssuer
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: r-shipwright-tls
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: shipwright.example.com
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: letsencrypt-prod
+      - notExists:
+          path: metadata.annotations["cert-manager.io/issuer"]
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-redirect"]
+          value: "true"
+
+  - it: renders NO Certificate document on the ingress path even when tls.certManager is enabled (ingress-shim — cert-manager watches the annotations itself)
+    template: templates/certificate.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.host: shipwright.example.com
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt-prod
+      tls.certManager.issuerRef.kind: ClusterIssuer
+    release:
+      name: r
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: uses the cert-manager.io/issuer annotation key (not cluster-issuer) for a chart-managed namespaced Issuer
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: ""
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.kind: Issuer
+      tls.certManager.issuer.email: admin@example.com
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/issuer"]
+          value: r-shipwright-issuer
+      - notExists:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+
+  - it: renders spec.tls with an explicit secretName override and no cert-manager annotation when cert-manager is not enabled
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.secretName: my-tls
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: spec.tls[0].secretName
+          value: my-tls
+      - notExists:
+          path: metadata.annotations["cert-manager.io/issuer"]
+      - notExists:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+
+  - it: omits the ssl-redirect annotation when tls.redirect=false even though TLS is on
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: false
+    release:
+      name: r
+    asserts:
+      - notExists:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/ssl-redirect"]
+
   - it: renders NO Ingress with the default networking.type (ClusterIP)
     template: templates/ingress.yaml
     asserts:

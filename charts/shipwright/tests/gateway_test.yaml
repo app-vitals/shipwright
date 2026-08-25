@@ -424,3 +424,16 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: networking.type=ingress with tls.certManager enabled renders the Ingress ingress-shim annotation, not a Gateway/HTTPRoute/Certificate (CNH-3.1)
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt-prod
+    release:
+      name: r
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/cluster-issuer"]
+          value: letsencrypt-prod
