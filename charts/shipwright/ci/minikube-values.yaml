@@ -47,13 +47,6 @@ agent:
 
 postgresql:
   enabled: true
-  # Bitnami moved its public catalog behind "Bitnami Secure" in 2025, so the
-  # default docker.io/bitnami/postgresql tag is no longer publicly pullable.
-  # Point CI installs at the `bitnamilegacy` mirror (the fallback documented in
-  # the chart README "Bitnami registry risk" section) so `ct install` can pull.
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
   # Set an explicit password so the install is deterministic across CI re-runs
   # (a Bitnami auto-generated password is fine for a throwaway cluster, but a
   # fixed value keeps `helm test`/connectivity checks reproducible). This is a

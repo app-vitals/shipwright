@@ -111,16 +111,16 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnami/postgresql:"
+          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
 
-  - it: follows a global postgresql image override to a mirror
+  - it: follows a postgresql image override back to bitnami/postgresql
     set:
       postgresql.image.registry: docker.io
-      postgresql.image.repository: bitnamilegacy/postgresql
+      postgresql.image.repository: bitnami/postgresql
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
+          pattern: "^docker\\.io/bitnami/postgresql:"
 
   - it: runs as a non-root user
     asserts:

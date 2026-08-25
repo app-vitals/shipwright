@@ -18,14 +18,14 @@ templates:
   - templates/chat-deployment.yaml
   - templates/whisper-deployment.yaml
 tests:
-  - it: renders the bitnami/postgresql image from the docker.io registry
+  - it: renders the bitnamilegacy/postgresql image from the docker.io registry
     template: charts/postgresql/templates/primary/statefulset.yaml
     set:
       postgresql.enabled: true
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^docker\\.io/bitnami/postgresql:"
+          pattern: "^docker\\.io/bitnamilegacy/postgresql:"
 
   - it: pins a concrete PostgreSQL image tag (never `latest`)
     template: charts/postgresql/templates/primary/statefulset.yaml
@@ -53,7 +53,7 @@ tests:
     asserts:
       - matchRegex:
           path: spec.template.spec.containers[0].image
-          pattern: "^my-mirror\\.example\\.com/bitnami/postgresql:"
+          pattern: "^my-mirror\\.example\\.com/bitnamilegacy/postgresql:"
 
   # ── DCC-3.1: global.imageRegistry must NOT double-prefix fully-qualified
   # service repositories, but SHOULD still prefix bare repository names. The
