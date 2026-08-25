@@ -61,12 +61,14 @@ This is the mechanism for repo-specific scheduled/autonomous behavior — a nigh
 
 ## Lightweight customization without a companion plugin
 
-If all you need is to tweak config or data — not add a new command or skill — a full companion plugin is overkill. The `entropy-scan` skill, the `plan-session` command, and the `dev-task` command all support a local override file under `.claude/shipwright/` in the target repo, checked before falling back to the plugin's shipped default — the reference pattern for this kind of lightweight customization:
+If all you need is to tweak config or data — not add a new command or skill — a full companion plugin is overkill. The `entropy-scan` skill, the `review` command, the `plan-session` command, and the `dev-task` command all support a local override file under `.claude/shipwright/` in the target repo, checked before falling back to the plugin's shipped default — the reference pattern for this kind of lightweight customization:
 
 - Default: `<plugin-dir>/references/principles.md`
 - Override: `.claude/shipwright/principles.md` (project-local, used in its entirety when present — no merging with the default)
 
 **For `entropy-scan`:** Run `/entropy-scan --init` to seed the override file from the plugin default, then edit it to match your project's norms (disable entries, change severity, add project-specific checks).
+
+**For `review`:** The code-reviewer subagent checks for a project-level override when evaluating test-readiness, architecture-layering, and security-domain adherence (Rules 6, 7, 8). If `.claude/shipwright/principles.md` exists, it uses that; otherwise, it loads the default. This lets teams define project-specific principles to inform code review severity and category mappings.
 
 **For `plan-session`:** Step 5 (Task Breakdown) automatically checks for a project-level override before loading the default principles file. If `.claude/shipwright/principles.md` exists, it loads and uses that; otherwise, it loads the default. This lets teams define project-specific principles to inform task scope and acceptance criteria.
 

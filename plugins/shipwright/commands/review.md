@@ -501,8 +501,10 @@ for this dispatch.
 - **`testReadinessContext`** — contents of `docs/test-readiness/test-system.md` plus the
   Testing section of the repo's CLAUDE.md (gathered in Step 5.7); omit this field entirely
   when no test-readiness content was gathered (the subagent falls back to the universal
-  baseline in the testing-domain entries of `references/principles.md` when the field is
-  absent)
+  baseline in the testing-domain entries of the project's principles source when the field
+  is absent — checking for a project-level override at `.claude/shipwright/principles.md`
+  first, then falling back to `references/principles.md` (relative to the plugin root) if
+  no override exists)
 - **`Prior Findings — Requires Resolution Check`** (PVD-1.2) — when Step 5.5's
   `priorQualifyingReviews` is non-empty, include this labeled input listing each prior
   qualifying review's `ref` and full `body`. Omit this field entirely when
