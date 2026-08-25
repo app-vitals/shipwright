@@ -108,3 +108,34 @@ describe("plan-session.md — Step 6b template omits requiresHumanApproval (RHA-
     expect(section).not.toContain("Type B");
   });
 });
+
+describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
+  function extractStep5Section(md: string): string {
+    const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n### Complexity and Model Scoring)/);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("Step 5 preamble checks .claude/shipwright/principles.md before falling back", () => {
+    const section = extractStep5Section(content);
+    expect(section).toContain(".claude/shipwright/principles.md");
+  });
+
+  it("Step 5 preamble mentions fallback to references/principles.md", () => {
+    const section = extractStep5Section(content);
+    expect(section).toContain("references/principles.md");
+  });
+
+  it("Step 5 preamble describes checking/loading project override before falling back", () => {
+    const section = extractStep5Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/check.*project|project.*override|override.*check/);
+  });
+
+  it("Step 5 preamble cites security as one of the domains alongside architecture and testing", () => {
+    const section = extractStep5Section(content);
+    expect(section).toContain("security");
+    expect(section).toContain("architecture");
+    expect(section).toContain("testing");
+  });
+});

@@ -61,12 +61,16 @@ This is the mechanism for repo-specific scheduled/autonomous behavior — a nigh
 
 ## Lightweight customization without a companion plugin
 
-If all you need is to tweak config or data — not add a new command or skill — a full companion plugin is overkill. The `entropy-scan` skill supports a local override file under `.claude/shipwright/` in the target repo, checked before falling back to the plugin's shipped default — the reference pattern for this kind of lightweight customization:
+If all you need is to tweak config or data — not add a new command or skill — a full companion plugin is overkill. The `entropy-scan` skill and the `plan-session` command support a local override file under `.claude/shipwright/` in the target repo, checked before falling back to the plugin's shipped default — the reference pattern for this kind of lightweight customization:
 
 - Default: `<plugin-dir>/references/principles.md`
 - Override: `.claude/shipwright/principles.md` (project-local, used in its entirety when present — no merging with the default)
 
-Run `/entropy-scan --init` to seed the override file from the plugin default, then edit it to match your project's norms (disable entries, change severity, add project-specific checks). See [`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md) for the full pattern.
+**For `entropy-scan`:** Run `/entropy-scan --init` to seed the override file from the plugin default, then edit it to match your project's norms (disable entries, change severity, add project-specific checks).
+
+**For `plan-session`:** Step 5 (Task Breakdown) automatically checks for a project-level override before loading the default principles file. If `.claude/shipwright/principles.md` exists, it loads and uses that; otherwise, it loads the default. This lets teams define project-specific principles to inform task scope and acceptance criteria.
+
+See [`skills/entropy-scan/references/customization.md`](../plugins/shipwright/skills/entropy-scan/references/customization.md) for the full pattern.
 
 Reach for this first if you just need different data or thresholds; reach for a companion plugin when you need genuinely new commands, skills, or scheduled behavior that doesn't fit inside shipwright's existing commands.
 
