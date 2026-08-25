@@ -123,6 +123,7 @@ crons:
       /shipwright:error-scan
       /shipwright:error-fix
       /shipwright:error-resolve
+      These three commands are not independent suggestions -- invoke each one immediately after the previous one finishes, in this same session, using the Skill tool. Do not stop after a command's own output tells you to 'run /X next' (e.g. error-scan's summary) -- that phrasing is written for a standalone manual invocation, not this chained cron session. Continue automatically through all three commands before doing anything else.
       After the chain completes, write state/error-patrol-ledger.json's lastRun field: "<ISO timestamp>". Use [silent] if no new or regressed issues are found.
     silent: true
     preCheck: shipwright:check-error-patrol.ts
