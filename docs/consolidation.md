@@ -151,7 +151,7 @@ The `consolidation-patrol-maintenance` cron runs `consolidation-scan` and `conso
 |-------|-------|-------|
 | **Schedule** | `0 5 * * 1` | Weekly, Monday at 05:00 UTC. |
 | **Prompt** | `/shipwright:consolidation-scan` → `/shipwright:consolidation-fix` | Runs both skills in sequence; only posts to Slack if `ready_to_propose` findings exist. |
-| **preCheck** | `shipwright:check-consolidation-patrol.ts` | Scans the ledger for candidates worth waking a full Claude session: either already `ready_to_propose`, or still `tracking` but one observation away from the stabilization threshold (`occurrence_count >= 2`). Missing ledger → exits silently (normal first run). |
+| **preCheck** | `shipwright:check-consolidation-patrol.ts` | Scans the ledger for candidates worth waking a full Claude session: either already `ready_to_propose`, or still `tracking` but one observation away from the stabilization threshold (`occurrence_count >= 2`). Missing ledger → exits permissively to bootstrap the initial tracking (one-time unlock). |
 | **Enabled** | `false` | Disabled by default. Recommended to stay disabled after merge until `state/consolidation-ledger.json` has accumulated a few weeks of real signal. |
 
 ### How to enable it
@@ -173,7 +173,7 @@ The same mechanism applies to all opt-in crons — see `docs/agent.md`'s "Defaul
 - Already `ready_to_propose` (met the Rule of Three).
 - Still `tracking` but with `occurrence_count >= 2` — one observation away from the count threshold (note: `occurrence_count` alone doesn't promote a candidate; `consecutive_stable_runs` and suppression checks also apply — the preCheck is just a cheap signal, and `consolidation-scan`/`consolidation-fix` remain authoritative).
 
-Missing ledger → exits silently (normal first run). Ledger present but unparsable → exits permissively (unknown state). Zero interesting candidates → exits silently. At least one → exits with a short summary, which becomes the actual cron prompt, so the cron only spends a Claude turn when there's real signal.
+Missing ledger → exits permissively (one-time bootstrap unlock; the scan that creates the ledger must be allowed to run). Ledger present but unparsable → exits permissively (unknown state). Zero interesting candidates → exits silently. At least one → exits with a short summary, which becomes the actual cron prompt, so the cron only spends a Claude turn when there's real signal.
 
 ## See also
 
