@@ -35,11 +35,6 @@ auth:
 
 postgresql:
   enabled: true
-  image:
-    registry: docker.io
-    # Bitnami's 2025 catalog change moved the public `bitnami/postgresql` tags
-    # behind Bitnami Secure. The `bitnamilegacy` mirror still serves them.
-    repository: bitnamilegacy/postgresql
   auth:
     database: shipwright_admin
     username: shipwright

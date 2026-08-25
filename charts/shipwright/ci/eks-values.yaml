@@ -50,11 +50,6 @@ agent:
 
 postgresql:
   enabled: true
-  # Use the `bitnamilegacy` mirror — the default bitnami/postgresql tag is no
-  # longer publicly pullable (see README "Bitnami registry risk").
-  image:
-    registry: docker.io
-    repository: bitnamilegacy/postgresql
   auth:
     database: shipwright_admin
     username: shipwright

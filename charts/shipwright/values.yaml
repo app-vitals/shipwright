@@ -495,11 +495,13 @@ auth:
 postgresql:
   # -- Deploy the bundled PostgreSQL subchart.
   enabled: true
-  # -- Image overrides. If Bitnami's default registry tags disappear, repoint
-  # `image.registry` / `image.repository` at a mirror (see README "Bitnami registry risk").
+  # -- Image overrides. The `bitnamilegacy` mirror is now the default (Bitnami's
+  # 2025 catalog change moved public tags to Bitnami Secure). To switch back to
+  # the standard `bitnami` repository, override this value explicitly (or see
+  # README "Bitnami registry risk" for alternative mirror options).
   image:
     registry: docker.io
-    repository: bitnami/postgresql
+    repository: bitnamilegacy/postgresql
     # tag intentionally left to the pinned subchart default (concrete, not `latest`).
   auth:
     # -- Default database name created on first boot.

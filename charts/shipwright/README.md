@@ -181,7 +181,7 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `admin.resources` | `50m/64Mi → 250m/256Mi` | Admin container resource requests/limits. |
 | `postgresql.enabled` | `true` | Deploy the bundled Bitnami PostgreSQL subchart. |
 | `postgresql.image.registry` | `docker.io` | PostgreSQL image registry (repoint to a mirror — see below). |
-| `postgresql.image.repository` | `bitnami/postgresql` | PostgreSQL image repository. |
+| `postgresql.image.repository` | `bitnamilegacy/postgresql` | PostgreSQL image repository. |
 | `postgresql.auth.database` | `shipwright_admin` | Default database created on first boot. |
 | `postgresql.auth.username` | `shipwright` | Default application user. |
 | `postgresql.auth.password` | `shipwright` | Default password — **change for any non-throwaway env**, or use `existingSecret`. |
@@ -206,15 +206,25 @@ dependencies:
     condition: postgresql.enabled
 ```
 
-**Why this specific pin?** In **2025 Bitnami changed their catalog and registry.**
+**Why this specific pin and mirror?** In **2025 Bitnami changed their catalog and registry.**
 Many image tags were moved to a `bitnamilegacy` repository, and the newest
 secure/hardened images moved behind **Bitnami Secure** (newer chart lines ship a
 default `image.tag: latest` that no longer resolves to a concrete public tag).
 Chart `16.7.27` is pinned because its **default image tag is concrete**
 (`17.6.0-debian-12-r4`), not `latest`, so it renders deterministically.
+**The chart now defaults to the `bitnamilegacy` mirror** to ensure a fresh
+install pulls successfully from the public registry.
 
-**If the default Bitnami registry tags disappear**, repoint the images without
-changing the chart — pick one:
+**If you need the standard `bitnami` repository** (e.g., you have Bitnami Secure
+access or the legacy mirror is deprecated), override the image explicitly:
+
+```yaml
+postgresql:
+  image:
+    repository: bitnami/postgresql
+```
+
+**For other registry scenarios**, pick one of these alternatives:
 
 1. **Mirror the whole stack** in one place:
 
@@ -223,17 +233,7 @@ changing the chart — pick one:
      imageRegistry: <your-mirror-registry>
    ```
 
-2. **Use the `bitnamilegacy` mirror** for the PostgreSQL image specifically:
-
-   ```yaml
-   postgresql:
-     image:
-       registry: docker.io
-       repository: bitnamilegacy/postgresql
-       tag: 17.6.0-debian-12-r4
-   ```
-
-3. **Bring your own PostgreSQL** — disable the subchart entirely and point the
+2. **Bring your own PostgreSQL** — disable the subchart entirely and point the
    admin service at an external database via the `externalDatabase` block:
 
    ```yaml
