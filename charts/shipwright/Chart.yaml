@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.13.0
+version: 1.13.1
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -31,6 +31,8 @@ annotations:
   artifacthub.io/changes: |
     - kind: added
       description: "ingress TLS/cert-manager helpers, validation, and values/schema groundwork (networking.ingress.controller/tls, tls.certManager.issuer) — no render change; nothing new is wired into templates/ingress.yaml yet"
+    - kind: added
+      description: "wire ingress TLS + cert-manager ingress-shim annotations into templates/ingress.yaml (nginx): renders spec.tls when networking.ingress.tls.enabled or tls.certManager.enabled, adds the nginx.ingress.kubernetes.io/ssl-redirect annotation when TLS + redirect + controller=nginx, and adds cert-manager.io/issuer or cert-manager.io/cluster-issuer keyed by the effective issuer kind/name — no chart-rendered Certificate CR on the ingress path, so TLS works on first install regardless of cert-manager readiness"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

@@ -143,6 +143,23 @@ tests:
     asserts:
       - failedTemplate: {}
 
+  - it: rejects an unknown key under networking.ingress.tls (additionalProperties false, CNH-3.1)
+    set:
+      networking.type: ingress
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.bogus: x
+    asserts:
+      - failedTemplate:
+          errorPattern: "additional properties 'bogus' not allowed"
+
+  - it: rejects an unknown networking.ingress.controller outside the [nginx, traefik] enum (CNH-3.1)
+    set:
+      networking.type: ingress
+      networking.ingress.controller: haproxy
+    asserts:
+      - failedTemplate:
+          errorPattern: "/networking/ingress/controller"
+
   - it: accepts internalKey with key set and existingSecret empty (guard is existingSecret-triggered)
     set:
       metrics.provider.internalKey.key: my-key

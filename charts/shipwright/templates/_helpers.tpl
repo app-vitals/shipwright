@@ -593,12 +593,15 @@ future controller-specific template logic has one place to read this from.
 {{- end }}
 
 {{/*
-shipwright.ingress.tlsEnabled — true when the Ingress should terminate TLS
-(networking.ingress.tls.enabled). GROUNDWORK: templates/ingress.yaml does not
-yet render a `tls:` stanza; this exists for a follow-up task to gate that on.
+shipwright.ingress.tlsEnabled — true when the Ingress should terminate TLS:
+either networking.ingress.tls.enabled=true directly, OR
+tls.certManager.enabled=true (enabling cert-manager on the ingress path
+implies wanting TLS — that's the entire point of the ingress-shim annotations
+templates/ingress.yaml renders). Gates the `tls:` stanza on
+templates/ingress.yaml (CNH-3.1).
 */}}
 {{- define "shipwright.ingress.tlsEnabled" -}}
-{{- if .Values.networking.ingress.tls.enabled }}true{{- end }}
+{{- if or .Values.networking.ingress.tls.enabled .Values.tls.certManager.enabled }}true{{- end }}
 {{- end }}
 
 {{/*

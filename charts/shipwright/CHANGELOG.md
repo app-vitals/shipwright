@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.13.1] - 2026-08-25
+
+### Added
+
+- Wire ingress TLS + cert-manager ingress-shim (nginx) into `templates/ingress.yaml` (CNH-3.1): renders `spec.tls: [{hosts: [host], secretName: <fullname>-tls | override}]` when `networking.ingress.tls.enabled` or `tls.certManager.enabled` is set; adds the `nginx.ingress.kubernetes.io/ssl-redirect: "true"` annotation when TLS is on, `networking.ingress.tls.redirect` is true, and the controller is nginx; adds the cert-manager ingress-shim annotation (`cert-manager.io/issuer` or `cert-manager.io/cluster-issuer`, controller-agnostic) keyed by the effective issuer kind/name (`shipwright.certManager.issuerName`/`issuerKind`) when `tls.certManager.enabled=true`. No chart-rendered Certificate CR on the ingress path — cert-manager itself watches the annotations, so TLS works on first install regardless of cert-manager readiness. Broadened `shipwright.ingress.tlsEnabled` (`_helpers.tpl`) to `networking.ingress.tls.enabled OR tls.certManager.enabled`; this helper had no callers before this change. Existing plain-HTTP Ingress output (nginx, TLS off) is unchanged — the annotations-block predicate keeps `networking.ingress.annotations`/task-store-exposure as its first two disjuncts.
+
 ## [1.13.0] - 2026-08-25
 
 ### Added

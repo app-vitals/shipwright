@@ -3,19 +3,51 @@
        taskStore.enabled avoids a path/annotation pointing at a Service that does
        not exist. */}}
 {{- $exposeTaskStore := and .Values.taskStore.enabled .Values.taskStore.expose.enabled }}
+{{- /* TLS on this Ingress (CNH-3.1): networking.ingress.tls.enabled directly, OR
+       tls.certManager.enabled (cert-manager on the ingress path implies wanting
+       TLS — see shipwright.ingress.tlsEnabled). */}}
+{{- $tlsEnabled := include "shipwright.ingress.tlsEnabled" . }}
+{{- /* ssl-redirect is an nginx-specific annotation key, so only add it for the
+       nginx controller flavor (shipwright.bundled.nginx) — a meaningless
+       annotation on a traefik-controller deployment would be confusing. */}}
+{{- $sslRedirect := and $tlsEnabled .Values.networking.ingress.tls.redirect (include "shipwright.bundled.nginx" .) }}
+{{- /* cert-manager's ingress-shim annotations are controller-agnostic — cert-manager
+       itself watches these on any Ingress regardless of controller — so they are
+       NOT gated on shipwright.bundled.nginx. Only added when tls.certManager is
+       enabled AND an effective issuer name is resolvable (bring-your-own
+       issuerRef.name, or a chart-managed Issuer via issuer.create=true). */}}
+{{- $issuerName := include "shipwright.certManager.issuerName" . }}
+{{- $certManagerAnnotation := and .Values.tls.certManager.enabled $issuerName }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "shipwright.fullname" . }}
   labels:
     {{- include "shipwright.labels" . | nindent 4 }}
-  {{- if or .Values.networking.ingress.annotations $exposeTaskStore }}
+  {{- if or .Values.networking.ingress.annotations $exposeTaskStore $sslRedirect $certManagerAnnotation }}
   annotations:
     {{- if $exposeTaskStore }}
     # Strip the task-store path prefix before traffic reaches the Service (the
     # task-store app serves /tasks, /tokens, /prs, /health at root). Only set when
     # the task-store route is exposed, so non-exposed installs are unaffected.
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- end }}
+    {{- if $sslRedirect }}
+    # HTTP->HTTPS redirect once TLS is on — nginx-specific, so gated on the
+    # nginx controller flavor (networking.ingress.controller=nginx).
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+    {{- if $certManagerAnnotation }}
+    # cert-manager ingress-shim: cert-manager watches for this annotation and
+    # creates/manages the Certificate itself, so the chart renders NO
+    # Certificate CR on the ingress path (see templates/certificate.yaml, which
+    # only renders for networking.type=gateway). Controller-agnostic — not
+    # gated on shipwright.bundled.nginx.
+    {{- if eq (include "shipwright.certManager.issuerKind" .) "ClusterIssuer" }}
+    cert-manager.io/cluster-issuer: {{ $issuerName }}
+    {{- else }}
+    cert-manager.io/issuer: {{ $issuerName }}
+    {{- end }}
     {{- end }}
     {{- with .Values.networking.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
@@ -24,6 +56,12 @@ metadata:
 spec:
   {{- with .Values.networking.ingress.className }}
   ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $tlsEnabled }}
+  tls:
+    - hosts:
+        - {{ .Values.networking.ingress.host | quote }}
+      secretName: {{ include "shipwright.ingress.tlsSecretName" . }}
   {{- end }}
   rules:
     - host: {{ .Values.networking.ingress.host | quote }}
