@@ -508,10 +508,9 @@ networking:
   ingress:
     className: alb
     host: shipwright.example.com
-    controller: nginx              # required by the ingress-shim annotations
     tls:
       enabled: true                # render spec.tls on the Ingress
-      redirect: true               # add ssl-redirect annotation (nginx-specific)
+      redirect: false              # ALB handles its own HTTP->HTTPS redirect via listen-ports/annotations; this flag only applies to the nginx controller
     annotations:
       alb.ingress.kubernetes.io/scheme: internet-facing
       alb.ingress.kubernetes.io/target-type: ip
@@ -519,7 +518,7 @@ networking:
       # ALB will see the TLS spec rendered by the chart and handle the listener accordingly
 tls:
   certManager:
-    enabled: true                  # enable cert-manager ingress-shim
+    enabled: true                  # enable cert-manager ingress-shim (controller-agnostic annotation)
     issuerRef:
       name: letsencrypt-prod       # a ClusterIssuer that must already exist
       kind: ClusterIssuer
