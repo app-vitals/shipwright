@@ -124,10 +124,13 @@
     removal should be confirmed as reflected in `task-service.ts`'s existing integration
     suite (no assertions should reference the dropped field) — a cleanup check, not new
     coverage.
-  - **Two Astro marketing-page content updates** (Factory added to `compare.astro` and
-    `self-hosted.astro` comparison tables) — same already-covered E2E user-journey row
-    (site journey #4); `site/tests/compare.spec.ts`/`self-hosted.spec.ts` need one more
-    incremental assertion each for the new table row, same Playwright tooling.
+  - **Astro marketing-page updates: Factory comparison additions** (Factory added to
+    `compare.astro` and `self-hosted.astro` comparison tables, plus new dedicated
+    `/vs/factory` page with full architectural comparison) — same already-covered E2E
+    user-journey row (site journey #4); `site/tests/compare.spec.ts`/`self-hosted.spec.ts`
+    need one more incremental assertion each for the new table row, and new
+    `site/tests/vs-factory.spec.ts` (full page coverage with 13 assertions), same
+    Playwright tooling.
 
   **None of this cycle's changes require a new framework, local-substitute category, CI
   stage, coverage-target adjustment, or speed-budget change.** The `check-review.ts` fix
