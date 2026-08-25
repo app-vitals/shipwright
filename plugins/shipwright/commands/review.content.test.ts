@@ -10,6 +10,14 @@ beforeAll(() => {
   content = readFileSync(REVIEW_MD_PATH, "utf-8");
 });
 
+function extractStep7Section(md: string): string {
+  const step7Idx = md.indexOf("## Step 7: Deep Review");
+  const step8Idx = md.indexOf("## Step 8: Score and Classify Findings");
+  expect(step7Idx).toBeGreaterThan(-1);
+  expect(step8Idx).toBeGreaterThan(step7Idx);
+  return md.slice(step7Idx, step8Idx);
+}
+
 describe("review.md — pre-claim marker documentation (CBD-1.4)", () => {
   it("Arguments section documents the [preclaim:{recordId}:{commitSha}] marker format", () => {
     const argsIdx = content.indexOf("## Arguments");
@@ -1756,14 +1764,6 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
 });
 
 describe("review.md — Step 7 dispatch is synchronous, no ScheduleWakeup/Monitor (RVS-1.1)", () => {
-  function extractStep7Section(md: string): string {
-    const step7Idx = md.indexOf("## Step 7: Deep Review");
-    const step8Idx = md.indexOf("## Step 8: Score and Classify Findings");
-    expect(step7Idx).toBeGreaterThan(-1);
-    expect(step8Idx).toBeGreaterThan(step7Idx);
-    return md.slice(step7Idx, step8Idx);
-  }
-
   it("explicitly states the Agent dispatch blocks and returns the subagent's JSON response directly", () => {
     const step7Section = extractStep7Section(content);
     const lower = step7Section.toLowerCase().replace(/\s+/g, " ");
@@ -1779,5 +1779,23 @@ describe("review.md — Step 7 dispatch is synchronous, no ScheduleWakeup/Monito
     const lower = step7Section.toLowerCase();
     expect(lower).not.toContain("running in the background");
     expect(lower).not.toContain("wait for it to complete");
+  });
+});
+
+describe("review.md — testReadinessContext fallback checks principles.md override (PCO-1.3)", () => {
+  it("testReadinessContext fallback note checks .claude/shipwright/principles.md before falling back", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain(".claude/shipwright/principles.md");
+  });
+
+  it("testReadinessContext fallback note mentions fallback to references/principles.md", () => {
+    const step7Section = extractStep7Section(content);
+    expect(step7Section).toContain("references/principles.md");
+  });
+
+  it("testReadinessContext fallback note describes checking/loading project override before falling back", () => {
+    const step7Section = extractStep7Section(content);
+    const lower = step7Section.toLowerCase();
+    expect(lower).toMatch(/check.*project|project.*override|override.*check/);
   });
 });
