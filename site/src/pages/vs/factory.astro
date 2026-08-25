@@ -17,6 +17,7 @@ const verifiedDate = "August 25, 2026";
 const src = {
   missions: "https://factory.ai/news/missions",
   missionsDocs: "https://docs.factory.ai/features/missions/overview",
+  slack: "https://docs.factory.ai/integrations/slack",
 };
 
 const comparisonRows = [
@@ -49,7 +50,7 @@ const comparisonRows = [
     shipwright:
       "Enforced: tests land in the same PR, written first, CI-green to merge.",
     factory: "Test droid available, not an enforced gate.",
-    citation: null,
+    citation: src.missionsDocs,
   },
   {
     dimension: "Orchestration",
@@ -67,7 +68,7 @@ const comparisonRows = [
   {
     dimension: "Enterprise security",
     shipwright:
-      "SSO via Okta OIDC, role-based access (admin and agent-member), permission scoping, approval gates, and an auditable review trail.",
+      "SSO via Okta OIDC, admin vs. per-agent scoped access (cross-agent calls 403), approval gates, and an auditable review trail.",
     factory:
       "Adds SCIM auto-provisioning, compliance certifications (SOC 2, ISO), Droid Shield secret-scanning, OpenTelemetry, and airgapped deployment.",
     citation: src.missions,
@@ -76,7 +77,7 @@ const comparisonRows = [
     dimension: "Slack workflow",
     shipwright: "First-class: the whole operating loop runs in Slack.",
     factory: "@-mention task delegation.",
-    citation: null,
+    citation: src.slack,
   },
   {
     dimension: "Open source",
@@ -174,8 +175,9 @@ const dimensionRows = comparisonRows.map((row) => ({
     </p>
     <p class="mt-4 max-w-2xl">
       Where Factory is ahead, plainly. Shipwright already ships SSO via Okta
-      OIDC and role-based access with two roles, admin and agent-member,
-      scoped so members see only their own agent. Where Factory is still ahead
+      OIDC and admin-vs-per-agent scoped access: an admin key or session
+      unlocks everything, while a per-agent token is rejected with a 403 on
+      any other agent's routes. Where Factory is still ahead
       is the rest of the enterprise trust layer: SCIM auto-provisioning,
       compliance certifications such as SOC 2 and ISO, Droid Shield
       secret-scanning before anything reaches a model, OpenTelemetry, and

@@ -91,6 +91,18 @@ test("every Factory claim carries a citation link, and the page shows a verified
   ).toBeVisible();
 });
 
+test("specific, non-obvious Factory product claims (Tests-first, Slack workflow) carry a citation link in their row", async ({
+  page,
+}) => {
+  await page.goto("/vs/factory");
+  for (const dimension of ["Tests-first", "Slack workflow"]) {
+    const row = page.locator("table tr", { hasText: dimension });
+    await expect(
+      row.locator('td a[href*="factory.ai"]'),
+    ).toHaveCount(1);
+  }
+});
+
 test("page markets no pricing anywhere", async ({ page }) => {
   await page.goto("/vs/factory");
   await expectBannedPhrasesAbsent(page, [
