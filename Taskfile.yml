@@ -179,11 +179,31 @@ tasks:
       # Traefik profile: exercises the traefik dialect (ingress.yaml) plus the
       # Middleware/http-redirect templates against the traefik.io/v1alpha1
       # Middleware CRD schema (same datreeio CRDs-catalog schema-location
-      # above already resolves it).
+      # above already resolves it). Traefik's own CRDs (IngressRoute,
+      # Middleware, etc.) ship in the subchart's special crds/ directory, which
+      # `helm template` never renders — so no CustomResourceDefinition
+      # documents appear here and no -skip flag is needed.
       - >-
         helm template shipwright charts/shipwright --namespace shipwright
         -f charts/shipwright/examples/values-cloud-native-traefik.yaml
         | kubeconform -strict -summary
+        -schema-location default
+        {{ printf "%s" "-schema-location" }}
+        {{ printf "%s" "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" }}
+      # Cloud-native nginx+cert-manager profile (CNH-8.1): unlike the traefik
+      # profile above, cert-manager ships its CRDs as regular templates
+      # (templates/crd-*.yaml, gated on crds.enabled), so `helm template`
+      # output here DOES contain real CustomResourceDefinition documents — the
+      # CRD *definitions* themselves, not CR instances. kubeconform's default
+      # schema catalog chokes validating those definition bodies, so
+      # -skip CustomResourceDefinition excludes just those documents; every
+      # other rendered object (the chart-managed Issuer's bootstrap ConfigMap,
+      # Deployments, etc.) is still fully validated.
+      - >-
+        helm template shipwright charts/shipwright --namespace shipwright
+        -f charts/shipwright/examples/values-cloud-native.yaml
+        | kubeconform -strict -summary
+        -skip CustomResourceDefinition
         -schema-location default
         {{ printf "%s" "-schema-location" }}
         {{ printf "%s" "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" }}

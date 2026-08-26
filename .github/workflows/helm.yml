@@ -93,6 +93,30 @@ jobs:
                 -schema-location default \
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
 
+      - name: kubeconform validate — cloud-native nginx+cert-manager profile (strict, k8s + CRD schemas)
+        # CNH-8.1: examples/values-cloud-native.yaml bundles cert-manager
+        # (cert-manager.enabled=true), and the jetstack cert-manager subchart
+        # ships its CRDs as regular templates (templates/crd-*.yaml, gated on
+        # crds.enabled — unlike Helm's special crds/ directory that ingress-nginx/
+        # traefik use, which `helm template` never renders), so `helm template`
+        # output here contains real `kind: CustomResourceDefinition` documents —
+        # the CRD *definitions* themselves, not CR instances. kubeconform's
+        # default schema catalog only has schemas for the OpenAPI-recognized
+        # CustomResourceDefinition object shape used by older/nonstandard specs,
+        # and chokes validating cert-manager's (large, structural-schema-heavy)
+        # CRD bodies against it — -skip CustomResourceDefinition excludes just
+        # those definition documents; every other rendered object (Issuer,
+        # Certificate references, Deployments, etc.) is still fully validated.
+        run: |
+          helm template shipwright charts/shipwright --namespace shipwright \
+              -f charts/shipwright/examples/values-cloud-native.yaml \
+            | kubeconform \
+                -strict \
+                -summary \
+                -skip CustomResourceDefinition \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+
   # End-to-end gate: spin a kind cluster and `ct install` the chart per ci/ values
   # variant, running `helm test` against each install.
   helm-e2e:

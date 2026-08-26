@@ -1,0 +1,168 @@
+# ct-discovered values variant: cloud-native profile, ingress-nginx + cert-manager
+# bundled (CNH-8.1). Mirrors examples/values-cloud-native.yaml's shape — a
+# self-contained install that bundles its own ingress controller AND its own
+# cert-manager, issuing a selfsigned cert via a chart-managed Issuer — but
+# tuned for a throwaway single-node kind cluster the way the other ci/
+# variants are: small resource requests/limits, ClusterIP (no cloud
+# LoadBalancer to wait on), and pinned/side-loaded first-party images.
+#
+# This is the ONLY one of the five ci/ variants that bundles cert-manager —
+# ct.yaml's `helm-extra-args: --timeout 600s` exists specifically to cover
+# cert-manager's startupapicheck Job (plus this profile's own bootstrap hook
+# Job, which additionally waits for cert-manager's Deployments to be
+# Available before applying the Issuer) taking longer than Helm's 5m default
+# install timeout on CI's kind cluster.
+#
+# ct install's `helm test` proves this profile end-to-end via
+# templates/tests/test-connection.yaml's ingress-nginx-gated HTTPS block (curls
+# THROUGH the bundled ingress-nginx controller Service, verifying the served
+# cert is the cert-manager-issued one and /task-store/health -> 200) and the
+# new templates/tests/test-cert-issuer.yaml (waits for the chart-managed
+# Issuer + Certificate to reach Ready).
+networking:
+  # networking.type must be "ingress" (or "gateway") once tls.certManager.enabled
+  # is true (values.schema.json's root if/then) — an actual Ingress is needed
+  # for cert-manager's ingress-shim annotations / HTTP-01 solver, unlike the
+  # traefik ci variant below (no cert-manager, so ClusterIP is schema-valid
+  # there — see that file's comment). The bundled ingress-nginx controller's
+  # OWN Service is what is pinned to ClusterIP (ingress-nginx.controller.
+  # service.type below), not this networking.type.
+  type: ingress
+  ingress:
+    host: shipwright.local
+    controller: nginx
+    tls:
+      enabled: true
+      redirect: true
+
+ingress-nginx:
+  # -- Bundle ingress-nginx as this release's ingress controller instead of
+  # relying on kind's own NGINX addon — proves the bundled-subchart install
+  # path itself (Deployment, admission webhook off, IngressClass), which is
+  # what this profile is meant to exercise.
+  enabled: true
+  controller:
+    # -- Small resource footprint so a single-node kind cluster schedules it
+    # alongside the rest of the release quickly.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 90Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+    service:
+      # -- ClusterIP (not the subchart's own LoadBalancer default) — nothing
+      # provisions a cloud LB on kind, and the helm test curls the controller's
+      # Service directly by name, so no external IP is needed.
+      type: ClusterIP
+
+cert-manager:
+  # -- Bundle cert-manager so the chart-managed selfsigned Issuer below can
+  # actually issue a certificate with no out-of-band setup.
+  enabled: true
+  crds:
+    enabled: true
+    # -- Unlike examples/values-cloud-native.yaml's keep:true (a real cluster
+    # you don't want to lose Certificates/Issuers from on accidental
+    # uninstall), CI's kind cluster is torn down after every run — there is
+    # nothing to protect, so let `helm uninstall` remove the CRDs cleanly.
+    keep: false
+  # -- Small resource footprint for the controller/webhook/cainjector pods.
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  webhook:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  cainjector:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+  startupapicheck:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+tls:
+  certManager:
+    enabled: true
+    issuer:
+      create: true
+      kind: Issuer
+      # -- selfsigned: no ACME account/external DNS validation required, so
+      # the install succeeds fully offline on an isolated CI runner.
+      type: selfsigned
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # Dev auth (ADMIN_DEV_AUTH=true), no OAuth — fine for a throwaway CI cluster.
+  mode: open
+
+admin:
+  # Pin repository/tag to the image `helm.yml` builds and side-loads via
+  # `kind load docker-image` (tag 0.1.0 = Chart.yaml appVersion) — pullPolicy
+  # Never means kind uses ONLY this local image, so the reference here must be
+  # an exact match or the pod fails to schedule (ErrImageNeverPull). Overrides
+  # values.yaml's GHCR default (DCC-2.1), which is unpublished at PR time.
+  image:
+    repository: shipwright-admin
+    tag: "0.1.0"
+    pullPolicy: Never
+
+metrics:
+  # pullPolicy Never so kind uses the side-loaded shipwright-metrics image and
+  # never reaches a registry. Postgres mode is exercised via the bundled subchart.
+  # repository/tag pinned to match the image `helm.yml` side-loads (tag 0.1.0 =
+  # Chart.yaml appVersion) — overrides values.yaml's GHCR default (DCC-2.1).
+  image:
+    repository: shipwright-metrics
+    tag: "0.1.0"
+    pullPolicy: Never
+  provider:
+    # Run in offline (fixture) mode — no task-store or admin service available in CI.
+    offline: true
+
+postgresql:
+  enabled: true
+  # Set an explicit password so the install is deterministic across CI re-runs
+  # (a Bitnami auto-generated password is fine for a throwaway cluster, but a
+  # fixed value keeps `helm test`/connectivity checks reproducible). This is a
+  # CI-only, non-secret literal for an ephemeral single-node cluster.
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    password: ci-cloud-native-postgres
+  primary:
+    persistence:
+      # Ephemeral storage — no PVC on the local node.
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi

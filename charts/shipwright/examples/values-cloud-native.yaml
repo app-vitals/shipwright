@@ -32,7 +32,13 @@ cert-manager:
 networking:
   type: ingress
   ingress:
-    host: shipwright.example.com
+    # shipwright.local (not shipwright.example.com) — this profile issues a
+    # selfsigned cert via the bundled cert-manager below, so there is no real
+    # public DNS/CA involved; shipwright.local is this chart's established
+    # placeholder for a locally-resolved hostname (map it to your ingress
+    # controller's Service/LoadBalancer IP in /etc/hosts, same as
+    # examples/values-minikube.yaml). Matches admin.appBaseUrl below.
+    host: shipwright.local
     # Default className ("nginx") matches the bundled ingress-nginx
     # subchart's own default IngressClass name, so no override is needed here.
     controller: nginx
@@ -59,6 +65,16 @@ taskStore:
   expose:
     enabled: true
     pathPrefix: /task-store
+
+admin:
+  # Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL)
+  # so OAuth redirect URIs use the real hostname instead of localhost:3001.
+  # Matches networking.ingress.host above, over HTTPS (TLS terminates on the
+  # Ingress via the bundled cert-manager Issuer configured below) and the
+  # ingress-nginx default HTTPS port (8443 on a local kind/Minikube cluster
+  # forwarding the controller's LoadBalancer/NodePort; use 443 on a real
+  # cluster with a standard front door).
+  appBaseUrl: https://shipwright.local:8443
 
 auth:
   # Real Google OAuth for a public deployment.

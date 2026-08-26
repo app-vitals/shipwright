@@ -1,0 +1,103 @@
+# ct-discovered values variant: cloud-native profile, Traefik bundled, plain
+# HTTP (CNH-8.1). Mirrors examples/values-cloud-native-traefik.yaml's dialect
+# selection (networking.ingress.controller=traefik) and bundled-subchart
+# install path (traefik.enabled=true), but — unlike that example — bundles NO
+# cert-manager and terminates NO TLS: this variant exists purely to exercise
+# the Traefik controller + IngressClass + Middleware/path-routing wiring on a
+# throwaway kind cluster where standing up cert-manager + a real/selfsigned
+# Issuer as well would be redundant with cloud-native-nginx-values.yaml (the
+# only ci/ variant that bundles cert-manager).
+#
+# ct install's `helm test` proves this profile via
+# templates/tests/test-connection.yaml's traefik-gated block: a plain-HTTP curl
+# via a Host header through the bundled traefik Service, checking
+# /task-store/health -> 200.
+networking:
+  # networking.type=ingress (not ClusterIP) so templates/ingress.yaml actually
+  # renders an Ingress with ingressClassName=traefik — the bundled Traefik
+  # controller needs a real Ingress object to route on for the helm test's
+  # Host-header curl (templates/tests/test-connection.yaml's traefik-gated
+  # block) to prove anything beyond "the controller pod is up". No TLS here
+  # (no tls: stanza set) — plain HTTP end to end, unlike the nginx+cert-manager
+  # ci variant.
+  type: ingress
+  ingress:
+    host: shipwright.local
+    className: traefik
+    controller: traefik
+
+traefik:
+  # -- Bundle Traefik as this release's ingress controller — proves the
+  # bundled-subchart install path itself (Deployment, IngressClass, CRDs).
+  enabled: true
+  # -- Small resource footprint so a single-node kind cluster schedules it
+  # alongside the rest of the release quickly.
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  service:
+    spec:
+      # -- ClusterIP (not the subchart's own LoadBalancer default) — nothing
+      # provisions a cloud LB on kind, and the helm test curls the Service
+      # directly by name, so no external IP is needed.
+      type: ClusterIP
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # Dev auth (ADMIN_DEV_AUTH=true), no OAuth — fine for a throwaway CI cluster.
+  mode: open
+
+admin:
+  # Pin repository/tag to the image `helm.yml` builds and side-loads via
+  # `kind load docker-image` (tag 0.1.0 = Chart.yaml appVersion) — pullPolicy
+  # Never means kind uses ONLY this local image, so the reference here must be
+  # an exact match or the pod fails to schedule (ErrImageNeverPull). Overrides
+  # values.yaml's GHCR default (DCC-2.1), which is unpublished at PR time.
+  image:
+    repository: shipwright-admin
+    tag: "0.1.0"
+    pullPolicy: Never
+
+metrics:
+  # pullPolicy Never so kind uses the side-loaded shipwright-metrics image and
+  # never reaches a registry. Postgres mode is exercised via the bundled subchart.
+  # repository/tag pinned to match the image `helm.yml` side-loads (tag 0.1.0 =
+  # Chart.yaml appVersion) — overrides values.yaml's GHCR default (DCC-2.1).
+  image:
+    repository: shipwright-metrics
+    tag: "0.1.0"
+    pullPolicy: Never
+  provider:
+    # Run in offline (fixture) mode — no task-store or admin service available in CI.
+    offline: true
+
+postgresql:
+  enabled: true
+  # Set an explicit password so the install is deterministic across CI re-runs
+  # (a Bitnami auto-generated password is fine for a throwaway cluster, but a
+  # fixed value keeps `helm test`/connectivity checks reproducible). This is a
+  # CI-only, non-secret literal for an ephemeral single-node cluster.
+  auth:
+    database: shipwright_admin
+    username: shipwright
+    password: ci-cloud-native-traefik-postgres
+  primary:
+    persistence:
+      # Ephemeral storage — no PVC on the local node.
+      enabled: false
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
