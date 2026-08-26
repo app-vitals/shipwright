@@ -132,7 +132,7 @@ Ask your agent to change the policy settings in `state/agent-policy.md` — no r
 | `auto_post_reviews` | true | Post reviews to GitHub automatically. Set to `false` to stage reviews locally instead. |
 | `allowed_events` | [COMMENT, APPROVE] | Never REQUEST_CHANGES |
 | `review_external_prs` | true | Review externally-opened PRs |
-| `allow_self_review` | true | Review own PRs |
+| `allow_self_review` | false | Review own PRs |
 | `min_confidence` | 75 | Drop findings below this threshold |
 | `max_findings` | 5 | Trim to highest-confidence findings |
 
@@ -149,7 +149,7 @@ Ask your agent to change the policy settings in `state/agent-policy.md` — no r
 | `auto_post_reviews` | `true` | Post review comments to GitHub immediately. When `false`, reviews are staged locally. |
 | `allowed_events` | `[COMMENT, APPROVE]` | GitHub review event types the agent may emit. Remove `APPROVE` to prevent agent approvals. |
 | `review_external_prs` | `true` | Review PRs opened by users other than the agent. Set `false` to review only the agent's own PRs. |
-| `allow_self_review` | `true` | Allow the agent to review PRs it opened. Set `false` to require a human reviewer on agent-authored PRs. |
+| `allow_self_review` | `false` | Allow the agent to review PRs it opened. Set `false` to require a human reviewer on agent-authored PRs. |
 | `min_confidence` | `75` | Minimum confidence score (0–100) for a finding to appear in a review. Raise it to reduce noise. |
 | `max_findings` | `5` | Maximum findings per review. |
 
