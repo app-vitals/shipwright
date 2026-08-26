@@ -1,0 +1,293 @@
+---
+title: Security
+description: Security architecture overview for Shipwright — deployment model, network controls, human access, Kubernetes RBAC, secrets, GitHub/Slack integration scopes, logging, and current compliance posture.
+section: Operations
+order: 6
+prev: "/docs/the-shipwright-loop"
+next: "/docs/reference"
+---
+
+# Security
+
+This page is a security architecture overview for anyone evaluating Shipwright before deploying it
+against their own infrastructure and repositories. It covers the reference deployment topology,
+network and egress posture, human and machine authentication, Kubernetes RBAC, secrets handling,
+third-party integration scopes, and current logging and compliance posture. Every claim below is
+either how the software behaves today or an explicit statement of what it does not yet do — read
+the gaps as plainly as the features.
+
+Shipwright is self-hosted: you run it in your own Kubernetes cluster, against your own GitHub App
+and Slack app, with your own database. No Shipwright-operated service ever sees your source code,
+your task data, or your credentials.
+
+## Deployment architecture
+
+The reference deployment is a Helm chart (`charts/shipwright`) packaging a small set of services,
+each independently optional except the admin service:
+
+| Service | Port | Role |
+|---|---|---|
+| Admin | 3001 | CRUD API + web UI — agent management, provisioning, task/PR browsing, chat |
+| Metrics | 3460 | Stateless JSON API + dashboard, no database |
+| Task store | 3000 | Opt-in, Postgres-backed work queue (tasks, PRs, scoped tokens) |
+| Chat | 3000 | Opt-in, Postgres-backed chat threads between you and an agent |
+| MCP server | 3010 | Opt-in, proxies MCP tool calls to the task-store API |
+| Agent | — | One Kubernetes Deployment per agent, provisioned dynamically |
+
+Task store, chat, and the MCP server are disabled by default. Per-agent Deployments are only
+created when `agent.provisioning.enabled=true`; each provisioned agent gets its own Secret and
+PersistentVolumeClaim.
+
+```text
+                          ┌─────────────┐
+                          │   Ingress   │  (Gateway API / ALB / nginx / Traefik)
+                          └──────┬──────┘
+                                 │ HTTPS
+              ┌──────────────────┼──────────────────┐
+              │                  │                   │
+        ┌─────▼─────┐      ┌─────▼─────┐       ┌─────▼─────┐
+        │   Admin   │      │  Metrics  │       │    MCP    │
+        │  :3001    │      │  :3460    │       │  :3010    │
+        └─────┬─────┘      └───────────┘       └─────┬─────┘
+              │ provisions                           │ proxies
+        ┌─────▼─────┐                           ┌─────▼─────┐
+        │  Agent(s) │                           │ Task store│
+        │ (per-user │◄──────────────────────────┤  :3000    │
+        │ Deployment)│      task-store token     └───────────┘
+        └───────────┘
+```
+
+### AWS (EKS)
+
+The AWS Load Balancer Controller provisions an ALB from the chart's `Ingress` resource
+(`ingressClassName: alb`). TLS terminates at the ALB, either via an ACM certificate referenced in
+an annotation or via cert-manager. `auth.mode=google` (or `okta`) is required for any
+internet-reachable EKS deployment.
+
+### GCP (GKE)
+
+GKE uses the Gateway API instead of a plain `Ingress`: the chart renders a `Gateway` and
+`HTTPRoute`s targeting the `gke-l7-global-external-managed` GatewayClass, with cert-manager
+issuing TLS via a `ClusterIssuer`. The chart also renders an HTTP→HTTPS redirect route so plaintext
+requests never reach a service.
+
+### Other targets
+
+Plain `Ingress` is also supported with nginx (Minikube, bare-metal) or Traefik, and the chart can
+optionally bundle PostgreSQL (Bitnami subchart), ingress-nginx, Traefik, and cert-manager as
+dependencies — all off by default, so a production install can bring its own database and ingress
+controller instead.
+
+## Network & egress controls
+
+Shipwright does not implement an egress allowlist or firewall inside the application itself.
+Restricting which external hosts a Shipwright service or agent pod can reach is an infrastructure
+decision you make at deploy time — a Kubernetes `NetworkPolicy`, a cloud VPC egress rule, or an
+equivalent control at your network boundary. Every service assumes outbound internet access by
+default (to reach Anthropic's API, GitHub, Slack, and any configured third-party voice provider)
+unless you add your own network policy.
+
+The one exception is voice. Speech-to-text and text-to-speech can run **fully self-hosted with zero
+third-party network calls**: `agent.voice.provider=whisper` runs speech-to-text as a self-hosted
+Whisper pod, and Piper — the default text-to-speech engine — is a self-hosted binary baked into the
+agent image and invoked as a local subprocess (stdin in, WAV file out), never making a network
+call. Opting into `agent.voice.provider=groq` or setting `agent.voice.elevenlabs.apiKey` each
+independently reintroduce egress to that respective third party. Voice is the only subsystem where
+egress is architecturally eliminable; treat everything else as requiring outbound internet access
+unless you've fenced it off yourself.
+
+> **Security:** if you require a fully egress-locked deployment, plan on writing your own
+> `NetworkPolicy` (or cloud firewall rules) — Shipwright does not ship one, and does not enforce
+> any egress restriction on your behalf.
+
+## Human access
+
+The admin service supports three authentication modes, set via `auth.mode`:
+
+| Mode | Use case | Notes |
+|---|---|---|
+| `open` | Local development only | No real authentication — hard-blocked in production regardless of configuration |
+| `google` | Production | Google OAuth 2.0 |
+| `okta` | Production | Okta OIDC |
+
+`google` and `okta` can be configured simultaneously — the login page shows both providers — and
+both gate on the same `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` allowlist, a comma-separated list of email
+addresses. Only listed emails may sign in, regardless of which provider they authenticate through.
+Session state is an `admin_session` httpOnly JWT cookie valid for 8 hours.
+
+A human doesn't need to be an admin to get scoped access: adding their email as an `AgentMember` on
+a specific agent grants them visibility into that one agent's detail page and Slack access, without
+putting them on the admin allowlist or exposing any other agent.
+
+> **Security:** `auth.mode=open` performs no authentication — anyone who can reach the admin
+> service is treated as a logged-in user. Use it only on a local cluster or behind a private
+> network you fully control.
+
+### Programmatic access
+
+The admin API checks three auth paths, in order:
+
+1. **Admin API key** — a bearer token matching an entry in `SHIPWRIGHT_ADMIN_API_KEYS`
+   (comma-separated `name:token:scope` tuples). Full admin access.
+2. **Per-agent bearer token** — a bearer token scoped to one agent id. Cross-agent access returns
+   `403`.
+3. **Session cookie** — the same `admin_session` cookie used by the web UI.
+
+## Kubernetes service accounts & RBAC
+
+RBAC for agent provisioning is entirely opt-in: nothing related to it is rendered by the Helm chart
+unless `agent.provisioning.enabled=true` (default `false`). When it is enabled, the chart grants
+the admin ServiceAccount exactly the verbs the provisioner exercises — nothing broader:
+
+| Resource | Verbs |
+|---|---|
+| Deployments (`apps`) | `create`, `get`, `list`, `patch`, `update`, `delete` |
+| Secrets (core) | `create`, `get`, `delete` |
+| PersistentVolumeClaims (core) | `create`, `get`, `delete` |
+
+By default this is a namespace-scoped `Role` + `RoleBinding` in the release namespace. If you set
+`agent.provisioning.namespace` to provision agents into a different namespace, the chart renders a
+`ClusterRole` + `ClusterRoleBinding` with the same verb set instead, so provisioning still reaches
+no further than these specific operations.
+
+Provisioned agents run under their own, separate ServiceAccount — distinct from the admin
+ServiceAccount that provisions them — and that agent ServiceAccount is granted no additional RBAC
+by the chart. An agent pod runs with the cluster's default (empty) permissions unless you
+explicitly add more.
+
+## Secrets & service-to-service auth
+
+Secret values — env vars, Slack tokens, Anthropic API keys — are encrypted at the service layer
+with AES-256-GCM when `SHIPWRIGHT_ENCRYPTION_KEY` (a 64-character hex string, 32 bytes) is set. If
+this key is left unset, secrets are stored in plain text and a warning is logged at startup;
+setting it is something you should do before any production use.
+
+Agent API tokens are never stored reversibly: only their SHA-256 hash is persisted, and the raw
+token value is shown exactly once, at creation time.
+
+When per-agent Kubernetes provisioning is enabled, each agent gets its own dedicated Secret
+carrying a task-store token (`SHIPWRIGHT_TASK_STORE_TOKEN`) and, if chat is enabled, a
+chat-service token (`SHIPWRIGHT_CHAT_SERVICE_TOKEN`). Both are scoped to that single agent and are
+revoked automatically when the agent is deleted.
+
+## GitHub App integration
+
+Shipwright authenticates to GitHub either as a GitHub App (recommended — `GH_APP_ID`,
+`GH_APP_INSTALLATION_ID`, `GH_APP_PRIVATE_KEY`) or, as a fallback, a personal access token
+(`GH_TOKEN`). The default GitHub App permission manifest requests exactly:
+
+| Permission | Access |
+|---|---|
+| Contents | Write |
+| Pull requests | Write |
+| Actions | Read |
+| Workflows | Write |
+
+There is no webhook receiver in the codebase — the app manifest sets no webhook configuration, and
+Shipwright does not accept inbound GitHub webhook events. All GitHub interaction is Shipwright
+calling out to the GitHub API, never GitHub calling in.
+
+## Slack App integration
+
+Slack access is configured per deployment with three required env vars — `SLACK_BOT_TOKEN` (bot
+OAuth token), `SLACK_APP_TOKEN` (Socket Mode app-level token), and `SLACK_SIGNING_SECRET` (verifies
+inbound request signatures) — plus optional vars (`SLACK_ADMIN_TOKEN` for privileged operations,
+`SLACK_ALERT_CHANNEL`, `SLACK_OWNER_USER`).
+
+There is no single, centrally codified Slack app manifest shipped with the project. Each operator
+provisions their own Slack app — the admin console's provisioning wizard automates app creation and
+OAuth — and supplies the resulting tokens as env vars. Permissions are implied by how those tokens
+are used (Socket Mode connection, bot messaging, DM/mention handling), not enumerated in a single
+static scope list.
+
+## One agent per user
+
+Every GitHub PR/commit and Slack message an agent sends carries that agent's own bot identity, so
+attribution is a function of how many humans share one agent. Running **one Shipwright agent per
+human user (or per accountable team)** keeps every change traceable to a single owner; sharing one
+bot identity across many humans makes attribution ambiguous.
+
+Two independent, optional scoping controls narrow an agent's exposure further:
+
+- **`restrictSlackToMembers`** (default `false`) — when `true`, only Slack users registered as that
+  agent's members can DM or mention it; when `false`, any user in the Slack workspace can.
+- **`authorAllowlist`** (default empty, meaning anyone) — a list of GitHub logins whose pull
+  requests the agent will act on. An empty allowlist means any authenticated GitHub user's PRs are
+  eligible.
+
+## Admins vs. agent members
+
+Access control is layered around two roles:
+
+- **Admins** — anyone on `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, or holding an admin API key, can see
+  and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and
+  deletion.
+- **Agent members** — a non-admin human, added as an `AgentMember` (by email) to one specific
+  agent, can see that agent's detail page and, if Slack access is restricted to members, message it
+  — without any visibility into or control over the rest of the fleet.
+
+This lets you grant a teammate scoped visibility into "their" agent without making them an admin
+over every agent in the deployment.
+
+## Logging, monitoring & observability
+
+Sentry integration is opt-in and inert by default — zero telemetry is sent unless `SENTRY_DSN` is
+set, independently, on each service (admin, metrics, task-store, agent).
+
+**What's captured**, when enabled:
+
+- Unhandled exceptions and 5xx errors, with stack traces
+- `console.log` / `console.warn` / `console.error` calls, forwarded as structured logs
+- Request path and method for HTTP errors
+- Caller identity — which admin or agent token triggered an error — for tracing
+
+**What's never captured**, unconditionally:
+
+- `Authorization` and `Cookie` header values — redacted to `[Filtered]` regardless of configuration
+- Request or response bodies — never attached to an event
+- The live value of any secret-shaped env var — redacted wherever it appears, including nested
+  inside longer strings
+
+Self-hosted Sentry is fully supported: point `SENTRY_DSN` at your own instance and everything above
+applies the same way.
+
+Shipwright does not currently provide a tool-call-level audit log — there is no immutable,
+queryable record of every individual tool invocation an agent makes. Sentry's caller-identity
+capture on the error path is not a substitute for a full audit trail; if you need one today, you'll
+need to build it on top of your own logging pipeline.
+
+## Compliance posture
+
+Shipwright does not currently hold SOC 2, ISO 27001, ISO 42001, or any other third-party compliance
+certification.
+
+## FAQ
+
+**Where does my source code go?**
+Nowhere outside your own infrastructure. Shipwright is self-hosted — the agent runs in your
+Kubernetes cluster, against your own GitHub App and repositories. There is no third-party code
+execution and no Shipwright-operated service that ever receives your source.
+
+**What happens if `SHIPWRIGHT_ENCRYPTION_KEY` is never set?**
+Secrets (env values, Slack tokens, API keys) are stored in plain text in the database, with a
+warning logged at startup. There's no forced failure — the service still runs — so this is
+something you need to set deliberately before any production use.
+
+**Can I run with zero third-party network calls?**
+Voice can: self-hosted Whisper for speech-to-text plus the default Piper text-to-speech engine make
+zero outbound calls. Every other Shipwright service assumes outbound internet access by default (to
+reach Anthropic, GitHub, and Slack). Restricting egress further is your responsibility, via your
+own Kubernetes `NetworkPolicy` or cloud firewall rules.
+
+**Is there an audit log of every action an agent takes?**
+Not a tool-call-level one, today. Sentry (when enabled) captures caller identity on the error path,
+but that's not a full audit trail of every tool invocation.
+
+**Does Shipwright have SOC 2 or similar certifications?**
+No, not currently.
+
+**Do I need to expose the admin service to the public internet?**
+No. `networking.type=ClusterIP` (the default) keeps every service reachable only via
+`kubectl port-forward` inside the cluster. Public exposure via Ingress or Gateway API is a choice
+you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is required the
+moment you do.
