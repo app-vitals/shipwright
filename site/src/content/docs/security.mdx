@@ -259,22 +259,19 @@ bot identity across many humans makes attribution ambiguous.
 
 Two independent, optional scoping controls narrow an agent's exposure further:
 
-- **`restrictSlackToMembers`** (default `false`) — when `true`, only Slack users registered as that
-  agent's members can DM or mention it; when `false`, any user in the Slack workspace can.
-- **`authorAllowlist`** (default empty, meaning anyone) — a list of GitHub logins whose pull
-  requests the agent will act on. An empty allowlist means any authenticated GitHub user's PRs are
-  eligible.
+| Control | Default | Effect |
+|---|---|---|
+| `restrictSlackToMembers` | `false` | When `true`, only Slack users registered as that agent's members can DM or mention it; when `false`, any user in the Slack workspace can |
+| `authorAllowlist` | empty (anyone) | A list of GitHub logins whose pull requests the agent will act on. An empty allowlist means any authenticated GitHub user's PRs are eligible |
 
 ## Admins vs. agent members
 
 Access control is layered around two roles:
 
-- **Admins** — anyone on `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, or holding an admin API key, can see
-  and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and
-  deletion.
-- **Agent members** — a non-admin human, added as an `AgentMember` (by email) to one specific
-  agent, can see that agent's detail page and, if Slack access is restricted to members, message it
-  — without any visibility into or control over the rest of the fleet.
+| Role | Grant mechanism | Scope/Visibility |
+|---|---|---|
+| Admin | Listed in `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, or holding an admin API key | Can see and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and deletion |
+| Agent Member | Added as an `AgentMember` (by email) to one specific agent | Can see that agent's detail page and, if Slack access is restricted to members, message it — without any visibility into or control over the rest of the fleet |
 
 This lets you grant a teammate scoped visibility into "their" agent without making them an admin
 over every agent in the deployment.

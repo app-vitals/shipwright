@@ -157,3 +157,27 @@ test("security page shows secrets/token table under Secrets & service-to-service
   });
   await expect(cell.first()).toBeVisible();
 });
+
+test("security page shows one agent per user scoping controls table", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", { hasText: /one agent per user/i });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr", { hasText: /restrictSlackToMembers/i });
+  await expect(row.first()).toBeVisible();
+});
+
+test("security page shows admins vs agent members table", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", {
+    hasText: /admins.*members|agent members/i,
+  });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr", { hasText: /admin/i });
+  await expect(row.first()).toBeVisible();
+});
