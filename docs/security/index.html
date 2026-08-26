@@ -440,16 +440,23 @@ seeded from the shipped template) sets <code>allow_self_review: false</code>, so
 reviewing its own open PRs. Automated merging is disabled by default too — the <code>shipwright-deploy</code>
 cron ships off, so nothing merges without a human clicking merge in the GitHub UI.</p>
 <p>If Shipwright itself performs a merge — because you’ve enabled <code>shipwright-deploy</code>, or a human
-runs the merge command directly — it uses an administrator-level override (<code>gh pr merge --admin</code>)
-that bypasses branch protection’s required-approval rule, on the premise that Shipwright’s own
-review-and-CI gate substitutes for it.</p>
+runs the merge command directly — it squash-merges the PR as a normal merge (<code>gh pr merge --squash</code>,
+no admin override), which defers to GitHub’s branch protection natively rather than bypassing it.
+In practice this rarely blocks, because most repos either have no review requirement configured or
+have the merging identity listed as a <strong>bypass actor</strong> on the active ruleset. If a repo <em>does</em> have
+a required-review rule that the merging identity can’t bypass, the merge command fails with GitHub’s
+native “base branch policy prohibits the merge” error; Shipwright detects that specific failure,
+releases its claim on the task, and marks the task/PR <strong>blocked</strong> with a note explaining that a
+self-review approval doesn’t satisfy a native required-review rule — a human then needs to add a
+real approval or configure the identity as a ruleset bypass actor.</p>
 <p>For environments that need a specific, named human to be the actual approver — not just “not the
 same agent,” but a person you’ve designated (SOC 2-style segregation of duties) — add your
 reviewers as GitHub <strong>CODEOWNERS</strong> for the repository, or at minimum for <code>.github/workflows/**</code>,
-and require review from Code Owners in branch protection. Neither self-review nor another agent’s
-review satisfies a Code Owners requirement; only a human on that list does. Keep
-<code>shipwright-deploy</code> disabled in this configuration (its default state) so every merge stays an
-explicit human action.</p>
+require review from Code Owners in branch protection, and do <strong>not</strong> list the agent identity as a
+bypass actor on that ruleset. Neither self-review nor another agent’s review satisfies a Code
+Owners requirement; only a human on that list does, and with no bypass actor configured, Shipwright’s
+merge will correctly block until a human approves. Keep <code>shipwright-deploy</code> disabled in this
+configuration (its default state) so every merge stays an explicit human action.</p>
 <h2 id="one-agent-per-user">One agent per user</h2>
 <p>Every GitHub PR/commit and Slack message an agent sends carries that agent’s own bot identity, so
 attribution is a function of how many humans share one agent. Running <strong>one Shipwright agent per
