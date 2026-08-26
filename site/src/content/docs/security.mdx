@@ -106,7 +106,7 @@ The admin service supports three authentication modes, set via `auth.mode`:
 
 | Mode | Use case | Notes |
 |---|---|---|
-| `open` | Local development only | No real authentication — hard-blocked in production regardless of configuration |
+| `open` | Local development only | No real authentication — a deliberate insecure escape hatch; the chart overrides `NODE_ENV` to route around the only runtime guard that exists, so it is *not* blocked in production and must never be selected for an internet-reachable deployment |
 | `google` | Production | Google OAuth 2.0 |
 | `okta` | Production | Okta OIDC |
 
