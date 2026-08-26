@@ -3,20 +3,25 @@ suite: cert-manager Issuer (templates/cert-manager-issuer.yaml)
 # (declared as unused groundwork in CNH-2.1) and wires it into a new,
 # guard-only templates/cert-manager-issuer.yaml, mirroring the
 # guard-here/body-in-helper split templates/certificate.yaml already uses.
-# Render guard: `shipwright.certManager.createIssuer && !viaHook` — createIssuer
-# is true only when tls.certManager.issuer.create=true AND
+# Render guard: `tls.certManager.enabled && shipwright.certManager.createIssuer
+# && !viaHook` — enabled is the documented master off-switch for the whole
+# cert-manager integration (mirrors templates/certificate.yaml's guard);
+# createIssuer is true only when tls.certManager.issuer.create=true AND
 # tls.certManager.issuerRef.name is empty (an explicit issuerRef.name always
 # means bring-your-own-Issuer and suppresses chart-managed creation, even if
 # issuer.create is also set). viaHook is a future hook-based-issuance escape
 # hatch that always renders falsy today (see _helpers.tpl), so this guard is
-# unconditionally equivalent to `issuer.create=true && !issuerRef.name` for
-# every input reachable today. Default values (issuer.create=false) render
-# ZERO documents from this template — see the "byte-identical default" test
-# below and acceptance criterion 3.
+# unconditionally equivalent to `enabled=true && issuer.create=true &&
+# !issuerRef.name` for every input reachable today. Default values
+# (enabled=false, issuer.create=false) render ZERO documents from this
+# template — see the "byte-identical default" test below and acceptance
+# criterion 3.
 tests:
   - it: renders a letsencrypt Issuer wired to email/server/ingressClassName when issuer.create=true (default kind Issuer)
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.email: admin@example.com
       tls.certManager.issuer.server: https://acme-staging-v02.api.letsencrypt.org/directory
@@ -53,6 +58,8 @@ tests:
   - it: defaults the ACME server to the Let's Encrypt production endpoint when unset
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.email: admin@example.com
     asserts:
@@ -63,6 +70,8 @@ tests:
   - it: fails the render with a message naming tls.certManager.issuer.email when letsencrypt is missing an email
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.email: ""
     asserts:
@@ -72,6 +81,8 @@ tests:
   - it: renders a selfsigned Issuer with spec.selfSigned and no acme block
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.type: selfsigned
     asserts:
@@ -86,6 +97,8 @@ tests:
   - it: renders a ClusterIssuer with no metadata.namespace when issuer.kind=ClusterIssuer
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.kind: ClusterIssuer
       tls.certManager.issuer.type: selfsigned
@@ -98,6 +111,8 @@ tests:
   - it: renders NO Issuer when an explicit issuerRef.name is set (bring-your-own-Issuer suppresses chart-managed creation)
     template: templates/cert-manager-issuer.yaml
     set:
+      tls.certManager.enabled: true
+      networking.type: ingress
       tls.certManager.issuer.create: true
       tls.certManager.issuer.type: selfsigned
       tls.certManager.issuerRef.name: my-issuer
@@ -105,7 +120,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders NO Issuer when only tls.certManager.enabled=true is set, without issuer.create (forward-compat guard for CNH-7.1 — proves the guard keys off issuer.create, not enabled)
+  - it: renders NO Issuer when only tls.certManager.enabled=true is set, without issuer.create (forward-compat guard for CNH-7.1 — proves the guard also requires createIssuer, not just enabled)
     template: templates/cert-manager-issuer.yaml
     set:
       tls.certManager.enabled: true
@@ -115,7 +130,16 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders NO Issuer with default values (issuer.create defaults to false)
+  - it: renders NO Issuer when issuer.create=true but tls.certManager.enabled is left at its default false (the documented master off-switch must suppress chart-managed Issuer creation too)
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO Issuer with default values (enabled and issuer.create both default to false)
     template: templates/cert-manager-issuer.yaml
     asserts:
       - hasDocuments:
