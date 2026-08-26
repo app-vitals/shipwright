@@ -281,19 +281,15 @@ over every agent in the deployment.
 Sentry integration is opt-in and inert by default — zero telemetry is sent unless `SENTRY_DSN` is
 set, independently, on each service (admin, metrics, task-store, agent).
 
-**What's captured**, when enabled:
-
-- Unhandled exceptions and 5xx errors, with stack traces
-- `console.log` / `console.warn` / `console.error` calls, forwarded as structured logs
-- Request path and method for HTTP errors
-- Caller identity — which admin or agent token triggered an error — for tracing
-
-**What's never captured**, unconditionally:
-
-- `Authorization` and `Cookie` header values — redacted to `[Filtered]` regardless of configuration
-- Request or response bodies — never attached to an event
-- The live value of any secret-shaped env var — redacted wherever it appears, including nested
-  inside longer strings
+| Data | Captured by Sentry? |
+|---|---|
+| Unhandled exceptions and 5xx errors, with stack traces | Yes |
+| `console.log` / `console.warn` / `console.error` calls, forwarded as structured logs | Yes |
+| Request path and method for HTTP errors | Yes |
+| Caller identity — which admin or agent token triggered an error | Yes |
+| `Authorization` and `Cookie` header values | Redacted — replaced with `[Filtered]` regardless of configuration |
+| Request or response bodies | No — never attached to an event |
+| The live value of any secret-shaped env var | Redacted — scrubbed wherever it appears, including nested inside longer strings |
 
 Self-hosted Sentry is fully supported: point `SENTRY_DSN` at your own instance and everything above
 applies the same way.
