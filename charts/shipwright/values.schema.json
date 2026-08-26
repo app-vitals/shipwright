@@ -612,6 +612,55 @@
       },
       "required": ["enabled"]
     },
+    "ingress-nginx": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "controller": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "admissionWebhooks": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "traefik": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "cert-manager": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "crds": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "keep": { "type": "boolean" }
+          }
+        },
+        "startupapicheck": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
     "externalDatabase": {
       "type": "object",
       "additionalProperties": false,

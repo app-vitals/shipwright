@@ -62,6 +62,13 @@ Checks (each `fail`s independently — first failing check wins):
      hard-fail the render on that schema-valid-but-inert combination —
      `values.schema.json`'s issuerRef/issuer.create `anyOf` constraint itself
      only activates when `enabled=true`.
+  6. `ingress-nginx.enabled=true` AND `traefik.enabled=true` at once (CNH-6.1).
+     These are the two BUNDLED ingress controller SUBCHARTS (Chart.yaml
+     dependencies, unrelated to the controller-dialect flags checks 1/2/4
+     already cover) — installing both simultaneously would deploy two
+     competing ingress controllers into the same cluster, almost certainly
+     unintentional. Bundling only one (or neither, bring-your-own) is
+     supported.
 */}}
 {{- define "shipwright.validate" -}}
 {{- $ingress := .Values.networking.ingress -}}
@@ -86,5 +93,8 @@ Checks (each `fail`s independently — first failing check wins):
 {{- $bundledClass := include "shipwright.bundledIngressClass" . -}}
 {{- if and $className (ne $className $bundledClass) (or (eq $className "nginx") (eq $className "traefik")) -}}
 {{- fail (printf "networking.ingress.className=%s contradicts the class implied by networking.ingress.controller=%s (%s). Align className with controller, or use an IngressClass name this chart does not special-case (e.g. \"alb\")." $className $controller $bundledClass) -}}
+{{- end -}}
+{{- if and (index .Values "ingress-nginx" "enabled") (.Values.traefik.enabled) -}}
+{{- fail "ingress-nginx.enabled=true and traefik.enabled=true are both set — both bundled ingress controller subcharts are enabled at once. Enable only one (or neither, to bring your own)." -}}
 {{- end -}}
 {{- end -}}

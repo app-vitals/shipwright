@@ -1,0 +1,69 @@
+# Example: fully self-contained "cloud-native" install — bundles BOTH the
+# ingress-nginx and cert-manager subcharts (CNH-6.1), so no ingress controller
+# or cert-manager needs to pre-exist in the cluster. Good starting point for a
+# fresh cluster (e.g. a cloud-managed Kubernetes node pool with no add-ons
+# installed yet) where you want `helm install` alone to stand up the full
+# stack, ingress included.
+#
+# This is NOT a ct-discovered ci/ values variant, so it is kept under
+# examples/ rather than ci/. `ct install`'s kind cluster already runs its own
+# NGINX ingress addon; bundling a second ingress-nginx controller (Deployment,
+# admission webhook, IngressClass, etc.) on top of that during CI install
+# would be redundant and could collide with the cluster-provided one. Render
+# it directly instead:
+#
+#   helm template shipwright charts/shipwright \
+#     -f charts/shipwright/examples/values-cloud-native.yaml
+#
+# Prerequisites on a real cluster: none beyond a working Kubernetes API server
+# — this file bundles everything else it needs.
+
+ingress-nginx:
+  # -- Deploy the bundled ingress-nginx subchart as this cluster's ingress
+  # controller (instead of relying on one that's already installed).
+  enabled: true
+
+cert-manager:
+  # -- Deploy the bundled cert-manager subchart (instead of relying on one
+  # that's already installed) so TLS certs can be issued without any
+  # out-of-band setup.
+  enabled: true
+
+networking:
+  type: ingress
+  ingress:
+    host: shipwright.example.com
+    # Default className ("nginx") matches the bundled ingress-nginx
+    # subchart's own default IngressClass name, so no override is needed here.
+    controller: nginx
+    tls:
+      enabled: true
+      redirect: true
+
+tls:
+  # Issue a TLS cert via the bundled cert-manager, using a chart-managed
+  # selfsigned Issuer — no ACME account/external DNS validation required, so
+  # this example works offline / on a cluster with no public ingress yet.
+  # Switch issuer.type to "letsencrypt" (and set issuer.email) for a real
+  # publicly-trusted certificate once the cluster is reachable from the
+  # internet.
+  certManager:
+    enabled: true
+    issuer:
+      create: true
+      kind: Issuer
+      type: selfsigned
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # Real Google OAuth for a public deployment.
+  mode: google
+  google:
+    clientId: REPLACE_ME
+    clientSecret: REPLACE_ME
+    allowedEmails: you@example.com

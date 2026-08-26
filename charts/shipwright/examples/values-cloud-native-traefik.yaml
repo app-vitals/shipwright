@@ -2,6 +2,16 @@
 # redirect enabled, and the task-store API exposed externally under
 # /task-store.
 #
+# CNH-6.1: also bundles the Traefik subchart itself (traefik.enabled=true)
+# rather than assuming an externally-installed Traefik — this file now
+# exercises BOTH the controller-dialect selection (networking.ingress.
+# controller=traefik, the annotation/path-rewriting flavor in
+# templates/ingress.yaml) AND the bundled-subchart install path (the actual
+# Traefik Deployment/IngressClass/CRDs shipped as a chart dependency). The two
+# are independently wired (see values.yaml's traefik: block and
+# Chart.yaml's traefik dependency) but are meant to be used together for a
+# self-contained Traefik install, which is what this example demonstrates.
+#
 # This is NOT a ct-discovered ci/ values variant. The kind cluster `ct install`
 # uses runs the NGINX ingress addon and has NO Traefik CRDs (traefik.io/v1alpha1
 # Middleware) installed, so a values file that sets
@@ -16,11 +26,15 @@
 #     -f charts/shipwright/examples/values-cloud-native-traefik.yaml
 #
 # Prerequisites on a real cluster:
-#   - Traefik installed as the ingress controller, with the
-#     traefik.io/v1alpha1 CRDs (Middleware, IngressRoute, etc.) applied.
+#   - None for Traefik itself — bundled via traefik.enabled=true below.
 #   - cert-manager installed, with a ClusterIssuer named below (e.g.
 #     letsencrypt-prod), OR bring your own TLS Secret via
 #     networking.ingress.tls.secretName.
+
+traefik:
+  # -- Deploy the bundled Traefik subchart as this cluster's ingress
+  # controller (instead of relying on one that's already installed).
+  enabled: true
 
 networking:
   # Render an Ingress (templates/ingress.yaml) plus the Traefik-specific

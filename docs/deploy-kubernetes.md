@@ -8,10 +8,10 @@ The chart lives at [`charts/shipwright`](../charts/shipwright) and is also
 published to a Helm repo on every chart version bump (see
 [`helm-repo.md`](./helm-repo.md)). It packages the admin (port **3001**), metrics
 (port **3460**), agent (port **3000**), task-store (port **3000**), optional chat
-(port **3000**), and optional MCP server (port **3010**) services plus an optional bundled
-PostgreSQL dependency, with Minikube-friendly defaults throughout. Task-store, chat, and
-MCP server are disabled by default; the agent is provisioned dynamically when
-`agent.provisioning.enabled=true` is set.
+(port **3000**), and optional MCP server (port **3010**) services plus optional bundled
+dependencies (PostgreSQL, ingress-nginx, Traefik, cert-manager), with Minikube-friendly defaults
+throughout. Task-store, chat, MCP server, and all bundled dependencies are disabled by default;
+the agent is provisioned dynamically when `agent.provisioning.enabled=true` is set.
 
 This guide covers four deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
@@ -23,6 +23,7 @@ concerns shared by all of them:
 - [Agent runtime provisioning model](#agent-runtime-provisioning-model)
 - [Authentication modes](#authentication-modes)
 - [Bringing your own PostgreSQL / Bitnami registry fallback](#bringing-your-own-postgresql--bitnami-registry-fallback)
+- [Bundled ingress controllers and cert-manager (optional)](#bundled-ingress-controllers-and-cert-manager-optional)
 
 > Two install paths are interchangeable below. Install from the local chart
 > source (`charts/shipwright`) when working in this repo, or from the published
@@ -215,15 +216,16 @@ From the repo root:
 task minikube:up
 ```
 
-That handles the five ordering constraints that otherwise fail confusingly:
+That handles the key ordering constraints that otherwise fail confusingly:
 VM sizing (only settable at `minikube start`), the ingress addon (must precede
 the install, or the Ingress has no controller), waiting for the ingress
 controller's admission webhook pod to be Ready (installing immediately after
 enabling the addon races it — the webhook Service has no ready endpoint yet
 and helm fails with "connect: connection refused"), `helm dependency build`
-(the PostgreSQL subchart is OCI-pinned in `Chart.lock`), and the `/etc/hosts`
-entry (only possible once there's a routable address to point it at). It then
-waits on each Deployment individually and runs `helm test`.
+(all optional subcharts — PostgreSQL, ingress-nginx, Traefik, cert-manager — are
+pinned in `Chart.lock`), and the `/etc/hosts` entry (only possible once there's a
+routable address to point it at). It then waits on each Deployment individually and
+runs `helm test`.
 
 With the `docker` driver (the default on macOS/Colima), `minikube ip` returns
 an address on a Docker-internal network the host can't route to at all, so the
@@ -968,8 +970,129 @@ changing the chart, or bring your own database:
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
   ```
 
-The full image-override / mirror guidance and the exact pinned version are in
-[the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
+  The full image-override / mirror guidance and the exact pinned version are in
+  [the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
+
+---
+
+## Bundled ingress controllers and cert-manager (optional)
+
+The chart includes **optional bundled subcharts** for ingress-nginx, Traefik, and
+cert-manager, all disabled by default. Bring your own ingress controller and
+certificate issuer unless you opt in — this keeps default deployments lightweight.
+
+### Ingress-nginx (bundled, optional)
+
+Enable the bundled ingress-nginx subchart to run the NGINX ingress controller
+alongside Shipwright:
+
+```yaml
+ingress-nginx:
+  enabled: true
+```
+
+By default, the admission webhook is **disabled** (`controller.admissionWebhooks.enabled=false`)
+because it requires a Kubernetes API server reachable at install time — an unsafe
+requirement for fresh installs. If your cluster can tolerate it (e.g., you're
+upgrading an existing release), enable it:
+
+```yaml
+ingress-nginx:
+  enabled: true
+  controller:
+    admissionWebhooks:
+      enabled: true
+```
+
+**Only one bundled ingress controller is allowed at a time.** Enabling both
+ingress-nginx and Traefik together will fail validation:
+
+```yaml
+ingress-nginx:
+  enabled: true
+traefik:
+  enabled: true  # ❌ Error: both ingress controllers cannot run simultaneously
+```
+
+### Traefik (bundled, optional)
+
+Enable the bundled Traefik subchart to run the Traefik ingress controller:
+
+```yaml
+traefik:
+  enabled: true
+```
+
+This is independent of `networking.ingress.controller=traefik` (which only selects
+Traefik-flavored annotations in the chart's `Ingress` manifest). Set **both** to
+fully bundle and use Traefik end-to-end:
+
+```yaml
+networking:
+  type: ingress
+  ingress:
+    controller: traefik  # Select Traefik annotation style
+traefik:
+  enabled: true         # Also bundle and run the Traefik controller
+```
+
+As with ingress-nginx, enabling Traefik alongside ingress-nginx is not permitted
+— validation will reject the render.
+
+### cert-manager (bundled, optional)
+
+Enable the bundled cert-manager subchart to run the cert-manager controller:
+
+```yaml
+cert-manager:
+  enabled: true
+  crds:
+    enabled: true   # Install cert-manager's CRDs (v1.15+ convention)
+    keep: true      # Keep CRDs on `helm uninstall`
+  startupapicheck:
+    enabled: true   # Run post-install readiness check
+```
+
+The subchart automatically installs cert-manager's CRDs inline (no separate CRD
+chart needed per jetstack v1.15+ convention) and runs a startup API check to ensure
+the CRDs are ready. When you `helm uninstall`, the CRDs are preserved to avoid
+deleting custom resources (Certificates, Issuers, etc.) cluster-wide.
+
+This is independent of `tls.certManager.enabled` and the chart's own Issuer
+creation (`tls.certManager.issuer.create`). The bundled cert-manager subchart is
+purely the **controller** — the chart's TLS wiring picks up that controller and
+uses it. You can run cert-manager elsewhere and leave this bundled subchart
+disabled; or enable it here to bring both controller and TLS wiring up together.
+
+### All three together (self-contained cloud-native setup)
+
+For a **fully self-contained install** with no external dependencies, enable all
+three:
+
+```yaml
+ingress-nginx:
+  enabled: true
+cert-manager:
+  enabled: true
+  crds:
+    enabled: true
+    keep: true
+  startupapicheck:
+    enabled: true
+networking:
+  type: ingress
+tls:
+  certManager:
+    enabled: true
+    issuer:
+      create: true
+      type: letsencrypt
+      # ... issuer config
+```
+
+Example value files are provided:
+- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager
+- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager
 
 ---
 

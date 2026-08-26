@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.15.0
+version: 1.16.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,6 +30,8 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: added
+      description: "bundle optional ingress-nginx/traefik/cert-manager subcharts, default off (CNH-6.1): Chart.yaml grows three new dependencies alongside the existing postgresql one — ingress-nginx (4.15.1, https://kubernetes.github.io/ingress-nginx, condition ingress-nginx.enabled), traefik (41.3.0, https://traefik.github.io/charts, condition traefik.enabled), and cert-manager (v1.21.1, https://charts.jetstack.io, condition cert-manager.enabled) — each vendored as a .tgz under charts/shipwright/charts/ with Chart.lock pinning exact versions (no ranges). All three default to disabled (values.yaml top-level ingress-nginx.enabled/traefik.enabled/cert-manager.enabled: false), so `helm template` output with default values is byte-identical to before this change. values.yaml also sets ingress-nginx.controller.admissionWebhooks.enabled=false (the admission webhook path needs a job that reaches a running API server at install time, unsafe to force on by default) and, within the cert-manager block, crds.enabled=true/crds.keep=true/startupapicheck.enabled=true (so enabling cert-manager.enabled=true renders its CRDs inline — no separate CRD chart needed, per the jetstack chart's v1.15+ convention). values.schema.json documents the three new hyphenated top-level keys with loose (additionalProperties: true) `enabled`-only shapes, matching the existing postgresql entry's style. New templates/_validation.tpl check: ingress-nginx.enabled=true together with traefik.enabled=true fails the render (two bundled ingress controller subcharts installed simultaneously is contradictory), surfaced via the existing shipwright.validate call in NOTES.txt. New tests/bundled_subcharts_test.yaml covers the enabled/disabled render matrix for all three subcharts' key resources (ingress-nginx controller Deployment, traefik Deployment, cert-manager Certificate CRD) plus the new both-enabled validation failure; tests/ingress_traefik_test.yaml grows a case asserting the bundled traefik subchart's own IngressClass and this chart's Ingress agree on the effective class name (traefik). New examples/values-cloud-native.yaml demonstrates a fully self-contained install (bundled ingress-nginx + cert-manager, no external dependencies); examples/values-cloud-native-traefik.yaml is extended to also bundle the traefik subchart (traefik.enabled=true) rather than assuming an externally-installed Traefik. ct.yaml gains helm-extra-args: [--timeout, 600s] since cert-manager's startupapicheck can exceed the default install timeout in CI's kind cluster."
+    - kind: added
       description: "chart-created cert-manager Issuer for external cert-manager (CNH-5.1): new templates/cert-manager-issuer.yaml renders a cert-manager.io/v1 (Cluster)Issuer via shipwright.certManager.issuerManifest when tls.certManager.issuer.create=true and no explicit issuerRef.name is set (shipwright.certManager.createIssuer). Supports issuer.type=letsencrypt (spec.acme.{email,server,privateKeySecretRef: <issuer>-acme-account, solvers[0].http01.ingress.ingressClassName: <effective class>}, email required) and issuer.type=selfsigned (spec.selfSigned: {}). Kind Issuer (the new default) renders an explicit metadata.namespace; ClusterIssuer renders none. Name is <fullname>-issuer. An explicit issuerRef.name always suppresses chart-managed creation. values.yaml default tls.certManager.issuer.kind changes from ClusterIssuer to Issuer, and issuer.type's enum grows selfsigned — both no-ops for default values (issuer.create defaults to false, so this template never renders by default). helm template output is byte-identical for existing users."
     - kind: added
       description: "ingress TLS/cert-manager helpers, validation, and values/schema groundwork (networking.ingress.controller/tls, tls.certManager.issuer) — no render change; nothing new is wired into templates/ingress.yaml yet"
@@ -46,3 +48,21 @@ dependencies:
     version: "16.7.27"
     repository: oci://registry-1.docker.io/bitnamicharts
     condition: postgresql.enabled
+  # Optional bundled ingress controller subcharts (CNH-6.1). Both default off
+  # (condition: <name>.enabled) — bring your own ingress controller unless you
+  # opt in. Only one should be enabled at a time (templates/_validation.tpl
+  # fails the render if both are on simultaneously).
+  - name: ingress-nginx
+    version: "4.15.1"
+    repository: https://kubernetes.github.io/ingress-nginx
+    condition: ingress-nginx.enabled
+  - name: traefik
+    version: "41.3.0"
+    repository: https://traefik.github.io/charts
+    condition: traefik.enabled
+  # Optional bundled cert-manager subchart (CNH-6.1), default off. Bring your
+  # own cert-manager unless you opt in via cert-manager.enabled=true.
+  - name: cert-manager
+    version: "v1.21.1"
+    repository: https://charts.jetstack.io
+    condition: cert-manager.enabled

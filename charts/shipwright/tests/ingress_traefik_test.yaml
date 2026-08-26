@@ -249,6 +249,49 @@ tests:
           path: spec.rules[0].http.paths[1].pathType
           value: Prefix
 
+  # ---- bundled traefik subchart + IngressClass registration (CNH-6.1) ----
+  # traefik.enabled=true bundles the traefik subchart (Chart.yaml condition);
+  # networking.ingress.controller=traefik selects the traefik dialect in this
+  # chart's own templates/ingress.yaml. The bundled subchart's IngressClass
+  # name defaults to the release fullname, not "traefik" —
+  # traefik.ingressClass.name pins it to match shipwright.ingress.className's
+  # default-controller-name resolution, proving the two independently-wired
+  # pieces (subchart + dialect selection) name the same IngressClass.
+  - it: "bundled traefik profile: the subchart's own IngressClass renders with name traefik"
+    templates:
+      - charts/traefik/templates/ingressclass.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      traefik.enabled: true
+      traefik.ingressClass.name: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - isKind:
+          of: IngressClass
+      - equal:
+          path: metadata.name
+          value: traefik
+
+  - it: "bundled traefik profile: the umbrella Ingress's spec.ingressClassName equals traefik (same effective class as the bundled subchart's IngressClass)"
+    template: templates/ingress.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      traefik.enabled: true
+      traefik.ingressClass.name: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+
   # ---- nginx unaffected ----
   - it: renders none of the traefik annotations for the default (nginx) controller
     template: templates/ingress.yaml
