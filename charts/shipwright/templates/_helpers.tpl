@@ -685,12 +685,15 @@ create — see shipwright.certManager.issuerManifest).
 
 {{/*
 shipwright.certManager.createIssuer — true when the chart should render its
-own (Cluster)Issuer (tls.certManager.issuer.create=true). Mirrors the value
-directly; named so templates read intent ("should I render an Issuer?")
-instead of reaching into .Values.
+own (Cluster)Issuer: tls.certManager.issuer.create=true AND no explicit
+tls.certManager.issuerRef.name is set. An explicit issuerRef.name always means
+bring-your-own-Issuer and suppresses chart-managed creation even if
+issuer.create is also (redundantly) true — keeps the two paths mutually
+exclusive at render time, matching the values.yaml comment describing this
+intent. Guards templates/cert-manager-issuer.yaml (CNH-5.1).
 */}}
 {{- define "shipwright.certManager.createIssuer" -}}
-{{- if .Values.tls.certManager.issuer.create }}true{{- end }}
+{{- if and .Values.tls.certManager.issuer.create (not .Values.tls.certManager.issuerRef.name) }}true{{- end }}
 {{- end }}
 
 {{/*
@@ -709,32 +712,47 @@ to light up the hook path everywhere it is checked.
 {{- end }}
 
 {{/*
-shipwright.certManager.issuerManifest — GROUNDWORK: renders a cert-manager.io/v1
-(Cluster)Issuer manifest body (no apiVersion/kind/metadata wrapper decision
-here — a future templates/issuer.yaml would guard-and-include this, mirroring
-how templates/certificate.yaml now guards-and-includes
-shipwright.certManager.certificateManifest below). NOT included from any
-template today. Only supports the ACME/Let's-Encrypt HTTP-01 shape implied by
-tls.certManager.issuer.type=letsencrypt (the only supported type — see
-values.schema.json's enum).
+shipwright.certManager.issuerManifest — the cert-manager.io/v1 (Cluster)Issuer
+body, included from templates/cert-manager-issuer.yaml (CNH-5.1) when
+shipwright.certManager.createIssuer is true. Two issuer.type shapes:
+  - "selfsigned" -> spec.selfSigned: {} (no ACME account, no dependency on an
+    external CA — good for internal/dev clusters).
+  - "letsencrypt" (default) -> spec.acme.{email,server,privateKeySecretRef,
+    solvers}. email is validated as required by shipwright.validate. server
+    defaults to the Let's Encrypt production endpoint when unset. The HTTP-01
+    solver targets the effective ingress class (shipwright.ingress.className)
+    via the modern `ingressClassName` field (not the deprecated `class`).
+kind is namespace-scoped ("Issuer") or cluster-scoped ("ClusterIssuer") per
+tls.certManager.issuer.kind — only "Issuer" gets an explicit metadata.
+namespace (ClusterIssuer has no namespace). This helper is only ever invoked
+from behind the createIssuer guard, so issuerName always resolves to the
+chart-managed "<fullname>-issuer" name here (issuerRef.name, which would
+override it, is guaranteed empty whenever createIssuer is true).
 */}}
 {{- define "shipwright.certManager.issuerManifest" -}}
 apiVersion: cert-manager.io/v1
 kind: {{ .Values.tls.certManager.issuer.kind }}
 metadata:
   name: {{ include "shipwright.certManager.issuerName" . }}
+  {{- if eq .Values.tls.certManager.issuer.kind "Issuer" }}
+  namespace: {{ .Release.Namespace }}
+  {{- end }}
   labels:
     {{- include "shipwright.labels" . | nindent 4 }}
 spec:
+  {{- if eq .Values.tls.certManager.issuer.type "selfsigned" }}
+  selfSigned: {}
+  {{- else }}
   acme:
     email: {{ .Values.tls.certManager.issuer.email | quote }}
     server: {{ .Values.tls.certManager.issuer.server | default "https://acme-v02.api.letsencrypt.org/directory" | quote }}
     privateKeySecretRef:
-      name: {{ include "shipwright.certManager.issuerName" . }}-key
+      name: {{ include "shipwright.certManager.issuerName" . }}-acme-account
     solvers:
       - http01:
           ingress:
-            class: {{ include "shipwright.ingress.className" . }}
+            ingressClassName: {{ include "shipwright.ingress.className" . }}
+  {{- end }}
 {{- end }}
 
 {{/*

@@ -75,3 +75,39 @@ tests:
       tls.certManager.issuer.email: ""
     asserts:
       - notFailedTemplate: {}
+
+  - it: fails when enabled=true, issuer.create=true with type=letsencrypt (default) and networking.type=gateway (HTTP-01 solver has no Ingress to target in gateway mode)
+    set:
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "not supported when networking.type=gateway"
+
+  - it: passes when enabled=false (master off-switch) even with issuer.create=true, type=letsencrypt (default), and networking.type=gateway — nothing renders, so the gateway/HTTP-01 conflict is moot
+    set:
+      tls.certManager.enabled: false
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: passes when issuer.create=true with type=selfsigned and networking.type=gateway (selfsigned has no ACME solver, so gateway mode is unaffected)
+    set:
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: passes when issuer.create=true with type=letsencrypt and networking.type=ingress (the supported combination)
+    set:
+      networking.type: ingress
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - notFailedTemplate: {}

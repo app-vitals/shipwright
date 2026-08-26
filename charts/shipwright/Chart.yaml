@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.14.0
+version: 1.15.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,6 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
+    - kind: added
+      description: "chart-created cert-manager Issuer for external cert-manager (CNH-5.1): new templates/cert-manager-issuer.yaml renders a cert-manager.io/v1 (Cluster)Issuer via shipwright.certManager.issuerManifest when tls.certManager.issuer.create=true and no explicit issuerRef.name is set (shipwright.certManager.createIssuer). Supports issuer.type=letsencrypt (spec.acme.{email,server,privateKeySecretRef: <issuer>-acme-account, solvers[0].http01.ingress.ingressClassName: <effective class>}, email required) and issuer.type=selfsigned (spec.selfSigned: {}). Kind Issuer (the new default) renders an explicit metadata.namespace; ClusterIssuer renders none. Name is <fullname>-issuer. An explicit issuerRef.name always suppresses chart-managed creation. values.yaml default tls.certManager.issuer.kind changes from ClusterIssuer to Issuer, and issuer.type's enum grows selfsigned — both no-ops for default values (issuer.create defaults to false, so this template never renders by default). helm template output is byte-identical for existing users."
     - kind: added
       description: "ingress TLS/cert-manager helpers, validation, and values/schema groundwork (networking.ingress.controller/tls, tls.certManager.issuer) — no render change; nothing new is wired into templates/ingress.yaml yet"
     - kind: added

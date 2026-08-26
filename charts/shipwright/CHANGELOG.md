@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.15.0] - 2026-08-26
+
+### Added
+
+- Chart-created cert-manager Issuer for external cert-manager (CNH-5.1): implements the body of `shipwright.certManager.issuerManifest` (declared as unused groundwork in CNH-2.1) and adds a new `templates/cert-manager-issuer.yaml` that renders it when `shipwright.certManager.createIssuer` is true — i.e. `tls.certManager.issuer.create=true` AND no explicit `tls.certManager.issuerRef.name` is set (an explicit `issuerRef.name` always means bring-your-own-Issuer and suppresses chart-managed creation, even if `issuer.create` is also true; `shipwright.certManager.createIssuer` itself is fixed to account for this — previously it ignored `issuerRef.name` entirely). `issuer.type=letsencrypt` (default) renders `spec.acme.{email (required, enforced by the existing shipwright.validate check — now also invoked from this new template), server, privateKeySecretRef.name: <issuer>-acme-account, solvers[0].http01.ingress.ingressClassName: <effective ingress class via shipwright.ingress.className>}`; `server` defaults to the Let's Encrypt production endpoint when unset. `issuer.type=selfsigned` (new) renders `spec.selfSigned: {}` with no ACME block. Kind `Issuer` (the new default, changed from `ClusterIssuer`) renders an explicit `metadata.namespace: <release namespace>`; `ClusterIssuer` renders none. Name is always `<fullname>-issuer`. `values.schema.json`'s `tls.certManager.issuer.type` enum grows `"selfsigned"` alongside `"letsencrypt"`. New `tests/cert_manager_issuer_test.yaml` (helm-unittest) covers the letsencrypt/selfsigned/Issuer/ClusterIssuer matrix, the missing-email failure, `issuerRef.name` suppressing creation, and — as a forward-compat guard for CNH-7.1 — that `tls.certManager.enabled=true` alone (without `issuer.create`) renders nothing. Manually verified against the datreeio `cert-manager.io/{issuer,clusterissuer}_v1.json` schemas via kubeconform. No render-output change for existing users: default `tls.certManager.issuer.create=false` means this template never renders (`helm template` output is byte-identical, aside from chart-version-tagged labels and randomly-generated Secret material unrelated to this change).
+
 ## [1.14.0] - 2026-08-25
 
 ### Added

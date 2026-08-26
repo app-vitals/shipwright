@@ -46,6 +46,22 @@ Checks (each `fail`s independently — first failing check wins):
      className" rule as check 2 — this is intentionally the same underlying
      contradiction stated as a second, explicit acceptance-criteria-mandated
      check: "an explicit className contradicts a bundled class").
+  5. `tls.certManager.enabled=true` with `tls.certManager.issuer.create=true`
+     and `type=letsencrypt` (CNH-5.1's chart-managed Issuer) while
+     `networking.type=gateway`. The letsencrypt branch of shipwright.
+     certManager.issuerManifest always targets an HTTP-01 solver via an
+     Ingress (shipwright.ingress.className), but templates/ingress.yaml only
+     renders when networking.type=ingress — in gateway mode there is no
+     Ingress for the solver to ever satisfy, so the chart-managed Issuer
+     would render schema-valid but permanently unable to complete its ACME
+     challenge. selfsigned (no ACME/no solver) and bring-your-own via
+     issuerRef.name are both unaffected. The `enabled` guard mirrors
+     templates/cert-manager-issuer.yaml's render guard: with
+     tls.certManager.enabled=false (the default) the whole cert-manager
+     integration is off and nothing would render, so this check must not
+     hard-fail the render on that schema-valid-but-inert combination —
+     `values.schema.json`'s issuerRef/issuer.create `anyOf` constraint itself
+     only activates when `enabled=true`.
 */}}
 {{- define "shipwright.validate" -}}
 {{- $ingress := .Values.networking.ingress -}}
@@ -63,6 +79,9 @@ Checks (each `fail`s independently — first failing check wins):
 {{- end -}}
 {{- if and .Values.tls.certManager.issuer.create (eq .Values.tls.certManager.issuer.type "letsencrypt") (not .Values.tls.certManager.issuer.email) -}}
 {{- fail "tls.certManager.issuer.email is required when tls.certManager.issuer.create=true and tls.certManager.issuer.type=letsencrypt (Let's Encrypt requires a contact email on every ACME account)." -}}
+{{- end -}}
+{{- if and .Values.tls.certManager.enabled .Values.tls.certManager.issuer.create (eq .Values.tls.certManager.issuer.type "letsencrypt") (eq .Values.networking.type "gateway") -}}
+{{- fail "tls.certManager.issuer.create=true with tls.certManager.issuer.type=letsencrypt is not supported when networking.type=gateway — the chart-managed Issuer's HTTP-01 solver targets an Ingress, which never renders in gateway mode (templates/ingress.yaml only renders for networking.type=ingress), so the ACME challenge could never complete. Use tls.certManager.issuer.type=selfsigned, switch networking.type to ingress, or bring your own Issuer via tls.certManager.issuerRef.name instead." -}}
 {{- end -}}
 {{- $bundledClass := include "shipwright.bundledIngressClass" . -}}
 {{- if and $className (ne $className $bundledClass) (or (eq $className "nginx") (eq $className "traefik")) -}}

@@ -145,11 +145,13 @@ tls:
       name: ""
       # -- Issuer kind: "ClusterIssuer" (cluster-scoped) or "Issuer" (namespaced).
       kind: ClusterIssuer
-    # -- Optional CHART-MANAGED (Cluster)Issuer. GROUNDWORK ONLY as of CNH-2.1 —
-    # no template renders an Issuer/ClusterIssuer yet (shipwright.certManager.
-    # issuerManifest is added as groundwork for that). Default create=false
-    # preserves today's bring-your-own-Issuer behavior (issuerRef.name points at
-    # an Issuer/ClusterIssuer you created yourself, outside this chart).
+    # -- Optional CHART-MANAGED (Cluster)Issuer. When create=true, the chart
+    # renders templates/cert-manager-issuer.yaml (CNH-5.1), via
+    # shipwright.certManager.issuerManifest. Default create=false preserves
+    # today's bring-your-own-Issuer behavior (issuerRef.name points at an
+    # Issuer/ClusterIssuer you created yourself, outside this chart). An
+    # explicit issuerRef.name always suppresses chart-managed creation, even
+    # when create=true is also set (see shipwright.certManager.createIssuer).
     issuer:
       # -- When true, the chart creates a (Cluster)Issuer instead of requiring a
       # pre-existing one via issuerRef.name. Mutually exclusive in spirit with
@@ -160,10 +162,10 @@ tls:
       # "Issuer" (namespaced). Independent from issuerRef.kind so a
       # chart-created Issuer's scope can differ from a bring-your-own
       # reference's scope (only one of the two paths is active at a time).
-      kind: ClusterIssuer
-      # -- ACME issuer type. Only "letsencrypt" is supported today (ACME via
-      # Let's Encrypt, HTTP-01 challenge). Reserved as an enum-of-one for
-      # forward compatibility (e.g. a future "selfsigned" or "vault" type).
+      kind: Issuer
+      # -- Issuer type to create: "letsencrypt" (ACME via Let's Encrypt,
+      # HTTP-01 challenge) or "selfsigned" (spec.selfSigned: {}, no ACME
+      # account, no external dependency — good for internal/dev clusters).
       type: letsencrypt
       # -- ACME account email. REQUIRED when create=true and type=letsencrypt —
       # Let's Encrypt requires a contact email on every ACME account, and
