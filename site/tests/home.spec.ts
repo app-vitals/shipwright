@@ -238,7 +238,7 @@ test("header nav surfaces the Docs link", async ({ page }) => {
   const nav = page.locator("header nav");
   await expect(
     nav.getByRole("link", { name: /Docs/i }),
-  ).toHaveAttribute("href", "/docs");
+  ).toHaveAttribute("href", "/docs/introduction");
 });
 
 test("mobile hamburger toggle is present", async ({ page }) => {
