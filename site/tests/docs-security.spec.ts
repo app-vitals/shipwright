@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoRuntimeJsBeyondAnalytics } from "./helpers";
 
 // Fulfill external font CDN requests immediately so the page's 'load' event
 // fires even when CI can't reach external networks.
@@ -27,6 +28,43 @@ test("security sidebar is present", async ({ page }) => {
   await page.goto("/docs/security");
   const sidebar = page.locator("nav[aria-label='Docs navigation']");
   await expect(sidebar).toBeVisible();
+});
+
+// Architecture diagram component (SDH-1.1) — zero-JS, brand-token diagram
+// replacing the old fenced ```text ASCII block.
+
+test("security page shows all architecture diagram labels", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const text = (await page.locator("main").textContent()) ?? "";
+  for (const label of [
+    "Ingress",
+    "Admin",
+    "Metrics",
+    "MCP",
+    "Agent(s)",
+    "Task store",
+  ]) {
+    expect(text, `expected label "${label}" to be visible`).toContain(label);
+  }
+});
+
+test("security page ships no runtime JS beyond the analytics tag", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  await expectNoRuntimeJsBeyondAnalytics(page, { allowPagefind: true });
+});
+
+test("security page shows an AWS vs GCP comparison table", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const row = page.locator("main table tr", { hasText: /ingress/i });
+  await expect(row.first()).toBeVisible();
+  const cell = page.locator("main table td", { hasText: /ALB|Gateway API/i });
+  await expect(cell.first()).toBeVisible();
 });
 
 // One heading-presence check per major section the brief requires coverage

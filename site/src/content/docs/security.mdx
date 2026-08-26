@@ -7,6 +7,8 @@ prev: "/docs/the-shipwright-loop"
 next: "/docs/reference"
 ---
 
+import SecurityArchDiagram from '../../components/SecurityArchDiagram.astro'
+
 # Security
 
 This page is a security architecture overview for anyone evaluating Shipwright before deploying it
@@ -38,24 +40,14 @@ Task store, chat, and the MCP server are disabled by default. Per-agent Deployme
 created when `agent.provisioning.enabled=true`; each provisioned agent gets its own Secret and
 PersistentVolumeClaim.
 
-```text
-                          ┌─────────────┐
-                          │   Ingress   │  (Gateway API / ALB / nginx / Traefik)
-                          └──────┬──────┘
-                                 │ HTTPS
-              ┌──────────────────┼──────────────────┐
-              │                  │                   │
-        ┌─────▼─────┐      ┌─────▼─────┐       ┌─────▼─────┐
-        │   Admin   │      │  Metrics  │       │    MCP    │
-        │  :3001    │      │  :3460    │       │  :3010    │
-        └─────┬─────┘      └───────────┘       └─────┬─────┘
-              │ provisions                           │ proxies
-        ┌─────▼─────┐                           ┌─────▼─────┐
-        │  Agent(s) │                           │ Task store│
-        │ (per-user │◄──────────────────────────┤  :3000    │
-        │ Deployment)│      task-store token     └───────────┘
-        └───────────┘
-```
+<SecurityArchDiagram />
+
+| Aspect | AWS (EKS) | GCP (GKE) |
+|---|---|---|
+| Ingress | AWS Load Balancer Controller provisions an ALB from the chart's `Ingress` resource (`ingressClassName: alb`) | Gateway API — the chart renders a `Gateway` and `HTTPRoute`s targeting the `gke-l7-global-external-managed` GatewayClass |
+| TLS | Terminates at the ALB, via an ACM certificate annotation or cert-manager | cert-manager issues TLS via a `ClusterIssuer`, plus an HTTP→HTTPS redirect route |
+| Database | Optional bundled PostgreSQL (Bitnami subchart), off by default — bring your own | Optional bundled PostgreSQL (Bitnami subchart), off by default — bring your own |
+| Storage | Chart-managed PersistentVolumeClaim per provisioned agent, same on both targets | Chart-managed PersistentVolumeClaim per provisioned agent, same on both targets |
 
 ### AWS (EKS)
 
