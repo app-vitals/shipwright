@@ -111,3 +111,65 @@ describe("scripts/check-downstream-compat.sh — Render A restore guard (extract
     }
   });
 });
+
+describe("scripts/check-downstream-compat.sh — image-tag allowlist (extracted, executed)", () => {
+  // The A-vs-B allowlist logic lives in a Python heredoc embedded in the
+  // bash script (between `python3 - "${AB_DIFF}" "${OFFENDING}" <<'PYEOF'`
+  // and the closing `PYEOF`). Extract it verbatim and run it as a real
+  // Python script against synthetic diff fixtures, so this test exercises
+  // the actual allowlist code rather than a hand-copied stand-in.
+  function extractAllowlistScript(): string {
+    const script = readScript();
+    const heredocStart = script.indexOf("<<'PYEOF'\n", script.indexOf("python3 - \"${AB_DIFF}\""));
+    expect(heredocStart).toBeGreaterThan(-1);
+    const bodyStart = heredocStart + "<<'PYEOF'\n".length;
+    const bodyEnd = script.indexOf("\nPYEOF", bodyStart);
+    expect(bodyEnd).toBeGreaterThan(bodyStart);
+    return script.slice(bodyStart, bodyEnd);
+  }
+
+  function runAllowlist(diffText: string): string {
+    const pyScript = extractAllowlistScript();
+    const scratchDir = mkdtempSync(join(tmpdir(), "check-downstream-compat-allowlist-"));
+    try {
+      const diffPath = join(scratchDir, "ab.diff");
+      const outPath = join(scratchDir, "ab.offending");
+      writeFileSync(diffPath, diffText);
+      execFileSync("python3", ["-c", pyScript, diffPath, outPath], { encoding: "utf8" });
+      return readFileSync(outPath, "utf8");
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
+  }
+
+  test("regression: a digest-pinned image with a different digest is NOT allowlisted (surfaces as a real diff)", () => {
+    // Two genuinely different sha256 digests on an otherwise-identical
+    // "image:" line. Before the fix, IMAGE_TAG_RE's greedy `[^:\s]+` swallowed
+    // the whole `@sha256:<hex>` segment as if it were a tag, normalizing both
+    // lines to the same placeholder and silently allowlisting the diff.
+    const diff = [
+      "--- a/render-a.norm.yaml\n",
+      "+++ b/render-b.norm.yaml\n",
+      "@@ -1,1 +1,1 @@\n",
+      "-  image: ghcr.io/app-vitals/shipwright@sha256:aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111\n",
+      "+  image: ghcr.io/app-vitals/shipwright@sha256:bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222\n",
+    ].join("");
+
+    const offending = runAllowlist(diff);
+    expect(offending).toContain("@sha256:aaaa1111");
+    expect(offending).toContain("@sha256:bbbb2222");
+  });
+
+  test("no regression: a plain tag-only image change is still allowlisted", () => {
+    const diff = [
+      "--- a/render-a.norm.yaml\n",
+      "+++ b/render-b.norm.yaml\n",
+      "@@ -1,1 +1,1 @@\n",
+      "-  image: ghcr.io/app-vitals/shipwright:1.2.3\n",
+      "+  image: ghcr.io/app-vitals/shipwright:1.2.4\n",
+    ].join("");
+
+    const offending = runAllowlist(diff);
+    expect(offending).toBe("");
+  });
+});

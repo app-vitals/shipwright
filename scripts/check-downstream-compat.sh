@@ -538,7 +538,15 @@ with open(diff_path) as f:
 
 # Collect contiguous +/- blocks (hunks of removed/added lines) and pair them
 # positionally to check for image-tag-only differences.
-IMAGE_TAG_RE = re.compile(r'^(\s*(?:-\s*)?image:\s*\S+):[^:\s]+(\s*)$')
+#
+# The repo-reference group excludes '@' so digest-pinned images
+# (image: repo@sha256:<hex>) never match here: greedily matching through an
+# '@sha256:' segment would let two genuinely different digests normalize to
+# the same "<repo>:<TAG>" placeholder, silently allowlisting a real content
+# change. Lines that don't match fall through to image_tag_normalized()'s
+# `return line` below and are compared verbatim, so a digest change is
+# correctly treated as a real diff, not a normalized tag.
+IMAGE_TAG_RE = re.compile(r'^(\s*(?:-\s*)?image:\s*(?:(?!@)\S)+):[^:\s]+(\s*)$')
 
 def image_tag_normalized(line):
     m = IMAGE_TAG_RE.match(line)
