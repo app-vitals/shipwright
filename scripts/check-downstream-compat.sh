@@ -418,7 +418,7 @@ fi
 echo "[check-downstream-compat] rendering A (wrapper as-is)..."
 RENDER_A_DIR="${SCRATCH_DIR}/wrapper-as-is"
 copy_wrapper "${RENDER_A_DIR}"
-if [[ -f "${RENDER_A_DIR}/Chart.lock" || -d "${WRAPPER_DIR}/charts" ]]; then
+if [[ -f "${WRAPPER_DIR}/Chart.lock" || -d "${WRAPPER_DIR}/charts" ]]; then
   # Restore the wrapper's own vendored charts/ dir (excluded by copy_wrapper)
   # so Render A truly reflects whatever the wrapper currently has pinned.
   if [[ -d "${WRAPPER_DIR}/charts" ]]; then
