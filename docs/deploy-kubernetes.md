@@ -638,6 +638,12 @@ networking:
       entrypoints:
         web: web                   # Traefik's HTTP entrypoint name
         websecure: websecure       # Traefik's HTTPS entrypoint name
+admin:
+  # Public base URL for OAuth/OIDC redirect URIs — must match the hostname
+  # and scheme of your Ingress. When set, the admin service constructs OAuth
+  # redirect URIs using this URL instead of the request Host header, ensuring
+  # consistency when the external hostname differs from internal DNS names.
+  appBaseUrl: https://shipwright.example.com
 tls:
   certManager:
     enabled: true
@@ -1117,6 +1123,10 @@ cert-manager:
     enabled: true
 networking:
   type: ingress
+admin:
+  # Public base URL for OAuth/OIDC redirects. When bundling cert-manager and
+  # ingress-nginx, use the same hostname as networking.ingress.host.
+  appBaseUrl: https://shipwright.local:8443    # https when TLS is enabled
 tls:
   certManager:
     enabled: true
@@ -1127,8 +1137,8 @@ tls:
 ```
 
 Example value files are provided:
-- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager
-- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager
+- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager; uses `shipwright.local` with a selfsigned cert and `admin.appBaseUrl: https://shipwright.local:8443`
+- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager; uses `shipwright.example.com` with `letsencrypt-prod` and `admin.appBaseUrl: https://shipwright.example.com`
 
 ---
 
