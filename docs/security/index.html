@@ -505,20 +505,44 @@ over every agent in the deployment.</p>
 <h2 id="logging-monitoring--observability">Logging, monitoring &amp; observability</h2>
 <p>Sentry integration is opt-in and inert by default — zero telemetry is sent unless <code>SENTRY_DSN</code> is
 set, independently, on each service (admin, metrics, task-store, agent).</p>
-<p><strong>What’s captured</strong>, when enabled:</p>
-<ul>
-<li>Unhandled exceptions and 5xx errors, with stack traces</li>
-<li><code>console.log</code> / <code>console.warn</code> / <code>console.error</code> calls, forwarded as structured logs</li>
-<li>Request path and method for HTTP errors</li>
-<li>Caller identity — which admin or agent token triggered an error — for tracing</li>
-</ul>
-<p><strong>What’s never captured</strong>, unconditionally:</p>
-<ul>
-<li><code>Authorization</code> and <code>Cookie</code> header values — redacted to <code>[Filtered]</code> regardless of configuration</li>
-<li>Request or response bodies — never attached to an event</li>
-<li>The live value of any secret-shaped env var — redacted wherever it appears, including nested
-inside longer strings</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Captured by Sentry?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unhandled exceptions and 5xx errors, with stack traces</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>console.log</code> / <code>console.warn</code> / <code>console.error</code> calls, forwarded as structured logs</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Request path and method for HTTP errors</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Caller identity — which admin or agent token triggered an error</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td><code>Authorization</code> and <code>Cookie</code> header values</td>
+<td>Redacted — replaced with <code>[Filtered]</code> regardless of configuration</td>
+</tr>
+<tr>
+<td>Request or response bodies</td>
+<td>No — never attached to an event</td>
+</tr>
+<tr>
+<td>The live value of any secret-shaped env var</td>
+<td>Redacted — scrubbed wherever it appears, including nested inside longer strings</td>
+</tr>
+</tbody>
+</table>
 <p>Self-hosted Sentry is fully supported: point <code>SENTRY_DSN</code> at your own instance and everything above
 applies the same way.</p>
 <p>Shipwright does not currently provide a tool-call-level audit log — there is no immutable,
