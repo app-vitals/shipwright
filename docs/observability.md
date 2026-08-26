@@ -12,19 +12,20 @@ All services share the same init options and scrub hooks via `buildSentryInitOpt
 
 ## What is collected
 
-When `SENTRY_DSN` is set, a service reports:
+When `SENTRY_DSN` is set, a service reports to Sentry. Below is a summary of what data is captured and what is redacted:
 
-- **Unhandled exceptions and 5xx errors**, with stack traces, after scrubbing (see below).
-- **`console.log` / `console.warn` / `console.error` calls**, forwarded as structured Sentry Logs via `consoleLoggingIntegration`.
-- **Request path and method** for errors that occur inside an HTTP handler (via `@sentry/hono`'s `sentry()` middleware, or the app's own `onError` hook).
-- **Caller identity** (admin or agent token) in error logs from admin, metrics, and task-store, for tracing which token triggered an unhandled error.
-- **Tags** — structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
+| Data | Captured by Sentry? |
+|---|---|
+| Unhandled exceptions and 5xx errors, with stack traces | Yes |
+| `console.log` / `console.warn` / `console.error` calls, forwarded as structured logs | Yes |
+| Request path and method for HTTP errors | Yes |
+| Caller identity — which admin or agent token triggered an error | Yes |
+| Tags (structured key-value metadata: `service`, `agent_id`, `item_type`, `item_id`) | Yes |
+| `Authorization` and `Cookie` header values | Redacted — replaced with `[Filtered]` regardless of configuration |
+| Request or response bodies | No — never attached to an event |
+| The live value of any secret-shaped env var | Redacted — scrubbed wherever it appears, including nested inside longer strings |
 
-## What is never collected
-
-- **Request headers** — `Authorization` and `Cookie` header **values** are unconditionally redacted to `[Filtered]` in every event before it leaves the process, regardless of whether any secret env var is set. (The header keys remain; only the values are scrubbed.)
-- **Request bodies** — request/response bodies are never attached to Sentry events.
-- **Secret values** — any currently-set value of a secret-shaped env var (`ANTHROPIC_API_KEY`, `GH_TOKEN`, `SHIPWRIGHT_SESSION_SECRET`, etc. — see `SECRET_ENV_VARS` in `lib/secret-env-vars.ts` for the full list) is redacted to `[Filtered]` wherever it appears in an event or log, including nested inside longer strings. This scrub runs on both error events (`scrubEvent`) and console-derived logs (`scrubLog`).
+**Tags** are structured key-value metadata attached to every event: `service` (the reporting service name, always present), and `agent_id` (when initializing Sentry for an agent runner with an `agentId`). These process-wide tags are set once at init time via `buildSentryInitOptions()`'s static `initialScope`. The agent additionally tags `item_type`/`item_id` (`"task"` or `"pr"`, plus that item's id) on any Sentry event captured during `loop-orchestrator.ts`'s `dispatch()` — its per-item execution runs inside a forked Sentry scope (`sentryClient.withScope(...)`, not a bare `Sentry.setTag()` global mutation) so the tags are scoped to that single dispatch and never leak across concurrent or sequential dispatches. This lets a Sentry Issue or Log be attributed to the specific task/PR that was in flight, not just "which service/agent" — see `lib/sentry.ts`'s `ErrorCapturingClient.withScope` and `loop-orchestrator.ts`'s `dispatch()`.
 
 ## Disabling Sentry
 
