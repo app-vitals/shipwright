@@ -243,26 +243,101 @@ post-merge update in Step 4c — no second claim call is needed. Proceed to Step
 
 ### 4b. Squash Merge
 
-Squash merge the PR immediately with `--admin`, unconditionally — regardless of
-`approval_source` from Step 3a:
+Squash merge the PR — regardless of `approval_source` from Step 3a — capturing combined
+output and exit code explicitly rather than trusting an unchecked exit:
 
 ```bash
-gh pr merge {pr} --repo {org}/{repo} --squash --admin
+MERGE_OUTPUT=$(gh pr merge {pr} --repo {org}/{repo} --squash 2>&1)
+MERGE_EXIT=$?
 ```
 
-`--admin` bypasses branch protection (including the "require approval" rule, which GitHub
-cannot satisfy natively when the approval came from a self-review rather than a second
-GitHub user). This is safe because Step 3a (approval — GitHub or self-review) and Step 3b
-(CI green) already independently verify the safety properties branch protection exists to
-enforce here — this repo does have an active CODEOWNERS ruleset (`require_code_owner_review:
-true`, ruleset id 18495740) enforced on `main`, but both maintainer accounts are configured
-as `bypass_actors` on it, so `--admin` here is exercising an existing, already-authorized
-bypass rather than circumventing a live protection gate (no staging/prod environments either;
-see the repo's `CLAUDE.md`, "Deploy model: direct"). Queuing an auto-merge instead would only
-defer to GitHub's native branch-protection wait, which adds a fragile dependency on the
-required-status-check context name staying in sync with actual CI job names — it silently
-breaks on CI restructuring, and picking the wrong merge flag for the approval source is its
-own bug class. `--admin` avoids both.
+This no longer forces the merge through unconditionally: the command now defers to GitHub's
+branch protection natively rather than bypassing it. In practice this rarely blocks — both
+maintainer accounts are configured as `bypass_actors` on the active CODEOWNERS ruleset
+(`require_code_owner_review: true`, ruleset id `18495740`) enforced on `main`, and other
+repos this agent merges into may have no review requirement configured at all — so the
+branch-protection-block detection below is a defensive backstop for the rare case (a PR
+opened under a different identity, or ruleset config drift), not the common path.
+
+**If `MERGE_EXIT != 0`** (the merge command itself failed — nothing to poll for), check
+whether the failure is a branch-protection block:
+
+```bash
+if echo "$MERGE_OUTPUT" | grep -qi "base branch policy prohibits the merge"; then
+  IS_BRANCH_PROTECTION_BLOCK=true
+else
+  IS_BRANCH_PROTECTION_BLOCK=false
+fi
+```
+
+**Branch-protection-block case** (`IS_BRANCH_PROTECTION_BLOCK=true`, per the
+`auto-bump-chart.yml` PR #1084 precedent — GitHub's GraphQL error text when a required
+review is missing and no bypass applies): release the pre-merge claim from Step 4a first,
+then mark the task/PR record `blocked`. The `blockedReason` must name the underlying gap
+explicitly — a self-review APPROVE body does not satisfy GitHub's native required-review
+rule, which nothing here forces past anymore:
+
+```bash
+[ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d '{"status": "blocked", "note": "Merge blocked by branch protection — a self-review APPROVE does not satisfy GitHub'"'"'s native required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d '{"blocked": true, "blockedReason": "Merge blocked by branch protection — a self-review APPROVE does not satisfy GitHub'"'"'s native required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+fi
+```
+
+Print and stop:
+```
+✗ Merge blocked by branch protection — PR #{pr} requires a real GitHub approval.
+  A self-review APPROVE does not satisfy GitHub's native required-review rule.
+  A human must add a real approval, or configure this identity as a ruleset bypass actor.
+```
+
+**Generic merge-failure case** (`MERGE_EXIT != 0` but `IS_BRANCH_PROTECTION_BLOCK=false`):
+release the pre-merge claim first, then mark the task/PR record `blocked` with a reason
+referencing the captured output for diagnosis:
+
+```bash
+[ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d "{\"status\": \"blocked\", \"note\": \"Squash merge failed — $MERGE_OUTPUT\"}" | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d "{\"blocked\": true, \"blockedReason\": \"Squash merge failed — $MERGE_OUTPUT\"}" | jq .
+fi
+```
+
+Print and stop:
+```
+✗ Squash merge failed on PR #{pr}.
+  {MERGE_OUTPUT}
+  Check the PR on GitHub — a human may need to resolve this manually.
+```
+
+**Success case** (`MERGE_EXIT == 0`): fall through to the existing poll-for-completion step
+below — the merge command succeeded, but GitHub may still take a moment to reflect the
+`"MERGED"` state.
 
 Poll for the merge to complete — check `gh pr view {pr} --json state --jq '.state'` every
 5 seconds, up to 60 seconds. When the state becomes `"MERGED"`, capture the squash SHA:

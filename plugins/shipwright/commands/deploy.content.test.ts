@@ -624,11 +624,22 @@ describe("deploy.md — read target repo's Deploy model before polling (DPS-2.1)
   });
 });
 
+function extractStep4bSection(md: string): string {
+  const match = md.match(/### 4b\. Squash Merge[\s\S]*?(?=\n### 4c)/);
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
-  it("Step 4b contains exactly one unconditional --admin merge command", () => {
-    const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
-    const occurrences = content.split(adminMergeCommand).length - 1;
+  it("Step 4b contains exactly one plain (non-admin) squash merge command", () => {
+    const plainMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash";
+    const occurrences = content.split(plainMergeCommand).length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  it("Step 4b's merge command no longer includes --admin", () => {
+    const step4bSection = extractStep4bSection(content);
+    expect(step4bSection).not.toContain("--admin");
   });
 
   it("does not contain a --auto merge command anywhere in the file", () => {
@@ -636,11 +647,7 @@ describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
   });
 
   it("Step 4b's merge command selection is no longer branched on approval_source", () => {
-    const step4bMatch = content.match(
-      /### 4b\. Squash Merge[\s\S]*?(?=\n### 4c)/,
-    );
-    expect(step4bMatch).not.toBeNull();
-    const step4bSection = step4bMatch?.[0] ?? "";
+    const step4bSection = extractStep4bSection(content);
     // No conditional branching by approval source (the two-way GitHub-vs-self-review
     // command selection this task removes) — informational mentions of
     // approval_source are fine, but not a per-branch label distinguishing merge commands.
@@ -648,6 +655,120 @@ describe("deploy.md — unconditional admin merge (DSH-1.1)", () => {
     expect(step4bSection).not.toContain("**Self-review**");
     expect(step4bSection).not.toContain('approval_source == "github"');
     expect(step4bSection).not.toContain('approval_source == "self_review"');
+  });
+});
+
+describe("deploy.md — branch-protection-block detection on squash merge (RDA-1.1)", () => {
+  it("Step 4b captures MERGE_OUTPUT (combined stdout/stderr) and MERGE_EXIT explicitly", () => {
+    const step4bSection = extractStep4bSection(content);
+    expect(step4bSection).toContain("MERGE_OUTPUT");
+    expect(step4bSection).toContain("2>&1");
+    expect(step4bSection).toContain("MERGE_EXIT");
+    expect(step4bSection).toContain("$?");
+  });
+
+  it("Step 4b greps MERGE_OUTPUT case-insensitively for the branch-protection-block phrase", () => {
+    const step4bSection = extractStep4bSection(content);
+    expect(step4bSection).toContain("grep -qi");
+    expect(step4bSection).toContain("base branch policy prohibits the merge");
+  });
+
+  // Quote-escaping style varies in this file (single-quoted static JSON vs.
+  // double-quoted JSON with interpolated variables, e.g. $MERGE_OUTPUT), so
+  // match "status": "blocked" tolerant of either \" or " around the keys/values.
+  const BLOCKED_STATUS_RE = /\\?"status\\?"\s*:\s*\\?"blocked\\?"/g;
+
+  function countBlockedStatusOccurrences(section: string): number {
+    return (section.match(BLOCKED_STATUS_RE) ?? []).length;
+  }
+
+  function firstBlockedStatusIndex(section: string, fromIndex = 0): number {
+    BLOCKED_STATUS_RE.lastIndex = 0;
+    const re = new RegExp(BLOCKED_STATUS_RE);
+    re.lastIndex = fromIndex;
+    const match = re.exec(section);
+    return match ? match.index : -1;
+  }
+
+  it("branch-protection-block case sets status: blocked with a blockedReason naming the self-review/native-approval gap", () => {
+    const step4bSection = extractStep4bSection(content);
+    const blockIdx = step4bSection.indexOf(
+      "base branch policy prohibits the merge",
+    );
+    expect(blockIdx).toBeGreaterThan(-1);
+    const blockSection = step4bSection.slice(blockIdx, blockIdx + 1500);
+    expect(countBlockedStatusOccurrences(blockSection)).toBeGreaterThanOrEqual(
+      1,
+    );
+    expect(blockSection).toContain("blockedReason");
+    const lower = blockSection.toLowerCase();
+    expect(lower).toContain("self-review");
+    expect(lower).toContain("native");
+    const mentionsFix =
+      lower.includes("bypass actor") || lower.includes("real approval");
+    expect(mentionsFix).toBe(true);
+  });
+
+  it("generic merge-failure case (non-branch-protection) also sets status: blocked with a distinct reason", () => {
+    const step4bSection = extractStep4bSection(content);
+    // The generic failure branch's blocked-update PATCH must be present and distinct
+    // from the branch-protection-block PATCH — check both blocked-status PATCHes exist.
+    const blockedOccurrences = countBlockedStatusOccurrences(step4bSection);
+    expect(blockedOccurrences).toBeGreaterThanOrEqual(2);
+    expect(step4bSection).toContain("Squash merge failed");
+  });
+
+  it("both new blocked-status updates release the pre-merge claim first", () => {
+    const step4bSection = extractStep4bSection(content);
+    const releaseIdx1 = step4bSection.indexOf("/prs/$PR_RECORD_ID/release");
+    expect(releaseIdx1).toBeGreaterThan(-1);
+    const branchProtectionBlockIdx = step4bSection.indexOf(
+      "base branch policy prohibits the merge",
+    );
+    const firstBlockedIdx = firstBlockedStatusIndex(step4bSection);
+    expect(firstBlockedIdx).toBeGreaterThan(-1);
+    expect(releaseIdx1).toBeLessThan(firstBlockedIdx);
+    expect(branchProtectionBlockIdx).toBeLessThan(firstBlockedIdx);
+
+    const secondBlockedIdx = firstBlockedStatusIndex(
+      step4bSection,
+      firstBlockedIdx + 1,
+    );
+    expect(secondBlockedIdx).toBeGreaterThan(-1);
+    const releaseIdx2 = step4bSection.lastIndexOf(
+      "/prs/$PR_RECORD_ID/release",
+      secondBlockedIdx,
+    );
+    expect(releaseIdx2).toBeGreaterThan(-1);
+    expect(releaseIdx2).toBeLessThan(secondBlockedIdx);
+  });
+
+  it("the non-zero-exit check happens before the existing 60-second MERGED-state poll", () => {
+    const step4bSection = extractStep4bSection(content);
+    const mergeExitIdx = step4bSection.indexOf("MERGE_EXIT");
+    const pollIdx = step4bSection.indexOf("Poll for the merge to complete");
+    expect(mergeExitIdx).toBeGreaterThan(-1);
+    expect(pollIdx).toBeGreaterThan(-1);
+    expect(mergeExitIdx).toBeLessThan(pollIdx);
+  });
+
+  it("rationale prose no longer claims --admin bypasses branch protection unconditionally", () => {
+    const step4bSection = extractStep4bSection(content);
+    expect(step4bSection).not.toContain(
+      "bypasses branch protection (including",
+    );
+    expect(step4bSection.toLowerCase()).not.toContain(
+      "already-authorized\nbypass rather than circumventing",
+    );
+  });
+
+  it("rationale prose describes the new deferral-to-branch-protection behavior and names the bypass_actors exception", () => {
+    const step4bSection = extractStep4bSection(content);
+    const lower = step4bSection.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("defer");
+    expect(step4bSection).toContain("bypass_actors");
+    expect(step4bSection).toContain("18495740");
+    expect(lower).toContain("other repos");
   });
 });
 
@@ -836,9 +957,11 @@ describe("deploy.md — self-review approval fallback (RHA-1.1)", () => {
     );
   });
 
-  it("Step 4b's merge command remains the single unconditional admin merge", () => {
-    const adminMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash --admin";
-    const occurrences = content.split(adminMergeCommand).length - 1;
+  it("Step 4b's merge command remains the single plain (non-admin) squash merge", () => {
+    const plainMergeCommand = "gh pr merge {pr} --repo {org}/{repo} --squash";
+    const occurrences = content.split(plainMergeCommand).length - 1;
     expect(occurrences).toBe(1);
+    const step4bSection = extractStep4bSection(content);
+    expect(step4bSection).not.toContain("--admin");
   });
 });
