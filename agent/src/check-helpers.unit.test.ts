@@ -363,8 +363,8 @@ describe("parseAllowSelfReview", () => {
     ).toBe(true);
   });
 
-  test("defaults to true when the field is missing entirely", () => {
-    expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(true);
+  test("defaults to false when the field is missing entirely", () => {
+    expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(false);
   });
 });
 
@@ -388,8 +388,8 @@ describe("readAllowSelfReview", () => {
     expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
   });
 
-  test("defaults to true when the policy file does not exist", () => {
-    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(true);
+  test("defaults to false when the policy file does not exist", () => {
+    expect(checkHelpers.readAllowSelfReview(tmpDir)).toBe(false);
   });
 });
 

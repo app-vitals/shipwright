@@ -1184,10 +1184,10 @@ describe("buildProductionDeps", () => {
     expect(typeof deps.queryTaskStatus).toBe("function");
   });
 
-  test("isSelfReviewAllowed reflects readAllowSelfReview's default (true) when no policy file is present", async () => {
+  test("isSelfReviewAllowed reflects readAllowSelfReview's default (false) when no policy file is present", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
     });
-    expect(deps.isSelfReviewAllowed).toBe(true);
+    expect(deps.isSelfReviewAllowed).toBe(false);
   });
 });

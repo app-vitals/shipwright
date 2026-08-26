@@ -126,7 +126,10 @@ gh pr view {pr} --repo {org}/{repo} --json reviewDecision,reviews \
 
 **If `reviewDecision` is not `"APPROVED"`**: Fall back to the self-review approval path.
 Read `allow_self_review` from
-`state/agent-policy.md` (default: true). If `allow_self_review` is true, fetch the PR's
+`state/agent-policy.md` (default: false — every provisioned agent gets the policy file
+seeded on startup with `allow_self_review: false`; `true` is only the internal code-level
+fallback used if `state/agent-policy.md` is ever missing or unparseable). If
+`allow_self_review` is true, fetch the PR's
 reviews from GitHub and check if any review has a clean APPROVE body — either a leading
 `APPROVE` (strip any leading markdown bold markers (`**`) first, since the review skill
 posts `"**APPROVE**"`) or a `Verdict: APPROVE` label anywhere in the body (the narrative
