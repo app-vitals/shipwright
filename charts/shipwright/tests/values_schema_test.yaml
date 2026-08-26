@@ -126,7 +126,12 @@ tests:
 
   - it: accepts certManager enabled with empty issuerRef.name when tls.certManager.issuer.create is true (anyOf branch — chart-managed Issuer, no pre-existing issuer to reference)
     set:
-      networking.type: gateway
+      # networking.type=ingress (not gateway) — this test exercises the
+      # values.schema.json anyOf branch only; networking.type=gateway with
+      # issuer.create=true and type=letsencrypt (the default) is rejected by
+      # a separate shipwright.validate cross-field guard, covered in
+      # validation_test.yaml and cert_manager_issuer_test.yaml.
+      networking.type: ingress
       tls.certManager.enabled: true
       tls.certManager.issuerRef.name: ""
       tls.certManager.issuer.create: true

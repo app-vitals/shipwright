@@ -144,3 +144,28 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: fails the render when networking.type=gateway with issuer.create=true and type=letsencrypt (default) — the HTTP-01 solver has no Ingress to target in gateway mode
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - failedTemplate:
+          errorPattern: "not supported when networking.type=gateway"
+
+  - it: renders a selfsigned Issuer when networking.type=gateway (selfsigned has no ACME solver, so gateway mode is unaffected)
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - isKind:
+          of: Issuer
+      - equal:
+          path: spec.selfSigned
+          value: {}
