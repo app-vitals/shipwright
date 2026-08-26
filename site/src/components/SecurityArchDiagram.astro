@@ -1,0 +1,197 @@
+---
+// Deployment architecture diagram for the security docs page (SDH-1.1).
+// Static Astro component: no client-side JS, brand tokens only (no raw hex).
+// Mirrors the box + arrow visual language of src/pages/agent-model.astro and
+// src/pages/service-architecture.astro.
+---
+
+<div class="sec-diagram" role="img" aria-label="Deployment architecture: Ingress fans out to Admin, Metrics, and MCP. Admin provisions Agent(s). MCP proxies to Task store, which Agent(s) reach via a task-store token.">
+
+  <!-- Ingress -->
+  <div class="sec-row sec-row-single">
+    <div class="sec-box sec-box-ingress">
+      <div class="sec-tag">Ingress</div>
+      <div class="sec-title">Gateway API / ALB / nginx / Traefik</div>
+    </div>
+  </div>
+
+  <div class="sec-arrow-center">
+    <span class="sec-arrow-glyph">↓</span>
+    <span class="sec-arrow-label">HTTPS</span>
+  </div>
+
+  <!-- Fan-out: Admin / Metrics / MCP -->
+  <div class="sec-row sec-row-three">
+    <div class="sec-box sec-box-service">
+      <div class="sec-tag">Admin</div>
+      <div class="sec-title">:3001</div>
+    </div>
+    <div class="sec-box sec-box-service">
+      <div class="sec-tag">Metrics</div>
+      <div class="sec-title">:3460</div>
+    </div>
+    <div class="sec-box sec-box-service">
+      <div class="sec-tag">MCP</div>
+      <div class="sec-title">:3010</div>
+    </div>
+  </div>
+
+  <!-- Arrows down from Admin and MCP (Metrics is a leaf, no downstream box) -->
+  <div class="sec-row sec-row-three">
+    <div class="sec-arrow-center">
+      <span class="sec-arrow-glyph">↓</span>
+      <span class="sec-arrow-label">provisions</span>
+    </div>
+    <div class="sec-arrow-spacer" aria-hidden="true"></div>
+    <div class="sec-arrow-center">
+      <span class="sec-arrow-glyph">↓</span>
+      <span class="sec-arrow-label">proxies</span>
+    </div>
+  </div>
+
+  <!-- Leaves: Agent(s) / (empty) / Task store, with a token link between them -->
+  <div class="sec-row sec-row-three">
+    <div class="sec-box sec-box-leaf">
+      <div class="sec-tag">Agent(s)</div>
+      <div class="sec-title">per-user Deployment</div>
+    </div>
+    <div class="sec-token-link" aria-hidden="true">
+      <span class="sec-token-glyph">←</span>
+      <span class="sec-token-label">task-store token</span>
+    </div>
+    <div class="sec-box sec-box-leaf">
+      <div class="sec-tag">Task store</div>
+      <div class="sec-title">:3000</div>
+    </div>
+  </div>
+
+</div>
+
+<style>
+  .sec-diagram {
+    margin: 1.5rem 0 2rem;
+  }
+
+  .sec-row {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .sec-row-single {
+    grid-template-columns: 1fr;
+  }
+
+  .sec-row-three {
+    grid-template-columns: 1fr 1fr 1fr;
+    align-items: start;
+  }
+
+  /* ── Boxes ── */
+  .sec-box {
+    border-radius: 6px;
+    border-width: 1.5px;
+    border-style: solid;
+    padding: 0.875rem 1rem;
+    text-align: center;
+  }
+
+  .sec-box-ingress {
+    max-width: 20rem;
+    margin: 0 auto;
+    background: var(--sw-color-brand-soft);
+    border-color: var(--sw-color-brand-default);
+  }
+
+  .sec-box-service {
+    background: var(--sw-color-bg-raised);
+    border-color: var(--sw-color-border-muted);
+  }
+
+  .sec-box-leaf {
+    background: color-mix(in srgb, var(--sw-color-support-cyan) 10%, transparent);
+    border-color: var(--sw-color-support-cyan);
+  }
+
+  .sec-tag {
+    font-size: 0.6875rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--sw-color-text-heading);
+    margin-bottom: 0.25rem;
+  }
+
+  .sec-title {
+    font-size: 0.75rem;
+    font-family: var(--sw-font-mono);
+    color: var(--sw-color-text-muted);
+  }
+
+  /* ── Arrows ── */
+  .sec-arrow-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0;
+  }
+
+  .sec-arrow-glyph {
+    color: var(--sw-color-border-strong);
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .sec-arrow-label {
+    font-size: 0.625rem;
+    color: var(--sw-color-text-muted);
+    margin-top: 0.125rem;
+  }
+
+  .sec-arrow-spacer {
+    visibility: hidden;
+  }
+
+  /* ── Token link between Agent(s) and Task store ── */
+  .sec-token-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-top: 1rem;
+  }
+
+  .sec-token-glyph {
+    color: var(--sw-color-support-cyan);
+    font-size: 1.125rem;
+    line-height: 1;
+  }
+
+  .sec-token-label {
+    font-size: 0.625rem;
+    color: var(--sw-color-text-muted);
+    margin-top: 0.125rem;
+    text-align: center;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .sec-row-three {
+      grid-template-columns: 1fr;
+    }
+
+    .sec-arrow-spacer {
+      display: none;
+    }
+
+    .sec-token-link {
+      flex-direction: row;
+      gap: 0.375rem;
+      padding: 0.25rem 0;
+    }
+
+    .sec-token-glyph {
+      transform: rotate(90deg);
+    }
+  }
+</style>
