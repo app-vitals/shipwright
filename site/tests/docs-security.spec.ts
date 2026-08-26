@@ -67,6 +67,15 @@ test("security page shows an AWS vs GCP comparison table", async ({
   await expect(cell.first()).toBeVisible();
 });
 
+test("security page shows Slack bot scopes table", async ({ page }) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", { hasText: /slack app/i });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.locator("xpath=following::table[1]");
+  const row = table.locator("tr");
+  await expect(row.first()).toBeVisible();
+});
+
 // One heading-presence check per major section the brief requires coverage
 // for.
 const MAJOR_SECTIONS: Array<[string, RegExp]> = [
