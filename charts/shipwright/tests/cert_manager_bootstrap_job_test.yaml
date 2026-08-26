@@ -1,0 +1,449 @@
+suite: cert-manager bootstrap hook (bundled cert-manager path)
+# CNH-7.1. When cert-manager is bundled in the SAME release
+# (cert-manager.enabled=true), its Issuer/Certificate CRs cannot be plain
+# manifests on first install — the CRDs they depend on are templates in the
+# same release and do not exist at apply time. This suite covers the
+# ConfigMap-carried manifests + the post-install/post-upgrade Job that applies
+# them once cert-manager is Available, the (non-hook) RBAC that backs the Job,
+# and the pre-delete cleanup Job. The `viaHook` guard suppresses the inline
+# Issuer/Certificate whenever this hook path is active.
+#
+# Files under test render nothing unless BOTH cert-manager.enabled=true AND
+# tls.certManager.enabled=true AND (issuer.create OR networking.type=gateway) —
+# see shipwright.certManager.viaHook. Defaults leave both flags false, so the
+# whole feature is off (byte-identical default render — acceptance criterion 3).
+#
+# The cert-manager-bootstrap-job.yaml template renders documents in a stable
+# order: [0] ConfigMap, [1] apply Job, [2] cleanup Job (when cleanupOnDelete).
+# The apply Job and cleanup Job both have kind: Job, so cases assert against a
+# specific documentIndex rather than a kind selector.
+templates:
+  - templates/cert-manager-bootstrap-job.yaml
+  - templates/cert-manager-bootstrap-rbac.yaml
+release:
+  name: r
+  namespace: shipwright
+tests:
+  # ---------------------------------------------------------------------------
+  # Apply Job — hook wiring
+  # ---------------------------------------------------------------------------
+  - it: renders the bootstrap apply Job when cert-manager is bundled + tls.certManager enabled + gateway
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      networking.gateway.host: shipwright.example
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: r-shipwright-cert-manager-bootstrap
+
+  - it: is a post-install AND post-upgrade hook at weight 10 with the right delete policy
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "10"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+
+  # ---------------------------------------------------------------------------
+  # Apply Job — init container waits on cert-manager Deployments
+  # ---------------------------------------------------------------------------
+  - it: waits for the cert-manager, webhook, and cainjector Deployments to be Available
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: spec.template.spec.initContainers[0].command[0]
+          value: kubectl
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: --for=condition=Available
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: deployment/r-cert-manager
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: deployment/r-cert-manager-webhook
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: deployment/r-cert-manager-cainjector
+      - contains:
+          path: spec.template.spec.initContainers[0].args
+          content: --timeout=300s
+
+  - it: uses the registry.k8s.io/kubectl image for the init and main containers
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.initContainers[0].image
+          pattern: "^registry\\.k8s\\.io/kubectl:"
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "^registry\\.k8s\\.io/kubectl:"
+
+  # ---------------------------------------------------------------------------
+  # Apply Job — main container apply args
+  # ---------------------------------------------------------------------------
+  - it: applies the manifests server-side with a pinned field manager and force-conflicts
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command[0]
+          value: kubectl
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: apply
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --server-side
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --field-manager=shipwright-chart
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --force-conflicts
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -f
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: /manifests
+
+  # ---------------------------------------------------------------------------
+  # Apply Job — pod/security/limits
+  # ---------------------------------------------------------------------------
+  - it: restarts OnFailure with the default backoffLimit and activeDeadlineSeconds
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: OnFailure
+      - equal:
+          path: spec.backoffLimit
+          value: 10
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 540
+
+  - it: runs as the non-root distroless kubectl user with a read-only root filesystem
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: uses the bootstrap ServiceAccount for the apply Job
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: r-shipwright-cert-manager-bootstrap
+
+  - it: applies configured backoffLimit / activeDeadlineSeconds / resources overrides
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 1
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+      tls.certManager.bootstrap.backoffLimit: 4
+      tls.certManager.bootstrap.activeDeadlineSeconds: 123
+      tls.certManager.bootstrap.resources:
+        requests:
+          cpu: 11m
+          memory: 22Mi
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 4
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 123
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 11m
+
+  # ---------------------------------------------------------------------------
+  # ConfigMap contents per networking type ([0] is always the ConfigMap)
+  # ---------------------------------------------------------------------------
+  - it: ships the Issuer AND the Certificate in the bootstrap ConfigMap on the gateway path
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 0
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      networking.gateway.host: shipwright.example
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - exists:
+          path: data["10-issuer.yaml"]
+      - exists:
+          path: data["20-certificate.yaml"]
+      - matchRegex:
+          path: data["10-issuer.yaml"]
+          pattern: "kind: Issuer"
+      - matchRegex:
+          path: data["20-certificate.yaml"]
+          pattern: "kind: Certificate"
+
+  - it: ships ONLY the Issuer in the ConfigMap on the ingress path (issuer.create, no gateway Certificate)
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentIndex: 0
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: ingress
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - exists:
+          path: data["10-issuer.yaml"]
+      - notExists:
+          path: data["20-certificate.yaml"]
+
+  # ---------------------------------------------------------------------------
+  # RBAC — SA, Role
+  # ---------------------------------------------------------------------------
+  - it: creates the bootstrap ServiceAccount as a regular (non-hook) resource
+    template: templates/cert-manager-bootstrap-rbac.yaml
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: metadata.name
+          value: r-shipwright-cert-manager-bootstrap
+      - notExists:
+          path: metadata.annotations["helm.sh/hook"]
+
+  - it: grants the Role read on Deployments and full CRUD on cert-manager.io issuers/certificates
+    template: templates/cert-manager-bootstrap-rbac.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - equal:
+          path: metadata.name
+          value: r-shipwright-cert-manager-bootstrap
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apps"]
+            resources: ["deployments"]
+            verbs: ["get", "list", "watch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["cert-manager.io"]
+            resources: ["issuers", "certificates"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # ---------------------------------------------------------------------------
+  # RBAC — ClusterRole only for ClusterIssuer
+  # ---------------------------------------------------------------------------
+  - it: renders a ClusterRole for clusterissuers ONLY when the chart creates a ClusterIssuer
+    template: templates/cert-manager-bootstrap-rbac.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: ingress
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.kind: ClusterIssuer
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - equal:
+          path: metadata.name
+          value: r-shipwright-cert-manager-bootstrap
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["cert-manager.io"]
+            resources: ["clusterissuers"]
+            verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  - it: renders NO ClusterRole when the chart-managed issuer.kind is Issuer (namespaced)
+    template: templates/cert-manager-bootstrap-rbac.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+      skipEmptyTemplates: true
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.kind: Issuer
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---------------------------------------------------------------------------
+  # Cleanup Job (pre-delete)
+  # ---------------------------------------------------------------------------
+  - it: renders a pre-delete cleanup Job by default (cleanupOnDelete=true)
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentSelector:
+      path: metadata.annotations["helm.sh/hook"]
+      value: pre-delete
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: r-shipwright-cert-manager-bootstrap-cleanup
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: delete
+
+  - it: renders NO cleanup Job when cleanupOnDelete=false
+    template: templates/cert-manager-bootstrap-job.yaml
+    documentSelector:
+      path: metadata.annotations["helm.sh/hook"]
+      value: pre-delete
+      skipEmptyTemplates: true
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+      tls.certManager.bootstrap.cleanupOnDelete: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---------------------------------------------------------------------------
+  # Off switches — cert-manager.enabled=false suppresses EVERYTHING
+  # ---------------------------------------------------------------------------
+  - it: renders no bootstrap Job/ConfigMap when the bundled cert-manager is disabled (even with tls.certManager on + gateway)
+    template: templates/cert-manager-bootstrap-job.yaml
+    set:
+      cert-manager.enabled: false
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no bootstrap RBAC when the bundled cert-manager is disabled
+    template: templates/cert-manager-bootstrap-rbac.yaml
+    set:
+      cert-manager.enabled: false
+      tls.certManager.enabled: true
+      networking.type: gateway
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no bootstrap resources when tls.certManager is disabled (cert-manager subchart alone is not enough)
+    template: templates/cert-manager-bootstrap-job.yaml
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders no bootstrap resources on the ingress path with no chart-managed Issuer (viaHook requires issuer.create OR gateway)
+    template: templates/cert-manager-bootstrap-job.yaml
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: ingress
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing at all with default values
+    templates:
+      - templates/cert-manager-bootstrap-job.yaml
+      - templates/cert-manager-bootstrap-rbac.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

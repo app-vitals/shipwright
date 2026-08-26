@@ -1,0 +1,102 @@
+{{- if include "shipwright.certManager.viaHook" . }}
+{{- /*
+  RBAC for the cert-manager bootstrap hook Job (CNH-7.1), rendered ONLY when
+  shipwright.certManager.viaHook is true (cert-manager bundled in the same
+  release AND tls.certManager.enabled AND a chart-managed Issuer and/or gateway
+  Certificate to apply). See templates/cert-manager-bootstrap-job.yaml for the
+  Jobs these back.
+
+  These are REGULAR (non-hook) resources — NOT Helm hooks. If they were hooks
+  they would be recreated on every `helm upgrade`, cycling the ServiceAccount's
+  UID and invalidating already-issued bound tokens (see CLAUDE.md's Debugging
+  note on hook-rendered ServiceAccounts). As regular resources they are applied
+  with the main release, so they exist before the post-install/post-upgrade
+  apply Job (hook-weight 10) fires, and the apply Job's ServiceAccount token
+  stays valid across upgrades.
+
+  Role (namespaced) always renders:
+    - deployments get/list/watch — the apply Job's initContainer runs
+      `kubectl wait --for=condition=Available` on the cert-manager Deployments
+      (needs to read Deployment status).
+    - cert-manager.io issuers/certificates full CRUD — the apply Job
+      `kubectl apply --server-side`s the ConfigMap-sourced Issuer/Certificate,
+      and the cleanup Job deletes them.
+
+  ClusterRole (cluster-scoped) renders ONLY when the chart is creating a
+  ClusterIssuer (createIssuer AND issuer.kind=ClusterIssuer) — a ClusterIssuer
+  is a cluster-scoped resource a namespaced Role cannot reach.
+*/}}
+{{- $name := printf "%s-cert-manager-bootstrap" (include "shipwright.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- $clusterScoped := and (include "shipwright.certManager.createIssuer" .) (eq .Values.tls.certManager.issuer.kind "ClusterIssuer") }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["issuers", "certificates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- if $clusterScoped }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["clusterissuers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

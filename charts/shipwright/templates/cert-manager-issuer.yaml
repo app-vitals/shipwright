@@ -8,12 +8,16 @@
 # already uses, so issuer.create=true alone (with enabled left at its default
 # false) renders NO Issuer — preserving the documented "disabled by default"
 # behavior instead of silently creating a live Issuer/ClusterIssuer.
-# shipwright.certManager.viaHook is reserved for a FUTURE hook-based-issuance
-# path and always renders falsy today (no values key backs it yet — see
-# _helpers.tpl), so this guard is unconditionally equivalent to
-# `enabled=true && issuer.create=true && !issuerRef.name` for every input that
-# reaches this template today. Disabled by default (enabled=false) → no Issuer
-# renders. Body lives in shipwright.certManager.issuerManifest (_helpers.tpl),
+# shipwright.certManager.viaHook (CNH-7.1) is true when cert-manager is BUNDLED
+# in the same release (cert-manager.enabled) — on first install its CRDs are
+# templates in this release and do not exist at apply time, so an inline Issuer
+# manifest would fail. In that case this template renders NOTHING and the
+# Issuer is instead carried in the cert-manager-bootstrap ConfigMap and applied
+# by the hook Job once cert-manager is Available. For the common
+# bring-your-own-cert-manager path (cert-manager.enabled=false) viaHook is
+# falsy and this template renders the inline Issuer exactly as before.
+# Disabled by default (enabled=false) → no Issuer renders. Body lives in
+# shipwright.certManager.issuerManifest (_helpers.tpl),
 # mirroring the guard-here/body-in-helper split templates/certificate.yaml
 # already uses.
 {{- include "shipwright.validate" . }}

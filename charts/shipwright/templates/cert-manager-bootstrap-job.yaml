@@ -1,0 +1,211 @@
+{{- if include "shipwright.certManager.viaHook" . }}
+{{- /*
+  cert-manager bootstrap hook (CNH-7.1). Rendered ONLY when
+  shipwright.certManager.viaHook is true — i.e. cert-manager is BUNDLED in the
+  same release (cert-manager.enabled=true), tls.certManager.enabled=true, and
+  there is a chart-managed Issuer (issuer.create) and/or a gateway Certificate
+  to apply.
+
+  WHY THIS EXISTS: when cert-manager ships in the same release, its CRDs
+  (issuers.cert-manager.io, certificates.cert-manager.io, ...) are templates in
+  THIS release and do not exist at first-install apply time. A plain inline
+  cert-manager.io/v1 Issuer/Certificate manifest would therefore fail to apply
+  ("no matches for kind ... in group cert-manager.io"). So the inline templates
+  (templates/cert-manager-issuer.yaml, templates/certificate.yaml) render
+  nothing under viaHook, and their bodies are carried in the ConfigMap below and
+  applied by a post-install/post-upgrade Job that first WAITS for cert-manager
+  (and thus its CRDs + webhook) to be Available.
+
+  Three resources:
+    1. ConfigMap  <fullname>-cert-manager-bootstrap — 10-issuer.yaml (if
+       issuer.create) and 20-certificate.yaml (if gateway), reusing the SAME
+       shipwright.certManager.issuerManifest / certificateManifest helpers the
+       inline templates use, so there is one source of truth for the CR bodies.
+    2. apply Job  <fullname>-cert-manager-bootstrap — post-install,post-upgrade,
+       hook-weight 10 (after cert-manager's own startupapicheck at 1 and the
+       db-bootstrap Job at -5). initContainer `kubectl wait` on the cert-manager
+       Deployments; main container `kubectl apply --server-side` the ConfigMap.
+    3. cleanup Job <fullname>-cert-manager-bootstrap-cleanup — pre-delete hook
+       that deletes the applied CRs on uninstall (issued TLS Secret + ACME
+       account Secret are intentionally KEPT). Gated on
+       tls.certManager.bootstrap.cleanupOnDelete.
+
+  RBAC (ServiceAccount/Role/RoleBinding, and ClusterRole/Binding for a
+  ClusterIssuer) lives in templates/cert-manager-bootstrap-rbac.yaml as REGULAR
+  (non-hook) resources so the SA token stays valid across upgrades.
+*/}}
+{{- $fullname := include "shipwright.fullname" . }}
+{{- $name := printf "%s-cert-manager-bootstrap" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $cmFullname := include "shipwright.certManager.subchartFullname" . }}
+{{- $createIssuer := include "shipwright.certManager.createIssuer" . }}
+{{- $gateway := eq .Values.networking.type "gateway" }}
+{{- $image := include "shipwright.imageRef" (dict "context" $ "repository" "registry.k8s.io/kubectl" "tag" "v1.31.0") }}
+{{- $b := .Values.tls.certManager.bootstrap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+data:
+  {{- if $createIssuer }}
+  10-issuer.yaml: |
+    {{- include "shipwright.certManager.issuerManifest" . | nindent 4 }}
+  {{- end }}
+  {{- if $gateway }}
+  20-certificate.yaml: |
+    {{- include "shipwright.certManager.certificateManifest" . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ $b.backoffLimit }}
+  activeDeadlineSeconds: {{ $b.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cert-manager-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ $name }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      initContainers:
+        # Wait for the bundled cert-manager control plane — controller, webhook,
+        # and cainjector — to be Available before applying the CRs. Until the
+        # webhook is up, apply of a cert-manager.io/v1 resource is rejected.
+        - name: wait-cert-manager
+          image: {{ $image | quote }}
+          command:
+            - kubectl
+          args:
+            - wait
+            - --for=condition=Available
+            - --timeout=300s
+            - deployment/{{ $cmFullname }}
+            - deployment/{{ $cmFullname }}-webhook
+            - deployment/{{ $cmFullname }}-cainjector
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          {{- with $b.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      containers:
+        - name: apply
+          image: {{ $image | quote }}
+          command:
+            - kubectl
+          args:
+            - apply
+            - --server-side
+            - --field-manager=shipwright-chart
+            - --force-conflicts
+            - -f
+            - /manifests
+          volumeMounts:
+            - name: manifests
+              mountPath: /manifests
+              readOnly: true
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          {{- with $b.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: manifests
+          configMap:
+            name: {{ $name }}
+{{- if $b.cleanupOnDelete }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-cleanup" $name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: cert-manager-bootstrap-cleanup
+  annotations:
+    "helm.sh/hook": pre-delete
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ $b.backoffLimit }}
+  activeDeadlineSeconds: {{ $b.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "shipwright.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: cert-manager-bootstrap-cleanup
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ $name }}
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+      containers:
+        - name: cleanup
+          image: {{ $image | quote }}
+          # Delete the CRs the apply Job created. --ignore-not-found so an
+          # already-partly-removed release still exits 0. The issued TLS Secret
+          # and the ACME account Secret are INTENTIONALLY not deleted — keeping
+          # them avoids a fresh ACME order / re-issuance on the next install.
+          command:
+            - kubectl
+          args:
+            - delete
+            - --ignore-not-found
+            {{- if $gateway }}
+            - certificate.cert-manager.io/{{ $fullname }}-tls
+            {{- end }}
+            {{- if $createIssuer }}
+            {{- if eq .Values.tls.certManager.issuer.kind "ClusterIssuer" }}
+            - clusterissuer.cert-manager.io/{{ include "shipwright.certManager.issuerName" . }}
+            {{- else }}
+            - issuer.cert-manager.io/{{ include "shipwright.certManager.issuerName" . }}
+            {{- end }}
+            {{- end }}
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          {{- with $b.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}

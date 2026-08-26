@@ -127,6 +127,16 @@
                 "email": { "type": "string" },
                 "server": { "type": "string" }
               }
+            },
+            "bootstrap": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cleanupOnDelete": { "type": "boolean" },
+                "backoffLimit": { "type": "integer" },
+                "activeDeadlineSeconds": { "type": "integer" },
+                "resources": { "type": "object" }
+              }
             }
           },
           "if": {

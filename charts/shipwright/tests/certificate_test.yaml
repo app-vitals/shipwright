@@ -54,6 +54,24 @@ tests:
           path: spec.issuerRef.kind
           value: Issuer
 
+  - it: renders NO inline Certificate when the bundled cert-manager hook path is active (CNH-7.1 — it ships inside the bootstrap ConfigMap instead)
+    # When cert-manager is bundled in the same release, its CRDs are templates in
+    # this release and do not exist at first-install apply time, so a plain
+    # inline Certificate would fail to apply. shipwright.certManager.viaHook is
+    # true here (cert-manager.enabled && tls.certManager.enabled && gateway), so
+    # this template must render 0 documents — the Certificate is carried in the
+    # r-shipwright-cert-manager-bootstrap ConfigMap and applied by the hook Job.
+    template: templates/certificate.yaml
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: gateway
+      networking.gateway.host: shipwright.example
+      tls.certManager.issuerRef.name: letsencrypt
+    asserts:
+      - hasDocuments:
+          count: 0
+
   - it: renders NO Certificate when certManager is disabled (default — plain HTTP)
     template: templates/certificate.yaml
     asserts:

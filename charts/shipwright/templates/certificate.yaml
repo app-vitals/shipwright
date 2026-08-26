@@ -5,12 +5,15 @@
 # setup (networking.type=ingress or ClusterIP), which would produce a
 # Certificate referencing networking.gateway.host (not the ingress host) whose
 # Secret is never mounted or used. Disabled → no Certificate (plain HTTP).
-# shipwright.certManager.viaHook is reserved for a FUTURE hook-based-issuance
-# path and always renders falsy today (no values key backs it yet — see
-# _helpers.tpl), so this guard is UNCONDITIONALLY equivalent to the prior
-# `tls.certManager.enabled && networking.type == "gateway"` guard for every
-# input that reaches this template today (CNH-2.1 groundwork — no render
-# change). cert-manager writes the issued cert into the Secret named here
+# shipwright.certManager.viaHook (CNH-7.1) is true when cert-manager is BUNDLED
+# in the same release (cert-manager.enabled) — on first install its CRDs are
+# templates in this release and do not exist at apply time, so an inline
+# Certificate manifest would fail. In that case this template renders NOTHING
+# and the Certificate is instead carried in the cert-manager-bootstrap
+# ConfigMap and applied by the hook Job once cert-manager is Available. For the
+# common bring-your-own-cert-manager path (cert-manager.enabled=false) viaHook
+# is falsy and this template renders the inline Certificate exactly as before.
+# cert-manager writes the issued cert into the Secret named here
 # ("<fullname>-tls"), which the Gateway's HTTPS listener references via
 # certificateRefs (templates/gateway.yaml). Body lives in
 # shipwright.certManager.certificateManifest (_helpers.tpl) — moved there
