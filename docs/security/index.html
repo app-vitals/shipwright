@@ -276,11 +276,100 @@ calling out to the GitHub API, never GitHub calling in.</p>
 OAuth token), <code>SLACK_APP_TOKEN</code> (Socket Mode app-level token), and <code>SLACK_SIGNING_SECRET</code> (verifies
 inbound request signatures) — plus optional vars (<code>SLACK_ADMIN_TOKEN</code> for privileged operations,
 <code>SLACK_ALERT_CHANNEL</code>, <code>SLACK_OWNER_USER</code>).</p>
-<p>There is no single, centrally codified Slack app manifest shipped with the project. Each operator
-provisions their own Slack app — the admin console’s provisioning wizard automates app creation and
-OAuth — and supplies the resulting tokens as env vars. Permissions are implied by how those tokens
-are used (Socket Mode connection, bot messaging, DM/mention handling), not enumerated in a single
-static scope list.</p>
+<p>Shipwright’s Slack app manifest is <strong>centrally codified</strong> in the codebase at <code>admin/src/slack-provisioning-client.ts</code>.
+The <code>buildAgentManifest()</code> function constructs a Slack App Manifest object with configured
+display_information, bot_user, app_home, and assistant_view. Bot permissions are centrally defined
+in the exported <code>AGENT_BOT_SCOPES</code> array, which is embedded into the manifest’s <code>oauth_config.scopes.bot</code>.
+This manifest-driven approach ensures consistent provisioning: <code>apps.manifest.create</code> provisions new
+apps during initial setup, and <code>apps.manifest.update</code> keeps the manifest in sync during agent
+lifecycle management.</p>
+<p><strong>Bot scopes</strong> — the following table enumerates every permission the agent’s bot user holds:</p>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>Grants</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Messaging</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>chat:write</td>
+<td>Send messages to channels, DMs, and group conversations</td>
+</tr>
+<tr>
+<td>im:write</td>
+<td>Send direct messages to users</td>
+</tr>
+<tr>
+<td>files:read</td>
+<td>Read file metadata and contents</td>
+</tr>
+<tr>
+<td>files:write</td>
+<td>Upload and modify files</td>
+</tr>
+<tr>
+<td>reactions:write</td>
+<td>Add and remove emoji reactions</td>
+</tr>
+<tr>
+<td>assistant:write</td>
+<td>Post messages to Slack Assistant threads</td>
+</tr>
+<tr>
+<td><strong>History-read</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>channels:history</td>
+<td>Read message history from public channels</td>
+</tr>
+<tr>
+<td>groups:history</td>
+<td>Read message history from private channels</td>
+</tr>
+<tr>
+<td>im:history</td>
+<td>Read direct message history</td>
+</tr>
+<tr>
+<td>mpim:history</td>
+<td>Read group DM message history</td>
+</tr>
+<tr>
+<td><strong>Directory-read</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>channels:read</td>
+<td>List public channels and channel information</td>
+</tr>
+<tr>
+<td>users:read</td>
+<td>List and read user information</td>
+</tr>
+<tr>
+<td>users:read.email</td>
+<td>Access user email addresses</td>
+</tr>
+<tr>
+<td><strong>Mention &amp; misc.</strong></td>
+<td></td>
+</tr>
+<tr>
+<td>app_mentions:read</td>
+<td>Receive notifications when the agent is mentioned</td>
+</tr>
+<tr>
+<td>reactions:read</td>
+<td>Read emoji reactions on messages</td>
+</tr>
+</tbody>
+</table>
 <h2 id="pull-request-review--merge">Pull request review &amp; merge</h2>
 <p>Self-review is disabled by default: a freshly provisioned agent’s policy (<code>state/agent-policy.md</code>,
 seeded from the shipped template) sets <code>allow_self_review: false</code>, so an agent is excluded from
