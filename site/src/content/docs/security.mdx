@@ -270,8 +270,8 @@ Access control is layered around two roles:
 
 | Role | Grant mechanism | Scope/Visibility |
 |---|---|---|
-| **Admin** | Listed in `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, or holding an admin API key | Can see and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and deletion |
-| **Agent Member** | Added as an `AgentMember` (by email) to one specific agent | Can see that agent's detail page and, if Slack access is restricted to members, message it — without any visibility into or control over the rest of the fleet |
+| Admin | Listed in `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS`, or holding an admin API key | Can see and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and deletion |
+| Agent Member | Added as an `AgentMember` (by email) to one specific agent | Can see that agent's detail page and, if Slack access is restricted to members, message it — without any visibility into or control over the rest of the fleet |
 
 This lets you grant a teammate scoped visibility into "their" agent without making them an admin
 over every agent in the deployment.
