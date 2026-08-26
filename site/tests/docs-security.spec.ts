@@ -115,3 +115,28 @@ test("security page next link points to reference", async ({ page }) => {
   const next = page.locator('a[data-nav="next"]');
   await expect(next).toHaveAttribute("href", "/docs/reference");
 });
+
+// SDH-1.3 — competitive-gap additions: egress destinations table and
+// compliance status table.
+
+test("security page shows egress destinations table under Network & egress controls", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", { hasText: /network.*egress|egress/i });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr", { hasText: /github api/i });
+  await expect(row.first()).toBeVisible();
+});
+
+test("security page shows compliance status table under Compliance posture", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", { hasText: /compliance/i });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr", { hasText: /soc 2/i });
+  await expect(row.first()).toBeVisible();
+});

@@ -76,8 +76,19 @@ Shipwright does not implement an egress allowlist or firewall inside the applica
 Restricting which external hosts a Shipwright service or agent pod can reach is an infrastructure
 decision you make at deploy time — a Kubernetes `NetworkPolicy`, a cloud VPC egress rule, or an
 equivalent control at your network boundary. Every service assumes outbound internet access by
-default (to reach Anthropic's API, GitHub, Slack, and any configured third-party voice provider)
-unless you add your own network policy.
+default unless you add your own network policy. The required outbound destinations are:
+
+| Destination | Purpose | Required/Optional |
+|---|---|---|
+| GitHub API | Reading/writing repository contents, pull requests, Actions status | Required |
+| Slack API | Bot messaging, Socket Mode event delivery | Required |
+| Anthropic API | The model calls that power agent reasoning and code generation | Required |
+| Your SSO provider (Google or Okta OAuth) | Admin login when `auth.mode=google` or `auth.mode=okta` | Required only when internet-reachable auth is enabled |
+| Sentry | Error/log reporting | Optional — only when `SENTRY_DSN` is set |
+
+Shipwright has no subprocessor relationship of its own — the only third parties that ever sit in
+the data path are whichever of the above you configure yourself, each under your own account and
+terms with that provider.
 
 The one exception is voice. Speech-to-text and text-to-speech can run **fully self-hosted with zero
 third-party network calls**: `agent.voice.provider=whisper` runs speech-to-text as a self-hosted
@@ -296,8 +307,22 @@ need to build it on top of your own logging pipeline.
 
 ## Compliance posture
 
-Shipwright does not currently hold SOC 2, ISO 27001, ISO 42001, or any other third-party compliance
-certification.
+| Control/Certification | Status | Notes |
+|---|---|---|
+| SOC 2 | Not currently held | No third-party audit performed |
+| ISO 27001 | Not currently held | No third-party audit performed |
+| ISO 42001 | Not currently held | No third-party audit performed |
+| Tool-call-level audit logging | Not currently offered | See "Logging, monitoring & observability" above — Sentry's caller-identity capture on the error path is not a substitute |
+| Automated credential rotation | Not currently offered | — |
+| Third-party pen test | None performed to date | — |
+| Vulnerability disclosure | In place | GitHub private security advisories, 7-day acknowledgment commitment — see [SECURITY.md](https://github.com/app-vitals/shipwright/blob/main/SECURITY.md) |
+
+Because Shipwright is self-hosted and runs entirely inside your own infrastructure, most
+infrastructure-level controls — physical security, cloud provider compliance certifications, and
+so on — are inherited from your own cloud provider rather than being a separate Shipwright-operated
+surface to certify. The same self-hosted model applies to data retention: all persistent data
+(tasks, PRs, chat history, and so on) lives in your own Postgres database, so retention is entirely
+your call — Shipwright imposes no retention policy of its own.
 
 ## FAQ
 
@@ -305,6 +330,18 @@ certification.
 Nowhere outside your own infrastructure. Shipwright is self-hosted — the agent runs in your
 Kubernetes cluster, against your own GitHub App and repositories. There is no third-party code
 execution and no Shipwright-operated service that ever receives your source.
+
+**Does Shipwright train on my code?**
+No. There is no training pipeline — Shipwright has no third-party code custody of any kind. The
+only third party that ever sees code content is whichever Anthropic API account you configure
+yourself, under your own Anthropic API terms.
+
+**How do I report a security vulnerability?**
+Via GitHub private security advisories, not a public issue:
+[github.com/app-vitals/shipwright/security/advisories/new](https://github.com/app-vitals/shipwright/security/advisories/new).
+A maintainer will acknowledge the report within 7 days and work with you on a fix and coordinated
+disclosure — see [SECURITY.md](https://github.com/app-vitals/shipwright/blob/main/SECURITY.md) for
+the full policy.
 
 **What happens if `SHIPWRIGHT_ENCRYPTION_KEY` is never set?**
 Secrets (env values, Slack tokens, API keys) are stored in plain text in the database, with a
@@ -329,6 +366,21 @@ No. `networking.type=ClusterIP` (the default) keeps every service reachable only
 `kubectl port-forward` inside the cluster. Public exposure via Ingress or Gateway API is a choice
 you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is required the
 moment you do.
+
+**Does Shipwright support SCIM provisioning?**
+No, not today. There is no SCIM code in the codebase — user access is managed via the
+`SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` allowlist and `AgentMember` records described above, not an
+automated identity-provider sync.
+
+**Can I IP-allowlist the admin service?**
+There's no built-in IP-allowlist feature. The substitute is keeping `networking.type=ClusterIP`
+(the default — see above) so the service is never reachable outside the cluster in the first
+place, plus whatever allowlisting your own ingress layer or load balancer supports if you do expose
+it.
+
+**Is there rate limiting on the admin API?**
+No built-in rate limiting today. If you need to throttle requests to the admin API, put a reverse
+proxy or API gateway in front of it.
 
 **Does every change require human review before it merges?**
 Self-review and automated merging are both disabled by default, so in practice a human reviews and
