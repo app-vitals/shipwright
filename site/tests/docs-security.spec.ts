@@ -38,6 +38,7 @@ const MAJOR_SECTIONS: Array<[string, RegExp]> = [
   ["Kubernetes service accounts & RBAC", /service accounts|rbac/i],
   ["Secrets & service-to-service auth", /secrets|service-to-service/i],
   ["GitHub App integration", /github app/i],
+  ["Pull request review & merge", /pull request review|review.*merge/i],
   ["Slack App integration", /slack app/i],
   ["One agent per user", /one agent per user/i],
   ["Admins vs. agent members", /admins.*members|agent members/i],

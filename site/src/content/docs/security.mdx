@@ -200,6 +200,24 @@ OAuth — and supplies the resulting tokens as env vars. Permissions are implied
 are used (Socket Mode connection, bot messaging, DM/mention handling), not enumerated in a single
 static scope list.
 
+## Pull request review & merge
+
+If branch protection needs to be the actual gate on what merges into your repository, configure
+it explicitly: keep the `shipwright-deploy` cron disabled (it ships off by default) and add your
+own reviewers as GitHub **CODEOWNERS** for the repository — or at minimum for
+`.github/workflows/**` — then require review from Code Owners in branch protection. Shipwright's
+own automated review doesn't satisfy a Code Owners requirement; a human you've named is what
+actually has to approve before anything merges, including changes to workflow files. This is the
+right setup for SOC 2-style segregation-of-duties requirements: a named human approver, distinct
+from whoever (or whatever) authored the change.
+
+By default, self-review is allowed (`allow_self_review`, default `true`) — the agent that opened a
+PR can also review it. And by default, Shipwright's own merge commands use an administrator-level
+override (`gh pr merge --admin`) that bypasses branch protection's required-approval rule when the
+credential performing the merge has that permission — the intent is that Shipwright's own
+review-and-CI gate substitutes for branch protection, not that it defers to it. If that's not the
+model you want, the CODEOWNERS setup above is how to require independent human sign-off instead.
+
 ## One agent per user
 
 Every GitHub PR/commit and Slack message an agent sends carries that agent's own bot identity, so
@@ -291,3 +309,9 @@ No. `networking.type=ClusterIP` (the default) keeps every service reachable only
 `kubectl port-forward` inside the cluster. Public exposure via Ingress or Gateway API is a choice
 you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is required the
 moment you do.
+
+**Does every change require human review before it merges?**
+Not by default — self-review is allowed, and Shipwright's own merge commands bypass branch
+protection's required-approval rule by design. If you need a named human to be the actual
+approver, disable the `shipwright-deploy` cron and require Code Owners review as described above —
+Shipwright's own review won't satisfy that requirement.
