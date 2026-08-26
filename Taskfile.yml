@@ -200,6 +200,16 @@ tasks:
     cmds:
       - ct install --config ct.yaml --charts charts/shipwright
 
+  helm:downstream-compat:
+    desc: "Downstream-compatibility render-diff: renders a WRAPPER chart's shipwright dependency as-is / at a published baseline / from this working tree, and diffs them (scripts/check-downstream-compat.sh). Requires WRAPPER=<path-to-wrapper-chart>."
+    cmds:
+      - |
+        if [ -z "$WRAPPER" ]; then
+          echo "ERROR: WRAPPER is not set. Export it (path to a wrapper chart dir) before running helm:downstream-compat."
+          exit 1
+        fi
+        ./scripts/check-downstream-compat.sh "$WRAPPER" $DOWNSTREAM_COMPAT_ARGS
+
   minikube:up:
     desc: "Bring the FULL Shipwright stack up on Minikube (admin + metrics + task-store + chat + PostgreSQL + agent provisioning). Requires minikube + helm + kubectl."
     cmds:
