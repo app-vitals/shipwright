@@ -24,3 +24,11 @@ validate-maintainers: false
 # fails any PR that modifies the chart without bumping Chart.yaml `version`. See
 # charts/shipwright/CHANGELOG.md and the README "Versioning" section.
 check-version-increment: true
+
+# Extra args passed to every `helm install`/`helm upgrade` ct runs. The
+# bundled optional subcharts (CNH-6.1) — especially cert-manager with
+# startupapicheck.enabled: true, which waits on a post-install Job — can take
+# longer than Helm's default install timeout (5m) on CI's kind cluster.
+helm-extra-args:
+  - --timeout
+  - 600s
