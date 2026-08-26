@@ -270,12 +270,38 @@ explicitly add more.</p>
 with AES-256-GCM when <code>SHIPWRIGHT_ENCRYPTION_KEY</code> (a 64-character hex string, 32 bytes) is set. If
 this key is left unset, secrets are stored in plain text and a warning is logged at startup;
 setting it is something you should do before any production use.</p>
-<p>Agent API tokens are never stored reversibly: only their SHA-256 hash is persisted, and the raw
-token value is shown exactly once, at creation time.</p>
-<p>When per-agent Kubernetes provisioning is enabled, each agent gets its own dedicated Secret
-carrying a task-store token (<code>SHIPWRIGHT_TASK_STORE_TOKEN</code>) and, if chat is enabled, a
-chat-service token (<code>SHIPWRIGHT_CHAT_SERVICE_TOKEN</code>). Both are scoped to that single agent and are
-revoked automatically when the agent is deleted.</p>
+<p>The following table enumerates each credential managed by Shipwright in per-agent Secrets, how it
+is stored, and its scope:</p>
+<table>
+<thead>
+<tr>
+<th>Secret/Token</th>
+<th>Env var</th>
+<th>Storage</th>
+<th>Scope</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Agent API token</td>
+<td><code>SHIPWRIGHT_AGENT_API_KEY</code></td>
+<td>SHA-256 hash persisted in the database; raw 64-char hex value shown once at creation; injected into the agent’s Kubernetes Secret (<code>token</code> key)</td>
+<td>Scoped to a single agent id; cross-agent access returns <code>403</code></td>
+</tr>
+<tr>
+<td>Task-store token</td>
+<td><code>SHIPWRIGHT_TASK_STORE_TOKEN</code></td>
+<td>Minted per-agent by the admin provisioner; stored in the agent’s Secret (<code>task-store-token</code> key); revoked automatically when the agent is deleted</td>
+<td>Scoped to that single agent</td>
+</tr>
+<tr>
+<td>Chat-service token</td>
+<td><code>SHIPWRIGHT_CHAT_SERVICE_TOKEN</code></td>
+<td>Minted per-agent by the admin provisioner; stored in the agent’s Secret (<code>chat-service-token</code> key); revoked automatically when the agent is deleted</td>
+<td>Scoped to that single agent; only present when chat is enabled</td>
+</tr>
+</tbody>
+</table>
 <h2 id="github-app-integration">GitHub App integration</h2>
 <p>Shipwright authenticates to GitHub either as a GitHub App (recommended — <code>GH_APP_ID</code>,
 <code>GH_APP_INSTALLATION_ID</code>, <code>GH_APP_PRIVATE_KEY</code>) or, as a fallback, a personal access token
