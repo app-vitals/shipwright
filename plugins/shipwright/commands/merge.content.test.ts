@@ -198,11 +198,14 @@ describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", 
     expect(hasSkipLanguage).toBe(true);
   });
 
-  it("squash-merges with --admin", () => {
+  it("squash-merges without --admin, deferring to native branch protection", () => {
     const section = extractStep3Section(content);
-    expect(section).toContain(
-      "gh pr merge {pr} --repo {org}/{repo} --squash --admin",
+    expect(section).toContain("gh pr merge {pr} --repo {org}/{repo} --squash");
+    const mergeIdx = section.indexOf(
+      "gh pr merge {pr} --repo {org}/{repo} --squash",
     );
+    const mergeLineEnd = section.indexOf("\n", mergeIdx);
+    expect(section.slice(mergeIdx, mergeLineEnd)).not.toContain("--admin");
   });
 
   it("polls for MERGED state for up to 60 seconds", () => {
@@ -211,11 +214,30 @@ describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", 
     expect(section).toContain("MERGED");
   });
 
-  it("releases the pre-merge claim on a merge timeout without blocking task status", () => {
-    const section = extractStep3Section(content);
-    expect(section).toContain("/release");
-    expect(section.toLowerCase()).toContain("do not patch the task");
-    expect(section).not.toContain('"status": "blocked"');
+  it("releases the pre-merge claim if the merge does not complete within 60 seconds", () => {
+    // A stuck/timed-out merge must not leave the phase: "deploy" claim dangling —
+    // otherwise a retry within the claim TTL hits a spurious 409.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const beforeTimeout = content.slice(0, timeoutIdx);
+    const releaseIdx = beforeTimeout.lastIndexOf("/prs/$PR_RECORD_ID/release");
+    expect(releaseIdx).toBeGreaterThan(-1);
+    // The release call must come after the pre-merge claim and before the timeout message
+    const claimIdx = content.indexOf("/prs/claim");
+    expect(releaseIdx).toBeGreaterThan(claimIdx);
+  });
+
+  it("does not PATCH task status to blocked on a merge-timeout/conflict failure", () => {
+    // Scoped to the post-merge-command timeout failure only (a stuck/slow MERGED-state
+    // poll) — distinct from the pre-merge MERGE_EXIT != 0 branch-protection-block and
+    // generic-failure cases above, which do intentionally set status: blocked.
+    const timeoutIdx = content.indexOf("did not complete within 60 seconds");
+    expect(timeoutIdx).toBeGreaterThan(-1);
+    const nextSectionIdx = content.indexOf("### 3c.", timeoutIdx);
+    expect(nextSectionIdx).toBeGreaterThan(timeoutIdx);
+    const failureSection = content.slice(timeoutIdx, nextSectionIdx);
+    expect(failureSection).not.toContain('"status": "blocked"');
+    expect(failureSection.toLowerCase()).toContain("do not patch the task");
   });
 
   it("PATCHes the task to status: merged with mergedAt", () => {
@@ -242,9 +264,34 @@ describe("merge.md — Step 3: Merge (claim, squash-merge, task-store update)", 
     expect(postMergeSection.includes("/prs/claim")).toBe(false);
   });
 
-  it("rationale for --admin bypass being safe is preserved", () => {
+  it("rationale describes deferring to native branch protection via bypass_actors, not force-bypassing with --admin", () => {
     const section = extractStep3Section(content);
-    expect(section.toLowerCase()).toContain("bypass");
+    const lower = section.toLowerCase();
+    expect(lower).toContain("bypass_actors");
+    expect(lower).toContain("defer");
+    expect(section).not.toContain(
+      "bypasses branch protection (including",
+    );
+  });
+
+  it("Step 3b captures MERGE_OUTPUT and MERGE_EXIT explicitly and detects a branch-protection block", () => {
+    const section = extractStep3Section(content);
+    expect(section).toContain("MERGE_OUTPUT");
+    expect(section).toContain("2>&1");
+    expect(section).toContain("MERGE_EXIT");
+    expect(section).toContain("$?");
+    expect(section).toContain("grep -qi");
+    expect(section).toContain("base branch policy prohibits the merge");
+  });
+
+  it("branch-protection-block and generic merge-failure cases both release the claim and set status: blocked", () => {
+    const section = extractStep3Section(content);
+    const blockedOccurrences = (
+      section.match(/\\?"status\\?"\s*:\s*\\?"blocked\\?"/g) ?? []
+    ).length;
+    expect(blockedOccurrences).toBeGreaterThanOrEqual(2);
+    expect(section).toContain("blockedReason");
+    expect(section).toContain("Squash merge failed");
   });
 });
 
