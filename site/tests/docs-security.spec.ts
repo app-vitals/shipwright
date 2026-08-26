@@ -140,3 +140,20 @@ test("security page shows compliance status table under Compliance posture", asy
   const row = table.locator("tr", { hasText: /soc 2/i });
   await expect(row.first()).toBeVisible();
 });
+
+test("security page shows secrets/token table under Secrets & service-to-service auth", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", {
+    hasText: /secrets|service-to-service/i,
+  });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr");
+  await expect(row.first()).toBeVisible();
+  const cell = table.locator("td, th", {
+    hasText: /SHIPWRIGHT_TASK_STORE_TOKEN|SHIPWRIGHT_AGENT_API_KEY/i,
+  });
+  await expect(cell.first()).toBeVisible();
+});

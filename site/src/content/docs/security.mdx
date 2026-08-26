@@ -165,13 +165,14 @@ with AES-256-GCM when `SHIPWRIGHT_ENCRYPTION_KEY` (a 64-character hex string, 32
 this key is left unset, secrets are stored in plain text and a warning is logged at startup;
 setting it is something you should do before any production use.
 
-Agent API tokens are never stored reversibly: only their SHA-256 hash is persisted, and the raw
-token value is shown exactly once, at creation time.
+The following table enumerates each credential managed by Shipwright in per-agent Secrets, how it
+is stored, and its scope:
 
-When per-agent Kubernetes provisioning is enabled, each agent gets its own dedicated Secret
-carrying a task-store token (`SHIPWRIGHT_TASK_STORE_TOKEN`) and, if chat is enabled, a
-chat-service token (`SHIPWRIGHT_CHAT_SERVICE_TOKEN`). Both are scoped to that single agent and are
-revoked automatically when the agent is deleted.
+| Secret/Token | Env var | Storage | Scope |
+|---|---|---|---|
+| Agent API token | `SHIPWRIGHT_AGENT_API_KEY` | SHA-256 hash persisted in the database; raw 64-char hex value shown once at creation; injected into the agent's Kubernetes Secret (`token` key) | Scoped to a single agent id; cross-agent access returns `403` |
+| Task-store token | `SHIPWRIGHT_TASK_STORE_TOKEN` | Minted per-agent by the admin provisioner; stored in the agent's Secret (`task-store-token` key); revoked automatically when the agent is deleted | Scoped to that single agent |
+| Chat-service token | `SHIPWRIGHT_CHAT_SERVICE_TOKEN` | Minted per-agent by the admin provisioner; stored in the agent's Secret (`chat-service-token` key); revoked automatically when the agent is deleted | Scoped to that single agent; only present when chat is enabled |
 
 ## GitHub App integration
 
