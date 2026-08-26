@@ -87,7 +87,7 @@ export function parseAllowSelfReview(content: string): boolean {
   const match = content.match(
     /(?:`allow_self_review`\s*\|\s*|\*\*allow_self_review\*\*:\s*)(true|false)/,
   );
-  return match?.[1] !== "false"; // default true if missing
+  return match?.[1] === "true"; // default false if missing/unparseable
 }
 
 export function parseCleanupMergedWorktrees(content: string): boolean {
@@ -273,7 +273,7 @@ export function readAllowSelfReview(workspacePath: string): boolean {
     );
     return parseAllowSelfReview(content);
   } catch {
-    return true;
+    return false;
   }
 }
 

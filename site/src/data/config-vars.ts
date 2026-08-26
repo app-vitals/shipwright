@@ -118,7 +118,7 @@ export const policyFields: ConfigVar[] = [
   { name: "auto_post_reviews", type: "bool", def: "true", desc: "Post review comments to GitHub automatically without manual approval. Set to false to stage reviews locally for owner approval instead." },
   { name: "allowed_events", type: "string[]", def: '["COMMENT", "APPROVE"]', desc: "GitHub review event types the agent may emit." },
   { name: "review_external_prs", type: "bool", def: "true", desc: "Review PRs opened by users other than the agent." },
-  { name: "allow_self_review", type: "bool", def: "true", desc: "Allow the agent to review its own PRs. Set to false to require a human reviewer on agent-authored PRs." },
+  { name: "allow_self_review", type: "bool", def: "false", desc: "Self-review is excluded by default. Set to true to allow the agent to review its own PRs instead of requiring a human reviewer on agent-authored PRs." },
   { name: "min_confidence", type: "number", def: "75", desc: "Minimum confidence score (0–100) for a finding to be included in a review." },
   { name: "max_findings", type: "number", def: "5", desc: "Maximum number of findings to include in a single review." },
   { name: "cleanup_merged_worktrees", type: "bool", def: "true", desc: "Automatically remove worktrees for merged branches." },
