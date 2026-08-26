@@ -289,6 +289,13 @@ wrapper_dep_field() {
   yq -r ".dependencies[] | select(.name == \"${DEP_NAME}\") | .${field} // \"\"" "${WRAPPER_CHART_YAML}" 2>/dev/null | head -n1
 }
 
+# `helm template` a chart dir with the resolved VALUES_ARGS, writing to $2.
+render_variant() {
+  local chart_dir="$1"
+  local out="$2"
+  helm template compat-check "${chart_dir}" "${VALUES_ARGS[@]}" > "${out}"
+}
+
 # Normalize output that legitimately (and expectedly) differs between two
 # otherwise-identical renders, so it never shows up as a spurious diff line:
 #
@@ -421,7 +428,7 @@ if [[ -f "${RENDER_A_DIR}/Chart.lock" || -d "${WRAPPER_DIR}/charts" ]]; then
     cp "${WRAPPER_DIR}/Chart.lock" "${RENDER_A_DIR}/Chart.lock"
   fi
 fi
-helm template compat-check "${RENDER_A_DIR}" "${VALUES_ARGS[@]}" > "${RENDER_A}"
+render_variant "${RENDER_A_DIR}" "${RENDER_A}"
 
 # ---------------------------------------------------------------------------
 # Determine whether the wrapper has a matching dependency to swap
@@ -449,7 +456,7 @@ if [[ "${HAS_DEP}" == "true" ]]; then
   copy_wrapper "${RENDER_B_DIR}"
   yq -i "(.dependencies[] | select(.name == \"${DEP_NAME}\")).version = \"${EFFECTIVE_BASELINE}\" | (.dependencies[] | select(.name == \"${DEP_NAME}\")).repository = \"${REPO_URL_RESOLVED}\"" "${RENDER_B_DIR}/Chart.yaml"
   helm dependency update "${RENDER_B_DIR}" >/dev/null
-  helm template compat-check "${RENDER_B_DIR}" "${VALUES_ARGS[@]}" > "${RENDER_B}"
+  render_variant "${RENDER_B_DIR}" "${RENDER_B}"
 else
   cp "${RENDER_A}" "${RENDER_B}"
 fi
@@ -487,7 +494,7 @@ if [[ "${HAS_DEP}" == "true" ]]; then
   WORKING_TREE_VERSION="$(yq -r '.version' "${CHART_DIR}/Chart.yaml")"
   yq -i "(.dependencies[] | select(.name == \"${DEP_NAME}\")).version = \"${WORKING_TREE_VERSION}\" | (.dependencies[] | select(.name == \"${DEP_NAME}\")).repository = \"file://${UNPACKED_CHART_DIR}\"" "${RENDER_C_DIR}/Chart.yaml"
   helm dependency update "${RENDER_C_DIR}" >/dev/null
-  helm template compat-check "${RENDER_C_DIR}" "${VALUES_ARGS[@]}" > "${RENDER_C}"
+  render_variant "${RENDER_C_DIR}" "${RENDER_C}"
 else
   # Self-referential / self-test mode: <wrapper-dir> IS charts/shipwright, so
   # there's no separate dependency to swap. Render C is the working-tree
@@ -495,7 +502,7 @@ else
   # itself, since the package step above packages exactly that working
   # tree) — this is the same general mechanism, degenerate because the
   # "wrapper" and the "dependency" are the same chart.
-  helm template compat-check "${UNPACKED_CHART_DIR}" "${VALUES_ARGS[@]}" > "${RENDER_C}"
+  render_variant "${UNPACKED_CHART_DIR}" "${RENDER_C}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -606,7 +613,7 @@ if ! helm lint "${WRAPPER_DIR}" "${VALUES_ARGS[@]}"; then
 fi
 
 echo "[check-downstream-compat] running helm template on the wrapper (own values)..."
-if ! helm template compat-check "${WRAPPER_DIR}" "${VALUES_ARGS[@]}" > /dev/null; then
+if ! render_variant "${WRAPPER_DIR}" /dev/null; then
   echo "ERROR: helm template failed for wrapper at ${WRAPPER_DIR}" >&2
   FAILED=true
 fi
