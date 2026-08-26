@@ -186,11 +186,37 @@ OAuth token), `SLACK_APP_TOKEN` (Socket Mode app-level token), and `SLACK_SIGNIN
 inbound request signatures) — plus optional vars (`SLACK_ADMIN_TOKEN` for privileged operations,
 `SLACK_ALERT_CHANNEL`, `SLACK_OWNER_USER`).
 
-There is no single, centrally codified Slack app manifest shipped with the project. Each operator
-provisions their own Slack app — the admin console's provisioning wizard automates app creation and
-OAuth — and supplies the resulting tokens as env vars. Permissions are implied by how those tokens
-are used (Socket Mode connection, bot messaging, DM/mention handling), not enumerated in a single
-static scope list.
+Shipwright's Slack app manifest is **centrally codified** in the codebase at `admin/src/slack-provisioning-client.ts`.
+The `buildAgentManifest()` function constructs a Slack App Manifest object with configured
+display_information, bot_user, app_home, and assistant_view. Bot permissions are centrally defined
+in the exported `AGENT_BOT_SCOPES` array, which is embedded into the manifest's `oauth_config.scopes.bot`.
+This manifest-driven approach ensures consistent provisioning: `apps.manifest.create` provisions new
+apps during initial setup, and `apps.manifest.update` keeps the manifest in sync during agent
+lifecycle management.
+
+**Bot scopes** — the following table enumerates every permission the agent's bot user holds:
+
+| Scope | Grants |
+|---|---|
+| **Messaging** | |
+| chat:write | Send messages to channels, DMs, and group conversations |
+| im:write | Send direct messages to users |
+| files:read | Read file metadata and contents |
+| files:write | Upload and modify files |
+| reactions:write | Add and remove emoji reactions |
+| assistant:write | Post messages to Slack Assistant threads |
+| **History-read** | |
+| channels:history | Read message history from public channels |
+| groups:history | Read message history from private channels |
+| im:history | Read direct message history |
+| mpim:history | Read group DM message history |
+| **Directory-read** | |
+| channels:read | List public channels and channel information |
+| users:read | List and read user information |
+| users:read.email | Access user email addresses |
+| **Mention & misc.** | |
+| app_mentions:read | Receive notifications when the agent is mentioned |
+| reactions:read | Read emoji reactions on messages |
 
 ## Pull request review & merge
 
