@@ -776,16 +776,16 @@ advisory — CI can run and still not gate `main`.
 - **Enforce on admins:** **no.**
 
 `shipwright-deploy` is enabled for this repo, so most PRs are agent-authored and
-agent-reviewed, and `deploy.md` Step 4b merges every PR with `gh pr merge --admin` by
-design, not as an emergency exception. `--admin` bypasses branch protection wholesale,
-so all four settings above are moot for the actual merge path: GitHub blocks
-self-APPROVE via the API so a required-review count can never be satisfied by the
-pipeline itself, `enforce_admins: true` would either block every automated merge or
-require the merging account to be a permanent `bypass_actor`, "up to date" burns real CI
-minutes on every merge, and conversation resolution isn't reliably enforced by the
-pipeline either. These are the standard values for every shipwright repo, one flat
-default rather than a per-repo choice; see `repo-config/SKILL.md`'s Branch protection
-section for the full reasoning. Unchanged this cycle.
+agent-reviewed, and `deploy.md` Step 4b merges every PR with `gh pr merge --squash`,
+deferring to GitHub's native branch protection rather than bypassing it unconditionally.
+This respects the `require_code_owner_review: true` ruleset (ruleset id 18495740) enforced
+on `main` — both maintainer accounts are configured as `bypass_actors` on it, and other
+repos this agent merges into may have no review requirement configured at all — so the
+branch-protection-block detection in Step 4b is a defensive backstop for rare cases
+(a PR opened under a different identity, or ruleset config drift), not the common path.
+The four settings above remain as standard values for every shipwright repo per
+`repo-config/SKILL.md`'s Branch protection section for context — they are gated by
+branch protection itself, not bypassed anymore. Changed this cycle (RDA-1.1).
 - **Canary status check:** not applicable / not included — see Canary execution
   contract section.
 
