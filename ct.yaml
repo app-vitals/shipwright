@@ -29,6 +29,4 @@ check-version-increment: true
 # bundled optional subcharts (CNH-6.1) — especially cert-manager with
 # startupapicheck.enabled: true, which waits on a post-install Job — can take
 # longer than Helm's default install timeout (5m) on CI's kind cluster.
-helm-extra-args:
-  - --timeout
-  - 600s
+helm-extra-args: --timeout 600s
