@@ -8,6 +8,9 @@ export default defineConfig({
   site: "https://shipwrightharness.com",
   integrations: [tailwind(), sitemap(), mdx()],
   output: "static",
+  redirects: {
+    "/docs": "/docs/introduction",
+  },
   markdown: {
     shikiConfig: {
       // Use css-variables theme so syntax colors map to brand tokens

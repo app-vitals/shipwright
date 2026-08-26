@@ -48,13 +48,13 @@ test("config page renders Policy Config section", async ({ page }) => {
   ).toBeVisible();
 });
 
-test("footer nav has a link to /docs", async ({ page }) => {
+test("footer nav has a link to /docs/introduction", async ({ page }) => {
   await page.goto("/");
   const footer = page.locator("footer");
   await expect(footer).toBeVisible();
   await expect(
     footer.getByRole("link", { name: /^Docs$/i }),
-  ).toHaveAttribute("href", "/docs");
+  ).toHaveAttribute("href", "/docs/introduction");
 });
 
 test("config page renders Task store service section", async ({ page }) => {

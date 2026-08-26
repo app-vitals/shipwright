@@ -46,7 +46,7 @@ export interface NavLink {
  * "vs Devin" entry only, no additional claim text.
  */
 export const PRIMARY_NAV_LINKS: NavLink[] = [
-  { href: "/docs", label: "Docs" },
+  { href: "/docs/introduction", label: "Docs" },
   { href: "/compare", label: "Compare" },
   { href: "/vs/devin", label: "vs Devin" },
   { href: "/agent-model", label: "Agent Model" },

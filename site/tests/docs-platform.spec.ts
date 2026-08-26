@@ -310,7 +310,9 @@ test("mobile sidebar contains Docs, Compare, GitHub nav links", async ({ page })
   await page.locator("label[for='docs-sidebar-toggle']").first().click();
   const sidebar = page.locator("aside.docs-sidebar");
   // Nav links should be present in the sidebar
-  await expect(sidebar.locator("a[href='/docs']")).toBeVisible();
+  await expect(
+    sidebar.locator("a[href='/docs/introduction']").first(),
+  ).toBeVisible();
   await expect(sidebar.locator("a[href='/compare']")).toBeVisible();
   await expect(sidebar.locator("a[href='https://github.com/app-vitals/shipwright']")).toBeVisible();
 });
