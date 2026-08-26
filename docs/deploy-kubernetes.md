@@ -382,8 +382,12 @@ Gateway API, with TLS issued by cert-manager. A ready-to-apply example lives at
   `gke-l7-global-external-managed` GatewayClass ships with GKE's managed gateway
   controller.
 - **cert-manager** installed, with a `ClusterIssuer` already created (e.g.
-  `letsencrypt-prod`). cert-manager's CRDs (`cert-manager.io/v1`) must exist
-  before the chart renders the `Certificate`.
+  `letsencrypt-prod`). If you're bringing your own cert-manager, its CRDs
+  (`cert-manager.io/v1`) must exist before install. **Alternatively,** you can
+  bundle cert-manager in this same Helm release (see [Bundled ingress
+  controllers and cert-manager](#bundled-ingress-controllers-and-cert-manager-optional)
+  below) — the chart will then apply the `Certificate` after cert-manager's
+  CRDs are ready via a post-install Job hook.
 
 > The chart's `ci/` values used by chart-testing do **not** enable the gateway
 > or cert-manager, because the test kind cluster has neither set of CRDs. That's
@@ -465,7 +469,13 @@ certificate management.
 - **AWS Load Balancer Controller** installed in the cluster — it watches
   `Ingress` objects with `ingressClassName: alb` and provisions an ALB. Without
   it, the rendered `Ingress` has no controller and no load balancer appears.
-- **cert-manager** (or AWS Certificate Manager via annotations) for TLS.
+- **TLS management:** use either AWS Certificate Manager (via annotations,
+  requires no cert-manager), or cert-manager (when bundled or pre-installed). If
+  bringing your own cert-manager, its CRDs (`cert-manager.io/v1`) must exist
+  before install. Alternatively, you can bundle cert-manager in this same Helm
+  release (see [Bundled ingress controllers and cert-manager](#bundled-ingress-controllers-and-cert-manager-optional)
+  below) — the chart will then apply any chart-managed `Issuer` after
+  cert-manager's CRDs are ready via a post-install Job hook.
 
 ### Install
 
@@ -594,8 +604,13 @@ Production deployment on any Kubernetes cluster with Traefik as the ingress cont
   API group CRDs (e.g., `traefik.io/v1alpha1` `Middleware`) applied. Most
   Traefik Helm charts include these by default.
 - **cert-manager** installed, with a `ClusterIssuer` already created (e.g.
-  `letsencrypt-prod`). cert-manager's CRDs (`cert-manager.io/v1`) must exist
-  before the chart renders the `Certificate`.
+  `letsencrypt-prod`). If you're bringing your own cert-manager, its CRDs
+  (`cert-manager.io/v1`) must exist before install. **Alternatively,** you can
+  bundle cert-manager in this same Helm release (see [Bundled ingress
+  controllers and cert-manager](#bundled-ingress-controllers-and-cert-manager-optional)
+  below) — the chart will then apply the `Ingress` TLS stanza and any
+  chart-managed `Issuer` after cert-manager's CRDs are ready via a post-install
+  Job hook.
 
 ### Install
 
@@ -1058,11 +1073,32 @@ chart needed per jetstack v1.15+ convention) and runs a startup API check to ens
 the CRDs are ready. When you `helm uninstall`, the CRDs are preserved to avoid
 deleting custom resources (Certificates, Issuers, etc.) cluster-wide.
 
-This is independent of `tls.certManager.enabled` and the chart's own Issuer
-creation (`tls.certManager.issuer.create`). The bundled cert-manager subchart is
-purely the **controller** — the chart's TLS wiring picks up that controller and
-uses it. You can run cert-manager elsewhere and leave this bundled subchart
-disabled; or enable it here to bring both controller and TLS wiring up together.
+#### CRD-bootstrap hook for bundled cert-manager
+
+When cert-manager is bundled in the **same release** (`cert-manager.enabled=true`)
+and `tls.certManager.enabled=true` with a chart-managed `Issuer` and/or `Certificate`
+to apply (`tls.certManager.issuer.create=true` or `networking.type=gateway`), the
+chart uses a **post-install/post-upgrade bootstrap Job** (CNH-7.1) to apply those
+CRs. This is necessary because on first install, cert-manager's CRDs are templates
+in this release and do not exist at apply time — an inline `Issuer` or `Certificate`
+manifest would fail to apply until cert-manager's webhook is up. The bootstrap Job
+waits for cert-manager to be Available, then applies the CRs from a ConfigMap.
+
+A cleanup Job (pre-delete hook) is also rendered by default to delete the applied
+CRs on `helm uninstall`, preserving the issued TLS Secret and ACME account Secret
+so the next install does not force a fresh ACME order. To disable cleanup on
+delete, set `tls.certManager.bootstrap.cleanupOnDelete: false`.
+
+This bootstrap hook is **only** used for the bundled cert-manager path. If you're
+using `cert-manager.enabled=false` and bringing your own cert-manager (which has
+already had its CRDs installed separately), the chart applies CRs as ordinary inline
+manifests.
+
+This is independent of whether you bring your own cert-manager — the bundled
+cert-manager subchart is purely the **controller**. The chart's TLS wiring picks up
+that controller and uses it. You can run cert-manager elsewhere and leave this
+bundled subchart disabled; or enable it here to bring both controller and TLS
+wiring up together with no external dependencies.
 
 ### All three together (self-contained cloud-native setup)
 

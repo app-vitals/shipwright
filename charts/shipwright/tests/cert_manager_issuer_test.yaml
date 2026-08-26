@@ -145,6 +145,23 @@ tests:
       - hasDocuments:
           count: 0
 
+  - it: renders NO inline Issuer when the bundled cert-manager hook path is active (CNH-7.1 — it ships inside the bootstrap ConfigMap instead)
+    # Mirrors the certificate_test.yaml viaHook case. When cert-manager is
+    # bundled in the same release and the chart is creating an Issuer, viaHook is
+    # true, so this inline template renders 0 documents — the Issuer is carried
+    # in the r-shipwright-cert-manager-bootstrap ConfigMap and applied by the
+    # hook Job once cert-manager (and its CRDs) is Available.
+    template: templates/cert-manager-issuer.yaml
+    set:
+      cert-manager.enabled: true
+      tls.certManager.enabled: true
+      networking.type: ingress
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - hasDocuments:
+          count: 0
+
   - it: fails the render when networking.type=gateway with issuer.create=true and type=letsencrypt (default) — the HTTP-01 solver has no Ingress to target in gateway mode
     template: templates/cert-manager-issuer.yaml
     set:

@@ -697,18 +697,53 @@ intent. Guards templates/cert-manager-issuer.yaml (CNH-5.1).
 {{- end }}
 
 {{/*
-shipwright.certManager.viaHook — reserved for a FUTURE hook-based-issuance path
-(e.g. a pre-install/pre-upgrade Job that requests a cert out-of-band instead of
-a live cert-manager.io/v1 Certificate resource). No values key backs this
-today — it always renders "" (falsy) — so
-shipwright.certManager.certificateManifest's render guard
-(`tls.certManager.enabled && networking.type == "gateway" && !viaHook`) is
-UNCONDITIONALLY equivalent to today's `tls.certManager.enabled &&
-networking.type == "gateway"` guard. Kept as its own helper (rather than
-inlining `false`) so a follow-up task only has to change this one definition
-to light up the hook path everywhere it is checked.
+shipwright.certManager.viaHook — true when the chart-managed Issuer/Certificate
+must be issued through the post-install/post-upgrade bootstrap hook Job
+(templates/cert-manager-bootstrap-job.yaml, CNH-7.1) instead of as inline
+manifests. This is the case ONLY when cert-manager is BUNDLED in the same
+release (index .Values "cert-manager" "enabled") — on first install its CRDs
+are templates in this very release and do not exist at apply time, so a plain
+cert-manager.io/v1 Issuer/Certificate manifest would fail to apply. The hook
+Job waits for cert-manager to be Available, then `kubectl apply`s the CRs from
+a ConfigMap once the CRDs exist.
+
+Renders "true" when ALL of:
+  - tls.certManager.enabled            (the master cert-manager off-switch), AND
+  - cert-manager.enabled               (the bundled subchart is on), AND
+  - issuer.create OR networking.type=gateway
+                                       (there is actually a chart-managed
+                                       Issuer and/or a gateway Certificate to
+                                       apply — the ingress + bring-your-own-
+                                       Issuer path needs no live CR, it uses
+                                       ingress-shim annotations instead).
+Otherwise renders "" (falsy) and the inline templates/cert-manager-issuer.yaml
+and templates/certificate.yaml render as before.
 */}}
 {{- define "shipwright.certManager.viaHook" -}}
+{{- if and .Values.tls.certManager.enabled (index .Values "cert-manager" "enabled") (or .Values.tls.certManager.issuer.create (eq .Values.networking.type "gateway")) }}true{{- end }}
+{{- end }}
+
+{{/*
+shipwright.certManager.subchartFullname — the fullname the BUNDLED cert-manager
+subchart resolves to, replicating its own cert-manager.fullname helper so the
+bootstrap Job's `kubectl wait` targets the ACTUAL rendered Deployment names
+(<subchartFullname>, <subchartFullname>-webhook, <subchartFullname>-cainjector).
+Honors the cert-manager block's fullnameOverride/nameOverride if a user sets
+them under the `cert-manager:` values key. NOT the parent shipwright.fullname —
+the subchart names off .Release.Name + its own chart name "cert-manager".
+*/}}
+{{- define "shipwright.certManager.subchartFullname" -}}
+{{- $cm := index .Values "cert-manager" | default dict -}}
+{{- if $cm.fullnameOverride -}}
+{{- $cm.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- $name := $cm.nameOverride | default "cert-manager" -}}
+{{- if contains $name .Release.Name -}}
+{{- .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
 {{- end }}
 
 {{/*

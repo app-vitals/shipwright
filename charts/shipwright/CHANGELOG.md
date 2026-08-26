@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.17.0] - 2026-08-26
+
+### Added
+
+- cert-manager bootstrap hook for the bundled cert-manager path (CNH-7.1): when cert-manager is bundled in the same release (`cert-manager.enabled=true`), its CRDs are templates in this release and do not exist at first-install apply time, so the chart-managed Issuer/Certificate can no longer be plain inline manifests. New `templates/cert-manager-bootstrap-job.yaml` ships a ConfigMap `<fullname>-cert-manager-bootstrap` (`10-issuer.yaml` if `issuer.create`, `20-certificate.yaml` if `networking.type=gateway` — both from the existing `shipwright.certManager.issuerManifest`/`certificateManifest` helpers) applied by a `post-install,post-upgrade` Job (`hook-weight` `"10"`, after cert-manager's `startupapicheck` at `1` and `db-bootstrap` at `-5`, `hook-delete-policy` `before-hook-creation,hook-succeeded`) whose initContainer `kubectl wait`s for the cert-manager/webhook/cainjector Deployments to be `Available` (300s timeout) before the main container `kubectl apply --server-side --field-manager=shipwright-chart --force-conflicts`s the ConfigMap. A pre-delete cleanup Job (`tls.certManager.bootstrap.cleanupOnDelete`, default `true`) deletes the applied CRs on uninstall, intentionally keeping the issued TLS Secret and ACME account Secret. New `templates/cert-manager-bootstrap-rbac.yaml` adds the ServiceAccount/Role/RoleBinding (regular, non-hook resources so the token survives upgrades) plus a ClusterRole/Binding only when `issuer.kind=ClusterIssuer`. `templates/cert-manager-issuer.yaml` and `templates/certificate.yaml` now render nothing when the new `shipwright.certManager.viaHook` guard is true, so this is the sole render path for those CRs in the bundled-cert-manager case; `helm template` output with default values is byte-identical to before this change.
+
 ## [1.16.3] - 2026-08-26
 
 ### Changed

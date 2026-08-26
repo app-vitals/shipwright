@@ -176,6 +176,38 @@ tls:
       # Encrypt staging endpoint (https://acme-staging-v02.api.letsencrypt.org/directory)
       # while testing to avoid production rate limits.
       server: ""
+    # -- Bootstrap hook for the BUNDLED cert-manager path (CNH-7.1). When
+    # cert-manager is bundled in the same release (cert-manager.enabled=true),
+    # its CRDs are templates in this release and do not exist at first-install
+    # apply time, so the chart-managed Issuer/Certificate cannot be plain
+    # manifests. Instead they ship inside a ConfigMap applied by a
+    # post-install/post-upgrade Job that waits for cert-manager to be Available.
+    # This block only takes effect when shipwright.certManager.viaHook is true
+    # (tls.certManager.enabled && cert-manager.enabled && (issuer.create ||
+    # networking.type=gateway)); it is inert for the common
+    # bring-your-own-cert-manager path.
+    bootstrap:
+      # -- Render a pre-delete cleanup Job that deletes the applied Issuer/
+      # Certificate CRs on `helm uninstall`. The issued TLS Secret and the ACME
+      # account Secret are intentionally KEPT (deleting them would force a fresh
+      # ACME order / re-issuance on the next install). Set false to leave the
+      # CRs in place on delete.
+      cleanupOnDelete: true
+      # -- backoffLimit for the apply Job. The initContainer waits for
+      # cert-manager to be Available first, so retries here only cover a
+      # cert-manager that is slow to reconcile the applied CRs.
+      backoffLimit: 10
+      # -- Hard wall-clock deadline (seconds) for the apply Job. Slightly under
+      # the initContainer's 300s Available wait plus apply time.
+      activeDeadlineSeconds: 540
+      # -- Compute resources for the bootstrap Job pods (apply + cleanup).
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
 
 # -- ServiceAccount for shipwright workloads.
 serviceAccount:
