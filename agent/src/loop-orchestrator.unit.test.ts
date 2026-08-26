@@ -3522,7 +3522,7 @@ describe("createLoopOrchestrator", () => {
   });
 
   test("dispatching a review candidate for a PR does not suppress a patch candidate for the same PR id/commit within the cooldown window", async () => {
-    // Regression coverage for the ok-wow-infra#2373-shaped bug: the cooldown
+    // Regression coverage for the acme/x#5-shaped bug: the cooldown
     // key was bare pr.id, shared across phases. Review re-firing on an
     // unchanged commit would suppress patch's independent need to act on the
     // same PR (e.g. resolving a live merge conflict) for the full cooldown
