@@ -1052,6 +1052,43 @@ describe("review.md — Step 5.5 fetches reviewThreads via GraphQL (RUC-1.1)", (
     expect(threadsBlock).toMatch(/comments\(first:\s*20\)/);
     expect(threadsBlock).toContain("createdAt");
   });
+
+  it("Step 5.5 shows the literal jq extraction assigning REVIEWS_JSON, REVIEW_THREADS_JSON, and COMMENTS_JSON as full { nodes: [...] } connection objects, not bare arrays (RNS-1.1)", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step6Idx).toBeGreaterThan(step5Idx);
+    const step5Section = content.slice(step5Idx, step6Idx);
+
+    const itemIdx = step5Section.indexOf("Existing reviews, comments, and inline review threads");
+    expect(itemIdx).toBeGreaterThan(-1);
+    const itemBlock = step5Section.slice(itemIdx, itemIdx + 3000);
+
+    // The graphql call's response must be captured so the extraction below can read it.
+    expect(itemBlock).toContain("RESPONSE=$(gh api graphql -f query=");
+
+    // Each JSON variable must be built by example from the literal jq extraction, not left
+    // to prose inference -- and must hold the full connection object, not the bare inner
+    // array, since Step 9.5 requires the { nodes: [...] } shape.
+    expect(itemBlock).toContain(
+      "HEAD_REF_OID=$(jq -r '.data.repository.pullRequest.headRefOid' <<< \"$RESPONSE\")",
+    );
+    expect(itemBlock).toContain(
+      "REVIEWS_JSON=$(jq -c '.data.repository.pullRequest.reviews' <<< \"$RESPONSE\")",
+    );
+    expect(itemBlock).toContain(
+      "REVIEW_THREADS_JSON=$(jq -c '.data.repository.pullRequest.reviewThreads' <<< \"$RESPONSE\")",
+    );
+    expect(itemBlock).toContain(
+      "COMMENTS_JSON=$(jq -c '.data.repository.pullRequest.comments' <<< \"$RESPONSE\")",
+    );
+
+    // The prose must describe fields inside the wrapped object, not phrasing that implies
+    // the bare inner array itself is what gets assigned to the variable.
+    expect(itemBlock).toContain("full connection object");
+    expect(itemBlock).toContain("{ nodes: [...] }");
+    expect(itemBlock).not.toMatch(/Extract `reviews\.nodes\[\]`/);
+  });
 });
 
 describe("review.md — Unresolved Comment Check includes unresolved inline threads (RUC-1.1)", () => {

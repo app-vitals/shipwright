@@ -223,7 +223,7 @@ back to `'sonnet'`.
    review objects only — blind to inline diff-line review comments and their `isResolved`
    state):
    ```bash
-   gh api graphql -f query='
+   RESPONSE=$(gh api graphql -f query='
    {
      repository(owner: "{org}", name: "{repo}") {
        pullRequest(number: {pr}) {
@@ -261,16 +261,26 @@ back to `'sonnet'`.
          }
        }
      }
-   }'
+   }')
    ```
-   Extract `reviews.nodes[]` (including each review's `commit.oid`, needed by Step 9.5's
-   mechanical gate below to filter reviews at the current `headRefOid`), `reviewThreads.nodes[]`
-   (with `isResolved` and up to 20 comments per thread — `author.login`, `body`, `path`, `line`,
-   and `createdAt` for each, not just the first comment; `createdAt` is what Step 9.5's
-   `isThreadAddressedByAuthorReply` exclusion (URT-1.1) needs to detect a PR-author reply posted
-   after a thread's first, flagging comment), and `comments.nodes[]` — the same shape patch.md's
-   Step 3a extracts. Used below by the Unresolved Comment Check and by the unaddressed-findings
-   gate before Step 10.
+   Extract `HEAD_REF_OID`, `REVIEWS_JSON`, `REVIEW_THREADS_JSON`, and `COMMENTS_JSON` from the
+   response — each of the three JSON variables holds the **full connection object**
+   (`{ nodes: [...] }`), not the bare inner array, since Step 9.5 passes them straight through to
+   `compute-unaddressed-findings.ts`, which requires that shape:
+   ```bash
+   HEAD_REF_OID=$(jq -r '.data.repository.pullRequest.headRefOid' <<< "$RESPONSE")
+   REVIEWS_JSON=$(jq -c '.data.repository.pullRequest.reviews' <<< "$RESPONSE")
+   REVIEW_THREADS_JSON=$(jq -c '.data.repository.pullRequest.reviewThreads' <<< "$RESPONSE")
+   COMMENTS_JSON=$(jq -c '.data.repository.pullRequest.comments' <<< "$RESPONSE")
+   ```
+   `REVIEWS_JSON.nodes[]` holds each review (including `commit.oid`, needed by Step 9.5's
+   mechanical gate below to filter reviews at the current `headRefOid`),
+   `REVIEW_THREADS_JSON.nodes[]` holds each thread (with `isResolved` and up to 20 comments per
+   thread — `author.login`, `body`, `path`, `line`, and `createdAt` for each, not just the first
+   comment; `createdAt` is what Step 9.5's `isThreadAddressedByAuthorReply` exclusion (URT-1.1)
+   needs to detect a PR-author reply posted after a thread's first, flagging comment), and
+   `COMMENTS_JSON.nodes[]` holds each comment — the same shape patch.md's Step 3a extracts. Used
+   below by the Unresolved Comment Check and by the unaddressed-findings gate before Step 10.
 
    #### Prior Qualifying Reviews for Subagent Attestation (PVD-1.2)
 
