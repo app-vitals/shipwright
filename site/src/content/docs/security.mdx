@@ -202,21 +202,23 @@ static scope list.
 
 ## Pull request review & merge
 
-If branch protection needs to be the actual gate on what merges into your repository, configure
-it explicitly: keep the `shipwright-deploy` cron disabled (it ships off by default) and add your
-own reviewers as GitHub **CODEOWNERS** for the repository — or at minimum for
-`.github/workflows/**` — then require review from Code Owners in branch protection. Shipwright's
-own automated review doesn't satisfy a Code Owners requirement; a human you've named is what
-actually has to approve before anything merges, including changes to workflow files. This is the
-right setup for SOC 2-style segregation-of-duties requirements: a named human approver, distinct
-from whoever (or whatever) authored the change.
+Self-review is disabled by default: a freshly provisioned agent's policy (`state/agent-policy.md`,
+seeded from the shipped template) sets `allow_self_review: false`, so an agent is excluded from
+reviewing its own open PRs. Automated merging is disabled by default too — the `shipwright-deploy`
+cron ships off, so nothing merges without a human clicking merge in the GitHub UI.
 
-By default, self-review is allowed (`allow_self_review`, default `true`) — the agent that opened a
-PR can also review it. And by default, Shipwright's own merge commands use an administrator-level
-override (`gh pr merge --admin`) that bypasses branch protection's required-approval rule when the
-credential performing the merge has that permission — the intent is that Shipwright's own
-review-and-CI gate substitutes for branch protection, not that it defers to it. If that's not the
-model you want, the CODEOWNERS setup above is how to require independent human sign-off instead.
+If Shipwright itself performs a merge — because you've enabled `shipwright-deploy`, or a human
+runs the merge command directly — it uses an administrator-level override (`gh pr merge --admin`)
+that bypasses branch protection's required-approval rule, on the premise that Shipwright's own
+review-and-CI gate substitutes for it.
+
+For environments that need a specific, named human to be the actual approver — not just "not the
+same agent," but a person you've designated (SOC 2-style segregation of duties) — add your
+reviewers as GitHub **CODEOWNERS** for the repository, or at minimum for `.github/workflows/**`,
+and require review from Code Owners in branch protection. Neither self-review nor another agent's
+review satisfies a Code Owners requirement; only a human on that list does. Keep
+`shipwright-deploy` disabled in this configuration (its default state) so every merge stays an
+explicit human action.
 
 ## One agent per user
 
@@ -311,7 +313,8 @@ you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is
 moment you do.
 
 **Does every change require human review before it merges?**
-Not by default — self-review is allowed, and Shipwright's own merge commands bypass branch
-protection's required-approval rule by design. If you need a named human to be the actual
-approver, disable the `shipwright-deploy` cron and require Code Owners review as described above —
-Shipwright's own review won't satisfy that requirement.
+Self-review and automated merging are both disabled by default, so in practice a human reviews and
+a human clicks merge. If Shipwright performs the merge itself (deploy enabled, or the merge command
+run directly), it bypasses branch protection's required-approval rule by design. For a guaranteed,
+specific human approver, add Code Owners review as described above — that's the one thing neither
+self-review nor another agent's review can satisfy.
