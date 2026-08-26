@@ -165,7 +165,7 @@ anything beyond a quick fix, going through the task queue produces better outcom
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`auto_post_reviews`</span><span style="color:var(--astro-code-foreground)"> | true | Post reviews to GitHub automatically. Set to </span><span style="color:var(--astro-code-token-string)">`false`</span><span style="color:var(--astro-code-foreground)"> to stage reviews locally instead. |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`allowed_events`</span><span style="color:var(--astro-code-foreground)"> | [COMMENT, APPROVE] | Never REQUEST_CHANGES |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`review_external_prs`</span><span style="color:var(--astro-code-foreground)"> | true | Review externally-opened PRs |</span></span>
-<span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`allow_self_review`</span><span style="color:var(--astro-code-foreground)"> | true | Review own PRs |</span></span>
+<span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`allow_self_review`</span><span style="color:var(--astro-code-foreground)"> | false | Review own PRs |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`min_confidence`</span><span style="color:var(--astro-code-foreground)"> | 75 | Drop findings below this threshold |</span></span>
 <span class="line"><span style="color:var(--astro-code-foreground)">| </span><span style="color:var(--astro-code-token-string)">`max_findings`</span><span style="color:var(--astro-code-foreground)"> | 5 | Trim to highest-confidence findings |</span></span>
 <span class="line"></span>
@@ -201,7 +201,7 @@ anything beyond a quick fix, going through the task queue produces better outcom
 </tr>
 <tr>
 <td><code>allow_self_review</code></td>
-<td><code>true</code></td>
+<td><code>false</code></td>
 <td>Allow the agent to review PRs it opened. Set <code>false</code> to require a human reviewer on agent-authored PRs.</td>
 </tr>
 <tr>
