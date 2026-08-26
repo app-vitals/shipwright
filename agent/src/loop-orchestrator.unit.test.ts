@@ -3521,6 +3521,40 @@ describe("createLoopOrchestrator", () => {
     expect(creates).toHaveLength(2);
   });
 
+  test("dispatching a review candidate for a PR does not suppress a patch candidate for the same PR id/commit within the cooldown window", async () => {
+    // Regression coverage for the ok-wow-infra#2373-shaped bug: the cooldown
+    // key was bare pr.id, shared across phases. Review re-firing on an
+    // unchanged commit would suppress patch's independent need to act on the
+    // same PR (e.g. resolving a live merge conflict) for the full cooldown
+    // window, even though the two phases have nothing to do with each other.
+    const { clock } = makeMutableClock("2026-01-01T00:00:00Z");
+    const { reporter, creates } = makeRecordingReporter();
+    const reviewCandidate = pr("acme/x#5", "2026-01-01T00:00:00Z", "review");
+    const patchCandidate = pr("acme/x#5", "2026-01-01T00:00:00Z", "patch", {
+      commitSha: reviewCandidate.commitSha,
+    });
+    const deps = {
+      ...makeDeps({
+        reviewCandidates: [reviewCandidate],
+        patchCandidates: [patchCandidate],
+        reporter,
+      }),
+      clock,
+    };
+    const loop = createLoopOrchestrator(deps);
+
+    // Review dispatches first, recording a cooldown entry for this PR.
+    await loop([job("shipwright-review", true)]);
+    expect(creates).toHaveLength(1);
+
+    // Patch has an independent need to act on the exact same PR id and
+    // commitSha, well within review's cooldown window. It must not be
+    // suppressed — a phase-scoped cooldown key keeps the two phases'
+    // dispatch histories independent.
+    await loop([job("shipwright-patch", true)]);
+    expect(creates).toHaveLength(2);
+  });
+
   test("the pre-claim marker is appended in the exact [preclaim:id:sha] format", async () => {
     const consumed = new Set<string>();
     const prCandidate = pr(

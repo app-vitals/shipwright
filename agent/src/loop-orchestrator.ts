@@ -293,12 +293,22 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  * a PR was re-dispatched every 2-5 minutes for hours on an unchanged commit)
  * are suppressed.
  *
- * Per-phase load-bearing status (investigated for a possible scoped removal —
- * see PH-1.3):
- * - **review**: redundant-but-harmless. check-review.ts has its own
- *   commitSha+reviewState dedup, plus RVD-1.1's live-GitHub dedup — an
+ * The cooldown key is phase-scoped (`${pr.id}:${phase}`, see
+ * isPrDispatchSuppressed) — each phase tracks its own redispatch history
+ * independently. PH-1.3 previously assumed a bare-pr.id key shared across
+ * review/patch/deploy was safe because review's cooldown was believed inert
+ * in practice (see below); that assumption is disproven (confirmed live,
+ * PRC-1.1): a real review dispatch on an unchanged commit was suppressing an
+ * unrelated, independent patch need (e.g. resolving a live merge conflict)
+ * for the full cooldown window.
+ *
+ * Per-phase load-bearing status:
+ * - **review**: redundant-but-harmless in isolation. check-review.ts has its
+ *   own commitSha+reviewState dedup, plus RVD-1.1's live-GitHub dedup — an
  *   unchanged-commit PR never even reaches getReviewCandidates()'s output, so
- *   this cooldown never gets a chance to fire for review in practice.
+ *   this cooldown rarely gets a chance to fire for review in practice. Kept
+ *   (not removed) because it's still a legitimate backstop for review's own
+ *   phase.
  * - **patch**: load-bearing. check-patch.ts re-evaluates live state every
  *   tick and keeps no "already attempted this commit" memory of its own — a
  *   non-blocking failed/no-op cycle would redispatch every tick without this
@@ -307,9 +317,6 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  *   sets `blocked` for its own designed failure mode and doesn't need this
  *   cooldown, but a transient/unhandled failure outside that path has the
  *   same unbounded-redispatch exposure as patch.
- *
- * A scoped (patch/deploy-only) removal wasn't pursued: this is a single
- * shared constant, and review's redundant coverage costs nothing to keep.
  */
 const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 
@@ -325,15 +332,27 @@ const PR_REDISPATCH_COOLDOWN_MS = 25 * 60 * 1000;
 const PROGRESS_PUSH_DEBOUNCE_MS = 5000;
 
 /**
+ * Builds the phase-scoped cooldown key (PRC-1.1) shared by
+ * isPrDispatchSuppressed's lookup and the dispatch loop's lastPrDispatch
+ * write — `${pr.id}:${phase}` rather than bare pr.id, so each phase's
+ * redispatch history is tracked independently and a dispatch in one phase
+ * can't suppress an unrelated phase's need to act on the same PR.
+ */
+function prDispatchCooldownKey(pr: WorkPrCandidate): string {
+  return `${pr.id}:${pr.phase ?? "review"}`;
+}
+
+/**
  * A PR item should be excluded from this tick's candidate pool when it was
- * already dispatched at this exact commitSha within the cooldown window —
- * nothing new to act on since the last dispatch. (A hitl:true PR is excluded
- * further upstream, at the candidate-collector level — see check-patch.ts and
- * check-review.ts — so it never reaches this function in the first place.)
+ * already dispatched at this exact commitSha, in this same phase, within the
+ * cooldown window — nothing new to act on since the last dispatch. (A
+ * hitl:true PR is excluded further upstream, at the candidate-collector
+ * level — see check-patch.ts and check-review.ts — so it never reaches this
+ * function in the first place.)
  *
- * `lastDispatch` is keyed by item id and persists across ticks (closure
- * state, like lastDispatchedItemId below) so the suppression holds across
- * many cron ticks, not just within one drain.
+ * `lastDispatch` is keyed by prDispatchCooldownKey(pr) and persists across
+ * ticks (closure state, like lastDispatchedItemId below) so the suppression
+ * holds across many cron ticks, not just within one drain.
  */
 function isPrDispatchSuppressed(
   pr: WorkPrCandidate,
@@ -343,7 +362,7 @@ function isPrDispatchSuppressed(
   >,
   nowMs: number,
 ): boolean {
-  const last = lastDispatch.get(pr.id);
+  const last = lastDispatch.get(prDispatchCooldownKey(pr));
   if (!last || last.commitSha !== pr.commitSha) return false;
 
   return nowMs - last.dispatchedAt < PR_REDISPATCH_COOLDOWN_MS;
@@ -1114,7 +1133,7 @@ export function createLoopOrchestrator(
         // without throwing (a thrown dispatch `continue`s above before
         // reaching here).
         if (item.type === "pr") {
-          lastPrDispatch.set(itemId, {
+          lastPrDispatch.set(prDispatchCooldownKey(item.pr), {
             commitSha: item.pr.commitSha,
             dispatchedAt: clock.now().getTime(),
           });
