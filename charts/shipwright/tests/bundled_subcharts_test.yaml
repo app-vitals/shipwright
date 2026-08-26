@@ -1,0 +1,88 @@
+suite: Bundled optional ingress-nginx/traefik/cert-manager subcharts (CNH-6.1)
+# Mirrors the postgresql_dependency_test.yaml pattern: three more OPTIONAL,
+# default-off subchart dependencies (Chart.yaml `condition: <name>.enabled`),
+# each vendored under charts/shipwright/charts/. Default values render none of
+# them (documentSelector + skipEmptyTemplates asserts 0 documents, matching
+# the postgresql "disabled" case); each renders exactly 1 controller/CRD
+# document when its own `<name>.enabled` flag is flipped on. Also covers the
+# new "two bundled ingress controllers at once" validation guard in
+# templates/_validation.tpl (shipwright.validate, invoked from NOTES.txt).
+tests:
+  # ---- ingress-nginx ----
+  - it: renders no ingress-nginx controller Deployment by default
+    templates:
+      - charts/ingress-nginx/templates/controller-deployment.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the ingress-nginx controller Deployment when ingress-nginx.enabled=true
+    templates:
+      - charts/ingress-nginx/templates/controller-deployment.yaml
+    set:
+      ingress-nginx.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+
+  # ---- traefik ----
+  - it: renders no traefik Deployment by default
+    templates:
+      - charts/traefik/templates/deployment.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the traefik Deployment when traefik.enabled=true
+    templates:
+      - charts/traefik/templates/deployment.yaml
+    set:
+      traefik.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+
+  # ---- cert-manager ----
+  - it: renders no cert-manager CustomResourceDefinition by default
+    templates:
+      - charts/cert-manager/templates/crd-cert-manager.io_certificates.yaml
+    documentSelector:
+      path: kind
+      value: CustomResourceDefinition
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders the cert-manager Certificate CRD when cert-manager.enabled=true (crds.enabled defaults to true within the bundled block)
+    templates:
+      - charts/cert-manager/templates/crd-cert-manager.io_certificates.yaml
+    set:
+      cert-manager.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: CustomResourceDefinition
+
+  # ---- contradictory config: both bundled ingress controller subcharts on ----
+  - it: fails validation when both ingress-nginx and traefik subcharts are enabled together
+    template: templates/NOTES.txt
+    set:
+      ingress-nginx.enabled: true
+      traefik.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "both.*bundled.*ingress.*controller"
