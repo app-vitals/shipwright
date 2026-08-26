@@ -1,0 +1,363 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-ccykbmgk><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="Astro v7.1.4"><title>Security — Shipwright Harness</title><meta name="description" content="Security architecture overview for Shipwright — deployment model, network controls, human access, Kubernetes RBAC, secrets, GitHub/Slack integration scopes, logging, and current compliance posture."><link rel="canonical" href="https://shipwrightharness.com/docs/security/"><link rel="icon" type="image/svg+xml" href="/shipwright-icon.svg"><link rel="icon" type="image/png" href="/shipwright-icon.png"><link rel="apple-touch-icon" href="/shipwright-icon.png"><meta property="og:type" content="website"><meta property="og:url" content="https://shipwrightharness.com/docs/security/"><meta property="og:title" content="Security — Shipwright Harness"><meta property="og:description" content="Security architecture overview for Shipwright — deployment model, network controls, human access, Kubernetes RBAC, secrets, GitHub/Slack integration scopes, logging, and current compliance posture."><meta property="og:site_name" content="Shipwright Harness"><meta property="og:image" content="https://shipwrightharness.com/og-default-1280x640.png"><meta property="og:image:width" content="1280"><meta property="og:image:height" content="640"><!-- Google Analytics 4 --><!-- Google tag (gtag.js) — GA4 --><script async src="https://www.googletagmanager.com/gtag/js?id=G-WS5TVR713J"></script><script>(function(){const GA_MEASUREMENT_ID = "G-WS5TVR713J";
+
+  // Skip analytics on localhost / dev to avoid polluting production data.
+  if (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1"
+  ) {
+    // no-op: do not initialize GA4
+  } else {
+    window.dataLayer = window.dataLayer || [];
+    function gtag() {
+      dataLayer.push(arguments);
+    }
+    gtag("js", new Date());
+    gtag("config", GA_MEASUREMENT_ID);
+  }
+})();</script><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="preconnect" href="https://api.fontshare.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"><link href="https://api.fontshare.com/v2/css?f[]=general-sans@400,500,600&display=swap" rel="stylesheet"><!-- Pagefind UI — the ONE permitted script on the docs layout --><link href="/pagefind/pagefind-ui.css" rel="stylesheet"><script>
+      import("/pagefind/pagefind-ui.js").then(function () {
+        new window.PagefindUI({ element: "#search", showImages: false });
+      });
+    </script><link rel="stylesheet" href="/_astro/SiteHeader.BY_KNoCI.css"><style>#docs-sidebar-toggle[data-astro-cid-ccykbmgk],.docs-sidebar-overlay[data-astro-cid-ccykbmgk]{display:none}@media (width<=767px){.docs-sidebar[data-astro-cid-ccykbmgk]{z-index:50;background:var(--sw-color-bg-raised);border-right:1px solid var(--sw-color-border-muted);width:280px;height:100vh;padding:1.5rem;transition:transform .25s;position:fixed;top:0;left:0;overflow-y:auto;transform:translate(-100%)}#docs-sidebar-toggle[data-astro-cid-ccykbmgk]:checked~.docs-layout[data-astro-cid-ccykbmgk] .docs-sidebar[data-astro-cid-ccykbmgk]{transform:translate(0)}#docs-sidebar-toggle[data-astro-cid-ccykbmgk]:checked~.docs-sidebar-overlay[data-astro-cid-ccykbmgk]{z-index:40;background:color-mix(in srgb, var(--sw-color-bg-base) 65%, transparent);display:block;position:fixed;inset:0}.docs-mobile-menu-btn[data-astro-cid-ccykbmgk],.docs-mobile-close-btn[data-astro-cid-ccykbmgk]{display:flex}}@media (width>=768px){.docs-mobile-menu-btn[data-astro-cid-ccykbmgk],.docs-mobile-close-btn[data-astro-cid-ccykbmgk]{display:none}.docs-sidebar[data-astro-cid-ccykbmgk]{height:fit-content;max-height:calc(100vh - 3rem);position:sticky;top:1.5rem;overflow-y:auto}}.docs-layout[data-astro-cid-ccykbmgk]{grid-template-columns:1fr;gap:0;min-height:calc(100vh - 80px);display:grid}@media (width>=768px){.docs-layout[data-astro-cid-ccykbmgk]{grid-template-columns:260px 1fr 220px;align-items:start;gap:2rem}}.docs-sidebar-link[data-astro-cid-ccykbmgk]{border-radius:var(--sw-radius-sm);font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);padding:.3rem .75rem;text-decoration:none;transition:background .15s,color .15s;display:block}.docs-sidebar-link[data-astro-cid-ccykbmgk]:hover,.docs-sidebar-link[data-astro-cid-ccykbmgk][aria-current=page]{background:var(--sw-color-bg-overlay);color:var(--sw-color-text-heading)}.docs-sidebar-link[data-astro-cid-ccykbmgk][aria-current=page]{color:var(--sw-color-brand-default);font-weight:500}.docs-toc-link[data-astro-cid-ccykbmgk]{font-size:var(--sw-text-small-size);color:var(--sw-color-text-editorial);padding:.2rem 0;line-height:1.4;text-decoration:none;display:block}.docs-toc-link[data-astro-cid-ccykbmgk]:hover{color:var(--sw-color-text-heading)}.docs-toc-link[data-astro-cid-ccykbmgk].depth-3{font-size:var(--sw-text-label-size);color:var(--sw-color-text-muted);padding-left:.75rem}.docs-prevnext[data-astro-cid-ccykbmgk]{border-top:1px solid var(--sw-color-border-subtle);flex-wrap:wrap;justify-content:space-between;gap:1rem;margin-top:2rem;padding-top:2rem;display:flex}.docs-prevnext[data-astro-cid-ccykbmgk] a[data-astro-cid-ccykbmgk]{border-radius:var(--sw-radius-md);border:1px solid var(--sw-color-border-muted);background:var(--sw-color-bg-raised);color:var(--sw-color-text-body);font-size:var(--sw-text-small-size);align-items:center;gap:.4rem;padding:.6rem 1rem;text-decoration:none;transition:border-color .15s,color .15s;display:inline-flex}.docs-prevnext[data-astro-cid-ccykbmgk] a[data-astro-cid-ccykbmgk]:hover{border-color:var(--sw-color-brand-default);color:var(--sw-color-brand-default)}
+</style></head><body class="min-h-screen" data-astro-cid-ccykbmgk><!-- Glow orb (decorative) --><div class="sw-orb sw-orb-brand" aria-hidden="true" style="top: -12rem; left: 50%; width: 42rem; height: 42rem; transform: translateX(-50%);" data-astro-cid-ccykbmgk></div><!-- Site header --><header class="sw-container relative z-10 flex items-center justify-between py-6"><a href="/" class="flex items-center gap-3" aria-label="Shipwright Harness — home"><img src="/shipwright-icon.svg" alt="" width="36" height="36" class="rounded-lg"><span class="text-lg" style="font-family: var(--sw-font-display); font-weight: 700; letter-spacing: -0.01em; color: var(--sw-color-text-heading);">Shipwright <span style="color: var(--sw-color-brand-default);">Harness</span></span></a><nav class="hidden md:flex items-center gap-6" aria-label="Primary"><a href="/docs" class="sw-label">Docs</a><a href="/compare" class="sw-label">Compare</a><a href="/vs/devin" class="sw-label">vs Devin</a><a href="/agent-model" class="sw-label">Agent Model</a><a href="/story" class="sw-label">Story</a><a href="https://github.com/app-vitals/shipwright" class="sw-label">GitHub ↗</a><a href="https://vitals-os.com/cal/book/discovery" class="sw-btn sw-btn-secondary">Book a call</a></nav></header><!-- Main docs layout --><div class="sw-container relative z-10 pb-20" data-astro-cid-ccykbmgk><!-- Mobile: hamburger button --><div class="docs-mobile-menu-btn py-4" data-astro-cid-ccykbmgk><label for="docs-sidebar-toggle" class="sw-btn sw-btn-secondary" style="cursor: pointer; font-size: var(--sw-text-small-size); padding: 0.4rem 0.75rem;" aria-label="Open navigation" data-astro-cid-ccykbmgk>☰ Menu</label></div><!-- CSS-only mobile sidebar toggle (placed before docs-layout for correct sibling selector) --><input type="checkbox" id="docs-sidebar-toggle" aria-hidden="true" data-astro-cid-ccykbmgk><!-- Overlay (click to close) --><label for="docs-sidebar-toggle" class="docs-sidebar-overlay" aria-hidden="true" data-astro-cid-ccykbmgk></label><div class="docs-layout" data-astro-cid-ccykbmgk><!-- Sidebar --><aside class="docs-sidebar" data-astro-cid-ccykbmgk><!-- Mobile-only nav links (hidden on desktop) --><nav class="md:hidden" aria-label="Mobile top navigation" style="margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--sw-color-border-subtle);" data-astro-cid-ccykbmgk><ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Docs</a></li><li data-astro-cid-ccykbmgk><a href="/compare" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Compare</a></li><li data-astro-cid-ccykbmgk><a href="/vs/devin" class="docs-sidebar-link" data-astro-cid-ccykbmgk>vs Devin</a></li><li data-astro-cid-ccykbmgk><a href="/agent-model" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Agent Model</a></li><li data-astro-cid-ccykbmgk><a href="/story" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Story</a></li><li data-astro-cid-ccykbmgk><a href="https://github.com/app-vitals/shipwright" class="docs-sidebar-link" data-astro-cid-ccykbmgk>GitHub ↗</a></li><li data-astro-cid-ccykbmgk><a href="https://vitals-os.com/cal/book/discovery" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Book a call</a></li></ul></nav><!-- Pagefind search widget --><div id="search" style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk></div><!-- Mobile close button --><div class="docs-mobile-close-btn" style="justify-content: flex-end; margin-bottom: 1rem;" data-astro-cid-ccykbmgk><label for="docs-sidebar-toggle" style="cursor: pointer; color: var(--sw-color-text-editorial); font-size: var(--sw-text-small-size);" aria-label="Close navigation" data-astro-cid-ccykbmgk>✕ Close</label></div><nav aria-label="Docs navigation" data-astro-cid-ccykbmgk><div style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-ccykbmgk>Getting Started</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs/introduction" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Introduction</a></li><li data-astro-cid-ccykbmgk><a href="/docs/getting-started" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Getting Started</a></li></ul></div><div style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-ccykbmgk>Plugin</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs/the-plugin" class="docs-sidebar-link" data-astro-cid-ccykbmgk>The Plugin</a></li><li data-astro-cid-ccykbmgk><a href="/docs/running-locally" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Running Locally</a></li><li data-astro-cid-ccykbmgk><a href="/docs/agent-skills" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Agent Skills</a></li><li data-astro-cid-ccykbmgk><a href="/docs/commands-reference" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Commands Reference</a></li></ul></div><div style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-ccykbmgk>Agent</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs/the-agent" class="docs-sidebar-link" data-astro-cid-ccykbmgk>The Agent</a></li><li data-astro-cid-ccykbmgk><a href="/docs/configuring-autonomy" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Configuring Autonomy</a></li></ul></div><div style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-ccykbmgk>Operations</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs/deploying-to-cloud" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Deploying to Cloud</a></li><li data-astro-cid-ccykbmgk><a href="/docs/slack-integration" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Slack Integration</a></li><li data-astro-cid-ccykbmgk><a href="/docs/day-to-day-operations" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Day-to-Day Operations</a></li><li data-astro-cid-ccykbmgk><a href="/docs/admin-console" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Admin Console</a></li><li data-astro-cid-ccykbmgk><a href="/docs/cron-jobs" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Cron Jobs</a></li><li data-astro-cid-ccykbmgk><a href="/docs/the-shipwright-loop" class="docs-sidebar-link" data-astro-cid-ccykbmgk>The Shipwright Loop</a></li><li data-astro-cid-ccykbmgk><a href="/docs/security" class="docs-sidebar-link" aria-current="page" data-astro-cid-ccykbmgk>Security</a></li></ul></div><div style="margin-bottom: 1.5rem;" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.5rem; padding-left: 0.75rem;" data-astro-cid-ccykbmgk>Reference</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="/docs/reference" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Configuration Reference</a></li><li data-astro-cid-ccykbmgk><a href="/docs/task-store-api" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Task Store API</a></li><li data-astro-cid-ccykbmgk><a href="/docs/prs-api" class="docs-sidebar-link" data-astro-cid-ccykbmgk>PRs API</a></li><li data-astro-cid-ccykbmgk><a href="/agent-model" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Agent Model</a></li><li data-astro-cid-ccykbmgk><a href="/service-architecture" class="docs-sidebar-link" data-astro-cid-ccykbmgk>Service Architecture</a></li></ul></div></nav></aside><!-- Main content --><main class="sw-prose" style="min-width: 0;" data-pagefind-body data-astro-cid-ccykbmgk><h1 id="security">Security</h1>
+<p>This page is a security architecture overview for anyone evaluating Shipwright before deploying it
+against their own infrastructure and repositories. It covers the reference deployment topology,
+network and egress posture, human and machine authentication, Kubernetes RBAC, secrets handling,
+third-party integration scopes, and current logging and compliance posture. Every claim below is
+either how the software behaves today or an explicit statement of what it does not yet do — read
+the gaps as plainly as the features.</p>
+<p>Shipwright is self-hosted: you run it in your own Kubernetes cluster, against your own GitHub App
+and Slack app, with your own database. No Shipwright-operated service ever sees your source code,
+your task data, or your credentials.</p>
+<h2 id="deployment-architecture">Deployment architecture</h2>
+<p>The reference deployment is a Helm chart (<code>charts/shipwright</code>) packaging a small set of services,
+each independently optional except the admin service:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Port</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin</td>
+<td>3001</td>
+<td>CRUD API + web UI — agent management, provisioning, task/PR browsing, chat</td>
+</tr>
+<tr>
+<td>Metrics</td>
+<td>3460</td>
+<td>Stateless JSON API + dashboard, no database</td>
+</tr>
+<tr>
+<td>Task store</td>
+<td>3000</td>
+<td>Opt-in, Postgres-backed work queue (tasks, PRs, scoped tokens)</td>
+</tr>
+<tr>
+<td>Chat</td>
+<td>3000</td>
+<td>Opt-in, Postgres-backed chat threads between you and an agent</td>
+</tr>
+<tr>
+<td>MCP server</td>
+<td>3010</td>
+<td>Opt-in, proxies MCP tool calls to the task-store API</td>
+</tr>
+<tr>
+<td>Agent</td>
+<td>—</td>
+<td>One Kubernetes Deployment per agent, provisioned dynamically</td>
+</tr>
+</tbody>
+</table>
+<p>Task store, chat, and the MCP server are disabled by default. Per-agent Deployments are only
+created when <code>agent.provisioning.enabled=true</code>; each provisioned agent gets its own Secret and
+PersistentVolumeClaim.</p>
+<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>                          ┌─────────────┐</span></span>
+<span class="line"><span>                          │   Ingress   │  (Gateway API / ALB / nginx / Traefik)</span></span>
+<span class="line"><span>                          └──────┬──────┘</span></span>
+<span class="line"><span>                                 │ HTTPS</span></span>
+<span class="line"><span>              ┌──────────────────┼──────────────────┐</span></span>
+<span class="line"><span>              │                  │                   │</span></span>
+<span class="line"><span>        ┌─────▼─────┐      ┌─────▼─────┐       ┌─────▼─────┐</span></span>
+<span class="line"><span>        │   Admin   │      │  Metrics  │       │    MCP    │</span></span>
+<span class="line"><span>        │  :3001    │      │  :3460    │       │  :3010    │</span></span>
+<span class="line"><span>        └─────┬─────┘      └───────────┘       └─────┬─────┘</span></span>
+<span class="line"><span>              │ provisions                           │ proxies</span></span>
+<span class="line"><span>        ┌─────▼─────┐                           ┌─────▼─────┐</span></span>
+<span class="line"><span>        │  Agent(s) │                           │ Task store│</span></span>
+<span class="line"><span>        │ (per-user │◄──────────────────────────┤  :3000    │</span></span>
+<span class="line"><span>        │ Deployment)│      task-store token     └───────────┘</span></span>
+<span class="line"><span>        └───────────┘</span></span></code></pre>
+<h3 id="aws-eks">AWS (EKS)</h3>
+<p>The AWS Load Balancer Controller provisions an ALB from the chart’s <code>Ingress</code> resource
+(<code>ingressClassName: alb</code>). TLS terminates at the ALB, either via an ACM certificate referenced in
+an annotation or via cert-manager. <code>auth.mode=google</code> (or <code>okta</code>) is required for any
+internet-reachable EKS deployment.</p>
+<h3 id="gcp-gke">GCP (GKE)</h3>
+<p>GKE uses the Gateway API instead of a plain <code>Ingress</code>: the chart renders a <code>Gateway</code> and
+<code>HTTPRoute</code>s targeting the <code>gke-l7-global-external-managed</code> GatewayClass, with cert-manager
+issuing TLS via a <code>ClusterIssuer</code>. The chart also renders an HTTP→HTTPS redirect route so plaintext
+requests never reach a service.</p>
+<h3 id="other-targets">Other targets</h3>
+<p>Plain <code>Ingress</code> is also supported with nginx (Minikube, bare-metal) or Traefik, and the chart can
+optionally bundle PostgreSQL (Bitnami subchart), ingress-nginx, Traefik, and cert-manager as
+dependencies — all off by default, so a production install can bring its own database and ingress
+controller instead.</p>
+<h2 id="network--egress-controls">Network &amp; egress controls</h2>
+<p>Shipwright does not implement an egress allowlist or firewall inside the application itself.
+Restricting which external hosts a Shipwright service or agent pod can reach is an infrastructure
+decision you make at deploy time — a Kubernetes <code>NetworkPolicy</code>, a cloud VPC egress rule, or an
+equivalent control at your network boundary. Every service assumes outbound internet access by
+default (to reach Anthropic’s API, GitHub, Slack, and any configured third-party voice provider)
+unless you add your own network policy.</p>
+<p>The one exception is voice. Speech-to-text and text-to-speech can run <strong>fully self-hosted with zero
+third-party network calls</strong>: <code>agent.voice.provider=whisper</code> runs speech-to-text as a self-hosted
+Whisper pod, and Piper — the default text-to-speech engine — is a self-hosted binary baked into the
+agent image and invoked as a local subprocess (stdin in, WAV file out), never making a network
+call. Opting into <code>agent.voice.provider=groq</code> or setting <code>agent.voice.elevenlabs.apiKey</code> each
+independently reintroduce egress to that respective third party. Voice is the only subsystem where
+egress is architecturally eliminable; treat everything else as requiring outbound internet access
+unless you’ve fenced it off yourself.</p>
+<blockquote>
+<p><strong>Security:</strong> if you require a fully egress-locked deployment, plan on writing your own
+<code>NetworkPolicy</code> (or cloud firewall rules) — Shipwright does not ship one, and does not enforce
+any egress restriction on your behalf.</p>
+</blockquote>
+<h2 id="human-access">Human access</h2>
+<p>The admin service supports three authentication modes, set via <code>auth.mode</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Mode</th>
+<th>Use case</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>open</code></td>
+<td>Local development only</td>
+<td>No real authentication — a deliberate insecure escape hatch; the chart overrides <code>NODE_ENV</code> to route around the only runtime guard that exists, so it is <em>not</em> blocked in production and must never be selected for an internet-reachable deployment</td>
+</tr>
+<tr>
+<td><code>google</code></td>
+<td>Production</td>
+<td>Google OAuth 2.0</td>
+</tr>
+<tr>
+<td><code>okta</code></td>
+<td>Production</td>
+<td>Okta OIDC</td>
+</tr>
+</tbody>
+</table>
+<p><code>google</code> and <code>okta</code> can be configured simultaneously — the login page shows both providers — and
+both gate on the same <code>SHIPWRIGHT_ADMIN_ALLOWED_EMAILS</code> allowlist, a comma-separated list of email
+addresses. Only listed emails may sign in, regardless of which provider they authenticate through.
+Session state is an <code>admin_session</code> httpOnly JWT cookie valid for 8 hours.</p>
+<p>A human doesn’t need to be an admin to get scoped access: adding their email as an <code>AgentMember</code> on
+a specific agent grants them visibility into that one agent’s detail page and Slack access, without
+putting them on the admin allowlist or exposing any other agent.</p>
+<blockquote>
+<p><strong>Security:</strong> <code>auth.mode=open</code> performs no authentication — anyone who can reach the admin
+service is treated as a logged-in user. Use it only on a local cluster or behind a private
+network you fully control.</p>
+</blockquote>
+<h3 id="programmatic-access">Programmatic access</h3>
+<p>The admin API checks three auth paths, in order:</p>
+<ol>
+<li><strong>Admin API key</strong> — a bearer token matching an entry in <code>SHIPWRIGHT_ADMIN_API_KEYS</code>
+(comma-separated <code>name:token:scope</code> tuples). Full admin access.</li>
+<li><strong>Per-agent bearer token</strong> — a bearer token scoped to one agent id. Cross-agent access returns
+<code>403</code>.</li>
+<li><strong>Session cookie</strong> — the same <code>admin_session</code> cookie used by the web UI.</li>
+</ol>
+<h2 id="kubernetes-service-accounts--rbac">Kubernetes service accounts &amp; RBAC</h2>
+<p>RBAC for agent provisioning is entirely opt-in: nothing related to it is rendered by the Helm chart
+unless <code>agent.provisioning.enabled=true</code> (default <code>false</code>). When it is enabled, the chart grants
+the admin ServiceAccount exactly the verbs the provisioner exercises — nothing broader:</p>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Verbs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Deployments (<code>apps</code>)</td>
+<td><code>create</code>, <code>get</code>, <code>list</code>, <code>patch</code>, <code>update</code>, <code>delete</code></td>
+</tr>
+<tr>
+<td>Secrets (core)</td>
+<td><code>create</code>, <code>get</code>, <code>delete</code></td>
+</tr>
+<tr>
+<td>PersistentVolumeClaims (core)</td>
+<td><code>create</code>, <code>get</code>, <code>delete</code></td>
+</tr>
+</tbody>
+</table>
+<p>By default this is a namespace-scoped <code>Role</code> + <code>RoleBinding</code> in the release namespace. If you set
+<code>agent.provisioning.namespace</code> to provision agents into a different namespace, the chart renders a
+<code>ClusterRole</code> + <code>ClusterRoleBinding</code> with the same verb set instead, so provisioning still reaches
+no further than these specific operations.</p>
+<p>Provisioned agents run under their own, separate ServiceAccount — distinct from the admin
+ServiceAccount that provisions them — and that agent ServiceAccount is granted no additional RBAC
+by the chart. An agent pod runs with the cluster’s default (empty) permissions unless you
+explicitly add more.</p>
+<h2 id="secrets--service-to-service-auth">Secrets &amp; service-to-service auth</h2>
+<p>Secret values — env vars, Slack tokens, Anthropic API keys — are encrypted at the service layer
+with AES-256-GCM when <code>SHIPWRIGHT_ENCRYPTION_KEY</code> (a 64-character hex string, 32 bytes) is set. If
+this key is left unset, secrets are stored in plain text and a warning is logged at startup;
+setting it is something you should do before any production use.</p>
+<p>Agent API tokens are never stored reversibly: only their SHA-256 hash is persisted, and the raw
+token value is shown exactly once, at creation time.</p>
+<p>When per-agent Kubernetes provisioning is enabled, each agent gets its own dedicated Secret
+carrying a task-store token (<code>SHIPWRIGHT_TASK_STORE_TOKEN</code>) and, if chat is enabled, a
+chat-service token (<code>SHIPWRIGHT_CHAT_SERVICE_TOKEN</code>). Both are scoped to that single agent and are
+revoked automatically when the agent is deleted.</p>
+<h2 id="github-app-integration">GitHub App integration</h2>
+<p>Shipwright authenticates to GitHub either as a GitHub App (recommended — <code>GH_APP_ID</code>,
+<code>GH_APP_INSTALLATION_ID</code>, <code>GH_APP_PRIVATE_KEY</code>) or, as a fallback, a personal access token
+(<code>GH_TOKEN</code>). The default GitHub App permission manifest requests exactly:</p>
+<table>
+<thead>
+<tr>
+<th>Permission</th>
+<th>Access</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Contents</td>
+<td>Write</td>
+</tr>
+<tr>
+<td>Pull requests</td>
+<td>Write</td>
+</tr>
+<tr>
+<td>Actions</td>
+<td>Read</td>
+</tr>
+<tr>
+<td>Workflows</td>
+<td>Write</td>
+</tr>
+</tbody>
+</table>
+<p>There is no webhook receiver in the codebase — the app manifest sets no webhook configuration, and
+Shipwright does not accept inbound GitHub webhook events. All GitHub interaction is Shipwright
+calling out to the GitHub API, never GitHub calling in.</p>
+<h2 id="slack-app-integration">Slack App integration</h2>
+<p>Slack access is configured per deployment with three required env vars — <code>SLACK_BOT_TOKEN</code> (bot
+OAuth token), <code>SLACK_APP_TOKEN</code> (Socket Mode app-level token), and <code>SLACK_SIGNING_SECRET</code> (verifies
+inbound request signatures) — plus optional vars (<code>SLACK_ADMIN_TOKEN</code> for privileged operations,
+<code>SLACK_ALERT_CHANNEL</code>, <code>SLACK_OWNER_USER</code>).</p>
+<p>There is no single, centrally codified Slack app manifest shipped with the project. Each operator
+provisions their own Slack app — the admin console’s provisioning wizard automates app creation and
+OAuth — and supplies the resulting tokens as env vars. Permissions are implied by how those tokens
+are used (Socket Mode connection, bot messaging, DM/mention handling), not enumerated in a single
+static scope list.</p>
+<h2 id="pull-request-review--merge">Pull request review &amp; merge</h2>
+<p>Self-review is disabled by default: a freshly provisioned agent’s policy (<code>state/agent-policy.md</code>,
+seeded from the shipped template) sets <code>allow_self_review: false</code>, so an agent is excluded from
+reviewing its own open PRs. Automated merging is disabled by default too — the <code>shipwright-deploy</code>
+cron ships off, so nothing merges without a human clicking merge in the GitHub UI.</p>
+<p>If Shipwright itself performs a merge — because you’ve enabled <code>shipwright-deploy</code>, or a human
+runs the merge command directly — it uses an administrator-level override (<code>gh pr merge --admin</code>)
+that bypasses branch protection’s required-approval rule, on the premise that Shipwright’s own
+review-and-CI gate substitutes for it.</p>
+<p>For environments that need a specific, named human to be the actual approver — not just “not the
+same agent,” but a person you’ve designated (SOC 2-style segregation of duties) — add your
+reviewers as GitHub <strong>CODEOWNERS</strong> for the repository, or at minimum for <code>.github/workflows/**</code>,
+and require review from Code Owners in branch protection. Neither self-review nor another agent’s
+review satisfies a Code Owners requirement; only a human on that list does. Keep
+<code>shipwright-deploy</code> disabled in this configuration (its default state) so every merge stays an
+explicit human action.</p>
+<h2 id="one-agent-per-user">One agent per user</h2>
+<p>Every GitHub PR/commit and Slack message an agent sends carries that agent’s own bot identity, so
+attribution is a function of how many humans share one agent. Running <strong>one Shipwright agent per
+human user (or per accountable team)</strong> keeps every change traceable to a single owner; sharing one
+bot identity across many humans makes attribution ambiguous.</p>
+<p>Two independent, optional scoping controls narrow an agent’s exposure further:</p>
+<ul>
+<li><strong><code>restrictSlackToMembers</code></strong> (default <code>false</code>) — when <code>true</code>, only Slack users registered as that
+agent’s members can DM or mention it; when <code>false</code>, any user in the Slack workspace can.</li>
+<li><strong><code>authorAllowlist</code></strong> (default empty, meaning anyone) — a list of GitHub logins whose pull
+requests the agent will act on. An empty allowlist means any authenticated GitHub user’s PRs are
+eligible.</li>
+</ul>
+<h2 id="admins-vs-agent-members">Admins vs. agent members</h2>
+<p>Access control is layered around two roles:</p>
+<ul>
+<li><strong>Admins</strong> — anyone on <code>SHIPWRIGHT_ADMIN_ALLOWED_EMAILS</code>, or holding an admin API key, can see
+and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and
+deletion.</li>
+<li><strong>Agent members</strong> — a non-admin human, added as an <code>AgentMember</code> (by email) to one specific
+agent, can see that agent’s detail page and, if Slack access is restricted to members, message it
+— without any visibility into or control over the rest of the fleet.</li>
+</ul>
+<p>This lets you grant a teammate scoped visibility into “their” agent without making them an admin
+over every agent in the deployment.</p>
+<h2 id="logging-monitoring--observability">Logging, monitoring &amp; observability</h2>
+<p>Sentry integration is opt-in and inert by default — zero telemetry is sent unless <code>SENTRY_DSN</code> is
+set, independently, on each service (admin, metrics, task-store, agent).</p>
+<p><strong>What’s captured</strong>, when enabled:</p>
+<ul>
+<li>Unhandled exceptions and 5xx errors, with stack traces</li>
+<li><code>console.log</code> / <code>console.warn</code> / <code>console.error</code> calls, forwarded as structured logs</li>
+<li>Request path and method for HTTP errors</li>
+<li>Caller identity — which admin or agent token triggered an error — for tracing</li>
+</ul>
+<p><strong>What’s never captured</strong>, unconditionally:</p>
+<ul>
+<li><code>Authorization</code> and <code>Cookie</code> header values — redacted to <code>[Filtered]</code> regardless of configuration</li>
+<li>Request or response bodies — never attached to an event</li>
+<li>The live value of any secret-shaped env var — redacted wherever it appears, including nested
+inside longer strings</li>
+</ul>
+<p>Self-hosted Sentry is fully supported: point <code>SENTRY_DSN</code> at your own instance and everything above
+applies the same way.</p>
+<p>Shipwright does not currently provide a tool-call-level audit log — there is no immutable,
+queryable record of every individual tool invocation an agent makes. Sentry’s caller-identity
+capture on the error path is not a substitute for a full audit trail; if you need one today, you’ll
+need to build it on top of your own logging pipeline.</p>
+<h2 id="compliance-posture">Compliance posture</h2>
+<p>Shipwright does not currently hold SOC 2, ISO 27001, ISO 42001, or any other third-party compliance
+certification.</p>
+<h2 id="faq">FAQ</h2>
+<p><strong>Where does my source code go?</strong>
+Nowhere outside your own infrastructure. Shipwright is self-hosted — the agent runs in your
+Kubernetes cluster, against your own GitHub App and repositories. There is no third-party code
+execution and no Shipwright-operated service that ever receives your source.</p>
+<p><strong>What happens if <code>SHIPWRIGHT_ENCRYPTION_KEY</code> is never set?</strong>
+Secrets (env values, Slack tokens, API keys) are stored in plain text in the database, with a
+warning logged at startup. There’s no forced failure — the service still runs — so this is
+something you need to set deliberately before any production use.</p>
+<p><strong>Can I run with zero third-party network calls?</strong>
+Voice can: self-hosted Whisper for speech-to-text plus the default Piper text-to-speech engine make
+zero outbound calls. Every other Shipwright service assumes outbound internet access by default (to
+reach Anthropic, GitHub, and Slack). Restricting egress further is your responsibility, via your
+own Kubernetes <code>NetworkPolicy</code> or cloud firewall rules.</p>
+<p><strong>Is there an audit log of every action an agent takes?</strong>
+Not a tool-call-level one, today. Sentry (when enabled) captures caller identity on the error path,
+but that’s not a full audit trail of every tool invocation.</p>
+<p><strong>Does Shipwright have SOC 2 or similar certifications?</strong>
+No, not currently.</p>
+<p><strong>Do I need to expose the admin service to the public internet?</strong>
+No. <code>networking.type=ClusterIP</code> (the default) keeps every service reachable only via
+<code>kubectl port-forward</code> inside the cluster. Public exposure via Ingress or Gateway API is a choice
+you make when you’re ready for it, and <code>auth.mode=google</code> or <code>auth.mode=okta</code> is required the
+moment you do.</p>
+<p><strong>Does every change require human review before it merges?</strong>
+Self-review and automated merging are both disabled by default, so in practice a human reviews and
+a human clicks merge. If Shipwright performs the merge itself (deploy enabled, or the merge command
+run directly), it bypasses branch protection’s required-approval rule by design. For a guaranteed,
+specific human approver, add Code Owners review as described above — that’s the one thing neither
+self-review nor another agent’s review can satisfy.</p><!-- Prev/next navigation --><div class="docs-prevnext" data-astro-cid-ccykbmgk><a href="/docs/the-shipwright-loop" data-nav="prev" data-astro-cid-ccykbmgk>← Previous</a><a href="/docs/reference" data-nav="next" data-astro-cid-ccykbmgk>Next →</a></div></main><!-- TOC (on-page, static) --><aside style="min-width: 0;" data-astro-cid-ccykbmgk><nav aria-label="On this page" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-ccykbmgk>On this page</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="#deployment-architecture" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Deployment architecture</a></li><li data-astro-cid-ccykbmgk><a href="#aws-eks" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>AWS (EKS)</a></li><li data-astro-cid-ccykbmgk><a href="#gcp-gke" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>GCP (GKE)</a></li><li data-astro-cid-ccykbmgk><a href="#other-targets" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Other targets</a></li><li data-astro-cid-ccykbmgk><a href="#network--egress-controls" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Network &amp; egress controls</a></li><li data-astro-cid-ccykbmgk><a href="#human-access" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Human access</a></li><li data-astro-cid-ccykbmgk><a href="#programmatic-access" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Programmatic access</a></li><li data-astro-cid-ccykbmgk><a href="#kubernetes-service-accounts--rbac" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Kubernetes service accounts &amp; RBAC</a></li><li data-astro-cid-ccykbmgk><a href="#secrets--service-to-service-auth" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Secrets &amp; service-to-service auth</a></li><li data-astro-cid-ccykbmgk><a href="#github-app-integration" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>GitHub App integration</a></li><li data-astro-cid-ccykbmgk><a href="#slack-app-integration" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Slack App integration</a></li><li data-astro-cid-ccykbmgk><a href="#pull-request-review--merge" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Pull request review &amp; merge</a></li><li data-astro-cid-ccykbmgk><a href="#one-agent-per-user" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>One agent per user</a></li><li data-astro-cid-ccykbmgk><a href="#admins-vs-agent-members" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Admins vs. agent members</a></li><li data-astro-cid-ccykbmgk><a href="#logging-monitoring--observability" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Logging, monitoring &amp; observability</a></li><li data-astro-cid-ccykbmgk><a href="#compliance-posture" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Compliance posture</a></li><li data-astro-cid-ccykbmgk><a href="#faq" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>FAQ</a></li></ul></nav></aside></div></div><!-- Footer --><footer class="sw-container relative z-10 py-12"><div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);"><p class="sw-label flex items-center gap-2"><img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded">Shipwright Harness · MIT-licensed · © 2026</p><nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer"><a href="/story">Story</a><a href="https://github.com/app-vitals/shipwright">GitHub</a><a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE">MIT License</a><a href="https://claude.com/claude-code">Claude Code</a><a href="https://github.com/app-vitals/shipwright/discussions">GitHub Discussions</a><a href="/vs/devin">vs Devin</a><a href="https://vitals-os.com/cal/book/discovery">Book a call</a></nav></div></footer></body></html>
