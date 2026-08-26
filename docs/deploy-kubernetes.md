@@ -959,6 +959,20 @@ changing the chart, or bring your own database:
   container. Use together with `externalDatabase.existingSecret` and
   `postgresql.enabled=false`.
 
+  ```yaml
+  postgresql:
+    enabled: false
+  externalDatabase:
+    existingSecret: my-cloud-sql-secret
+  cloudSqlProxy:
+    enabled: true
+    connectionName: "project:region:instance"   # required
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
+  ```
+
+  The full image-override / mirror guidance and the exact pinned version are in
+  [the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
+
 ---
 
 ## Bundled ingress controllers and cert-manager (optional)
@@ -1079,20 +1093,6 @@ tls:
 Example value files are provided:
 - [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager
 - [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager
-
-  ```yaml
-  postgresql:
-    enabled: false
-  externalDatabase:
-    existingSecret: my-cloud-sql-secret
-  cloudSqlProxy:
-    enabled: true
-    connectionName: "project:region:instance"   # required
-    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2
-  ```
-
-The full image-override / mirror guidance and the exact pinned version are in
-[the chart README — "Bitnami registry risk and image-override / mirror fallback"](../charts/shipwright/README.md#-bitnami-registry-risk-and-image-override--mirror-fallback).
 
 ---
 
