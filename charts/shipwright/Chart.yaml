@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.13.1
+version: 1.14.0
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -33,6 +33,8 @@ annotations:
       description: "ingress TLS/cert-manager helpers, validation, and values/schema groundwork (networking.ingress.controller/tls, tls.certManager.issuer) — no render change; nothing new is wired into templates/ingress.yaml yet"
     - kind: added
       description: "wire ingress TLS + cert-manager ingress-shim annotations into templates/ingress.yaml (nginx): renders spec.tls when networking.ingress.tls.enabled or tls.certManager.enabled, adds the nginx.ingress.kubernetes.io/ssl-redirect annotation when TLS + redirect + controller=nginx, and adds cert-manager.io/issuer or cert-manager.io/cluster-issuer keyed by the effective issuer kind/name — no chart-rendered Certificate CR on the ingress path, so TLS works on first install regardless of cert-manager readiness"
+    - kind: added
+      description: "Traefik ingress controller support (CNH-4.1): templates/ingress.yaml grows a traefik dialect branch (guarded on shipwright.bundled.traefik, nothing changes for controller=nginx) adding traefik.ingress.kubernetes.io/router.entrypoints (websecure when TLS is on, else web, using the configurable networking.ingress.traefik.entrypoints names), router.tls: \"true\" when TLS is on, and router.middlewares (<ns>-<fullname>-task-store-strip@kubernetescrd) when the task-store route is exposed; traefik paths are always plain Prefix (/dashboard, the configured taskStore.expose.pathPrefix, /) with no capture-group regex and no nginx rewrite-target annotation, since prefix-stripping is delegated to a Middleware instead. New templates/ingress-traefik-middleware.yaml renders a StripPrefix Middleware (<fullname>-task-store-strip) when task-store is exposed and a redirectScheme Middleware (<fullname>-redirect-https) when TLS + redirect are on, both traefik.io/v1alpha1 and controller-gated. New templates/ingress-http-redirect.yaml renders a separate plain-HTTP Ingress (<fullname>-http-redirect, no spec.tls, entrypoint web) bound to the redirect-https Middleware, needed because a TLS-enabled Ingress is a TLS-only router in Traefik's model. New tests/ingress_traefik_test.yaml and tests/ingress_traefik_middleware_test.yaml (helm-unittest) cover the full traefik x {TLS off/on} x {task-store exposed off/on} matrix plus the zero-render cases for nginx/ClusterIP. New examples/values-cloud-native-traefik.yaml plus a matching kubeconform CI step (.github/workflows/helm.yml) and Taskfile.yml helm:validate command validate the traefik.io/v1alpha1 Middleware CRD schema via the existing datreeio CRDs-catalog schema-location. No values.yaml/values.schema.json changes — this consumes controller/tls/traefik.entrypoints keys already added in CNH-2.1/CNH-3.1. Default-values (nginx) render output is unchanged."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

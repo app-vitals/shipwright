@@ -18,24 +18,65 @@
        issuerRef.name, or a chart-managed Issuer via issuer.create=true). */}}
 {{- $issuerName := include "shipwright.certManager.issuerName" . }}
 {{- $certManagerAnnotation := and .Values.tls.certManager.enabled $issuerName }}
+{{- /* Traefik dialect (CNH-4.1): traefik reads TLS/entrypoint/middleware
+       config from annotations rather than the nginx-specific
+       rewrite-target/ssl-redirect keys above. Guarded on
+       shipwright.bundled.traefik so nothing here renders for nginx (or any
+       other controller value) — the nginx branch above is untouched. */}}
+{{- $isTraefik := include "shipwright.bundled.traefik" . }}
+{{- $traefikEntrypoint := .Values.networking.ingress.traefik.entrypoints.web }}
+{{- if $tlsEnabled }}
+{{- $traefikEntrypoint = .Values.networking.ingress.traefik.entrypoints.websecure }}
+{{- end }}
+{{- $traefikMiddlewares := and $isTraefik $exposeTaskStore }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "shipwright.fullname" . }}
   labels:
     {{- include "shipwright.labels" . | nindent 4 }}
-  {{- if or .Values.networking.ingress.annotations $exposeTaskStore $sslRedirect $certManagerAnnotation }}
+  {{- if or .Values.networking.ingress.annotations $exposeTaskStore $sslRedirect $certManagerAnnotation $isTraefik }}
   annotations:
     {{- if $exposeTaskStore }}
     # Strip the task-store path prefix before traffic reaches the Service (the
     # task-store app serves /tasks, /tokens, /prs, /health at root). Only set when
     # the task-store route is exposed, so non-exposed installs are unaffected.
+    # nginx-only: traefik's equivalent path-stripping is a StripPrefix
+    # Middleware attached via router.middlewares below (see
+    # templates/ingress-traefik-middleware.yaml).
+    {{- if include "shipwright.bundled.nginx" . }}
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    {{- end }}
     {{- end }}
     {{- if $sslRedirect }}
     # HTTP->HTTPS redirect once TLS is on — nginx-specific, so gated on the
     # nginx controller flavor (networking.ingress.controller=nginx).
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    {{- end }}
+    {{- if $isTraefik }}
+    # Traefik reads routing/TLS config from annotations on the same Ingress
+    # object (rather than a separate CRD) when using the annotation-based
+    # provider. router.entrypoints selects which Traefik entrypoint serves
+    # this Ingress — websecure once TLS terminates here, else web. Entrypoint
+    # NAMES are configurable (networking.ingress.traefik.entrypoints), not
+    # hardcoded, since they're operator-defined on the Traefik install itself.
+    traefik.ingress.kubernetes.io/router.entrypoints: {{ $traefikEntrypoint }}
+    {{- if $tlsEnabled }}
+    # Tells Traefik's router to terminate TLS for this Ingress. Distinct from
+    # (and additive to) the controller-agnostic cert-manager ingress-shim
+    # annotations below, which only control certificate issuance.
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    {{- end }}
+    {{- if $traefikMiddlewares }}
+    # Attaches the StripPrefix Middleware (templates/ingress-traefik-middleware.yaml)
+    # to this router so task-store sees its root paths (/tasks, /tokens, /prs,
+    # /health) after the pathPrefix is stripped — traefik's analogue of the
+    # nginx rewrite-target annotation above, but as a proper namespaced
+    # resource reference rather than a shared per-Ingress rewrite. Format is
+    # traefik's required "<namespace>-<name>@kubernetescrd" cross-provider
+    # middleware reference.
+    traefik.ingress.kubernetes.io/router.middlewares: {{ .Release.Namespace }}-{{ include "shipwright.fullname" . }}-task-store-strip@kubernetescrd
+    {{- end }}
     {{- end }}
     {{- if $certManagerAnnotation }}
     # cert-manager ingress-shim: cert-manager watches for this annotation and
@@ -86,8 +127,13 @@ spec:
           # entire matched suffix, making "/$2" a no-op rewrite. Ordinary
           # "/dashboard" is fine, and simpler, when task-store isn't exposed and
           # no rewrite-target exists to interact with.
-          - path: {{ if $exposeTaskStore }}/()(dashboard.*){{ else }}/dashboard{{ end }}
-            pathType: {{ if $exposeTaskStore }}ImplementationSpecific{{ else }}Prefix{{ end }}
+          #
+          # Traefik never uses the capture-group trick — it has no shared
+          # per-Ingress rewrite annotation, so its paths stay plain Prefix
+          # regardless of task-store exposure (stripping is done per-router via
+          # the StripPrefix Middleware instead, see router.middlewares above).
+          - path: {{ if $isTraefik }}/dashboard{{ else if $exposeTaskStore }}/()(dashboard.*){{ else }}/dashboard{{ end }}
+            pathType: {{ if or $isTraefik (not $exposeTaskStore) }}Prefix{{ else }}ImplementationSpecific{{ end }}
             backend:
               service:
                 name: {{ include "shipwright.metrics.fullname" . }}
@@ -98,9 +144,11 @@ spec:
           # Task-store API (opt-in). Declared BEFORE the admin "/" catch-all so the
           # more-specific task-store prefix wins. The nginx rewrite-target
           # annotation above strips the prefix (capture group $2) so the app sees
-          # its root paths (/tasks, /tokens, /prs, /health).
-          - path: {{ .Values.taskStore.expose.pathPrefix }}(/|$)(.*)
-            pathType: ImplementationSpecific
+          # its root paths (/tasks, /tokens, /prs, /health). Traefik strips the
+          # prefix via a StripPrefix Middleware instead (router.middlewares
+          # above), so its path stays a plain Prefix match with no regex.
+          - path: {{ if $isTraefik }}{{ .Values.taskStore.expose.pathPrefix }}{{ else }}{{ .Values.taskStore.expose.pathPrefix }}(/|$)(.*){{ end }}
+            pathType: {{ if $isTraefik }}Prefix{{ else }}ImplementationSpecific{{ end }}
             backend:
               service:
                 name: {{ include "shipwright.taskStore.fullname" . }}
@@ -111,9 +159,10 @@ spec:
           # path above is routed to the admin service. Same no-op-rewrite
           # treatment as metrics above, and for the same reason: the admin app
           # serves real routes below "/" (e.g. /admin/agents/new) and expects
-          # them verbatim, not collapsed by the shared rewrite-target.
-          - path: {{ if $exposeTaskStore }}/()(.*){{ else }}/{{ end }}
-            pathType: {{ if $exposeTaskStore }}ImplementationSpecific{{ else }}Prefix{{ end }}
+          # them verbatim, not collapsed by the shared rewrite-target. Traefik
+          # again stays a plain "/" Prefix match — no shared rewrite to round-trip.
+          - path: {{ if $isTraefik }}/{{ else if $exposeTaskStore }}/()(.*){{ else }}/{{ end }}
+            pathType: {{ if or $isTraefik (not $exposeTaskStore) }}Prefix{{ else }}ImplementationSpecific{{ end }}
             backend:
               service:
                 name: {{ include "shipwright.admin.fullname" . }}

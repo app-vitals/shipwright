@@ -1,0 +1,321 @@
+suite: Traefik Middleware + plain-HTTP redirect Ingress (CNH-4.1)
+# Covers templates/ingress-traefik-middleware.yaml (task-store-strip and
+# redirect-https Middleware resources) and templates/ingress-http-redirect.yaml
+# (the plain-HTTP redirect Ingress). Each renders only under its own exact
+# condition set; every other combination must render zero documents.
+tests:
+  # ---- task-store-strip Middleware ----
+  - it: renders the task-store-strip Middleware when controller=traefik and task-store is exposed
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Middleware
+      - equal:
+          path: apiVersion
+          value: traefik.io/v1alpha1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-task-store-strip
+      - equal:
+          path: metadata.namespace
+          value: shipwright
+      - equal:
+          path: spec.stripPrefix.prefixes[0]
+          value: /task-store
+
+  - it: honors a configured taskStore.expose.pathPrefix in the StripPrefix spec
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /tasks-api
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: spec.stripPrefix.prefixes[0]
+          value: /tasks-api
+
+  - it: renders zero documents when task-store is not exposed
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero documents when taskStore.expose.enabled but taskStore.enabled=false
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: false
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero documents for the nginx controller even with task-store exposed
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: nginx
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero documents for ClusterIP even with controller=traefik and task-store exposed
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ClusterIP
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---- redirect-https Middleware ----
+  - it: renders the redirect-https Middleware when controller=traefik, TLS enabled, and redirect=true
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Middleware
+      - equal:
+          path: metadata.name
+          value: r-shipwright-redirect-https
+      - equal:
+          path: metadata.namespace
+          value: shipwright
+      - equal:
+          path: spec.redirectScheme.scheme
+          value: https
+      - equal:
+          path: spec.redirectScheme.permanent
+          value: true
+
+  - it: renders BOTH Middlewares (2 documents) when task-store is exposed AND TLS+redirect are on
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: renders zero documents when TLS is off (redirect has nothing to redirect to)
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero documents when redirect=false even though TLS is on
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: false
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero documents for the nginx controller even with TLS+redirect on
+    template: templates/ingress-traefik-middleware.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: nginx
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ---- plain-HTTP redirect Ingress ----
+  - it: renders the http-redirect Ingress only under the traefik+TLS+redirect three-way gate
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: apiVersion
+          value: networking.k8s.io/v1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-http-redirect
+      - equal:
+          path: metadata.namespace
+          value: shipwright
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: web
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.middlewares"]
+          value: shipwright-r-shipwright-redirect-https@kubernetescrd
+      - notExists:
+          path: spec.tls
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+      - equal:
+          path: spec.rules[0].http.paths[0].path
+          value: /
+      - equal:
+          path: spec.rules[0].http.paths[0].pathType
+          value: Prefix
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: r-shipwright-admin
+
+  - it: uses the configured web entrypoint name on the http-redirect Ingress
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+      networking.ingress.traefik.entrypoints.web: custom-web
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - equal:
+          path: metadata.annotations["traefik.ingress.kubernetes.io/router.entrypoints"]
+          value: custom-web
+
+  - it: renders zero http-redirect documents for the nginx controller
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: nginx
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero http-redirect documents for ClusterIP (networking.type != ingress)
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ClusterIP
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero http-redirect documents for traefik without TLS
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.redirect: true
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders zero http-redirect documents for traefik with TLS but redirect=false
+    template: templates/ingress-http-redirect.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.controller: traefik
+      networking.ingress.className: traefik
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: false
+    release:
+      name: r
+      namespace: shipwright
+    asserts:
+      - hasDocuments:
+          count: 0

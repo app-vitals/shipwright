@@ -176,6 +176,17 @@ tasks:
         -schema-location default
         {{ printf "%s" "-schema-location" }}
         {{ printf "%s" "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" }}
+      # Traefik profile: exercises the traefik dialect (ingress.yaml) plus the
+      # Middleware/http-redirect templates against the traefik.io/v1alpha1
+      # Middleware CRD schema (same datreeio CRDs-catalog schema-location
+      # above already resolves it).
+      - >-
+        helm template shipwright charts/shipwright --namespace shipwright
+        -f charts/shipwright/examples/values-cloud-native-traefik.yaml
+        | kubeconform -strict -summary
+        -schema-location default
+        {{ printf "%s" "-schema-location" }}
+        {{ printf "%s" "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" }}
 
   helm:check:
     desc: "Local-runnable Helm gate: lint → unittest → validate (no cluster)"
