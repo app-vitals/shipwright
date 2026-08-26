@@ -456,23 +456,50 @@ attribution is a function of how many humans share one agent. Running <strong>on
 human user (or per accountable team)</strong> keeps every change traceable to a single owner; sharing one
 bot identity across many humans makes attribution ambiguous.</p>
 <p>Two independent, optional scoping controls narrow an agent’s exposure further:</p>
-<ul>
-<li><strong><code>restrictSlackToMembers</code></strong> (default <code>false</code>) — when <code>true</code>, only Slack users registered as that
-agent’s members can DM or mention it; when <code>false</code>, any user in the Slack workspace can.</li>
-<li><strong><code>authorAllowlist</code></strong> (default empty, meaning anyone) — a list of GitHub logins whose pull
-requests the agent will act on. An empty allowlist means any authenticated GitHub user’s PRs are
-eligible.</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Default</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>restrictSlackToMembers</code></td>
+<td><code>false</code></td>
+<td>When <code>true</code>, only Slack users registered as that agent’s members can DM or mention it; when <code>false</code>, any user in the Slack workspace can</td>
+</tr>
+<tr>
+<td><code>authorAllowlist</code></td>
+<td>empty (anyone)</td>
+<td>A list of GitHub logins whose pull requests the agent will act on. An empty allowlist means any authenticated GitHub user’s PRs are eligible</td>
+</tr>
+</tbody>
+</table>
 <h2 id="admins-vs-agent-members">Admins vs. agent members</h2>
 <p>Access control is layered around two roles:</p>
-<ul>
-<li><strong>Admins</strong> — anyone on <code>SHIPWRIGHT_ADMIN_ALLOWED_EMAILS</code>, or holding an admin API key, can see
-and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and
-deletion.</li>
-<li><strong>Agent members</strong> — a non-admin human, added as an <code>AgentMember</code> (by email) to one specific
-agent, can see that agent’s detail page and, if Slack access is restricted to members, message it
-— without any visibility into or control over the rest of the fleet.</li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Grant mechanism</th>
+<th>Scope/Visibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin</td>
+<td>Listed in <code>SHIPWRIGHT_ADMIN_ALLOWED_EMAILS</code>, or holding an admin API key</td>
+<td>Can see and manage every agent in the deployment: provisioning, env vars, crons, tools, tokens, and deletion</td>
+</tr>
+<tr>
+<td>Agent Member</td>
+<td>Added as an <code>AgentMember</code> (by email) to one specific agent</td>
+<td>Can see that agent’s detail page and, if Slack access is restricted to members, message it — without any visibility into or control over the rest of the fleet</td>
+</tr>
+</tbody>
+</table>
 <p>This lets you grant a teammate scoped visibility into “their” agent without making them an admin
 over every agent in the deployment.</p>
 <h2 id="logging-monitoring--observability">Logging, monitoring &amp; observability</h2>
