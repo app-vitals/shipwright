@@ -287,13 +287,13 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d '{"status": "blocked", "note": "Merge blocked by branch protection — a self-review APPROVE does not satisfy GitHub'"'"'s native required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+    -d '{"status": "blocked", "note": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d '{"blocked": true, "blockedReason": "Merge blocked by branch protection — a self-review APPROVE does not satisfy GitHub'"'"'s native required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
+    -d '{"blocked": true, "blockedReason": "Merge blocked by branch protection — a self-review APPROVE does not satisfy the native GitHub required-review rule; a human must add a real approval or configure this identity as a ruleset bypass actor."}' | jq .
 fi
 ```
 
@@ -306,7 +306,9 @@ Print and stop:
 
 **Generic merge-failure case** (`MERGE_EXIT != 0` but `IS_BRANCH_PROTECTION_BLOCK=false`):
 release the pre-merge claim first, then mark the task/PR record `blocked` with a reason
-referencing the captured output for diagnosis:
+referencing the captured output for diagnosis. Build the JSON body with `jq -n --arg` rather
+than interpolating `$MERGE_OUTPUT` directly into a quoted string — `gh`'s error output can
+contain quotes or newlines that would otherwise produce invalid JSON:
 
 ```bash
 [ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
@@ -318,13 +320,13 @@ if [ -n "$TASK_ID" ]; then
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
-    -d "{\"status\": \"blocked\", \"note\": \"Squash merge failed — $MERGE_OUTPUT\"}" | jq .
+    -d "$(jq -n --arg note "Squash merge failed — $MERGE_OUTPUT" '{"status": "blocked", "note": $note}')" | jq .
 elif [ -n "$PR_RECORD_ID" ]; then
   curl -sf -X PATCH \
     -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     -H "Content-Type: application/json" \
     "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-    -d "{\"blocked\": true, \"blockedReason\": \"Squash merge failed — $MERGE_OUTPUT\"}" | jq .
+    -d "$(jq -n --arg reason "Squash merge failed — $MERGE_OUTPUT" '{"blocked": true, "blockedReason": $reason}')" | jq .
 fi
 ```
 
