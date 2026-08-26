@@ -1,0 +1,18 @@
+{{- if and (include "shipwright.certManager.createIssuer" .) (not (include "shipwright.certManager.viaHook" .)) }}
+# Chart-managed cert-manager (Cluster)Issuer, rendered ONLY when
+# tls.certManager.issuer.create=true, no explicit tls.certManager.issuerRef.
+# name is set (see shipwright.certManager.createIssuer), AND NOT
+# shipwright.certManager.viaHook. Note this guard keys off issuer.create, NOT
+# tls.certManager.enabled — enabling cert-manager alone (bring-your-own-Issuer
+# via issuerRef.name, or the future hook path) must not also render this
+# inline Issuer. shipwright.certManager.viaHook is reserved for a FUTURE
+# hook-based-issuance path and always renders falsy today (no values key backs
+# it yet — see _helpers.tpl), so this guard is unconditionally equivalent to
+# `issuer.create=true && !issuerRef.name` for every input that reaches this
+# template today. Disabled by default (issuer.create=false) → no Issuer
+# renders, preserving today's bring-your-own-Issuer behavior. Body lives in
+# shipwright.certManager.issuerManifest (_helpers.tpl), mirroring the
+# guard-here/body-in-helper split templates/certificate.yaml already uses.
+{{- include "shipwright.validate" . }}
+{{ include "shipwright.certManager.issuerManifest" . }}
+{{- end }}

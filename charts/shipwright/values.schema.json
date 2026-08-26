@@ -122,7 +122,7 @@
                 },
                 "type": {
                   "type": "string",
-                  "enum": ["letsencrypt"]
+                  "enum": ["letsencrypt", "selfsigned"]
                 },
                 "email": { "type": "string" },
                 "server": { "type": "string" }

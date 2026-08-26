@@ -1,0 +1,122 @@
+suite: cert-manager Issuer (templates/cert-manager-issuer.yaml)
+# CNH-5.1 implements the body of shipwright.certManager.issuerManifest
+# (declared as unused groundwork in CNH-2.1) and wires it into a new,
+# guard-only templates/cert-manager-issuer.yaml, mirroring the
+# guard-here/body-in-helper split templates/certificate.yaml already uses.
+# Render guard: `shipwright.certManager.createIssuer && !viaHook` — createIssuer
+# is true only when tls.certManager.issuer.create=true AND
+# tls.certManager.issuerRef.name is empty (an explicit issuerRef.name always
+# means bring-your-own-Issuer and suppresses chart-managed creation, even if
+# issuer.create is also set). viaHook is a future hook-based-issuance escape
+# hatch that always renders falsy today (see _helpers.tpl), so this guard is
+# unconditionally equivalent to `issuer.create=true && !issuerRef.name` for
+# every input reachable today. Default values (issuer.create=false) render
+# ZERO documents from this template — see the "byte-identical default" test
+# below and acceptance criterion 3.
+tests:
+  - it: renders a letsencrypt Issuer wired to email/server/ingressClassName when issuer.create=true (default kind Issuer)
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+      tls.certManager.issuer.server: https://acme-staging-v02.api.letsencrypt.org/directory
+      networking.ingress.className: alb
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: Issuer
+      - equal:
+          path: apiVersion
+          value: cert-manager.io/v1
+      - equal:
+          path: metadata.name
+          value: r-shipwright-issuer
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+      - equal:
+          path: spec.acme.email
+          value: admin@example.com
+      - equal:
+          path: spec.acme.server
+          value: https://acme-staging-v02.api.letsencrypt.org/directory
+      - equal:
+          path: spec.acme.privateKeySecretRef.name
+          value: r-shipwright-issuer-acme-account
+      - equal:
+          path: spec.acme.solvers[0].http01.ingress.ingressClassName
+          value: alb
+      - isNull:
+          path: spec.selfSigned
+
+  - it: defaults the ACME server to the Let's Encrypt production endpoint when unset
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: admin@example.com
+    asserts:
+      - equal:
+          path: spec.acme.server
+          value: https://acme-v02.api.letsencrypt.org/directory
+
+  - it: fails the render with a message naming tls.certManager.issuer.email when letsencrypt is missing an email
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.email: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: "tls.certManager.issuer.email"
+
+  - it: renders a selfsigned Issuer with spec.selfSigned and no acme block
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - isKind:
+          of: Issuer
+      - equal:
+          path: spec.selfSigned
+          value: {}
+      - isNull:
+          path: spec.acme
+
+  - it: renders a ClusterIssuer with no metadata.namespace when issuer.kind=ClusterIssuer
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.kind: ClusterIssuer
+      tls.certManager.issuer.type: selfsigned
+    asserts:
+      - isKind:
+          of: ClusterIssuer
+      - notExists:
+          path: metadata.namespace
+
+  - it: renders NO Issuer when an explicit issuerRef.name is set (bring-your-own-Issuer suppresses chart-managed creation)
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.type: selfsigned
+      tls.certManager.issuerRef.name: my-issuer
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO Issuer when only tls.certManager.enabled=true is set, without issuer.create (forward-compat guard for CNH-7.1 — proves the guard keys off issuer.create, not enabled)
+    template: templates/cert-manager-issuer.yaml
+    set:
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt
+      networking.type: gateway
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders NO Issuer with default values (issuer.create defaults to false)
+    template: templates/cert-manager-issuer.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
