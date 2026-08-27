@@ -77,3 +77,59 @@ test("the-shipwright-loop page cross-links to configuring-autonomy instead of du
   const link = page.locator('a[href="/docs/configuring-autonomy"]');
   await expect(link.first()).toBeAttached();
 });
+
+// SUX-2.3 — "How dispatch works" now uses StepFlow instead of a 7-item prose
+// list, with the 409-pre-claim-conflict path rendered as a visually distinct
+// branch off step 5 rather than folded into the linear sequence.
+
+test("How dispatch works section renders as a 7-step flow", async ({
+  page,
+}) => {
+  await page.goto("/docs/the-shipwright-loop");
+  const heading = page.locator("h2, h3", {
+    hasText: /how dispatch works/i,
+  });
+  await expect(heading.first()).toBeVisible();
+
+  const stepFlow = heading
+    .first()
+    .locator("xpath=following::ol[contains(@class, 'step-flow')][1]");
+  await expect(stepFlow).toBeVisible();
+
+  const steps = stepFlow.locator("li.step-flow-item");
+  await expect(steps).toHaveCount(7);
+});
+
+test("How dispatch works section renders the 409-conflict path as a distinct branch off the pre-claim step", async ({
+  page,
+}) => {
+  await page.goto("/docs/the-shipwright-loop");
+  const heading = page.locator("h2, h3", {
+    hasText: /how dispatch works/i,
+  });
+  const stepFlow = heading
+    .first()
+    .locator("xpath=following::ol[contains(@class, 'step-flow')][1]");
+
+  const preClaimStep = stepFlow.locator("li.step-flow-item", {
+    hasText: /pre-claim/i,
+  });
+  await expect(preClaimStep.first()).toBeVisible();
+
+  const branch = preClaimStep.first().locator(".step-branch");
+  await expect(branch).toBeVisible();
+  await expect(branch).toContainText("409");
+
+  // The branch should be the only one in the whole flow — a single
+  // conditional path off the linear happy path, not a general branching graph.
+  const allBranches = stepFlow.locator(".step-branch");
+  await expect(allBranches).toHaveCount(1);
+});
+
+test("How dispatch works section preserves the FIFO work-selector cross-link", async ({
+  page,
+}) => {
+  await page.goto("/docs/the-shipwright-loop");
+  const link = page.locator('a[href="#the-fifo-work-selector"]');
+  await expect(link.first()).toBeAttached();
+});
