@@ -930,9 +930,11 @@ with Okta" button alongside the Google sign-in button.
 
 The bundled PostgreSQL is the **Bitnami `postgresql` subchart**, pinned to a
 chart version whose default image tag is concrete (not `latest`) so it renders
-deterministically. In 2025 Bitnami changed their catalog and registry, so if the
-default registry tags become unavailable you can repoint the images without
-changing the chart, or bring your own database:
+deterministically. In 2025 Bitnami changed their catalog and registry, moving
+many image tags to a `bitnamilegacy` repository — the chart now **defaults to
+the `bitnamilegacy/postgresql` image** so a fresh install pulls successfully
+from the public registry. You can repoint the images without changing the
+chart, or bring your own database:
 
 - **Mirror the whole stack:** set `global.imageRegistry: <your-mirror>`.
   When set, this prefix is applied **only** to bare repository names (those not
@@ -945,7 +947,9 @@ changing the chart, or bring your own database:
   alone. Only bare names (e.g., `shipwright-admin` or the whisper image
   `onerahmet/openai-whisper-asr-webservice`) receive the prefix.
 
-- **Use the `bitnamilegacy` mirror** for PostgreSQL specifically.
+- **Use the standard `bitnami/postgresql` repository** instead of the default
+  `bitnamilegacy` mirror (e.g., if you have Bitnami Secure access) by setting
+  `postgresql.image.repository: bitnami/postgresql`.
 
 - **Bring your own PostgreSQL:** set `postgresql.enabled=false` and point
   `externalDatabase.existingSecret` at a pre-created Kubernetes Secret holding
