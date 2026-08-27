@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.18.1
+version: 1.18.2
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,8 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: added
-      description: "Minikube cloud-native profile examples (CNH-8.2): new examples/values-minikube-cloud-native-nginx.yaml (bundles ingress-nginx + cert-manager with a selfsigned Issuer, auth.mode: open, admin.appBaseUrl on https://shipwright.local:8443) and examples/values-minikube-cloud-native-traefik.yaml (bundles Traefik, plain HTTP on http://shipwright.local:8080, no cert-manager) — dev-friendly variants of values-cloud-native.yaml/values-cloud-native-traefik.yaml tuned to run standalone on a fresh local Minikube VM with no external OAuth creds or pre-existing ClusterIssuer required."
+    - kind: changed
+      description: "auto-bump to chart v1.18.2 triggered by release tag agent-v1.196.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
