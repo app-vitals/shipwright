@@ -35,6 +35,9 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.port
           value: 3001
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.successThreshold
+          value: 2
 
   - it: wires the ServiceAccount and standard selector labels onto the Deployment
     template: templates/admin-deployment.yaml

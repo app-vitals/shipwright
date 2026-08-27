@@ -56,6 +56,7 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
+            successThreshold: 2
           env:
             # Bind the admin service to the chart-standard port 3001 (the app
             # defaults to 3000 via PORT; the chart standardizes on 3001).
