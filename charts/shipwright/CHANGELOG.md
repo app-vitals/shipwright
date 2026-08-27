@@ -10,6 +10,16 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.0] - 2026-08-27
+
+### Changed
+
+- Cloud-native docs and release (CNH-8.4). `README.md` gains Values rows for `ingress-nginx.enabled`/`traefik.enabled`/`cert-manager.enabled`, a Dependencies table listing all four vendored subcharts (`postgresql`, `ingress-nginx`, `traefik`, `cert-manager`) with versions/repositories/conditions, and a new "Cloud-native install (single chart)" section with a warning against bundling cert-manager on a cluster that already has it. `docs/deploy-kubernetes.md` gains a new "Cloud-native (any cluster)" deployment-target section (install commands for both the ingress-nginx and Traefik bundled variants, the same cert-manager-collision warning, and cross-links to the existing Bundled ingress controllers reference and Minikube profiles). `docs/helm-repo.md` now states the chart vendors four optional subcharts up front.
+
+### Note
+
+- This release closes out the cloud-native profiles milestone (CNH-8.1, CNH-8.2, CNH-8.3). Per the merge gate on this task, the PR is left open at reviewed/approved + CI green rather than auto-merged — a human merges it via the paired HITL task CNH-8.6, since the downstream `bump-shipwright-chart.yml` poller auto-merges chart bumps with no branch gate of its own.
+
 ## [1.18.1] - 2026-08-27
 
 ### Added

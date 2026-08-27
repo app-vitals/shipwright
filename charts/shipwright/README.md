@@ -189,9 +189,60 @@ environment, set `postgresql.auth.existingSecret` to a pre-created Secret (or se
 | `postgresql.primary.persistence.enabled` | `true` | Toggle PostgreSQL persistence (set `false` for ephemeral Minikube). |
 | `postgresql.primary.persistence.size` | `1Gi` | PostgreSQL PVC size. |
 | `postgresql.primary.resources` | `100m/128Mi → 500m/512Mi` | Modest Minikube-friendly resource requests/limits. |
+| `ingress-nginx.enabled` | `false` | Deploy the bundled ingress-nginx subchart as the cluster's ingress controller. Mutually exclusive with `traefik.enabled`. |
+| `traefik.enabled` | `false` | Deploy the bundled Traefik subchart as the cluster's ingress controller. Mutually exclusive with `ingress-nginx.enabled`. Independent of `networking.ingress.controller: traefik` (set both to fully bundle and use Traefik). |
+| `cert-manager.enabled` | `false` | Deploy the bundled cert-manager subchart (controller + CRDs). Pairs with `tls.certManager.enabled` for the chart's own Issuer/Certificate wiring. |
 
 The full values surface is validated by `values.schema.json` (enums for
 `networking.type`, `auth.mode`, and image pull policies; required service shapes).
+
+## Cloud-native install (single chart)
+
+For a fully self-contained install with **no pre-existing ingress controller or
+cert-manager on the cluster**, bundle all optional subcharts in one release:
+
+```yaml
+ingress-nginx:
+  enabled: true
+cert-manager:
+  enabled: true
+networking:
+  type: ingress
+tls:
+  certManager:
+    enabled: true
+    issuer:
+      create: true
+      type: letsencrypt
+```
+
+Swap `ingress-nginx` for `traefik` (and set `networking.ingress.controller:
+traefik`) to bundle Traefik instead. See [`docs/deploy-kubernetes.md`](../../docs/deploy-kubernetes.md#cloud-native-any-cluster)
+for the full walkthrough and ready-to-use example values files.
+
+> ⚠️ **Do not bundle cert-manager on a cluster that already has it installed.**
+> Enabling `cert-manager.enabled=true` when cert-manager is already running
+> cluster-wide installs a second copy of its CRDs and controllers, which can
+> collide with the existing installation (webhook conflicts, duplicate CRD
+> ownership, `helm uninstall` deleting CRDs a different release still needs).
+> Leave `cert-manager.enabled=false` and point `tls.certManager.*` at the
+> cluster's existing cert-manager instead.
+
+## Dependencies
+
+The chart vendors **four optional subcharts** — each gated by its own
+`condition` and off by default except PostgreSQL:
+
+| Subchart | Version | Repository | Condition | Default |
+|---|---|---|---|---|
+| `postgresql` | `16.7.27` | `oci://registry-1.docker.io/bitnamicharts` | `postgresql.enabled` | **on** |
+| `ingress-nginx` | `4.15.1` | `https://kubernetes.github.io/ingress-nginx` | `ingress-nginx.enabled` | off |
+| `traefik` | `41.3.0` | `https://traefik.github.io/charts` | `traefik.enabled` | off |
+| `cert-manager` | `v1.21.1` | `https://charts.jetstack.io` | `cert-manager.enabled` | off |
+
+`ingress-nginx` and `traefik` are mutually exclusive — enabling both fails the
+render (`templates/_validation.tpl`). See [Cloud-native install](#cloud-native-install-single-chart)
+above for bundling `cert-manager` alongside either one.
 
 ## ⚠️ Bitnami registry risk and image-override / mirror fallback
 

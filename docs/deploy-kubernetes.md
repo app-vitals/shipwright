@@ -13,13 +13,14 @@ dependencies (PostgreSQL, ingress-nginx, Traefik, cert-manager), with Minikube-f
 throughout. Task-store, chat, MCP server, and all bundled dependencies are disabled by default;
 the agent is provisioned dynamically when `agent.provisioning.enabled=true` is set.
 
-This guide covers four deployment targets end-to-end, then the cross-cutting
+This guide covers five deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
 
 - [Minikube (local)](#minikube-local) — three profiles: `task minikube:up` (addon, HTTP), `task minikube:cloud-native` (bundled ingress-nginx + cert-manager, HTTPS), or `task minikube:cloud-native:traefik` (bundled Traefik, HTTP)
 - [GKE (Gateway API + cert-manager)](#gke-gateway-api--cert-manager)
 - [EKS (ALB ingress + cert-manager)](#eks-alb-ingress--cert-manager)
 - [Traefik (ingress + cert-manager)](#traefik-ingress--cert-manager)
+- [Cloud-native (any cluster)](#cloud-native-any-cluster) — no pre-installed ingress controller or cert-manager required; bundles both as subcharts
 - [Agent runtime provisioning model](#agent-runtime-provisioning-model)
 - [Authentication modes](#authentication-modes)
 - [Bringing your own PostgreSQL / Bitnami registry fallback](#bringing-your-own-postgresql--bitnami-registry-fallback)
@@ -758,6 +759,52 @@ HTTPS-terminating `Ingress`; cert-manager watches the annotation and creates a
 Secret, which the Ingress's `spec.tls` stanza consumes. This annotation-based
 model is controller-agnostic — it works with Traefik, nginx, ALB, and any other
 ingress controller cert-manager supports.
+
+---
+
+## Cloud-native (any cluster)
+
+Unlike the GKE, EKS, and Traefik sections above — which assume an
+already-installed ingress controller and cert-manager — this profile bundles
+**everything the chart needs as subcharts in the same Helm release**: an
+ingress controller (ingress-nginx or Traefik), cert-manager, and PostgreSQL.
+It works on any conformant Kubernetes cluster, cloud or bare-metal, with zero
+pre-installed cluster dependencies.
+
+> ⚠️ **Do not enable `cert-manager.enabled=true` on a cluster that already
+> runs cert-manager.** A second bundled copy installs a second set of CRDs
+> and controllers, which can collide with the existing installation (webhook
+> conflicts, duplicate CRD ownership, and a `helm uninstall` of this release
+> deleting CRDs the other installation still needs). If cert-manager is
+> already present cluster-wide, leave `cert-manager.enabled=false` and point
+> `tls.certManager.*` at it instead — see the [GKE](#gke-gateway-api--cert-manager),
+> [EKS](#eks-alb-ingress--cert-manager), or [Traefik](#traefik-ingress--cert-manager)
+> sections for that bring-your-own-cert-manager path.
+
+**Install (ingress-nginx variant):**
+
+```bash
+helm upgrade --install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/examples/values-cloud-native.yaml --wait
+```
+
+**Install (Traefik variant):**
+
+```bash
+helm upgrade --install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/examples/values-cloud-native-traefik.yaml --wait
+```
+
+Both example values files bundle `cert-manager` with a `letsencrypt-prod`
+issuer and set `admin.appBaseUrl` for OAuth/OIDC redirects — swap in a
+selfsigned issuer or your own hostname as needed. See [Bundled ingress
+controllers and cert-manager](#bundled-ingress-controllers-and-cert-manager-optional)
+below for the full values reference (per-subchart toggles, the CRD-bootstrap
+hook, and the mutual-exclusion rule between `ingress-nginx` and `traefik`),
+and [Minikube (local)](#minikube-local) for a dev-tuned variant of this same
+profile (`task minikube:cloud-native` / `task minikube:cloud-native:traefik`).
 
 ---
 

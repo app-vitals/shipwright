@@ -1,6 +1,9 @@
 # Installing from the published Helm repo
 
-The `shipwright` chart (`charts/shipwright`) is published to a
+The `shipwright` chart (`charts/shipwright`) vendors four optional subcharts
+(PostgreSQL, ingress-nginx, Traefik, cert-manager — see the chart
+[README](../charts/shipwright/README.md#dependencies) for versions and
+conditions) and is published to a
 [GitHub Pages](https://pages.github.com/) Helm repository on every chart
 **version bump** that lands on `main`. The
 [`chart-release.yml`](../.github/workflows/chart-release.yml) workflow packages
