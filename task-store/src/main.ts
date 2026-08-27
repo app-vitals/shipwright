@@ -123,6 +123,14 @@ async function startServer(): Promise<void> {
     pullRequestService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
+    checkDbReady: async () => {
+      try {
+        await prisma.$queryRaw`SELECT 1`;
+        return true;
+      } catch {
+        return false;
+      }
+    },
   });
 
   const reaper = new StaleClaimReaper(prisma);
