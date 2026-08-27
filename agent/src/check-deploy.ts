@@ -77,7 +77,17 @@ export interface PrRecord {
 
 export interface CheckDeployDeps {
   getCurrentUser: () => Promise<string>;
-  isSelfReviewAllowed: boolean;
+  /**
+   * Whether self-review is allowed (the `allow_self_review` policy field,
+   * state/agent-policy.md). A getter, invoked fresh on every
+   * getDeployCandidates() call — not evaluated once at buildProductionDeps()
+   * time — so an edit to state/agent-policy.md takes effect on the very next
+   * call without requiring an agent process restart (PLR-1.1). Mirrors this
+   * file's own getScopedRepos/hasScopeSynced live-read pattern.
+   * buildProductionDeps() wires this as `() =>
+   * readAllowSelfReview(workspacePath)` (check-helpers.ts).
+   */
+  isSelfReviewAllowed: () => boolean;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
   fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
@@ -214,7 +224,10 @@ export async function getDeployCandidates(
 
       if (pr.reviewDecision === "APPROVED") {
         approved = true;
-      } else if (deps.isSelfReviewAllowed && pr.author.login === currentUser) {
+      } else if (
+        deps.isSelfReviewAllowed() &&
+        pr.author.login === currentUser
+      ) {
         const reviews = await deps.fetchPrReviews(org, repoName, pr.number);
         if (hasSelfApproveReview(reviews, currentUser)) {
           approved = true;
@@ -348,7 +361,7 @@ export async function buildProductionDeps(opts: {
 
   return {
     getCurrentUser,
-    isSelfReviewAllowed: readAllowSelfReview(workspacePath),
+    isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
     repos: allRepos,
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,

@@ -266,14 +266,17 @@ export interface PrStateReconcilerDeps {
   delay: (ms: number) => Promise<void>;
   /**
    * Whether the `cleanup_merged_worktrees` policy field (state/agent-policy.md,
-   * WTR-1.1) is enabled — read once at `buildProductionDeps()` time via
-   * `readCleanupMergedWorktrees()` (check-helpers.ts), mirroring
-   * `check-deploy.ts`/`check-review.ts`'s established
-   * `readAllowSelfReview()` → `isSelfReviewAllowed` pattern: the
-   * already-parsed boolean is injected, not raw file content, so tests can
-   * set it directly without faking a file read.
+   * WTR-1.1) is enabled. A getter, invoked fresh inside `reconcileRecord()`
+   * on every call — not evaluated once at `buildProductionDeps()` time — so
+   * an edit to state/agent-policy.md takes effect on the very next reconcile
+   * tick without requiring an agent process restart (PLR-1.1). Mirrors this
+   * same file's `cleanup_after_days`/`readCleanupAfterDays` live-read pattern
+   * (see `removeWorktree`'s production implementation below) and
+   * `check-deploy.ts`/`check-review.ts`'s `isSelfReviewAllowed` getter.
+   * `buildProductionDeps()` wires this as `() =>
+   * readCleanupMergedWorktrees(workspacePath)` (check-helpers.ts).
    */
-  isCleanupMergedWorktreesEnabled: boolean;
+  isCleanupMergedWorktreesEnabled: () => boolean;
   /**
    * Remove a local git worktree (WTR-1.3) — called from `reconcileRecord()`
    * after a successful state PATCH to merged/closed, when
@@ -567,7 +570,7 @@ async function reconcileRecord(
 
   await deps.patchPrRecord(record.id, fields);
 
-  if (!deps.isCleanupMergedWorktreesEnabled) return "patched";
+  if (!deps.isCleanupMergedWorktreesEnabled()) return "patched";
   if (!ghState.headRefName) return "patched"; // defensive — no branch to derive a worktree path from
 
   try {
@@ -1481,7 +1484,8 @@ export function buildProductionDeps(opts: {
     }),
     now: () => new Date().toISOString(),
     delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-    isCleanupMergedWorktreesEnabled: readCleanupMergedWorktrees(workspacePath),
+    isCleanupMergedWorktreesEnabled: () =>
+      readCleanupMergedWorktrees(workspacePath),
     removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
       const worktreeRoot = (
         process.env.SHIPWRIGHT_WORKTREE_DIR ?? join(workspacePath, "worktrees")
