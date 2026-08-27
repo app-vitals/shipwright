@@ -188,7 +188,7 @@ only the long-standing, explicitly-optional `admin/src/clock.ts` item.
 - **Canary suite definition** — not applicable under the current `direct` deploy model;
   deferred until a staged-deploy model exists.
 - **Speed budgets per layer** — Unit <50ms p95 / Integration <2s / Smoke <5s / E2E <30s /
-  full PR pipeline <15min. Tier 1 aggregate confirms comfortable headroom (~16% of
+  full PR pipeline <15min. Tier 1 aggregate confirms comfortable headroom (~17% of
   budget); no per-layer breakdown needed since Tier 2 has never triggered.
 - **Zero `rebuild` / `delete (redundant)` / `promote-deepen` buckets** — still true today,
   a second consecutive clean cycle.
