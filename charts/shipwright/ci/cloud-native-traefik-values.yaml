@@ -48,6 +48,12 @@ traefik:
 
 taskStore:
   enabled: true
+  # -- existingSecret defaults to "shipwright-secrets" in values.yaml (the
+  # bring-your-own-Secret path); this CI cluster never creates that Secret, so
+  # override to "" to select the chart-managed bundled-PostgreSQL path
+  # (postgresql.enabled: true below).
+  database:
+    existingSecret: ""
   expose:
     enabled: true
     pathPrefix: /task-store
