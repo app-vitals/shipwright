@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.17.4
+version: 1.17.5
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -31,8 +31,6 @@ annotations:
   artifacthub.io/changes: |
     - kind: added
       description: "Add DB-aware readinessProbe (/health/ready) for task-store, and raise its successThreshold to 2 to prevent premature Ready flip during pod initialization, mirroring the admin readiness split (PLR-1.2). livenessProbe stays on /health, unaffected."
-    - kind: changed
-      description: "auto-bump to chart v1.17.4 triggered by release tag agent-v1.193.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
