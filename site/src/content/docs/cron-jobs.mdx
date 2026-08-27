@@ -170,29 +170,14 @@ conclusion.
 
 ### Two outcomes that are expected, not bugs
 
-**A `[silent]` reply is normal when there's nothing to report.** Most cron ticks find no
-qualifying work and end silently — that's the system working as designed, not a stuck or broken
-cron. Before assuming something's wrong, check the run's outcome in Cron Logs: a run marked
-`silent` completed successfully and simply had nothing worth posting.
+Use this table when a cron produces no output or shows an unexpected outcome. Arrive with a symptom (what you're observing), then follow the check and meaning columns to confirm whether it's a normal state or a real issue.
 
-**A cron that never posts at all can have two different, equally normal causes**, both visible
-without needing raw logs or a transcript:
-
-1. **Its `preCheck` returned no work.** Look at the run's outcome in Cron Logs — a `skipped`
-   outcome (rather than `silent` or `posted`) means the preCheck script exited non-zero or produced
-   no output, and the tick was suppressed *before* a Claude turn even started. This is the
-   expected shape for a cron with nothing ready to act on.
-2. **The cron is disabled.** Check the enabled/disabled badge on the cron's row in the agent's Cron
-   Jobs card. A disabled cron doesn't run at all — it won't even show up as a recent `skipped` run,
-   because `node-cron` never scheduled it in the first place.
-
-If a pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
-`shipwright-deploy`) shows as enabled in the admin console but never has any runs in Cron Logs,
-check whether `shipwright-loop` itself is enabled (see "Loop-driven vs standalone crons" above): a
-reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent
-schedule, so its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches
-that phase directly — there's no standalone tick to show up as `silent` or `skipped` in the
-meantime.
+| Symptom | Check | Meaning |
+|---------|-------|---------|
+| A cron run shows outcome `silent` in Cron Logs | Look at the run details — this is normal. The run completed successfully and simply had no qualifying work to report. | Most cron ticks find no work and end silently by design. This is the system working correctly, not a bug. Before assuming something's wrong, confirm the run finished (check its duration). |
+| A cron run shows outcome `skipped` in Cron Logs | Look at the run's outcome in Cron Logs. A `skipped` outcome means the cron's `preCheck` script exited non-zero or produced empty output. The tick was suppressed *before* a Claude turn even started. | This is the expected shape for a cron with no work ready. The `preCheck` script found nothing to act on and correctly short-circuited the expensive Claude run. |
+| A cron never appears in Cron Logs at all (no recent runs, no `silent`, no `skipped`) | Check the enabled/disabled badge on the cron's row in the agent's **Cron Jobs** card in the admin console. | If the badge shows **disabled**, the cron doesn't run at all — `node-cron` never scheduled it in the first place. Re-enable it if you want it to fire. |
+| A pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-deploy`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
 
 ## Next steps
 
