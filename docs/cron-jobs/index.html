@@ -111,6 +111,8 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <tr>
 <th>Cron</th>
 <th>Schedule</th>
+<th>Command</th>
+<th>Skill</th>
 <th>Default</th>
 <th>What it does</th>
 </tr>
@@ -119,78 +121,104 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <tr>
 <td><code>shipwright-dev-task</code></td>
 <td>every minute</td>
+<td><code>/shipwright:dev-task</code></td>
+<td>—</td>
 <td><strong>on</strong></td>
 <td>Builds and ships a PR for the task <code>shipwright-loop</code> selects. Inert if <code>shipwright-loop</code> is disabled.</td>
 </tr>
 <tr>
 <td><code>shipwright-review</code></td>
 <td>every minute</td>
+<td><code>/shipwright:review</code></td>
+<td>—</td>
 <td><strong>on</strong></td>
 <td>Reviews the PR <code>shipwright-loop</code> selects. Inert if <code>shipwright-loop</code> is disabled.</td>
 </tr>
 <tr>
 <td><code>shipwright-patch</code></td>
 <td>every minute</td>
+<td><code>/shipwright:patch</code></td>
+<td>—</td>
 <td><strong>on</strong></td>
 <td>Patches the PR <code>shipwright-loop</code> selects. Inert if <code>shipwright-loop</code> is disabled.</td>
 </tr>
 <tr>
 <td><code>shipwright-deploy</code></td>
 <td>every minute</td>
+<td><code>/shipwright:deploy</code></td>
+<td>—</td>
 <td>off</td>
 <td>Merges and deploys the PR <code>shipwright-loop</code> selects. Inert if <code>shipwright-loop</code> is disabled.</td>
 </tr>
 <tr>
 <td><code>shipwright-loop</code></td>
 <td>every minute</td>
+<td>internal</td>
+<td>—</td>
 <td>off</td>
 <td>Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry.</td>
 </tr>
 <tr>
 <td><code>shipwright-test-readiness</code></td>
 <td>daily 06:00</td>
+<td><code>/shipwright:test-readiness --full --publish</code></td>
+<td>test-readiness</td>
 <td>off</td>
 <td>Full test-readiness audit for repos with stale or missing artifacts.</td>
 </tr>
 <tr>
 <td><code>shipwright-docs-freshness</code></td>
 <td>daily 07:00</td>
+<td><code>/shipwright:research-docs --auto</code></td>
+<td>—</td>
 <td>off</td>
 <td>Refreshes docs that have drifted from the code.</td>
 </tr>
 <tr>
 <td><code>learn-dream</code></td>
 <td>daily 03:00</td>
+<td><code>/shipwright:learn-dream --since 1d --review</code></td>
+<td>—</td>
 <td>off</td>
 <td>Mines the last day of merged PRs for durable learnings.</td>
 </tr>
 <tr>
 <td><code>dependabot-triage</code></td>
 <td>daily 08:00</td>
+<td><code>/shipwright:triage-dependabot-prs</code></td>
+<td>triage-dependabot-prs</td>
 <td>off</td>
 <td>Reviews and triages open Dependabot PRs.</td>
 </tr>
 <tr>
 <td><code>entropy-patrol-maintenance</code></td>
 <td>weekly Mon 04:00</td>
+<td><code>/shipwright:entropy-scan</code> → <code>/shipwright:entropy-fix</code></td>
+<td>entropy-scan, entropy-fix</td>
 <td>off</td>
 <td>Scans for code entropy and fixes what’s PR-worthy.</td>
 </tr>
 <tr>
 <td><code>error-patrol-maintenance</code></td>
 <td>daily 04:00</td>
+<td><code>/shipwright:error-scan</code> → <code>/shipwright:error-fix</code> → <code>/shipwright:error-resolve</code></td>
+<td>error-scan, error-fix, error-resolve</td>
 <td>off</td>
 <td>Scans for unresolved Sentry errors and fixes what’s PR-worthy.</td>
 </tr>
 <tr>
 <td><code>security-patrol-maintenance</code></td>
 <td>weekly Mon 06:00</td>
+<td><code>/shipwright:security-scan</code> → <code>/shipwright:security-fix</code></td>
+<td>security-scan, security-fix</td>
 <td>off</td>
 <td>Scans for security vulnerabilities and fixes what’s PR-worthy.</td>
 </tr>
 <tr>
 <td><code>consolidation-patrol-maintenance</code></td>
 <td>weekly Mon 05:00</td>
+<td><code>/shipwright:consolidation-scan</code> → <code>/shipwright:consolidation-fix</code></td>
+<td>consolidation-scan, consolidation-fix</td>
 <td>off</td>
 <td>Proposes consolidation for duplicate patterns that have stabilized over time.</td>
 </tr>
