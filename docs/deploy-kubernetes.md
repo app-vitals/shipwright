@@ -16,7 +16,7 @@ the agent is provisioned dynamically when `agent.provisioning.enabled=true` is s
 This guide covers four deployment targets end-to-end, then the cross-cutting
 concerns shared by all of them:
 
-- [Minikube (local, full stack, HTTP + nginx ingress)](#minikube-local) — `task minikube:up`
+- [Minikube (local)](#minikube-local) — three profiles: `task minikube:up` (addon, HTTP), `task minikube:cloud-native` (bundled ingress-nginx + cert-manager, HTTPS), or `task minikube:cloud-native:traefik` (bundled Traefik, HTTP)
 - [GKE (Gateway API + cert-manager)](#gke-gateway-api--cert-manager)
 - [EKS (ALB ingress + cert-manager)](#eks-alb-ingress--cert-manager)
 - [Traefik (ingress + cert-manager)](#traefik-ingress--cert-manager)
@@ -204,43 +204,55 @@ for the full list of MCP server env vars and their defaults.
 ## Minikube (local)
 
 The **full stack** — admin, metrics, task-store, chat, bundled PostgreSQL, and
-runtime agent provisioning — over plain HTTP, with **no hand-created Secrets**.
-The chart assembles every database connection string for you. The MCP server is disabled
-by default; enable it with `mcpServer.enabled=true` if needed.
+runtime agent provisioning — with **no hand-created Secrets**. The chart assembles
+every database connection string for you. The MCP server is disabled by default; enable
+it with `mcpServer.enabled=true` if needed.
+
+Three profiles are available, selected via a `--profile` flag to the underlying `scripts/minikube.ts` script:
+
+| Profile | Command | TLS | Ingress | Values file |
+|---------|---------|-----|---------|-------------|
+| **addon** (default) | `task minikube:up` | Plain HTTP | minikube's built-in `ingress` addon | `examples/values-minikube.yaml` |
+| **cloud-native-nginx** | `task minikube:cloud-native` | HTTPS (selfsigned cert-manager) | Bundled ingress-nginx subchart | `ci/cloud-native-nginx-values.yaml` |
+| **cloud-native-traefik** | `task minikube:cloud-native:traefik` | Plain HTTP | Bundled Traefik subchart | `ci/cloud-native-traefik-values.yaml` |
+
+Each profile is idempotent — repeat `task minikube:up` (or the cloud-native variants) reuses an already-running VM and port-forward; `task minikube:down` tears down all three the same way (VM, helm release, port-forward).
 
 ### One command
 
-From the repo root:
+From the repo root, pick a profile:
 
+**Default (addon):**
 ```bash
 task minikube:up
 ```
 
-That handles the key ordering constraints that otherwise fail confusingly:
-VM sizing (only settable at `minikube start`), the ingress addon (must precede
-the install, or the Ingress has no controller), waiting for the ingress
-controller's admission webhook pod to be Ready (installing immediately after
-enabling the addon races it — the webhook Service has no ready endpoint yet
-and helm fails with "connect: connection refused"), `helm dependency build`
-(all optional subcharts — PostgreSQL, ingress-nginx, Traefik, cert-manager — are
-pinned in `Chart.lock`), and the `/etc/hosts` entry (only possible once there's a
-routable address to point it at). It then waits on each Deployment individually and
-runs `helm test`.
+**Cloud-native with HTTPS:**
+```bash
+task minikube:cloud-native
+```
+
+**Cloud-native with Traefik (HTTP):**
+```bash
+task minikube:cloud-native:traefik
+```
+
+Each task handles the key ordering constraints that otherwise fail confusingly:
+VM sizing (only settable at `minikube start`), the ingress controller setup (addon profiles enable the minikube `ingress` addon; cloud-native profiles bundle the controller via a helm subchart), waiting for the controller to be ready (addon profile waits for the webhook pod, cloud-native profiles wait on the controller Deployment after install), `helm dependency build` (all optional subcharts — PostgreSQL, ingress-nginx, Traefik, cert-manager — are pinned in `Chart.lock`), and the `/etc/hosts` entry (only possible once there's a routable address to point it at). It then waits on each Deployment individually and runs `helm test`.
 
 With the `docker` driver (the default on macOS/Colima), `minikube ip` returns
 an address on a Docker-internal network the host can't route to at all, so the
-script starts a background `kubectl port-forward` from a local port (`8080`)
-to the ingress controller Service instead, and points `/etc/hosts` at
-`127.0.0.1`. The port-forward's PID is tracked in
-`state/minikube-port-forward.pid` so repeat `task minikube:up` runs reuse an
-already-running forwarder rather than starting duplicates; `task minikube:down`
-tears it down automatically.
+script starts a background `kubectl port-forward` to the ingress controller Service. The port-forward binds to a local port (`8080` for addon and cloud-native-traefik; both `8080` and `8443` for cloud-native-nginx which also terminates HTTPS), and `/etc/hosts` is pointed at `127.0.0.1`. The port-forward's PID is tracked in
+`state/minikube-port-forward.pid` so repeat task runs reuse an already-running forwarder rather than starting duplicates; `task minikube:down` tears it down automatically.
 
 Tear down with `task minikube:down` (stops the port-forward, then helm
 uninstall, then minikube delete).
 
 ### By hand
 
+The `task minikube:*` commands automate these steps. To run them manually, follow the addon profile example below, or substitute the cloud-native values file and ingress setup steps (see the script source in `scripts/minikube.ts` for the exact cloud-native ingress controller wait commands).
+
+**Addon profile (default):**
 ```bash
 minikube start --cpus=4 --memory=8192 --disk-size=40g
 minikube addons enable ingress
@@ -251,6 +263,32 @@ helm upgrade --install shipwright charts/shipwright \
   --namespace shipwright --create-namespace \
   -f charts/shipwright/examples/values-minikube.yaml --wait
 kubectl port-forward --namespace ingress-nginx svc/ingress-nginx-controller 8080:80 &
+echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
+```
+
+**Cloud-native-nginx profile (HTTPS):**
+```bash
+minikube start --cpus=4 --memory=8192 --disk-size=40g
+helm dependency build charts/shipwright
+helm upgrade --install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/ci/cloud-native-nginx-values.yaml --wait
+kubectl rollout status deployment/shipwright-ingress-nginx-controller \
+  --namespace shipwright --timeout=5m
+kubectl port-forward --namespace shipwright svc/shipwright-ingress-nginx-controller 8080:80 8443:443 &
+echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
+```
+
+**Cloud-native-traefik profile (HTTP):**
+```bash
+minikube start --cpus=4 --memory=8192 --disk-size=40g
+helm dependency build charts/shipwright
+helm upgrade --install shipwright charts/shipwright \
+  --namespace shipwright --create-namespace \
+  -f charts/shipwright/ci/cloud-native-traefik-values.yaml --wait
+kubectl rollout status deployment/shipwright-traefik \
+  --namespace shipwright --timeout=5m
+kubectl port-forward --namespace shipwright svc/shipwright-traefik 8080:80 &
 echo "127.0.0.1 shipwright.local" | sudo tee -a /etc/hosts
 ```
 
@@ -308,20 +346,27 @@ The Ingress routes `/dashboard` to metrics, `/task-store` to the task store, and
 `/` (catch-all) to admin. The metrics app mounts its whole router under
 `provider.basePath` (`/dashboard` in the Minikube example values) and its own
 dashboard route is itself named `/dashboard`, so the two compose — the
-browsable URL is `/dashboard/dashboard`, not `/dashboard`:
+browsable URL is `/dashboard/dashboard`, not `/dashboard`.
 
+**Addon and cloud-native-traefik profiles (HTTP):**
 - Admin UI/API: `http://shipwright.local/`
 - Metrics dashboard: `http://shipwright.local/dashboard/dashboard`
 - Task store: `http://shipwright.local/task-store/health`
 
-`task minikube:up` doesn't print this whole list — the console root (`/`)
+**Cloud-native-nginx profile (HTTPS):**
+- Admin UI/API: `https://shipwright.local:8443/`
+- Metrics dashboard: `https://shipwright.local:8443/dashboard/dashboard`
+- Task store: `https://shipwright.local:8443/task-store/health`
+
+The task doesn't print this whole list — the console root (`/`)
 redirects to a Google sign-in page the Minikube profile never configures, a
 dead end for a fresh stack. Instead it prints and auto-opens exactly one link,
 `/admin/dev-login` (via `buildAccessUrls()` in `scripts/minikube.ts`), which
 mints a dev session outright and lands on `/admin/agents`; every other surface
 above is reachable from the console once you're signed in. If `/etc/hosts`
 isn't mapped yet it prints the `echo … | sudo tee -a /etc/hosts` line instead
-of opening the browser.
+of opening the browser. (For cloud-native-nginx with HTTPS, the script also
+prints a kubectl command to check the cert-manager Issuer and Certificate status.)
 
 Or port-forward instead (works with the default `networking.type=ClusterIP`):
 
@@ -1150,8 +1195,10 @@ tls:
 ```
 
 Example value files are provided:
-- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager; uses `shipwright.local` with a selfsigned cert and `admin.appBaseUrl: https://shipwright.local:8443`
-- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager; uses `shipwright.example.com` with `letsencrypt-prod` and `admin.appBaseUrl: https://shipwright.example.com`
+- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — production-oriented: bundles ingress-nginx + cert-manager with `letsencrypt-prod`, uses `shipwright.local` with a selfsigned cert, and sets `admin.appBaseUrl: https://shipwright.local:8443`
+- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — production-oriented: bundles Traefik + cert-manager with `letsencrypt-prod`, uses `shipwright.example.com`, and sets `admin.appBaseUrl: https://shipwright.example.com`
+
+**Note:** the Minikube task `task minikube:cloud-native` and `task minikube:cloud-native:traefik` use simplified versions (`charts/shipwright/ci/cloud-native-nginx-values.yaml` and `charts/shipwright/ci/cloud-native-traefik-values.yaml`) tuned for local development with self-signed certs and without OAuth/OIDC setup — see [Minikube (local)](#minikube-local) for details.
 
 ---
 
