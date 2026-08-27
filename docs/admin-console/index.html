@@ -87,6 +87,57 @@ if any repo is malformed), and redirects to the new agent’s detail page.</p>
 any), and — for Slack-provisioned agents — a <strong>Sync Manifest</strong> control that re-pushes the current
 Slack app manifest given a fresh <code>xoxe.xoxp-</code> configuration token (<code>POST /admin/agents/:id/sync-manifest</code>), optionally re-triggering the Slack OAuth reinstall flow. Below the
 header, in order:</p>
+<table>
+<thead>
+<tr>
+<th>Card</th>
+<th>Who sees it</th>
+<th>Key actions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Env Vars</strong></td>
+<td>Slack-provisioned agents only</td>
+<td>Add, edit value (masked), delete</td>
+</tr>
+<tr>
+<td><strong>Repos</strong></td>
+<td>All viewers</td>
+<td>Add, remove</td>
+</tr>
+<tr>
+<td><strong>Cron Jobs</strong></td>
+<td>All viewers</td>
+<td>View logs, enable/disable, edit (custom only), delete (custom only)</td>
+</tr>
+<tr>
+<td><strong>Tools</strong></td>
+<td>All viewers</td>
+<td>Add, enable/disable, delete</td>
+</tr>
+<tr>
+<td><strong>Task Store Tokens</strong></td>
+<td>All viewers</td>
+<td>Create, revoke</td>
+</tr>
+<tr>
+<td><strong>Plugins</strong></td>
+<td>All viewers</td>
+<td>View only (install via CLI)</td>
+</tr>
+<tr>
+<td><strong>Members</strong></td>
+<td>Admin-only</td>
+<td>Add, remove</td>
+</tr>
+<tr>
+<td><strong>Danger Zone</strong></td>
+<td>Admin-only</td>
+<td>Delete agent</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Env Vars</strong> (Slack-provisioned agents only — self-hosted agents skip this card). A table of
 <code>KEY</code> / masked value (<code>••••••••</code>, with a 🔒 icon on keys marked secret) / delete-button rows, plus an
 add form (<code>POST /admin/agents/:id/envs</code>) with <code>key</code>, <code>value</code>, and a “Mark as secret” checkbox.
