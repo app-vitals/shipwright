@@ -537,3 +537,62 @@ describe("dev-task.md — Step 6 principles override + security domain", () => {
     expect(section).toMatch(/security_[a-z_]+/);
   });
 });
+
+describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SWG-1.1)", () => {
+  function getStep8Section(): string {
+    const step8Idx = content.indexOf("## Step 8: Pre-Ship Checks");
+    expect(step8Idx).toBeGreaterThan(-1);
+    const step85Idx = content.indexOf("## Step 8.5:", step8Idx);
+    expect(step85Idx).toBeGreaterThan(step8Idx);
+    return content.slice(step8Idx, step85Idx);
+  }
+
+  function getStep9b2Section(): string {
+    const step9b2Idx = content.indexOf("### 9b.2. Wait for Checks");
+    expect(step9b2Idx).toBeGreaterThan(-1);
+    const step9b3Idx = content.indexOf("### 9b.3.", step9b2Idx);
+    expect(step9b3Idx).toBeGreaterThan(step9b2Idx);
+    return content.slice(step9b2Idx, step9b3Idx);
+  }
+
+  it("Step 8 (Pre-Ship Checks) states long-running validation/test commands must run synchronously or backgrounded-and-polled within the same session", () => {
+    const section = getStep8Section();
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("synchronously");
+    expect(lower).toContain("within this same session");
+  });
+
+  it("Step 8 does NOT contain the literal string 'ScheduleWakeup'", () => {
+    const section = getStep8Section();
+    expect(section).not.toContain("ScheduleWakeup");
+  });
+
+  it("Step 8's guardrail prohibits handing the wait off via a scheduled wakeup mechanism", () => {
+    const section = getStep8Section();
+    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain("scheduled wakeup mechanism");
+  });
+
+  it("Step 9b.2 (Wait for Checks) states the 30s/10-min poll must run as a blocking loop within the same Bash invocation chain", () => {
+    const section = getStep9b2Section();
+    expect(section).toContain("chained in-Bash sleep loop");
+    const lower = section.toLowerCase().replace(/\s+/g, " ");
+    expect(lower).toContain("shell-level loop inside a single bash tool call");
+    expect(lower).toContain("chain additional bash calls");
+  });
+
+  it("Step 9b.2 does NOT contain the literal string 'ScheduleWakeup'", () => {
+    const section = getStep9b2Section();
+    expect(section).not.toContain("ScheduleWakeup");
+  });
+
+  it("Step 9b.2's guardrail prohibits handing the wait off via a scheduled wakeup mechanism", () => {
+    const section = getStep9b2Section();
+    expect(section.toLowerCase().replace(/\s+/g, " ")).toContain("scheduled wakeup mechanism");
+  });
+
+  it("preserves the existing 30-second poll interval and 10-minute budget wording in Step 9b.2", () => {
+    const section = getStep9b2Section();
+    expect(section).toContain("30 seconds");
+    expect(section).toContain("10 minutes");
+  });
+});

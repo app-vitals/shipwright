@@ -680,6 +680,16 @@ Stop.
 
 ## Step 8: Pre-Ship Checks
 
+**Implementation: no scheduled wakeup mid-check.** Validation/test commands here can be
+long-running (full suites, coverage runs). Run them synchronously in the same Bash
+invocation — chaining additional Bash calls back-to-back if a single command needs more
+wall-clock time than one call's timeout allows — or, if backgrounding is genuinely
+needed, poll for completion within this same session (a chained in-Bash loop, or the
+Monitor tool). Do not hand the wait off via a scheduled wakeup mechanism that resumes the
+session later: a resumed session is a brand-new process invocation with no memory of this
+pipeline's progress, and a silent resume failure leaves the task-store record stuck
+mid-pipeline with a fully green PR nobody recorded (see this task's Background section).
+
 Run the detected validation commands from Step 0. For multi-ecosystem projects, run all applicable commands. If `tests` was populated in Step 0 (multiple test layers), run each layer's command — not just the fast default `test` command.
 
 Examples based on detected toolchain:
@@ -906,6 +916,15 @@ Resolve owner/repo and current HEAD SHA:
 REPO=$(git remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
 HEAD_SHA=$(git rev-parse HEAD)
 ```
+
+**Implementation: chained in-Bash sleep loop.** Do not wait between polls via a scheduled
+wakeup mechanism that resumes the session later — each resumption is a brand-new process
+invocation, and a silent resume failure leaves this exact PR fully green and mergeable
+with no task-store record of it (the failure mode this poll has already hit once — see
+this task's Background section). Instead, run the 30-second-interval checks as a
+shell-level loop inside a single Bash tool call, and chain additional Bash calls
+back-to-back within the same turn if the full 10-minute budget needs more iterations than
+one call comfortably covers.
 
 Poll every 30 seconds for up to **10 minutes** (20 polls max). On each poll:
 ```bash
