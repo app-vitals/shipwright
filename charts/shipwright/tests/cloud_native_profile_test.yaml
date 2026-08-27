@@ -105,12 +105,12 @@ tests:
       - equal:
           path: metadata.annotations["helm.sh/hook"]
           value: test
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: "issuer/RELEASE-NAME-shipwright-issuer"
-      - matchRegex:
-          path: spec.containers[0].command[2]
-          pattern: "certificate/RELEASE-NAME-shipwright-tls"
+      - contains:
+          path: spec.initContainers[0].args
+          content: "issuer/RELEASE-NAME-shipwright-issuer"
+      - contains:
+          path: spec.containers[0].args
+          content: "certificate/RELEASE-NAME-shipwright-tls"
 
   - it: "nginx profile: test-connection.yaml's ingress-nginx-gated HTTPS block is present"
     template: templates/tests/test-connection.yaml

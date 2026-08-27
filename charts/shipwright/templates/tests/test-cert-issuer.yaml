@@ -158,19 +158,33 @@ spec:
   securityContext:
     runAsNonRoot: true
     runAsUser: 65532
-  containers:
-    - name: wait
+  initContainers:
+    - name: wait-for-issuer
       image: {{ $image | quote }}
       command:
-        - /bin/sh
-        - -c
-        - |
-          set -eu
-          echo "kubectl wait --for=condition=Ready {{ $issuerKind }}/{{ $issuerName }} (timeout 120s)"
-          kubectl wait --for=condition=Ready --timeout=120s {{ $issuerKind }}/{{ $issuerName }} -n {{ .Release.Namespace }}
-          echo "kubectl wait --for=condition=Ready certificate/{{ $certificateName }} (timeout 120s)"
-          kubectl wait --for=condition=Ready --timeout=120s certificate/{{ $certificateName }} -n {{ .Release.Namespace }}
-          echo "OK: {{ $issuerKind }}/{{ $issuerName }} and certificate/{{ $certificateName }} are Ready"
+        - kubectl
+      args:
+        - wait
+        - --for=condition=Ready
+        - --timeout=120s
+        - {{ printf "%s/%s" $issuerKind $issuerName }}
+        - -n
+        - {{ .Release.Namespace }}
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+  containers:
+    - name: wait-for-certificate
+      image: {{ $image | quote }}
+      command:
+        - kubectl
+      args:
+        - wait
+        - --for=condition=Ready
+        - --timeout=120s
+        - {{ printf "certificate/%s" $certificateName }}
+        - -n
+        - {{ .Release.Namespace }}
       securityContext:
         readOnlyRootFilesystem: true
         allowPrivilegeEscalation: false
