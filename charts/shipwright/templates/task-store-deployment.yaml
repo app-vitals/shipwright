@@ -47,13 +47,16 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           readinessProbe:
+            # DB-aware — keeps the pod out of Service rotation until Postgres
+            # is actually reachable (mirrors admin's /health/ready split).
             httpGet:
-              path: /health
+              path: /health/ready
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
             timeoutSeconds: 3
             failureThreshold: 3
+            successThreshold: 2
           env:
             {{- if .Values.taskStore.database.existingSecret }}
             # Bring-your-own Secret (the default, "shipwright-secrets"). The chart

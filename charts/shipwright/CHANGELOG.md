@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.17.6] - 2026-08-27
+
+### Added
+
+- Add a DB-aware readinessProbe (`/health/ready`) for task-store — backed by a lightweight `SELECT 1` — so Kubernetes no longer routes traffic to a task-store pod before Postgres is reachable. `livenessProbe` is unchanged and stays on `/health` (DB-independent), matching the admin liveness/readiness split. Also raises the readinessProbe `successThreshold` to 2 to prevent a single-lucky-probe premature Ready flip during pod initialization (mirroring PLR-1.2's admin fix).
+
 ## [1.17.5] - 2026-08-27
 
 ### Changed

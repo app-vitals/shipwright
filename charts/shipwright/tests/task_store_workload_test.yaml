@@ -18,7 +18,11 @@ tests:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 3000
 
-  - it: sets liveness and readiness probes against /health on port 3000
+  # PLR-1.3: readinessProbe is DB-aware (/health/ready) while livenessProbe
+  # stays DB-independent (/health) — a transient DB blip must never trigger a
+  # liveness-driven restart. successThreshold: 2 avoids a single-lucky-probe
+  # premature Ready flip during pod initialization (mirrors PLR-1.2's admin fix).
+  - it: sets a DB-independent liveness probe against /health and a DB-aware readiness probe against /health/ready, both on port 3000
     template: templates/task-store-deployment.yaml
     set:
       taskStore.enabled: true
@@ -31,10 +35,13 @@ tests:
           value: 3000
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.path
-          value: /health
+          value: /health/ready
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.httpGet.port
           value: 3000
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.successThreshold
+          value: 2
 
   - it: wires standard selector labels onto the Deployment
     template: templates/task-store-deployment.yaml
