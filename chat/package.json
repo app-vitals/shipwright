@@ -15,7 +15,7 @@
   "dependencies": {
     "@hono/zod-openapi": "^0.18.3",
     "@prisma/client": "^6.19.2",
-    "@shipwright/lib": "*",
+    "@shipwright/lib": "workspace:*",
     "hono": "^4.13.1"
   },
   "devDependencies": {

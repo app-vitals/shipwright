@@ -391,6 +391,26 @@ describe("getReviewCandidates", () => {
     expect(result[0].id).toContain("#3");
   });
 
+  test("returns empty array when all open PRs are authored by app/renovate", async () => {
+    const prs = [
+      makePr({ number: 1, author: { login: "app/renovate" } }),
+      makePr({ number: 2, author: { login: "app/renovate" } }),
+    ];
+    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+    expect(result).toEqual([]);
+  });
+
+  test("returns the one eligible non-draft non-renovate PR from a mixed set (all matches collected)", async () => {
+    const prs = [
+      makePr({ number: 1, isDraft: true }),
+      makePr({ number: 2, author: { login: "app/renovate" } }),
+      makePr({ number: 3, author: { login: "danmcaulay" } }),
+    ];
+    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toContain("#3");
+  });
+
   // ─── automated label exclusion ────────────────────────────────────────────
 
   test("returns empty array when all open PRs are labeled automated", async () => {
@@ -893,6 +913,15 @@ describe("getReviewCandidates", () => {
   test("requested-reviewer status does not override the unconditional dependabot exclusion", async () => {
     const pr = makePr({
       author: { login: "app/dependabot" },
+      reviewRequests: [{ login: "bodhi-agent" }],
+    });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toEqual([]);
+  });
+
+  test("requested-reviewer status does not override the unconditional renovate exclusion", async () => {
+    const pr = makePr({
+      author: { login: "app/renovate" },
       reviewRequests: [{ login: "bodhi-agent" }],
     });
     const result = await getReviewCandidates(makeDeps([pr], async () => null));
