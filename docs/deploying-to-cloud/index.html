@@ -97,10 +97,24 @@ bundled, so no external database is required.</p>
 <p>Point the Minikube IP at the local hostname:</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">echo</span><span style="color:var(--astro-code-token-string-expression)"> &quot;$(</span><span style="color:var(--astro-code-token-function)">minikube</span><span style="color:var(--astro-code-token-string)"> ip</span><span style="color:var(--astro-code-token-string-expression)">) shipwright.local&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> sudo</span><span style="color:var(--astro-code-token-string)"> tee</span><span style="color:var(--astro-code-token-string)"> -a</span><span style="color:var(--astro-code-token-string)"> /etc/hosts</span></span></code></pre>
 <p>Then:</p>
-<ul>
-<li>Admin UI/API: <code>http://shipwright.local/</code></li>
-<li>Metrics dashboard: <code>http://shipwright.local/dashboard</code></li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin UI/API</td>
+<td><code>http://shipwright.local/</code></td>
+</tr>
+<tr>
+<td>Metrics dashboard</td>
+<td><code>http://shipwright.local/dashboard</code></td>
+</tr>
+</tbody>
+</table>
 <p>Or skip the ingress and port-forward directly:</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">kubectl</span><span style="color:var(--astro-code-token-string)"> port-forward</span><span style="color:var(--astro-code-token-string)"> svc/shipwright-admin</span><span style="color:var(--astro-code-token-string)">   3001:3001</span><span style="color:var(--astro-code-token-string)"> -n</span><span style="color:var(--astro-code-token-string)"> shipwright</span></span>
 <span class="line"><span style="color:var(--astro-code-token-function)">kubectl</span><span style="color:var(--astro-code-token-string)"> port-forward</span><span style="color:var(--astro-code-token-string)"> svc/shipwright-metrics</span><span style="color:var(--astro-code-token-string)"> 3460:3460</span><span style="color:var(--astro-code-token-string)"> -n</span><span style="color:var(--astro-code-token-string)"> shipwright</span></span></code></pre>
@@ -156,10 +170,24 @@ API add-on with the <code>gke-l7-global-external-managed</code> GatewayClass</li
 <p>The chart renders a <code>Gateway</code> plus <code>HTTPRoute</code>s: an HTTP listener on <code>:80</code>, an HTTPS listener on
 <code>:443</code> (when TLS is enabled), and an HTTP→HTTPS redirect route. Point your DNS <code>A</code>/<code>AAAA</code> record
 at the Gateway’s external address once provisioned.</p>
-<ul>
-<li>Admin UI/API: <code>https://shipwright.example.com/</code></li>
-<li>Metrics dashboard: <code>https://shipwright.example.com/dashboard</code></li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin UI/API</td>
+<td><code>https://shipwright.example.com/</code></td>
+</tr>
+<tr>
+<td>Metrics dashboard</td>
+<td><code>https://shipwright.example.com/dashboard</code></td>
+</tr>
+</tbody>
+</table>
 <h2 id="eks-alb-ingress--cert-manager">EKS (ALB ingress + cert-manager)</h2>
 <p>Production deployment on EKS using the AWS Load Balancer Controller to provision an ALB from the
 chart’s <code>Ingress</code>, with cert-manager for certificate management.</p>
@@ -194,10 +222,24 @@ chart’s <code>Ingress</code>, with cert-manager for certificate management.</p
 <span class="line"><span style="color:var(--astro-code-token-string)">  --namespace</span><span style="color:var(--astro-code-token-string)"> shipwright</span><span style="color:var(--astro-code-token-string)"> --create-namespace</span><span style="color:var(--astro-code-foreground)"> \</span></span>
 <span class="line"><span style="color:var(--astro-code-token-string)">  -f</span><span style="color:var(--astro-code-token-string)"> my-values.yaml</span></span></code></pre>
 <p>Point your DNS record at the ALB’s DNS name once provisioned.</p>
-<ul>
-<li>Admin UI/API: <code>https://shipwright.example.com/</code></li>
-<li>Metrics dashboard: <code>https://shipwright.example.com/dashboard</code></li>
-</ul>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>URL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Admin UI/API</td>
+<td><code>https://shipwright.example.com/</code></td>
+</tr>
+<tr>
+<td>Metrics dashboard</td>
+<td><code>https://shipwright.example.com/dashboard</code></td>
+</tr>
+</tbody>
+</table>
 <h2 id="agent-runtime-provisioning">Agent runtime provisioning</h2>
 <p>By default the admin service runs in <strong>Noop</strong> mode — creating an agent only writes a database row.
 Set <code>agent.provisioning.enabled=true</code> to switch to the <strong>Kubernetes</strong> provisioner:</p>
