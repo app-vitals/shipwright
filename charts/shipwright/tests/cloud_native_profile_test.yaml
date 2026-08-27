@@ -126,7 +126,7 @@ tests:
     asserts:
       - matchRegex:
           path: spec.containers[0].command[2]
-          pattern: "--retry-connrefused --retry-all-errors"
+          pattern: "--retry-connrefused --retry-all-errors -f"
 
   # ---- traefik profile (examples/values-cloud-native-traefik.yaml) ----
   - it: "traefik profile: Ingress is plain HTTP (no spec.tls) per the example's bring-your-own-cert path being disabled here"
@@ -195,4 +195,4 @@ tests:
     asserts:
       - matchRegex:
           path: spec.containers[0].command[2]
-          pattern: "--retry-connrefused --retry-all-errors"
+          pattern: "--retry-connrefused --retry-all-errors -f"

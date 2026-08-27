@@ -96,7 +96,7 @@ spec:
           # fake one by inspecting -v's TLS handshake trace below.
           nginx_verbose="$(curl -sv -k -o /dev/null \
             --connect-to "${NGINX_HOST}:443:${NGINX_CONTROLLER_SVC}:443" \
-            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
             "${NGINX_URL}" 2>&1)"
           echo "${nginx_verbose}" | grep -E 'subject:|issuer:' || true
           if echo "${nginx_verbose}" | grep -qi 'Kubernetes Ingress Controller Fake Certificate'; then
@@ -106,7 +106,7 @@ spec:
           fi
           nginx_code="$(curl -s -k -o /dev/null -w '%{http_code}' \
             --connect-to "${NGINX_HOST}:443:${NGINX_CONTROLLER_SVC}:443" \
-            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
             "${NGINX_URL}")"
           echo "ingress-nginx -> task-store /task-store/health -> ${nginx_code}"
           if [ "${nginx_code}" != "200" ]; then
@@ -126,7 +126,7 @@ spec:
           echo "GET ${TRAEFIK_URL} with Host: ${TRAEFIK_HOST} via bundled traefik Service (expect 200)"
           traefik_code="$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Host: ${TRAEFIK_HOST}" \
-            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
             "${TRAEFIK_URL}")"
           echo "traefik -> task-store /task-store/health -> ${traefik_code}"
           if [ "${traefik_code}" != "200" ]; then
