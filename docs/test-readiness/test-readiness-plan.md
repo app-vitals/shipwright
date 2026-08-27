@@ -152,7 +152,7 @@ toward the escalation trigger. Test-count growth trajectory: 5,762 (2026-07-28) 
 weren't flagged stale this cycle).
 
 **Tier 2 triggered:** no — the escalation formula (aggregate wall-clock >7.5 min,
-sustained across 2 consecutive measurements) is nowhere near tripped (~16% of budget,
+sustained across 2 consecutive measurements) is nowhere near tripped (~17% of budget,
 well below the 50% escalation threshold). No per-layer p95 table is populated below, per
 the SKILL's explicit guidance against fabricating per-layer numbers when only the Tier 1
 aggregate is available.
