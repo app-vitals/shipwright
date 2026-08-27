@@ -84,24 +84,8 @@ unset, secrets are stored in plain text with a logged warning.
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons. Three are enabled by default; the rest are opt-in
-and can be toggled in the admin UI or via `PATCH /agents/:id/crons/:cronId`.
-
-| Cron | Schedule | Default | What it does |
-|------|----------|---------|--------------|
-| `shipwright-dev-task` | every 30 min | **on** | Pick next ready task, build with tests, open PR |
-| `shipwright-review` | every 30 min | **on** | Review-only pass over open PRs |
-| `shipwright-patch` | every 30 min | **on** | Fix failing CI and unresolved review findings |
-| `shipwright-deploy` | every 30 min | off | Merge approved PRs and deploy |
-| `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit |
-| `shipwright-docs-freshness` | daily 07:00 | off | Refresh docs that drifted from the code |
-| `learn-dream` | daily 03:00 | off | Mine merged PRs for durable learnings |
-| `dependabot-triage` | daily 08:00 | off | Review and triage open Dependabot PRs |
-| `entropy-patrol-maintenance` | weekly Mon 04:00 | off | Scan for code entropy and fix what's PR-worthy |
-
-Crons run `silent` by default — they post to Slack only when there is a result worth surfacing or
-on error. Most carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only
-spends a Claude turn when there is real work ready.
+See [Cron Jobs](/docs/cron-jobs#default-system-crons) for the full list of default system crons,
+their schedules, and what each one does.
 
 ## Required environment variables
 
