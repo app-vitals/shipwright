@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.18.1] - 2026-08-27
+
+### Added
+
+- Minikube cloud-native profile examples (CNH-8.2): new `examples/values-minikube-cloud-native-nginx.yaml` (bundles ingress-nginx + cert-manager with a selfsigned Issuer, `auth.mode: open`, `admin.appBaseUrl` on `https://shipwright.local:8443`) and `examples/values-minikube-cloud-native-traefik.yaml` (bundles Traefik, plain HTTP on `http://shipwright.local:8080`, no cert-manager) — dev-friendly variants of `values-cloud-native.yaml`/`values-cloud-native-traefik.yaml` tuned to run standalone on a fresh local Minikube VM with no external OAuth creds or pre-existing ClusterIssuer required.
+
 ## [1.18.0] - 2026-08-26
 
 ### Added

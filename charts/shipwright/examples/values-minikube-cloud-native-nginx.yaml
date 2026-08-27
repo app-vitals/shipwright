@@ -1,0 +1,77 @@
+# Cloud-native-nginx profile, tuned for a local Minikube VM (CNH-8.2).
+#
+# Mirrors values-cloud-native.yaml's self-contained shape — bundles BOTH the
+# ingress-nginx and cert-manager subcharts, issuing a selfsigned cert via a
+# chart-managed Issuer — but swaps in values-minikube.yaml's dev-friendly
+# auth/appBaseUrl so it actually works standalone on a fresh VM:
+#
+#   - auth.mode: open (dev auth, no OAuth) instead of values-cloud-native.yaml's
+#     auth.mode: google with REPLACE_ME placeholder creds, which would leave
+#     the console's only sign-in path a dead end on a laptop.
+#   - admin.appBaseUrl on :8443 (INGRESS_LOCAL_TLS_PORT in scripts/minikube.ts)
+#     instead of the bare hostname, matching the port-forward this profile
+#     actually uses.
+#
+# Deliberately does NOT set admin.image/metrics.image — unlike
+# ci/cloud-native-nginx-values.yaml (pullPolicy: Never, pinned to a locally
+# `kind load docker-image`-side-loaded 0.1.0 tag for the ct/kind CI flow),
+# this profile pulls the real published image from GHCR (values.yaml's
+# default), which a real minikube VM can reach with no side-load step.
+#
+#   task minikube:cloud-native
+#
+# or directly:
+#
+#   helm upgrade --install shipwright charts/shipwright \
+#     --namespace shipwright --create-namespace \
+#     -f charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml --wait
+
+networking:
+  type: ingress
+  ingress:
+    host: shipwright.local
+    controller: nginx
+    tls:
+      enabled: true
+      redirect: true
+
+ingress-nginx:
+  # -- Bundle ingress-nginx as this release's ingress controller — minikube's
+  # own `ingress` addon is not enabled for this profile (scripts/minikube.ts
+  # skips it whenever a cloud-native profile installs its own controller).
+  enabled: true
+
+cert-manager:
+  # -- Bundle cert-manager so the selfsigned Issuer below can issue a
+  # certificate with no out-of-band setup — a fresh minikube VM has no
+  # pre-existing cert-manager install and no ClusterIssuer.
+  enabled: true
+
+tls:
+  certManager:
+    enabled: true
+    issuer:
+      create: true
+      kind: Issuer
+      # selfsigned: no ACME account/external DNS validation required, so this
+      # works fully offline on a laptop VM.
+      type: selfsigned
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # ⚠️ ADMIN_DEV_AUTH=true — no authentication at all. Local only. Matches
+  # values-minikube.yaml; values-cloud-native.yaml's auth.mode: google would
+  # need real OAuth creds this profile has no way to supply on a laptop.
+  mode: open
+
+admin:
+  # :8443 matches INGRESS_LOCAL_TLS_PORT (scripts/minikube.ts) — the local
+  # port this profile's port-forward maps to the bundled controller's HTTPS
+  # port. values-cloud-native.yaml uses the same port for the same reason
+  # (see its own appBaseUrl comment).
+  appBaseUrl: https://shipwright.local:8443
