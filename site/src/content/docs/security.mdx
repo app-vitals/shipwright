@@ -84,7 +84,7 @@ default unless you add your own network policy. The required outbound destinatio
 | Slack API | Bot messaging, Socket Mode event delivery | Required |
 | Anthropic API | The model calls that power agent reasoning and code generation | Required |
 | Your SSO provider (Google or Okta OAuth) | Admin login when `auth.mode=google` or `auth.mode=okta` | Required only when internet-reachable auth is enabled |
-| Sentry | Error/log reporting | Optional — only when `SENTRY_DSN` is set |
+| Sentry | Error/log reporting | Optional — only when `SENTRY_DSN` is set (self-hostable in-cluster — see [Logging, monitoring & observability](#logging-monitoring--observability)) |
 
 Shipwright has no subprocessor relationship of its own — the only third parties that ever sit in
 the data path are whichever of the above you configure yourself, each under your own account and
