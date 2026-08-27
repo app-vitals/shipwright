@@ -25,6 +25,30 @@ import { TaskTokenService } from "./token-service.ts";
 
 const DEFAULT_PORT = 3000;
 
+// ─── Readiness check ──────────────────────────────────────────────────────────
+
+/**
+ * DB-aware readiness check backing GET /health/ready. Runs a lightweight
+ * `SELECT 1` and reports whether Postgres is actually reachable — unlike
+ * GET /health (liveness), which stays DB-independent so a transient DB blip
+ * never triggers a liveness-driven pod restart. Takes only the `$queryRaw`
+ * slice of PrismaClient so it's unit-testable with a mocked/injected client,
+ * no real I/O.
+ */
+export async function checkDbReady(prisma: {
+  $queryRaw: (
+    query: TemplateStringsArray,
+    ...values: unknown[]
+  ) => Promise<unknown>;
+}): Promise<boolean> {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Migration preflight ──────────────────────────────────────────────────────
 
 /**
@@ -123,14 +147,7 @@ async function startServer(): Promise<void> {
     pullRequestService,
     scopeResolver,
     sentryClient: process.env.SENTRY_DSN ? Sentry : undefined,
-    checkDbReady: async () => {
-      try {
-        await prisma.$queryRaw`SELECT 1`;
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    checkDbReady: () => checkDbReady(prisma),
   });
 
   const reaper = new StaleClaimReaper(prisma);
@@ -166,7 +183,10 @@ async function startServer(): Promise<void> {
   console.log(`[task-store] listening on http://localhost:${server.port}`);
 }
 
-startServer().catch((err) => {
-  console.error("[task-store] fatal startup error:", err);
-  process.exit(1);
-});
+// Run directly when invoked as main entry
+if (import.meta.main) {
+  startServer().catch((err) => {
+    console.error("[task-store] fatal startup error:", err);
+    process.exit(1);
+  });
+}
