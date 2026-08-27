@@ -337,8 +337,8 @@ Via GitHub private security advisories, not a public issue:
 [github.com/app-vitals/shipwright/security/advisories/new](https://github.com/app-vitals/shipwright/security/advisories/new).
 A maintainer will acknowledge the report within 7 days and work with you on a fix and coordinated
 disclosure — see [SECURITY.md](https://github.com/app-vitals/shipwright/blob/main/SECURITY.md) for
-the full policy. See the [Compliance posture table](#compliance-posture) above for more on vulnerability
-disclosure procedures.
+the full policy. See the [Compliance posture table](#compliance-posture) above for more on
+vulnerability disclosure procedures.
 
 **What happens if `SHIPWRIGHT_ENCRYPTION_KEY` is never set?**
 Secrets (env values, Slack tokens, API keys) are stored in plain text in the database, with a
@@ -349,28 +349,33 @@ something you need to set deliberately before any production use.
 Voice can: self-hosted Whisper for speech-to-text plus the default Piper text-to-speech engine make
 zero outbound calls. Every other Shipwright service assumes outbound internet access by default (to
 reach Anthropic, GitHub, and Slack). Restricting egress further is your responsibility, via your
-own Kubernetes `NetworkPolicy` or cloud firewall rules. See the [Network & egress controls table](#network--egress-controls) above
-for the required and optional external destinations.
+own Kubernetes `NetworkPolicy` or cloud firewall rules. See the
+[Network & egress controls table](#network--egress-controls) above for the required and
+optional external destinations.
 
 **Is there an audit log of every action an agent takes?**
 Not a tool-call-level one, today. Sentry (when enabled) captures caller identity on the error path,
-but that's not a full audit trail of every tool invocation. See the [Compliance posture table](#compliance-posture) above
-for the current status of tool-call-level audit logging.
+but that's not a full audit trail of every tool invocation. See the
+[Compliance posture table](#compliance-posture) above for the current status of
+tool-call-level audit logging.
 
 **Does Shipwright have SOC 2 or similar certifications?**
-No, not currently. See the [Compliance posture table](#compliance-posture) above for details on current certification status.
+No, not currently. See the [Compliance posture table](#compliance-posture) above for details
+on current certification status.
 
 **Do I need to expose the admin service to the public internet?**
 No. `networking.type=ClusterIP` (the default) keeps every service reachable only via
 `kubectl port-forward` inside the cluster. Public exposure via Ingress or Gateway API is a choice
 you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is required the
-moment you do. See the [Human access table](#human-access) above for authentication mode requirements.
+moment you do. See the [Human access table](#human-access) above for authentication mode
+requirements.
 
 **Does Shipwright support SCIM provisioning?**
 No, not today. There is no SCIM code in the codebase — user access is managed via the
 `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` allowlist and `AgentMember` records described above, not an
-automated identity-provider sync. See the [Admins vs. agent members table](#admins-vs-agent-members) above for how access control is currently
-managed.
+automated identity-provider sync. See the
+[Admins vs. agent members table](#admins-vs-agent-members) above for how access control is
+currently managed.
 
 **Can I IP-allowlist the admin service?**
 There's no built-in IP-allowlist feature. The substitute is keeping `networking.type=ClusterIP`
