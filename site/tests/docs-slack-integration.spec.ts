@@ -117,6 +117,28 @@ test("Connecting a Slack app section preserves all credential/token names", asyn
   await expect(nextHeading.first()).toBeVisible();
 });
 
+// Regression test for a review finding on the StepFlow migration: the
+// xoxe.xoxp- token instructions must retain the placeholder-app create/
+// delete steps, not just point at api.slack.com/apps in the abstract.
+test("Connecting a Slack app section explains the placeholder-app create/delete steps for the xoxe.xoxp- token", async ({
+  page,
+}) => {
+  await page.goto("/docs/slack-integration");
+  const heading = page.locator("h2, h3", {
+    hasText: /connecting a slack app/i,
+  });
+  const stepFlow = heading
+    .first()
+    .locator("xpath=following::ol[contains(@class, 'step-flow')][1]");
+
+  const firstStep = stepFlow.locator("li.step-flow-item").first();
+  const text = (await firstStep.textContent()) ?? "";
+
+  expect(text.toLowerCase()).toContain("from scratch");
+  expect(text.toLowerCase()).toContain("not from a manifest");
+  expect(text.toLowerCase()).toContain("delete the placeholder app");
+});
+
 test("slack-integration page ships no runtime JS beyond the analytics tag", async ({
   page,
 }) => {

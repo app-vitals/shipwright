@@ -31,7 +31,7 @@ Socket Mode) is required at the end; everything else happens for you.
 <StepFlow steps={[
   {
     label: "Open the provisioning form",
-    detail: "Navigate to /admin/provision in the Shipwright admin UI and fill in the agent to configure, GitHub credentials (a PAT or GitHub App installation), an optional Anthropic API key, an optional Claude Code OAuth token, and a Slack app configuration token — a personal xoxe.xoxp- token from api.slack.com/apps (App-Level Tokens → Generate Token and Scopes → admin scope) that Shipwright uses once to create the app and never stores.",
+    detail: "Navigate to /admin/provision in the Shipwright admin UI and fill in the agent to configure, GitHub credentials (a PAT or GitHub App installation), an optional Anthropic API key, an optional Claude Code OAuth token, and a Slack app configuration token — a personal xoxe.xoxp- token that Shipwright uses once to create the app and never stores. To obtain it, go to api.slack.com/apps, click Create New App → From scratch (not from a manifest) to spin up a placeholder app, then under that placeholder app's App-Level Tokens click Generate Token and Scopes with the admin scope to generate the xoxe.xoxp- token. Once you've copied it, delete the placeholder app — it was only needed to generate the token.",
   },
   {
     label: "Shipwright creates the Slack app",
