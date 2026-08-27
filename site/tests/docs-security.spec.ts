@@ -181,3 +181,26 @@ test("security page shows admins vs agent members table", async ({
   const row = table.locator("tr", { hasText: /admin/i });
   await expect(row.first()).toBeVisible();
 });
+
+// SDH-2.3 — captured/redacted scan table replacing the two separate
+// "What's captured" / "What's never captured" bullet lists under
+// Logging, monitoring & observability.
+
+test("security page shows captured/redacted scan table under Logging, monitoring & observability", async ({
+  page,
+}) => {
+  await page.goto("/docs/security");
+  const heading = page.locator("h2, h3", { hasText: /observability|logging/i });
+  await expect(heading.first()).toBeVisible();
+  const table = heading.first().locator("xpath=following::table[1]");
+  const row = table.locator("tr");
+  await expect(row.first()).toBeVisible();
+  for (const label of [
+    /5xx/i,
+    /console\.(log|warn|error)/i,
+    /Authorization/i,
+  ]) {
+    const cell = table.locator("td, th", { hasText: label });
+    await expect(cell.first()).toBeVisible();
+  }
+});
