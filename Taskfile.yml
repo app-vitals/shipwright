@@ -240,6 +240,16 @@ tasks:
     cmds:
       - bun run scripts/minikube.ts --down
 
+  minikube:cloud-native:
+    desc: "Bring the Shipwright stack up on Minikube using the bundled ingress-nginx + cert-manager profile (HTTPS via a selfsigned cert). Requires minikube + helm + kubectl."
+    cmds:
+      - bun run scripts/minikube.ts --profile cloud-native-nginx
+
+  minikube:cloud-native:traefik:
+    desc: "Bring the Shipwright stack up on Minikube using the bundled Traefik profile (plain HTTP, no TLS). Requires minikube + helm + kubectl."
+    cmds:
+      - bun run scripts/minikube.ts --profile cloud-native-traefik
+
   pre-public:
     desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
     cmds:

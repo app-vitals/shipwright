@@ -15,6 +15,7 @@ import {
   buildAccessUrls,
   buildMinikubeCommands,
   buildOpenCommand,
+  buildPortForwardArgv,
   buildTeardownCommands,
   type Command,
   hostsEntryPresent,
@@ -22,6 +23,7 @@ import {
   openInBrowser,
   DEPLOYMENTS,
   missingBinaries,
+  PROFILES,
   runCommands,
 } from "./minikube.ts";
 
@@ -184,6 +186,261 @@ describe("buildMinikubeCommands — install shape", () => {
     ).toBe(true);
     expect(lines.every((l) => !l.includes("--namespace shipwright"))).toBe(
       true,
+    );
+  });
+});
+
+describe("buildMinikubeCommands — addon profile regression (byte-identical)", () => {
+  it("emits the exact same command list with no profile opt as with profile: 'addon'", () => {
+    // Acceptance criterion 1: `task minikube:up` must be byte-identical to
+    // before this task. Compare the default call against an explicit
+    // `profile: "addon"` call — both must produce identical argv lists.
+    const noProfile = buildMinikubeCommands();
+    const explicitAddon = buildMinikubeCommands({ profile: "addon" });
+    expect(explicitAddon).toEqual(noProfile);
+  });
+
+  it("pins the full default (addon) command list, argv for argv", () => {
+    // A hard snapshot of the pre-cloud-native-profile behavior. Any accidental
+    // reordering, insertion, or removal for the addon profile fails this test.
+    const cmds = buildMinikubeCommands();
+    expect(cmds.map((c) => c.argv)).toEqual([
+      ["minikube", "start", "--cpus=4", "--memory=8192", "--disk-size=40g"],
+      ["minikube", "addons", "enable", "ingress"],
+      [
+        "kubectl",
+        "wait",
+        "--namespace",
+        "ingress-nginx",
+        "--for=condition=ready",
+        "pod",
+        "--selector=app.kubernetes.io/component=controller",
+        "--timeout=120s",
+      ],
+      ["helm", "dependency", "build", "charts/shipwright"],
+      [
+        "helm",
+        "upgrade",
+        "--install",
+        "shipwright",
+        "charts/shipwright",
+        "--namespace",
+        "shipwright",
+        "--create-namespace",
+        "--values",
+        "charts/shipwright/examples/values-minikube.yaml",
+        "--wait",
+        "--timeout",
+        "15m",
+      ],
+      [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/shipwright-admin",
+        "--namespace",
+        "shipwright",
+        "--timeout=5m",
+      ],
+      [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/shipwright-metrics",
+        "--namespace",
+        "shipwright",
+        "--timeout=5m",
+      ],
+      [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/shipwright-task-store",
+        "--namespace",
+        "shipwright",
+        "--timeout=5m",
+      ],
+      [
+        "kubectl",
+        "rollout",
+        "status",
+        "deployment/shipwright-chat",
+        "--namespace",
+        "shipwright",
+        "--timeout=5m",
+      ],
+      ["helm", "test", "shipwright", "--namespace", "shipwright"],
+    ]);
+  });
+});
+
+describe("buildMinikubeCommands — cloud-native profiles", () => {
+  it("cloud-native-nginx skips the minikube ingress addon enable step", () => {
+    const cmds = buildMinikubeCommands({ profile: "cloud-native-nginx" });
+    expect(indexOf(cmds, /addons enable ingress/)).toBe(-1);
+  });
+
+  it("cloud-native-nginx skips the ingress-nginx namespace webhook wait", () => {
+    const cmds = buildMinikubeCommands({ profile: "cloud-native-nginx" });
+    expect(indexOf(cmds, /wait.*ingress-nginx.*condition=ready/)).toBe(-1);
+  });
+
+  it("cloud-native-traefik skips the minikube ingress addon enable step", () => {
+    const cmds = buildMinikubeCommands({ profile: "cloud-native-traefik" });
+    expect(indexOf(cmds, /addons enable ingress/)).toBe(-1);
+  });
+
+  it("cloud-native-traefik skips the ingress-nginx namespace webhook wait", () => {
+    const cmds = buildMinikubeCommands({ profile: "cloud-native-traefik" });
+    expect(indexOf(cmds, /wait.*ingress-nginx.*condition=ready/)).toBe(-1);
+  });
+
+  it("still resolves chart dependencies BEFORE the install for both cloud-native profiles", () => {
+    for (const profile of ["cloud-native-nginx", "cloud-native-traefik"] as const) {
+      const cmds = buildMinikubeCommands({ profile });
+      expect(indexOf(cmds, /helm dependency build/)).toBeLessThan(
+        indexOf(cmds, /helm upgrade --install/),
+      );
+    }
+  });
+
+  it("resolves the cloud-native-nginx values file from the profile by default", () => {
+    const install = argvLines(
+      buildMinikubeCommands({ profile: "cloud-native-nginx" }),
+    ).find((l) => l.includes("helm upgrade"));
+    expect(install).toContain(
+      "--values charts/shipwright/ci/cloud-native-nginx-values.yaml",
+    );
+  });
+
+  it("resolves the cloud-native-traefik values file from the profile by default", () => {
+    const install = argvLines(
+      buildMinikubeCommands({ profile: "cloud-native-traefik" }),
+    ).find((l) => l.includes("helm upgrade"));
+    expect(install).toContain(
+      "--values charts/shipwright/ci/cloud-native-traefik-values.yaml",
+    );
+  });
+
+  it("an explicit valuesFile override still wins over the profile default", () => {
+    const install = argvLines(
+      buildMinikubeCommands({
+        profile: "cloud-native-nginx",
+        valuesFile: "custom-values.yaml",
+      }),
+    ).find((l) => l.includes("helm upgrade"));
+    expect(install).toContain("--values custom-values.yaml");
+  });
+
+  it("waits on the bundled ingress-nginx controller Deployment in the shipwright namespace", () => {
+    const lines = argvLines(
+      buildMinikubeCommands({ profile: "cloud-native-nginx" }),
+    );
+    expect(
+      lines.some((l) =>
+        l.includes(
+          "rollout status deployment/shipwright-ingress-nginx-controller --namespace shipwright",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("waits on the bundled traefik controller Deployment in the shipwright namespace", () => {
+    const lines = argvLines(
+      buildMinikubeCommands({ profile: "cloud-native-traefik" }),
+    );
+    expect(
+      lines.some((l) =>
+        l.includes(
+          "rollout status deployment/shipwright-traefik --namespace shipwright",
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("waits on the bundled controller AFTER the install and alongside the app Deployments", () => {
+    const cmds = buildMinikubeCommands({ profile: "cloud-native-nginx" });
+    const install = indexOf(cmds, /helm upgrade --install/);
+    const controllerWait = indexOf(
+      cmds,
+      /rollout status deployment\/shipwright-ingress-nginx-controller/,
+    );
+    const helmTest = indexOf(cmds, /helm test/);
+    expect(controllerWait).toBeGreaterThan(install);
+    expect(controllerWait).toBeLessThan(helmTest);
+  });
+
+  it("still waits on every app Deployment for cloud-native profiles too", () => {
+    const lines = argvLines(
+      buildMinikubeCommands({ profile: "cloud-native-traefik" }),
+    );
+    for (const deployment of DEPLOYMENTS) {
+      expect(
+        lines.some((l) =>
+          l.includes(`rollout status deployment/${deployment}`),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("rejects an unknown profile key at the PROFILES map level", () => {
+    expect(Object.keys(PROFILES).sort()).toEqual(
+      ["addon", "cloud-native-nginx", "cloud-native-traefik"].sort(),
+    );
+  });
+});
+
+describe("buildPortForwardArgv — profile-aware targets", () => {
+  it("addon profile forwards svc/ingress-nginx-controller in the ingress-nginx namespace on 8080:80", () => {
+    const argv = buildPortForwardArgv(PROFILES.addon);
+    expect(argv).toEqual([
+      "kubectl",
+      "port-forward",
+      "--namespace",
+      "ingress-nginx",
+      "svc/ingress-nginx-controller",
+      "8080:80",
+    ]);
+  });
+
+  it("cloud-native-nginx forwards svc/shipwright-ingress-nginx-controller in the shipwright namespace on both 8080:80 and 8443:443", () => {
+    const argv = buildPortForwardArgv(PROFILES["cloud-native-nginx"]);
+    expect(argv).toEqual([
+      "kubectl",
+      "port-forward",
+      "--namespace",
+      "shipwright",
+      "svc/shipwright-ingress-nginx-controller",
+      "8080:80",
+      "8443:443",
+    ]);
+  });
+
+  it("cloud-native-traefik forwards svc/shipwright-traefik in the shipwright namespace on 8080:80 only", () => {
+    const argv = buildPortForwardArgv(PROFILES["cloud-native-traefik"]);
+    expect(argv).toEqual([
+      "kubectl",
+      "port-forward",
+      "--namespace",
+      "shipwright",
+      "svc/shipwright-traefik",
+      "8080:80",
+    ]);
+  });
+});
+
+describe("buildAccessUrls — profile-aware scheme", () => {
+  it("defaults to http, unchanged for existing callers", () => {
+    const urls = buildAccessUrls("shipwright.local", 8080);
+    expect(urls.admin).toBe("http://shipwright.local:8080/");
+  });
+
+  it("builds https URLs when an https scheme is passed explicitly", () => {
+    const urls = buildAccessUrls("shipwright.local", 8443, "https");
+    expect(urls.admin).toBe("https://shipwright.local:8443/");
+    expect(urls.devLogin).toBe("https://shipwright.local:8443/admin/dev-login");
+    expect(urls.taskStore).toBe(
+      "https://shipwright.local:8443/task-store/health",
     );
   });
 });

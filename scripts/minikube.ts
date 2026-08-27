@@ -49,6 +49,8 @@ export const INGRESS_HOST = "shipwright.local";
  * port-forward` to a local port instead of the raw minikube IP on :80.
  */
 export const INGRESS_LOCAL_PORT = 8080;
+/** HTTPS local port — only forwarded by profiles that terminate TLS. */
+export const INGRESS_LOCAL_TLS_PORT = 8443;
 export const PORT_FORWARD_PID_FILE = "state/minikube-port-forward.pid";
 export const PORT_FORWARD_LOG_FILE = "state/minikube-port-forward.log";
 
@@ -74,6 +76,96 @@ export const DEPLOYMENTS = [
 
 export type CommandKind = "minikube" | "helm" | "kubectl";
 
+/**
+ * "addon" is the pre-existing default: minikube's own `ingress` addon,
+ * webhook-waited and reached at svc/ingress-nginx-controller in the
+ * ingress-nginx namespace. The two "cloud-native-*" profiles instead install
+ * the chart's OWN bundled ingress controller subchart (CNH-8.1) — the
+ * controller comes up as part of the same helm release, in the shipwright
+ * namespace, so there is nothing for `minikube addons enable` to do and no
+ * separate webhook to wait on before the install.
+ */
+export type Profile = "addon" | "cloud-native-nginx" | "cloud-native-traefik";
+
+/** A local:remote port pair passed to `kubectl port-forward`. */
+export type PortPair = { local: number; remote: number };
+
+export type ProfileConfig = {
+  profile: Profile;
+  /** Run `minikube addons enable ingress` + wait on its webhook before install. */
+  useIngressAddon: boolean;
+  /** `--values` file for the helm install, unless overridden by BuildOpts. */
+  valuesFile: string;
+  /** Namespace the ingress controller Service/Deployment lives in. */
+  controllerNamespace: string;
+  /** Service the port-forward targets, e.g. "svc/shipwright-traefik". */
+  controllerService: string;
+  /** Port pairs forwarded to the controller Service, local:remote. */
+  portPairs: PortPair[];
+  /**
+   * Bundled controller Deployment to `kubectl rollout status` wait on after
+   * install, or null for the addon profile (whose webhook-pod wait happens
+   * BEFORE install instead, and is unaffected by this mechanism).
+   */
+  controllerRollout: { name: string; kind: "deployment" } | null;
+  /** URL scheme for buildAccessUrls — https once TLS is bundled and enabled. */
+  scheme: "http" | "https";
+  /** Local port used to build the printed access URL for this profile. */
+  accessPort: number;
+};
+
+/**
+ * Per-profile config consumed by the pure command builder. Adding a profile
+ * means adding an entry here — buildMinikubeCommands/ensurePortForward/
+ * printNextSteps all read from this map rather than branching on profile name.
+ */
+export const PROFILES: Record<Profile, ProfileConfig> = {
+  addon: {
+    profile: "addon",
+    useIngressAddon: true,
+    valuesFile: VALUES_FILE,
+    controllerNamespace: "ingress-nginx",
+    controllerService: "svc/ingress-nginx-controller",
+    portPairs: [{ local: INGRESS_LOCAL_PORT, remote: 80 }],
+    controllerRollout: null,
+    scheme: "http",
+    accessPort: INGRESS_LOCAL_PORT,
+  },
+  "cloud-native-nginx": {
+    profile: "cloud-native-nginx",
+    useIngressAddon: false,
+    valuesFile: "charts/shipwright/ci/cloud-native-nginx-values.yaml",
+    controllerNamespace: NAMESPACE,
+    controllerService: "svc/shipwright-ingress-nginx-controller",
+    // Both ports: tls.redirect=true (ci/cloud-native-nginx-values.yaml) means
+    // port 80 still exists and 301s to 443 — forwarding only 8443 would work
+    // for the app itself, but 8080 is kept reachable too so the redirect
+    // behavior is also exercised, matching acceptance criterion 2's :8443 check.
+    portPairs: [
+      { local: INGRESS_LOCAL_PORT, remote: 80 },
+      { local: INGRESS_LOCAL_TLS_PORT, remote: 443 },
+    ],
+    controllerRollout: {
+      name: "shipwright-ingress-nginx-controller",
+      kind: "deployment",
+    },
+    scheme: "https",
+    accessPort: INGRESS_LOCAL_TLS_PORT,
+  },
+  "cloud-native-traefik": {
+    profile: "cloud-native-traefik",
+    useIngressAddon: false,
+    valuesFile: "charts/shipwright/ci/cloud-native-traefik-values.yaml",
+    controllerNamespace: NAMESPACE,
+    controllerService: "svc/shipwright-traefik",
+    // No tls: stanza in ci/cloud-native-traefik-values.yaml — plain HTTP only.
+    portPairs: [{ local: INGRESS_LOCAL_PORT, remote: 80 }],
+    controllerRollout: { name: "shipwright-traefik", kind: "deployment" },
+    scheme: "http",
+    accessPort: INGRESS_LOCAL_PORT,
+  },
+};
+
 export type Command = {
   kind: CommandKind;
   /** Full argv, including the binary name, so exec is a single spawn. */
@@ -94,11 +186,16 @@ export type BuildOpts = {
   release?: string;
   namespace?: string;
   chartPath?: string;
+  /** Overrides the resolved profile's values file when set. */
   valuesFile?: string;
   /** Helm --timeout for the install. Agent image pulls are large. */
   timeout?: string;
   /** Run `helm test` after the rollout completes. */
   runHelmTest?: boolean;
+  /** Which ingress setup to install against. Defaults to "addon" — the
+   *  pre-existing minikube-ingress-addon behavior — so every caller that
+   *  predates profiles keeps its exact command list. */
+  profile?: Profile;
 };
 
 // ---------------------------------------------------------------------------
@@ -119,10 +216,14 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
     release = RELEASE,
     namespace = NAMESPACE,
     chartPath = CHART_PATH,
-    valuesFile = VALUES_FILE,
     timeout = "15m",
     runHelmTest = true,
+    profile = "addon",
   } = opts;
+  const profileConfig = PROFILES[profile];
+  // opts.valuesFile, when explicitly passed, wins over the profile default —
+  // preserves the existing override/testability contract for callers.
+  const valuesFile = opts.valuesFile ?? profileConfig.valuesFile;
 
   const cmds: Command[] = [];
 
@@ -143,32 +244,38 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
     });
   }
 
-  // 2. BEFORE the install: without the controller the Ingress is inert.
-  cmds.push({
-    kind: "minikube",
-    label: "enable the ingress addon",
-    argv: ["minikube", "addons", "enable", "ingress"],
-  });
-
-  // 2b. BEFORE the install: `addons enable` returns as soon as the controller
-  //     Deployment is created, not once its admission webhook is reachable. The
+  // 2 & 2b. BEFORE the install, addon profile only: without the controller the
+  //     Ingress is inert, and `addons enable` returns as soon as the controller
+  //     Deployment is created, not once its admission webhook is reachable — the
   //     chart's Ingress resource is validated against that webhook on apply, so
-  //     installing immediately after enabling races it — the webhook Service has
-  //     no ready endpoint yet and helm fails with "connection refused".
-  cmds.push({
-    kind: "kubectl",
-    label: "wait for the ingress admission webhook",
-    argv: [
-      "kubectl",
-      "wait",
-      "--namespace",
-      "ingress-nginx",
-      "--for=condition=ready",
-      "pod",
-      "--selector=app.kubernetes.io/component=controller",
-      "--timeout=120s",
-    ],
-  });
+  //     installing immediately after enabling races it and helm fails with
+  //     "connection refused". Cloud-native profiles install their OWN ingress
+  //     controller as a chart-bundled subchart in the SAME helm release below —
+  //     there is no separate addon to enable and no pre-install webhook to wait
+  //     on (its rollout is waited on AFTER the install instead, with the rest of
+  //     the release's Deployments).
+  if (profileConfig.useIngressAddon) {
+    cmds.push({
+      kind: "minikube",
+      label: "enable the ingress addon",
+      argv: ["minikube", "addons", "enable", "ingress"],
+    });
+
+    cmds.push({
+      kind: "kubectl",
+      label: "wait for the ingress admission webhook",
+      argv: [
+        "kubectl",
+        "wait",
+        "--namespace",
+        "ingress-nginx",
+        "--for=condition=ready",
+        "pod",
+        "--selector=app.kubernetes.io/component=controller",
+        "--timeout=120s",
+      ],
+    });
+  }
 
   // 3. BEFORE the install: Chart.lock pins the PostgreSQL subchart via OCI.
   cmds.push({
@@ -216,6 +323,26 @@ export function buildMinikubeCommands(opts: BuildOpts = {}): Command[] {
     });
   }
 
+  // 5b. Cloud-native profiles only: the bundled ingress controller comes up as
+  //     part of this SAME helm release (not a pre-install minikube addon), so
+  //     its rollout is waited on here, alongside the app Deployments above.
+  if (profileConfig.controllerRollout) {
+    const { name } = profileConfig.controllerRollout;
+    cmds.push({
+      kind: "kubectl",
+      label: `wait for ${name}`,
+      argv: [
+        "kubectl",
+        "rollout",
+        "status",
+        `deployment/${name}`,
+        "--namespace",
+        namespace,
+        "--timeout=5m",
+      ],
+    });
+  }
+
   // 6. Proves the stack answers over HTTP, not just that pods are Running.
   if (runHelmTest) {
     cmds.push({
@@ -251,8 +378,12 @@ export type AccessUrls = {
  * Google sign-in button, which this profile never configures. That is a dead end.
  * /admin/dev-login mints the dev session outright and lands on /admin/agents.
  */
-export function buildAccessUrls(host: string, port: number): AccessUrls {
-  const base = `http://${host}:${port}`;
+export function buildAccessUrls(
+  host: string,
+  port: number,
+  scheme: "http" | "https" = "http",
+): AccessUrls {
+  const base = `${scheme}://${host}:${port}`;
   return {
     admin: `${base}/`,
     devLogin: `${base}/admin/dev-login`,
@@ -311,6 +442,24 @@ export function buildTeardownCommands(opts: BuildOpts = {}): Command[] {
       label: "delete the VM",
       argv: ["minikube", "delete"],
     },
+  ];
+}
+
+/**
+ * Build the argv for a single `kubectl port-forward` targeting a profile's
+ * controller Service. One process, multiple `local:remote` positional pairs —
+ * kubectl accepts several port pairs on one invocation, so a profile that
+ * needs both HTTP and HTTPS (cloud-native-nginx) still needs only one PID to
+ * track, matching the existing single-PID-file design.
+ */
+export function buildPortForwardArgv(config: ProfileConfig): string[] {
+  return [
+    "kubectl",
+    "port-forward",
+    "--namespace",
+    config.controllerNamespace,
+    config.controllerService,
+    ...config.portPairs.map((p) => `${p.local}:${p.remote}`),
   ];
 }
 
@@ -385,43 +534,43 @@ function readPortForwardPid(): number | null {
   }
 }
 
+/** Human-readable "on :8080" / "on :8080, :8443" for log lines. */
+function describePorts(config: ProfileConfig): string {
+  return config.portPairs.map((p) => `:${p.local}`).join(", ");
+}
+
 /**
- * Ensure a `kubectl port-forward` to the ingress controller is running on
- * INGRESS_LOCAL_PORT, starting one if none is alive yet. Idempotent across
- * repeated `task minikube:up` runs, the same way `minikubeIsRunning` is for
- * the VM itself.
+ * Ensure a `kubectl port-forward` to the profile's controller Service is
+ * running, starting one if none is alive yet. Idempotent across repeated
+ * `task minikube:up`-style runs, the same way `minikubeIsRunning` is for the
+ * VM itself. One process per profile, carrying every port pair the profile
+ * needs (see buildPortForwardArgv) — still a single PID to track.
  *
  * WHY NOT `minikube tunnel`: that needs a sudo password and a terminal left
  * open for the whole session. This uses the Kubernetes API connection that
  * already works (kubectl talks to it throughout the rest of this script), so
  * it needs no elevated privileges and no extra terminal.
  */
-function ensurePortForward(): void {
+function ensurePortForward(config: ProfileConfig): void {
   const existing = readPortForwardPid();
   if (existing !== null && isProcessAlive(existing)) {
     console.log(
-      `\n[minikube] port-forward already running on :${INGRESS_LOCAL_PORT} (pid ${existing})`,
+      `\n[minikube] port-forward already running on ${describePorts(config)} (pid ${existing})`,
     );
     return;
   }
 
   mkdirSync(dirname(PORT_FORWARD_PID_FILE), { recursive: true });
   const log = openSync(PORT_FORWARD_LOG_FILE, "a");
-  const proc = Bun.spawn(
-    [
-      "kubectl",
-      "port-forward",
-      "--namespace",
-      "ingress-nginx",
-      "svc/ingress-nginx-controller",
-      `${INGRESS_LOCAL_PORT}:80`,
-    ],
-    { stdout: log, stderr: log, stdin: "ignore" },
-  );
+  const proc = Bun.spawn(buildPortForwardArgv(config), {
+    stdout: log,
+    stderr: log,
+    stdin: "ignore",
+  });
   proc.unref();
   Bun.write(PORT_FORWARD_PID_FILE, `${proc.pid}\n`);
   console.log(
-    `\n[minikube] started port-forward on :${INGRESS_LOCAL_PORT} (pid ${proc.pid}, log: ${PORT_FORWARD_LOG_FILE})`,
+    `\n[minikube] started port-forward on ${describePorts(config)} (pid ${proc.pid}, log: ${PORT_FORWARD_LOG_FILE})`,
   );
 }
 
@@ -452,8 +601,8 @@ function stopPortForward(): void {
  * this profile never configures, so it is a dead end. /admin/dev-login mints
  * the dev session outright and lands on /admin/agents.
  */
-function printNextSteps(): void {
-  const urls = buildAccessUrls(INGRESS_HOST, INGRESS_LOCAL_PORT);
+function printNextSteps(config: ProfileConfig): void {
+  const urls = buildAccessUrls(INGRESS_HOST, config.accessPort, config.scheme);
   console.log("\n────────────────────────────────────────────────────────────");
   console.log("Shipwright is up.\n");
   console.log(`  ${urls.devLogin}\n`);
@@ -465,6 +614,17 @@ function printNextSteps(): void {
   console.log(
     "  No Slack needed — chat with the agent from the console's Chat tab.\n",
   );
+
+  // Cloud-native-nginx bundles cert-manager and issues its own selfsigned
+  // cert — surface the check the manual verification plan (CNH-8.2 AC2) uses
+  // to confirm the Issuer/Certificate actually reached Ready before assuming
+  // HTTPS just works.
+  if (config.profile === "cloud-native-nginx") {
+    console.log(
+      "  TLS is issued by the bundled cert-manager Issuer — check it's Ready:",
+    );
+    console.log("    kubectl get issuer,certificate -n shipwright\n");
+  }
 
   if (!ingressHostResolves()) {
     console.log(`${INGRESS_HOST} is not in /etc/hosts yet — add it, then open`);
@@ -505,8 +665,34 @@ export function openInBrowser(
   }
 }
 
+/**
+ * Parse `--profile <name>` from argv. Returns "addon" (the pre-existing
+ * default) when the flag is absent, so every pre-CNH-8.2 invocation of this
+ * script keeps behaving exactly as before.
+ */
+export function parseProfileArg(argv: string[]): string {
+  const i = argv.indexOf("--profile");
+  if (i === -1 || i === argv.length - 1) return "addon";
+  return argv[i + 1];
+}
+
+/** True when `name` is a known Profile key. */
+export function isKnownProfile(name: string): name is Profile {
+  return Object.hasOwn(PROFILES, name);
+}
+
 async function main(): Promise<void> {
   const down = process.argv.includes("--down");
+
+  const profileArg = parseProfileArg(process.argv);
+  if (!isKnownProfile(profileArg)) {
+    console.error(`[minikube] unknown --profile "${profileArg}".`);
+    console.error(
+      `[minikube] valid profiles: ${Object.keys(PROFILES).join(", ")}`,
+    );
+    process.exit(1);
+  }
+  const profileConfig = PROFILES[profileArg];
 
   const missing = missingBinaries((bin) => Bun.which(bin));
   if (missing.length > 0) {
@@ -518,6 +704,12 @@ async function main(): Promise<void> {
   }
 
   if (down) {
+    // Teardown does not know which profile brought the stack up (it isn't
+    // recorded anywhere), and `helm uninstall`/`minikube delete` target the
+    // same release/namespace regardless of which controller was bundled — so
+    // teardown itself needs no profile. The port-forward PID file, however,
+    // always holds exactly one process regardless of profile, so killing
+    // whatever is on record (not re-deriving it from a profile) is correct.
     stopPortForward();
     // Best-effort: a partially-installed stack should still tear down, so a
     // failing uninstall must not block `minikube delete`.
@@ -542,9 +734,12 @@ async function main(): Promise<void> {
     );
   }
 
-  runCommands(buildMinikubeCommands({ alreadyRunning }), realExec);
-  ensurePortForward();
-  printNextSteps();
+  runCommands(
+    buildMinikubeCommands({ alreadyRunning, profile: profileArg }),
+    realExec,
+  );
+  ensurePortForward(profileConfig);
+  printNextSteps(profileConfig);
 }
 
 if (import.meta.main) {
