@@ -72,7 +72,7 @@ This adds a `/task-store` path on the existing host (no extra DNS/cert work):
   `nginx.ingress.kubernetes.io/rewrite-target: /$2` annotation.
 
 Both **strip the `/task-store` prefix** before traffic reaches the Service (the
-app serves `/tasks`, `/tokens`, `/prs`, `/health` at root). Reach it at
+app serves `/tasks`, `/tokens`, `/prs`, `/health`, and `/health/ready` at root). Reach it at
 `https://<host>/task-store`. Requires `taskStore.enabled=true`; the prefix is
 configurable via `taskStore.expose.pathPrefix`.
 
