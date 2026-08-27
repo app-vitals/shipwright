@@ -111,21 +111,21 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 
 ### Default system crons
 
-| Cron | Schedule | Default | What it does |
-|---|---|---|---|
-| `shipwright-dev-task` | every minute | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-review` | every minute | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-patch` | every minute | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-deploy` | every minute | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-loop` | every minute | off | Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
-| `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit for repos with stale or missing artifacts. |
-| `shipwright-docs-freshness` | daily 07:00 | off | Refreshes docs that have drifted from the code. |
-| `learn-dream` | daily 03:00 | off | Mines the last day of merged PRs for durable learnings. |
-| `dependabot-triage` | daily 08:00 | off | Reviews and triages open Dependabot PRs. |
-| `entropy-patrol-maintenance` | weekly Mon 04:00 | off | Scans for code entropy and fixes what's PR-worthy. |
-| `error-patrol-maintenance` | daily 04:00 | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
-| `security-patrol-maintenance` | weekly Mon 06:00 | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
-| `consolidation-patrol-maintenance` | weekly Mon 05:00 | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
+| Cron | Schedule | Command | Skill | Default | What it does |
+|---|---|---|---|---|---|
+| `shipwright-dev-task` | every minute | `/shipwright:dev-task` | — | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-review` | every minute | `/shipwright:review` | — | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-patch` | every minute | `/shipwright:patch` | — | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-deploy` | every minute | `/shipwright:deploy` | — | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-loop` | every minute | internal | — | off | Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
+| `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
+| `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
+| `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | — | off | Mines the last day of merged PRs for durable learnings. |
+| `dependabot-triage` | daily 08:00 | `/shipwright:triage-dependabot-prs` | triage-dependabot-prs | off | Reviews and triages open Dependabot PRs. |
+| `entropy-patrol-maintenance` | weekly Mon 04:00 | `/shipwright:entropy-scan` → `/shipwright:entropy-fix` | entropy-scan, entropy-fix | off | Scans for code entropy and fixes what's PR-worthy. |
+| `error-patrol-maintenance` | daily 04:00 | `/shipwright:error-scan` → `/shipwright:error-fix` → `/shipwright:error-resolve` | error-scan, error-fix, error-resolve | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
+| `security-patrol-maintenance` | weekly Mon 06:00 | `/shipwright:security-scan` → `/shipwright:security-fix` | security-scan, security-fix | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
+| `consolidation-patrol-maintenance` | weekly Mon 05:00 | `/shipwright:consolidation-scan` → `/shipwright:consolidation-fix` | consolidation-scan, consolidation-fix | off | Proposes consolidation for duplicate patterns that have stabilized over time. |
 
 Only three ship enabled by default: `shipwright-dev-task`, `shipwright-review`, and
 `shipwright-patch`. Everything else — including `shipwright-loop` itself — is opt-in, toggled from
@@ -170,29 +170,14 @@ conclusion.
 
 ### Two outcomes that are expected, not bugs
 
-**A `[silent]` reply is normal when there's nothing to report.** Most cron ticks find no
-qualifying work and end silently — that's the system working as designed, not a stuck or broken
-cron. Before assuming something's wrong, check the run's outcome in Cron Logs: a run marked
-`silent` completed successfully and simply had nothing worth posting.
+Use this table when a cron produces no output or shows an unexpected outcome. Arrive with a symptom (what you're observing), then follow the check and meaning columns to confirm whether it's a normal state or a real issue.
 
-**A cron that never posts at all can have two different, equally normal causes**, both visible
-without needing raw logs or a transcript:
-
-1. **Its `preCheck` returned no work.** Look at the run's outcome in Cron Logs — a `skipped`
-   outcome (rather than `silent` or `posted`) means the preCheck script exited non-zero or produced
-   no output, and the tick was suppressed *before* a Claude turn even started. This is the
-   expected shape for a cron with nothing ready to act on.
-2. **The cron is disabled.** Check the enabled/disabled badge on the cron's row in the agent's Cron
-   Jobs card. A disabled cron doesn't run at all — it won't even show up as a recent `skipped` run,
-   because `node-cron` never scheduled it in the first place.
-
-If a pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`,
-`shipwright-deploy`) shows as enabled in the admin console but never has any runs in Cron Logs,
-check whether `shipwright-loop` itself is enabled (see "Loop-driven vs standalone crons" above): a
-reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent
-schedule, so its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches
-that phase directly — there's no standalone tick to show up as `silent` or `skipped` in the
-meantime.
+| Symptom | Check | Meaning |
+|---|---|---|
+| A cron run shows outcome `silent` in Cron Logs | Look at the run details — this is normal. The run completed successfully and simply had no qualifying work to report. | Most cron ticks find no work and end silently by design. This is the system working correctly, not a bug. |
+| A cron run shows outcome `skipped` in Cron Logs | Look at the run's outcome in Cron Logs. A `skipped` outcome means the cron's `preCheck` script exited non-zero or produced empty output. The tick was suppressed *before* a Claude turn even started. | This is the expected shape for a cron with no work ready. The `preCheck` script found nothing to act on and correctly short-circuited the expensive Claude run. |
+| A cron never appears in Cron Logs at all (no recent runs, no `silent`, no `skipped`) | Check the enabled/disabled badge on the cron's row in the agent's **Cron Jobs** card in the admin console. | If the badge shows **disabled**, the cron doesn't run at all — `node-cron` never scheduled it in the first place. Re-enable it if you want it to fire. |
+| A pipeline cron (`shipwright-dev-task`, `shipwright-review`, `shipwright-patch`, or `shipwright-deploy`) shows as **enabled** but has no runs in Cron Logs | Check whether `shipwright-loop` itself is enabled in the agent's **Cron Jobs** card (see "Loop-driven vs standalone crons" section above). | A reconciled pipeline cron is a child of `shipwright-loop` and never gets its own independent schedule. Its `enabled` toggle only takes effect once `shipwright-loop` reads it and dispatches that phase directly. If `shipwright-loop` is disabled, the pipeline cron will not fire on its own — there's no standalone tick. Re-enable `shipwright-loop` to restore pipeline dispatch. |
 
 ## Next steps
 

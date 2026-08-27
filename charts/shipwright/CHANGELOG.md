@@ -15,6 +15,41 @@ independent of `appVersion`. CI enforces this with
 ### Added
 
 - Cloud-native profiles: examples, CI variants, kind e2e assertions (CNH-8.1). `examples/values-cloud-native.yaml` now sets `admin.appBaseUrl` (`https://shipwright.local:8443`) for OAuth redirects, and its `networking.ingress.host` moved to the `shipwright.local` placeholder (matching the selfsigned cert this profile issues); `examples/values-cloud-native-traefik.yaml` gains the same `admin.appBaseUrl` treatment (`https://shipwright.example.com`, matching its real `letsencrypt-prod` issuer). Two new `ct`-discovered `ci/` values variants — `ci/cloud-native-nginx-values.yaml` (ingress-nginx ClusterIP + small resources, cert-manager with `crds.keep=false` + small resources, `tls.certManager.enabled` + `issuer.create` selfsigned, task-store exposed — the only `ci/` variant that bundles cert-manager) and `ci/cloud-native-traefik-values.yaml` (traefik ClusterIP + small resources, no cert-manager, plain HTTP) — extend the `helm-e2e` kind matrix from three to five variants. `templates/tests/test-connection.yaml` gains an ingress-nginx-gated HTTPS retry-loop block (curls THROUGH the bundled ingress-nginx controller Service via `--connect-to`, asserting the served cert is not ingress-nginx's default "Kubernetes Ingress Controller Fake Certificate" placeholder, then checks `/task-store/health` -> 200) and a traefik-gated block (Host-header curl through the bundled traefik Service, plain HTTP, `/task-store/health` -> 200). New `templates/tests/test-cert-issuer.yaml` — gated identically to `templates/cert-manager-bootstrap-job.yaml` (`shipwright.certManager.viaHook`) with its own dedicated ServiceAccount/Role/RoleBinding (+ ClusterRole/Binding for a ClusterIssuer) — `kubectl wait`s for the chart-managed Issuer and the cert-manager-ingress-shim-created Certificate (`<fullname>-tls`) to reach Ready. New `.github/workflows/helm.yml` + `Taskfile.yml` `helm:validate` kubeconform step validates `examples/values-cloud-native.yaml` with `-skip CustomResourceDefinition` (cert-manager ships its CRDs as regular templates, unlike ingress-nginx/traefik's Helm `crds/` directory convention which `helm template` never renders). `templates/NOTES.txt` now prints a Public URL line (`admin.appBaseUrl` when set, else constructed from `shipwright.publicScheme`/`publicHost`), one line per bundled optional subchart (ingress-nginx/traefik/cert-manager), and a Let's Encrypt STAGING warning when `tls.certManager.issuer.server` points at the ACME staging endpoint. New `tests/cloud_native_profile_test.yaml` (helm-unittest) asserts, per profile: Ingress `spec.tls` (nginx only), the cert-manager bootstrap Job (nginx only), the bundled controller Deployment renders, no inline Issuer/Certificate document, `ingressClassName` matches the bundled class, and the new test hooks' gating.
+## [1.17.7] - 2026-08-27
+
+### Changed
+
+- auto-bump to chart v1.17.7 triggered by release tag(s): `admin-v1.96.0`, `agent-v1.195.0`, `chat-v1.51.0`, `metrics-v1.54.0`, `task-store-v1.76.0`
+
+## [1.17.6] - 2026-08-27
+
+### Added
+
+- Add a DB-aware readinessProbe (`/health/ready`) for task-store — backed by a lightweight `SELECT 1` — so Kubernetes no longer routes traffic to a task-store pod before Postgres is reachable. `livenessProbe` is unchanged and stays on `/health` (DB-independent), matching the admin liveness/readiness split. Also raises the readinessProbe `successThreshold` to 2 to prevent a single-lucky-probe premature Ready flip during pod initialization (mirroring PLR-1.2's admin fix).
+
+## [1.17.5] - 2026-08-27
+
+### Changed
+
+- auto-bump to chart v1.17.5 triggered by release tag(s): `agent-v1.194.0`
+
+## [1.17.4] - 2026-08-27
+
+### Changed
+
+- auto-bump to chart v1.17.4 triggered by release tag(s): `agent-v1.193.0`
+
+## [1.17.3] - 2026-08-27
+
+### Changed
+
+- auto-bump to chart v1.17.3 triggered by release tag(s): `agent-v1.192.0`
+
+## [1.17.2] - 2026-08-27
+
+### Changed
+
+- auto-bump to chart v1.17.2 triggered by release tag(s): `agent-v1.191.0`
 
 ## [1.17.1] - 2026-08-26
 

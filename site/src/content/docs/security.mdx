@@ -84,7 +84,7 @@ default unless you add your own network policy. The required outbound destinatio
 | Slack API | Bot messaging, Socket Mode event delivery | Required |
 | Anthropic API | The model calls that power agent reasoning and code generation | Required |
 | Your SSO provider (Google or Okta OAuth) | Admin login when `auth.mode=google` or `auth.mode=okta` | Required only when internet-reachable auth is enabled |
-| Sentry | Error/log reporting | Optional — only when `SENTRY_DSN` is set |
+| Sentry | Error/log reporting | Optional — only when `SENTRY_DSN` is set (self-hostable in-cluster — see [Logging, monitoring & observability](#logging-monitoring--observability)) |
 
 Shipwright has no subprocessor relationship of its own — the only third parties that ever sit in
 the data path are whichever of the above you configure yourself, each under your own account and
@@ -238,24 +238,19 @@ reviewing its own open PRs. Automated merging is disabled by default too — the
 cron ships off, so nothing merges without a human clicking merge in the GitHub UI.
 
 If Shipwright itself performs a merge — because you've enabled `shipwright-deploy`, or a human
-runs the merge command directly — it squash-merges the PR as a normal merge (`gh pr merge --squash`,
-no admin override), which defers to GitHub's branch protection natively rather than bypassing it.
-In practice this rarely blocks, because most repos either have no review requirement configured or
-have the merging identity listed as a **bypass actor** on the active ruleset. If a repo *does* have
-a required-review rule that the merging identity can't bypass, the merge command fails with GitHub's
-native "base branch policy prohibits the merge" error; Shipwright detects that specific failure,
-releases its claim on the task, and marks the task/PR **blocked** with a note explaining that a
-self-review approval doesn't satisfy a native required-review rule — a human then needs to add a
-real approval or configure the identity as a ruleset bypass actor.
+runs the merge command directly — it squash-merges the PR (`gh pr merge --squash`). Self-review
+(`allow_self_review`, also off by default) only lets that merge go through in repos where GitHub
+doesn't require a review at all; if branch protection does require one, self-review doesn't
+satisfy it, the merge is rejected, and Shipwright releases its claim on the task and marks the
+task/PR **blocked** so a human can add a real approval.
 
 For environments that need a specific, named human to be the actual approver — not just "not the
 same agent," but a person you've designated (SOC 2-style segregation of duties) — add your
 reviewers as GitHub **CODEOWNERS** for the repository, or at minimum for `.github/workflows/**`,
-require review from Code Owners in branch protection, and do **not** list the agent identity as a
-bypass actor on that ruleset. Neither self-review nor another agent's review satisfies a Code
-Owners requirement; only a human on that list does, and with no bypass actor configured, Shipwright's
-merge will correctly block until a human approves. Keep `shipwright-deploy` disabled in this
-configuration (its default state) so every merge stays an explicit human action.
+and require review from Code Owners in branch protection. Neither self-review nor another agent's
+review satisfies a Code Owners requirement; only a human on that list does. Keep
+`shipwright-deploy` disabled in this configuration (its default state) so every merge stays an
+explicit human action.
 
 ## One agent per user
 
@@ -342,7 +337,8 @@ Via GitHub private security advisories, not a public issue:
 [github.com/app-vitals/shipwright/security/advisories/new](https://github.com/app-vitals/shipwright/security/advisories/new).
 A maintainer will acknowledge the report within 7 days and work with you on a fix and coordinated
 disclosure — see [SECURITY.md](https://github.com/app-vitals/shipwright/blob/main/SECURITY.md) for
-the full policy.
+the full policy. See the [Compliance posture table](#compliance-posture) above for more on
+vulnerability disclosure procedures.
 
 **What happens if `SHIPWRIGHT_ENCRYPTION_KEY` is never set?**
 Secrets (env values, Slack tokens, API keys) are stored in plain text in the database, with a
@@ -353,25 +349,33 @@ something you need to set deliberately before any production use.
 Voice can: self-hosted Whisper for speech-to-text plus the default Piper text-to-speech engine make
 zero outbound calls. Every other Shipwright service assumes outbound internet access by default (to
 reach Anthropic, GitHub, and Slack). Restricting egress further is your responsibility, via your
-own Kubernetes `NetworkPolicy` or cloud firewall rules.
+own Kubernetes `NetworkPolicy` or cloud firewall rules. See the
+[Network & egress controls table](#network--egress-controls) above for the required and
+optional external destinations.
 
 **Is there an audit log of every action an agent takes?**
 Not a tool-call-level one, today. Sentry (when enabled) captures caller identity on the error path,
-but that's not a full audit trail of every tool invocation.
+but that's not a full audit trail of every tool invocation. See the
+[Compliance posture table](#compliance-posture) above for the current status of
+tool-call-level audit logging.
 
 **Does Shipwright have SOC 2 or similar certifications?**
-No, not currently.
+No, not currently. See the [Compliance posture table](#compliance-posture) above for details
+on current certification status.
 
 **Do I need to expose the admin service to the public internet?**
 No. `networking.type=ClusterIP` (the default) keeps every service reachable only via
 `kubectl port-forward` inside the cluster. Public exposure via Ingress or Gateway API is a choice
 you make when you're ready for it, and `auth.mode=google` or `auth.mode=okta` is required the
-moment you do.
+moment you do. See the [Human access table](#human-access) above for authentication mode
+requirements.
 
 **Does Shipwright support SCIM provisioning?**
 No, not today. There is no SCIM code in the codebase — user access is managed via the
 `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` allowlist and `AgentMember` records described above, not an
-automated identity-provider sync.
+automated identity-provider sync. See the
+[Admins vs. agent members table](#admins-vs-agent-members) above for how access control is
+currently managed.
 
 **Can I IP-allowlist the admin service?**
 There's no built-in IP-allowlist feature. The substitute is keeping `networking.type=ClusterIP`

@@ -1,0 +1,229 @@
+---
+// Reusable linear stepper/flow component for docs pages that currently
+// describe a process as prose (SUX-2.1, unblocks SUX-2.2/SUX-2.3). Reuses
+// the box + arrow visual language established by SecurityArchDiagram.astro
+// and the .pipe-step/.pipe-arrow pipeline in src/pages/agent-model.astro,
+// laid out vertically since a numbered sequence reads top-to-bottom rather
+// than left-to-right. Static Astro component: no client-side JS, brand
+// tokens only (no raw hex).
+interface Branch {
+  label: string;
+  detail: string;
+  // Marks this branch step as requiring manual/human action — same flag as
+  // the top-level Step, reusing --sw-color-state-warning (the same token
+  // agent-model.astro uses for its "loop"/human-attention states) rather
+  // than inventing a new color.
+  manual?: boolean;
+}
+
+interface Step {
+  label: string;
+  detail: string;
+  // Requires manual/human action — rendered with a distinct warning-token
+  // treatment instead of the default brand treatment.
+  manual?: boolean;
+  // A single optional conditional path forking off this step. Keep this
+  // minimal: one branch per step, not a general branching graph — matches
+  // the brief's "optional single conditional branch".
+  branch?: Branch;
+}
+
+interface Props {
+  steps: Step[];
+}
+
+const { steps } = Astro.props;
+---
+
+<ol class="step-flow" role="list">
+  {steps.map((step, i) => (
+    <li class="step-flow-item">
+      <div class={`step-box ${step.manual ? "step-box-manual" : ""}`}>
+        <div class="step-index" aria-hidden="true">{i + 1}</div>
+        <div class="step-body">
+          <div class="step-label-row">
+            <span class="step-label">{step.label}</span>
+            {step.manual && <span class="step-manual-tag">Manual step</span>}
+          </div>
+          <p class="step-detail">{step.detail}</p>
+        </div>
+      </div>
+
+      {step.branch && (
+        <div class="step-branch">
+          <div class="step-branch-arrow">
+            <span class="step-arrow-glyph">↳</span>
+            <span class="step-arrow-label">if applicable</span>
+          </div>
+          <div class={`step-box step-box-branch ${step.branch.manual ? "step-box-manual" : ""}`}>
+            <div class="step-body">
+              <div class="step-label-row">
+                <span class="step-label">{step.branch.label}</span>
+                {step.branch.manual && <span class="step-manual-tag">Manual step</span>}
+              </div>
+              <p class="step-detail">{step.branch.detail}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {i < steps.length - 1 && (
+        <div class="step-arrow-center" aria-hidden="true">
+          <span class="step-arrow-glyph">↓</span>
+        </div>
+      )}
+    </li>
+  ))}
+</ol>
+
+<style>
+  .step-flow {
+    display: flex;
+    flex-direction: column;
+    margin: 1.5rem 0 2rem;
+    padding: 0;
+    list-style: none;
+  }
+
+  .step-flow-item {
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Step box ── */
+  .step-box {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.875rem;
+    background: var(--sw-color-bg-raised);
+    border: 1.5px solid var(--sw-color-border-muted);
+    border-radius: 6px;
+    padding: 0.875rem 1.125rem;
+  }
+
+  .step-box-manual {
+    background: color-mix(in srgb, var(--sw-color-state-warning) 12%, transparent);
+    border-color: var(--sw-color-state-warning);
+  }
+
+  .step-index {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    background: var(--sw-color-brand-soft);
+    color: var(--sw-color-brand-default);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    font-family: var(--sw-font-mono);
+  }
+
+  .step-box-manual .step-index {
+    background: color-mix(in srgb, var(--sw-color-state-warning) 20%, transparent);
+    color: var(--sw-color-state-warning);
+  }
+
+  .step-body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .step-label-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .step-label {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sw-color-text-heading);
+  }
+
+  .step-manual-tag {
+    font-size: 0.5625rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--sw-color-state-warning);
+    border: 1px solid var(--sw-color-state-warning);
+    border-radius: 100px;
+    padding: 0.125rem 0.5rem;
+  }
+
+  .step-detail {
+    font-size: 0.8125rem;
+    color: var(--sw-color-text-muted);
+    line-height: 1.6;
+  }
+
+  /* ── Arrows between steps ── */
+  .step-arrow-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem 0;
+    padding-left: 0.875rem;
+  }
+
+  .step-arrow-glyph {
+    color: var(--sw-color-border-strong);
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  /* ── Conditional branch fork ── */
+  .step-branch {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    margin: 0.5rem 0 0.5rem 1.75rem;
+    padding-left: 0.875rem;
+    border-left: 1.5px dashed var(--sw-color-border-muted);
+  }
+
+  .step-branch-arrow {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-left: 0.25rem;
+  }
+
+  .step-branch-arrow .step-arrow-glyph {
+    color: var(--sw-color-border-strong);
+    font-size: 1.125rem;
+  }
+
+  .step-arrow-label {
+    font-size: 0.625rem;
+    color: var(--sw-color-text-muted);
+    margin-top: 0.125rem;
+    white-space: nowrap;
+  }
+
+  .step-box-branch {
+    flex: 1 1 auto;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .step-branch {
+      flex-direction: column;
+      align-items: stretch;
+      margin-left: 0.875rem;
+    }
+
+    .step-branch-arrow {
+      flex-direction: row;
+      justify-content: flex-start;
+      gap: 0.375rem;
+      padding-left: 0;
+    }
+  }
+</style>

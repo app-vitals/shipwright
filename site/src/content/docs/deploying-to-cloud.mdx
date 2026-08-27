@@ -88,8 +88,10 @@ echo "$(minikube ip) shipwright.local" | sudo tee -a /etc/hosts
 
 Then:
 
-- Admin UI/API: `http://shipwright.local/`
-- Metrics dashboard: `http://shipwright.local/dashboard`
+| Service | URL |
+|---------|-----|
+| Admin UI/API | `http://shipwright.local/` |
+| Metrics dashboard | `http://shipwright.local/dashboard` |
 
 Or skip the ingress and port-forward directly:
 
@@ -164,8 +166,10 @@ The chart renders a `Gateway` plus `HTTPRoute`s: an HTTP listener on `:80`, an H
 `:443` (when TLS is enabled), and an HTTP→HTTPS redirect route. Point your DNS `A`/`AAAA` record
 at the Gateway's external address once provisioned.
 
-- Admin UI/API: `https://shipwright.example.com/`
-- Metrics dashboard: `https://shipwright.example.com/dashboard`
+| Service | URL |
+|---------|-----|
+| Admin UI/API | `https://shipwright.example.com/` |
+| Metrics dashboard | `https://shipwright.example.com/dashboard` |
 
 ## EKS (ALB ingress + cert-manager)
 
@@ -212,8 +216,10 @@ helm install shipwright charts/shipwright \
 
 Point your DNS record at the ALB's DNS name once provisioned.
 
-- Admin UI/API: `https://shipwright.example.com/`
-- Metrics dashboard: `https://shipwright.example.com/dashboard`
+| Service | URL |
+|---------|-----|
+| Admin UI/API | `https://shipwright.example.com/` |
+| Metrics dashboard | `https://shipwright.example.com/dashboard` |
 
 ## Agent runtime provisioning
 

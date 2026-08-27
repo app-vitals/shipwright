@@ -7,6 +7,8 @@ prev: "/docs/cron-jobs"
 next: "/docs/security"
 ---
 
+import StepFlow from '../../components/StepFlow.astro'
+
 # The Shipwright Loop
 
 `shipwright-loop` is the one cron that drives the entire autonomous delivery loop. Instead of
@@ -23,44 +25,43 @@ on.
 
 ## How dispatch works
 
-Each tick of `shipwright-loop` runs the following sequence:
+Each tick of `shipwright-loop` runs the following sequence. Step 4 hands off to
+[the FIFO work-selector](#the-fifo-work-selector), covered in full in the next section.
 
-1. **Read the four phase toggles.** The loop reads four independent booleans — one per
-   pipeline phase — off child cron rows named `shipwright-dev-task`, `shipwright-review`,
-   `shipwright-patch`, and `shipwright-deploy`, all parented under the `shipwright-loop` cron.
-   Each toggle is resolved and enabled/disabled entirely independently of the others. The loop
-   deliberately never reads `shipwright-review-patch`'s flag or invokes `/shipwright:review-patch`
-   — the loop's own per-tick selection across all four phases supersedes that command's internal
-   review-vs-patch decision.
-2. **Qualify candidates per enabled phase.** For each enabled phase, the loop calls that phase's
-   own qualification function to get structured candidates: dev-task candidates are tasks ready to
-   build, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase
-   contributes nothing — its qualification function is never called, so a phase with no candidates
-   never even shows up as an empty run.
-3. **Merge into one candidate list.** The PR candidates from every enabled phase (review, patch,
-   deploy) are merged into a single flat array. Task candidates stay their own list. Both lists
-   feed the same selection step below.
-4. **Run a single FIFO work-selector.** The loop calls the work-selector exactly once per
-   iteration, passing it the merged task list and the merged PR list together. See
-   [The FIFO work-selector](#the-fifo-work-selector) below for how it picks a winner.
-5. **Pre-claim the winning item.** Before anything is dispatched, the selected item is claimed
-   directly against the task store — task items via a task claim, PR items via a PR claim. A `409`
-   conflict (another agent replica already claimed it since it was collected) skips dispatch
-   entirely: no one-shot command runs and nothing is recorded as a run. The loop simply re-collects
-   candidates and continues to the next iteration, which naturally excludes the now-claimed item.
-6. **Dispatch the matching one-shot command.** Once pre-claimed, the loop dispatches the one-shot
-   command for that item: a task item always dispatches `/shipwright:dev-task`; a PR item
-   dispatches `/shipwright:review`, `/shipwright:patch`, or `/shipwright:deploy` depending on which
-   phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the
-   claimed record's id and commit SHA to the dispatched command string, so the downstream command
-   can recognize the loop already holds the claim instead of re-claiming (and conflicting with
-   itself).
-7. **Repeat immediately — drain until dry.** The loop doesn't wait for the next cron tick to look
-   for more work. It loops back to step 1 right away, re-reading toggles and re-collecting
-   candidates fresh each time (so a phase toggled off mid-drain, or work freshly consumed by the
-   previous iteration, is reflected immediately). It keeps selecting and dispatching one item at a
-   time until the work-selector returns nothing — an idle, drained queue — at which point the tick
-   ends.
+<StepFlow steps={[
+  {
+    label: "Read the four phase toggles",
+    detail: "The loop reads four independent booleans — one per pipeline phase — off child cron rows named shipwright-dev-task, shipwright-review, shipwright-patch, and shipwright-deploy, all parented under the shipwright-loop cron. Each toggle is resolved and enabled/disabled entirely independently of the others. The loop deliberately never reads shipwright-review-patch's flag or invokes /shipwright:review-patch — the loop's own per-tick selection across all four phases supersedes that command's internal review-vs-patch decision.",
+  },
+  {
+    label: "Qualify candidates per enabled phase",
+    detail: "For each enabled phase, the loop calls that phase's own qualification function to get structured candidates: dev-task candidates are tasks ready to build, and review/patch/deploy candidates are PRs ready for that phase. A disabled phase contributes nothing — its qualification function is never called, so a phase with no candidates never even shows up as an empty run.",
+  },
+  {
+    label: "Merge into one candidate list",
+    detail: "The PR candidates from every enabled phase (review, patch, deploy) are merged into a single flat array. Task candidates stay their own list. Both lists feed the same selection step below.",
+  },
+  {
+    label: "Run a single FIFO work-selector",
+    detail: "The loop calls the work-selector exactly once per iteration, passing it the merged task list and the merged PR list together — see the next section for how it picks a winner.",
+  },
+  {
+    label: "Pre-claim the winning item",
+    detail: "Before anything is dispatched, the selected item is claimed directly against the task store — task items via a task claim, PR items via a PR claim.",
+    branch: {
+      label: "409 conflict — already claimed",
+      detail: "Another agent replica already claimed this item since it was collected. Dispatch is skipped entirely: no one-shot command runs and nothing is recorded as a run. The loop simply re-collects candidates and continues to the next iteration, which naturally excludes the now-claimed item.",
+    },
+  },
+  {
+    label: "Dispatch the matching one-shot command",
+    detail: "Once pre-claimed, the loop dispatches the one-shot command for that item: a task item always dispatches /shipwright:dev-task; a PR item dispatches /shipwright:review, /shipwright:patch, or /shipwright:deploy depending on which phase the PR candidate came from. A successful PR pre-claim appends a marker carrying the claimed record's id and commit SHA to the dispatched command string, so the downstream command can recognize the loop already holds the claim instead of re-claiming (and conflicting with itself).",
+  },
+  {
+    label: "Repeat immediately — drain until dry",
+    detail: "The loop doesn't wait for the next cron tick to look for more work. It loops back to step 1 right away, re-reading toggles and re-collecting candidates fresh each time (so a phase toggled off mid-drain, or work freshly consumed by the previous iteration, is reflected immediately). It keeps selecting and dispatching one item at a time until the work-selector returns nothing — an idle, drained queue — at which point the tick ends.",
+  },
+]} />
 
 An idle tick that finds nothing to select reports no run at all: a phase with zero candidates
 never generates a row, and the loop only touches its run-reporting once a real item has been

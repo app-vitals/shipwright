@@ -7,7 +7,9 @@
  * passes the real TaskService / TaskTokenService backed by PrismaClient.
  *
  * Mount order:
- *   GET /health        — unauthenticated liveness probe
+ *   GET /health        — unauthenticated liveness probe (DB-independent)
+ *   GET /health/ready  — unauthenticated readiness probe (DB-aware, via
+ *                        the injected `checkDbReady` dep)
  *   * /*               — bearer auth middleware (everything else)
  *   * /tasks/*         — task CRUD + claim/heartbeat/complete/fail/release
  *   * /tokens/*        — token create/list/revoke
@@ -87,6 +89,14 @@ export interface TaskStoreDeps {
    * `@sentry/bun` only when SENTRY_DSN is set.
    */
   sentryClient?: ErrorCapturingClient;
+  /**
+   * Optional DB-aware readiness check backing GET /health/ready. Production
+   * wiring in main.ts passes a closure over the real `prisma` instance
+   * (`SELECT 1`, never throws — returns false on any failure). Omitted in
+   * most tests, which default to always-ready so existing callers that don't
+   * inject it are unaffected.
+   */
+  checkDbReady?: () => Promise<boolean>;
 }
 
 export function createTaskStoreApp(
@@ -120,10 +130,21 @@ export function createTaskStoreApp(
     return c.json({ error: message }, 500);
   });
 
-  // Health check — no auth.
+  // Health checks — no auth.
+  //   /health       — liveness: process-alive only, independent of DB state.
+  //                   A transient DB blip must never trigger a
+  //                   liveness-driven restart.
+  //   /health/ready — readiness: DB-aware. Used by the chart's readinessProbe
+  //                   so Kubernetes doesn't route traffic to this pod before
+  //                   Postgres is actually reachable. Defaults to always-ready
+  //                   when `checkDbReady` is omitted.
   app.get("/health", (c) =>
     c.json({ status: "ok", service: "task-store" }, 200),
   );
+  app.get("/health/ready", async (c) => {
+    const ready = deps.checkDbReady ? await deps.checkDbReady() : true;
+    return c.json({ status: ready ? "ok" : "not_ready" }, ready ? 200 : 503);
+  });
 
   // Everything below requires a valid bearer token.
   app.use(

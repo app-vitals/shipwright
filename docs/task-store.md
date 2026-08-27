@@ -12,7 +12,7 @@ The task store ships as a standalone Hono service backed by PostgreSQL. Agents c
 
 ### Authentication
 
-All endpoints except `GET /health` require a `Bearer` token:
+All endpoints except `GET /health` and `GET /health/ready` require a `Bearer` token:
 
 ```
 Authorization: Bearer <token>
@@ -520,11 +520,19 @@ Soft-deletes the token (sets `revokedAt`). Returns the revoked token record.
 
 ### Health
 
+Two health endpoints — no authentication required:
+
 ```
 GET /health
 ```
 
-No authentication required. Returns `{ "status": "ok", "service": "task-store" }`.
+Liveness probe (process-alive only, independent of database state). Returns `{ "status": "ok", "service": "task-store" }`. A transient database blip must never trigger a liveness-driven restart.
+
+```
+GET /health/ready
+```
+
+Readiness probe (database-aware). Used by the Kubernetes `readinessProbe` so traffic is not routed to this pod before Postgres is reachable. Returns `{ "status": "ok" }` with HTTP 200 when the database is healthy, or `{ "status": "not_ready" }` with HTTP 503 when unavailable. In test environments where a database check is omitted, this endpoint defaults to always-ready.
 
 ---
 

@@ -18,17 +18,14 @@ a human-facing admin CRUD API, a server-rendered admin UI, and a public read-onl
 
 There are three ways to run the agent depending on your context:
 
-| Mode | Entry point | Transport | When to use |
-|------|-------------|-----------|-------------|
-| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
-| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
-| Local dev | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
+| Mode | Entry point | Transport | Entrypoint behavior | When to use |
+|------|-------------|-----------|---------------------|-------------|
+| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Runs directly on the host | Running directly on a host with a local `.env` file |
+| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Dockerfile `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`, which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
+| Local dev | `task stack` | Chat poll loop → admin Chat UI | Runs the agent in Docker via the agent pane | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
 
 The admin service Dockerfile (`admin/Dockerfile`) `ENTRYPOINT` is `bun run admin/src/main.ts`,
-which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
-container Dockerfile (`agent/Dockerfile`) `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`,
-which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the
-startup sequence so Kubernetes liveness probes are reachable during init.
+which runs migrations, constructs all services, and mounts all admin and runtime routes.
 
 ## Running the agent locally
 
@@ -87,24 +84,8 @@ unset, secrets are stored in plain text with a logged warning.
 
 ## Default system crons
 
-Every new agent is seeded with eleven system crons. Three are enabled by default; the rest are opt-in
-and can be toggled in the admin UI or via `PATCH /agents/:id/crons/:cronId`.
-
-| Cron | Schedule | Default | What it does |
-|------|----------|---------|--------------|
-| `shipwright-dev-task` | every 30 min | **on** | Pick next ready task, build with tests, open PR |
-| `shipwright-review` | every 30 min | **on** | Review-only pass over open PRs |
-| `shipwright-patch` | every 30 min | **on** | Fix failing CI and unresolved review findings |
-| `shipwright-deploy` | every 30 min | off | Merge approved PRs and deploy |
-| `shipwright-test-readiness` | daily 06:00 | off | Full test-readiness audit |
-| `shipwright-docs-freshness` | daily 07:00 | off | Refresh docs that drifted from the code |
-| `learn-dream` | daily 03:00 | off | Mine merged PRs for durable learnings |
-| `dependabot-triage` | daily 08:00 | off | Review and triage open Dependabot PRs |
-| `entropy-patrol-maintenance` | weekly Mon 04:00 | off | Scan for code entropy and fix what's PR-worthy |
-
-Crons run `silent` by default — they post to Slack only when there is a result worth surfacing or
-on error. Most carry a `preCheck` script whose stdout becomes the actual prompt, so a cron only
-spends a Claude turn when there is real work ready.
+See [Cron Jobs](/docs/cron-jobs#default-system-crons) for the full list of default system crons,
+their schedules, and what each one does.
 
 ## Required environment variables
 

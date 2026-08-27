@@ -8,19 +8,19 @@
  * assert on the returned WorkPrCandidate[] array instead of {exit, output}.
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import type { LinkedTaskInfo } from "./check-helpers.ts";
 import {
-  buildProductionDeps,
   type CheckDeployDeps,
   type CiRun,
   type GhPr,
   type GhReview,
+  buildProductionDeps,
   getDeployCandidates,
 } from "./check-deploy.ts";
+import type { LinkedTaskInfo } from "./check-helpers.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -44,7 +44,7 @@ interface MakeDepsOptions {
   reviews?: Record<number, GhReview[]>;
   ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
-  isSelfReviewAllowed?: boolean;
+  isSelfReviewAllowed?: boolean | (() => boolean);
   taskStatus?: Record<string, LinkedTaskInfo | null>;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
@@ -65,7 +65,10 @@ function makeDeps({
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: async () => currentUser,
-    isSelfReviewAllowed,
+    isSelfReviewAllowed:
+      typeof isSelfReviewAllowed === "function"
+        ? isSelfReviewAllowed
+        : () => isSelfReviewAllowed,
     repos,
     getScopedRepos,
     hasScopeSynced,
@@ -359,7 +362,7 @@ describe("getDeployCandidates", () => {
 
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/failing-repo", "acme/example-repo"],
       getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
       hasScopeSynced: () => true,
@@ -448,7 +451,7 @@ describe("getDeployCandidates", () => {
     });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/busy-repo", "acme/free-repo"],
       getScopedRepos: () => ["acme/busy-repo", "acme/free-repo"],
       hasScopeSynced: () => true,
@@ -471,7 +474,7 @@ describe("getDeployCandidates", () => {
     const pr1 = makeGhPr({ number: 1, headRefOid: "sha1" });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -488,10 +491,14 @@ describe("getDeployCandidates", () => {
   });
 
   test("a queued Deploy run older than 1 hour is treated as stale/ghost and does not block the repo", async () => {
-    const pr1 = makeGhPr({ number: 1, headRefOid: "sha1", reviewDecision: "APPROVED" });
+    const pr1 = makeGhPr({
+      number: 1,
+      headRefOid: "sha1",
+      reviewDecision: "APPROVED",
+    });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -513,10 +520,14 @@ describe("getDeployCandidates", () => {
   });
 
   test("a queued Deploy run under 1 hour old still blocks the repo", async () => {
-    const pr1 = makeGhPr({ number: 1, headRefOid: "sha1", reviewDecision: "APPROVED" });
+    const pr1 = makeGhPr({
+      number: 1,
+      headRefOid: "sha1",
+      reviewDecision: "APPROVED",
+    });
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -560,7 +571,7 @@ describe("getDeployCandidates", () => {
 
     const deps: CheckDeployDeps = {
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: true,
+      isSelfReviewAllowed: () => true,
       repos: ["acme/example-repo"],
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
@@ -1067,7 +1078,11 @@ describe("buildProductionDeps", () => {
         expect(args).toContain("acme/widgets");
         return {
           reviews: [
-            { author: { login: "reviewer1" }, body: "APPROVE", state: "APPROVED" },
+            {
+              author: { login: "reviewer1" },
+              body: "APPROVE",
+              state: "APPROVED",
+            },
           ],
         } as unknown as T;
       },
@@ -1136,7 +1151,11 @@ describe("buildProductionDeps", () => {
 
     const runs = await deps.fetchActiveDeployRuns("acme", "widgets");
     expect(runs).toEqual([
-      { name: "Deploy", status: "in_progress", createdAt: "2026-05-01T00:00:00Z" },
+      {
+        name: "Deploy",
+        status: "in_progress",
+        createdAt: "2026-05-01T00:00:00Z",
+      },
       { name: "Deploy", status: "queued", createdAt: "2026-05-01T00:05:00Z" },
     ]);
     expect(calls).toHaveLength(2);
@@ -1188,6 +1207,39 @@ describe("buildProductionDeps", () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>() => [] as unknown as T,
     });
-    expect(deps.isSelfReviewAllowed).toBe(false);
+    expect(typeof deps.isSelfReviewAllowed).toBe("function");
+    expect(deps.isSelfReviewAllowed()).toBe(false);
+  });
+});
+
+describe("getDeployCandidates isSelfReviewAllowed live-read behavior (PLR-1.1)", () => {
+  // isSelfReviewAllowed is a live getter (() => boolean), invoked fresh on
+  // every getDeployCandidates() call — not memoized. A stub that flips its
+  // return value between calls must be observed to flip the resulting
+  // candidacy across two separate invocations, proving the consumer calls
+  // the getter each time instead of caching the first result (mirrors an
+  // agent-policy.md edit taking effect without a process restart).
+  test("isSelfReviewAllowed getter is invoked fresh on every call, not memoized", async () => {
+    const pr = makeGhPr({
+      author: { login: "bodhi-agent" },
+      reviewDecision: null,
+    });
+    const reviews: GhReview[] = [
+      { author: { login: "bodhi-agent" }, body: "APPROVE", state: "COMMENTED" },
+    ];
+    const values = [false, true];
+    const deps = makeDeps({
+      currentUser: "bodhi-agent",
+      isSelfReviewAllowed: () => values.shift() as boolean,
+      prs: { "acme/example-repo": [pr] },
+      reviews: { 50: reviews },
+      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
+    });
+
+    const firstResult = await getDeployCandidates(deps);
+    expect(firstResult).toEqual([]);
+
+    const secondResult = await getDeployCandidates(deps);
+    expect(secondResult).toHaveLength(1);
   });
 });

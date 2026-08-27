@@ -7,6 +7,8 @@ prev: "/docs/deploying-to-cloud"
 next: "/docs/day-to-day-operations"
 ---
 
+import StepFlow from '../../components/StepFlow.astro'
+
 # Slack Integration
 
 The Shipwright agent communicates via Slack using the Bolt SDK in Socket Mode — no public HTTP
@@ -23,81 +25,28 @@ agent knows who it's talking to. Cron job results are posted to a configured cha
 
 ## Connecting a Slack app
 
-Slack provisioning is automated via the `/admin/provision` flow. Follow these four steps:
+Slack provisioning is automated via the `/admin/provision` flow — one manual step (enabling
+Socket Mode) is required at the end; everything else happens for you.
 
-### Step 1: Open the provisioning form
-
-Navigate to `/admin/provision` in the Shipwright admin UI. You'll see a form with the following
-fields:
-
-- **Agent** — select which agent to configure
-- **GitHub credentials** — either a Personal Access Token (PAT) or a GitHub App installation for
-  repo access
-- **Anthropic API key** (optional) — if you want the agent to use a custom API key
-- **Claude Code OAuth token** (optional) — if you want to enable Claude Code integration
-- **Slack app configuration token** — a `xoxe.xoxp-` token (see below)
-
-### Understanding the Slack app configuration token
-
-A `xoxe.xoxp-` token is a **Slack app configuration token** — a personal token scoped to your
-Slack workspace that allows creating and configuring Slack apps via the API. To obtain one:
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps)
-2. Click **Create New App** and select **From scratch** (not from a manifest)
-3. Name your app and select your workspace
-4. Once created, go to **App-Level Tokens** in the left sidebar
-5. Click **Generate Token and Scopes**
-6. Name the token (e.g., "Shipwright Provisioning")
-7. Add the `admin` scope (or all available scopes for maximum compatibility)
-8. Click **Generate** and copy the token (it starts with `xoxe.xoxp-`)
-
-This token is **used only once** during provisioning — Shipwright calls the Slack API to create
-the actual bot app and does not store this token afterward. Delete the placeholder app you
-created above to retrieve the configuration token once provisioning completes.
-
-### Step 2: Shipwright creates the Slack app
-
-After you submit the form with valid GitHub credentials and the Slack configuration token,
-Shipwright:
-
-1. Calls `apps.manifest.create` to create a new Slack bot app with the necessary permissions
-2. Automatically stores the following credentials in the agent's environment:
-   - `SLACK_APP_ID` — the app's ID
-   - `SLACK_SIGNING_SECRET` — used to verify incoming Slack requests
-   - `SLACK_CLIENT_ID` — OAuth client ID
-   - `SLACK_CLIENT_SECRET` — OAuth client secret
-
-All of this happens automatically — no manual steps needed.
-
-### Step 3: Authorize the Slack app
-
-After Step 2 completes, the provisioning form shows an **Authorize Slack App →** button. Click it
-to:
-
-1. Redirect to Slack's OAuth approval page
-2. Approve the app to post to your workspace
-3. Redirect back to `/admin/provision/complete`
-
-Shipwright automatically stores `SLACK_BOT_TOKEN` (the bot user OAuth token) in the agent's
-environment. You do not need to copy it manually.
-
-### Step 4: Enable Socket Mode and generate the app token
-
-This is the **one remaining manual step**:
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) and select the app that was just
-   created (it will have a similar name to your agent)
-2. In the left sidebar, go to **Socket Mode**
-3. Click the toggle to **Enable Socket Mode**
-4. A panel appears asking you to generate an **app-level token**
-5. Click **Generate Token and Scopes**
-6. Name the token (e.g., "Socket Mode Token")
-7. Add the `connections:write` scope
-8. Click **Generate** and copy the token (it starts with `xapp-`)
-9. Return to the Shipwright admin UI and paste the `xapp-` token into the Socket Mode field
-10. Submit the form
-
-Once submitted, the agent will connect to Slack via Socket Mode on its next startup.
+<StepFlow steps={[
+  {
+    label: "Open the provisioning form",
+    detail: "Navigate to /admin/provision in the Shipwright admin UI and fill in the agent to configure, GitHub credentials (a PAT or GitHub App installation), an optional Anthropic API key, an optional Claude Code OAuth token, and a Slack app configuration token — a personal xoxe.xoxp- token that Shipwright uses once to create the app and never stores. To obtain it, go to api.slack.com/apps, click Create New App → From scratch (not from a manifest) to spin up a placeholder app, then under that placeholder app's App-Level Tokens click Generate Token and Scopes with the admin scope to generate the xoxe.xoxp- token. Once you've copied it, delete the placeholder app — it was only needed to generate the token.",
+  },
+  {
+    label: "Shipwright creates the Slack app",
+    detail: "After you submit the form, Shipwright calls apps.manifest.create to create a new Slack bot app, then automatically stores SLACK_APP_ID, the SLACK_SIGNING_SECRET (a signing secret used to verify incoming Slack requests), SLACK_CLIENT_ID, and SLACK_CLIENT_SECRET in the agent's environment. No manual steps needed.",
+  },
+  {
+    label: "Authorize the Slack app",
+    detail: "Click the Authorize Slack App → button the form now shows. You're redirected to Slack's OAuth approval page, approve the app to post to your workspace, and land back on /admin/provision/complete. Shipwright automatically stores SLACK_BOT_TOKEN (the xoxb- bot user OAuth token) — you don't need to copy it manually.",
+  },
+  {
+    label: "Enable Socket Mode and generate the app token",
+    detail: "Go to api.slack.com/apps, select the app that was just created, and open Socket Mode in the left sidebar. Enable it, then Generate Token and Scopes with the connections:write scope to produce an app-level token (starts with xapp-). Paste that xapp- token into the Socket Mode field back in the Shipwright admin UI and submit — the agent connects via Socket Mode on its next startup.",
+    manual: true,
+  },
+]} />
 
 ## Required Slack environment variables
 

@@ -72,6 +72,17 @@ Slack app manifest given a fresh `xoxe.xoxp-` configuration token (`POST
 /admin/agents/:id/sync-manifest`), optionally re-triggering the Slack OAuth reinstall flow. Below the
 header, in order:
 
+| Card | Who sees it | Key actions |
+|---|---|---|
+| **Env Vars** | Slack-provisioned agents only | Add, edit value (masked), delete |
+| **Repos** | All viewers | Add, remove |
+| **Cron Jobs** | All viewers | View logs, enable/disable, edit (custom only), delete (custom only) |
+| **Tools** | All viewers | Add, enable/disable, delete |
+| **Task Store Tokens** | All viewers | Create, revoke |
+| **Plugins** | All viewers | View only (install via CLI) |
+| **Members** | Admin-only | Add, remove |
+| **Danger Zone** | Admin-only | Delete agent |
+
 **Env Vars** (Slack-provisioned agents only — self-hosted agents skip this card). A table of
 `KEY` / masked value (`••••••••`, with a 🔒 icon on keys marked secret) / delete-button rows, plus an
 add form (`POST /admin/agents/:id/envs`) with `key`, `value`, and a "Mark as secret" checkbox.

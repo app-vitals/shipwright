@@ -64,7 +64,7 @@ function makeDeps(
     prNumber: number,
   ) => Promise<PrRecord | null> = async () => null,
   currentUser = "bodhi-agent",
-  isSelfReviewAllowed = false,
+  isSelfReviewAllowed: boolean | (() => boolean) = false,
   queryTaskStatus: (
     repo: string,
     prNumber: number,
@@ -84,7 +84,10 @@ function makeDeps(
     listOpenPrs: async (_repo: string) => prs,
     queryPrRecord: queryPrRecordFn,
     getCurrentUser: async () => currentUser,
-    isSelfReviewAllowed,
+    isSelfReviewAllowed:
+      typeof isSelfReviewAllowed === "function"
+        ? isSelfReviewAllowed
+        : () => isSelfReviewAllowed,
     getScopedRepos,
     hasScopeSynced,
     queryTaskStatus,
@@ -272,6 +275,31 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // PLR-1.1: isSelfReviewAllowed is a live getter (() => boolean), invoked
+  // fresh on every getReviewCandidates() call — not memoized. A stub that
+  // flips its return value between calls must be observed to flip the
+  // resulting candidacy across two separate invocations, proving the
+  // consumer calls the getter each time instead of caching the first result
+  // (mirrors an agent-policy.md edit taking effect without a process
+  // restart).
+  test("isSelfReviewAllowed getter is invoked fresh on every call, not memoized (PLR-1.1)", async () => {
+    const pr = makePr({ author: { login: "bodhi-agent" } });
+    const values = [false, true];
+    const isSelfReviewAllowed = () => values.shift() as boolean;
+    const deps = makeDeps(
+      [pr],
+      async () => null,
+      "bodhi-agent",
+      isSelfReviewAllowed,
+    );
+
+    const firstResult = await getReviewCandidates(deps);
+    expect(firstResult).toEqual([]);
+
+    const secondResult = await getReviewCandidates(deps);
+    expect(secondResult).toHaveLength(1);
+  });
+
   test("returns a candidate when PR is authored by different user", async () => {
     const pr = makePr({ author: { login: "danmcaulay" } });
     const result = await getReviewCandidates(
@@ -323,7 +351,7 @@ describe("getReviewCandidates", () => {
         throw new Error("Network error");
       },
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: false,
+      isSelfReviewAllowed: () => false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
       fetchPrReviews: defaultFetchPrReviews,
@@ -817,7 +845,7 @@ describe("getReviewCandidates", () => {
         throw new Error("Network error");
       },
       getCurrentUser: async () => "bodhi-agent",
-      isSelfReviewAllowed: false,
+      isSelfReviewAllowed: () => false,
       getScopedRepos: () => [pr.repo ?? ""],
       hasScopeSynced: () => true,
       fetchPrReviews: defaultFetchPrReviews,
@@ -2644,8 +2672,13 @@ describe("traceReviewCandidacyDecision", () => {
     // Proves the thread-reply freshness signal only defeats the live-review
     // check it's paired with; it has no effect on the independent
     // task-blocked check next in precedence order.
-    const pr = makePr({ headRefOid: "sha111", author: { login: "danmcaulay" } });
-    const record: PrRecord = { reviewedAt: "2026-07-15T09:00:00.000Z" } as PrRecord;
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
+    const record: PrRecord = {
+      reviewedAt: "2026-07-15T09:00:00.000Z",
+    } as PrRecord;
     const reviewedAtMs = new Date(record.reviewedAt as string).getTime();
     const reviewData = makeReviewData({
       headRefOid: "sha111",
@@ -2713,7 +2746,10 @@ describe("traceReviewCandidacyDecision", () => {
     // that a fresh reply which clears the two earlier, reply-aware checks
     // does NOT also clear the later staged check, which has no such
     // exception.
-    const pr = makePr({ headRefOid: "sha111", author: { login: "danmcaulay" } });
+    const pr = makePr({
+      headRefOid: "sha111",
+      author: { login: "danmcaulay" },
+    });
     const record: PrRecord = {
       commitSha: "sha111",
       reviewedCommitSha: "sha111",

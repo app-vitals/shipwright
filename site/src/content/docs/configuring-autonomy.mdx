@@ -73,6 +73,12 @@ a working `check-deploy` pre-check — so the agent can't merge something broken
 
 ## Common workflow patterns
 
+| Pattern | dev-task | review | patch | deploy | Notes |
+|---------|:--------:|:------:|:-----:|:------:|-------|
+| Hands-off | ✓ | ✗ | ✓ | ✗ | Build and patch CI, skip posting reviews — you review PRs yourself. |
+| Staged reviews | ✓ | ✓ | ✓ | ✗ | `auto_post_reviews: false` — findings held locally until you approve them. |
+| Bring your own PR | ✗ | ✓ | ✓ | ✓ | Skip the task queue; open PRs yourself and let review/patch/deploy take it from there. |
+
 ### Hands-off: build and patch, skip review
 
 Some projects don't need the agent to post PR reviews. You just want it to build tasks and
@@ -80,10 +86,6 @@ fix CI failures while you review PRs yourself.
 
 Enable `shipwright-dev-task` and `shipwright-patch`. Disable `shipwright-review`. The agent
 builds, opens PRs, and patches CI — but never posts a review comment.
-
-```
-dev-task  ✓  patch  ✓  review  ✗  deploy  ✗
-```
 
 ### Staged reviews
 
@@ -96,19 +98,11 @@ With staging on, the agent runs its review pass and writes the findings to a loc
 Nothing is posted to GitHub until you approve it. Once you've confirmed the review looks right,
 post it manually, or set `auto_post_reviews: true` again to go back to automatic posting.
 
-```
-dev-task  ✓  review  ✓  patch  ✓  deploy  ✗   (auto_post_reviews: false)
-```
-
 ### Bring your own PR
 
 You don't have to go through the task queue at all. Open a PR yourself — a quick fix, a hotfix,
 anything — and Shipwright picks it up from there. With `review`, `patch`, and `deploy` enabled,
 the agent will review the PR, patch any CI failures, and merge it once it's clean.
-
-```
-dev-task  ✗  review  ✓  patch  ✓  deploy  ✓
-```
 
 This works and is a reasonable way to get comfortable with the system. That said, bypassing
 `dev-task` means skipping the quality work it does before the PR exists: structured planning,
