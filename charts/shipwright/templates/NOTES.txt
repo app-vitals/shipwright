@@ -45,6 +45,38 @@ Configured service ports:
 
 Networking exposure type: {{ .Values.networking.type }}
 Auth mode:                {{ .Values.auth.mode }}
+{{- /*
+CNH-8.1: public URL line. admin.appBaseUrl is the operator's own declared
+public base URL (set specifically for OAuth redirect URIs), so it wins when
+present — it is the most authoritative "how the outside world reaches this
+release" value the chart has. Falling back to shipwright.publicScheme +
+shipwright.publicHost only covers networking.type=ingress/gateway (the only
+cases those helpers resolve a host for at all); ClusterIP/NodePort/
+LoadBalancer installs have no chart-known public URL and print nothing here.
+*/}}
+{{- $publicUrl := .Values.admin.appBaseUrl }}
+{{- if not $publicUrl }}
+{{- $publicHost := include "shipwright.publicHost" . }}
+{{- if $publicHost }}
+{{- $publicUrl = printf "%s://%s" (include "shipwright.publicScheme" .) $publicHost }}
+{{- end }}
+{{- end }}
+{{- if $publicUrl }}
+Public URL:               {{ $publicUrl }}
+{{- end }}
+{{- if or (index .Values "ingress-nginx" "enabled") .Values.traefik.enabled (index .Values "cert-manager" "enabled") }}
+
+Bundled subcharts (this release deploys these alongside the app):
+{{- if index .Values "ingress-nginx" "enabled" }}
+  • ingress-nginx — bundled as this release's ingress controller.
+{{- end }}
+{{- if .Values.traefik.enabled }}
+  • traefik       — bundled as this release's ingress controller.
+{{- end }}
+{{- if index .Values "cert-manager" "enabled" }}
+  • cert-manager  — bundled to issue TLS certificates for this release.
+{{- end }}
+{{- end }}
 
 {{- if .Values.admin.enabled }}
 
@@ -141,6 +173,27 @@ Provision your first agent:
       working login path, which will lock you out of the admin UI. Use
       auth.mode=google (working today) or auth.mode=open (non-public only)
       until application-side Okta support ships.
+  ============================================================================
+{{- end }}
+{{- /*
+CNH-8.1: Let's Encrypt STAGING warning. Only meaningful for the chart-managed
+Issuer path (tls.certManager.issuer.create) — a bring-your-own Issuer
+(issuerRef.name) is opaque to this chart, so there is no server URL to check.
+Staging certs are signed by a CA no browser/client trusts, so operators who
+copy-pasted the staging server while testing need a loud reminder before they
+believe TLS is "done".
+*/}}
+{{- if and .Values.tls.certManager.issuer.create (eq .Values.tls.certManager.issuer.type "letsencrypt") (contains "acme-staging" .Values.tls.certManager.issuer.server) }}
+
+  ============================================================================
+  ⚠️  WARNING: tls.certManager.issuer.server points at the Let's Encrypt
+      STAGING endpoint ({{ .Values.tls.certManager.issuer.server }}).
+      Staging certificates are NOT publicly trusted — browsers and most HTTP
+      clients will reject them. This is expected while testing (staging has
+      much higher rate limits than production), but switch
+      tls.certManager.issuer.server to the production endpoint (or leave it
+      empty for the chart's own default) before relying on this for real
+      traffic.
   ============================================================================
 {{- end }}
 

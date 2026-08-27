@@ -73,5 +73,66 @@ spec:
             exit 1
           fi
           {{- end }}
+          {{- if index .Values "ingress-nginx" "enabled" }}
+          # CNH-8.1: prove the cloud-native nginx+cert-manager profile actually
+          # terminates real TLS through the BUNDLED ingress-nginx controller's
+          # Service (not the task-store Service directly) — the whole point of
+          # bundling ingress-nginx + cert-manager together is that traffic goes
+          # in via the controller and comes out the other side with a
+          # cert-manager-issued certificate, not ingress-nginx's own built-in
+          # "Kubernetes Ingress Controller Fake Certificate" placeholder (which
+          # it serves for any Host with no matching TLS-enabled Ingress).
+          NGINX_CONTROLLER_SVC="{{ .Release.Name }}-ingress-nginx-controller"
+          NGINX_HOST="{{ .Values.networking.ingress.host }}"
+          NGINX_URL="https://${NGINX_HOST}/task-store/health"
+          # --connect-to redirects the TCP connection to the controller Service
+          # (in-cluster DNS name, no IP lookup needed) while keeping the
+          # original host in the URL/SNI/Host header — so both TLS SNI routing
+          # and cert-manager's ingress-shim host matching see the real host.
+          echo "GET ${NGINX_URL} via bundled ingress-nginx controller Service ${NGINX_CONTROLLER_SVC} (expect 200)"
+          # -k: the Issuer here is selfsigned (CI) or otherwise not a public CA
+          # this curl image trusts, so we can't verify the chain — but we can
+          # (and do) verify the SERVED certificate is not the nginx-default
+          # fake one by inspecting -v's TLS handshake trace below.
+          nginx_verbose="$(curl -sv -k -o /dev/null \
+            --connect-to "${NGINX_HOST}:443:${NGINX_CONTROLLER_SVC}:443" \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
+            "${NGINX_URL}" 2>&1)"
+          echo "${nginx_verbose}" | grep -E 'subject:|issuer:' || true
+          if echo "${nginx_verbose}" | grep -qi 'Kubernetes Ingress Controller Fake Certificate'; then
+            echo "FAIL: served certificate is ingress-nginx's default placeholder (Kubernetes Ingress Controller Fake Certificate), not a cert-manager-issued cert" >&2
+            echo "${nginx_verbose}" >&2
+            exit 1
+          fi
+          nginx_code="$(curl -s -k -o /dev/null -w '%{http_code}' \
+            --connect-to "${NGINX_HOST}:443:${NGINX_CONTROLLER_SVC}:443" \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
+            "${NGINX_URL}")"
+          echo "ingress-nginx -> task-store /task-store/health -> ${nginx_code}"
+          if [ "${nginx_code}" != "200" ]; then
+            echo "FAIL: task-store /task-store/health via ingress-nginx returned ${nginx_code}, expected 200" >&2
+            exit 1
+          fi
+          {{- end }}
+          {{- if .Values.traefik.enabled }}
+          # CNH-8.1: prove the cloud-native traefik profile actually routes
+          # through the BUNDLED traefik controller's Service (plain HTTP —
+          # this profile bundles no cert-manager). Uses a Host header rather
+          # than DNS/--resolve so it works regardless of whether the
+          # controller Service has an external IP.
+          TRAEFIK_SVC="{{ .Release.Name }}-traefik"
+          TRAEFIK_HOST="{{ .Values.networking.ingress.host }}"
+          TRAEFIK_URL="http://${TRAEFIK_SVC}/task-store/health"
+          echo "GET ${TRAEFIK_URL} with Host: ${TRAEFIK_HOST} via bundled traefik Service (expect 200)"
+          traefik_code="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Host: ${TRAEFIK_HOST}" \
+            --max-time 10 --retry 5 --retry-delay 3 --retry-connrefused --retry-all-errors -f \
+            "${TRAEFIK_URL}")"
+          echo "traefik -> task-store /task-store/health -> ${traefik_code}"
+          if [ "${traefik_code}" != "200" ]; then
+            echo "FAIL: task-store /task-store/health via traefik returned ${traefik_code}, expected 200" >&2
+            exit 1
+          fi
+          {{- end }}
           echo "OK: connection checks passed"
 {{- end }}

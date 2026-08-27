@@ -78,6 +78,14 @@ taskStore:
     enabled: true
     pathPrefix: /task-store
 
+admin:
+  # Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL)
+  # so OAuth redirect URIs use the real hostname instead of localhost:3001.
+  # Matches networking.ingress.host above over the standard HTTPS port (this
+  # profile expects a real front door / DNS + the pre-existing letsencrypt-prod
+  # ClusterIssuer named above, unlike the selfsigned nginx cloud-native example).
+  appBaseUrl: https://shipwright.example.com
+
 auth:
   # Real Google OAuth for a public deployment.
   mode: google

@@ -1,0 +1,191 @@
+{{- if include "shipwright.certManager.viaHook" . }}
+{{- /*
+  CNH-8.1: cert-manager Issuer/Certificate Ready assertion, gated identically
+  to templates/cert-manager-bootstrap-job.yaml (shipwright.certManager.viaHook
+  — cert-manager BUNDLED in this release, tls.certManager.enabled=true, and a
+  chart-managed Issuer and/or gateway Certificate to apply). This is a
+  `helm.sh/hook: test` Pod (same convention as
+  templates/tests/test-connection.yaml), so it only runs on `helm test`.
+
+  WHY THIS EXISTS: the bootstrap hook Job (post-install/post-upgrade,
+  hook-weight 10) applies the chart-managed Issuer and waits for cert-manager
+  itself to be Available, but never waits for the Issuer/Certificate it just
+  applied to actually finish issuing — a selfsigned Issuer can take a few
+  seconds to go Ready, and (on the ingress path) cert-manager's ingress-shim
+  needs a moment after the Ingress is created to notice the
+  cert-manager.io/issuer annotation and create the Certificate at all. `helm
+  test` is the natural place to assert the FULL chain completed: Issuer Ready,
+  then Certificate Ready, proving a real (not fake/placeholder) cert was
+  actually issued — see the ingress-nginx-gated block in test-connection.yaml
+  for the complementary "the SERVED cert isn't ingress-nginx's default
+  placeholder" check.
+
+  Resource naming mirrors shipwright.certManager.issuerName /
+  shipwright.ingress.tlsSecretName exactly, so this Pod waits on the SAME
+  resources the bootstrap Job applies / the ingress-shim creates:
+    - issuer/<fullname>-issuer            (or clusterissuer/... when
+      tls.certManager.issuer.kind=ClusterIssuer) — applied by the bootstrap
+      Job's ConfigMap (10-issuer.yaml).
+    - certificate/<fullname>-tls           — on networking.type=gateway this is
+      the chart-managed Certificate the bootstrap Job also applies
+      (20-certificate.yaml); on networking.type=ingress there is NO
+      chart-managed Certificate template at all (templates/certificate.yaml
+      only renders for gateway) — cert-manager's ingress-shim auto-creates a
+      Certificate from the Ingress's cert-manager.io/issuer annotation,
+      NAMED AFTER THE TLS SECRET (shipwright.ingress.tlsSecretName, same
+      "<fullname>-tls" default), which is exactly the resource this Pod waits
+      on either way.
+
+  RBAC: a dedicated ServiceAccount/Role/RoleBinding scoped to `get`/`list`/
+  `watch` on issuers/certificates (+ clusterissuers when the Issuer is
+  cluster-scoped) — kept SEPARATE from the bootstrap hook's ServiceAccount
+  (templates/cert-manager-bootstrap-rbac.yaml) because `helm.sh/hook: test`
+  Pods run independently (any time an operator runs `helm test`, long after
+  install/upgrade), and no other templates/tests/*.yaml Pod shares RBAC with a
+  non-test hook either.
+*/}}
+{{- $fullname := include "shipwright.fullname" . }}
+{{- $name := printf "%s-test-cert-issuer" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $issuerName := include "shipwright.certManager.issuerName" . }}
+{{- $issuerKind := include "shipwright.certManager.issuerKind" . | lower }}
+{{- $certificateName := include "shipwright.ingress.tlsSecretName" . }}
+{{- $clusterScoped := eq (include "shipwright.certManager.issuerKind" .) "ClusterIssuer" }}
+{{- $image := include "shipwright.imageRef" (dict "context" $ "repository" "registry.k8s.io/kubectl" "tag" "v1.31.0") }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["issuers", "certificates"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- if $clusterScoped }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+rules:
+  - apiGroups: ["cert-manager.io"]
+    resources: ["clusterissuers"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $name }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "shipwright.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test-cert-issuer
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  serviceAccountName: {{ $name }}
+  {{- with .Values.global.imagePullSecrets }}
+  imagePullSecrets:
+    {{- range . }}
+    - name: {{ . }}
+    {{- end }}
+  {{- end }}
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+  initContainers:
+    - name: wait-for-issuer
+      image: {{ $image | quote }}
+      command:
+        - kubectl
+      args:
+        - wait
+        - --for=condition=Ready
+        - --timeout=120s
+        - {{ printf "%s/%s" $issuerKind $issuerName }}
+        - -n
+        - {{ .Release.Namespace }}
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+  containers:
+    - name: wait-for-certificate
+      image: {{ $image | quote }}
+      command:
+        - kubectl
+      args:
+        - wait
+        - --for=condition=Ready
+        - --timeout=120s
+        - {{ printf "certificate/%s" $certificateName }}
+        - -n
+        - {{ .Release.Namespace }}
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+{{- end }}

@@ -682,6 +682,17 @@ ingress-nginx:
 traefik:
   # -- Deploy the bundled Traefik subchart.
   enabled: false
+  ingressClass:
+    # -- Name of the IngressClass the bundled Traefik subchart registers. The
+    # subchart's own default is the release fullname ("<release>-traefik"),
+    # which would NOT match this chart's Ingress (networking.ingress.className,
+    # "traefik" for the Traefik profile). Traefik's ingress provider only
+    # routes an Ingress whose explicit ingressClassName matches an existing
+    # IngressClass by exact name — a mismatch is silently skipped and every
+    # request through the controller 404s. Pin it to "traefik" so the bundled
+    # profile works out of the box; keep it equal to
+    # networking.ingress.className if you change either.
+    name: traefik
 
 # -- Optional bundled cert-manager subchart (CNH-6.1). Off by default — bring
 # your own cert-manager (see tls.certManager.* for the chart's own

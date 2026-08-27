@@ -1,0 +1,221 @@
+suite: Cloud-native profiles (CNH-8.1) — examples/values-cloud-native.yaml and examples/values-cloud-native-traefik.yaml
+# CNH-8.1 adds example/CI variants that combine the CNH-6.1 bundled-subchart
+# switches (ingress-nginx OR traefik, optionally cert-manager) with a real
+# Ingress + TLS configuration. These assertions mirror the values set in
+# examples/values-cloud-native.yaml (nginx + cert-manager, selfsigned Issuer,
+# task-store exposed) and examples/values-cloud-native-traefik.yaml (traefik,
+# no bundled cert-manager, bring-your-own ClusterIssuer) inline via `set:`
+# blocks, matching this repo's existing helm-unittest idiom (see
+# ingress_test.yaml / cert_manager_issuer_test.yaml) rather than referencing
+# the example files directly.
+templates:
+  - templates/ingress.yaml
+  - templates/cert-manager-bootstrap-job.yaml
+  - templates/cert-manager-issuer.yaml
+  - templates/certificate.yaml
+  - templates/tests/test-connection.yaml
+  - templates/tests/test-cert-issuer.yaml
+  - charts/ingress-nginx/templates/controller-deployment.yaml
+  - charts/traefik/templates/deployment.yaml
+  - charts/traefik/templates/ingressclass.yaml
+tests:
+  # ---- nginx + cert-manager profile (examples/values-cloud-native.yaml) ----
+  - it: "nginx profile: Ingress has spec.tls populated"
+    template: templates/ingress.yaml
+    set: &nginxProfile
+      ingress-nginx.enabled: true
+      cert-manager.enabled: true
+      networking.type: ingress
+      networking.ingress.host: shipwright.example.com
+      networking.ingress.controller: nginx
+      networking.ingress.tls.enabled: true
+      networking.ingress.tls.redirect: true
+      tls.certManager.enabled: true
+      tls.certManager.issuer.create: true
+      tls.certManager.issuer.kind: Issuer
+      tls.certManager.issuer.type: selfsigned
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /task-store
+    release:
+      name: r
+    asserts:
+      - isNotNull:
+          path: spec.tls
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: shipwright.example.com
+
+  - it: "nginx profile: ingressClassName equals the bundled nginx class"
+    template: templates/ingress.yaml
+    set: *nginxProfile
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+
+  - it: "nginx profile: cert-manager bootstrap Job exists"
+    template: templates/cert-manager-bootstrap-job.yaml
+    set: *nginxProfile
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-shipwright-cert-manager-bootstrap
+
+  - it: "nginx profile: no inline Issuer document is rendered (carried in the bootstrap ConfigMap instead)"
+    template: templates/cert-manager-issuer.yaml
+    set: *nginxProfile
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "nginx profile: no inline Certificate document is rendered"
+    template: templates/certificate.yaml
+    set: *nginxProfile
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "nginx profile: the bundled ingress-nginx controller Deployment renders"
+    template: charts/ingress-nginx/templates/controller-deployment.yaml
+    set: *nginxProfile
+    documentSelector:
+      path: kind
+      value: Deployment
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+
+  - it: "nginx profile: test-cert-issuer.yaml renders (waits for the chart-managed Issuer + ingress-shim Certificate)"
+    template: templates/tests/test-cert-issuer.yaml
+    set: *nginxProfile
+    # Namespaced Issuer (issuer.kind=Issuer, the default set above) renders
+    # ServiceAccount, Role, RoleBinding, then the Pod — no ClusterRole/Binding
+    # (those only render for issuer.kind=ClusterIssuer) — so the Pod is
+    # document index 3.
+    documentIndex: 3
+    asserts:
+      - isKind:
+          of: Pod
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - contains:
+          path: spec.initContainers[0].args
+          content: "issuer/RELEASE-NAME-shipwright-issuer"
+      - contains:
+          path: spec.containers[0].args
+          content: "certificate/RELEASE-NAME-shipwright-tls"
+
+  - it: "nginx profile: test-connection.yaml's ingress-nginx-gated HTTPS block is present"
+    template: templates/tests/test-connection.yaml
+    set: *nginxProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "ingress-nginx controller Service"
+
+  - it: "nginx profile: test-connection.yaml's ingress-nginx health check retries on transient errors (e.g. 404 during route-sync), not just connrefused"
+    template: templates/tests/test-connection.yaml
+    set: *nginxProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "--retry-connrefused --retry-all-errors -f"
+
+  # ---- traefik profile (examples/values-cloud-native-traefik.yaml) ----
+  - it: "traefik profile: Ingress is plain HTTP (no spec.tls) per the example's bring-your-own-cert path being disabled here"
+    template: templates/ingress.yaml
+    set: &traefikProfile
+      traefik.enabled: true
+      networking.type: ingress
+      networking.ingress.className: traefik
+      networking.ingress.host: shipwright.example.com
+      networking.ingress.controller: traefik
+      taskStore.enabled: true
+      taskStore.expose.enabled: true
+      taskStore.expose.pathPrefix: /task-store
+    release:
+      name: r
+    asserts:
+      - isNull:
+          path: spec.tls
+
+  - it: "traefik profile: ingressClassName equals the bundled traefik class"
+    template: templates/ingress.yaml
+    set: *traefikProfile
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: traefik
+
+  # The umbrella Ingress above says ingressClassName=traefik, but the traefik
+  # subchart names its IngressClass after the release fullname
+  # ("<release>-traefik") unless traefik.ingressClass.name is set. Traefik's
+  # ingress provider only routes an Ingress whose explicit ingressClassName
+  # matches an existing IngressClass by exact name — a mismatch is silently
+  # skipped (debug-level log) and every request through the controller 404s.
+  # This test renders the SUBCHART's IngressClass with only the profile's own
+  # values (no explicit traefik.ingressClass.name, exactly like
+  # ci/cloud-native-traefik-values.yaml and the example) and asserts the two
+  # independently-wired names agree out of the box.
+  - it: "traefik profile: the bundled subchart's IngressClass is named traefik without an explicit traefik.ingressClass.name (matches the umbrella Ingress out of the box)"
+    template: charts/traefik/templates/ingressclass.yaml
+    set: *traefikProfile
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: IngressClass
+      - equal:
+          path: metadata.name
+          value: traefik
+
+  - it: "traefik profile: the bundled traefik Deployment renders"
+    template: charts/traefik/templates/deployment.yaml
+    set: *traefikProfile
+    documentSelector:
+      path: kind
+      value: Deployment
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Deployment
+
+  - it: "traefik profile: no cert-manager bootstrap Job (cert-manager not bundled in this profile)"
+    template: templates/cert-manager-bootstrap-job.yaml
+    set: *traefikProfile
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "traefik profile: test-cert-issuer.yaml renders nothing (no bundled cert-manager, viaHook is false)"
+    template: templates/tests/test-cert-issuer.yaml
+    set: *traefikProfile
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "traefik profile: test-connection.yaml's traefik-gated HTTP block is present"
+    template: templates/tests/test-connection.yaml
+    set: *traefikProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "bundled traefik Service"
+
+  - it: "traefik profile: test-connection.yaml's traefik health check retries on transient errors (e.g. 404 during route-sync), not just connrefused"
+    template: templates/tests/test-connection.yaml
+    set: *traefikProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "--retry-connrefused --retry-all-errors -f"

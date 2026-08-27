@@ -638,6 +638,12 @@ networking:
       entrypoints:
         web: web                   # Traefik's HTTP entrypoint name
         websecure: websecure       # Traefik's HTTPS entrypoint name
+admin:
+  # Public base URL for OAuth/OIDC redirect URIs — must match the hostname
+  # and scheme of your Ingress. When set, the admin service constructs OAuth
+  # redirect URIs using this URL instead of the request Host header, ensuring
+  # consistency when the external hostname differs from internal DNS names.
+  appBaseUrl: https://shipwright.example.com
 tls:
   certManager:
     enabled: true
@@ -656,8 +662,17 @@ auth:
 
 `networking.type=ingress` with `className: traefik` and `controller: traefik`
 renders an `Ingress` the Traefik controller watches, plus additional Middleware
-CRs for path stripping (when the task-store is exposed). Unlike nginx and ALB,
-Traefik uses annotations to configure routing behavior:
+CRs for path stripping (when the task-store is exposed).
+
+When Traefik is **bundled** (`traefik.enabled=true`), the chart pins the
+subchart's IngressClass to `traefik.ingressClass.name: traefik` so it matches
+the Ingress's `ingressClassName` (`networking.ingress.className`) out of the
+box. Traefik only routes an Ingress whose explicit `ingressClassName` matches
+an existing IngressClass by exact name — a mismatch is skipped silently and
+every request through the controller returns 404 — so if you rename either
+value, keep the two equal. (The subchart's own default is `<release>-traefik`.)
+
+Unlike nginx and ALB, Traefik uses annotations to configure routing behavior:
 
 - `traefik.ingress.kubernetes.io/router.entrypoints` — selects which Traefik
   entrypoint serves this Ingress (e.g., `web` for HTTP-only, `websecure` for
@@ -1121,6 +1136,10 @@ cert-manager:
     enabled: true
 networking:
   type: ingress
+admin:
+  # Public base URL for OAuth/OIDC redirects. When bundling cert-manager and
+  # ingress-nginx, use the same hostname as networking.ingress.host.
+  appBaseUrl: https://shipwright.local:8443    # https when TLS is enabled
 tls:
   certManager:
     enabled: true
@@ -1131,8 +1150,8 @@ tls:
 ```
 
 Example value files are provided:
-- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager
-- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager
+- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — bundles ingress-nginx + cert-manager; uses `shipwright.local` with a selfsigned cert and `admin.appBaseUrl: https://shipwright.local:8443`
+- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — bundles Traefik + cert-manager; uses `shipwright.example.com` with `letsencrypt-prod` and `admin.appBaseUrl: https://shipwright.example.com`
 
 ---
 
