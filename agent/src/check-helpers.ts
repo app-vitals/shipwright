@@ -99,7 +99,7 @@ export function parseCleanupMergedWorktrees(content: string): boolean {
 
 export function parseCleanupAfterDays(content: string): number {
   const match = content.match(
-    /(?:`cleanup_after_days`\s*\|\s*|\*\*cleanup_after_days\*\*:\s*)(\d+)/,
+    /`?\*{0,2}\bcleanup_after_days\b\*{0,2}`?\s*[:|]\s*\*{0,2}(\d+)\b/i,
   );
   if (!match) return 14; // default 14 if missing
   const parsed = Number.parseInt(match[1], 10);

@@ -505,6 +505,14 @@ describe("parseCleanupAfterDays", () => {
     ).toBe(21);
   });
 
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 30\n---\n",
+      ),
+    ).toBe(30);
+  });
+
   test("defaults to 14 when the field is missing", () => {
     expect(checkHelpers.parseCleanupAfterDays("no policy here")).toBe(14);
   });
