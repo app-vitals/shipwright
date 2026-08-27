@@ -305,21 +305,41 @@ describe("buildMinikubeCommands — cloud-native profiles", () => {
   });
 
   it("resolves the cloud-native-nginx values file from the profile by default", () => {
+    // NOT ci/cloud-native-nginx-values.yaml — that CI-only fixture pins
+    // admin/metrics images to pullPolicy: Never, relying on a `kind load
+    // docker-image` step this script never performs, which would hang a real
+    // minikube VM on ErrImageNeverPull. The minikube-specific overlay pulls
+    // the real GHCR image instead.
     const install = argvLines(
       buildMinikubeCommands({ profile: "cloud-native-nginx" }),
     ).find((l) => l.includes("helm upgrade"));
     expect(install).toContain(
-      "--values charts/shipwright/ci/cloud-native-nginx-values.yaml",
+      "--values charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml",
     );
   });
 
   it("resolves the cloud-native-traefik values file from the profile by default", () => {
+    // Same ErrImageNeverPull rationale as the nginx profile above — see that
+    // test's comment.
     const install = argvLines(
       buildMinikubeCommands({ profile: "cloud-native-traefik" }),
     ).find((l) => l.includes("helm upgrade"));
     expect(install).toContain(
-      "--values charts/shipwright/ci/cloud-native-traefik-values.yaml",
+      "--values charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml",
     );
+  });
+
+  it("cloud-native profiles do NOT resolve to the CI-only ci/*.yaml fixtures", () => {
+    // Regression guard for the ErrImageNeverPull bug: ci/*.yaml fixtures pin
+    // admin/metrics to a local pullPolicy: Never image, side-loaded via `kind
+    // load docker-image` in CI — a step this script never performs for a real
+    // minikube VM, which would hang the rollout wait.
+    for (const profile of ["cloud-native-nginx", "cloud-native-traefik"] as const) {
+      expect(PROFILES[profile].valuesFile).not.toContain("charts/shipwright/ci/");
+      expect(PROFILES[profile].valuesFile.startsWith(
+        "charts/shipwright/examples/values-minikube-",
+      )).toBe(true);
+    }
   });
 
   it("an explicit valuesFile override still wins over the profile default", () => {

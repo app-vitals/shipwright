@@ -1,0 +1,57 @@
+# Cloud-native-traefik profile, tuned for a local Minikube VM (CNH-8.2).
+#
+# Mirrors values-cloud-native-traefik.yaml's Traefik-bundled shape, but
+# swaps in values-minikube.yaml's dev-friendly auth and drops TLS entirely
+# (plain HTTP), because that example's TLS setup depends on a
+# `letsencrypt-prod` ClusterIssuer that must ALREADY exist in the cluster —
+# nothing creates one on a fresh minikube VM, so using it unmodified would
+# leave certs stuck Pending forever. This profile mirrors
+# ci/cloud-native-traefik-values.yaml's choice to skip TLS/cert-manager
+# altogether instead (plain HTTP end to end), which needs no external
+# ClusterIssuer.
+#
+# Deliberately does NOT set admin.image/metrics.image — unlike
+# ci/cloud-native-traefik-values.yaml (pullPolicy: Never, pinned to a locally
+# `kind load docker-image`-side-loaded 0.1.0 tag for the ct/kind CI flow),
+# this profile pulls the real published image from GHCR (values.yaml's
+# default), which a real minikube VM can reach with no side-load step.
+#
+#   task minikube:cloud-native:traefik
+#
+# or directly:
+#
+#   helm upgrade --install shipwright charts/shipwright \
+#     --namespace shipwright --create-namespace \
+#     -f charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml --wait
+
+networking:
+  type: ingress
+  ingress:
+    host: shipwright.local
+    className: traefik
+    controller: traefik
+
+traefik:
+  # -- Bundle Traefik as this release's ingress controller — minikube's own
+  # `ingress` addon is not enabled for this profile (scripts/minikube.ts
+  # skips it whenever a cloud-native profile installs its own controller).
+  enabled: true
+
+taskStore:
+  enabled: true
+  expose:
+    enabled: true
+    pathPrefix: /task-store
+
+auth:
+  # ⚠️ ADMIN_DEV_AUTH=true — no authentication at all. Local only. Matches
+  # values-minikube.yaml; values-cloud-native-traefik.yaml's auth.mode: google
+  # would need real OAuth creds this profile has no way to supply on a laptop.
+  mode: open
+
+admin:
+  # Plain HTTP on :8080 (INGRESS_LOCAL_PORT in scripts/minikube.ts) — no TLS
+  # here (see file header): values-cloud-native-traefik.yaml's TLS setup
+  # needs a pre-existing letsencrypt-prod ClusterIssuer this fresh VM does
+  # not have.
+  appBaseUrl: http://shipwright.local:8080

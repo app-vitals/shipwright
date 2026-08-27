@@ -134,12 +134,20 @@ export const PROFILES: Record<Profile, ProfileConfig> = {
   "cloud-native-nginx": {
     profile: "cloud-native-nginx",
     useIngressAddon: false,
-    valuesFile: "charts/shipwright/ci/cloud-native-nginx-values.yaml",
+    // NOT ci/cloud-native-nginx-values.yaml — that file pins admin/metrics
+    // images to a local 0.1.0 tag with pullPolicy: Never, relying on CI's
+    // `kind load docker-image` step to side-load them. A real minikube VM has
+    // no equivalent side-load step, so those pods would hang on
+    // ErrImageNeverPull. This values file bundles the same ingress-nginx +
+    // cert-manager subcharts but pulls the real GHCR image and uses dev auth
+    // — see its own header comment.
+    valuesFile:
+      "charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml",
     controllerNamespace: NAMESPACE,
     controllerService: "svc/shipwright-ingress-nginx-controller",
-    // Both ports: tls.redirect=true (ci/cloud-native-nginx-values.yaml) means
-    // port 80 still exists and 301s to 443 — forwarding only 8443 would work
-    // for the app itself, but 8080 is kept reachable too so the redirect
+    // Both ports: tls.redirect=true (values-minikube-cloud-native-nginx.yaml)
+    // means port 80 still exists and 301s to 443 — forwarding only 8443 would
+    // work for the app itself, but 8080 is kept reachable too so the redirect
     // behavior is also exercised, matching acceptance criterion 2's :8443 check.
     portPairs: [
       { local: INGRESS_LOCAL_PORT, remote: 80 },
@@ -155,10 +163,16 @@ export const PROFILES: Record<Profile, ProfileConfig> = {
   "cloud-native-traefik": {
     profile: "cloud-native-traefik",
     useIngressAddon: false,
-    valuesFile: "charts/shipwright/ci/cloud-native-traefik-values.yaml",
+    // NOT ci/cloud-native-traefik-values.yaml — same local-image/pullPolicy:
+    // Never issue as the cloud-native-nginx profile above (see that entry's
+    // comment). This values file bundles the same Traefik subchart but pulls
+    // the real GHCR image and uses dev auth — see its own header comment.
+    valuesFile:
+      "charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml",
     controllerNamespace: NAMESPACE,
     controllerService: "svc/shipwright-traefik",
-    // No tls: stanza in ci/cloud-native-traefik-values.yaml — plain HTTP only.
+    // No tls: stanza in values-minikube-cloud-native-traefik.yaml — plain
+    // HTTP only.
     portPairs: [{ local: INGRESS_LOCAL_PORT, remote: 80 }],
     controllerRollout: { name: "shipwright-traefik", kind: "deployment" },
     scheme: "http",
