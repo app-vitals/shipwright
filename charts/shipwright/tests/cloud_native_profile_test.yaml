@@ -17,6 +17,7 @@ templates:
   - templates/tests/test-cert-issuer.yaml
   - charts/ingress-nginx/templates/controller-deployment.yaml
   - charts/traefik/templates/deployment.yaml
+  - charts/traefik/templates/ingressclass.yaml
 tests:
   # ---- nginx + cert-manager profile (examples/values-cloud-native.yaml) ----
   - it: "nginx profile: Ingress has spec.tls populated"
@@ -152,6 +153,28 @@ tests:
     asserts:
       - equal:
           path: spec.ingressClassName
+          value: traefik
+
+  # The umbrella Ingress above says ingressClassName=traefik, but the traefik
+  # subchart names its IngressClass after the release fullname
+  # ("<release>-traefik") unless traefik.ingressClass.name is set. Traefik's
+  # ingress provider only routes an Ingress whose explicit ingressClassName
+  # matches an existing IngressClass by exact name — a mismatch is silently
+  # skipped (debug-level log) and every request through the controller 404s.
+  # This test renders the SUBCHART's IngressClass with only the profile's own
+  # values (no explicit traefik.ingressClass.name, exactly like
+  # ci/cloud-native-traefik-values.yaml and the example) and asserts the two
+  # independently-wired names agree out of the box.
+  - it: "traefik profile: the bundled subchart's IngressClass is named traefik without an explicit traefik.ingressClass.name (matches the umbrella Ingress out of the box)"
+    template: charts/traefik/templates/ingressclass.yaml
+    set: *traefikProfile
+    release:
+      name: r
+    asserts:
+      - isKind:
+          of: IngressClass
+      - equal:
+          path: metadata.name
           value: traefik
 
   - it: "traefik profile: the bundled traefik Deployment renders"

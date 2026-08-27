@@ -252,10 +252,12 @@ tests:
   # ---- bundled traefik subchart + IngressClass registration (CNH-6.1) ----
   # traefik.enabled=true bundles the traefik subchart (Chart.yaml condition);
   # networking.ingress.controller=traefik selects the traefik dialect in this
-  # chart's own templates/ingress.yaml. The bundled subchart's IngressClass
-  # name defaults to the release fullname, not "traefik" —
-  # traefik.ingressClass.name pins it to match shipwright.ingress.className's
-  # default-controller-name resolution, proving the two independently-wired
+  # chart's own templates/ingress.yaml. The bundled subchart's OWN IngressClass
+  # name defaults to the release fullname, not "traefik" — this chart's
+  # values.yaml pins traefik.ingressClass.name to "traefik" so it matches
+  # shipwright.ingress.className's default-controller-name resolution (see
+  # cloud_native_profile_test.yaml for the no-explicit-override case). These
+  # two tests set it explicitly as well, proving the two independently-wired
   # pieces (subchart + dialect selection) name the same IngressClass.
   - it: "bundled traefik profile: the subchart's own IngressClass renders with name traefik"
     templates:

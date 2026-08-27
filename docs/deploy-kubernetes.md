@@ -662,8 +662,17 @@ auth:
 
 `networking.type=ingress` with `className: traefik` and `controller: traefik`
 renders an `Ingress` the Traefik controller watches, plus additional Middleware
-CRs for path stripping (when the task-store is exposed). Unlike nginx and ALB,
-Traefik uses annotations to configure routing behavior:
+CRs for path stripping (when the task-store is exposed).
+
+When Traefik is **bundled** (`traefik.enabled=true`), the chart pins the
+subchart's IngressClass to `traefik.ingressClass.name: traefik` so it matches
+the Ingress's `ingressClassName` (`networking.ingress.className`) out of the
+box. Traefik only routes an Ingress whose explicit `ingressClassName` matches
+an existing IngressClass by exact name — a mismatch is skipped silently and
+every request through the controller returns 404 — so if you rename either
+value, keep the two equal. (The subchart's own default is `<release>-traefik`.)
+
+Unlike nginx and ALB, Traefik uses annotations to configure routing behavior:
 
 - `traefik.ingress.kubernetes.io/router.entrypoints` — selects which Traefik
   entrypoint serves this Ingress (e.g., `web` for HTTP-only, `websecure` for
