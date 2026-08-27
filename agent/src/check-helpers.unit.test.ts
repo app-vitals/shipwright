@@ -363,6 +363,22 @@ describe("parseAllowSelfReview", () => {
     ).toBe(true);
   });
 
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: true\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: false\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(false);
+  });
+
   test("defaults to false when the field is missing entirely", () => {
     expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(false);
   });
@@ -422,6 +438,22 @@ describe("parseCleanupMergedWorktrees", () => {
     ).toBe(true);
   });
 
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: false\ncleanup_after_days: 14\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 14\n---\n",
+      ),
+    ).toBe(true);
+  });
+
   test("defaults to true when the field is missing entirely", () => {
     expect(checkHelpers.parseCleanupMergedWorktrees("no policy here")).toBe(true);
   });
@@ -471,6 +503,14 @@ describe("parseCleanupAfterDays", () => {
     expect(
       checkHelpers.parseCleanupAfterDays("**cleanup_after_days**: 21"),
     ).toBe(21);
+  });
+
+  test("parses numeric value from plain YAML frontmatter style", () => {
+    expect(
+      checkHelpers.parseCleanupAfterDays(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 30\n---\n",
+      ),
+    ).toBe(30);
   });
 
   test("defaults to 14 when the field is missing", () => {

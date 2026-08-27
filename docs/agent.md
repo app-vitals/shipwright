@@ -12,11 +12,11 @@ The agent owns eleven first-class Prisma models (`Agent` and its `Env` / `CronJo
 
 There are three ways to run the agent process, depending on the deployment context:
 
-| Mode | Entry point | Transport | Use when |
-|---|---|---|---|
-| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
-| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile — validates required vars, fetches config from the admin API, applies env, symlinks `~/.claude`, sets up GitHub auth, runs mise, installs plugins, then spawns `index.ts` |
-| Local dev (no Slack) | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab (`/admin/chat`) |
+| Mode | Entry point | Transport | Entrypoint behavior | When to use |
+|---|---|---|---|---|
+| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Runs directly on the host | Running directly on a host with a local `.env` file |
+| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Dockerfile `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`, which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
+| Local dev (no Slack) | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Runs the agent in Docker via the agent pane | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab (`/admin/chat`) |
 
 `agent/src/index.ts` is the production agent entrypoint in all transport modes — it wires the health server, config sync loop, cron sync loop, chat poll loop, Slack Bolt app, and graceful shutdown.
 

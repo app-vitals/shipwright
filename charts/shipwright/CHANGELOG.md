@@ -16,6 +16,10 @@ independent of `appVersion`. CI enforces this with
 
 - Add a DB-aware readinessProbe (`/health/ready`) for task-store — backed by a lightweight `SELECT 1` — so Kubernetes no longer routes traffic to a task-store pod before Postgres is reachable. `livenessProbe` is unchanged and stays on `/health` (DB-independent), matching the admin liveness/readiness split. Also raises the readinessProbe `successThreshold` to 2 to prevent a single-lucky-probe premature Ready flip during pod initialization (mirroring PLR-1.2's admin fix).
 
+### Changed
+
+- auto-bump to chart v1.17.4 triggered by release tag(s): `agent-v1.193.0`
+
 ## [1.17.3] - 2026-08-27
 
 ### Changed

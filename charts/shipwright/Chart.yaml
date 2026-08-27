@@ -31,6 +31,8 @@ annotations:
   artifacthub.io/changes: |
     - kind: added
       description: "Add DB-aware readinessProbe (/health/ready) for task-store, and raise its successThreshold to 2 to prevent premature Ready flip during pod initialization, mirroring the admin readiness split (PLR-1.2). livenessProbe stays on /health, unaffected."
+    - kind: changed
+      description: "auto-bump to chart v1.17.4 triggered by release tag agent-v1.193.0"
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
