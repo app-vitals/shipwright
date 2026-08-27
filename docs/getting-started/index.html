@@ -59,17 +59,9 @@ In fixtures mode it loads sample data so you can explore the UI immediately.</p>
 </li>
 </ol>
 <h2 id="manual-setup">Manual setup</h2>
-<p>If you prefer to run the steps yourself:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">git</span><span style="color:var(--astro-code-token-string)"> clone</span><span style="color:var(--astro-code-token-string)"> https://github.com/app-vitals/shipwright.git</span></span>
-<span class="line"><span style="color:var(--astro-code-token-function)">cd</span><span style="color:var(--astro-code-token-string)"> shipwright</span></span>
-<span class="line"><span style="color:var(--astro-code-token-function)">./scripts/quickstart.sh</span></span></code></pre>
-<p>The quickstart script runs the following commands internally:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> setup</span><span style="color:var(--astro-code-token-comment)">   # install all workspace dependencies</span></span>
-<span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> dev</span><span style="color:var(--astro-code-token-comment)">     # start the metrics dashboard at http://localhost:3460/dashboard</span></span></code></pre>
-<p>Once the dashboard is running, install the plugin inside your Claude Code session:</p>
-<pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="text"><code><span class="line"><span>/plugin install shipwright@app-vitals/shipwright</span></span></code></pre>
-<p>The dashboard will be available at <code>http://localhost:3460/dashboard</code>. It starts in offline mode
-(fixtures), so you can explore without configuring any external services.</p>
+<p>If you prefer to run the steps yourself, or want a metrics-only mode or the full multi-service
+dev stack, see <a href="/docs/running-locally">Running Locally</a> — it covers the same clone/quickstart/
+plugin-install flow (Option A) plus <code>task dev</code> (Option B) and <code>task stack</code> (Option C).</p>
 <h2 id="next-steps">Next steps</h2>
 <p>Once you have the local setup running, you can:</p>
 <ul>
