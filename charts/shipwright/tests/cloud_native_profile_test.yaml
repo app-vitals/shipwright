@@ -120,6 +120,14 @@ tests:
           path: spec.containers[0].command[2]
           pattern: "ingress-nginx controller Service"
 
+  - it: "nginx profile: test-connection.yaml's ingress-nginx health check retries on transient errors (e.g. 404 during route-sync), not just connrefused"
+    template: templates/tests/test-connection.yaml
+    set: *nginxProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "--retry-connrefused --retry-all-errors"
+
   # ---- traefik profile (examples/values-cloud-native-traefik.yaml) ----
   - it: "traefik profile: Ingress is plain HTTP (no spec.tls) per the example's bring-your-own-cert path being disabled here"
     template: templates/ingress.yaml
@@ -180,3 +188,11 @@ tests:
       - matchRegex:
           path: spec.containers[0].command[2]
           pattern: "bundled traefik Service"
+
+  - it: "traefik profile: test-connection.yaml's traefik health check retries on transient errors (e.g. 404 during route-sync), not just connrefused"
+    template: templates/tests/test-connection.yaml
+    set: *traefikProfile
+    asserts:
+      - matchRegex:
+          path: spec.containers[0].command[2]
+          pattern: "--retry-connrefused --retry-all-errors"
