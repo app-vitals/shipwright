@@ -32,6 +32,7 @@ a human-facing admin CRUD API, a server-rendered admin UI, and a public read-onl
 <th>Mode</th>
 <th>Entry point</th>
 <th>Transport</th>
+<th>Entrypoint behavior</th>
 <th>When to use</th>
 </tr>
 </thead>
@@ -40,27 +41,27 @@ a human-facing admin CRUD API, a server-rendered admin UI, and a public read-onl
 <td>Pi / bare-metal</td>
 <td><code>agent/src/index.ts</code></td>
 <td>Slack Socket Mode</td>
+<td>Runs directly on the host</td>
 <td>Running directly on a host with a local <code>.env</code> file</td>
 </tr>
 <tr>
 <td>K8s container</td>
 <td><code>agent/src/entrypoint-main.ts</code></td>
 <td>Slack Socket Mode</td>
+<td>Dockerfile <code>ENTRYPOINT</code> is <code>bun run agent/src/entrypoint-main.ts</code>, which starts the health server in-process on <code>SHIPWRIGHT_HEALTH_PORT</code> (default <code>3459</code>) before the startup sequence so Kubernetes liveness probes are reachable during init</td>
 <td>Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner)</td>
 </tr>
 <tr>
 <td>Local dev</td>
-<td><code>task stack</code> (Docker agent pane)</td>
+<td><code>task stack</code></td>
 <td>Chat poll loop → admin Chat UI</td>
+<td>Runs the agent in Docker via the agent pane</td>
 <td>Testing Claude locally without a Slack workspace — chat via the admin console’s Chat tab</td>
 </tr>
 </tbody>
 </table>
 <p>The admin service Dockerfile (<code>admin/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run admin/src/main.ts</code>,
-which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
-container Dockerfile (<code>agent/Dockerfile</code>) <code>ENTRYPOINT</code> is <code>bun run agent/src/entrypoint-main.ts</code>,
-which starts the health server in-process on <code>SHIPWRIGHT_HEALTH_PORT</code> (default <code>3459</code>) before the
-startup sequence so Kubernetes liveness probes are reachable during init.</p>
+which runs migrations, constructs all services, and mounts all admin and runtime routes.</p>
 <h2 id="running-the-agent-locally">Running the agent locally</h2>
 <p>Run the full local dev stack:</p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-function)">task</span><span style="color:var(--astro-code-token-string)"> stack</span></span></code></pre>
