@@ -363,6 +363,22 @@ describe("parseAllowSelfReview", () => {
     ).toBe(true);
   });
 
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: true\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      checkHelpers.parseAllowSelfReview(
+        "---\nauto_post_reviews: true\nallow_self_review: false\nmin_confidence: 75\n---\n",
+      ),
+    ).toBe(false);
+  });
+
   test("defaults to false when the field is missing entirely", () => {
     expect(checkHelpers.parseAllowSelfReview("no policy here")).toBe(false);
   });
@@ -419,6 +435,22 @@ describe("parseCleanupMergedWorktrees", () => {
   test("returns true for bold-style true", () => {
     expect(
       checkHelpers.parseCleanupMergedWorktrees("**cleanup_merged_worktrees**: true"),
+    ).toBe(true);
+  });
+
+  test("returns false for plain YAML frontmatter style false", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: false\ncleanup_after_days: 14\n---\n",
+      ),
+    ).toBe(false);
+  });
+
+  test("returns true for plain YAML frontmatter style true", () => {
+    expect(
+      checkHelpers.parseCleanupMergedWorktrees(
+        "---\ncleanup_merged_worktrees: true\ncleanup_after_days: 14\n---\n",
+      ),
     ).toBe(true);
   });
 

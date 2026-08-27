@@ -85,14 +85,14 @@ export interface Task {
 
 export function parseAllowSelfReview(content: string): boolean {
   const match = content.match(
-    /(?:`allow_self_review`\s*\|\s*|\*\*allow_self_review\*\*:\s*)(true|false)/,
+    /`?\*{0,2}\ballow_self_review\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
   );
   return match?.[1] === "true"; // default false if missing/unparseable
 }
 
 export function parseCleanupMergedWorktrees(content: string): boolean {
   const match = content.match(
-    /(?:`cleanup_merged_worktrees`\s*\|\s*|\*\*cleanup_merged_worktrees\*\*:\s*)(true|false)/,
+    /`?\*{0,2}\bcleanup_merged_worktrees\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
   );
   return match?.[1] !== "false"; // default true if missing
 }
