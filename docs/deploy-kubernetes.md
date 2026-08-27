@@ -213,8 +213,8 @@ Three profiles are available, selected via a `--profile` flag to the underlying 
 | Profile | Command | TLS | Ingress | Values file |
 |---------|---------|-----|---------|-------------|
 | **addon** (default) | `task minikube:up` | Plain HTTP | minikube's built-in `ingress` addon | `examples/values-minikube.yaml` |
-| **cloud-native-nginx** | `task minikube:cloud-native` | HTTPS (selfsigned cert-manager) | Bundled ingress-nginx subchart | `ci/cloud-native-nginx-values.yaml` |
-| **cloud-native-traefik** | `task minikube:cloud-native:traefik` | Plain HTTP | Bundled Traefik subchart | `ci/cloud-native-traefik-values.yaml` |
+| **cloud-native-nginx** | `task minikube:cloud-native` | HTTPS (selfsigned cert-manager) | Bundled ingress-nginx subchart | `examples/values-minikube-cloud-native-nginx.yaml` |
+| **cloud-native-traefik** | `task minikube:cloud-native:traefik` | Plain HTTP | Bundled Traefik subchart | `examples/values-minikube-cloud-native-traefik.yaml` |
 
 Each profile is idempotent — repeat `task minikube:up` (or the cloud-native variants) reuses an already-running VM and port-forward; `task minikube:down` tears down all three the same way (VM, helm release, port-forward).
 
@@ -272,7 +272,7 @@ minikube start --cpus=4 --memory=8192 --disk-size=40g
 helm dependency build charts/shipwright
 helm upgrade --install shipwright charts/shipwright \
   --namespace shipwright --create-namespace \
-  -f charts/shipwright/ci/cloud-native-nginx-values.yaml --wait
+  -f charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml --wait
 kubectl rollout status deployment/shipwright-ingress-nginx-controller \
   --namespace shipwright --timeout=5m
 kubectl port-forward --namespace shipwright svc/shipwright-ingress-nginx-controller 8080:80 8443:443 &
@@ -285,7 +285,7 @@ minikube start --cpus=4 --memory=8192 --disk-size=40g
 helm dependency build charts/shipwright
 helm upgrade --install shipwright charts/shipwright \
   --namespace shipwright --create-namespace \
-  -f charts/shipwright/ci/cloud-native-traefik-values.yaml --wait
+  -f charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml --wait
 kubectl rollout status deployment/shipwright-traefik \
   --namespace shipwright --timeout=5m
 kubectl port-forward --namespace shipwright svc/shipwright-traefik 8080:80 &
@@ -1198,7 +1198,7 @@ Example value files are provided:
 - [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — production-oriented: bundles ingress-nginx + cert-manager with `letsencrypt-prod`, uses `shipwright.local` with a selfsigned cert, and sets `admin.appBaseUrl: https://shipwright.local:8443`
 - [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — production-oriented: bundles Traefik + cert-manager with `letsencrypt-prod`, uses `shipwright.example.com`, and sets `admin.appBaseUrl: https://shipwright.example.com`
 
-**Note:** the Minikube task `task minikube:cloud-native` and `task minikube:cloud-native:traefik` use simplified versions (`charts/shipwright/ci/cloud-native-nginx-values.yaml` and `charts/shipwright/ci/cloud-native-traefik-values.yaml`) tuned for local development with self-signed certs and without OAuth/OIDC setup — see [Minikube (local)](#minikube-local) for details.
+**Note:** the Minikube task `task minikube:cloud-native` and `task minikube:cloud-native:traefik` use simplified versions (`charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml` and `charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml`) tuned for local development with self-signed certs and without OAuth/OIDC setup — see [Minikube (local)](#minikube-local) for details.
 
 ---
 
