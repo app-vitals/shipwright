@@ -18,17 +18,14 @@ a human-facing admin CRUD API, a server-rendered admin UI, and a public read-onl
 
 There are three ways to run the agent depending on your context:
 
-| Mode | Entry point | Transport | When to use |
-|------|-------------|-----------|-------------|
-| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Running directly on a host with a local `.env` file |
-| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
-| Local dev | `task stack` (Docker agent pane) | Chat poll loop → admin Chat UI | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
+| Mode | Entry point | Transport | Entrypoint behavior | When to use |
+|------|-------------|-----------|---------------------|-------------|
+| Pi / bare-metal | `agent/src/index.ts` | Slack Socket Mode | Runs directly on the host | Running directly on a host with a local `.env` file |
+| K8s container | `agent/src/entrypoint-main.ts` | Slack Socket Mode | Dockerfile `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`, which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the startup sequence so Kubernetes liveness probes are reachable during init | Deployed via the Dockerfile (validates vars, fetches config, installs plugins, spawns runner) |
+| Local dev | `task stack` | Chat poll loop → admin Chat UI | Runs the agent in Docker via the agent pane | Testing Claude locally without a Slack workspace — chat via the admin console's Chat tab |
 
 The admin service Dockerfile (`admin/Dockerfile`) `ENTRYPOINT` is `bun run admin/src/main.ts`,
-which runs migrations, constructs all services, and mounts all admin and runtime routes. The agent
-container Dockerfile (`agent/Dockerfile`) `ENTRYPOINT` is `bun run agent/src/entrypoint-main.ts`,
-which starts the health server in-process on `SHIPWRIGHT_HEALTH_PORT` (default `3459`) before the
-startup sequence so Kubernetes liveness probes are reachable during init.
+which runs migrations, constructs all services, and mounts all admin and runtime routes.
 
 ## Running the agent locally
 
