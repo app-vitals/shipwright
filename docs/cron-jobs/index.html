@@ -230,28 +230,38 @@ explain what happened in plain language. You don’t need transcript or log acce
 ask the agent to run it, and it will report back the prompt, the key steps taken, and its
 conclusion.</p>
 <h3 id="two-outcomes-that-are-expected-not-bugs">Two outcomes that are expected, not bugs</h3>
-<p><strong>A <code>[silent]</code> reply is normal when there’s nothing to report.</strong> Most cron ticks find no
-qualifying work and end silently — that’s the system working as designed, not a stuck or broken
-cron. Before assuming something’s wrong, check the run’s outcome in Cron Logs: a run marked
-<code>silent</code> completed successfully and simply had nothing worth posting.</p>
-<p><strong>A cron that never posts at all can have two different, equally normal causes</strong>, both visible
-without needing raw logs or a transcript:</p>
-<ol>
-<li><strong>Its <code>preCheck</code> returned no work.</strong> Look at the run’s outcome in Cron Logs — a <code>skipped</code>
-outcome (rather than <code>silent</code> or <code>posted</code>) means the preCheck script exited non-zero or produced
-no output, and the tick was suppressed <em>before</em> a Claude turn even started. This is the
-expected shape for a cron with nothing ready to act on.</li>
-<li><strong>The cron is disabled.</strong> Check the enabled/disabled badge on the cron’s row in the agent’s Cron
-Jobs card. A disabled cron doesn’t run at all — it won’t even show up as a recent <code>skipped</code> run,
-because <code>node-cron</code> never scheduled it in the first place.</li>
-</ol>
-<p>If a pipeline cron (<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>,
-<code>shipwright-deploy</code>) shows as enabled in the admin console but never has any runs in Cron Logs,
-check whether <code>shipwright-loop</code> itself is enabled (see “Loop-driven vs standalone crons” above): a
-reconciled pipeline cron is a child of <code>shipwright-loop</code> and never gets its own independent
-schedule, so its <code>enabled</code> toggle only takes effect once <code>shipwright-loop</code> reads it and dispatches
-that phase directly — there’s no standalone tick to show up as <code>silent</code> or <code>skipped</code> in the
-meantime.</p>
+<p>Use this table when a cron produces no output or shows an unexpected outcome. Arrive with a symptom (what you’re observing), then follow the check and meaning columns to confirm whether it’s a normal state or a real issue.</p>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Check</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A cron run shows outcome <code>silent</code> in Cron Logs</td>
+<td>Look at the run details — this is normal. The run completed successfully and simply had no qualifying work to report.</td>
+<td>Most cron ticks find no work and end silently by design. This is the system working correctly, not a bug.</td>
+</tr>
+<tr>
+<td>A cron run shows outcome <code>skipped</code> in Cron Logs</td>
+<td>Look at the run’s outcome in Cron Logs. A <code>skipped</code> outcome means the cron’s <code>preCheck</code> script exited non-zero or produced empty output. The tick was suppressed <em>before</em> a Claude turn even started.</td>
+<td>This is the expected shape for a cron with no work ready. The <code>preCheck</code> script found nothing to act on and correctly short-circuited the expensive Claude run.</td>
+</tr>
+<tr>
+<td>A cron never appears in Cron Logs at all (no recent runs, no <code>silent</code>, no <code>skipped</code>)</td>
+<td>Check the enabled/disabled badge on the cron’s row in the agent’s <strong>Cron Jobs</strong> card in the admin console.</td>
+<td>If the badge shows <strong>disabled</strong>, the cron doesn’t run at all — <code>node-cron</code> never scheduled it in the first place. Re-enable it if you want it to fire.</td>
+</tr>
+<tr>
+<td>A pipeline cron (<code>shipwright-dev-task</code>, <code>shipwright-review</code>, <code>shipwright-patch</code>, or <code>shipwright-deploy</code>) shows as <strong>enabled</strong> but has no runs in Cron Logs</td>
+<td>Check whether <code>shipwright-loop</code> itself is enabled in the agent’s <strong>Cron Jobs</strong> card (see “Loop-driven vs standalone crons” section above).</td>
+<td>A reconciled pipeline cron is a child of <code>shipwright-loop</code> and never gets its own independent schedule. Its <code>enabled</code> toggle only takes effect once <code>shipwright-loop</code> reads it and dispatches that phase directly. If <code>shipwright-loop</code> is disabled, the pipeline cron will not fire on its own — there’s no standalone tick. Re-enable <code>shipwright-loop</code> to restore pipeline dispatch.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="next-steps">Next steps</h2>
 <p>For the mechanics of the loop that drives the four pipeline crons — candidate selection, dispatch
 order, and drain-until-dry behavior — see <a href="/docs/the-shipwright-loop">The Shipwright Loop</a> next.</p><!-- Prev/next navigation --><div class="docs-prevnext" data-astro-cid-ccykbmgk><a href="/docs/admin-console" data-nav="prev" data-astro-cid-ccykbmgk>← Previous</a><a href="/docs/the-shipwright-loop" data-nav="next" data-astro-cid-ccykbmgk>Next →</a></div></main><!-- TOC (on-page, static) --><aside style="min-width: 0;" data-astro-cid-ccykbmgk><nav aria-label="On this page" data-astro-cid-ccykbmgk><p class="sw-label" style="margin-bottom: 0.75rem;" data-astro-cid-ccykbmgk>On this page</p><ul style="list-style: none; margin: 0; padding: 0;" data-astro-cid-ccykbmgk><li data-astro-cid-ccykbmgk><a href="#how-crons-work" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>How crons work</a></li><li data-astro-cid-ccykbmgk><a href="#schedule-model" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Schedule model</a></li><li data-astro-cid-ccykbmgk><a href="#silent-by-default-posting" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Silent-by-default posting</a></li><li data-astro-cid-ccykbmgk><a href="#precheck-scripts" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>preCheck scripts</a></li><li data-astro-cid-ccykbmgk><a href="#reconcile" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Reconcile</a></li><li data-astro-cid-ccykbmgk><a href="#loop-driven-vs-standalone-crons" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Loop-driven vs standalone crons</a></li><li data-astro-cid-ccykbmgk><a href="#default-system-crons" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Default system crons</a></li><li data-astro-cid-ccykbmgk><a href="#investigating-a-cron" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Investigating a cron</a></li><li data-astro-cid-ccykbmgk><a href="#start-from-the-cron-run-history" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Start from the cron run history</a></li><li data-astro-cid-ccykbmgk><a href="#read-what-the-session-actually-did" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Read what the session actually did</a></li><li data-astro-cid-ccykbmgk><a href="#two-outcomes-that-are-expected-not-bugs" class="docs-toc-link depth-3" data-astro-cid-ccykbmgk>Two outcomes that are expected, not bugs</a></li><li data-astro-cid-ccykbmgk><a href="#next-steps" class="docs-toc-link depth-2" data-astro-cid-ccykbmgk>Next steps</a></li></ul></nav></aside></div></div><!-- Footer --><footer class="sw-container relative z-10 py-12"><div class="flex flex-col gap-6 pt-8 sm:flex-row sm:items-center sm:justify-between" style="border-top: 1px solid var(--sw-color-border-subtle);"><p class="sw-label flex items-center gap-2"><img src="/shipwright-icon.svg" alt="" width="20" height="20" class="rounded">Shipwright Harness · MIT-licensed · © 2026</p><nav class="flex flex-wrap gap-x-6 gap-y-2 text-sm" aria-label="Footer"><a href="/story">Story</a><a href="https://github.com/app-vitals/shipwright">GitHub</a><a href="https://github.com/app-vitals/shipwright/blob/main/LICENSE">MIT License</a><a href="https://claude.com/claude-code">Claude Code</a><a href="https://github.com/app-vitals/shipwright/discussions">GitHub Discussions</a><a href="/vs/devin">vs Devin</a><a href="https://vitals-os.com/cal/book/discovery">Book a call</a></nav></div></footer></body></html>
