@@ -113,14 +113,14 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 
 | Cron | Schedule | Command | Skill | Default | What it does |
 |---|---|---|---|---|---|
-| `shipwright-dev-task` | every minute | `/shipwright:dev-task` | dev-task | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-review` | every minute | `/shipwright:review` | review | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-patch` | every minute | `/shipwright:patch` | patch | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
-| `shipwright-deploy` | every minute | `/shipwright:deploy` | deploy | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-dev-task` | every minute | `/shipwright:dev-task` | — | **on** | Builds and ships a PR for the task `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-review` | every minute | `/shipwright:review` | — | **on** | Reviews the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-patch` | every minute | `/shipwright:patch` | — | **on** | Patches the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
+| `shipwright-deploy` | every minute | `/shipwright:deploy` | — | off | Merges and deploys the PR `shipwright-loop` selects. Inert if `shipwright-loop` is disabled. |
 | `shipwright-loop` | every minute | internal | — | off | Drives the four phases above — merges their candidates and dispatches exactly one winning item per phase, per tick, until the queue is dry. |
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
-| `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | research-docs | off | Refreshes docs that have drifted from the code. |
-| `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | learn-dream | off | Mines the last day of merged PRs for durable learnings. |
+| `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
+| `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | — | off | Mines the last day of merged PRs for durable learnings. |
 | `dependabot-triage` | daily 08:00 | `/shipwright:triage-dependabot-prs` | triage-dependabot-prs | off | Reviews and triages open Dependabot PRs. |
 | `entropy-patrol-maintenance` | weekly Mon 04:00 | `/shipwright:entropy-scan` → `/shipwright:entropy-fix` | entropy-scan, entropy-fix | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | daily 04:00 | `/shipwright:error-scan` → `/shipwright:error-fix` → `/shipwright:error-resolve` | error-scan, error-fix, error-resolve | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
