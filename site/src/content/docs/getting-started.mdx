@@ -54,29 +54,9 @@ When you run the one-prompt setup, three things happen in sequence:
 
 ## Manual setup
 
-If you prefer to run the steps yourself:
-
-```bash
-git clone https://github.com/app-vitals/shipwright.git
-cd shipwright
-./scripts/quickstart.sh
-```
-
-The quickstart script runs the following commands internally:
-
-```bash
-task setup   # install all workspace dependencies
-task dev     # start the metrics dashboard at http://localhost:3460/dashboard
-```
-
-Once the dashboard is running, install the plugin inside your Claude Code session:
-
-```text
-/plugin install shipwright@app-vitals/shipwright
-```
-
-The dashboard will be available at `http://localhost:3460/dashboard`. It starts in offline mode
-(fixtures), so you can explore without configuring any external services.
+If you prefer to run the steps yourself, or want a metrics-only mode or the full multi-service
+dev stack, see [Running Locally](/docs/running-locally) — it covers the same clone/quickstart/
+plugin-install flow (Option A) plus `task dev` (Option B) and `task stack` (Option C).
 
 ## Next steps
 
