@@ -102,11 +102,14 @@ interface MakeDepsOptions {
     PrOpenTaskRecord[] | typeof SCOPE_DEGRADED | Error
   >;
   /**
-   * WTR-1.3's injected worktree-cleanup policy boolean. Defaults to `false`
-   * so every pre-existing test — none of which configures this — never
-   * triggers the new removeWorktree side effect.
+   * WTR-1.3's injected worktree-cleanup policy getter (PLR-1.1: () =>
+   * boolean, invoked fresh by reconcileRecord() on every call rather than
+   * once at deps-build time). Defaults to `false` so every pre-existing
+   * test — none of which configures this — never triggers the new
+   * removeWorktree side effect. Also accepts a plain boolean for test
+   * convenience, wrapped into a constant-returning getter.
    */
-  cleanupMergedWorktreesEnabled?: boolean;
+  cleanupMergedWorktreesEnabled?: boolean | (() => boolean);
   /**
    * WTR-1.3's removeWorktree fake. Defaults to a no-op resolve; tests
    * exercising the failure path override this to reject.
@@ -210,7 +213,10 @@ function makeDeps({
     delay: async (ms: number) => {
       delayCalls.push(ms);
     },
-    isCleanupMergedWorktreesEnabled: cleanupMergedWorktreesEnabled,
+    isCleanupMergedWorktreesEnabled:
+      typeof cleanupMergedWorktreesEnabled === "function"
+        ? cleanupMergedWorktreesEnabled
+        : () => cleanupMergedWorktreesEnabled,
     removeWorktree: async (shortRepo: string, worktreeDirName: string) => {
       removeWorktreeCalls.push({ shortRepo, worktreeDirName });
       await removeWorktree(shortRepo, worktreeDirName);
@@ -439,6 +445,45 @@ describe("reconcilePrState", () => {
     expect(patchCalls).toHaveLength(1);
     expect(patchCalls[0].fields.state).toBe("merged");
     expect(removeWorktreeCalls).toHaveLength(1);
+  });
+
+  // PLR-1.1: isCleanupMergedWorktreesEnabled is a live getter (() =>
+  // boolean), invoked fresh by reconcileRecord() on every call — not
+  // memoized. A stub that flips its return value between calls must be
+  // observed to flip whether removeWorktree fires across two separate
+  // merged records reconciled within the same pass, proving the getter is
+  // invoked per-record rather than its first result being cached (mirrors
+  // an agent-policy.md edit to cleanup_merged_worktrees taking effect on
+  // the very next reconcile tick without an agent process restart).
+  test("isCleanupMergedWorktreesEnabled getter is invoked fresh on every reconcileRecord call, not memoized", async () => {
+    const recordA = makeRecord({ id: "pr-9", prNumber: 9 });
+    const recordB = makeRecord({ id: "pr-10", prNumber: 10 });
+    const values = [false, true];
+    const { deps, patchCalls, removeWorktreeCalls } = makeDeps({
+      openRecords: { "acme/example-repo": [recordA, recordB] },
+      ghResults: {
+        "acme/example-repo#9": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:00:00.000Z",
+          headRefName: "feat/first-merge",
+        },
+        "acme/example-repo#10": {
+          state: "MERGED",
+          mergedAt: "2026-07-14T09:05:00.000Z",
+          headRefName: "feat/second-merge",
+        },
+      },
+      cleanupMergedWorktreesEnabled: () => values.shift() as boolean,
+    });
+
+    await reconcilePrState(deps);
+
+    expect(patchCalls).toHaveLength(2);
+    expect(removeWorktreeCalls).toHaveLength(1);
+    expect(removeWorktreeCalls[0]).toEqual({
+      shortRepo: "example-repo",
+      worktreeDirName: "example-repo-feat-second-merge",
+    });
   });
 
   test("gh lookup failure for one PR does not abort reconciliation of the others in the same batch", async () => {
