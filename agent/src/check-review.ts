@@ -196,7 +196,7 @@ export function hasFreshNonAgentComment(
 export type ReviewCandidacyTrace =
   | { check: "eligible" }
   | { check: "draft" }
-  | { check: "dependabot" }
+  | { check: "excluded-bot-author"; author: string }
   | { check: "automated-label" }
   | { check: "self-review"; currentUser: string; isRequestedReviewer: boolean }
   | {
@@ -462,6 +462,16 @@ export interface CheckReviewDeps {
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
+ * Bot-authored PRs unconditionally excluded from review candidacy —
+ * dependency-bump bots that open PRs against the repo but are never
+ * eligible reviewees (RNV-1.1 added app/renovate alongside the original
+ * app/dependabot exclusion). Kept as a small list rather than a single
+ * hardcoded string so a future bot author is a one-line addition here
+ * instead of a second one-off comparison.
+ */
+const EXCLUDED_BOT_AUTHORS = ["app/dependabot", "app/renovate"];
+
+/**
  * Collect all open PRs with unreviewed commits, across all repos returned by
  * listOpenPrs, as WorkPrCandidate[] tagged phase: "review".
  */
@@ -486,8 +496,11 @@ export async function getReviewCandidates(
       logSkippedCandidacy(pr, { check: "draft" });
       continue;
     }
-    if (pr.author.login === "app/dependabot") {
-      logSkippedCandidacy(pr, { check: "dependabot" });
+    if (EXCLUDED_BOT_AUTHORS.includes(pr.author.login)) {
+      logSkippedCandidacy(pr, {
+        check: "excluded-bot-author",
+        author: pr.author.login,
+      });
       continue;
     }
     if (pr.labels?.some((l) => l.name === "automated")) {
