@@ -106,6 +106,46 @@ repository-to-repository dispatch from this repo — the consumer is solely
 responsible for noticing and acting on new versions, on its own poll
 schedule.
 
+## Verifying compatibility before a chart change lands
+
+A **wrapper** is a downstream consumer repo that depends on this repo's
+`shipwright` chart (`charts/shipwright`) as a chart dependency inside its own
+umbrella chart — i.e. anyone consuming the published chart via
+[`helm repo add`](#add-the-repo-and-install) above. Before a chart change
+merges to `main`, `scripts/check-downstream-compat.sh <wrapper-dir>` renders a
+given wrapper chart three ways and diffs the output, to catch a compatibility
+break before it reaches a real consumer:
+
+- **Render A** — the wrapper as-is, using whatever `shipwright` version/source
+  it currently has pinned in its own `Chart.lock` / vendored `charts/`.
+- **Render B** — the same wrapper, with its `shipwright` dependency swapped to
+  a specific **published** baseline version pulled from this `gh-pages` Helm
+  repository (defaults to the wrapper's own currently-pinned version).
+- **Render C** — the same wrapper, with its `shipwright` dependency swapped to
+  a chart packaged from **this repo's current working tree**.
+
+A vs B (allowing only image-tag-only differences) and B vs C (must be
+completely empty) together isolate "did swapping a pinned source for the
+same-version published artifact change anything" from "does the working tree
+change what a real wrapper renders" — the latter is the actual compatibility
+break this script exists to catch.
+
+Key flags: `--baseline <version>` (published version to diff against),
+`--values <file>` (wrapper values file), `--repo-url <url>` (published Helm
+repo, only needed to override the derivation described above), `--dep-name
+<name>` (the wrapper's dependency name for the shipwright chart, default
+`shipwright`). Run `./scripts/check-downstream-compat.sh --help` for the full
+reference.
+
+This script is **not wired into any CI workflow in this repo** — by design.
+It takes a wrapper chart path as a required argument, and no real downstream
+wrapper lives inside this repo to check automatically, so there's nothing for
+this repo's own CI to run it against. It's intended to be run **manually by a
+downstream consumer**, from their own wrapper chart repo (or its CI), before
+picking up a new published chart version. See
+[`CONTRIBUTING.md`](../CONTRIBUTING.md#downstream-compatibility-checking-helm-chart)
+for full usage, flag reference, and a copy-pasteable self-test smoke run.
+
 ## First-time setup (one-time)
 
 Before the **first** chart release, the `gh-pages` branch must exist and GitHub
