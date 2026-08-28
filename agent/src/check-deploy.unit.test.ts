@@ -1094,7 +1094,7 @@ describe("buildProductionDeps", () => {
     ]);
   });
 
-  test("fetchCiRuns filters workflow_runs down to name === 'CI' and maps status/conclusion", async () => {
+  test("fetchCiRuns filters workflow_runs down to name 'CI' (case-insensitive) and maps status/conclusion", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
         expect(args[1]).toContain(
@@ -1113,7 +1113,28 @@ describe("buildProductionDeps", () => {
     expect(runs).toEqual([{ status: "completed", conclusion: "success" }]);
   });
 
-  test("fetchActiveDeployRuns merges in_progress and queued runs, filters to name === 'Deploy', and maps created_at", async () => {
+  // Regression test: a repo whose CI workflow's `name:` field is lowercase
+  // `ci` (a valid, common convention — see .github/workflows/ci.yml's `name:`
+  // key) was silently excluded from deploy candidacy forever, since the old
+  // filter did an exact-case match against "CI". isCiGreen() always returned
+  // false for such a repo regardless of actual CI status.
+  test("fetchCiRuns matches a lowercase workflow name ('ci')", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => {
+        return {
+          workflow_runs: [
+            { name: "ci", status: "completed", conclusion: "success" },
+            { name: "build-image", status: "completed", conclusion: "success" },
+          ],
+        } as unknown as T;
+      },
+    });
+
+    const runs = await deps.fetchCiRuns("acme", "widgets", "deadbeef");
+    expect(runs).toEqual([{ status: "completed", conclusion: "success" }]);
+  });
+
+  test("fetchActiveDeployRuns merges in_progress and queued runs, filters to name 'Deploy' (case-insensitive), and maps created_at", async () => {
     const calls: string[][] = [];
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
@@ -1161,6 +1182,37 @@ describe("buildProductionDeps", () => {
     expect(calls).toHaveLength(2);
     expect(calls[0][1]).toContain("status=in_progress");
     expect(calls[1][1]).toContain("status=queued");
+  });
+
+  // Regression test: a repo whose deploy workflow's `name:` field is
+  // lowercase `deploy` was silently excluded from the busy-repo guard.
+  test("fetchActiveDeployRuns matches a lowercase workflow name ('deploy')", async () => {
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        if (args[1]?.includes("status=in_progress")) {
+          return {
+            workflow_runs: [
+              {
+                name: "deploy",
+                status: "in_progress",
+                conclusion: null,
+                created_at: "2026-05-01T00:00:00Z",
+              },
+            ],
+          } as unknown as T;
+        }
+        return { workflow_runs: [] } as unknown as T;
+      },
+    });
+
+    const runs = await deps.fetchActiveDeployRuns("acme", "widgets");
+    expect(runs).toEqual([
+      {
+        name: "deploy",
+        status: "in_progress",
+        createdAt: "2026-05-01T00:00:00Z",
+      },
+    ]);
   });
 
   test("clock returns a parseable ISO string", async () => {
