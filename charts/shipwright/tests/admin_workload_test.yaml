@@ -324,6 +324,74 @@ tests:
           content:
             name: SHIPWRIGHT_ADMIN_APP_BASE_URL
 
+  # ── CNH-9.1: admin.appBaseUrl auto-derivation from the public host ────────
+  # explicit admin.appBaseUrl always wins; when empty and networking.type is
+  # ingress/gateway, SHIPWRIGHT_ADMIN_APP_BASE_URL is derived as
+  # <scheme>://<public host> via shipwright.publicHost/shipwright.publicScheme
+  # (CNH-2.1); for any other networking.type the env var stays omitted.
+
+  - it: derives SHIPWRIGHT_ADMIN_APP_BASE_URL as http://<ingress host> when networking.type=ingress and TLS is off
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ingress
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "http://shipwright.local"
+
+  - it: derives SHIPWRIGHT_ADMIN_APP_BASE_URL as https://<ingress host> when networking.type=ingress and TLS is enabled
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.host: shipwright.example.com
+      networking.ingress.tls.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "https://shipwright.example.com"
+
+  - it: derives SHIPWRIGHT_ADMIN_APP_BASE_URL as https://<gateway host> when networking.type=gateway and cert-manager TLS is enabled
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: gateway
+      networking.gateway.host: shipwright.example.org
+      tls.certManager.enabled: true
+      tls.certManager.issuerRef.name: letsencrypt-prod
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "https://shipwright.example.org"
+
+  - it: omits SHIPWRIGHT_ADMIN_APP_BASE_URL when networking.type=ClusterIP (no public host to derive from) and admin.appBaseUrl is unset
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ClusterIP
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+
+  - it: renders the explicit admin.appBaseUrl verbatim, ignoring any derivation, even under networking.type=ingress with TLS enabled
+    template: templates/admin-deployment.yaml
+    set:
+      networking.type: ingress
+      networking.ingress.host: shipwright.example.com
+      networking.ingress.tls.enabled: true
+      admin.appBaseUrl: "https://override.example.net"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: SHIPWRIGHT_ADMIN_APP_BASE_URL
+            value: "https://override.example.net"
+
   # ── admin.taskStorePublicUrl ──────────────────────────────────────────────
 
   - it: injects SHIPWRIGHT_TASK_STORE_PUBLIC_URL when admin.taskStorePublicUrl is set

@@ -108,11 +108,16 @@ spec:
                   name: {{ include "shipwright.admin.secretName" . }}
                   key: SHIPWRIGHT_ENCRYPTION_KEY
             {{- end }}
-            {{- if .Values.admin.appBaseUrl }}
+            {{- $adminAppBaseUrl := include "shipwright.admin.appBaseUrl" . }}
+            {{- if $adminAppBaseUrl }}
             # admin.appBaseUrl: public host for OAuth redirect URIs so they use
-            # the real hostname instead of localhost:3001 behind a Gateway.
+            # the real hostname instead of localhost:3001. An explicit
+            # admin.appBaseUrl always wins; otherwise it's auto-derived from
+            # the public host for networking.type=ingress/gateway (see
+            # shipwright.admin.appBaseUrl); omitted entirely for
+            # ClusterIP/NodePort/LoadBalancer.
             - name: SHIPWRIGHT_ADMIN_APP_BASE_URL
-              value: {{ .Values.admin.appBaseUrl | quote }}
+              value: {{ $adminAppBaseUrl | quote }}
             {{- end }}
             {{- if .Values.admin.taskStorePublicUrl }}
             # admin.taskStorePublicUrl: externally-reachable task-store base URL

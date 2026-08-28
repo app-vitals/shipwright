@@ -685,11 +685,14 @@ networking:
         web: web                   # Traefik's HTTP entrypoint name
         websecure: websecure       # Traefik's HTTPS entrypoint name
 admin:
-  # Public base URL for OAuth/OIDC redirect URIs — must match the hostname
-  # and scheme of your Ingress. When set, the admin service constructs OAuth
-  # redirect URIs using this URL instead of the request Host header, ensuring
-  # consistency when the external hostname differs from internal DNS names.
-  appBaseUrl: https://shipwright.example.com
+  # Public base URL for OAuth/OIDC redirect URIs so they use the public
+  # hostname instead of localhost:3001. An explicit value here always wins.
+  # When left empty and networking.type is "ingress" or "gateway", the chart
+  # auto-derives it as "<scheme>://<public host>" from networking.ingress.host
+  # / .gateway.host (https when TLS is on) — no manual override needed for
+  # those paths. ClusterIP/NodePort/LoadBalancer installs have no chart-known
+  # public host, so the env var stays omitted unless set explicitly here.
+  appBaseUrl: ""  # omit or set to ""  to auto-derive from ingress/gateway
 tls:
   certManager:
     enabled: true
@@ -798,8 +801,10 @@ helm upgrade --install shipwright charts/shipwright \
 ```
 
 Both example values files bundle `cert-manager` with a `letsencrypt-prod`
-issuer and set `admin.appBaseUrl` for OAuth/OIDC redirects — swap in a
-selfsigned issuer or your own hostname as needed. See [Bundled ingress
+issuer and set `admin.appBaseUrl` explicitly for OAuth/OIDC redirects — swap
+in a selfsigned issuer or your own hostname as needed. `admin.appBaseUrl`
+can now be left empty instead, since the chart auto-derives it from the
+ingress/gateway host. See [Bundled ingress
 controllers and cert-manager](#bundled-ingress-controllers-and-cert-manager-optional)
 below for the full values reference (per-subchart toggles, the CRD-bootstrap
 hook, and the mutual-exclusion rule between `ingress-nginx` and `traefik`),
@@ -1229,9 +1234,9 @@ cert-manager:
 networking:
   type: ingress
 admin:
-  # Public base URL for OAuth/OIDC redirects. When bundling cert-manager and
-  # ingress-nginx, use the same hostname as networking.ingress.host.
-  appBaseUrl: https://shipwright.local:8443    # https when TLS is enabled
+  # Public base URL for OAuth/OIDC redirects. Auto-derived from
+  # networking.ingress.host when left empty (https when TLS is on).
+  appBaseUrl: ""  # leave empty to auto-derive
 tls:
   certManager:
     enabled: true
@@ -1242,8 +1247,8 @@ tls:
 ```
 
 Example value files are provided:
-- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — production-oriented: bundles ingress-nginx + cert-manager with `letsencrypt-prod`, uses `shipwright.local` with a selfsigned cert, and sets `admin.appBaseUrl: https://shipwright.local:8443`
-- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — production-oriented: bundles Traefik + cert-manager with `letsencrypt-prod`, uses `shipwright.example.com`, and sets `admin.appBaseUrl: https://shipwright.example.com`
+- [`examples/values-cloud-native.yaml`](../charts/shipwright/examples/values-cloud-native.yaml) — production-oriented: bundles ingress-nginx + cert-manager with `letsencrypt-prod`, uses `shipwright.local` with a selfsigned cert, and sets `admin.appBaseUrl: https://shipwright.local:8443` explicitly (could be left empty to auto-derive `https://shipwright.local` instead, since the port is non-default)
+- [`examples/values-cloud-native-traefik.yaml`](../charts/shipwright/examples/values-cloud-native-traefik.yaml) — production-oriented: bundles Traefik + cert-manager with `letsencrypt-prod`, uses `shipwright.example.com`, and sets `admin.appBaseUrl: https://shipwright.example.com` explicitly (equivalent to leaving it empty and letting the chart auto-derive)
 
 **Note:** the Minikube task `task minikube:cloud-native` and `task minikube:cloud-native:traefik` use simplified versions (`charts/shipwright/examples/values-minikube-cloud-native-nginx.yaml` and `charts/shipwright/examples/values-minikube-cloud-native-traefik.yaml`) tuned for local development with self-signed certs and without OAuth/OIDC setup — see [Minikube (local)](#minikube-local) for details.
 

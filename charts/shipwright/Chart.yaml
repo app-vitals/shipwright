@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.19.1
+version: 1.19.2
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -30,15 +30,11 @@ annotations:
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
     - kind: changed
-      description: "auto-bump to chart v1.19.1 triggered by release tag admin-v1.98.0"
+      description: "Derive admin.appBaseUrl from the public host (CNH-9.1). New shipwright.admin.appBaseUrl helper: an explicit admin.appBaseUrl value always wins; when empty and networking.type is ingress or gateway, SHIPWRIGHT_ADMIN_APP_BASE_URL is derived as <scheme>://<public host>; otherwise the env var is omitted (ClusterIP/NodePort/LoadBalancer installs unchanged). NOTES.txt and README.md updated to reflect the new precedence."
     - kind: changed
-      description: "auto-bump to chart v1.19.1 triggered by release tag agent-v1.197.0"
+      description: "auto-bump to chart v1.19.1 triggered by release tag(s): admin-v1.98.0, agent-v1.197.0, chat-v1.53.0, metrics-v1.56.0, task-store-v1.78.0"
     - kind: changed
-      description: "auto-bump to chart v1.19.1 triggered by release tag chat-v1.53.0"
-    - kind: changed
-      description: "auto-bump to chart v1.19.1 triggered by release tag metrics-v1.56.0"
-    - kind: changed
-      description: "auto-bump to chart v1.19.1 triggered by release tag task-store-v1.78.0"
+      description: "Cloud-native docs and release (CNH-8.4). README.md gains Values rows for ingress-nginx.enabled/traefik.enabled/cert-manager.enabled, a Dependencies table listing all four vendored subcharts (postgresql, ingress-nginx, traefik, cert-manager) with versions/repositories/conditions, and a new 'Cloud-native install (single chart)' section with a warning against bundling cert-manager on a cluster that already has it. docs/deploy-kubernetes.md gains a new 'Cloud-native (any cluster)' deployment-target section (install commands for both the ingress-nginx and Traefik bundled variants, the same cert-manager-collision warning, and cross-links to the existing Bundled ingress controllers reference and Minikube profiles). docs/helm-repo.md now states the chart vendors four optional subcharts up front."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer

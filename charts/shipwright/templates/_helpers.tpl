@@ -651,6 +651,28 @@ shipwright.publicHost for a follow-up task to assemble a full public base URL.
 {{- end }}
 
 {{/*
+shipwright.admin.appBaseUrl — the resolved public base URL for the admin
+service (used to set SHIPWRIGHT_ADMIN_APP_BASE_URL for OAuth redirect URIs).
+An explicit admin.appBaseUrl always wins (the operator's own declared public
+base URL is the most authoritative "how the outside world reaches this
+release" value the chart has). When empty, falls back to
+"<shipwright.publicScheme>://<shipwright.publicHost>", which only resolves a
+host for networking.type=ingress/gateway; ClusterIP/NodePort/LoadBalancer
+installs have no chart-known public URL and this renders "" (the caller
+should `{{- if }}` on the result to decide whether to emit the env var).
+*/}}
+{{- define "shipwright.admin.appBaseUrl" -}}
+{{- if .Values.admin.appBaseUrl -}}
+{{- .Values.admin.appBaseUrl -}}
+{{- else -}}
+{{- $publicHost := include "shipwright.publicHost" . -}}
+{{- if $publicHost -}}
+{{- printf "%s://%s" (include "shipwright.publicScheme" .) $publicHost -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 shipwright.certManager.issuerName — the (Cluster)Issuer name a rendered
 Certificate/Ingress should reference. An explicit tls.certManager.issuerRef.
 name always wins (bring-your-own Issuer, today's only working path); when
