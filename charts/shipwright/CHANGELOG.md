@@ -10,6 +10,18 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.2] - 2026-08-28
+
+### Changed
+
+- Derive `admin.appBaseUrl` from the public host (CNH-9.1). New `shipwright.admin.appBaseUrl` helper: an explicit `admin.appBaseUrl` value always wins; when empty and `networking.type` is `ingress` or `gateway`, `SHIPWRIGHT_ADMIN_APP_BASE_URL` is derived as `<scheme>://<public host>`; otherwise the env var is omitted (ClusterIP/NodePort/LoadBalancer installs unchanged). `NOTES.txt` and `README.md` updated to reflect the new precedence.
+
+## [1.19.1] - 2026-08-28
+
+### Changed
+
+- auto-bump to chart v1.19.1 triggered by release tag(s): `admin-v1.98.0`, `agent-v1.197.0`, `chat-v1.53.0`, `metrics-v1.56.0`, `task-store-v1.78.0`
+
 ## [1.19.0] - 2026-08-27
 
 ### Changed
