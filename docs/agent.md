@@ -219,7 +219,7 @@ note and the fix (enable `shipwright-loop`).
 | `OKTA_CLIENT_ID` | admin UI (OIDC) | Okta OIDC client ID. Required for the admin UI Okta login flow. |
 | `OKTA_CLIENT_SECRET` | admin UI (OIDC) | Okta OIDC client secret. Required for the admin UI Okta login flow. |
 | `SHIPWRIGHT_ADMIN_ALLOWED_EMAILS` | admin UI (OAuth/OIDC) | Comma-separated list of email addresses permitted to log in to the admin UI via either Google OAuth or Okta OIDC. |
-| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | admin UI (OAuth/OIDC) | Public base URL of the server (e.g. `https://shipwright.example.com`). Used to construct the OAuth/OIDC redirect URIs for both providers. Defaults to `http://localhost:{PORT}`. |
+| `SHIPWRIGHT_ADMIN_APP_BASE_URL` | admin UI (OAuth/OIDC) | Public base URL of the server (e.g. `https://shipwright.example.com`). Used to construct the OAuth/OIDC redirect URIs for both providers. An explicit value always wins. When empty and deployed via Helm, auto-derives from the ingress/gateway host when `networking.type=ingress` or `networking.type=gateway` (with HTTPS when TLS is on); omitted for ClusterIP/NodePort/LoadBalancer unless set explicitly. Defaults to `http://localhost:{PORT}` in bare-metal deployment. |
 | `SHIPWRIGHT_ENCRYPTION_KEY` | secrets at rest | 64-char hex (32 bytes) for AES-256-GCM. **If unset, secrets are stored in plain text** (logged warning) — set it in any real deployment. |
 | `GH_APP_ID` | GitHub App auth | GitHub App ID (integer as string). Required when using the App auth path. |
 | `GH_APP_PRIVATE_KEY` | GitHub App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Required when using the App auth path. |
