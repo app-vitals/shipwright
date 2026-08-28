@@ -35,9 +35,11 @@ import {
   type PrStateReconcilerDeps,
   type PrStateRecord,
   SCOPE_DEGRADED,
+  __resetPrOpenTasksCursorForTests,
   buildProductionDeps,
   buildReviewStateProductionDeps,
   isWorktreeStale,
+  reconcilePrOpenTasks,
   reconcilePrState,
   reconcileReviewState,
 } from "./pr-state-reconciler.ts";
@@ -55,7 +57,6 @@ interface ListPrsCall {
 interface ListTasksCall {
   limit: number;
   offset: number;
-  updatedSince: string;
 }
 
 interface PatchCall {
@@ -178,12 +179,8 @@ function makeDeps({
       if (!result) throw new Error(`no fake gh result configured for ${key}`);
       return result;
     },
-    listPrOpenTasks: async (
-      limit: number,
-      offset: number,
-      updatedSince: string,
-    ) => {
-      listPrOpenTasksCalls.push({ limit, offset, updatedSince });
+    listPrOpenTasks: async (limit: number, offset: number) => {
+      listPrOpenTasksCalls.push({ limit, offset });
       return prOpenTasks.slice(offset, offset + limit);
     },
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
@@ -1727,6 +1724,9 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
    * pagination contract: returns up to `limit` records starting at `offset`
    * from a fixed per-status backing array. Records every request's status,
    * limit, and offset so tests can assert the full paging sequence.
+   * `updatedSince` is recorded when present but is never sent by the pr_open
+   * list call path (RCB-1.1) — present here only so a caller could assert its
+   * absence (`hasUpdatedSince: false`).
    */
   function makeFakeTaskStoreFetch(opts: {
     tasksByStatus: Record<string, PrOpenTaskRecord[]>;
@@ -1736,22 +1736,22 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       status: string;
       limit: number;
       offset: number;
-      updatedSince: string;
+      hasUpdatedSince: boolean;
     }>;
   } {
     const calls: Array<{
       status: string;
       limit: number;
       offset: number;
-      updatedSince: string;
+      hasUpdatedSince: boolean;
     }> = [];
     const fetchFn = async (url: RequestInfo | URL) => {
       const parsed = new URL(String(url));
       const status = parsed.searchParams.get("status") ?? "";
       const limit = Number(parsed.searchParams.get("limit"));
       const offset = Number(parsed.searchParams.get("offset"));
-      const updatedSince = parsed.searchParams.get("updatedSince") ?? "";
-      calls.push({ status, limit, offset, updatedSince });
+      const hasUpdatedSince = parsed.searchParams.has("updatedSince");
+      calls.push({ status, limit, offset, hasUpdatedSince });
       const all = opts.tasksByStatus[status] ?? [];
       const page = all.slice(offset, offset + limit);
       return new Response(JSON.stringify({ tasks: page }), {
@@ -1790,7 +1790,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
     }
   });
 
-  test("listPrOpenTasks issues a single GET when under the page limit", async () => {
+  test("listPrOpenTasks issues a single GET when under the page limit — no updatedSince param (RCB-1.1)", async () => {
     const tasks = [{ id: "t1", repo: "acme/example-repo", pr: 1 }];
     const { fetchFn, calls } = makeFakeTaskStoreFetch({
       tasksByStatus: { pr_open: tasks },
@@ -1802,11 +1802,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
 
-    const result = await deps.listPrOpenTasks(
-      50,
-      0,
-      "2026-07-19T17:00:00.000Z",
-    );
+    const result = await deps.listPrOpenTasks(50, 0);
 
     expect(result).toEqual(tasks);
     expect(calls).toHaveLength(1);
@@ -1814,7 +1810,7 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
       status: "pr_open",
       limit: 50,
       offset: 0,
-      updatedSince: "2026-07-19T17:00:00.000Z",
+      hasUpdatedSince: false,
     });
   });
 
@@ -2084,7 +2080,11 @@ describe("buildProductionDeps — task-store GET /tasks pagination (TCR-1.2)", (
 });
 
 describe("reconcilePrState — pr_open task reconciliation pass", () => {
-  test("listPrOpenTasks is called with updatedSince computed as now-6h via the injected now() (PSR-1.1, widened per review)", async () => {
+  beforeEach(() => {
+    __resetPrOpenTasksCursorForTests();
+  });
+
+  test("listPrOpenTasks is called with a plain limit/offset — no updatedSince anywhere in the call (RCB-1.1)", async () => {
     const { deps, listPrOpenTasksCalls } = makeDeps({
       prOpenTasks: [],
       now: () => "2026-07-19T23:15:00.000Z",
@@ -2096,7 +2096,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(listPrOpenTasksCalls[0]).toEqual({
       limit: 50,
       offset: 0,
-      updatedSince: "2026-07-19T17:15:00.000Z",
     });
   });
 
@@ -2737,7 +2736,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls).toHaveLength(0);
   });
 
-  test("listPrOpenTasks paginates beyond the default page limit — scans a second page", async () => {
+  test("listPrOpenTasks paginates within a single batch — scans a second page starting at the cursor", async () => {
     const page1 = Array.from({ length: 2 }, (_, i) => ({
       id: `task-p1-${i}`,
       repo: "acme/example-repo",
@@ -2762,20 +2761,123 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
     await reconcilePrState(deps);
 
-    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1).
-    // updatedSince (PSR-1.1) is FAKE_NOW minus six hours, identical on both pages —
-    // a single reconcile pass uses one consistent cutoff across all its pages.
+    // Two pages fetched: offset 0 (full page of 2) then offset 2 (partial page of 1),
+    // both starting from cursor 0 — no updatedSince anywhere (RCB-1.1).
     expect(listPrOpenTasksCalls).toHaveLength(2);
-    expect(listPrOpenTasksCalls[0]).toEqual({
-      limit: 2,
-      offset: 0,
-      updatedSince: "2026-07-14T18:00:00.000Z",
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 2, offset: 0 });
+    expect(listPrOpenTasksCalls[1]).toEqual({ limit: 2, offset: 2 });
+  });
+
+  // ─── batch + rotating cursor (RCB-1.1) ─────────────────────────────────────
+
+  test("a pr_open list smaller than BATCH_SIZE is fully covered in a single reconcilePrOpenTasks() call — no wraparound", async () => {
+    const tasks = Array.from({ length: 3 }, (_, i) => ({
+      id: `task-small-${i}`,
+      repo: "acme/example-repo",
+      pr: 300 + i,
+    }));
+    const ghResults: Record<string, GhPrView> = {};
+    for (const t of tasks) {
+      ghResults[`acme/example-repo#${t.pr}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: tasks,
+      ghResults,
     });
-    expect(listPrOpenTasksCalls[1]).toEqual({
-      limit: 2,
-      offset: 2,
-      updatedSince: "2026-07-14T18:00:00.000Z",
+
+    await reconcilePrOpenTasks(deps);
+
+    // One page (well under both DEFAULT_PAGE_LIMIT=50 and BATCH_SIZE=200) —
+    // page shorter than the page limit ends pagination, and since the total
+    // fetched (3) is also under BATCH_SIZE, the cursor wraps back to 0.
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 0 }]);
+
+    // A second call starts again at offset 0 — confirms the cursor wrapped
+    // rather than continuing to advance past the end of the list.
+    await reconcilePrOpenTasks(deps);
+    expect(listPrOpenTasksCalls).toEqual([
+      { limit: 50, offset: 0 },
+      { limit: 50, offset: 0 },
+    ]);
+  });
+
+  test("a pr_open list larger than BATCH_SIZE is split across two reconcilePrOpenTasks() calls — cursor advances by the batch size", async () => {
+    const totalTasks = 225; // > RECONCILER_PR_OPEN_TASK_BATCH_SIZE default of 200
+    const tasks = Array.from({ length: totalTasks }, (_, i) => ({
+      id: `task-big-${i}`,
+      repo: "acme/example-repo",
+      pr: 1000 + i,
+    }));
+    const ghResults: Record<string, GhPrView> = {};
+    for (const t of tasks) {
+      ghResults[`acme/example-repo#${t.pr}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: tasks,
+      ghResults,
     });
+
+    await reconcilePrOpenTasks(deps);
+
+    // First call fetches exactly BATCH_SIZE=200 tasks, paginated in
+    // DEFAULT_PAGE_LIMIT=50 chunks starting at cursor 0: offsets 0/50/100/150.
+    expect(listPrOpenTasksCalls).toEqual([
+      { limit: 50, offset: 0 },
+      { limit: 50, offset: 50 },
+      { limit: 50, offset: 100 },
+      { limit: 50, offset: 150 },
+    ]);
+
+    listPrOpenTasksCalls.length = 0;
+
+    await reconcilePrOpenTasks(deps);
+
+    // Second call picks up where the first left off (cursor now 200), fetching
+    // the remaining 25 tasks in a single (partial, < limit) page — batch ends
+    // there since the page returned fewer than the page limit.
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 200 }]);
+  });
+
+  test("cursor wraps to 0 once it passes the end of the list, so the next call restarts from the beginning", async () => {
+    const totalTasks = 220; // > BATCH_SIZE (200), so the whole list needs 2 calls
+    const tasks = Array.from({ length: totalTasks }, (_, i) => ({
+      id: `task-wrap-${i}`,
+      repo: "acme/example-repo",
+      pr: 2000 + i,
+    }));
+    const ghResults: Record<string, GhPrView> = {};
+    for (const t of tasks) {
+      ghResults[`acme/example-repo#${t.pr}`] = {
+        state: "OPEN",
+        mergedAt: null,
+      };
+    }
+    const { deps, listPrOpenTasksCalls } = makeDeps({
+      prOpenTasks: tasks,
+      ghResults,
+    });
+
+    // 1st call: cursor 0 -> fetches 200 (BATCH_SIZE), cursor advances to 200.
+    await reconcilePrOpenTasks(deps);
+    listPrOpenTasksCalls.length = 0;
+
+    // 2nd call: cursor 200 -> only 20 tasks remain, a page shorter than the
+    // page limit signals end-of-list reached before the batch filled, so the
+    // cursor wraps back to 0 for the call after this one.
+    await reconcilePrOpenTasks(deps);
+    expect(listPrOpenTasksCalls).toEqual([{ limit: 50, offset: 200 }]);
+    listPrOpenTasksCalls.length = 0;
+
+    // 3rd call: cursor should have wrapped to 0 — starts over from the
+    // beginning of the list instead of requesting an out-of-range offset.
+    await reconcilePrOpenTasks(deps);
+    expect(listPrOpenTasksCalls[0]).toEqual({ limit: 50, offset: 0 });
   });
 
   // ─── scope filtering (PSR-1.3) ─────────────────────────────────────────────
@@ -2970,7 +3072,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
     expect(calls[0].updatedSince).toBe("2026-07-19T17:00:00.000Z");
   });
 
-  test("listTasksByStatus (backing listPrOpenTasks) passes updatedSince computed as now-6h", async () => {
+  test("listTasksByStatus (backing listPrOpenTasks) never sends an updatedSince param (RCB-1.1)", async () => {
     const { fetchFn, calls } = makeFakeTasksFetch();
     const deps = buildProductionDeps({
       ghJson: () => Promise.reject(new Error("not used in this test")),
@@ -2978,16 +3080,12 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
       getScopedRepos: () => [],
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
-    (deps as { now: () => string }).now = () => "2026-07-19T23:00:00.000Z";
-    const updatedSince = new Date(
-      new Date(deps.now()).getTime() - 6 * 60 * 60 * 1000,
-    ).toISOString();
 
-    await deps.listPrOpenTasks(50, 0, updatedSince);
+    await deps.listPrOpenTasks(50, 0);
 
     expect(calls.length).toBeGreaterThanOrEqual(1); // pr_open
     for (const call of calls) {
-      expect(call.updatedSince).toBe("2026-07-19T17:00:00.000Z");
+      expect(call.updatedSince).toBeUndefined();
     }
   });
 });
