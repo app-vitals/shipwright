@@ -495,7 +495,7 @@ new production code or content landed in the same commit/PR, at the correct cano
 layer. **Promote/deepen and Rebuild remain empty for a fourth consecutive cycle** — no
 open items were carried in from the 2026-08-25 pass (it closed clean).
 
-**Headline finding:** every real source change in this cycle's unusually large 47-commit
+**Headline finding:** every real source change in this cycle's unusually large 42-commit
 Phase 1 delta already has matching test coverage at the correct layer, landed in the same
 commits/PRs as the production changes — continuing the pattern observed in every prior
 pass, including through this cycle's above-average volume. No open items carried in, no
@@ -769,7 +769,7 @@ Test-count growth trajectory: 5,762 (2026-07-28 `speed-baseline.md`) → 6,041-6
 (2026-08-11) → 6,501 (2026-08-14) → 6,864 (2026-08-16) → 6,920 (2026-08-18) → 7,190
 (2026-08-22) → 7,211 (2026-08-23) → 7,228 (2026-08-25) → **7,326 (2026-08-28, this
 pass)** — a larger jump than recent single-digit-commit cycles (+98 tests), tracking this
-cycle's unusually large 47-commit non-routine delta: the 8 new test files (readiness
+cycle's unusually large 42-commit non-routine delta: the 8 new test files (readiness
 smoke coverage, the downstream-compat script's fixture-driven smoke suite, the
 cron-table content regression guard, 4 new/replacement Playwright specs) plus in-place
 extensions across the Renovate-exclusion, live-policy-flag-read, and phase-scoped-cooldown
