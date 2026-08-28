@@ -43,7 +43,7 @@
   discovered and run by different tooling and that difference is load-bearing for CI
   wiring, even though the *design intent* (pure logic, no I/O) is unit-equivalent.
 - **Delta since the 2026-08-25 design (this pass, against the 2026-08-28 inventory
-  covering 47 non-routine commits since `d4bfce02` — the largest window in several
+  covering 42 non-routine commits since `d4bfce02` — the largest window in several
   cycles):** no new frameworks, layer types, external dependencies, or user journeys.
   `deploy_model` re-verified as `direct` directly against `CLAUDE.md` at this commit
   (`7a688190`, unchanged); the canary-applicability finding below stands unmodified.

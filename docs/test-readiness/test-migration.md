@@ -13,8 +13,9 @@
 
 This pass diffed the current file tree against the 2026-08-25 pass's findings (baseline
 doc committed at `d4bfce02`) and re-verified the delta directly against current repo
-state — 47 non-routine commits since `d4bfce02` (69 total, the rest chart-version-bump/
-plugin-version-sync churn), the largest window in several cycles:
+state — 42 non-routine commits since `d4bfce02` (69 total, minus chart-version-bump/
+plugin-version-sync churn and this pipeline's own prior docs-refresh commits), the largest
+window in several cycles:
 
 1. **`70722bbb` (#2865) — DB-aware readiness check.** New `task-store/src/
    app.readiness.smoke.test.ts` (125 lines, new file) exercises `GET /ready` against a

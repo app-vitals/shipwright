@@ -83,12 +83,12 @@ highest is `test-t-084-shipwright` (confirmed present, unchanged status `deploye
 **`starting_offset = 85`** — this cycle's new task, if any, would begin at **T-085**. Per
 Phase 3's findings (zero Promote/deepen, zero rebuild, zero net-new beyond the same
 carried-forward optional item, despite this cycle's Phase 1-3 artifacts being fully
-regenerated against a genuinely large 47-non-routine-commit delta), **no new task is
+regenerated against a genuinely large 42-non-routine-commit delta), **no new task is
 minted this cycle** — T-085 remains reserved but unused.
 
 **Zero new tasks minted this cycle.** Phase 3 (`test-migration.md`, regenerated this
 cycle against the 2026-08-25→2026-08-28 delta) found zero genuine Promote/deepen items,
-zero rebuild items, zero delete/trim items — every one of the 47 non-routine commits it
+zero rebuild items, zero delete/trim items — every one of the 42 non-routine commits it
 analyzed (a task-store DB-aware readiness check, a downstream chart-compatibility script,
 the cloud-native networking chart work, a Renovate-exclusion + policy-plain-YAML-parsing
 fix cluster, live policy-flag reads, a phase-scoped redispatch cooldown fix, and a heavy
@@ -213,7 +213,7 @@ only the long-standing, explicitly-optional `admin/src/clock.ts` item.
 - **External-only deps with no local substitute:** none.
 - **No open depth gaps carried in from the prior cycle** — the 2026-08-25 cycle closed
   clean (0 open Promote/deepen items).
-- **New this cycle (2026-08-28): all 47 non-routine source commits landed with matching
+- **New this cycle (2026-08-28): all 42 non-routine source commits landed with matching
   coverage in the same commits/PRs, despite this being the largest delta window in several
   cycles.** A task-store DB-aware readiness check (`GET /ready` now a real Prisma
   round-trip, new smoke test), a downstream chart-compatibility script (new fixture-driven
