@@ -260,10 +260,14 @@ admin:
     encryptionKeyRef: SHIPWRIGHT_ENCRYPTION_KEY
     # -- Key in existingSecret that holds SHIPWRIGHT_SESSION_SECRET.
     sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
-  # -- Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL).
-  # Required when the admin service is behind a Gateway or Ingress so that OAuth
-  # redirect URIs use the public host instead of localhost:3001. Leave empty to
-  # omit the env var.
+  # -- Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL),
+  # used for OAuth redirect URIs so they use the public host instead of
+  # localhost:3001. An explicit value here always wins. When left empty AND
+  # networking.type is "ingress" or "gateway", the chart auto-derives it as
+  # "<scheme>://<public host>" from networking.ingress.host / .gateway.host
+  # (https when TLS is on) — no manual override needed for those paths.
+  # ClusterIP/NodePort/LoadBalancer installs have no chart-known public host,
+  # so the env var stays omitted unless set explicitly here.
   appBaseUrl: ""
   # -- Externally-reachable task-store base URL advertised in the mint-token env
   # block (sets SHIPWRIGHT_TASK_STORE_PUBLIC_URL). Set this to the public route a
