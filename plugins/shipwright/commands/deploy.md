@@ -171,8 +171,13 @@ Fetch the most recent CI runs on the PR's head commit:
 HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid')
 REPO="{org}/{repo}"
 gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
-  --jq '[.workflow_runs[] | select(.name == "CI") | {status, conclusion}]'
+  --jq '[.workflow_runs[] | select(.name | ascii_downcase == "ci") | {status, conclusion}]'
 ```
+
+Matched case-insensitively — a repo's CI workflow `name:` field may be `CI` or `ci` (both are
+common conventions; e.g. `app-vitals/squadron`'s `.github/workflows/ci.yml` uses `name: ci`), and
+an exact-case match here would silently and permanently exclude that repo's PRs from ever
+passing this check.
 
 If no CI run has `conclusion == "success"` (or no CI run exists at all), print and stop:
 ```

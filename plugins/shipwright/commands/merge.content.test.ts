@@ -142,7 +142,7 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
   it("verifies CI is green on the PR head commit", () => {
     const section = extractStep2Section(content);
     expect(section).toContain("headRefOid");
-    expect(section).toContain('.name == "CI"');
+    expect(section).toContain('ascii_downcase == "ci"');
     expect(section).toContain('conclusion == "success"');
   });
 

@@ -376,7 +376,7 @@ export async function buildProductionDeps(opts: {
         `repos/${org}/${repo}/actions/runs?status=queued&per_page=10`,
       ]);
       return [...inProgress.workflow_runs, ...queued.workflow_runs]
-        .filter((r) => r.name === "Deploy")
+        .filter((r) => r.name.toLowerCase() === "deploy")
         .map((r) => ({
           name: r.name,
           status: r.status,
@@ -413,7 +413,7 @@ export async function buildProductionDeps(opts: {
         `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
       ]);
       return data.workflow_runs
-        .filter((r) => r.name === "CI")
+        .filter((r) => r.name.toLowerCase() === "ci")
         .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
