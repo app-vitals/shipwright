@@ -877,6 +877,47 @@
         }
       }
     },
+    "/threads/{threadId}/messages/{id}/heartbeat": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{threadId}/messages/{id}/reply": {
       "post": {
         "tags": [
@@ -1246,6 +1287,14 @@
               "null"
             ],
             "example": "agent-id-123"
+          },
+          "heartbeatAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
           },
           "repliedAt": {
             "type": [

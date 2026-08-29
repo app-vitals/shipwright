@@ -377,15 +377,39 @@ describeOrSkip("MessageService (integration)", () => {
       });
       expect(claimed.heartbeatAt).toBeNull();
 
-      const updated = await svc.heartbeat(claimed.id);
+      const updated = await svc.heartbeat(claimed.id, "worker-1");
 
       expect(updated?.heartbeatAt).toEqual(new Date("2026-05-01T10:00:00Z"));
     });
 
     it("returns null when the message does not exist", async () => {
       const svc = new MessageService(prisma);
-      const updated = await svc.heartbeat("does-not-exist");
+      const updated = await svc.heartbeat("does-not-exist", "worker-1");
       expect(updated).toBeNull();
+    });
+
+    it("returns null when another worker owns the claim", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      const updated = await svc.heartbeat(claimed.id, "worker-2");
+
+      expect(updated).toBeNull();
+      const reread = await prisma.message.findUnique({
+        where: { id: claimed.id },
+      });
+      expect(reread?.heartbeatAt).toBeNull();
     });
 
     it("returns null and does not bump heartbeatAt for an unclaimed message", async () => {
@@ -396,7 +420,7 @@ describeOrSkip("MessageService (integration)", () => {
         data: { threadId, role: "user", body: "not claimed yet" },
       });
 
-      const updated = await svc.heartbeat(unclaimed.id);
+      const updated = await svc.heartbeat(unclaimed.id, "worker-1");
       expect(updated).toBeNull();
 
       const reloaded = await prisma.message.findUnique({
@@ -421,7 +445,7 @@ describeOrSkip("MessageService (integration)", () => {
         },
       });
 
-      const updated = await svc.heartbeat(replied.id);
+      const updated = await svc.heartbeat(replied.id, "worker-1");
       expect(updated).toBeNull();
 
       const reloaded = await prisma.message.findUnique({

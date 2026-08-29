@@ -245,9 +245,16 @@ export function fakeMessageService(
       msg.claimedBy = claimedBy;
       return msg;
     },
-    async heartbeat(id) {
+    async heartbeat(id, claimedBy) {
       const msg = store.find((m) => m.id === id);
-      if (!msg || !msg.claimed || msg.repliedAt !== null) return null;
+      if (
+        !msg ||
+        msg.role !== "user" ||
+        !msg.claimed ||
+        msg.repliedAt !== null ||
+        msg.claimedBy !== claimedBy
+      )
+        return null;
       msg.heartbeatAt = new Date();
       return msg;
     },

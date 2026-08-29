@@ -545,7 +545,14 @@ export function createMessagesRoutes(
     if (!existing || existing.threadId !== threadId)
       throw new NotFoundError("message not found");
 
-    const updated = await messageService.heartbeat(c.req.param("id"));
+    // Same identity derivation as claim — only the claim's owner may beat it.
+    const callerAgentId = c.get("agentId");
+    const claimedBy = callerAgentId ?? "admin";
+
+    const updated = await messageService.heartbeat(
+      c.req.param("id"),
+      claimedBy,
+    );
     if (!updated) throw new NotFoundError("message not found");
     return c.json(updated, 200);
   });
