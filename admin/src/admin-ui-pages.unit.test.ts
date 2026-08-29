@@ -31,12 +31,16 @@ import {
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
+  renderGithubAppInstallPage,
+  renderGithubAppInstalledPage,
+  renderGithubAppManifestRedirectPage,
   renderLoginPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderProvisionXappTokenPage,
   renderPrsPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
@@ -6907,4 +6911,207 @@ describe("renderWorkQueuePage", () => {
     expect(html).toContain('href="/admin/agents/agent-123"');
     expect(html).toContain("Test Agent");
   });
+});
+
+// ─── All page renderers — shared head via renderAdminPage (CFB-1.2) ─────────
+//
+// Every render*Page-style function in this file builds its <!DOCTYPE html>
+// head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
+// calls each of the 22 render sites (21 functions — renderChatThreadPage has
+// two distinct DOCTYPE blocks: its degraded early-return and its main return)
+// with minimal valid fixtures and asserts each output has exactly one
+// DOCTYPE and exactly one viewport meta tag, guarding against any call site
+// drifting back to a hand-rolled head or double-wrapping.
+
+describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", () => {
+  const MINIMAL_TASK: TaskItem = {
+    id: "TASK-LOOP-1",
+    title: "Loop test task",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+  };
+
+  const MINIMAL_PR: PrListItem = {
+    id: "pr-loop-1",
+    repo: "org/repo",
+    prNumber: 1,
+    taskId: null,
+    staged: false,
+    state: "open",
+    reviewState: "pending",
+    commitSha: null,
+    patchCycles: 0,
+    reviewCycles: 0,
+    agentId: null,
+    claimedBy: null,
+    reviewedAt: null,
+    patchedAt: null,
+    mergedAt: null,
+    claimedAt: null,
+    heartbeatAt: null,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  };
+
+  const MINIMAL_THREAD: ChatThread = {
+    id: "thread-loop-1",
+    agentId: "agent-123",
+    title: "Loop thread",
+    memberId: null,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  };
+
+  const MINIMAL_MSG: ChatMessage = {
+    id: "msg-loop-1",
+    threadId: "thread-loop-1",
+    role: "user",
+    body: "hello",
+    createdAt: "2026-06-01T09:00:00Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  const renderers: Array<[string, () => string]> = [
+    ["renderLoginPage", () => renderLoginPage()],
+    ["renderAgentsPage", () => renderAgentsPage([], USER_NAME, true, "UTC")],
+    [
+      "renderNewLocalAgentPage",
+      () =>
+        renderNewLocalAgentPage(USER_NAME, [
+          { name: "coding", displayName: "Coding Agent" },
+        ]),
+    ],
+    [
+      "renderAgentDetailPage",
+      () =>
+        renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, {
+          timezone: "UTC",
+        }),
+    ],
+    ["renderProvisionStartPage", () => renderProvisionStartPage(USER_NAME, [])],
+    [
+      "renderGithubAppManifestRedirectPage",
+      () =>
+        renderGithubAppManifestRedirectPage(USER_NAME, {
+          githubOrg: "acme",
+          manifest: { name: "shipwright" },
+        }),
+    ],
+    [
+      "renderGithubAppInstallPage",
+      () =>
+        renderGithubAppInstallPage(USER_NAME, {
+          installUrl: "https://github.com/apps/shipwright/installations/new",
+        }),
+    ],
+    [
+      "renderGithubAppInstalledPage",
+      () => renderGithubAppInstalledPage(USER_NAME, { success: true }),
+    ],
+    [
+      "renderProvisionXappTokenPage",
+      () => renderProvisionXappTokenPage(USER_NAME, { agentId: "agent-123" }),
+    ],
+    ["renderProvisionPasteForm", () => renderProvisionPasteForm(USER_NAME)],
+    [
+      "renderTasksPage",
+      () =>
+        renderTasksPage(
+          [MINIMAL_TASK],
+          {},
+          false,
+          USER_NAME,
+          {},
+          { total: 1, limit: 50, page: 1 },
+        ),
+    ],
+    [
+      "renderTaskDetailPage",
+      () => renderTaskDetailPage(MINIMAL_TASK, USER_NAME),
+    ],
+    [
+      "renderSessionDetailPage",
+      () =>
+        renderSessionDetailPage("session-loop-1", [MINIMAL_TASK], USER_NAME),
+    ],
+    [
+      "renderPrsPage",
+      () =>
+        renderPrsPage(
+          [MINIMAL_PR],
+          {},
+          false,
+          USER_NAME,
+          {},
+          { total: 1, limit: 50, page: 1 },
+        ),
+    ],
+    ["renderPrDetailPage", () => renderPrDetailPage(MINIMAL_PR, USER_NAME)],
+    [
+      "renderCronLogsPage",
+      () =>
+        renderCronLogsPage({
+          agent: { id: "agent-123", name: "Test Agent" },
+          crons: [],
+          runs: [],
+          filters: {},
+          pagination: { total: 0, limit: 50, page: 1 },
+          userName: USER_NAME,
+        }),
+    ],
+    [
+      "renderWorkQueuePage",
+      () =>
+        renderWorkQueuePage({
+          agent: { id: "agent-123", name: "Test Agent" },
+          snapshot: null,
+          userName: USER_NAME,
+        }),
+    ],
+    [
+      "renderProvisionCompletePage",
+      () => renderProvisionCompletePage(USER_NAME, { success: true }),
+    ],
+    ["renderTokensPage", () => renderTokensPage([], false, USER_NAME)],
+    ["renderChatPage", () => renderChatPage([], undefined, null, USER_NAME)],
+    [
+      "renderChatThreadPage (degraded — thread/messages null)",
+      () => renderChatThreadPage("agent-123", null, null, USER_NAME),
+    ],
+    [
+      "renderChatThreadPage (main)",
+      () =>
+        renderChatThreadPage(
+          "agent-123",
+          MINIMAL_THREAD,
+          [MINIMAL_MSG],
+          USER_NAME,
+        ),
+    ],
+  ];
+
+  test("all 22 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(22);
+  });
+
+  for (const [name, render] of renderers) {
+    test(`${name}: exactly one DOCTYPE and one viewport meta tag`, () => {
+      const html = render();
+      const doctypeMatches = html.match(/<!DOCTYPE html>/g) ?? [];
+      const viewportMatches = html.match(/<meta name="viewport"/g) ?? [];
+      expect(doctypeMatches.length).toBe(1);
+      expect(viewportMatches.length).toBe(1);
+      expect(html).toContain(
+        'content="width=device-width, initial-scale=1, viewport-fit=cover"',
+      );
+    });
+  }
 });
