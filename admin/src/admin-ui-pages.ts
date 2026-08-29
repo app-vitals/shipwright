@@ -4485,7 +4485,13 @@ export function renderChatThreadPage(
 
   return renderAdminPage({
     title: `${rawTitle} - Shipwright Admin`,
-    extraStyles: `${threadPaneStyles}${chatPageStyles}${chatThreadStyles}
+    // NOTE: chatThreadStyles must be concatenated before chatPageStyles here —
+    // chatPageStyles's mobile @media (max-width:640px) override for
+    // .chat-bubble-inner has the same specificity as chatThreadStyles's
+    // unconditional base rule, so whichever is concatenated *last* wins the
+    // cascade. Putting chatPageStyles last ensures the mobile override
+    // actually takes effect at ≤640px instead of being silently shadowed.
+    extraStyles: `${threadPaneStyles}${chatThreadStyles}${chatPageStyles}
   `,
     body: `${renderAdminToolbar(userName, activePath)}
   <div class="vos-page chat-thread-page">

@@ -181,4 +181,30 @@ test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-1.3 class migr
     expect(ratio).toBeGreaterThan(0.65);
     expect(ratio).toBeLessThanOrEqual(0.71);
   });
+
+  test("at 375px mobile viewport, .chat-bubble-inner computed width is 90% of #messages-container", async ({
+    page,
+    context,
+  }) => {
+    // Regression guard: chatPageStyles's @media (max-width:640px) override
+    // (.chat-bubble-inner { max-width:90% }) must win the cascade over
+    // chatThreadStyles's unconditional base rule (max-width:70%) at mobile
+    // widths — see CFB-1.3 review discussion on concatenation order.
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const bubbleInner = page.locator(".chat-bubble-inner").first();
+    await expect(bubbleInner).toBeVisible();
+
+    const bubbleWidth = await bubbleInner.evaluate(
+      (el) => el.getBoundingClientRect().width,
+    );
+    const containerWidth = await page
+      .locator("#messages-container")
+      .evaluate((el) => el.getBoundingClientRect().width);
+
+    const ratio = bubbleWidth / containerWidth;
+    expect(ratio).toBeGreaterThan(0.85);
+    expect(ratio).toBeLessThanOrEqual(0.91);
+  });
 });
