@@ -3913,8 +3913,7 @@ const chatThreadStyles = `
        flex-column body: min-height:100vh as a baseline, then min-height:100dvh
        as a progressive enhancement (dynamic viewport height accounts for
        mobile browser chrome that can grow the toolbar without breaking layout). */
-    body { display:flex;flex-direction:column;min-height:100vh }
-    body { min-height:100dvh }
+    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh }
     .chat-thread-page { display:flex;flex-direction:column;flex:1;min-height:0;max-width:900px;margin:0 auto;padding:0 24px;width:100% }
     .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
     /* Collapsed-by-default rename/delete disclosure (CFB-3.1 #5) — keeps the
