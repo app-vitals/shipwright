@@ -56,10 +56,10 @@ const TOOL_PHASE_MAP: Record<string, ProgressPhase> = {
   EnterPlanMode: "planning",
 };
 
-/** Prefix for any MCP-provided tool — always falls back to the generic phase. */
-const MCP_TOOL_PREFIX = "mcp__";
-
-/** Generic fallback phase for any tool_use block whose name isn't recognized. */
+/**
+ * Generic fallback phase for any tool_use block whose name isn't recognized —
+ * covers both `mcp__*`-prefixed MCP tools and any other unmapped tool name.
+ */
 const GENERIC_TOOL_PHASE: ProgressPhase = "tool";
 
 /**
@@ -78,12 +78,8 @@ export function phaseForBlock(block: ContentBlock): ProgressPhase | undefined {
       return "thinking";
     case "text":
       return "writing";
-    case "tool_use": {
-      const name = block.name ?? "";
-      if (name in TOOL_PHASE_MAP) return TOOL_PHASE_MAP[name];
-      if (name.startsWith(MCP_TOOL_PREFIX)) return GENERIC_TOOL_PHASE;
-      return GENERIC_TOOL_PHASE;
-    }
+    case "tool_use":
+      return TOOL_PHASE_MAP[block.name ?? ""] ?? GENERIC_TOOL_PHASE;
     default:
       return undefined;
   }
