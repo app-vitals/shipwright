@@ -66,10 +66,10 @@ export interface MessageServiceLike {
 
   /**
    * Bump a claimed message's heartbeatAt to now — proof of life for a
-   * long-running reply. Returns the updated message, or null if not found,
-   * not claimed, or already replied.
+   * long-running reply. Scoped to the claim's owner: returns null unless the
+   * message is an unreplied user message currently claimed by `claimedBy`.
    */
-  heartbeat(id: string): Promise<Message | null>;
+  heartbeat(id: string, claimedBy: string): Promise<Message | null>;
 
   /**
    * Post an agent reply to a claimed message.
@@ -215,14 +215,19 @@ export class MessageService implements MessageServiceLike {
     }
   }
 
-  async heartbeat(id: string): Promise<Message | null> {
+  async heartbeat(id: string, claimedBy: string): Promise<Message | null> {
     try {
+      // Scoped to the current owner of an in-flight claim: only the agent that
+      // actually claimed this message, and only while the reply is still
+      // outstanding. An unscoped update would let any caller authorized for
+      // the thread keep an arbitrary message looking alive.
       return await this.prisma.message.update({
-        where: { id, claimed: true, repliedAt: null },
+        where: { id, role: "user", claimed: true, repliedAt: null, claimedBy },
         data: { heartbeatAt: this.clock.now() },
       });
     } catch (err: unknown) {
-      // Not found, unclaimed, or already replied — all surface as P2025.
+      // Not found, unclaimed, already replied, or owned by another worker —
+      // all surface as P2025.
       if (isPrismaNotFound(err)) return null;
       throw err;
     }

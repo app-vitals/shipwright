@@ -4441,10 +4441,13 @@ export function renderChatThreadPage(
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var msgs = data.messages || [];
+        // Guard the null cutoff: comparing a Date against null coerces to a
+        // compare against 0, which would treat every assistant message in the
+        // thread as a new reply.
         var cutoff = lastUserMessageTime;
-        var replies = msgs.filter(function(m) {
+        var replies = cutoff ? msgs.filter(function(m) {
           return m.role === 'assistant' && new Date(m.createdAt) > cutoff;
-        });
+        }) : [];
         if (replies.length > 0) {
           stopPolling();
           removeThinkingIndicator();
@@ -4478,7 +4481,13 @@ export function renderChatThreadPage(
             lastProgressPollCount = pollCount;
           }
           if (pending.claimedAt) {
-            var elapsedSec = Math.round((Date.now() - lastUserMessageTime.getTime()) / 1000);
+            // Prefer the server's createdAt so elapsed survives a reload and
+            // never depends on lastUserMessageTime, which is null on a fresh
+            // page load and would throw here.
+            var startedAt = pending.createdAt
+              ? new Date(pending.createdAt).getTime()
+              : (lastUserMessageTime ? lastUserMessageTime.getTime() : Date.now());
+            var elapsedSec = Math.round((Date.now() - startedAt) / 1000);
             setThinkingText('still working… (' + elapsedSec + 's)');
           }
         }
