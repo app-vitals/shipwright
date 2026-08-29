@@ -31,6 +31,8 @@ export interface ChatMessage {
   body: string;
   createdAt: string;
   claimedBy: string | null;
+  claimed?: boolean;
+  claimedAt?: string | null;
   heartbeatAt?: string | null;
   repliedAt: string | null;
   tokens: MessageTokens | null;
