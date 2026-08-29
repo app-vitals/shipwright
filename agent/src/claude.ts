@@ -1,4 +1,6 @@
+import type { ProgressPhase } from "@shipwright/lib/progress-phases";
 import type { ErrorCapturingClient } from "@shipwright/lib/sentry";
+import { type ContentBlock, phaseForBlock } from "./progress-milestones.ts";
 
 export interface LiveClaudeConfig {
   model: string;
@@ -105,8 +107,17 @@ export interface ClaudeRunResult {
  * Callback fired as each new assistant turn/message completes (a new distinct
  * `message.id` is observed), receiving the running accumulated per-model total.
  * The passed map is a fresh snapshot — safe to retain without it mutating.
+ *
+ * The optional second argument is a generic progress phase (see
+ * `@shipwright/lib/progress-phases`) derived from the tool_use/thinking/text
+ * blocks in `message.content` — fired whenever the phase changes from the
+ * last one fired for this run (see `_consumeStream`'s phase-collapse logic).
+ * Purely additive: existing single-arg callbacks keep typechecking unchanged.
  */
-export type ProgressCallback = (modelUsage: ModelUsage) => void;
+export type ProgressCallback = (
+  modelUsage: ModelUsage,
+  phase?: ProgressPhase,
+) => void;
 
 /**
  * Returns the model name with the highest outputTokens from the CLI's
@@ -149,6 +160,7 @@ interface ClaudeAssistantEvent {
     role?: string;
     model?: string;
     usage?: TokenUsage;
+    content?: ContentBlock[];
   };
 }
 
@@ -318,6 +330,10 @@ export function createRunClaude(
     let result: ClaudeResultEvent | undefined;
     let buffer = "";
     let raw = "";
+    // Last phase fired for THIS _consumeStream call (i.e. this one runClaude
+    // invocation) — reset per call, never global/module state. Used to
+    // collapse repeated identical phases to a single onProgress fire.
+    let lastFiredPhase: ProgressPhase | undefined;
     // Captured off the very first `system`/`init` line, if one arrives — the
     // earliest point in the stream a session id is ever available. Populated
     // once and never overwritten, so a stray later system line (there's never
@@ -358,6 +374,23 @@ export function createRunClaude(
       if (event.type !== "assistant") return; // ignore user/etc.
 
       const { message } = parsed as ClaudeAssistantEvent;
+
+      // Walk message.content for a progress phase BEFORE the usage guard
+      // below, so a tool_use-only line (no `usage` field yet) can still fire
+      // a phase update. Each block that maps to a phase can fire its own
+      // onProgress call — but repeated identical phases collapse to a single
+      // fire (only fires when the phase differs from the last one fired this
+      // run), so e.g. two consecutive Read blocks fire "reading" once.
+      if (Array.isArray(message?.content)) {
+        for (const block of message.content) {
+          const phase = phaseForBlock(block);
+          if (phase === undefined || phase === lastFiredPhase) continue;
+          lastFiredPhase = phase;
+          onProgress?.(_snapshotUsage(accumulated), phase);
+          perCallOnProgress?.(_snapshotUsage(accumulated), phase);
+        }
+      }
+
       if (!message?.id || !message.usage) return;
       if (seenMessageIds.has(message.id)) return; // dedupe repeated turn lines
       seenMessageIds.add(message.id);
