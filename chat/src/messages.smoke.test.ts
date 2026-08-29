@@ -419,6 +419,53 @@ describe("POST /threads/:id/messages/:msgId/heartbeat", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("persists progressPhase and bumps progressSeq when a valid phase is posted", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ phase: "reading" }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message;
+    expect(body.progressPhase).toBe("reading");
+    expect(body.progressSeq).toBe(1);
+  });
+
+  it("returns 400 for an invalid phase", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ phase: "not-a-real-phase" }),
+      },
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 // ─── Queue API: reply ─────────────────────────────────────────────────────────

@@ -882,7 +882,7 @@
         "tags": [
           "messages"
         ],
-        "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply)",
+        "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), optionally recording the current progress phase",
         "parameters": [
           {
             "schema": {
@@ -894,6 +894,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Updated message",
@@ -901,6 +911,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1296,6 +1316,26 @@
             "format": "date-time",
             "example": null
           },
+          "progressPhase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "reading"
+          },
+          "progressSeq": {
+            "type": "integer",
+            "default": 0,
+            "example": 3
+          },
+          "cancelRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
           "repliedAt": {
             "type": [
               "string",
@@ -1426,6 +1466,15 @@
               "null"
             ],
             "example": null
+          }
+        }
+      },
+      "HeartbeatBody": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "example": "reading"
           }
         }
       },

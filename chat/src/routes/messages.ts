@@ -105,6 +105,17 @@ const UpdateMessageBodySchema = z
   })
   .openapi("UpdateMessageBody");
 
+/** Request body for POST /:id/heartbeat.
+ * `phase`, when given, must be one of PROGRESS_PHASES — validated by
+ * MessageService.heartbeat() (custom BadRequestError message), not by Zod,
+ * per the permissive-schema/manual-validation convention.
+ */
+const HeartbeatBodySchema = z
+  .object({
+    phase: z.string().optional().openapi({ example: "reading" }),
+  })
+  .openapi("HeartbeatBody");
+
 /** Request body for POST /:id/reply.
  * `body` is required at runtime by the handler (custom error message), but
  * kept optional here per the permissive-schema/manual-validation convention.
@@ -293,14 +304,23 @@ const heartbeatRoute = createRoute({
   path: "/:id/heartbeat",
   tags: ["messages"],
   summary:
-    "Bump a claimed message's heartbeatAt (proof of life for a long-running reply)",
+    "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), " +
+    "optionally recording the current progress phase",
   request: {
     params: MessageIdParamSchema,
+    body: {
+      content: { "application/json": { schema: HeartbeatBodySchema } },
+      required: false,
+    },
   },
   responses: {
     200: {
       description: "Updated message",
       content: { "application/json": { schema: MessageSchema } },
+    },
+    400: {
+      description: "Bad request",
+      content: { "application/json": { schema: ErrorSchema } },
     },
     404: {
       description: "Thread or message not found",
@@ -549,9 +569,13 @@ export function createMessagesRoutes(
     const callerAgentId = c.get("agentId");
     const claimedBy = callerAgentId ?? "admin";
 
+    const body = await readJson(c);
+    const phase = typeof body.phase === "string" ? body.phase : undefined;
+
     const updated = await messageService.heartbeat(
       c.req.param("id"),
       claimedBy,
+      phase,
     );
     if (!updated) throw new NotFoundError("message not found");
     return c.json(updated, 200);

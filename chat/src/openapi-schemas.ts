@@ -126,6 +126,18 @@ export const MessageSchema = z
       .nullable()
       .optional()
       .openapi({ example: null }),
+    progressPhase: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "reading" }),
+    progressSeq: z.number().int().default(0).openapi({ example: 3 }),
+    cancelRequestedAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: null }),
     repliedAt: z
       .string()
       .datetime()
