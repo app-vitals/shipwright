@@ -4338,8 +4338,21 @@ export function renderChatThreadPage(
 
   var pollTimer = null;
   var pollCount = 0;
-  var MAX_POLLS = 30; // 90 seconds at 3s intervals
+  // Bail out after this many consecutive polls with no progress signal at all
+  // (message never claimed, or claimed but no heartbeat/reply) — 90 seconds
+  // at 3s intervals, same as the old flat timeout.
+  var IDLE_TIMEOUT_POLLS = 30;
+  // Hard cap regardless of how much heartbeat activity keeps arriving, so a
+  // truly wedged agent can't poll forever — 10 minutes at 3s intervals.
+  var ABSOLUTE_MAX_POLLS = 200;
   var lastUserMessageTime = null;
+  // Proof-of-life tracking for the in-flight reply: reset whenever the
+  // pending message's claimedAt/heartbeatAt advances to a new value, so a
+  // long multi-turn run keeps extending the timeout via its heartbeats
+  // instead of tripping the same 90s cutoff that catches a truly stuck agent.
+  var lastProgressPollCount = 0;
+  var lastSeenClaimedAt = null;
+  var lastSeenHeartbeatAt = null;
 
   function escHtml(str) {
     return String(str)
@@ -4389,10 +4402,15 @@ export function renderChatThreadPage(
     div.id = 'thinking-indicator';
     div.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:12px';
     div.innerHTML = '<div style="max-width:70%;background:#f0fdf4;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
-      + '<div style="font-size:14px;color:#166534;font-style:italic">thinking…</div>'
+      + '<div id="thinking-indicator-text" style="font-size:14px;color:#166534;font-style:italic">thinking…</div>'
       + '</div>';
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+  }
+
+  function setThinkingText(text) {
+    var el = document.getElementById('thinking-indicator-text');
+    if (el) el.textContent = text;
   }
 
   function removeThinkingIndicator() {
@@ -4406,6 +4424,9 @@ export function renderChatThreadPage(
       pollTimer = null;
     }
     pollCount = 0;
+    lastProgressPollCount = 0;
+    lastSeenClaimedAt = null;
+    lastSeenHeartbeatAt = null;
   }
 
   function enableSend() {
@@ -4415,13 +4436,7 @@ export function renderChatThreadPage(
 
   function poll() {
     pollCount++;
-    if (pollCount > MAX_POLLS) {
-      stopPolling();
-      removeThinkingIndicator();
-      addBubble('assistant', 'Request timed out. Please try again.', true);
-      enableSend();
-      return;
-    }
+
     fetch(messagesJsonUrl)
       .then(function(r) { return r.json(); })
       .then(function(data) {
@@ -4443,6 +4458,36 @@ export function renderChatThreadPage(
           } else {
             addBubble('assistant', reply.body, false);
           }
+          enableSend();
+          return;
+        }
+
+        // No reply yet — check the pending user message for proof of life
+        // (claimed, or a heartbeat while it works a long-running run) and
+        // extend the idle-timeout window whenever either one advances.
+        var pending = msgs.filter(function(m) {
+          return m.role === 'user' && !m.repliedAt;
+        }).pop();
+        if (pending) {
+          if (pending.claimedAt && pending.claimedAt !== lastSeenClaimedAt) {
+            lastSeenClaimedAt = pending.claimedAt;
+            lastProgressPollCount = pollCount;
+          }
+          if (pending.heartbeatAt && pending.heartbeatAt !== lastSeenHeartbeatAt) {
+            lastSeenHeartbeatAt = pending.heartbeatAt;
+            lastProgressPollCount = pollCount;
+          }
+          if (pending.claimedAt) {
+            var elapsedSec = Math.round((Date.now() - lastUserMessageTime.getTime()) / 1000);
+            setThinkingText('still working… (' + elapsedSec + 's)');
+          }
+        }
+
+        var idlePolls = pollCount - lastProgressPollCount;
+        if (idlePolls > IDLE_TIMEOUT_POLLS || pollCount > ABSOLUTE_MAX_POLLS) {
+          stopPolling();
+          removeThinkingIndicator();
+          addBubble('assistant', 'Request timed out. Please try again.', true);
           enableSend();
         }
       })

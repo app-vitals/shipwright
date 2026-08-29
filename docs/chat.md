@@ -204,6 +204,14 @@ DELETE /threads/:threadId/messages/:id
 
 Returns `404` if not found, otherwise the deleted message with `200`.
 
+#### Heartbeat (queue API)
+
+```
+POST /threads/:threadId/messages/:id/heartbeat
+```
+
+Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this (throttled) from the Claude runner's per-turn progress callback so a slow multi-tool-call run doesn't look wedged to a poller; the admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Returns `404` if the message doesn't exist or doesn't belong to `:threadId`, otherwise the updated message with `200`.
+
 #### Reply (queue API)
 
 ```
@@ -267,6 +275,7 @@ Indexes: `[agentId, updatedAt desc]` (list-by-agent ordering), `[memberId]`.
 | `claimed` | `Boolean` | Default `false`; set by the claim queue endpoint |
 | `claimedAt` | `DateTime?` | |
 | `claimedBy` | `String?` | Caller `agentId`, or `"admin"` |
+| `heartbeatAt` | `DateTime?` | Bumped by the heartbeat queue endpoint while a claimed message is being worked |
 | `repliedAt` | `DateTime?` | Set by the reply queue endpoint; guards against double-reply |
 | `errorKind` | `String?` | |
 | `createdAt` | `DateTime` | |

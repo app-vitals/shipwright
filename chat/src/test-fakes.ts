@@ -6,7 +6,11 @@
 
 import type { Prisma } from "../prisma/client/index.js";
 import type { Message, MessageServiceLike } from "./message-service.ts";
-import type { Thread, ThreadServiceLike, ThreadStats } from "./thread-service.ts";
+import type {
+  Thread,
+  ThreadServiceLike,
+  ThreadStats,
+} from "./thread-service.ts";
 import type { ChatToken, ChatTokenServiceLike } from "./token-service.ts";
 
 // ─── Token fakes ──────────────────────────────────────────────────────────────
@@ -132,8 +136,7 @@ export function fakeThreadService(
       const updated: Thread = {
         ...thread,
         title: data.title !== undefined ? data.title : thread.title,
-        memberId:
-          data.memberId !== undefined ? data.memberId : thread.memberId,
+        memberId: data.memberId !== undefined ? data.memberId : thread.memberId,
         updatedAt: new Date(),
       };
       store[idx] = updated;
@@ -181,6 +184,7 @@ export function fakeMessageService(
         claimed: false,
         claimedAt: null,
         claimedBy: null,
+        heartbeatAt: null,
         repliedAt: null,
         errorKind: null,
         createdAt: new Date(),
@@ -241,6 +245,12 @@ export function fakeMessageService(
       msg.claimedBy = claimedBy;
       return msg;
     },
+    async heartbeat(id) {
+      const msg = store.find((m) => m.id === id);
+      if (!msg || !msg.claimed || msg.repliedAt !== null) return null;
+      msg.heartbeatAt = new Date();
+      return msg;
+    },
     async reply(messageId, data) {
       const userMsg = store.find((m) => m.id === messageId);
       if (!userMsg || userMsg.repliedAt !== null) return null;
@@ -258,6 +268,7 @@ export function fakeMessageService(
         claimed: false,
         claimedAt: null,
         claimedBy: null,
+        heartbeatAt: null,
         repliedAt: null,
         errorKind: null,
         createdAt: new Date(),

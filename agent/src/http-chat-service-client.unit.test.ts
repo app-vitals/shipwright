@@ -48,15 +48,14 @@ function capturingFetch(
   const calls: CapturedCall[] = [];
   return {
     fn: async (urlInput, init) => {
-      const url =
-        urlInput instanceof Request ? urlInput.url : String(urlInput);
+      const url = urlInput instanceof Request ? urlInput.url : String(urlInput);
       const method =
-        urlInput instanceof Request
-          ? urlInput.method
-          : (init?.method ?? "GET");
+        urlInput instanceof Request ? urlInput.method : (init?.method ?? "GET");
       const headers: Record<string, string> = {};
       const rawHeaders =
-        urlInput instanceof Request ? urlInput.headers : new Headers(init?.headers);
+        urlInput instanceof Request
+          ? urlInput.headers
+          : new Headers(init?.headers);
       rawHeaders.forEach((value, key) => {
         headers[key] = value;
       });
@@ -276,6 +275,51 @@ describe("HttpChatServiceClient.claimMessage", () => {
     const err = await client.claimMessage(THREAD_ID).catch((e) => e);
     expect(err).toBeInstanceOf(ChatServiceClientError);
     expect(err.statusCode).toBe(500);
+  });
+});
+
+// ─── heartbeat ──────────────────────────────────────────────────────────────────
+
+describe("HttpChatServiceClient.heartbeat", () => {
+  it("resolves on 200", async () => {
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fakeFetch(200, SAMPLE_MESSAGE),
+    });
+
+    await expect(
+      client.heartbeat(THREAD_ID, MESSAGE_ID),
+    ).resolves.toBeUndefined();
+  });
+
+  it("calls POST /threads/:threadId/messages/:messageId/heartbeat", async () => {
+    const { fn, calls } = capturingFetch(200, SAMPLE_MESSAGE);
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fn,
+    });
+
+    await client.heartbeat(THREAD_ID, MESSAGE_ID);
+
+    expect(calls[0].method).toBe("POST");
+    const url = new URL(calls[0].url);
+    expect(url.pathname).toBe(
+      `/threads/${THREAD_ID}/messages/${MESSAGE_ID}/heartbeat`,
+    );
+  });
+
+  it("throws ChatServiceClientError on non-2xx", async () => {
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fakeFetch(404, { error: "message not found" }),
+    });
+
+    const err = await client.heartbeat(THREAD_ID, MESSAGE_ID).catch((e) => e);
+    expect(err).toBeInstanceOf(ChatServiceClientError);
+    expect(err.statusCode).toBe(404);
   });
 });
 

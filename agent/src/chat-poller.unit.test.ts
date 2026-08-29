@@ -9,8 +9,9 @@ import { describe, expect, it, mock } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ChatServiceClient } from "./http-chat-service-client.ts";
 import { createChatPoller } from "./chat-poller.ts";
+import type { ProgressCallback } from "./claude.ts";
+import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ function makeMessage(threadId: string, messageId = "msg-1") {
     body: "Hello from user",
     claimedBy: "agent-1",
     claimedAt: new Date(),
+    heartbeatAt: null,
     repliedAt: null,
     tokens: null,
     costUsd: null,
@@ -63,6 +65,7 @@ function makeFakeClient(
   return {
     listThreads: async () => ({ threads: [], total: 0, limit: 50, offset: 0 }),
     claimMessage: async () => null,
+    heartbeat: async () => {},
     replyToMessage: async () => ({
       userMessage: makeMessage("thread-1"),
       assistantMessage: makeMessage("thread-1"),
@@ -164,7 +167,11 @@ describe("createChatPoller poll: claim then reply", () => {
 
     // Runner called with the message body and correct session key
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(runner).toHaveBeenCalledWith(message.body, `chat:${threadId}`);
+    expect(runner).toHaveBeenCalledWith(
+      message.body,
+      `chat:${threadId}`,
+      expect.any(Function),
+    );
 
     // Reply posted with runner output
     expect(replyToMessage).toHaveBeenCalledTimes(1);
@@ -209,7 +216,11 @@ describe("createChatPoller poll: claim then reply", () => {
     await poller.pollOnce();
 
     // Runner must receive the stable session key so it can resume the session
-    expect(runner).toHaveBeenCalledWith(message.body, `chat:${threadId}`);
+    expect(runner).toHaveBeenCalledWith(
+      message.body,
+      `chat:${threadId}`,
+      expect.any(Function),
+    );
   });
 });
 
@@ -324,6 +335,112 @@ describe("createChatPoller poll: listThreads failure", () => {
   });
 });
 
+// ─── poll: heartbeat during a long-running reply ───────────────────────────────
+
+describe("createChatPoller poll: heartbeat during a long-running reply", () => {
+  it("sends a heartbeat when the runner reports progress", async () => {
+    const threadId = "thread-hb";
+    const messageId = "msg-hb";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, messageId);
+    const replyResult = makeReplyResult(message);
+
+    const heartbeat = mock(async () => {});
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage: async () => replyResult,
+      heartbeat,
+    });
+
+    // Simulate a multi-turn Claude run by invoking the onProgress callback
+    // the poller passes in before resolving.
+    const runner = mock(
+      async (_msg: string, _key?: string, onProgress?: ProgressCallback) => {
+        onProgress?.({});
+        return { result: "ok" };
+      },
+    );
+
+    const poller = createChatPoller({ client, runner });
+    await poller.pollOnce();
+
+    expect(heartbeat).toHaveBeenCalledTimes(1);
+    expect(heartbeat).toHaveBeenCalledWith(threadId, messageId);
+  });
+
+  it("throttles heartbeats within the minimum interval", async () => {
+    const threadId = "thread-hb-throttle";
+    const message = makeMessage(threadId, "msg-hb-throttle");
+    const replyResult = makeReplyResult(message);
+
+    const heartbeat = mock(async () => {});
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage: async () => replyResult,
+      heartbeat,
+    });
+
+    // Fire onProgress many times back-to-back — well within the throttle
+    // window, only the first call should reach the chat service.
+    const runner = mock(
+      async (_msg: string, _key?: string, onProgress?: ProgressCallback) => {
+        for (let i = 0; i < 5; i++) onProgress?.({});
+        return { result: "ok" };
+      },
+    );
+
+    const poller = createChatPoller({ client, runner });
+    await poller.pollOnce();
+
+    expect(heartbeat).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let a heartbeat failure abort the reply", async () => {
+    const threadId = "thread-hb-fail";
+    const message = makeMessage(threadId, "msg-hb-fail");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+      heartbeat: async () => {
+        throw new Error("chat service unreachable");
+      },
+    });
+
+    const runner = mock(
+      async (_msg: string, _key?: string, onProgress?: ProgressCallback) => {
+        onProgress?.({});
+        return { result: "ok" };
+      },
+    );
+
+    const poller = createChatPoller({ client, runner });
+
+    await expect(poller.pollOnce()).resolves.toBeUndefined();
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ─── start/stop: timer lifecycle ───────────────────────────────────────────────
 //
 // Moved to chat-poller.integration.test.ts — these tests drive real
@@ -430,11 +547,7 @@ describe("createChatPoller poll: attachment handling", () => {
       expect(runnerArg).toContain("report.txt");
 
       // File written to <workspace>/uploads/<id>-<filename>
-      const filePath = join(
-        workspaceDir,
-        "uploads",
-        `${messageId}-report.txt`,
-      );
+      const filePath = join(workspaceDir, "uploads", `${messageId}-report.txt`);
       const written = await readFile(filePath);
       expect(Array.from(new Uint8Array(written))).toEqual([104, 105]);
     } finally {
