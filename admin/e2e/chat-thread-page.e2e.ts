@@ -208,3 +208,121 @@ test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-1.3 class migr
     expect(ratio).toBeLessThanOrEqual(0.91);
   });
 });
+
+// ─── CFB-3.1 — mobile responsive defects ───────────────────────────────────────
+
+test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-3.1 mobile responsive", () => {
+  test("at 375px, every visible input/textarea/select computes font-size >= 16px", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const fontSizes = await page.evaluate(() => {
+      const els = Array.from(
+        document.querySelectorAll("input, textarea, select"),
+      ) as HTMLElement[];
+      return els
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            (el as HTMLInputElement).type !== "hidden" &&
+            (el as HTMLInputElement).type !== "checkbox" &&
+            (el as HTMLInputElement).type !== "file"
+          );
+        })
+        .map((el) => ({
+          id: el.id || el.tagName,
+          fontSize: Number.parseFloat(getComputedStyle(el).fontSize),
+        }));
+    });
+
+    expect(fontSizes.length).toBeGreaterThan(0);
+    for (const { id, fontSize } of fontSizes) {
+      expect(fontSize, `${id} font-size`).toBeGreaterThanOrEqual(16);
+    }
+  });
+
+  test("at 375px and 768px, no horizontal overflow", async ({
+    page,
+    context,
+  }) => {
+    for (const width of [375, 768]) {
+      await page.setViewportSize({ width, height: 812 });
+      await loadChatThreadPage(page, context);
+
+      const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+      expect(scrollWidth, `width=${width}`).toBeLessThanOrEqual(clientWidth);
+    }
+  });
+
+  test("at a mobile viewport, touch targets are >= 44px except .data-table .btn", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const heights = await page.evaluate(() => {
+      const els = Array.from(
+        document.querySelectorAll(".btn, .thread-pane-link"),
+      ) as HTMLElement[];
+      return els
+        .filter((el) => {
+          const rect = el.getBoundingClientRect();
+          // offsetParent is null when the element (or an ancestor) is
+          // display:none — e.g. .chat-thread-sidebar collapses on mobile,
+          // which zeroes out its descendants' rects without those elements
+          // themselves being display:none. Skip anything not actually
+          // rendered rather than asserting on a phantom 0-height box.
+          return el.offsetParent !== null && rect.width > 0 && rect.height > 0;
+        })
+        .map((el) => ({
+          className: el.className,
+          height: el.getBoundingClientRect().height,
+        }));
+    });
+
+    expect(heights.length).toBeGreaterThan(0);
+    for (const { className, height } of heights) {
+      expect(height, className).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test("the rename/delete forms are collapsed behind a <details> element by default", async ({
+    page,
+    context,
+  }) => {
+    await loadChatThreadPage(page, context);
+
+    const details = page.locator("details.chat-thread-actions");
+    await expect(details).toBeAttached();
+    const isOpen = await details.evaluate(
+      (el) => (el as HTMLDetailsElement).open,
+    );
+    expect(isOpen).toBe(false);
+
+    // The rename/delete forms exist in the DOM but aren't visible until expanded.
+    await expect(page.locator('form[action*="/rename"]')).not.toBeVisible();
+    await expect(page.locator('form[action*="/delete"]')).not.toBeVisible();
+  });
+
+  test("the chat-thread-page layout does not collapse to zero height at a mobile viewport", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const pageHeight = await page
+      .locator(".chat-thread-page")
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(pageHeight).toBeGreaterThan(400);
+  });
+});

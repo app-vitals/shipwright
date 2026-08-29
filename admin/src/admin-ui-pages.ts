@@ -8,7 +8,11 @@
  */
 
 import { renderAdminPage } from "./admin-ui-layout.ts";
-import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
+import {
+  BREAKPOINT_MOBILE_MAX,
+  escapeHtml,
+  renderAdminToolbar,
+} from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
@@ -3868,7 +3872,9 @@ const threadPaneStyles = `
     .thread-pane-link.active { background:#eef2ff;color:#4f46e5;font-weight:600 }`;
 
 const chatPageStyles = `
-    @media (max-width:640px) {
+    .chat-sidebar-new-thread-input { font-size:12px }
+    @media (max-width:${BREAKPOINT_MOBILE_MAX}px) {
+      .chat-sidebar-new-thread-input { font-size:16px }
       .chat-list-layout { flex-direction:column }
       .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
       /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
@@ -3876,6 +3882,14 @@ const chatPageStyles = `
       .chat-thread-sidebar { display:none }
       .chat-bubble-inner { max-width:90% }
       #message-input { font-size:16px }
+      /* Composer row: let the textarea keep adequate width instead of being
+         squeezed to ~160px next to the Attach/Send buttons at narrow widths. */
+      .chat-composer-row { flex-wrap:wrap }
+      .chat-message-input { flex-basis:100%; }
+      /* .chat-thread-page combines with .vos-page (specificity 0,2,0), which
+         otherwise beats .vos-page's own mobile padding rule (0,1,0) — pin the
+         effective mobile padding back to match .vos-page's mobile padding. */
+      .chat-thread-page { padding:16px 12px 48px }
     }`;
 
 // ─── Chat thread page — class-driven bubble/composer styling (CFB-1.3) ────────
@@ -3893,8 +3907,20 @@ export function chatBubbleRoleClass(role: string): string {
 }
 
 const chatThreadStyles = `
-    .chat-thread-page { display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px }
+    /* The toolbar (.vos-toolbar) is a normal-flow sibling above .chat-thread-page,
+       not fixed/absolute — so the page doesn't need to subtract a hardcoded
+       toolbar height. Instead it grows to fill the remaining viewport via a
+       flex-column body: min-height:100vh as a baseline, then min-height:100dvh
+       as a progressive enhancement (dynamic viewport height accounts for
+       mobile browser chrome that can grow the toolbar without breaking layout). */
+    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh }
+    .chat-thread-page { display:flex;flex-direction:column;flex:1;min-height:0;max-width:900px;margin:0 auto;padding:0 24px;width:100% }
     .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
+    /* Collapsed-by-default rename/delete disclosure (CFB-3.1 #5) — keeps the
+       header compact above the fold regardless of viewport width. */
+    .chat-thread-actions { margin-top:12px }
+    .chat-thread-actions-summary { cursor:pointer;font-size:13px;color:#6b7280;user-select:none }
+    .chat-thread-actions-summary:hover { color:#374151 }
     .chat-messages-container { flex:1;overflow-y:auto;padding:8px 0;min-height:0 }
     .${CHAT_BUBBLE_CLASS} { display:flex;margin-bottom:12px }
     .${chatBubbleRoleClass("user")} { justify-content:flex-end }
@@ -4196,6 +4222,16 @@ export function renderChatThreadPage(
       <button type="submit" class="btn btn-danger">Delete Thread</button>
     </form>`;
 
+  // Collapsed by default so rename/delete controls don't eat vertical space
+  // above the fold before any conversation is visible on a short mobile
+  // viewport — a plain <details>/<summary> disclosure, no JS required.
+  const threadActionsDetails = `
+    <details class="chat-thread-actions">
+      <summary class="chat-thread-actions-summary">Thread actions</summary>
+      ${renameForm}
+      ${deleteForm}
+    </details>`;
+
   // Inline JS for the send/poll flow
   const inlineScript = `
 <script>
@@ -4452,11 +4488,15 @@ export function renderChatThreadPage(
 </script>`;
 
   // Thread list sidebar pane
+  // NOTE: no inline font-size here — an inline style would beat the
+  // .form-input mobile @media override by specificity and reintroduce the
+  // iOS Safari zoom-on-focus defect. Sizing is handled entirely via the
+  // .chat-sidebar-new-thread-input class below.
   const newThreadForm = `
     <form method="POST" action="/admin/chat/${escapeHtml(agentId)}/threads" style="margin-bottom:12px">
       <div class="form-row" style="gap:6px">
-        <input type="text" name="title" class="form-input" placeholder="New thread title…" style="font-size:12px">
-        <button type="submit" class="btn btn-primary" style="white-space:nowrap;font-size:12px;padding:6px 10px">New Thread</button>
+        <input type="text" name="title" class="form-input chat-sidebar-new-thread-input" placeholder="New thread title…">
+        <button type="submit" class="btn btn-primary" style="white-space:nowrap;padding:6px 10px">New Thread</button>
       </div>
     </form>`;
 
@@ -4510,8 +4550,7 @@ export function renderChatThreadPage(
             ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
             : ""
         }
-        ${renameForm}
-        ${deleteForm}
+        ${threadActionsDetails}
       </div>
     </div>
     <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">

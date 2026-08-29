@@ -6,6 +6,15 @@ import {
 
 export { escapeHtml };
 
+/**
+ * Shared responsive breakpoint constants (px), interpolated into `@media`
+ * template strings across admin-ui-styles.ts and admin-ui-pages.ts so tests
+ * can assert against the actual numeric constant instead of grepping for a
+ * hardcoded literal like "640px" in the rendered HTML string.
+ */
+export const BREAKPOINT_MOBILE_MAX = 640;
+export const BREAKPOINT_TABLET_MAX = 960;
+
 export function baseStyles(): string {
   return `${toolbarBaseStyles()}
     /* ─── Page header ───────────────────────────────────── */
@@ -278,7 +287,8 @@ export function baseStyles(): string {
       background-attachment: local, scroll, local, scroll;
     }
     .state-tab { padding: 5px 14px; }
-    @media (max-width: 640px) {
+
+    @media (max-width: ${BREAKPOINT_MOBILE_MAX}px) {
       .col-session, .col-repo, .col-source, .col-created { display: none; }
       .col-review-cycles, .col-patch-cycles, .col-claimed-by { display: none; }
       .col-tokens, .col-model { display: none; }
@@ -314,6 +324,46 @@ export function baseStyles(): string {
         display: block;
         width: auto;
         padding-top: 0;
+      }
+
+      /* iOS Safari zooms in on focus for any input under 16px font-size. */
+      .form-input,
+      input[type="text"],
+      input[type="search"],
+      input[type="email"],
+      input[type="password"],
+      input[type="number"],
+      textarea,
+      select {
+        font-size: 16px;
+      }
+
+      /* Touch targets: 44px minimum. .data-table .btn is excluded — a full
+         44px target there would make the tasks/PRs tables absurdly tall —
+         via an explicit override pinning it back to its current ~36px.
+         Both selectors are specificity 0,2,0 vs 0,1,0, so .data-table .btn
+         always wins regardless of declaration order within this block. */
+      .btn {
+        min-height: 44px;
+        align-items: center;
+      }
+      .data-table .btn {
+        min-height: 36px;
+      }
+      .thread-pane-link {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+      }
+    }
+
+    /* ─── Tablet band (641–${BREAKPOINT_TABLET_MAX}px) ──────────────── */
+    @media (min-width: ${BREAKPOINT_MOBILE_MAX + 1}px) and (max-width: ${BREAKPOINT_TABLET_MAX}px) {
+      .vos-page {
+        padding: 24px 20px 56px;
+      }
+      .card {
+        padding: 16px 18px;
       }
     }
   `;

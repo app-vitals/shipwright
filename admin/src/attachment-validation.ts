@@ -19,6 +19,8 @@ export const ALLOWED_MIME_EXACT = new Set([
   "image/gif",
   "image/webp",
   "image/svg+xml",
+  "image/heic",
+  "image/heif",
   "application/pdf",
   "application/json",
 ]);

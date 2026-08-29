@@ -5623,11 +5623,6 @@ describe("renderChatPage", () => {
     expect(html).toContain("@media");
   });
 
-  test("responsive: sidebar has chat-list-sidebar class for mobile styling", () => {
-    const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
-    expect(html).toContain("chat-list-sidebar");
-  });
-
   test("responsive: layout wrapper has chat-list-layout class", () => {
     const html = renderChatPage(AGENTS, "agent-1", THREADS, "alice");
     expect(html).toContain("chat-list-layout");
@@ -5982,16 +5977,6 @@ describe("renderChatThreadPage", () => {
       "alice",
     );
     expect(html).toContain("chat-thread-sidebar");
-  });
-
-  test("responsive: message bubble has chat-bubble-inner class for width overrides", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
-    expect(html).toContain("chat-bubble-inner");
-  });
-
-  test("responsive: main content wrapper has chat-thread-layout class for mobile reflow", () => {
-    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
-    expect(html).toContain("chat-thread-layout");
   });
 });
 
