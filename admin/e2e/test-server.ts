@@ -21,6 +21,11 @@ import { Hono } from "hono";
 import { sign } from "hono/jwt";
 import { createAdminUIApp } from "../src/admin-ui.ts";
 import type { AdminUIDeps } from "../src/admin-ui.ts";
+import type {
+  ChatClient,
+  ChatMessage,
+  ChatThread,
+} from "../src/http-chat-client.ts";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -70,6 +75,65 @@ const MOCK_TOKEN = {
   createdAt: new Date("2024-01-01"),
   revokedAt: null,
 };
+
+// ─── Chat fixtures (CFB-1.3 — chat thread page e2e) ──────────────────────────
+
+export const MOCK_CHAT_THREAD: ChatThread = {
+  id: "thread-e2e-1",
+  agentId: ADMIN_E2E_AGENT.id,
+  title: "E2E Test Thread",
+  memberId: null,
+  createdAt: "2024-01-01T00:00:00.000Z",
+  updatedAt: "2024-01-01T00:00:00.000Z",
+};
+
+export const MOCK_CHAT_MESSAGES: ChatMessage[] = [
+  {
+    id: "msg-e2e-1",
+    threadId: MOCK_CHAT_THREAD.id,
+    role: "user",
+    // Long enough to overflow any width well under the 70% max-width cap, so
+    // the e2e computed-width assertion (chat-thread-page.e2e.ts) exercises
+    // the CSS-driven cap rather than content-driven shrink-to-fit.
+    body: "Hello from the e2e test suite — this message body is intentionally long so that its rendered width is capped by the chat-bubble-inner max-width rule rather than shrinking to fit its own content, which lets the e2e test assert a stable 70% width ratio against the messages container.",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  },
+];
+
+function buildMockChatClient(): ChatClient {
+  return {
+    listThreads: async () => ({
+      threads: [MOCK_CHAT_THREAD],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    }),
+    getThread: async () => MOCK_CHAT_THREAD,
+    createThread: async () => MOCK_CHAT_THREAD,
+    updateThread: async () => MOCK_CHAT_THREAD,
+    deleteThread: async () => {},
+    listMessages: async () => ({
+      messages: MOCK_CHAT_MESSAGES,
+      total: MOCK_CHAT_MESSAGES.length,
+      limit: 50,
+      offset: 0,
+    }),
+    createMessage: async () => MOCK_CHAT_MESSAGES[0],
+    getThreadStats: async () => ({
+      messageCount: MOCK_CHAT_MESSAGES.length,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCostUsd: 0,
+    }),
+  };
+}
 
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
@@ -263,6 +327,7 @@ function buildMockDeps(): AdminUIDeps {
       }),
     },
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
+    chatClient: buildMockChatClient(),
   };
 }
 

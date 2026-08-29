@@ -3874,9 +3874,45 @@ const chatPageStyles = `
       /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
       .chat-thread-layout { flex-direction:column }
       .chat-thread-sidebar { display:none }
-      .chat-bubble-inner { max-width:90% !important }
+      .chat-bubble-inner { max-width:90% }
       #message-input { font-size:16px }
     }`;
+
+// ─── Chat thread page — class-driven bubble/composer styling (CFB-1.3) ────────
+// These class names are shared verbatim between the server-rendered HTML
+// (renderMessageBubble()) and the inline JS bubble builder (addBubble()) so
+// the two renderers physically cannot drift apart — see the interpolation of
+// CHAT_BUBBLE_CLASS/CHAT_BUBBLE_INNER_CLASS into `inlineScript` below.
+export const CHAT_BUBBLE_CLASS = "chat-bubble";
+export const CHAT_BUBBLE_INNER_CLASS = "chat-bubble-inner";
+export const CHAT_BUBBLE_INNER_WIDE_CLASS = "chat-bubble-inner--wide";
+
+/** e.g. "chat-bubble--user" — role is attacker-controlled only via server data, never used unescaped in an attribute here since roles are a closed set (user/assistant/system/other). */
+export function chatBubbleRoleClass(role: string): string {
+  return `${CHAT_BUBBLE_CLASS}--${role}`;
+}
+
+const chatThreadStyles = `
+    .chat-thread-page { display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px }
+    .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
+    .chat-messages-container { flex:1;overflow-y:auto;padding:8px 0;min-height:0 }
+    .${CHAT_BUBBLE_CLASS} { display:flex;margin-bottom:12px }
+    .${chatBubbleRoleClass("user")} { justify-content:flex-end }
+    .${chatBubbleRoleClass("assistant")} { justify-content:flex-start }
+    .${chatBubbleRoleClass("system")} { justify-content:center }
+    .${chatBubbleRoleClass("other")} { justify-content:flex-start }
+    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06) }
+    .${CHAT_BUBBLE_INNER_CLASS}.${CHAT_BUBBLE_INNER_WIDE_CLASS} { max-width:80% }
+    .${chatBubbleRoleClass("user")} .${CHAT_BUBBLE_INNER_CLASS} { background:#eef2ff }
+    .${chatBubbleRoleClass("assistant")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f0fdf4 }
+    .${chatBubbleRoleClass("system")} .${CHAT_BUBBLE_INNER_CLASS} { background:#fef9c3 }
+    .${chatBubbleRoleClass("other")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f3f4f6 }
+    .chat-composer-form { flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px }
+    .chat-composer-row { display:flex;gap:8px;align-items:flex-end }
+    .chat-message-input { flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none }
+    .chat-composer-btn { flex-shrink:0;height:44px }
+    .chat-composer-btn--attach { padding:0 16px }
+    .chat-composer-btn--send { padding:0 20px }`;
 
 export function renderChatPage(
   agents: AgentOption[],
@@ -4045,14 +4081,15 @@ export function renderChatThreadPage(
     const isAssistant = m.role === "assistant";
     const isSystem = m.role === "system";
 
-    const align = isUser ? "flex-end" : isSystem ? "center" : "flex-start";
-    const bubbleBg = isUser
-      ? "#eef2ff"
-      : isAssistant
-        ? "#f0fdf4"
-        : isSystem
-          ? "#fef9c3"
-          : "#f3f4f6";
+    const bubbleRoleClass = chatBubbleRoleClass(
+      isUser
+        ? "user"
+        : isAssistant
+          ? "assistant"
+          : isSystem
+            ? "system"
+            : "other",
+    );
     const bubbleColor = isUser
       ? "#4f46e5"
       : isAssistant
@@ -4060,7 +4097,9 @@ export function renderChatThreadPage(
         : isSystem
           ? "#854d0e"
           : "#374151";
-    const maxWidth = isSystem ? "80%" : "70%";
+    const bubbleInnerClass = isSystem
+      ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
+      : CHAT_BUBBLE_INNER_CLASS;
 
     // Render error badge if errorKind is set
     let errorBadge = "";
@@ -4121,8 +4160,8 @@ export function renderChatThreadPage(
       tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
     }
 
-    return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
-      <div class="chat-bubble-inner" style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
+    return `<div class="${CHAT_BUBBLE_CLASS} ${bubbleRoleClass}">
+      <div class="${bubbleInnerClass}">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
         ${markerBadges}
@@ -4210,8 +4249,6 @@ export function renderChatThreadPage(
 
   function addBubble(role, body, isError, attachmentName) {
     var isUser = role === 'user';
-    var align = isUser ? 'flex-end' : 'flex-start';
-    var bg = isUser ? '#eef2ff' : '#f0fdf4';
     var color = isUser ? '#4f46e5' : '#166534';
     var bodyHtml = isUser
       ? '<div style="font-size:14px;white-space:pre-wrap;color:' + color + '">' + escHtml(body) + '</div>'
@@ -4223,8 +4260,8 @@ export function renderChatThreadPage(
       ? '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(attachmentName) + '</div>'
       : '';
     var bubble = document.createElement('div');
-    bubble.style.cssText = 'display:flex;justify-content:' + align + ';margin-bottom:12px';
-    bubble.innerHTML = '<div style="max-width:70%;background:' + bg + ';border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
+    bubble.className = '${CHAT_BUBBLE_CLASS} ${CHAT_BUBBLE_CLASS}--' + role;
+    bubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
       + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">' + escHtml(role) + '</div>'
       + (isError ? errorHtml : bodyHtml)
       + attachmentHtml
@@ -4448,11 +4485,17 @@ export function renderChatThreadPage(
 
   return renderAdminPage({
     title: `${rawTitle} - Shipwright Admin`,
-    extraStyles: `${threadPaneStyles}${chatPageStyles}
+    // NOTE: chatThreadStyles must be concatenated before chatPageStyles here —
+    // chatPageStyles's mobile @media (max-width:640px) override for
+    // .chat-bubble-inner has the same specificity as chatThreadStyles's
+    // unconditional base rule, so whichever is concatenated *last* wins the
+    // cascade. Putting chatPageStyles last ensures the mobile override
+    // actually takes effect at ≤640px instead of being silently shadowed.
+    extraStyles: `${threadPaneStyles}${chatThreadStyles}${chatPageStyles}
   `,
     body: `${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page" style="display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px">
-    <div class="page-header" style="padding-top:20px;padding-bottom:16px;flex-shrink:0">
+  <div class="vos-page chat-thread-page">
+    <div class="page-header chat-thread-header">
       <div>
         <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
         <h1 class="page-title">${title}</h1>
@@ -4475,33 +4518,31 @@ export function renderChatThreadPage(
       ${sidebar}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
-        <div id="messages-container" style="flex:1;overflow-y:auto;padding:8px 0;min-height:0">
+        <div id="messages-container" class="chat-messages-container">
           ${messageBubbles}
           ${emptyState}
         </div>
 
         <!-- Send form -->
-        <form id="send-form" enctype="multipart/form-data" style="flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px">
-          <div style="display:flex;gap:8px;align-items:flex-end">
+        <form id="send-form" enctype="multipart/form-data" class="chat-composer-form">
+          <div class="chat-composer-row">
             <textarea
               id="message-input"
               name="body"
               rows="3"
               placeholder="Type a message..."
-              style="flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none"
+              class="chat-message-input"
             ></textarea>
             <input type="file" id="file-input" name="file" style="display:none" accept="text/*,image/*,application/pdf,application/json">
             <button
               type="button"
               id="attach-btn"
-              class="btn btn-secondary"
-              style="flex-shrink:0;height:44px;padding:0 16px"
+              class="btn btn-secondary chat-composer-btn chat-composer-btn--attach"
             >Attach file</button>
             <button
               type="submit"
               id="send-btn"
-              class="btn btn-primary"
-              style="flex-shrink:0;height:44px;padding:0 20px"
+              class="btn btn-primary chat-composer-btn chat-composer-btn--send"
             >Send</button>
           </div>
           <div id="file-name" style="font-size:12px;color:#6b7280;margin-top:6px;min-height:16px"></div>

@@ -5995,6 +5995,175 @@ describe("renderChatThreadPage", () => {
   });
 });
 
+// ─── renderChatThreadPage — inline styles moved to classes (CFB-1.3) ────────
+// Migrated elements must carry the new classes and no longer carry a `style=`
+// attribute of their own (background/text styling on nested badges etc. is
+// out of scope and untouched).
+
+describe("renderChatThreadPage — CFB-1.3 class migration", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "My Test Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const USER_MSG: ChatMessage = {
+    id: "msg-1",
+    threadId: "thread-abc",
+    role: "user",
+    body: "Hello, agent!",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  const SYSTEM_MSG: ChatMessage = {
+    id: "msg-sys",
+    threadId: "thread-abc",
+    role: "system",
+    body: "System notice",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("page wrapper (.vos-page) carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="vos-page[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+    expect(match?.[0]).toContain("chat-thread-page");
+  });
+
+  test("header (.page-header) carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="page-header[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("messages container carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div id="messages-container"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper carries chat-bubble + chat-bubble--user classes, no inline style", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--user"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper for assistant role carries chat-bubble--assistant class", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [{ ...USER_MSG, id: "msg-a", role: "assistant" }],
+      "alice",
+    );
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--assistant"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper for system role carries chat-bubble--system class", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [SYSTEM_MSG],
+      "alice",
+    );
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--system"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble inner carries chat-bubble-inner class and no inline max-width", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="chat-bubble-inner[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("max-width");
+  });
+
+  test("no inline max-width appears in any server-rendered bubble wrapper/inner", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG, SYSTEM_MSG],
+      "alice",
+    );
+    const bubbleMatches = html.match(/<div class="chat-bubble[^>]*>/g) ?? [];
+    expect(bubbleMatches.length).toBeGreaterThan(0);
+    for (const bubbleTag of bubbleMatches) {
+      expect(bubbleTag).not.toContain("max-width");
+    }
+  });
+
+  test("composer form and row carry no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const formMatch = html.match(/<form id="send-form"[^>]*>/);
+    expect(formMatch).not.toBeNull();
+    expect(formMatch?.[0]).not.toContain("style=");
+  });
+
+  test("message input carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<textarea[^>]*id="message-input"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("attach and send buttons carry no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const attachMatch = html.match(/<button[^>]*id="attach-btn"[^>]*>/);
+    const sendMatch = html.match(/<button[^>]*id="send-btn"[^>]*>/);
+    expect(attachMatch).not.toBeNull();
+    expect(sendMatch).not.toBeNull();
+    expect(attachMatch?.[0]).not.toContain("style=");
+    expect(sendMatch?.[0]).not.toContain("style=");
+  });
+
+  test("chatThreadStyles is included in extraStyles and defines chat-bubble rules", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain(".chat-bubble--user");
+    expect(html).toContain(".chat-bubble--assistant");
+    expect(html).toContain("justify-content:flex-end");
+    expect(html).toContain("justify-content:flex-start");
+  });
+
+  test("inline JS bubble builder (addBubble) uses the same chat-bubble class constants as the server renderer", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    // The class names baked into server-rendered HTML must also appear inside
+    // the inline <script> block, proving both come from the same source.
+    expect(html).toContain(
+      "bubble.className = 'chat-bubble chat-bubble--' + role;",
+    );
+    expect(html).toContain('class="chat-bubble-inner"');
+    expect(html).not.toContain("bubble.style.cssText");
+  });
+});
+
 // ─── classifyTaskState (HBV-1.2) ─────────────────────────────────────────────
 // Mirrors task-store/src/task-service.ts's list()/listReady()/listBlocked()
 // grouping: blockedBy is computed server-side for every status (not just
