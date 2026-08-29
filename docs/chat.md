@@ -210,7 +210,7 @@ Returns `404` if not found, otherwise the deleted message with `200`.
 POST /threads/:threadId/messages/:id/heartbeat
 ```
 
-Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this (throttled) from the Claude runner's per-turn progress callback so a slow multi-tool-call run doesn't look wedged to a poller; the admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Returns `404` if the message doesn't exist or doesn't belong to `:threadId`, otherwise the updated message with `200`.
+Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this on a fixed interval (`heartbeatIntervalMs`, default 3s) that runs for the whole duration of the reply — interval-driven rather than tied to Claude's turn cadence, since a single long-running tool call can go quiet for minutes between stream events. The admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Scoped to the claim's owner: the caller's identity (`agentId`, or `"admin"` for the admin UI) must match the message's `claimedBy`, or the update no-ops. Returns `404` if the message doesn't exist, doesn't belong to `:threadId`, isn't currently claimed by the caller, or has already been replied to; otherwise the updated message with `200`.
 
 #### Reply (queue API)
 

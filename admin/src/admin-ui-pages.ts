@@ -7,11 +7,8 @@
  * metrics/src/dashboard/dashboard-page.ts.
  */
 
-import {
-  baseStyles,
-  escapeHtml,
-  renderAdminToolbar,
-} from "./admin-ui-styles.ts";
+import { renderAdminPage } from "./admin-ui-layout.ts";
+import { escapeHtml, renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
 import { parseChatMarkers } from "./chat-markers.ts";
@@ -498,16 +495,9 @@ export function renderLoginPage(opts?: {
     ? `<a href="${oktaHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Okta</a>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin Login — Shipwright</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  <div class="login-wrapper">
+  return renderAdminPage({
+    title: "Admin Login — Shipwright",
+    body: `<div class="login-wrapper">
     <div class="login-card">
       <h1 class="login-title">Shipwright Admin</h1>
       <p class="login-subtitle">Sign in to manage your agents.</p>
@@ -515,9 +505,8 @@ export function renderLoginPage(opts?: {
       <a href="${googleHref}" class="btn btn-primary" style="width:100%;justify-content:center;text-decoration:none">Sign in with Google</a>
       ${oktaButtonHtml}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Agents list page ─────────────────────────────────────────────────────────
@@ -572,16 +561,9 @@ export function renderAgentsPage(
       <a href="/admin/provision" class="btn btn-secondary" style="margin-left:8px">Connect Slack app</a>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Agents — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/agents")}
+  return renderAdminPage({
+    title: "Agents — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Agents</h1>
@@ -604,9 +586,8 @@ export function renderAgentsPage(
         </tbody>
       </table>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── New agent page ───────────────────────────────────────────────────────────
@@ -631,16 +612,9 @@ export function renderNewLocalAgentPage(
         `<option value="${escapeHtml(t.name)}">${escapeHtml(t.displayName)}</option>`,
     )
     .join("\n");
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>New Agent — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/agents")}
+  return renderAdminPage({
+    title: "New Agent — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header">
       <div>
@@ -750,9 +724,8 @@ export function renderNewLocalAgentPage(
         </div>
       </form>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Agent detail page ────────────────────────────────────────────────────────
@@ -1076,16 +1049,9 @@ export function renderAgentDetailPage(
       </div>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(agent.name)} — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/agents")}
+  return renderAdminPage({
+    title: `${agent.name} — Shipwright Admin`,
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header">
       <div>
@@ -1464,9 +1430,8 @@ export function renderAgentDetailPage(
         : ""
     }
 
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Provision pages ──────────────────────────────────────────────────────────
@@ -1628,16 +1593,9 @@ export function renderProvisionStartPage(
         <button type="submit" class="btn btn-primary">Create Slack App →</button>
       </form>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Provision Agent — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Provision Agent — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1651,9 +1609,8 @@ export function renderProvisionStartPage(
       ${errorHtml}
       ${oauthSection}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 /**
@@ -1671,16 +1628,9 @@ export function renderGithubAppManifestRedirectPage(
   const actionUrl = `https://github.com/organizations/${encodeURIComponent(opts.githubOrg)}/settings/apps/new`;
   const manifestJson = JSON.stringify(opts.manifest);
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Provision Agent — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Provision Agent — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1702,9 +1652,8 @@ export function renderGithubAppManifestRedirectPage(
         document.getElementById('github-app-manifest-form').submit();
       </script>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 /**
@@ -1715,16 +1664,9 @@ export function renderGithubAppInstallPage(
   userName: string,
   opts: { installUrl: string },
 ): string {
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Provision Agent — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Provision Agent — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1742,9 +1684,8 @@ export function renderGithubAppInstallPage(
         Install GitHub App →
       </a>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 /**
@@ -1763,16 +1704,9 @@ export function renderGithubAppInstalledPage(
     : `<div class="alert alert-error">${escapeHtml(opts.error ?? "GitHub App installation failed.")}</div>
       <a href="/admin/provision" class="btn btn-secondary">Try again</a>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Provision Agent — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Provision Agent — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1785,9 +1719,8 @@ export function renderGithubAppInstalledPage(
     <div class="card">
       ${bodyHtml}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // xapp-token page shown after OAuth callback completes — user pastes the Socket Mode app token.
@@ -1799,16 +1732,9 @@ export function renderProvisionXappTokenPage(
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Complete Provisioning — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Complete Provisioning — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1842,9 +1768,8 @@ export function renderProvisionXappTokenPage(
         <button type="submit" class="btn btn-primary">Save Token →</button>
       </form>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // Paste form shown after OAuth callback — user enters SLACK_APP_ID and SLACK_SIGNING_SECRET
@@ -1857,16 +1782,9 @@ export function renderProvisionPasteForm(
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Complete Provisioning — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Complete Provisioning — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -1894,9 +1812,8 @@ export function renderProvisionPasteForm(
         <button type="submit" class="btn btn-primary">Save Credentials →</button>
       </form>
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 function statusBadgeClass(s: string): string {
@@ -2198,23 +2115,17 @@ export function renderTasksPage(
       </div>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Tasks — Shipwright</title>
-  <style>${baseStyles()}
+  return renderAdminPage({
+    title: "Tasks — Shipwright",
+    extraStyles: `
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
     .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  </style>
-</head>
-<body>
-  ${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
+  `,
+    body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">Tasks</h1>
@@ -2284,9 +2195,8 @@ export function renderTasksPage(
       </div>
       ${paginationHtml}
     </div>
-  </div>
-  ${
-    readOnly
+  </div>`,
+    bodyEnd: readOnly
       ? ""
       : `<script>
     document.querySelectorAll("tr[data-href]").forEach(function(row) {
@@ -2299,10 +2209,8 @@ export function renderTasksPage(
         window.location.href = row.getAttribute("data-href");
       });
     });
-  </script>`
-  }
-</body>
-</html>`;
+  </script>`,
+  });
 }
 
 // ─── Task detail page ────────────────────────────────────────────────────────
@@ -2543,13 +2451,9 @@ export function renderTaskDetailPage(
       ? listField("Dependencies", task.dependencies, true)
       : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>${escapeHtml(task.title)} — Tasks — Shipwright Admin</title>
-  <style>${baseStyles()}
+  return renderAdminPage({
+    title: `${task.title} — Tasks — Shipwright Admin`,
+    extraStyles: `
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
@@ -2558,10 +2462,8 @@ export function renderTaskDetailPage(
     .markdown-body pre code { background:none; padding:0; }
     .markdown-body ul, .markdown-body ol { padding-left:20px; margin:8px 0; }
     .markdown-body li { margin-bottom:4px; }
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/tasks")}
+  `,
+    body: `${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
@@ -2593,9 +2495,8 @@ export function renderTaskDetailPage(
         : ""
     }
     ${prSection}
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Session detail page ─────────────────────────────────────────────────────
@@ -2978,21 +2879,15 @@ export function renderSessionDetailPage(
       <div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(label)}</div>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Session ${escapeHtml(sessionId)} — Shipwright Admin</title>
-  <style>${baseStyles()}
+  return renderAdminPage({
+    title: `Session ${sessionId} — Shipwright Admin`,
+    extraStyles: `
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/tasks")}
+  `,
+    body: `${renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="${escapeHtml(backHref)}" style="color:#6b7280;font-size:13px;text-decoration:none">← Tasks</a>
@@ -3031,9 +2926,8 @@ export function renderSessionDetailPage(
       </div>
     </div>
     ${depsSection}
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 export function renderPrsPage(
@@ -3201,22 +3095,16 @@ export function renderPrsPage(
       </div>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PRs — Shipwright Admin</title>
-  <style>${baseStyles()}
+  return renderAdminPage({
+    title: "PRs — Shipwright Admin",
+    extraStyles: `
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
     .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/prs")}
+  `,
+    body: `${renderAdminToolbar(userName, "/admin/prs")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
       <h1 class="page-title" style="margin:0">PRs</h1>
@@ -3278,8 +3166,8 @@ export function renderPrsPage(
       </div>
       ${paginationHtml}
     </div>
-  </div>
-  <script>
+  </div>`,
+    bodyEnd: `<script>
     document.querySelectorAll("tr[data-href]").forEach(function(row) {
       row.addEventListener("click", function(e) {
         var target = e.target;
@@ -3290,9 +3178,8 @@ export function renderPrsPage(
         window.location.href = row.getAttribute("data-href");
       });
     });
-  </script>
-</body>
-</html>`;
+  </script>`,
+  });
 }
 
 export function renderPrDetailPage(
@@ -3394,23 +3281,17 @@ export function renderPrDetailPage(
     .filter(Boolean)
     .join("\n");
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>PR #${escapeHtml(String(pr.prNumber))} — ${escapeHtml(pr.repo)} — Shipwright Admin</title>
-  <style>${baseStyles()}
+  return renderAdminPage({
+    title: `PR #${pr.prNumber} — ${pr.repo} — Shipwright Admin`,
+    extraStyles: `
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-gray { background:#f3f4f6;color:#374151;border:1px solid #e5e7eb; }
     .badge-blocked { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .detail-table { width:100%;border-collapse:collapse; }
     .detail-table tr:not(:last-child) td { border-bottom:1px solid #f3f4f6; }
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/prs")}
+  `,
+    body: `${renderAdminToolbar(userName, "/admin/prs")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/prs" style="color:#6b7280;font-size:13px;text-decoration:none">← PRs</a>
@@ -3435,9 +3316,8 @@ export function renderPrDetailPage(
     </div>`
         : ""
     }
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 /**
@@ -3623,17 +3503,10 @@ export function renderCronLogsPage(opts: {
       </div>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Cron Logs — ${escapeHtml(agent.name)} — Shipwright Admin</title>
-  <style>${baseStyles()}
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/agents")}
+  return renderAdminPage({
+    title: `Cron Logs — ${agent.name} — Shipwright Admin`,
+    extraStyles: "\n  ",
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <a href="/admin/agents/${escapeHtml(agent.id)}" style="color:#6b7280;font-size:13px;text-decoration:none">← ${escapeHtml(agent.name)}</a>
@@ -3685,9 +3558,8 @@ export function renderCronLogsPage(opts: {
       </div>
       ${paginationHtml}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // Inline CSS for the work-queue "Phase" column badge, keyed by the raw
@@ -3786,16 +3658,9 @@ export function renderWorkQueuePage(opts: {
       </div>
     </div>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Work Queue — ${escapeHtml(agent.name)} — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/agents")}
+  return renderAdminPage({
+    title: `Work Queue — ${agent.name} — Shipwright Admin`,
+    body: `${renderAdminToolbar(userName, "/admin/agents")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       ${backLink}
@@ -3803,9 +3668,8 @@ export function renderWorkQueuePage(opts: {
     </div>
 
     ${content}
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 export function renderProvisionCompletePage(
@@ -3829,16 +3693,9 @@ export function renderProvisionCompletePage(
     : `<div class="alert alert-error">${escapeHtml(opts.error ?? "Provisioning failed.")}</div>
       <a href="/admin/provision" class="btn btn-secondary">Try again</a>`;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Provisioning Complete — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, "/admin/provision")}
+  return renderAdminPage({
+    title: "Provisioning Complete — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, "/admin/provision")}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Provision Agent</h1>
@@ -3852,9 +3709,8 @@ export function renderProvisionCompletePage(
     <div class="card">
       ${bodyHtml}
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Task-store tokens page ────────────────────────────────────────────────────
@@ -3957,16 +3813,9 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
       </div>`
     : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Task Store Tokens — Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, activePath)}
+  return renderAdminPage({
+    title: "Task Store Tokens — Shipwright Admin",
+    body: `${renderAdminToolbar(userName, activePath)}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Task Store Tokens</h1>
@@ -3992,9 +3841,8 @@ export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
       </div>
     </div>
     ${createForm}
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 // ─── Chat page ─────────────────────────────────────────────────────────────────
@@ -4026,9 +3874,45 @@ const chatPageStyles = `
       /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
       .chat-thread-layout { flex-direction:column }
       .chat-thread-sidebar { display:none }
-      .chat-bubble-inner { max-width:90% !important }
+      .chat-bubble-inner { max-width:90% }
       #message-input { font-size:16px }
     }`;
+
+// ─── Chat thread page — class-driven bubble/composer styling (CFB-1.3) ────────
+// These class names are shared verbatim between the server-rendered HTML
+// (renderMessageBubble()) and the inline JS bubble builder (addBubble()) so
+// the two renderers physically cannot drift apart — see the interpolation of
+// CHAT_BUBBLE_CLASS/CHAT_BUBBLE_INNER_CLASS into `inlineScript` below.
+export const CHAT_BUBBLE_CLASS = "chat-bubble";
+export const CHAT_BUBBLE_INNER_CLASS = "chat-bubble-inner";
+export const CHAT_BUBBLE_INNER_WIDE_CLASS = "chat-bubble-inner--wide";
+
+/** e.g. "chat-bubble--user" — role is attacker-controlled only via server data, never used unescaped in an attribute here since roles are a closed set (user/assistant/system/other). */
+export function chatBubbleRoleClass(role: string): string {
+  return `${CHAT_BUBBLE_CLASS}--${role}`;
+}
+
+const chatThreadStyles = `
+    .chat-thread-page { display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px }
+    .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
+    .chat-messages-container { flex:1;overflow-y:auto;padding:8px 0;min-height:0 }
+    .${CHAT_BUBBLE_CLASS} { display:flex;margin-bottom:12px }
+    .${chatBubbleRoleClass("user")} { justify-content:flex-end }
+    .${chatBubbleRoleClass("assistant")} { justify-content:flex-start }
+    .${chatBubbleRoleClass("system")} { justify-content:center }
+    .${chatBubbleRoleClass("other")} { justify-content:flex-start }
+    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06) }
+    .${CHAT_BUBBLE_INNER_CLASS}.${CHAT_BUBBLE_INNER_WIDE_CLASS} { max-width:80% }
+    .${chatBubbleRoleClass("user")} .${CHAT_BUBBLE_INNER_CLASS} { background:#eef2ff }
+    .${chatBubbleRoleClass("assistant")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f0fdf4 }
+    .${chatBubbleRoleClass("system")} .${CHAT_BUBBLE_INNER_CLASS} { background:#fef9c3 }
+    .${chatBubbleRoleClass("other")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f3f4f6 }
+    .chat-composer-form { flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px }
+    .chat-composer-row { display:flex;gap:8px;align-items:flex-end }
+    .chat-message-input { flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none }
+    .chat-composer-btn { flex-shrink:0;height:44px }
+    .chat-composer-btn--attach { padding:0 16px }
+    .chat-composer-btn--send { padding:0 20px }`;
 
 export function renderChatPage(
   agents: AgentOption[],
@@ -4121,26 +4005,19 @@ export function renderChatPage(
       </div>`;
   }
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Chat — Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, activePath)}
+  return renderAdminPage({
+    title: "Chat — Shipwright Admin",
+    extraStyles: `${threadPaneStyles}${chatPageStyles}
+  `,
+    body: `${renderAdminToolbar(userName, activePath)}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Chat</h1>
     </div>
     ${agentSelector}
     ${content}
-  </div>
-</body>
-</html>`;
+  </div>`,
+  });
 }
 
 function formatTokenCount(n: number): string {
@@ -4177,16 +4054,9 @@ export function renderChatThreadPage(
   const activePath = "/admin/chat";
 
   if (thread === null || messages === null) {
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Thread - Shipwright Admin</title>
-  <style>${baseStyles()}</style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, activePath)}
+    return renderAdminPage({
+      title: "Thread - Shipwright Admin",
+      body: `${renderAdminToolbar(userName, activePath)}
   <div class="vos-page">
     <div class="page-header">
       <h1 class="page-title">Thread</h1>
@@ -4195,12 +4065,15 @@ export function renderChatThreadPage(
       Chat service not configured. Set <code>SHIPWRIGHT_CHAT_SERVICE_URL</code> and
       <code>SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN</code> to enable this feature.
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`,
+    });
   }
 
   const threadId = thread.id;
+  // rawTitle feeds renderAdminPage(), which HTML-escapes it itself; `title`
+  // is the pre-escaped display string used inline in body markup below —
+  // keep both to avoid double-escaping the <title> tag.
+  const rawTitle = thread.title ?? "Untitled Thread";
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
   function renderMessageBubble(m: ChatMessage): string {
@@ -4208,14 +4081,15 @@ export function renderChatThreadPage(
     const isAssistant = m.role === "assistant";
     const isSystem = m.role === "system";
 
-    const align = isUser ? "flex-end" : isSystem ? "center" : "flex-start";
-    const bubbleBg = isUser
-      ? "#eef2ff"
-      : isAssistant
-        ? "#f0fdf4"
-        : isSystem
-          ? "#fef9c3"
-          : "#f3f4f6";
+    const bubbleRoleClass = chatBubbleRoleClass(
+      isUser
+        ? "user"
+        : isAssistant
+          ? "assistant"
+          : isSystem
+            ? "system"
+            : "other",
+    );
     const bubbleColor = isUser
       ? "#4f46e5"
       : isAssistant
@@ -4223,7 +4097,9 @@ export function renderChatThreadPage(
         : isSystem
           ? "#854d0e"
           : "#374151";
-    const maxWidth = isSystem ? "80%" : "70%";
+    const bubbleInnerClass = isSystem
+      ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
+      : CHAT_BUBBLE_INNER_CLASS;
 
     // Render error badge if errorKind is set
     let errorBadge = "";
@@ -4284,8 +4160,8 @@ export function renderChatThreadPage(
       tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
     }
 
-    return `<div style="display:flex;justify-content:${align};margin-bottom:12px">
-      <div class="chat-bubble-inner" style="max-width:${maxWidth};background:${bubbleBg};border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">
+    return `<div class="${CHAT_BUBBLE_CLASS} ${bubbleRoleClass}">
+      <div class="${bubbleInnerClass}">
         <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
         ${bodyHtml}
         ${markerBadges}
@@ -4373,8 +4249,6 @@ export function renderChatThreadPage(
 
   function addBubble(role, body, isError, attachmentName) {
     var isUser = role === 'user';
-    var align = isUser ? 'flex-end' : 'flex-start';
-    var bg = isUser ? '#eef2ff' : '#f0fdf4';
     var color = isUser ? '#4f46e5' : '#166534';
     var bodyHtml = isUser
       ? '<div style="font-size:14px;white-space:pre-wrap;color:' + color + '">' + escHtml(body) + '</div>'
@@ -4386,8 +4260,8 @@ export function renderChatThreadPage(
       ? '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(attachmentName) + '</div>'
       : '';
     var bubble = document.createElement('div');
-    bubble.style.cssText = 'display:flex;justify-content:' + align + ';margin-bottom:12px';
-    bubble.innerHTML = '<div style="max-width:70%;background:' + bg + ';border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
+    bubble.className = '${CHAT_BUBBLE_CLASS} ${CHAT_BUBBLE_CLASS}--' + role;
+    bubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
       + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">' + escHtml(role) + '</div>'
       + (isError ? errorHtml : bodyHtml)
       + attachmentHtml
@@ -4609,19 +4483,19 @@ export function renderChatThreadPage(
         </div>`
       : "";
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>${title} - Shipwright Admin</title>
-  <style>${baseStyles()}${threadPaneStyles}${chatPageStyles}
-  </style>
-</head>
-<body>
-  ${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page" style="display:flex;flex-direction:column;height:calc(100vh - 52px);max-width:900px;margin:0 auto;padding:0 24px">
-    <div class="page-header" style="padding-top:20px;padding-bottom:16px;flex-shrink:0">
+  return renderAdminPage({
+    title: `${rawTitle} - Shipwright Admin`,
+    // NOTE: chatThreadStyles must be concatenated before chatPageStyles here —
+    // chatPageStyles's mobile @media (max-width:640px) override for
+    // .chat-bubble-inner has the same specificity as chatThreadStyles's
+    // unconditional base rule, so whichever is concatenated *last* wins the
+    // cascade. Putting chatPageStyles last ensures the mobile override
+    // actually takes effect at ≤640px instead of being silently shadowed.
+    extraStyles: `${threadPaneStyles}${chatThreadStyles}${chatPageStyles}
+  `,
+    body: `${renderAdminToolbar(userName, activePath)}
+  <div class="vos-page chat-thread-page">
+    <div class="page-header chat-thread-header">
       <div>
         <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
         <h1 class="page-title">${title}</h1>
@@ -4644,41 +4518,38 @@ export function renderChatThreadPage(
       ${sidebar}
       <div style="flex:1;min-width:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
-        <div id="messages-container" style="flex:1;overflow-y:auto;padding:8px 0;min-height:0">
+        <div id="messages-container" class="chat-messages-container">
           ${messageBubbles}
           ${emptyState}
         </div>
 
         <!-- Send form -->
-        <form id="send-form" enctype="multipart/form-data" style="flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px">
-          <div style="display:flex;gap:8px;align-items:flex-end">
+        <form id="send-form" enctype="multipart/form-data" class="chat-composer-form">
+          <div class="chat-composer-row">
             <textarea
               id="message-input"
               name="body"
               rows="3"
               placeholder="Type a message..."
-              style="flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none"
+              class="chat-message-input"
             ></textarea>
             <input type="file" id="file-input" name="file" style="display:none" accept="text/*,image/*,application/pdf,application/json">
             <button
               type="button"
               id="attach-btn"
-              class="btn btn-secondary"
-              style="flex-shrink:0;height:44px;padding:0 16px"
+              class="btn btn-secondary chat-composer-btn chat-composer-btn--attach"
             >Attach file</button>
             <button
               type="submit"
               id="send-btn"
-              class="btn btn-primary"
-              style="flex-shrink:0;height:44px;padding:0 20px"
+              class="btn btn-primary chat-composer-btn chat-composer-btn--send"
             >Send</button>
           </div>
           <div id="file-name" style="font-size:12px;color:#6b7280;margin-top:6px;min-height:16px"></div>
         </form>
       </div>
     </div>
-  </div>
-  ${inlineScript}
-</body>
-</html>`;
+  </div>`,
+    bodyEnd: inlineScript,
+  });
 }

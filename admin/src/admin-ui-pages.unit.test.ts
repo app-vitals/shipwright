@@ -31,12 +31,16 @@ import {
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
+  renderGithubAppInstallPage,
+  renderGithubAppInstalledPage,
+  renderGithubAppManifestRedirectPage,
   renderLoginPage,
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
   renderProvisionStartPage,
+  renderProvisionXappTokenPage,
   renderPrsPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
@@ -5991,6 +5995,175 @@ describe("renderChatThreadPage", () => {
   });
 });
 
+// ─── renderChatThreadPage — inline styles moved to classes (CFB-1.3) ────────
+// Migrated elements must carry the new classes and no longer carry a `style=`
+// attribute of their own (background/text styling on nested badges etc. is
+// out of scope and untouched).
+
+describe("renderChatThreadPage — CFB-1.3 class migration", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "My Test Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const USER_MSG: ChatMessage = {
+    id: "msg-1",
+    threadId: "thread-abc",
+    role: "user",
+    body: "Hello, agent!",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  const SYSTEM_MSG: ChatMessage = {
+    id: "msg-sys",
+    threadId: "thread-abc",
+    role: "system",
+    body: "System notice",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("page wrapper (.vos-page) carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="vos-page[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+    expect(match?.[0]).toContain("chat-thread-page");
+  });
+
+  test("header (.page-header) carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="page-header[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("messages container carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div id="messages-container"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper carries chat-bubble + chat-bubble--user classes, no inline style", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--user"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper for assistant role carries chat-bubble--assistant class", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [{ ...USER_MSG, id: "msg-a", role: "assistant" }],
+      "alice",
+    );
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--assistant"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble wrapper for system role carries chat-bubble--system class", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [SYSTEM_MSG],
+      "alice",
+    );
+    const match = html.match(
+      /<div class="chat-bubble chat-bubble--system"[^>]*>/,
+    );
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("bubble inner carries chat-bubble-inner class and no inline max-width", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<div class="chat-bubble-inner[^"]*"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("max-width");
+  });
+
+  test("no inline max-width appears in any server-rendered bubble wrapper/inner", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG, SYSTEM_MSG],
+      "alice",
+    );
+    const bubbleMatches = html.match(/<div class="chat-bubble[^>]*>/g) ?? [];
+    expect(bubbleMatches.length).toBeGreaterThan(0);
+    for (const bubbleTag of bubbleMatches) {
+      expect(bubbleTag).not.toContain("max-width");
+    }
+  });
+
+  test("composer form and row carry no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const formMatch = html.match(/<form id="send-form"[^>]*>/);
+    expect(formMatch).not.toBeNull();
+    expect(formMatch?.[0]).not.toContain("style=");
+  });
+
+  test("message input carries no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const match = html.match(/<textarea[^>]*id="message-input"[^>]*>/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("style=");
+  });
+
+  test("attach and send buttons carry no inline style attribute", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    const attachMatch = html.match(/<button[^>]*id="attach-btn"[^>]*>/);
+    const sendMatch = html.match(/<button[^>]*id="send-btn"[^>]*>/);
+    expect(attachMatch).not.toBeNull();
+    expect(sendMatch).not.toBeNull();
+    expect(attachMatch?.[0]).not.toContain("style=");
+    expect(sendMatch?.[0]).not.toContain("style=");
+  });
+
+  test("chatThreadStyles is included in extraStyles and defines chat-bubble rules", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain(".chat-bubble--user");
+    expect(html).toContain(".chat-bubble--assistant");
+    expect(html).toContain("justify-content:flex-end");
+    expect(html).toContain("justify-content:flex-start");
+  });
+
+  test("inline JS bubble builder (addBubble) uses the same chat-bubble class constants as the server renderer", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    // The class names baked into server-rendered HTML must also appear inside
+    // the inline <script> block, proving both come from the same source.
+    expect(html).toContain(
+      "bubble.className = 'chat-bubble chat-bubble--' + role;",
+    );
+    expect(html).toContain('class="chat-bubble-inner"');
+    expect(html).not.toContain("bubble.style.cssText");
+  });
+});
+
 // ─── classifyTaskState (HBV-1.2) ─────────────────────────────────────────────
 // Mirrors task-store/src/task-service.ts's list()/listReady()/listBlocked()
 // grouping: blockedBy is computed server-side for every status (not just
@@ -6907,4 +7080,207 @@ describe("renderWorkQueuePage", () => {
     expect(html).toContain('href="/admin/agents/agent-123"');
     expect(html).toContain("Test Agent");
   });
+});
+
+// ─── All page renderers — shared head via renderAdminPage (CFB-1.2) ─────────
+//
+// Every render*Page-style function in this file builds its <!DOCTYPE html>
+// head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
+// calls each of the 22 render sites (21 functions — renderChatThreadPage has
+// two distinct DOCTYPE blocks: its degraded early-return and its main return)
+// with minimal valid fixtures and asserts each output has exactly one
+// DOCTYPE and exactly one viewport meta tag, guarding against any call site
+// drifting back to a hand-rolled head or double-wrapping.
+
+describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", () => {
+  const MINIMAL_TASK: TaskItem = {
+    id: "TASK-LOOP-1",
+    title: "Loop test task",
+    status: "pending",
+    session: null,
+    repo: null,
+    assignee: null,
+    claimedBy: null,
+  };
+
+  const MINIMAL_PR: PrListItem = {
+    id: "pr-loop-1",
+    repo: "org/repo",
+    prNumber: 1,
+    taskId: null,
+    staged: false,
+    state: "open",
+    reviewState: "pending",
+    commitSha: null,
+    patchCycles: 0,
+    reviewCycles: 0,
+    agentId: null,
+    claimedBy: null,
+    reviewedAt: null,
+    patchedAt: null,
+    mergedAt: null,
+    claimedAt: null,
+    heartbeatAt: null,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  };
+
+  const MINIMAL_THREAD: ChatThread = {
+    id: "thread-loop-1",
+    agentId: "agent-123",
+    title: "Loop thread",
+    memberId: null,
+    createdAt: "2026-06-01T09:00:00Z",
+    updatedAt: "2026-06-01T09:00:00Z",
+  };
+
+  const MINIMAL_MSG: ChatMessage = {
+    id: "msg-loop-1",
+    threadId: "thread-loop-1",
+    role: "user",
+    body: "hello",
+    createdAt: "2026-06-01T09:00:00Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  const renderers: Array<[string, () => string]> = [
+    ["renderLoginPage", () => renderLoginPage()],
+    ["renderAgentsPage", () => renderAgentsPage([], USER_NAME, true, "UTC")],
+    [
+      "renderNewLocalAgentPage",
+      () =>
+        renderNewLocalAgentPage(USER_NAME, [
+          { name: "coding", displayName: "Coding Agent" },
+        ]),
+    ],
+    [
+      "renderAgentDetailPage",
+      () =>
+        renderAgentDetailPage(AGENT, {}, [], [], [], [], [], USER_NAME, true, {
+          timezone: "UTC",
+        }),
+    ],
+    ["renderProvisionStartPage", () => renderProvisionStartPage(USER_NAME, [])],
+    [
+      "renderGithubAppManifestRedirectPage",
+      () =>
+        renderGithubAppManifestRedirectPage(USER_NAME, {
+          githubOrg: "acme",
+          manifest: { name: "shipwright" },
+        }),
+    ],
+    [
+      "renderGithubAppInstallPage",
+      () =>
+        renderGithubAppInstallPage(USER_NAME, {
+          installUrl: "https://github.com/apps/shipwright/installations/new",
+        }),
+    ],
+    [
+      "renderGithubAppInstalledPage",
+      () => renderGithubAppInstalledPage(USER_NAME, { success: true }),
+    ],
+    [
+      "renderProvisionXappTokenPage",
+      () => renderProvisionXappTokenPage(USER_NAME, { agentId: "agent-123" }),
+    ],
+    ["renderProvisionPasteForm", () => renderProvisionPasteForm(USER_NAME)],
+    [
+      "renderTasksPage",
+      () =>
+        renderTasksPage(
+          [MINIMAL_TASK],
+          {},
+          false,
+          USER_NAME,
+          {},
+          { total: 1, limit: 50, page: 1 },
+        ),
+    ],
+    [
+      "renderTaskDetailPage",
+      () => renderTaskDetailPage(MINIMAL_TASK, USER_NAME),
+    ],
+    [
+      "renderSessionDetailPage",
+      () =>
+        renderSessionDetailPage("session-loop-1", [MINIMAL_TASK], USER_NAME),
+    ],
+    [
+      "renderPrsPage",
+      () =>
+        renderPrsPage(
+          [MINIMAL_PR],
+          {},
+          false,
+          USER_NAME,
+          {},
+          { total: 1, limit: 50, page: 1 },
+        ),
+    ],
+    ["renderPrDetailPage", () => renderPrDetailPage(MINIMAL_PR, USER_NAME)],
+    [
+      "renderCronLogsPage",
+      () =>
+        renderCronLogsPage({
+          agent: { id: "agent-123", name: "Test Agent" },
+          crons: [],
+          runs: [],
+          filters: {},
+          pagination: { total: 0, limit: 50, page: 1 },
+          userName: USER_NAME,
+        }),
+    ],
+    [
+      "renderWorkQueuePage",
+      () =>
+        renderWorkQueuePage({
+          agent: { id: "agent-123", name: "Test Agent" },
+          snapshot: null,
+          userName: USER_NAME,
+        }),
+    ],
+    [
+      "renderProvisionCompletePage",
+      () => renderProvisionCompletePage(USER_NAME, { success: true }),
+    ],
+    ["renderTokensPage", () => renderTokensPage([], false, USER_NAME)],
+    ["renderChatPage", () => renderChatPage([], undefined, null, USER_NAME)],
+    [
+      "renderChatThreadPage (degraded — thread/messages null)",
+      () => renderChatThreadPage("agent-123", null, null, USER_NAME),
+    ],
+    [
+      "renderChatThreadPage (main)",
+      () =>
+        renderChatThreadPage(
+          "agent-123",
+          MINIMAL_THREAD,
+          [MINIMAL_MSG],
+          USER_NAME,
+        ),
+    ],
+  ];
+
+  test("all 22 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(22);
+  });
+
+  for (const [name, render] of renderers) {
+    test(`${name}: exactly one DOCTYPE and one viewport meta tag`, () => {
+      const html = render();
+      const doctypeMatches = html.match(/<!DOCTYPE html>/g) ?? [];
+      const viewportMatches = html.match(/<meta name="viewport"/g) ?? [];
+      expect(doctypeMatches.length).toBe(1);
+      expect(viewportMatches.length).toBe(1);
+      expect(html).toContain(
+        'content="width=device-width, initial-scale=1, viewport-fit=cover"',
+      );
+    });
+  }
 });
