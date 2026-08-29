@@ -1,6 +1,6 @@
 {
   "name": "shipwright-monorepo",
-  "version": "1.198.2",
+  "version": "1.198.3",
   "private": true,
   "workspaces": [
     "lib",
