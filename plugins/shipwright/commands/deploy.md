@@ -244,7 +244,56 @@ do NOT merge. Print:
 There is no other candidate to fall back to. Stop here.
 
 **Otherwise** (`200` or `201`): the claim succeeded. `PR_RECORD_ID` is reused by the
-post-merge update in Step 4c — no second claim call is needed. Proceed to Step 4b.
+post-merge update in Step 4c — no second claim call is needed. Proceed to Step 4a.5.
+
+### 4a.5. Hold-Label Re-check (AM-1)
+
+Read `auto_merge_hold_label` from `state/agent-policy.md` (default: unset/empty — every
+provisioned agent's policy file has no hold label configured until an operator opts in;
+`agent/src/check-helpers.ts`'s `readAutoMergeHoldLabel()`/`parseAutoMergeHoldLabel()` are the
+canonical parser this mirrors). If the field is unset or empty, skip this check entirely and
+proceed to Step 4b — this is a no-op for every repo that hasn't opted in.
+
+If a hold label is configured, this PR was already checked for that label at candidate-scan
+time (`agent/src/check-deploy.ts`'s `getDeployCandidates()`/`isHeldByLabel()`), but a label can
+be added to the PR in the window between that scan and this merge step. Re-fetch the PR's
+current labels and check again — this closes that label-added-mid-scan race:
+
+```bash
+CURRENT_LABELS=$(gh pr view {pr} --repo {org}/{repo} --json labels --jq '[.labels[].name]')
+```
+
+**If `CURRENT_LABELS` contains the configured `auto_merge_hold_label` value** (exact string
+match — mirrors `isHeldByLabel()`'s case-sensitive comparison): do NOT merge. Release the
+pre-merge claim from Step 4a first, then mark the task/PR record `blocked`:
+
+```bash
+[ -n "$PR_RECORD_ID" ] && curl -s -o /dev/null -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID/release"
+
+if [ -n "$TASK_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID" \
+    -d '{"status": "blocked", "note": "Merge blocked: PR carries the configured auto_merge_hold_label — a human must remove the label before this PR can be deployed."}' | jq .
+elif [ -n "$PR_RECORD_ID" ]; then
+  curl -sf -X PATCH \
+    -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    -H "Content-Type: application/json" \
+    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
+    -d '{"blocked": true, "blockedReason": "Merge blocked: PR carries the configured auto_merge_hold_label — a human must remove the label before this PR can be deployed."}' | jq .
+fi
+```
+
+Print and stop:
+```
+✗ Merge blocked: PR #{pr} carries the "{auto_merge_hold_label}" hold label.
+  A human must remove the label before this PR can be deployed.
+```
+
+**Otherwise** (label not present, or field unset): proceed to Step 4b.
 
 ### 4b. Squash Merge
 
