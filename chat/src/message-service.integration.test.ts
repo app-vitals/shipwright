@@ -21,7 +21,10 @@ function makePrisma(): PrismaClient {
   });
 }
 
-async function createThread(prisma: PrismaClient, agentId = "agent-1"): Promise<string> {
+async function createThread(
+  prisma: PrismaClient,
+  agentId = "agent-1",
+): Promise<string> {
   const thread = await prisma.thread.create({ data: { agentId } });
   return thread.id;
 }
@@ -149,7 +152,11 @@ describeOrSkip("MessageService (integration)", () => {
       });
 
       const { messages } = await service.list(threadId);
-      expect(messages.map((m) => m.id)).toEqual([first.id, second.id, third.id]);
+      expect(messages.map((m) => m.id)).toEqual([
+        first.id,
+        second.id,
+        third.id,
+      ]);
     });
 
     it("respects limit/offset and returns an accurate total independent of pagination", async () => {
@@ -350,6 +357,38 @@ describeOrSkip("MessageService (integration)", () => {
     });
   });
 
+  // ─── heartbeat() ────────────────────────────────────────────────────────────
+
+  describe("heartbeat()", () => {
+    it("bumps heartbeatAt on a claimed message", async () => {
+      const threadId = await createThread(prisma);
+      const clock = FixedClock(new Date("2026-05-01T10:00:00Z"));
+      const svc = new MessageService(prisma, clock);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+      expect(claimed.heartbeatAt).toBeNull();
+
+      const updated = await svc.heartbeat(claimed.id);
+
+      expect(updated?.heartbeatAt).toEqual(new Date("2026-05-01T10:00:00Z"));
+    });
+
+    it("returns null when the message does not exist", async () => {
+      const svc = new MessageService(prisma);
+      const updated = await svc.heartbeat("does-not-exist");
+      expect(updated).toBeNull();
+    });
+  });
+
   // ─── reply() ────────────────────────────────────────────────────────────────
 
   describe("reply()", () => {
@@ -370,7 +409,9 @@ describeOrSkip("MessageService (integration)", () => {
 
       expect(result).not.toBeNull();
       expect(result?.userMessage.id).toBe(userMessage.id);
-      expect(result?.userMessage.repliedAt).toEqual(new Date("2026-04-01T09:30:00Z"));
+      expect(result?.userMessage.repliedAt).toEqual(
+        new Date("2026-04-01T09:30:00Z"),
+      );
       expect(result?.assistantMessage.role).toBe("assistant");
       expect(result?.assistantMessage.body).toBe("answer");
       expect(result?.assistantMessage.threadId).toBe(threadId);
@@ -394,7 +435,9 @@ describeOrSkip("MessageService (integration)", () => {
         },
       });
 
-      const result = await service.reply(userMessage.id, { body: "second answer" });
+      const result = await service.reply(userMessage.id, {
+        body: "second answer",
+      });
       expect(result).toBeNull();
     });
   });

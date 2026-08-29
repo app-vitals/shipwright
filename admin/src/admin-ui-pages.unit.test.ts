@@ -5791,6 +5791,14 @@ describe("renderChatThreadPage", () => {
     expect(html).toContain("messages.json");
   });
 
+  test("page's poll loop extends the timeout on heartbeatAt/claimedAt progress instead of a flat cutoff", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    expect(html).toContain("heartbeatAt");
+    expect(html).toContain("IDLE_TIMEOUT_POLLS");
+    expect(html).toContain("ABSOLUTE_MAX_POLLS");
+    expect(html).not.toContain("var MAX_POLLS =");
+  });
+
   test("XSS: user message body is escaped", () => {
     const xssMsg: ChatMessage = {
       ...USER_MSG,

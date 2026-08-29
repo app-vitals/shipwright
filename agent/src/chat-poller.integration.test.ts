@@ -10,8 +10,8 @@
  */
 
 import { describe, expect, it, mock } from "bun:test";
-import type { ChatServiceClient } from "./http-chat-service-client.ts";
 import { createChatPoller } from "./chat-poller.ts";
+import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,7 @@ function makeFakeClient(
   return {
     listThreads: async () => ({ threads: [], total: 0, limit: 50, offset: 0 }),
     claimMessage: async () => null,
+    heartbeat: async () => {},
     replyToMessage: async () => {
       throw new Error("replyToMessage not stubbed for this test");
     },

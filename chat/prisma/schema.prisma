@@ -61,6 +61,10 @@ model Message {
   claimed            Boolean   @default(false)
   claimedAt          DateTime?
   claimedBy          String?
+  // Bumped by the claiming agent while it works a long-running reply so
+  // pollers can tell "still working" apart from "wedged" (see heartbeat()
+  // in message-service.ts). Only ever set on claimed user messages.
+  heartbeatAt        DateTime?
   repliedAt          DateTime?
   errorKind          String?
   createdAt          DateTime  @default(now())

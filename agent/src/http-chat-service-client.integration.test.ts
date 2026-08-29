@@ -32,10 +32,8 @@ interface CassetteEntry {
 }
 
 function loadCassette(filename: string): Record<string, CassetteEntry> {
-  const path = new URL(
-    `./fixtures/chat-service/${filename}`,
-    import.meta.url,
-  ).pathname;
+  const path = new URL(`./fixtures/chat-service/${filename}`, import.meta.url)
+    .pathname;
   return JSON.parse(readFileSync(path, "utf-8"));
 }
 
@@ -217,6 +215,37 @@ describe("HttpChatServiceClient.claimMessage (recorded fixtures)", () => {
     const err = await client.claimMessage(THREAD_ID).catch((e) => e);
     expect(err).toBeInstanceOf(ChatServiceClientError);
     expect(err.statusCode).toBe(500);
+  });
+});
+
+// ─── heartbeat ──────────────────────────────────────────────────────────────────
+
+describe("HttpChatServiceClient.heartbeat (recorded fixtures)", () => {
+  it("resolves and hits the recorded fixture on 200", async () => {
+    const { client, lastRequest } = makeClient(
+      messagesCassette,
+      "heartbeat_success",
+    );
+
+    await expect(
+      client.heartbeat(THREAD_ID, MESSAGE_ID),
+    ).resolves.toBeUndefined();
+
+    const req = lastRequest();
+    expect(req.method).toBe("POST");
+    const url = new URL(req.url);
+    expect(url.pathname).toBe(
+      `/threads/${THREAD_ID}/messages/${MESSAGE_ID}/heartbeat`,
+    );
+    expect(req.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
+  });
+
+  it("throws ChatServiceClientError with statusCode 404 on the recorded not-found error", async () => {
+    const { client } = makeClient(messagesCassette, "heartbeat_404");
+
+    const err = await client.heartbeat(THREAD_ID, MESSAGE_ID).catch((e) => e);
+    expect(err).toBeInstanceOf(ChatServiceClientError);
+    expect(err.statusCode).toBe(404);
   });
 });
 

@@ -65,6 +65,12 @@ export interface MessageServiceLike {
   claim(threadId: string, claimedBy: string): Promise<Message | null>;
 
   /**
+   * Bump a claimed message's heartbeatAt to now — proof of life for a
+   * long-running reply. Returns the updated message, or null if not found.
+   */
+  heartbeat(id: string): Promise<Message | null>;
+
+  /**
    * Post an agent reply to a claimed message.
    * Creates an assistant message and marks the user message with repliedAt.
    * Returns null if the user message is not found.
@@ -157,7 +163,10 @@ export class MessageService implements MessageServiceLike {
     if (data.errorKind !== undefined) updateData.errorKind = data.errorKind;
 
     try {
-      return await this.prisma.message.update({ where: { id }, data: updateData });
+      return await this.prisma.message.update({
+        where: { id },
+        data: updateData,
+      });
     } catch (err: unknown) {
       if (isPrismaNotFound(err)) return null;
       throw err;
@@ -200,6 +209,18 @@ export class MessageService implements MessageServiceLike {
       });
     } catch (err: unknown) {
       // Another worker claimed it between our findFirst and update — return null.
+      if (isPrismaNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async heartbeat(id: string): Promise<Message | null> {
+    try {
+      return await this.prisma.message.update({
+        where: { id },
+        data: { heartbeatAt: this.clock.now() },
+      });
+    } catch (err: unknown) {
       if (isPrismaNotFound(err)) return null;
       throw err;
     }
@@ -255,6 +276,9 @@ function isPrismaNotFound(err: unknown): boolean {
 /** Convert a Uint8Array (or Buffer) to the exact Uint8Array<ArrayBuffer> type Prisma expects. */
 function toBytes(u: Uint8Array): Prisma.Bytes {
   // Ensure we have an owned ArrayBuffer (not SharedArrayBuffer)
-  const ab = u.buffer.slice(u.byteOffset, u.byteOffset + u.byteLength) as ArrayBuffer;
+  const ab = u.buffer.slice(
+    u.byteOffset,
+    u.byteOffset + u.byteLength,
+  ) as ArrayBuffer;
   return new Uint8Array(ab);
 }

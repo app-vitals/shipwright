@@ -60,5 +60,27 @@
   "replyToMessage_400": {
     "status": 400,
     "body": { "error": "body is required" }
+  },
+  "heartbeat_success": {
+    "status": 200,
+    "body": {
+      "id": "msg-xyz",
+      "threadId": "thread-abc",
+      "role": "user",
+      "body": "Hello, can you help me?",
+      "claimedBy": "agent-1",
+      "claimedAt": "2026-01-01T00:10:00.000Z",
+      "heartbeatAt": "2026-01-01T00:10:30.000Z",
+      "repliedAt": null,
+      "tokens": null,
+      "costUsd": null,
+      "attachmentFilename": null,
+      "createdAt": "2026-01-01T00:09:00.000Z",
+      "updatedAt": "2026-01-01T00:10:30.000Z"
+    }
+  },
+  "heartbeat_404": {
+    "status": 404,
+    "body": { "error": "message not found" }
   }
 }

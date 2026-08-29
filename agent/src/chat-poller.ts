@@ -16,7 +16,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ClaudeRunResult } from "./claude.ts";
+import type { ClaudeRunResult, ProgressCallback } from "./claude.ts";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,7 +24,17 @@ import type { ChatServiceClient } from "./http-chat-service-client.ts";
 export type ChatRunner = (
   message: string,
   sessionKey?: string,
+  onProgress?: ProgressCallback,
 ) => Promise<ClaudeRunResult>;
+
+/**
+ * Minimum time between heartbeat() calls for a single claimed message.
+ * ProgressCallback fires once per Claude turn, which can be much more
+ * frequent than this — throttling keeps a chatty run from hammering the
+ * chat service while still giving pollers proof of life well inside the
+ * admin UI's 3s poll interval.
+ */
+const HEARTBEAT_MIN_INTERVAL_MS = 3_000;
 
 export interface ChatPollerOptions {
   client: ChatServiceClient;
@@ -84,9 +94,25 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
       }
     }
 
+    // Best-effort heartbeat while the run is in progress, throttled so a
+    // chatty multi-turn run doesn't hammer the chat service. Failures are
+    // swallowed — a missed heartbeat must never abort the reply itself.
+    let lastHeartbeatSentAt = 0;
+    const onProgress: ProgressCallback = () => {
+      const now = Date.now();
+      if (now - lastHeartbeatSentAt < HEARTBEAT_MIN_INTERVAL_MS) return;
+      lastHeartbeatSentAt = now;
+      client.heartbeat(threadId, message.id).catch((err) => {
+        console.error(
+          `[chat-poller] heartbeat failed for thread ${threadId} message ${message.id}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    };
+
     let runResult: Awaited<ReturnType<ChatRunner>>;
     try {
-      runResult = await runner(runnerMessage, sessionKey);
+      runResult = await runner(runnerMessage, sessionKey, onProgress);
     } catch (err) {
       console.error(
         `[chat-poller] runner failed for thread ${threadId}:`,

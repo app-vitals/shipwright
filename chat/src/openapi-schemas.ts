@@ -120,6 +120,12 @@ export const MessageSchema = z
       .nullable()
       .optional()
       .openapi({ example: "agent-id-123" }),
+    heartbeatAt: z
+      .string()
+      .datetime()
+      .nullable()
+      .optional()
+      .openapi({ example: null }),
     repliedAt: z
       .string()
       .datetime()
