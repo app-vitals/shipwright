@@ -247,7 +247,7 @@ export function fakeMessageService(
     },
     async heartbeat(id) {
       const msg = store.find((m) => m.id === id);
-      if (!msg) return null;
+      if (!msg || !msg.claimed || msg.repliedAt !== null) return null;
       msg.heartbeatAt = new Date();
       return msg;
     },

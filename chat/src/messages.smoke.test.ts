@@ -314,7 +314,27 @@ describe("POST /threads/:id/messages/claim", () => {
 // ─── Queue API: heartbeat ───────────────────────────────────────────────────────
 
 describe("POST /threads/:id/messages/:msgId/heartbeat", () => {
-  it("bumps heartbeatAt and returns 200", async () => {
+  it("bumps heartbeatAt and returns 200 for a claimed message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "worker-1");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message;
+    expect(body.heartbeatAt).toBeTruthy();
+  });
+
+  it("returns 404 when the message has not been claimed", async () => {
     const ts = fakeThreadService();
     const ms = fakeMessageService();
     const thread = await ts.create({ agentId: "a1" });
@@ -328,9 +348,26 @@ describe("POST /threads/:id/messages/:msgId/heartbeat", () => {
       `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
       { method: "POST", headers: H.get },
     );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as Message;
-    expect(body.heartbeatAt).toBeTruthy();
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message has already been replied to", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "worker-1");
+    await ms.reply(userMsg.id, { body: "the answer" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
   });
 
   it("returns 404 when the message does not exist", async () => {

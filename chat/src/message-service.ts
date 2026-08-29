@@ -66,7 +66,8 @@ export interface MessageServiceLike {
 
   /**
    * Bump a claimed message's heartbeatAt to now — proof of life for a
-   * long-running reply. Returns the updated message, or null if not found.
+   * long-running reply. Returns the updated message, or null if not found,
+   * not claimed, or already replied.
    */
   heartbeat(id: string): Promise<Message | null>;
 
@@ -217,10 +218,11 @@ export class MessageService implements MessageServiceLike {
   async heartbeat(id: string): Promise<Message | null> {
     try {
       return await this.prisma.message.update({
-        where: { id },
+        where: { id, claimed: true, repliedAt: null },
         data: { heartbeatAt: this.clock.now() },
       });
     } catch (err: unknown) {
+      // Not found, unclaimed, or already replied — all surface as P2025.
       if (isPrismaNotFound(err)) return null;
       throw err;
     }

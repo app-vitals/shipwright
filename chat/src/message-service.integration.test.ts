@@ -387,6 +387,48 @@ describeOrSkip("MessageService (integration)", () => {
       const updated = await svc.heartbeat("does-not-exist");
       expect(updated).toBeNull();
     });
+
+    it("returns null and does not bump heartbeatAt for an unclaimed message", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const unclaimed = await prisma.message.create({
+        data: { threadId, role: "user", body: "not claimed yet" },
+      });
+
+      const updated = await svc.heartbeat(unclaimed.id);
+      expect(updated).toBeNull();
+
+      const reloaded = await prisma.message.findUnique({
+        where: { id: unclaimed.id },
+      });
+      expect(reloaded?.heartbeatAt).toBeNull();
+    });
+
+    it("returns null and does not bump heartbeatAt for an already-replied message", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const replied = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "already answered",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+          repliedAt: new Date("2026-05-01T10:00:00Z"),
+        },
+      });
+
+      const updated = await svc.heartbeat(replied.id);
+      expect(updated).toBeNull();
+
+      const reloaded = await prisma.message.findUnique({
+        where: { id: replied.id },
+      });
+      expect(reloaded?.heartbeatAt).toBeNull();
+    });
   });
 
   // ─── reply() ────────────────────────────────────────────────────────────────
