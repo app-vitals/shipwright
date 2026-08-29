@@ -32,6 +32,9 @@ const truncatedNoResult = await import(
 const cleanExitNoResult = await import(
   "./fixtures/stream-json/clean-exit-no-result.ts"
 );
+const progressPhases = await import(
+  "./fixtures/stream-json/progress-phases.ts"
+);
 
 // ─── Shared test session store ────────────────────────────────────────────────
 
@@ -729,8 +732,8 @@ describe("resume retry", () => {
     );
 
     const progress: Array<Record<string, unknown>> = [];
-    const result = await runClaude("hello", "chan:ts", (mu) => {
-      progress.push(structuredClone(mu));
+    const result = await runClaude("hello", "chan:ts", (mu, phase) => {
+      if (phase === undefined) progress.push(structuredClone(mu));
     });
 
     expect(result.recoveredFromError).toBe(true);
@@ -876,9 +879,7 @@ describe("session persistence on failure", () => {
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
-    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
-      (e) => e,
-    );
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch((e) => e);
     expect(err).toBeInstanceOf(ClaudeTimeoutError);
     expect((err as InstanceType<typeof ClaudeTimeoutError>).sessionId).toBe(
       "fresh-sess-id",
@@ -895,9 +896,7 @@ describe("session persistence on failure", () => {
       if (callCount === 1) {
         // First call (resume) fails with a non-timeout error — enters the
         // retry branch.
-        return fakeProc("", "socket closed", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
       }
       // Retry attempt hangs and times out, but still captures a session id
       // off its own init line before the idle timer kills it.
@@ -941,10 +940,7 @@ describe("session persistence on failure", () => {
     // The mapping must point at the retry's session id — the most recently
     // known one — not the original stale session id.
     expect(mockSetSession).toHaveBeenCalledWith("chan:ts", "retry-sess-id");
-    expect(mockSetSession).toHaveBeenLastCalledWith(
-      "chan:ts",
-      "retry-sess-id",
-    );
+    expect(mockSetSession).toHaveBeenLastCalledWith("chan:ts", "retry-sess-id");
   });
 
   test("does not save when no sessionId was ever captured (process crashes before any stdout)", async () => {
@@ -964,9 +960,9 @@ describe("session persistence on failure", () => {
       fakeSentryClient,
     );
 
-    await expect(
-      runClaudeCrash("hello", "chan:ts"),
-    ).rejects.toThrow("segfault");
+    await expect(runClaudeCrash("hello", "chan:ts")).rejects.toThrow(
+      "segfault",
+    );
     expect(mockSetSession).not.toHaveBeenCalled();
   });
 
@@ -1009,18 +1005,13 @@ describe("session persistence on failure", () => {
     );
 
     const { ClaudeTimeoutError } = await import("./claude.ts");
-    const err = await runClaudeWithTimeout("hello", "chan:ts").catch(
-      (e) => e,
-    );
+    const err = await runClaudeWithTimeout("hello", "chan:ts").catch((e) => e);
     // The persistence failure must never replace the original timeout error.
     expect(err).toBeInstanceOf(ClaudeTimeoutError);
     expect((err as InstanceType<typeof ClaudeTimeoutError>).sessionId).toBe(
       "fresh-sess-id",
     );
-    expect(throwingSetSession).toHaveBeenCalledWith(
-      "chan:ts",
-      "fresh-sess-id",
-    );
+    expect(throwingSetSession).toHaveBeenCalledWith("chan:ts", "fresh-sess-id");
   });
 
   test("a session store write failure on the retry catch does not mask the original error or skip Sentry capture", async () => {
@@ -1030,9 +1021,7 @@ describe("session persistence on failure", () => {
       if (callCount === 1) {
         // First call (resume) fails with a non-timeout error — enters the
         // retry branch.
-        return fakeProc("", "socket closed", 1) as ReturnType<
-          typeof Bun.spawn
-        >;
+        return fakeProc("", "socket closed", 1) as ReturnType<typeof Bun.spawn>;
       }
       // Retry attempt hangs and times out, but still captures a session id
       // off its own init line before the idle timer kills it.
@@ -1079,16 +1068,11 @@ describe("session persistence on failure", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain("socket closed");
     expect(mockSpawnRetry).toHaveBeenCalledTimes(2);
-    expect(throwingSetSession).toHaveBeenCalledWith(
-      "chan:ts",
-      "retry-sess-id",
-    );
+    expect(throwingSetSession).toHaveBeenCalledWith("chan:ts", "retry-sess-id");
     // Sentry capture of the ORIGINAL error must still run despite the
     // persistence failure.
     expect(capturedExceptions).toHaveLength(1);
-    expect((capturedExceptions[0] as Error).message).toContain(
-      "socket closed",
-    );
+    expect((capturedExceptions[0] as Error).message).toContain("socket closed");
   });
 });
 
@@ -1564,8 +1548,11 @@ describe("runClaude — stream-json parsing", () => {
       undefined,
       undefined,
       undefined,
-      (mu) => {
-        progress.push(structuredClone(mu));
+      (mu, phase) => {
+        // Isolate the usage-triggered fires (phase undefined) from the
+        // separate phase-triggered fires (CFB-2.1) this same callback also
+        // now receives — this test is specifically about usage accumulation.
+        if (phase === undefined) progress.push(structuredClone(mu));
       },
     );
 
@@ -1593,8 +1580,8 @@ describe("runClaude — stream-json parsing", () => {
       fakeSentryClient,
     );
 
-    await runClaude("go", undefined, (mu) => {
-      progress.push(structuredClone(mu));
+    await runClaude("go", undefined, (mu, phase) => {
+      if (phase === undefined) progress.push(structuredClone(mu));
     });
 
     expect(progress).toHaveLength(cleanMultiTurn.expectedProgressCount);
@@ -1620,13 +1607,13 @@ describe("runClaude — stream-json parsing", () => {
       undefined,
       undefined,
       undefined,
-      (mu) => {
-        constructionProgress.push(structuredClone(mu));
+      (mu, phase) => {
+        if (phase === undefined) constructionProgress.push(structuredClone(mu));
       },
     );
 
-    await runClaude("go", undefined, (mu) => {
-      perCallProgress.push(structuredClone(mu));
+    await runClaude("go", undefined, (mu, phase) => {
+      if (phase === undefined) perCallProgress.push(structuredClone(mu));
     });
 
     expect(constructionProgress).toHaveLength(
@@ -1681,8 +1668,7 @@ describe("runClaude — stream-json parsing", () => {
 
   test("clean exit with no result event still surfaces the session id captured off the leading system/init line", async () => {
     const mockSpawn = mock(
-      () =>
-        ndjsonProc(cleanExitNoResult.lines) as ReturnType<typeof Bun.spawn>,
+      () => ndjsonProc(cleanExitNoResult.lines) as ReturnType<typeof Bun.spawn>,
     );
     const runClaude = createRunClaude(
       mockSpawn as typeof Bun.spawn,
@@ -1701,11 +1687,9 @@ describe("runClaude — stream-json parsing", () => {
   test("truncated non-zero exit with no result event falls back to the init line's session id on ClaudeRunError", async () => {
     const mockSpawn = mock(
       () =>
-        ndjsonProc(
-          truncatedNoResult.lines,
-          "",
-          1,
-        ) as ReturnType<typeof Bun.spawn>,
+        ndjsonProc(truncatedNoResult.lines, "", 1) as ReturnType<
+          typeof Bun.spawn
+        >,
     );
     const runClaude = createRunClaude(
       mockSpawn as typeof Bun.spawn,
@@ -1783,12 +1767,154 @@ describe("runClaude — stream-json parsing", () => {
       expect(err).toBeInstanceOf(ClaudeTimeoutError);
       const e = err as InstanceType<typeof ClaudeTimeoutError>;
       expect(e.reason).toBe("idle");
-      expect(e.partialModelUsage).toEqual(truncatedNoResult.expectedAccumulated);
+      expect(e.partialModelUsage).toEqual(
+        truncatedNoResult.expectedAccumulated,
+      );
       // The init line (first of the 3 emitted lines) carries a session id —
       // it must survive onto the timeout error even though the process was
       // killed before any terminal `result` event arrived.
       expect(e.sessionId).toBe(truncatedNoResult.expectedSessionId);
     }
+  });
+});
+
+// ─── progress phases ──────────────────────────────────────────────────────────
+
+describe("runClaude — progress phases derived from message.content", () => {
+  test("fires the expected collapsed phase sequence, in order, via onProgress", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(progressPhases.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const phases: Array<string | undefined> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (_mu, phase) => {
+        if (phase !== undefined) phases.push(phase);
+      },
+    );
+
+    await runClaude("go");
+
+    expect(phases).toEqual(progressPhases.expectedPhaseSequence);
+  });
+
+  test("fires the same collapsed phase sequence via the per-call onProgress", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(progressPhases.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const phases: Array<string | undefined> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    await runClaude("go", undefined, (_mu, phase) => {
+      if (phase !== undefined) phases.push(phase);
+    });
+
+    expect(phases).toEqual(progressPhases.expectedPhaseSequence);
+  });
+
+  test("fires a phase for a tool_use-only line with no usage field (before the usage guard)", async () => {
+    // msg_1 in the fixture carries a thinking block + a tool_use block and NO
+    // top-level `usage` field — the existing `if (!message?.id || !message.usage)
+    // return;` guard must not suppress the phase fire for this line.
+    const mockSpawn = mock(
+      () => ndjsonProc(progressPhases.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const phases: Array<string | undefined> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (_mu, phase) => {
+        if (phase !== undefined) phases.push(phase);
+      },
+    );
+
+    await runClaude("go");
+
+    // "thinking" and "reading" both come from msg_1, the usage-less line.
+    expect(phases[0]).toBe("thinking");
+    expect(phases[1]).toBe("reading");
+  });
+
+  test("never surfaces secret/path substrings embedded in tool_use.input anywhere in fired phases", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(progressPhases.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const phases: Array<string | undefined> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (_mu, phase) => {
+        phases.push(phase);
+      },
+    );
+
+    await runClaude("go");
+
+    const serialized = JSON.stringify(phases);
+    for (const secret of progressPhases.forbiddenSubstrings) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  test("passes the accumulated usage snapshot alongside the phase even when only the phase changed", async () => {
+    const mockSpawn = mock(
+      () => ndjsonProc(progressPhases.lines) as ReturnType<typeof Bun.spawn>,
+    );
+    const calls: Array<[Record<string, unknown>, string | undefined]> = [];
+    const runClaude = createRunClaude(
+      mockSpawn as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (mu, phase) => {
+        calls.push([structuredClone(mu), phase]);
+      },
+    );
+
+    await runClaude("go");
+
+    // The very first call (msg_1's thinking block, no usage field yet) must
+    // still receive a (possibly empty) modelUsage snapshot object alongside
+    // the phase — never undefined/omitted.
+    expect(calls[0][0]).toEqual({});
+    expect(calls[0][1]).toBe("thinking");
   });
 });
 

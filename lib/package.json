@@ -11,6 +11,7 @@
     "./http": "./http.ts",
     "./org-repo": "./org-repo.ts",
     "./pricing": "./pricing.ts",
+    "./progress-phases": "./progress-phases.ts",
     "./request-context": "./request-context.ts",
     "./secret-env-vars": "./secret-env-vars.ts",
     "./sentry": "./sentry.ts",
