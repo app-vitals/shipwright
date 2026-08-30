@@ -10,11 +10,65 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.19.2] - 2026-08-28
+## [1.19.11] - 2026-08-30
 
 ### Fixed
 
 - Raise admin readinessProbe successThreshold to 2 to prevent premature Ready flip during pod initialization. Single successful DB-aware probes no longer allow still-stabilizing pods to enter Ready state, preventing traffic routing before Cloud SQL proxy sidecar connection stabilizes (prevents transient 500s bursts observed via Sentry during admin restarts).
+
+## [1.19.10] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.10 triggered by release tag(s): `admin-v1.100.1`
+
+## [1.19.9] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.9 triggered by release tag(s): `admin-v1.100.0`, `agent-v1.199.0`, `chat-v1.55.0`, `metrics-v1.57.0`, `task-store-v1.79.0`
+
+## [1.19.8] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.8 triggered by release tag(s): `admin-v1.99.3`
+
+## [1.19.7] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.7 triggered by release tag(s): `admin-v1.99.2`
+
+## [1.19.6] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.6 triggered by release tag(s): `admin-v1.99.1`, `agent-v1.198.3`, `chat-v1.54.1`
+
+## [1.19.5] - 2026-08-29
+
+### Changed
+
+- auto-bump to chart v1.19.5 triggered by release tag(s): `admin-v1.99.0`, `agent-v1.198.2`, `chat-v1.54.0`
+
+## [1.19.4] - 2026-08-28
+
+### Changed
+
+- auto-bump to chart v1.19.4 triggered by release tag(s): `agent-v1.198.1`
+
+## [1.19.3] - 2026-08-28
+
+### Changed
+
+- auto-bump to chart v1.19.3 triggered by release tag(s): `agent-v1.198.0`
+
+## [1.19.2] - 2026-08-28
+
+### Changed
+
+- Derive `admin.appBaseUrl` from the public host (CNH-9.1). New `shipwright.admin.appBaseUrl` helper: an explicit `admin.appBaseUrl` value always wins; when empty and `networking.type` is `ingress` or `gateway`, `SHIPWRIGHT_ADMIN_APP_BASE_URL` is derived as `<scheme>://<public host>`; otherwise the env var is omitted (ClusterIP/NodePort/LoadBalancer installs unchanged). `NOTES.txt` and `README.md` updated to reflect the new precedence.
 
 ## [1.19.1] - 2026-08-28
 

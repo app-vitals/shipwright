@@ -478,9 +478,14 @@ describe("admin UI — login page", () => {
     const res = await app.request("/admin/login");
     expect(res.status).toBe(200);
     const html = await res.text();
+    // Scope the password-form check to <body> — the shared mobile stylesheet
+    // in <head> legitimately contains an `input[type="password"]` CSS
+    // selector (for other pages' real password fields), which would
+    // otherwise collide with a naive whole-page substring match.
+    const body = html.slice(html.indexOf("<body"));
     expect(html).toContain("Sign in with Google");
-    expect(html).not.toContain('type="password"');
-    expect(html).not.toContain('name="password"');
+    expect(body).not.toContain('type="password"');
+    expect(body).not.toContain('name="password"');
   });
 });
 

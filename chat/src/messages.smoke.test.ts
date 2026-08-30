@@ -11,6 +11,7 @@
  *   - PATCH  /threads/:id/messages/:msgId   update message
  *   - DELETE /threads/:id/messages/:msgId   delete message
  *   - POST   /threads/:id/messages/claim    claim next unclaimed (queue API)
+ *   - POST   /threads/:id/messages/:msgId/heartbeat  bump heartbeatAt (queue API)
  *   - POST   /threads/:id/messages/:msgId/reply  agent reply (queue API)
  *   - 413 when attachmentBytes exceeds 10 MB
  *   - 404 when thread not found
@@ -306,6 +307,116 @@ describe("POST /threads/:id/messages/claim", () => {
       method: "POST",
       headers: H.get,
     });
+    expect(res.status).toBe(404);
+  });
+});
+
+// ─── Queue API: heartbeat ───────────────────────────────────────────────────────
+
+describe("POST /threads/:id/messages/:msgId/heartbeat", () => {
+  it("bumps heartbeatAt and returns 200 for a claimed message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    // The route derives claimedBy from the caller's token — an admin token
+    // resolves to "admin", so the claim must be owned by "admin" to beat it.
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message;
+    expect(body.heartbeatAt).toBeTruthy();
+  });
+
+  it("returns 404 when another worker owns the claim", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "worker-1");
+    const app = buildApp(ts, ms);
+
+    // Caller is admin, but worker-1 holds the claim — keeping someone else's
+    // in-flight message looking alive is not the caller's to do.
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message has not been claimed", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message has already been replied to", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "admin");
+    await ms.reply(userMsg.id, { body: "the answer" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message does not exist", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/does-not-exist/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message belongs to a different thread", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread1 = await ts.create({ agentId: "a1" });
+    const thread2 = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread1.id, { role: "user", body: "hi" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread2.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
     expect(res.status).toBe(404);
   });
 });

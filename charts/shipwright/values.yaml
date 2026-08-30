@@ -223,7 +223,7 @@ admin:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-admin
-    tag: admin-v1.98.0
+    tag: admin-v1.100.1
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the admin service. ClusterIP is Minikube-friendly.
@@ -260,10 +260,14 @@ admin:
     encryptionKeyRef: SHIPWRIGHT_ENCRYPTION_KEY
     # -- Key in existingSecret that holds SHIPWRIGHT_SESSION_SECRET.
     sessionSecretRef: SHIPWRIGHT_SESSION_SECRET
-  # -- Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL).
-  # Required when the admin service is behind a Gateway or Ingress so that OAuth
-  # redirect URIs use the public host instead of localhost:3001. Leave empty to
-  # omit the env var.
+  # -- Public base URL for the admin service (sets SHIPWRIGHT_ADMIN_APP_BASE_URL),
+  # used for OAuth redirect URIs so they use the public host instead of
+  # localhost:3001. An explicit value here always wins. When left empty AND
+  # networking.type is "ingress" or "gateway", the chart auto-derives it as
+  # "<scheme>://<public host>" from networking.ingress.host / .gateway.host
+  # (https when TLS is on) — no manual override needed for those paths.
+  # ClusterIP/NodePort/LoadBalancer installs have no chart-known public host,
+  # so the env var stays omitted unless set explicitly here.
   appBaseUrl: ""
   # -- Externally-reachable task-store base URL advertised in the mint-token env
   # block (sets SHIPWRIGHT_TASK_STORE_PUBLIC_URL). Set this to the public route a
@@ -291,7 +295,7 @@ metrics:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-metrics
-    tag: metrics-v1.56.0
+    tag: metrics-v1.57.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the metrics service. ClusterIP is Minikube-friendly.
@@ -407,7 +411,7 @@ agent:
   enabled: true
   image:
     repository: ghcr.io/app-vitals/shipwright-agent
-    tag: agent-v1.197.0
+    tag: agent-v1.199.0
     pullPolicy: ""
   service:
     port: 3000
@@ -430,7 +434,7 @@ agent:
     # -- Image the admin provisioner stamps onto agent Deployments.
     image:
       repository: ghcr.io/app-vitals/shipwright-agent
-      tag: agent-v1.197.0
+      tag: agent-v1.199.0
     # -- Replica count for provisioned agent Deployments.
     replicas: 1
     # -- ServiceAccount provisioned agent pods run as (SEPARATE from the admin SA).
@@ -761,7 +765,7 @@ taskStore:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-task-store
-    tag: task-store-v1.78.0
+    tag: task-store-v1.79.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the task-store service. ClusterIP is Minikube-friendly.
@@ -914,7 +918,7 @@ chat:
   enabled: false
   image:
     repository: ghcr.io/app-vitals/shipwright-chat
-    tag: chat-v1.53.0
+    tag: chat-v1.55.0
     pullPolicy: ""    # defaults to top-level imagePullPolicy when empty
   service:
     # -- Service type for the chat service. ClusterIP is Minikube-friendly.

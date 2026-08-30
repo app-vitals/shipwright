@@ -77,6 +77,39 @@
  * `branch` set (the two fields can coexist); a `task.pr`-set task with no
  * branch, or on a solo-task branch, is unaffected and still advances purely
  * on GitHub's MERGED confirmation, as before.
+ *
+ * RCB-1.1 replaces `reconcilePrOpenTasks`'s own `updatedSince` recency filter
+ * (PSR-1.1 above) with a batch + rotating-offset cursor, because that filter
+ * has a permanent-exclusion failure mode this pass in particular is exposed
+ * to: nothing ever bumps a pr_open task's `updatedAt` while it just sits
+ * waiting on human review, so a PR that takes longer than the recency window
+ * to merge falls out of the window on every subsequent tick and is never
+ * reconciled again — even after it merges on GitHub. Confirmed live: over a
+ * dozen tasks stuck at pr_open after review turnaround exceeded the window.
+ * Unlike a crash/hang (the case the window was widened for), an
+ * ordinary-but-slow human review is not rare enough to treat as an edge case.
+ * `reconcilePrState`'s own PR-record scan and `reconcileReviewState`'s
+ * pending/posted-record scans keep their existing `updatedSince` window
+ * unchanged — those two passes exist specifically to heal a record stuck
+ * because of a crash/hang/out-of-band write, where "the record won't be
+ * touched again on its own" is the correct staleness signal; the pr_open task
+ * list has no such distinction; every record in it is, by definition,
+ * "waiting", so filtering by recency just means dropping tasks the pass
+ * exists to serve. Each call to `reconcilePrOpenTasks()` now fetches up to
+ * `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks (default 200, paginated in the
+ * usual `DEFAULT_PAGE_LIMIT` chunks) starting at a module-level rotating
+ * offset cursor; when the fetched total is less than the batch size (the end
+ * of the list was reached before the batch filled), the cursor wraps back to
+ * 0 for the next call, so a round-robin sweep across ticks still eventually
+ * covers the entire list — including a task the very next tick after it was
+ * last visited, once the round-robin comes back around — rather than
+ * permanently dropping anything. The cursor lives as in-process module state
+ * (not part of `PrStateReconcilerDeps`) since `buildProductionDeps()` is
+ * constructed once and reused for the process lifetime (see
+ * `reconcilerDeps ??= ...` in agent/src/index.ts); a process restart simply
+ * resets the cursor to 0 and the round-robin starts over, which is
+ * acceptable since nothing here depends on cursor continuity for
+ * correctness, only for eventually covering the full list.
  */
 
 import { existsSync, statSync } from "node:fs";
@@ -182,14 +215,15 @@ export interface PrStateReconcilerDeps {
   /** Fetch live GitHub state for a single PR. Throws on lookup failure. */
   ghViewPr: (repo: string, prNumber: number) => Promise<GhPrView>;
   /**
-   * List one page of task-store Tasks with status "pr_open" (DSR-1.1),
-   * updated at or after `updatedSince` (PSR-1.1 — see `listOpenPrRecords`
-   * above for the same `gte` semantics and wide-window rationale).
+   * List one page of task-store Tasks with status "pr_open" (DSR-1.1).
+   * Deliberately NOT recency-filtered (RCB-1.1) — unlike `listOpenPrRecords`
+   * above, this list is scanned via a batch + rotating-offset cursor instead
+   * of an `updatedSince` window; see the module doc comment's RCB-1.1
+   * paragraph for the full rationale.
    */
   listPrOpenTasks: (
     limit: number,
     offset: number,
-    updatedSince: string,
   ) => Promise<PrOpenTaskRecord[]>;
   /** PATCH a task-store Task's fields (DSR-1.1). */
   updateTaskStatus: (
@@ -425,6 +459,42 @@ function computeUpdatedSinceCutoff(nowMs: number): string {
 }
 
 /**
+ * Per-tick fetch cap for `reconcilePrOpenTasks`'s batch + rotating-cursor
+ * scan (RCB-1.1 — see the module doc comment for the full rationale). Each
+ * call fetches up to this many pr_open tasks (paginated in
+ * `DEFAULT_PAGE_LIMIT` chunks) starting at `prOpenTasksCursor` below.
+ * Overridable via SHIPWRIGHT_RECONCILER_PR_OPEN_TASK_BATCH_SIZE for ops
+ * tuning without a code change, mirroring this file's other
+ * SHIPWRIGHT_RECONCILER_*-namespaced tuning knobs.
+ */
+const RECONCILER_PR_OPEN_TASK_BATCH_SIZE = Number(
+  process.env.SHIPWRIGHT_RECONCILER_PR_OPEN_TASK_BATCH_SIZE ?? 200,
+);
+
+/**
+ * Rotating offset cursor for `reconcilePrOpenTasks`'s batch scan (RCB-1.1).
+ * Module-level (not part of `PrStateReconcilerDeps`) — deliberately: this
+ * pass's production deps object is constructed once and reused for the
+ * process lifetime (`reconcilerDeps ??= ...` in agent/src/index.ts), so
+ * in-process state here is safe and needs no persistence layer. Advances by
+ * the number of tasks actually fetched each call; wraps back to 0 once a
+ * call's fetch comes up short of `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` (the
+ * end of the list was reached before the batch filled). A process restart
+ * resets this to 0, restarting the round-robin from the beginning — see the
+ * module doc comment's RCB-1.1 paragraph.
+ */
+let prOpenTasksCursor = 0;
+
+/**
+ * Test-only reset for `prOpenTasksCursor` above, so each test can start from
+ * a known cursor state regardless of execution order — this file has no
+ * other module-level mutable state that needs an equivalent seam.
+ */
+export function __resetPrOpenTasksCursorForTests(): void {
+  prOpenTasksCursor = 0;
+}
+
+/**
  * RCO-1.5: per-pass record-outcome tally, accumulated across every repo a
  * reconcile pass scans and logged once as a single summary line at the end
  * of the pass — see `logPassSummary` below. A clean, fully successful pass
@@ -501,26 +571,37 @@ async function listAllOpenRecords(
 }
 
 /**
- * List every task-store Task with status "pr_open" (DSR-1.1), updated at or
- * after `updatedSince` (PSR-1.1), paging through the task-store's default
- * 50-record page until a page returns fewer than `limit` records — same
- * loop shape as `listAllOpenRecords` above (TCR-1.2 follow-up: this dep was
- * previously unpaginated).
+ * Fetch one batch (up to `RECONCILER_PR_OPEN_TASK_BATCH_SIZE` tasks) of
+ * task-store Tasks with status "pr_open" (DSR-1.1, RCB-1.1), starting at
+ * `prOpenTasksCursor` and paging through the task-store's default 50-record
+ * page (same loop shape as `listAllOpenRecords` above — TCR-1.2 follow-up:
+ * this dep was previously unpaginated) until either a page returns fewer
+ * than `limit` records (end of the whole list reached) or the batch cap is
+ * hit. Advances `prOpenTasksCursor` by the number of tasks actually fetched;
+ * wraps it back to 0 when the fetch came up short of the batch cap (end of
+ * list reached before the batch filled) — see the module doc comment's
+ * RCB-1.1 paragraph and `prOpenTasksCursor`'s own doc comment for the full
+ * rationale. Does NOT advance the cursor when the underlying list call
+ * throws — the batch didn't complete cleanly, so re-attempting from the same
+ * offset next tick is safer than skipping ahead blind.
  */
-async function listAllPrOpenTasks(
+async function fetchPrOpenTasksBatch(
   deps: PrStateReconcilerDeps,
-  updatedSince: string,
 ): Promise<PrOpenTaskRecord[]> {
   const limit = deps.pageLimit ?? DEFAULT_PAGE_LIMIT;
   const tasks: PrOpenTaskRecord[] = [];
-  let offset = 0;
+  let offset = prOpenTasksCursor;
 
   for (;;) {
-    const page = await deps.listPrOpenTasks(limit, offset, updatedSince);
+    const page = await deps.listPrOpenTasks(limit, offset);
     tasks.push(...page);
-    if (page.length < limit) break;
-    offset += limit;
+    offset += page.length;
+    if (page.length < limit) break; // end of the whole list reached
+    if (tasks.length >= RECONCILER_PR_OPEN_TASK_BATCH_SIZE) break; // batch cap reached
   }
+
+  prOpenTasksCursor =
+    tasks.length < RECONCILER_PR_OPEN_TASK_BATCH_SIZE ? 0 : offset;
 
   return tasks;
 }
@@ -767,7 +848,9 @@ async function reconcilePrOpenTask(
 }
 
 /**
- * Scan every pr_open task, resolve its linked PR (directly via task.pr, or
+ * Scan one batch of pr_open tasks (RCB-1.1 — see the module doc comment and
+ * `fetchPrOpenTasksBatch`'s doc comment for the batch + rotating-cursor
+ * scan's full rationale), resolve each linked PR (directly via task.pr, or
  * via the branch fallback), and PATCH the task to merged when GitHub
  * confirms the PR is actually merged. A single per-task failure is logged
  * and does not abort reconciliation of the rest of the batch — mirrors
@@ -776,15 +859,9 @@ async function reconcilePrOpenTask(
 export async function reconcilePrOpenTasks(
   deps: PrStateReconcilerDeps,
 ): Promise<void> {
-  // Computed once per reconcile pass (PSR-1.1) — never freshly inside the
-  // page loop, so a single pass uses one consistent cutoff across all pages.
-  const updatedSince = computeUpdatedSinceCutoff(
-    new Date(deps.now()).getTime(),
-  );
-
   let tasks: PrOpenTaskRecord[];
   try {
-    tasks = await listAllPrOpenTasks(deps, updatedSince);
+    tasks = await fetchPrOpenTasksBatch(deps);
   } catch (err) {
     console.error(
       "[pr-state-reconciler] failed to list pr_open tasks:",
@@ -1169,15 +1246,17 @@ interface TaskListResponseJson {
 }
 
 /**
- * Shared GET
- * /tasks?status=<status>&limit=<limit>&offset=<offset>&updatedSince=<updatedSince>
- * helper backing `listPrOpenTasks` (PSR-1.1). `limit`/`offset` are passed
- * straight through, same as `listOpenPrRecords`'s own GET /prs helper, so the
- * module-level `listAllPrOpenTasks` pagination loop above can page to
+ * Shared GET /tasks?status=<status>&limit=<limit>&offset=<offset>[&updatedSince=<updatedSince>]
+ * helper backing `listPrOpenTasks`. `limit`/`offset` are passed straight
+ * through, same as `listOpenPrRecords`'s own GET /prs helper, so the
+ * module-level `fetchPrOpenTasksBatch` pagination loop above can page to
  * completion instead of only ever seeing the task-store's default first
- * page. `updatedSince` is unconditionally included — recency-filtered per
- * PSR-1.1's (widened) window; see the module doc comment and
- * `PrStateReconcilerDeps.listOpenPrRecords`'s doc comment.
+ * page. `updatedSince` is optional and omitted from the querystring entirely
+ * when not passed — the pr_open call site (this function's sole caller) never
+ * passes it as of RCB-1.1, since that list is now scanned via a batch +
+ * rotating-cursor sweep instead of a recency filter (see the module doc
+ * comment's RCB-1.1 paragraph). Kept optional rather than dropped outright in
+ * case a future status-scan callsite still wants recency filtering.
  */
 function makeListTasksByStatus(opts: {
   baseUrl: string;
@@ -1187,20 +1266,20 @@ function makeListTasksByStatus(opts: {
   status: string,
   limit: number,
   offset: number,
-  updatedSince: string,
+  updatedSince?: string,
 ) => Promise<PrOpenTaskRecord[]> {
   const { baseUrl, headers, doFetch } = opts;
   return async (
     status: string,
     limit: number,
     offset: number,
-    updatedSince: string,
+    updatedSince?: string,
   ) => {
     const params = new URLSearchParams({
       status,
       limit: String(limit),
       offset: String(offset),
-      updatedSince,
+      ...(updatedSince !== undefined ? { updatedSince } : {}),
     });
     const res = await doFetch(`${baseUrl}/tasks?${params}`, { headers });
     if (!res.ok) {
@@ -1447,8 +1526,8 @@ export function buildProductionDeps(opts: {
         "state,mergedAt,headRefName",
       ]);
     },
-    listPrOpenTasks: (limit: number, offset: number, updatedSince: string) =>
-      listTasksByStatus("pr_open", limit, offset, updatedSince),
+    listPrOpenTasks: (limit: number, offset: number) =>
+      listTasksByStatus("pr_open", limit, offset),
     updateTaskStatus: async (id: string, fields: Record<string, unknown>) => {
       const res = await doFetch(`${baseUrl}/tasks/${id}`, {
         method: "PATCH",

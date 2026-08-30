@@ -10,6 +10,7 @@
  *   GET    /:id               get message
  *   PATCH  /:id               update message
  *   DELETE /:id               delete message
+ *   POST   /:id/heartbeat     bump a claimed message's heartbeatAt (queue API)
  *   POST   /:id/reply         agent reply to a message (queue API)
  *
  * The /:threadId param is provided by the parent mount in app.ts — routes here
@@ -110,7 +111,10 @@ const UpdateMessageBodySchema = z
  */
 const ReplyBodySchema = z
   .object({
-    body: z.string().optional().openapi({ example: "Sure, here is the answer." }),
+    body: z
+      .string()
+      .optional()
+      .openapi({ example: "Sure, here is the answer." }),
     tokens: z
       .record(z.string(), z.unknown())
       .optional()
@@ -284,6 +288,27 @@ const deleteRoute = createRoute({
   },
 });
 
+const heartbeatRoute = createRoute({
+  method: "post",
+  path: "/:id/heartbeat",
+  tags: ["messages"],
+  summary:
+    "Bump a claimed message's heartbeatAt (proof of life for a long-running reply)",
+  request: {
+    params: MessageIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated message",
+      content: { "application/json": { schema: MessageSchema } },
+    },
+    404: {
+      description: "Thread or message not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 const replyRoute = createRoute({
   method: "post",
   path: "/:id/reply",
@@ -355,7 +380,8 @@ export function createMessagesRoutes(
     }
 
     const messageBody = typeof body.body === "string" ? body.body : undefined;
-    if (messageBody === undefined) throw new BadRequestError("body is required");
+    if (messageBody === undefined)
+      throw new BadRequestError("body is required");
 
     // Attachment size guard.
     let attachmentBytes: Uint8Array | undefined;
@@ -370,7 +396,10 @@ export function createMessagesRoutes(
         }
         const buf = Buffer.from(body.attachmentBytes, "base64");
         attachmentBytes = new Uint8Array(
-          buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+          buf.buffer.slice(
+            buf.byteOffset,
+            buf.byteOffset + buf.byteLength,
+          ) as ArrayBuffer,
         );
       } else if (body.attachmentBytes instanceof Uint8Array) {
         byteLength = body.attachmentBytes.byteLength;
@@ -394,7 +423,9 @@ export function createMessagesRoutes(
           ? body.attachmentFilename
           : undefined,
       attachmentSize:
-        typeof body.attachmentSize === "number" ? body.attachmentSize : undefined,
+        typeof body.attachmentSize === "number"
+          ? body.attachmentSize
+          : undefined,
       attachmentBytes,
     });
     return c.json(message, 201);
@@ -502,6 +533,28 @@ export function createMessagesRoutes(
     const deleted = await messageService.delete(c.req.param("id"));
     if (!deleted) throw new NotFoundError("message not found");
     return c.json(deleted, 200);
+  });
+
+  // ─── Heartbeat (queue API) ──────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(heartbeatRoute, async (c): Promise<any> => {
+    const threadId = c.req.param("threadId") as string;
+    await requireThread(c, threadService, threadId);
+
+    const existing = await messageService.findById(c.req.param("id"));
+    if (!existing || existing.threadId !== threadId)
+      throw new NotFoundError("message not found");
+
+    // Same identity derivation as claim — only the claim's owner may beat it.
+    const callerAgentId = c.get("agentId");
+    const claimedBy = callerAgentId ?? "admin";
+
+    const updated = await messageService.heartbeat(
+      c.req.param("id"),
+      claimedBy,
+    );
+    if (!updated) throw new NotFoundError("message not found");
+    return c.json(updated, 200);
   });
 
   // ─── Reply (queue API) ─────────────────────────────────────────────────────

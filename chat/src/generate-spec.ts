@@ -89,6 +89,9 @@ const stubMessageService: MessageServiceLike = {
   async claim() {
     return null;
   },
+  async heartbeat() {
+    return null;
+  },
   async reply() {
     return null;
   },

@@ -46,21 +46,12 @@ Configured service ports:
 Networking exposure type: {{ .Values.networking.type }}
 Auth mode:                {{ .Values.auth.mode }}
 {{- /*
-CNH-8.1: public URL line. admin.appBaseUrl is the operator's own declared
-public base URL (set specifically for OAuth redirect URIs), so it wins when
-present — it is the most authoritative "how the outside world reaches this
-release" value the chart has. Falling back to shipwright.publicScheme +
-shipwright.publicHost only covers networking.type=ingress/gateway (the only
-cases those helpers resolve a host for at all); ClusterIP/NodePort/
-LoadBalancer installs have no chart-known public URL and print nothing here.
+CNH-8.1 / CNH-9.1: public URL line. Resolution precedence (explicit
+admin.appBaseUrl wins; else derived from the public host for
+networking.type=ingress/gateway; else empty) lives in one place now —
+shipwright.admin.appBaseUrl — so it's just consumed here.
 */}}
-{{- $publicUrl := .Values.admin.appBaseUrl }}
-{{- if not $publicUrl }}
-{{- $publicHost := include "shipwright.publicHost" . }}
-{{- if $publicHost }}
-{{- $publicUrl = printf "%s://%s" (include "shipwright.publicScheme" .) $publicHost }}
-{{- end }}
-{{- end }}
+{{- $publicUrl := include "shipwright.admin.appBaseUrl" . }}
 {{- if $publicUrl }}
 Public URL:               {{ $publicUrl }}
 {{- end }}

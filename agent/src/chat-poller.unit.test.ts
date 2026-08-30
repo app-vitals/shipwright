@@ -9,8 +9,9 @@ import { describe, expect, it, mock } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ChatServiceClient } from "./http-chat-service-client.ts";
 import { createChatPoller } from "./chat-poller.ts";
+import type { ProgressCallback } from "./claude.ts";
+import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ function makeMessage(threadId: string, messageId = "msg-1") {
     body: "Hello from user",
     claimedBy: "agent-1",
     claimedAt: new Date(),
+    heartbeatAt: null,
     repliedAt: null,
     tokens: null,
     costUsd: null,
@@ -63,6 +65,7 @@ function makeFakeClient(
   return {
     listThreads: async () => ({ threads: [], total: 0, limit: 50, offset: 0 }),
     claimMessage: async () => null,
+    heartbeat: async () => {},
     replyToMessage: async () => ({
       userMessage: makeMessage("thread-1"),
       assistantMessage: makeMessage("thread-1"),
@@ -324,6 +327,173 @@ describe("createChatPoller poll: listThreads failure", () => {
   });
 });
 
+// ─── poll: heartbeat during a long-running reply ───────────────────────────────
+
+/**
+ * Deterministic stand-in for setInterval/clearInterval. Registered callbacks
+ * fire only when `tick()` is called, so tests never depend on wall time.
+ */
+function makeFakeInterval() {
+  let nextId = 1;
+  const active = new Map<number, () => void>();
+  const setIntervalFn = ((fn: () => void) => {
+    const id = nextId++;
+    active.set(id, fn);
+    return id;
+  }) as unknown as typeof setInterval;
+  const clearIntervalFn = ((id: number) => {
+    active.delete(id);
+  }) as unknown as typeof clearInterval;
+  const tick = (times = 1) => {
+    for (let i = 0; i < times; i++) for (const fn of [...active.values()]) fn();
+  };
+  return { setIntervalFn, clearIntervalFn, tick, activeCount: () => active.size };
+}
+
+describe("createChatPoller poll: heartbeat during a long-running reply", () => {
+  it("beats on an interval even when the run emits no progress at all", async () => {
+    const threadId = "thread-hb";
+    const messageId = "msg-hb";
+    const thread = makeThread(threadId);
+    const message = makeMessage(threadId, messageId);
+    const replyResult = makeReplyResult(message);
+
+    const heartbeat = mock(async () => {});
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [thread],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage: async () => replyResult,
+      heartbeat,
+    });
+
+    const fake = makeFakeInterval();
+
+    // The regression this guards: a single long tool call emits ONE stream
+    // event and then nothing until it returns. A progress-driven heartbeat
+    // goes silent here — exactly during the wait it exists to cover. This
+    // runner never reports progress, and the heartbeat must still fire.
+    const runner = mock(async () => {
+      fake.tick(3);
+      return { result: "ok" };
+    });
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      setIntervalFn: fake.setIntervalFn,
+      clearIntervalFn: fake.clearIntervalFn,
+    });
+    await poller.pollOnce();
+
+    expect(heartbeat).toHaveBeenCalledTimes(3);
+    expect(heartbeat).toHaveBeenCalledWith(threadId, messageId);
+  });
+
+  it("stops beating once the run completes", async () => {
+    const threadId = "thread-hb-stop";
+    const message = makeMessage(threadId, "msg-hb-stop");
+    const replyResult = makeReplyResult(message);
+
+    const heartbeat = mock(async () => {});
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage: async () => replyResult,
+      heartbeat,
+    });
+
+    const fake = makeFakeInterval();
+    const runner = mock(async () => ({ result: "ok" }));
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      setIntervalFn: fake.setIntervalFn,
+      clearIntervalFn: fake.clearIntervalFn,
+    });
+    await poller.pollOnce();
+
+    expect(fake.activeCount()).toBe(0);
+    fake.tick(5);
+    expect(heartbeat).not.toHaveBeenCalled();
+  });
+
+  it("stops beating when the run throws", async () => {
+    const threadId = "thread-hb-throw";
+    const message = makeMessage(threadId, "msg-hb-throw");
+
+    const heartbeat = mock(async () => {});
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      heartbeat,
+    });
+
+    const fake = makeFakeInterval();
+    const runner = mock(async () => {
+      throw new Error("runner exploded");
+    });
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      setIntervalFn: fake.setIntervalFn,
+      clearIntervalFn: fake.clearIntervalFn,
+    });
+    await poller.pollOnce();
+
+    expect(fake.activeCount()).toBe(0);
+  });
+
+  it("does not let a heartbeat failure abort the reply", async () => {
+    const threadId = "thread-hb-fail";
+    const message = makeMessage(threadId, "msg-hb-fail");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+      heartbeat: async () => {
+        throw new Error("chat service unreachable");
+      },
+    });
+
+    const runner = mock(
+      async (_msg: string, _key?: string, onProgress?: ProgressCallback) => {
+        onProgress?.({});
+        return { result: "ok" };
+      },
+    );
+
+    const poller = createChatPoller({ client, runner });
+
+    await expect(poller.pollOnce()).resolves.toBeUndefined();
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ─── start/stop: timer lifecycle ───────────────────────────────────────────────
 //
 // Moved to chat-poller.integration.test.ts — these tests drive real
@@ -430,11 +600,7 @@ describe("createChatPoller poll: attachment handling", () => {
       expect(runnerArg).toContain("report.txt");
 
       // File written to <workspace>/uploads/<id>-<filename>
-      const filePath = join(
-        workspaceDir,
-        "uploads",
-        `${messageId}-report.txt`,
-      );
+      const filePath = join(workspaceDir, "uploads", `${messageId}-report.txt`);
       const written = await readFile(filePath);
       expect(Array.from(new Uint8Array(written))).toEqual([104, 105]);
     } finally {
@@ -547,5 +713,47 @@ describe("createChatPoller poll: attachment handling", () => {
     } finally {
       await rm(workspaceDir, { recursive: true, force: true });
     }
+  });
+});
+
+// ─── start: overlap guard ─────────────────────────────────────────────────────
+
+describe("createChatPoller start: overlap guard", () => {
+  it("skips interval ticks while the previous poll is still in flight", async () => {
+    let releaseList: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      releaseList = resolve;
+    });
+    const listThreads = mock(async () => {
+      await gate;
+      return { threads: [], total: 0, limit: 50, offset: 0 };
+    });
+
+    const client = makeFakeClient({ listThreads });
+    const runner = mock(async () => ({ result: "ok" }));
+    const fake = makeFakeInterval();
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      setIntervalFn: fake.setIntervalFn,
+      clearIntervalFn: fake.clearIntervalFn,
+    });
+    poller.start();
+
+    // A poll that outlives its interval would otherwise stack concurrent
+    // iterations for as long as it runs.
+    fake.tick(); // starts poll #1, which blocks on the gate
+    fake.tick(); // must be skipped
+    fake.tick(); // must be skipped
+    expect(listThreads).toHaveBeenCalledTimes(1);
+
+    releaseList();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    fake.tick(); // previous poll settled — free to run again
+    expect(listThreads).toHaveBeenCalledTimes(2);
+
+    poller.stop();
   });
 });

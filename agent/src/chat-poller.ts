@@ -16,7 +16,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ClaudeRunResult } from "./claude.ts";
+import type { ClaudeRunResult, ProgressCallback } from "./claude.ts";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,18 +24,37 @@ import type { ChatServiceClient } from "./http-chat-service-client.ts";
 export type ChatRunner = (
   message: string,
   sessionKey?: string,
+  onProgress?: ProgressCallback,
 ) => Promise<ClaudeRunResult>;
+
+/**
+ * Heartbeat cadence while a reply is in flight.
+ *
+ * Interval-driven, NOT progress-driven. A single long-running tool call (a
+ * multi-minute `Bash`, say) emits one stream event and then nothing at all
+ * until it returns, so a heartbeat tied to Claude turns goes silent during
+ * exactly the long wait it exists to cover. Liveness is a property of the
+ * agent process, not of the model's output cadence — so it gets its own
+ * timer. 3s keeps proof of life well inside the admin UI's poll interval.
+ */
+const HEARTBEAT_INTERVAL_MS = 3_000;
 
 export interface ChatPollerOptions {
   client: ChatServiceClient;
   runner: ChatRunner;
   /** Poll interval in ms. Default: 5000 */
   intervalMs?: number;
+  /** Heartbeat cadence in ms while a reply is in flight. Default: 3000 */
+  heartbeatIntervalMs?: number;
   /**
    * Agent workspace directory. When set, attachments on claimed messages are
    * pulled into `<workspaceDir>/uploads/` so Claude can Read them.
    */
   workspaceDir?: string;
+  /** Injected for tests so timer behavior is deterministic. */
+  setIntervalFn?: typeof setInterval;
+  /** Injected for tests so timer behavior is deterministic. */
+  clearIntervalFn?: typeof clearInterval;
 }
 
 export interface ChatPoller {
@@ -50,9 +69,19 @@ export interface ChatPoller {
 // ─── createChatPoller ─────────────────────────────────────────────────────────
 
 export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
-  const { client, runner, intervalMs = 5_000, workspaceDir } = opts;
+  const {
+    client,
+    runner,
+    intervalMs = 5_000,
+    heartbeatIntervalMs = HEARTBEAT_INTERVAL_MS,
+    workspaceDir,
+    setIntervalFn = setInterval,
+    clearIntervalFn = clearInterval,
+  } = opts;
 
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** Guards against a slow poll overlapping the next interval tick. */
+  let pollInFlight = false;
 
   async function processThread(threadId: string): Promise<void> {
     const message = await client.claimMessage(threadId);
@@ -84,7 +113,20 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
       }
     }
 
+    // Best-effort liveness heartbeat, running for the whole duration of the
+    // reply. Failures are swallowed — a missed heartbeat must never abort the
+    // reply itself.
+    const sendHeartbeat = () => {
+      client.heartbeat(threadId, message.id).catch((err) => {
+        console.error(
+          `[chat-poller] heartbeat failed for thread ${threadId} message ${message.id}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    };
+
     let runResult: Awaited<ReturnType<ChatRunner>>;
+    const heartbeatTimer = setIntervalFn(sendHeartbeat, heartbeatIntervalMs);
     try {
       runResult = await runner(runnerMessage, sessionKey);
     } catch (err) {
@@ -93,6 +135,8 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
         err instanceof Error ? err.message : String(err),
       );
       return;
+    } finally {
+      clearIntervalFn(heartbeatTimer);
     }
 
     try {
@@ -139,11 +183,20 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
   return {
     start() {
       if (timer) return; // already running
-      timer = setInterval(() => void pollOnce(), intervalMs);
+      // Skip a tick when the previous iteration is still running. A poll that
+      // outlives its interval (a long claim + reply cycle always does) would
+      // otherwise stack concurrent iterations for as long as it runs.
+      timer = setIntervalFn(() => {
+        if (pollInFlight) return;
+        pollInFlight = true;
+        void pollOnce().finally(() => {
+          pollInFlight = false;
+        });
+      }, intervalMs);
     },
     stop() {
       if (timer) {
-        clearInterval(timer);
+        clearIntervalFn(timer);
         timer = undefined;
       }
     },

@@ -241,6 +241,29 @@ test.describe("GET /admin/agents/:id — authenticated", () => {
     await loadAgentDetailPage(page, context);
     await expect(page.locator("body")).toContainText("coding");
   });
+
+  // CFB-3.1: .data-table .btn must stay at its current ~36px height at mobile
+  // widths — the mobile-wide .btn min-height:44px rule must not cascade
+  // through to buttons inside a .data-table (e.g. the env-var "Delete"
+  // button), or the tasks/PRs/env tables would become absurdly tall.
+  test("at 375px, a .data-table .btn (env var Delete button) stays near its current ~36px height, not 44px", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadAgentDetailPage(page, context);
+
+    const deleteBtn = page
+      .locator(".data-table .btn", { hasText: "Delete" })
+      .first();
+    await expect(deleteBtn).toBeVisible();
+
+    const height = await deleteBtn.evaluate(
+      (el) => el.getBoundingClientRect().height,
+    );
+    expect(height).toBeLessThan(44);
+    expect(height).toBeGreaterThan(0);
+  });
 });
 
 // ─── New-agent type picker (ATS-4.1) ──────────────────────────────────────────
@@ -264,10 +287,7 @@ async function loadNewAgentPage(
 }
 
 test.describe("GET /admin/agents/new — type picker", () => {
-  test("a required select[name=type] is present", async ({
-    page,
-    context,
-  }) => {
+  test("a required select[name=type] is present", async ({ page, context }) => {
     await loadNewAgentPage(page, context);
     const typeSelect = page.locator('select[name="type"]');
     await expect(typeSelect).toBeAttached();

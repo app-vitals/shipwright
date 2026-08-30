@@ -26,6 +26,7 @@ export interface Message {
   body: string;
   claimedBy: string | null;
   claimedAt: Date | string | null;
+  heartbeatAt: Date | string | null;
   repliedAt: Date | string | null;
   tokens: unknown;
   costUsd: number | null;
@@ -76,6 +77,12 @@ export interface ChatServiceClient {
   listThreads(opts: ListThreadsOptions): Promise<ListThreadsResult>;
   /** Returns null when there are no unclaimed messages in the thread. */
   claimMessage(threadId: string): Promise<Message | null>;
+  /**
+   * Bump a claimed message's heartbeatAt — proof of life while a long-running
+   * reply is in progress. Best-effort: callers should swallow failures rather
+   * than let a heartbeat blip abort the reply itself.
+   */
+  heartbeat(threadId: string, messageId: string): Promise<void>;
   replyToMessage(
     threadId: string,
     messageId: string,
@@ -124,7 +131,8 @@ export class HttpChatServiceClient implements ChatServiceClient {
 
   async listThreads(opts: ListThreadsOptions): Promise<ListThreadsResult> {
     const url = new URL(`${this.baseUrl}/threads`);
-    if (opts.agentId !== undefined) url.searchParams.set("agentId", opts.agentId);
+    if (opts.agentId !== undefined)
+      url.searchParams.set("agentId", opts.agentId);
     if (opts.limit !== undefined)
       url.searchParams.set("limit", String(opts.limit));
     if (opts.offset !== undefined)
@@ -166,6 +174,22 @@ export class HttpChatServiceClient implements ChatServiceClient {
     }
 
     return res.json() as Promise<Message>;
+  }
+
+  async heartbeat(threadId: string, messageId: string): Promise<void> {
+    const url = `${this.baseUrl}/threads/${threadId}/messages/${messageId}/heartbeat`;
+
+    const res = await this.fetchFn(url, {
+      method: "POST",
+      headers: this.authHeaders(),
+    });
+
+    if (!res.ok) {
+      throw new ChatServiceClientError(
+        res.status,
+        `POST /threads/${threadId}/messages/${messageId}/heartbeat failed: ${res.status}`,
+      );
+    }
   }
 
   async replyToMessage(
