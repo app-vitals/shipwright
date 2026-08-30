@@ -4,7 +4,9 @@
  * Do not import from production code paths.
  */
 
+import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
 import type { Prisma } from "../prisma/client/index.js";
+import { BadRequestError } from "./errors.ts";
 import type { Message, MessageServiceLike } from "./message-service.ts";
 import type {
   Thread,
@@ -185,6 +187,9 @@ export function fakeMessageService(
         claimedAt: null,
         claimedBy: null,
         heartbeatAt: null,
+        progressPhase: null,
+        progressSeq: 0,
+        cancelRequestedAt: null,
         repliedAt: null,
         errorKind: null,
         createdAt: new Date(),
@@ -245,7 +250,12 @@ export function fakeMessageService(
       msg.claimedBy = claimedBy;
       return msg;
     },
-    async heartbeat(id, claimedBy) {
+    async heartbeat(id, claimedBy, phase) {
+      if (phase !== undefined && !PROGRESS_PHASES.includes(phase as never)) {
+        throw new BadRequestError(
+          `invalid phase: ${phase} (must be one of ${PROGRESS_PHASES.join(", ")})`,
+        );
+      }
       const msg = store.find((m) => m.id === id);
       if (
         !msg ||
@@ -256,6 +266,8 @@ export function fakeMessageService(
       )
         return null;
       msg.heartbeatAt = new Date();
+      msg.progressSeq += 1;
+      if (phase !== undefined) msg.progressPhase = phase;
       return msg;
     },
     async reply(messageId, data) {
@@ -276,6 +288,9 @@ export function fakeMessageService(
         claimedAt: null,
         claimedBy: null,
         heartbeatAt: null,
+        progressPhase: null,
+        progressSeq: 0,
+        cancelRequestedAt: null,
         repliedAt: null,
         errorKind: null,
         createdAt: new Date(),

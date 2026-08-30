@@ -3,8 +3,10 @@
  * MessageService — CRUD for messages + queue operations (claim/reply).
  */
 
+import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
 import { Prisma } from "../prisma/client/index.js";
 import { type Clock, SystemClock } from "./clock.ts";
+import { BadRequestError } from "./errors.ts";
 import type { Message, PrismaClient } from "./index.ts";
 
 export type { Message };
@@ -68,8 +70,18 @@ export interface MessageServiceLike {
    * Bump a claimed message's heartbeatAt to now — proof of life for a
    * long-running reply. Scoped to the claim's owner: returns null unless the
    * message is an unreplied user message currently claimed by `claimedBy`.
+   *
+   * When `phase` is provided it must be one of PROGRESS_PHASES — otherwise
+   * this throws BadRequestError and no write happens. progressSeq is always
+   * incremented by exactly 1 in the same update as heartbeatAt (and
+   * progressPhase, when phase is given) — last-write-wins, not an
+   * append-only log.
    */
-  heartbeat(id: string, claimedBy: string): Promise<Message | null>;
+  heartbeat(
+    id: string,
+    claimedBy: string,
+    phase?: string,
+  ): Promise<Message | null>;
 
   /**
    * Post an agent reply to a claimed message.
@@ -215,7 +227,26 @@ export class MessageService implements MessageServiceLike {
     }
   }
 
-  async heartbeat(id: string, claimedBy: string): Promise<Message | null> {
+  async heartbeat(
+    id: string,
+    claimedBy: string,
+    phase?: string,
+  ): Promise<Message | null> {
+    if (phase !== undefined && !PROGRESS_PHASES.includes(phase as never)) {
+      throw new BadRequestError(
+        `invalid phase: ${phase} (must be one of ${PROGRESS_PHASES.join(", ")})`,
+      );
+    }
+
+    const data: Prisma.MessageUpdateInput = {
+      heartbeatAt: this.clock.now(),
+      // progressSeq is a deterministic, clock-skew-free change-detector: under
+      // FixedClock, heartbeatAt is byte-identical across two beats, so an
+      // incrementing integer is what makes "did this heartbeat land" testable.
+      progressSeq: { increment: 1 },
+    };
+    if (phase !== undefined) data.progressPhase = phase;
+
     try {
       // Scoped to the current owner of an in-flight claim: only the agent that
       // actually claimed this message, and only while the reply is still
@@ -223,7 +254,7 @@ export class MessageService implements MessageServiceLike {
       // the thread keep an arbitrary message looking alive.
       return await this.prisma.message.update({
         where: { id, role: "user", claimed: true, repliedAt: null, claimedBy },
-        data: { heartbeatAt: this.clock.now() },
+        data,
       });
     } catch (err: unknown) {
       // Not found, unclaimed, already replied, or owned by another worker —
