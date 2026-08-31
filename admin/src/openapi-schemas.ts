@@ -522,7 +522,6 @@ export const PatchAgentToolBodySchema = z
 
 /**
  * Token metadata returned from list/create (never the hash).
- * Exported as both AgentTokenSchema (canonical per brief) and AgentTokenMetaSchema (alias).
  */
 export const AgentTokenSchema = z
   .object({
