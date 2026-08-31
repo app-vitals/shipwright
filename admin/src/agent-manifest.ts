@@ -33,8 +33,8 @@ export const AGENT_HOME_MOUNT_PATH = "/data/agent-home";
  * ephemeral overlay layer — a single worktree with node_modules can exceed
  * the pod's ephemeral-storage limit and get the pod evicted.
  */
-export const AGENT_REPO_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/repos`;
-export const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
+const AGENT_REPO_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/repos`;
+const AGENT_WORKTREE_DIR = `${AGENT_HOME_MOUNT_PATH}/workspace/worktrees`;
 
 /**
  * Container resources. Requests mirror the GKE Autopilot defaults the agent

@@ -11,19 +11,19 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface AppManifestDisplayInfo {
+interface AppManifestDisplayInfo {
   name: string;
   description?: string;
   long_description?: string;
   background_color?: string;
 }
 
-export interface AppManifestBotUser {
+interface AppManifestBotUser {
   display_name: string;
   always_online?: boolean;
 }
 
-export interface AppManifestOAuthConfig {
+interface AppManifestOAuthConfig {
   scopes: {
     bot?: string[];
     user?: string[];
@@ -31,7 +31,7 @@ export interface AppManifestOAuthConfig {
   redirect_urls?: string[];
 }
 
-export interface AppManifestSettings {
+interface AppManifestSettings {
   event_subscriptions?: {
     bot_events?: string[];
   };

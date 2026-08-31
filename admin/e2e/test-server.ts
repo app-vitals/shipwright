@@ -34,7 +34,7 @@ export const ADMIN_E2E_SESSION_SECRET =
   process.env.ADMIN_E2E_SESSION_SECRET ?? "e2e-admin-test-secret-32chars!!!";
 export const SESSION_COOKIE = "admin_session";
 
-export const ADMIN_E2E_AGENT = {
+const ADMIN_E2E_AGENT = {
   id: "agent-e2e-1",
   name: "Test Agent",
   slackId: "U999TEST",

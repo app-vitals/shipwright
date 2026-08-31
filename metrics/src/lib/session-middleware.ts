@@ -24,7 +24,7 @@ import { verify } from "hono/jwt";
 // The session cookie + login path are owned by the admin service — metrics
 // consumes the admin's session rather than issuing its own.
 export const SESSION_COOKIE = "admin_session";
-export const ADMIN_LOGIN_PATH = "/admin/login";
+const ADMIN_LOGIN_PATH = "/admin/login";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -80,7 +80,7 @@ export interface UpdateSelfHostedInput {
   restrictSlackToMembers?: boolean;
 }
 
-export interface AgentIdAndRepos {
+interface AgentIdAndRepos {
   id: string;
   repos: string[];
   authorAllowlist: string[];

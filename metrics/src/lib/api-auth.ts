@@ -96,7 +96,7 @@ export const authMiddleware = (apiKeys: Map<string, Caller>) =>
  * Token validator interface — decouples authMiddleware from Prisma.
  * Implement with AgentTokenService.validate() for DB-backed agent token auth.
  */
-export interface AgentTokenValidator {
+interface AgentTokenValidator {
   validate(raw: string): Promise<{ userId: string; clientId: string } | null>;
 }
 
