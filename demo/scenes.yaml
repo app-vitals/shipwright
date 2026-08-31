@@ -210,7 +210,7 @@ scenes:
   - id: "proof"
     type: browser
     duration: 18
-    narration: "Shipwright builds Shipwright. Over eighteen hundred changes merged — mostly shipped by the agent itself. Two hundred thirty-two tasks completed in the last ninety days. Ninety-one percent passed all automated checks on the first try. Ninety-four percent approved on first review. Live and public at proof.shipwrightharness.com."
+    narration: "Shipwright builds Shipwright. Over nine hundred thirty tasks shipped in the last ninety days — mostly by the agent itself. Eighty-nine percent passed all automated checks on the first try. Eighty-one percent approved on first review. Live and public at proof.shipwrightharness.com."
     url: "http://localhost:4321/slides/proof.html"
     action: screenshot
     playwright: |
