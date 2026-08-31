@@ -90,43 +90,6 @@ export function parseAllowSelfReview(content: string): boolean {
   return match?.[1] === "true"; // default false if missing/unparseable
 }
 
-/**
- * Parse the `auto_merge_any_author_repos` policy field (AM-1) from
- * `state/agent-policy.md`, mirroring `parseAllowSelfReview()`'s regex style:
- * a bracketed, comma-separated list of "org/repo" strings, e.g.
- * `auto_merge_any_author_repos: [acme/repo-a, acme/repo-b]`. Entries are
- * trimmed of surrounding whitespace. Defaults to `[]` (unset/empty/
- * unparseable) — the safe default that preserves today's hard authorship
- * filter for every repo unless a repo is explicitly opted in.
- */
-export function parseAutoMergeAnyAuthorRepos(content: string): string[] {
-  const match = content.match(
-    /`?\*{0,2}\bauto_merge_any_author_repos\b\*{0,2}`?\s*[:|]\s*\[([^\]]*)\]/i,
-  );
-  if (!match) return [];
-  return match[1]
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry.length > 0);
-}
-
-/**
- * Parse the `auto_merge_hold_label` policy field (AM-1) from
- * `state/agent-policy.md`, mirroring `parseAllowSelfReview()`'s regex style:
- * a single label name, optionally quoted, e.g.
- * `auto_merge_hold_label: do-not-merge` or `auto_merge_hold_label: "hold
- * merge"`. Defaults to `""` (unset/empty/unparseable) — an empty hold label
- * never matches any PR label, so the exclusion is a no-op until a repo opts
- * in.
- */
-export function parseAutoMergeHoldLabel(content: string): string {
-  const match = content.match(
-    /`?\*{0,2}\bauto_merge_hold_label\b\*{0,2}`?\s*[:|]\s*\*{0,2}"?([^"\n|]*?)"?\*{0,2}\s*(?:\||$)/im,
-  );
-  if (!match) return "";
-  return match[1].trim();
-}
-
 export function parseCleanupMergedWorktrees(content: string): boolean {
   const match = content.match(
     /`?\*{0,2}\bcleanup_merged_worktrees\b\*{0,2}`?\s*[:|]\s*\*{0,2}(true|false)\b/i,
@@ -311,44 +274,6 @@ export function readAllowSelfReview(workspacePath: string): boolean {
     return parseAllowSelfReview(content);
   } catch {
     return false;
-  }
-}
-
-/**
- * Read and parse the `auto_merge_any_author_repos` policy field (AM-1) from
- * `state/agent-policy.md`, mirroring `readAllowSelfReview()` exactly:
- * defaults to `[]` on any read failure (missing file, missing workspace,
- * etc.) — the safe default that changes nothing for a repo that hasn't
- * explicitly opted in.
- */
-export function readAutoMergeAnyAuthorRepos(workspacePath: string): string[] {
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseAutoMergeAnyAuthorRepos(content);
-  } catch {
-    return [];
-  }
-}
-
-/**
- * Read and parse the `auto_merge_hold_label` policy field (AM-1) from
- * `state/agent-policy.md`, mirroring `readAllowSelfReview()` exactly:
- * defaults to `""` on any read failure (missing file, missing workspace,
- * etc.) — an empty hold label never matches any PR label, so the exclusion
- * is a no-op until a repo opts in.
- */
-export function readAutoMergeHoldLabel(workspacePath: string): string {
-  try {
-    const content = readFileSync(
-      join(workspacePath, "state", "agent-policy.md"),
-      "utf-8",
-    );
-    return parseAutoMergeHoldLabel(content);
-  } catch {
-    return "";
   }
 }
 
