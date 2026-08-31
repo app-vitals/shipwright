@@ -56,29 +56,35 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
       data: { id: "t-agh34", title: "stuck pending claim", status: "pending" },
     });
 
-    await expect(
-      prisma.$executeRawUnsafe(
+    let error: unknown;
+    try {
+      await prisma.$executeRawUnsafe(
         `UPDATE "Task" SET "claimedBy" = 'some-agent' WHERE "id" = 't-agh34';`,
-      ),
-    ).rejects.toThrow(/task_pending_claimed_by_invariant/);
+      );
+    } catch (e) {
+      error = e;
+    }
+    expect(String(error)).toContain("task_pending_claimed_by_invariant");
   });
 
   it("rejects an INSERT with status=pending and a non-null claimedBy", async () => {
-    await expect(
-      prisma.$executeRawUnsafe(
+    let error: unknown;
+    try {
+      await prisma.$executeRawUnsafe(
         `INSERT INTO "Task" ("id","title","status","claimedBy","updatedAt")
          VALUES ('t-bad-insert', 'bad insert', 'pending', 'some-agent', now());`,
-      ),
-    ).rejects.toThrow(/task_pending_claimed_by_invariant/);
+      );
+    } catch (e) {
+      error = e;
+    }
+    expect(String(error)).toContain("task_pending_claimed_by_invariant");
   });
 
   it("allows a normal pending row with claimedBy null", async () => {
-    await expect(
-      prisma.$executeRawUnsafe(
-        `INSERT INTO "Task" ("id","title","status","claimedBy","updatedAt")
-         VALUES ('t-ok-pending', 'ok pending', 'pending', NULL, now());`,
-      ),
-    ).resolves.not.toThrow();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Task" ("id","title","status","claimedBy","updatedAt")
+       VALUES ('t-ok-pending', 'ok pending', 'pending', NULL, now());`,
+    );
 
     const task = await prisma.task.findUniqueOrThrow({
       where: { id: "t-ok-pending" },
@@ -88,12 +94,10 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
   });
 
   it("allows a normal in_progress row with claimedBy set", async () => {
-    await expect(
-      prisma.$executeRawUnsafe(
-        `INSERT INTO "Task" ("id","title","status","claimedBy","updatedAt")
-         VALUES ('t-ok-claimed', 'ok claimed', 'in_progress', 'some-agent', now());`,
-      ),
-    ).resolves.not.toThrow();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "Task" ("id","title","status","claimedBy","updatedAt")
+       VALUES ('t-ok-claimed', 'ok claimed', 'in_progress', 'some-agent', now());`,
+    );
 
     const task = await prisma.task.findUniqueOrThrow({
       where: { id: "t-ok-claimed" },
