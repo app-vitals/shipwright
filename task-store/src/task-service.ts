@@ -585,21 +585,20 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const existing = await tx.task.findUnique({ where: { id } });
-        if (!existing) {
-          throw new NotFoundError("task not found");
-        }
         const record = await tx.task.update({ where: { id }, data });
         // update() has no single owning actor the way claim/release/recordSkip
         // do (a generic PATCH may be issued by any caller) — attribute to the
         // task's current claimant if one holds it, else "system". Mirrors
         // recordSkip()/resetSkip()'s ?? "system" fallback pattern in
-        // pull-request-service.ts.
+        // pull-request-service.ts. A missing task is caught by update()'s own
+        // P2025 below, translated to NotFoundError — no separate existence
+        // check needed.
         await this.recordTaskTransition(
           tx,
           existing,
           record,
           "update",
-          existing.claimedBy ?? "system",
+          existing?.claimedBy ?? "system",
         );
         return record;
       });
@@ -693,11 +692,9 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         // Capture the before-state up front — the actor is the current
-        // claimant that completed the task.
+        // claimant that completed the task. A missing task is caught by
+        // update()'s own P2025 below, translated to NotFoundError.
         const before = await tx.task.findUnique({ where: { id } });
-        if (!before) {
-          throw new NotFoundError("task not found");
-        }
         const record = await tx.task.update({
           where: { id },
           data: { status: "done", completedAt: now },
@@ -707,7 +704,7 @@ export class TaskService implements TaskServiceLike {
           before,
           record,
           "complete",
-          before.claimedBy ?? "system",
+          before?.claimedBy ?? "system",
         );
         return record;
       });
@@ -722,9 +719,6 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
-        if (!before) {
-          throw new NotFoundError("task not found");
-        }
         const record = await tx.task.update({
           where: { id },
           data: {
@@ -738,7 +732,7 @@ export class TaskService implements TaskServiceLike {
           before,
           record,
           "fail",
-          before.claimedBy ?? "system",
+          before?.claimedBy ?? "system",
         );
         return record;
       });
@@ -752,9 +746,6 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
-        if (!before) {
-          throw new NotFoundError("task not found");
-        }
         const record = await tx.task.update({
           where: { id },
           data: {
@@ -770,7 +761,7 @@ export class TaskService implements TaskServiceLike {
           before,
           record,
           "release",
-          before.claimedBy ?? "system",
+          before?.claimedBy ?? "system",
         );
         return record;
       });
@@ -795,9 +786,6 @@ export class TaskService implements TaskServiceLike {
         // Snapshot before the first update so the audit diff spans the whole
         // recordSkip (both the increment and any threshold auto-block).
         const before = await tx.task.findUnique({ where: { id } });
-        if (!before) {
-          throw new NotFoundError("task not found");
-        }
         let updated = await tx.task.update({
           where: { id },
           data: { skipCount: { increment: 1 }, lastSkippedAt: now },
@@ -819,7 +807,7 @@ export class TaskService implements TaskServiceLike {
           before,
           updated,
           "recordSkip",
-          before.claimedBy ?? "system",
+          before?.claimedBy ?? "system",
         );
         return updated;
       });
@@ -833,9 +821,6 @@ export class TaskService implements TaskServiceLike {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const before = await tx.task.findUnique({ where: { id } });
-        if (!before) {
-          throw new NotFoundError("task not found");
-        }
         const record = await tx.task.update({
           where: { id },
           data: { skipCount: 0, lastSkippedAt: null },
@@ -845,7 +830,7 @@ export class TaskService implements TaskServiceLike {
           before,
           record,
           "resetSkip",
-          before.claimedBy ?? "system",
+          before?.claimedBy ?? "system",
         );
         return record;
       });
