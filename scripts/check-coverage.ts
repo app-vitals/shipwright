@@ -191,7 +191,7 @@ export function filterRelevantFiles(
   );
 }
 
-export type AggregateStats = {
+type AggregateStats = {
   totalLf: number;
   totalLh: number;
   totalFnf: number;
