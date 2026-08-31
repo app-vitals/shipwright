@@ -214,7 +214,17 @@ Bumps `heartbeatAt` to now on the target message — proof of life while the cla
 
 Optional request body: `{ phase?: string }`. When `phase` is provided, it must be one of the valid `PROGRESS_PHASES` — otherwise returns `400`. On success, `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`.
 
+The heartbeat is **bidirectional**: the returned message carries `cancelRequestedAt`, so the same 3s tick that proves liveness also tells the agent whether a cancel was requested — no second polling loop and no inbound HTTP surface on the agent (the pull-only architecture is preserved). The agent derives `HeartbeatResult { cancelRequested }` from that field and, when set, aborts the in-flight Claude run (worst-case cancel latency ≈ one heartbeat interval, ~3s).
+
 Returns `400` if `phase` is provided but invalid, `404` if the message doesn't exist, doesn't belong to `:threadId`, isn't currently claimed by the caller, or has already been replied to; otherwise the updated message with `200`.
+
+#### Cancel (queue API)
+
+```
+POST /threads/:threadId/messages/:id/cancel
+```
+
+Requests cancellation of an in-flight reply by stamping `cancelRequestedAt` on the target message. Auth is the same `requireThread` scope as the rest of the queue API; the route is registered before the generic `/:id` routes so `/:id/cancel` matches its own handler. Returns `404` if the message doesn't exist or doesn't belong to `:threadId`; otherwise the updated message with `200`. The claiming agent observes the request on its next heartbeat tick (see above) and aborts — the aborted run remains resumable (its session id is still saved) and is **not** retried.
 
 #### Reply (queue API)
 
@@ -222,14 +232,14 @@ Returns `400` if `phase` is provided but invalid, `404` if the message doesn't e
 POST /threads/:threadId/messages/:id/reply
 ```
 
-Posts an agent's reply to a claimed user message — the second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number }`. `body` is required.
+Posts an agent's reply to a claimed user message — the second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }`. `body` is required. `errorKind` (e.g. `"cancelled"`, `"incomplete"`, `"stalled"`) is stamped on the assistant message so the admin chat UI can render a status badge and a Retry action.
 
 Preconditions, checked in order:
 1. The target message must exist and belong to `:threadId` — `404`
 2. `role` must be `"user"` — replying to an assistant message returns `400`
 3. `repliedAt` must be `null` — replying twice returns `409`
 
-On success, sets `repliedAt` on the user message and creates a new `role: "assistant"` message in the same thread. Returns `201` with `{ userMessage: Message, assistantMessage: Message }`.
+On success, sets `repliedAt` on the user message and creates a new `role: "assistant"` message in the same thread — both writes run inside a single `prisma.$transaction`, so a partial failure can never leave `repliedAt` set with no assistant message. Returns `201` with `{ userMessage: Message, assistantMessage: Message }`.
 
 ---
 

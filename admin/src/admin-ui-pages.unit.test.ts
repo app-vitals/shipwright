@@ -5765,6 +5765,32 @@ describe("renderChatThreadPage", () => {
     expect(html.toLowerCase()).toMatch(/error|#ef4444|#fee2e2|#b91c1c|#dc2626/);
   });
 
+  test("errorKind cancelled renders a human-readable 'Cancelled' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "cancelled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Cancelled");
+  });
+
+  test("errorKind incomplete renders a human-readable 'Incomplete' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "incomplete" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Incomplete");
+  });
+
+  test("errorKind stalled renders a human-readable 'Stalled' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "stalled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Stalled");
+  });
+
+  test("cancelled/incomplete/stalled errorKinds render a Retry action", () => {
+    for (const kind of ["cancelled", "incomplete", "stalled"]) {
+      const msg: ChatMessage = { ...ERROR_MSG, errorKind: kind };
+      const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+      expect(html).toContain("Retry");
+    }
+  });
+
   test("empty thread shows empty state message", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [], "alice");
     expect(html).toContain("No messages");

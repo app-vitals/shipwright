@@ -4127,7 +4127,9 @@ export function renderChatThreadPage(
       ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
       : CHAT_BUBBLE_INNER_CLASS;
 
-    // Render error badge if errorKind is set
+    // Render error badge if errorKind is set. cancelled/incomplete/stalled are
+    // recoverable states, so they also render a Retry action that re-sends the
+    // originating user message.
     let errorBadge = "";
     if (m.errorKind) {
       const errorLabel =
@@ -4137,8 +4139,21 @@ export function renderChatThreadPage(
             ? "Request failed"
             : m.errorKind === "timeout"
               ? "Timed out"
-              : "Error";
-      errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">${errorLabel}</div>`;
+              : m.errorKind === "cancelled"
+                ? "Cancelled"
+                : m.errorKind === "incomplete"
+                  ? "Incomplete"
+                  : m.errorKind === "stalled"
+                    ? "Stalled"
+                    : "Error";
+      const retryable =
+        m.errorKind === "cancelled" ||
+        m.errorKind === "incomplete" ||
+        m.errorKind === "stalled";
+      const retryAction = retryable
+        ? `<button type="button" class="chat-retry-btn" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
+        : "";
+      errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center">${errorLabel}${retryAction}</div>`;
     }
 
     // Parse markers from assistant messages to extract URLs/paths and clean text
@@ -4366,6 +4381,9 @@ export function renderChatThreadPage(
             var label = reply.errorKind === 'rate-limited' ? 'Rate limited'
               : reply.errorKind === 'upstream' ? 'Request failed'
               : reply.errorKind === 'timeout' ? 'Timed out'
+              : reply.errorKind === 'cancelled' ? 'Cancelled'
+              : reply.errorKind === 'incomplete' ? 'Incomplete'
+              : reply.errorKind === 'stalled' ? 'Stalled'
               : 'Error';
             addBubble('assistant', label, true);
           } else {

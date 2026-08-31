@@ -25,6 +25,7 @@ export type ChatRunner = (
   message: string,
   sessionKey?: string,
   onProgress?: ProgressCallback,
+  signal?: AbortSignal,
 ) => Promise<ClaudeRunResult>;
 
 /**
@@ -113,37 +114,75 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
       }
     }
 
-    // Best-effort liveness heartbeat, running for the whole duration of the
-    // reply. Failures are swallowed — a missed heartbeat must never abort the
-    // reply itself.
+    // Bidirectional heartbeat: the same 3s tick that proves liveness also
+    // learns whether a cancel was requested (via cancelRequestedAt on the
+    // returned message) and, if so, aborts the in-flight run. This keeps the
+    // architecture pull-only — no second polling loop, no inbound HTTP surface
+    // on the agent. Failures are swallowed — a missed heartbeat must never
+    // abort the reply itself.
+    const abortController = new AbortController();
+    let cancelRequested = false;
     const sendHeartbeat = () => {
-      client.heartbeat(threadId, message.id).catch((err) => {
-        console.error(
-          `[chat-poller] heartbeat failed for thread ${threadId} message ${message.id}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      });
+      client
+        .heartbeat(threadId, message.id)
+        .then((result) => {
+          if (result?.cancelRequested && !abortController.signal.aborted) {
+            cancelRequested = true;
+            abortController.abort();
+          }
+        })
+        .catch((err) => {
+          console.error(
+            `[chat-poller] heartbeat failed for thread ${threadId} message ${message.id}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        });
     };
 
-    let runResult: Awaited<ReturnType<ChatRunner>>;
+    let runResult: Awaited<ReturnType<ChatRunner>> | undefined;
+    let errorKind: string | undefined;
     const heartbeatTimer = setIntervalFn(sendHeartbeat, heartbeatIntervalMs);
     try {
-      runResult = await runner(runnerMessage, sessionKey);
+      runResult = await runner(
+        runnerMessage,
+        sessionKey,
+        undefined,
+        abortController.signal,
+      );
     } catch (err) {
+      // The runner failed. The message must NOT be left claimed forever with
+      // no reaper — always fall through to replyToMessage below with an
+      // errorKind. A cancel is a deliberate user action, not a stall.
+      const name = err instanceof Error ? err.name : "";
+      errorKind =
+        cancelRequested || name === "ClaudeAbortedError"
+          ? "cancelled"
+          : "stalled";
       console.error(
-        `[chat-poller] runner failed for thread ${threadId}:`,
+        `[chat-poller] runner failed for thread ${threadId} (${errorKind}):`,
         err instanceof Error ? err.message : String(err),
       );
-      return;
     } finally {
       clearIntervalFn(heartbeatTimer);
     }
 
+    // Derive the reply body + errorKind. The poller ALWAYS replies — a
+    // streamIncomplete run has an empty result string, so posting it verbatim
+    // would be an EMPTY reply; a thrown runner would otherwise leave the
+    // message claimed forever. Every branch produces a non-empty body.
+    const {
+      body,
+      tokens,
+      costUsd,
+      errorKind: finalErrorKind,
+    } = deriveReply(runResult, errorKind);
+
     try {
       await client.replyToMessage(threadId, message.id, {
-        body: runResult.result,
-        tokens: runResult.usage,
-        costUsd: runResult.totalCostUsd,
+        body,
+        tokens,
+        costUsd,
+        errorKind: finalErrorKind,
       });
     } catch (err) {
       console.error(
@@ -201,5 +240,57 @@ export function createChatPoller(opts: ChatPollerOptions): ChatPoller {
       }
     },
     pollOnce,
+  };
+}
+
+interface DerivedReply {
+  body: string;
+  tokens?: unknown;
+  costUsd?: number;
+  errorKind?: string;
+}
+
+/**
+ * Turn a run outcome into a reply that is never empty. `errorKind` is the
+ * failure-mode already inferred by the caller (`cancelled`/`stalled` for a
+ * thrown runner, or undefined for a completed run). Rules:
+ *  - cancelled: fixed body, keep errorKind.
+ *  - runner threw (no runResult): keep errorKind, synthesize a body.
+ *  - streamIncomplete or empty result on a clean finish: errorKind=incomplete
+ *    with a non-empty fallback body (never post an empty bubble).
+ *  - otherwise: the real reply body + usage.
+ */
+export function deriveReply(
+  runResult: ClaudeRunResult | undefined,
+  errorKind: string | undefined,
+): DerivedReply {
+  if (errorKind === "cancelled") return { body: "Cancelled.", errorKind };
+
+  if (!runResult) {
+    // Runner threw — errorKind is "stalled" (cancelled handled above).
+    return { body: "The run failed unexpectedly.", errorKind };
+  }
+
+  const { usage: tokens, totalCostUsd: costUsd } = runResult;
+
+  if (runResult.streamIncomplete) {
+    return {
+      body: runResult.result || "The reply was cut off before it finished.",
+      tokens,
+      costUsd,
+      errorKind: "incomplete",
+    };
+  }
+
+  if (runResult.result.trim().length > 0) {
+    return { body: runResult.result, tokens, costUsd, errorKind };
+  }
+
+  // Clean finish but empty body — treat as incomplete rather than an empty bubble.
+  return {
+    body: "The reply was empty.",
+    tokens,
+    costUsd,
+    errorKind: "incomplete",
   };
 }

@@ -526,6 +526,253 @@ describe("runClaude", () => {
     expect(mockSpawnTimeout).toHaveBeenCalledTimes(1);
   });
 
+  // ─── Abort / cancel ──────────────────────────────────────────────────────────
+
+  /**
+   * Wrap a real AbortController's signal so addEventListener/removeEventListener
+   * calls for the "abort" event are counted. Not a bare mock — event dispatch
+   * still works, so a listener that is actually added will still fire on abort.
+   * The counts prove the listener is removed after the run (no leak across the
+   * long-lived signal).
+   */
+  function countedSignal() {
+    const controller = new AbortController();
+    const real = controller.signal;
+    let added = 0;
+    let removed = 0;
+    const wrapped = {
+      get aborted() {
+        return real.aborted;
+      },
+      get reason() {
+        return real.reason;
+      },
+      addEventListener(type: string, cb: EventListener, opts?: unknown) {
+        if (type === "abort") added++;
+        real.addEventListener(type, cb, opts as AddEventListenerOptions);
+      },
+      removeEventListener(type: string, cb: EventListener, opts?: unknown) {
+        if (type === "abort") removed++;
+        real.removeEventListener(type, cb, opts as EventListenerOptions);
+      },
+    } as unknown as AbortSignal;
+    return {
+      signal: wrapped,
+      abort: () => controller.abort(),
+      counts: () => ({ added, removed }),
+    };
+  }
+
+  test("aborting the signal kills the process and throws ClaudeAbortedError", async () => {
+    const proc = hangingProc();
+    const mockSpawnAbort = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaudeAbort = createRunClaude(
+      mockSpawnAbort as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000,
+      5000,
+    );
+
+    const ctl = countedSignal();
+    const { ClaudeAbortedError } = await import("./claude.ts");
+    const runPromise = runClaudeAbort(
+      "hello",
+      undefined,
+      undefined,
+      ctl.signal,
+    );
+    // Abort shortly after the run starts.
+    setTimeout(() => ctl.abort(), 5);
+    const err = await runPromise.catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeAbortedError);
+  });
+
+  test("the abort listener is removed after the run (no leak across a long-lived signal)", async () => {
+    // A run that finishes cleanly (no abort) must still remove its listener.
+    const mockSpawnClean = mock(
+      () =>
+        fakeProc(jsonOutput("done")) as unknown as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaudeClean = createRunClaude(
+      mockSpawnClean as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const ctl = countedSignal();
+    await runClaudeClean("hello", undefined, undefined, ctl.signal);
+    const { added, removed } = ctl.counts();
+    expect(added).toBe(1);
+    expect(removed).toBe(1);
+  });
+
+  test("the abort listener is removed even across a resume-retry (no second leaked listener)", async () => {
+    // First spawn fails (retryable), second succeeds — the retry path must not
+    // leak a second listener on the shared signal.
+    let call = 0;
+    const mockSpawnRetry = mock(() => {
+      call++;
+      if (call === 1) {
+        return fakeProc("", "socket closed", 1) as unknown as ReturnType<
+          typeof Bun.spawn
+        >;
+      }
+      return fakeProc(
+        jsonOutput("recovered", "sess-r"),
+      ) as unknown as ReturnType<typeof Bun.spawn>;
+    });
+
+    mockGetSession.mockClear();
+    mockGetSession.mockReturnValueOnce("existing-sid");
+
+    const runClaudeRetry = createRunClaude(
+      mockSpawnRetry as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const ctl = countedSignal();
+    await runClaudeRetry("hello", "chan:ts", undefined, ctl.signal);
+    expect(mockSpawnRetry).toHaveBeenCalledTimes(2);
+    const { added, removed } = ctl.counts();
+    // Every _spawn attempt adds exactly one listener and removes it — no net leak.
+    expect(added).toBe(removed);
+  });
+
+  test("abort wins over a racing timeout: exit 143 classified as aborted, not a timeout/run error", async () => {
+    // The proc's kill() yields exit 143. Both the (very short) timeout and the
+    // abort race to kill it — but the aborted check must win, so the thrown
+    // error is ClaudeAbortedError, never ClaudeTimeoutError or ClaudeRunError.
+    const proc = hangingProc();
+    const mockSpawnRace = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+    const runClaudeRace = createRunClaude(
+      mockSpawnRace as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000, // ceiling far away
+      5000, // idle far away — so only the abort fires
+    );
+
+    const ctl = countedSignal();
+    const { ClaudeAbortedError, ClaudeTimeoutError } = await import(
+      "./claude.ts"
+    );
+    const runPromise = runClaudeRace("hello", undefined, undefined, ctl.signal);
+    setTimeout(() => ctl.abort(), 5);
+    const err = await runPromise.catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeAbortedError);
+    expect(err).not.toBeInstanceOf(ClaudeTimeoutError);
+  });
+
+  test("an aborted run is NOT retried even when an existing session would otherwise be resumed", async () => {
+    const proc = hangingProc();
+    const mockSpawnAbortRetry = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockGetSession.mockClear();
+    mockGetSession.mockReturnValueOnce("existing-sid");
+
+    const runClaudeAbortRetry = createRunClaude(
+      mockSpawnAbortRetry as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+    );
+
+    const ctl = countedSignal();
+    const { ClaudeAbortedError } = await import("./claude.ts");
+    const runPromise = runClaudeAbortRetry(
+      "hello",
+      "chan:ts",
+      undefined,
+      ctl.signal,
+    );
+    setTimeout(() => ctl.abort(), 5);
+    const err = await runPromise.catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeAbortedError);
+    // Aborted runs skip the resume-retry path — spawn called exactly once.
+    expect(mockSpawnAbortRetry).toHaveBeenCalledTimes(1);
+  });
+
+  test("_saveSessionFromError persists a ClaudeAbortedError's session id so the session stays resumable", async () => {
+    // hangingProc emits a system/init line carrying a session id before abort.
+    const enc = new TextEncoder();
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    let resolveExited!: (code: number) => void;
+    const exited = new Promise<number>((r) => {
+      resolveExited = r;
+    });
+    const proc = {
+      stdout: new ReadableStream<Uint8Array>({
+        start(c) {
+          ctrl = c;
+          c.enqueue(
+            enc.encode(
+              `${JSON.stringify({ type: "system", subtype: "init", session_id: "abort-sid" })}\n`,
+            ),
+          );
+        },
+      }),
+      stderr: bodyStream(""),
+      exited,
+      kill: () => {
+        ctrl.close();
+        resolveExited(143);
+      },
+    };
+    const mockSpawnAbortSave = mock(
+      () => proc as unknown as ReturnType<typeof Bun.spawn>,
+    );
+
+    mockSetSession.mockClear();
+    const runClaudeAbortSave = createRunClaude(
+      mockSpawnAbortSave as typeof Bun.spawn,
+      testSessions,
+      MODEL,
+      WORKSPACE,
+      fakeSentryClient,
+      undefined,
+      undefined,
+      undefined,
+      5000,
+      5000,
+    );
+
+    const ctl = countedSignal();
+    const { ClaudeAbortedError } = await import("./claude.ts");
+    const runPromise = runClaudeAbortSave(
+      "hello",
+      "chat:thread-1",
+      undefined,
+      ctl.signal,
+    );
+    setTimeout(() => ctl.abort(), 10);
+    const err = await runPromise.catch((e) => e);
+    expect(err).toBeInstanceOf(ClaudeAbortedError);
+    expect(mockSetSession).toHaveBeenCalledWith("chat:thread-1", "abort-sid");
+  });
+
   test("idle-reset-on-activity: frequent stdout lines keep resetting the idle timer, so no timeout occurs even past the idle window", async () => {
     // 6 lines at 15ms apart = 90ms total elapsed, well past the 20ms idle
     // timeout if it were never reset — but each line resets it, so the

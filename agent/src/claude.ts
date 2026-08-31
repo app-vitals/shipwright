@@ -178,6 +178,25 @@ export class ClaudeRunError extends Error {
   }
 }
 
+/**
+ * Thrown when a run is cancelled via its AbortSignal (e.g. a chat cancel
+ * request surfaced through the heartbeat tick). Mirrors ClaudeTimeoutError /
+ * ClaudeRunError's shape — it carries whatever session id the killed run
+ * managed to capture so the session stays resumable (see
+ * _saveSessionFromError). An aborted run is NEVER retried.
+ */
+export class ClaudeAbortedError extends Error {
+  constructor(
+    /** Session id captured off the leading system/init line, if one arrived. */
+    readonly sessionId?: string,
+    /** Per-model usage accumulated before the process was killed, if any. */
+    readonly partialModelUsage?: ModelUsage,
+  ) {
+    super("Claude session was cancelled");
+    this.name = "ClaudeAbortedError";
+  }
+}
+
 /** Which timer fired: idle-reset (no stdout activity) or the hard ceiling. */
 export type ClaudeTimeoutReason = "idle" | "ceiling";
 
@@ -239,6 +258,7 @@ export function createRunClaude(
   message: string,
   sessionKey?: string,
   onProgress?: ProgressCallback,
+  signal?: AbortSignal,
 ) => Promise<ClaudeRunResult> {
   // Per-session queue: ensures messages on the same thread run serially
   const sessionQueues = new Map<string, Promise<unknown>>();
@@ -453,6 +473,7 @@ export function createRunClaude(
   async function _spawn(
     args: string[],
     perCallOnProgress?: ProgressCallback,
+    signal?: AbortSignal,
   ): Promise<ClaudeRunResult> {
     // Strip SENTRY_DSN so a spawned Claude Code session (and any `bun test`
     // it runs internally) can never construct a real Sentry client from
@@ -469,8 +490,22 @@ export function createRunClaude(
     });
 
     let timedOut = false;
+    let aborted = false;
     let timeoutReason: ClaudeTimeoutReason = "ceiling";
     let firedTimeoutMs = timeoutMs;
+
+    // Cancel trigger: a third way to kill(), beside the two timeout timers. If
+    // the signal is already aborted, kill immediately; otherwise arm a listener
+    // that is REMOVED in the .finally() below (beside the two clearTimeouts) so
+    // it can't leak on a long-lived, per-thread signal across a resume-retry.
+    const onAbort = () => {
+      aborted = true;
+      proc.kill();
+    };
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort);
+    }
 
     // Hard ceiling: set once, never reset. Backstops a continuously-active
     // but never-converging session (idle timer alone would never fire).
@@ -506,7 +541,15 @@ export function createRunClaude(
     ]).finally(() => {
       clearTimeout(ceilingTimer);
       clearTimeout(idleTimer);
+      if (signal) signal.removeEventListener("abort", onAbort);
     });
+
+    // Aborted must be checked BEFORE timedOut and the exitCode checks: kill()
+    // yields exit 143, which the exitCode !== 0 branch would otherwise
+    // misclassify as a normal run failure.
+    if (aborted) {
+      throw new ClaudeAbortedError(earlySessionId, modelUsage);
+    }
 
     if (timedOut) {
       throw new ClaudeTimeoutError(
@@ -597,7 +640,13 @@ export function createRunClaude(
     err: unknown,
   ) {
     if (!sessionKey) return;
-    if (!(err instanceof ClaudeRunError || err instanceof ClaudeTimeoutError))
+    if (
+      !(
+        err instanceof ClaudeRunError ||
+        err instanceof ClaudeTimeoutError ||
+        err instanceof ClaudeAbortedError
+      )
+    )
       return;
     if (err.sessionId) {
       await sessions.set(sessionKey, err.sessionId);
@@ -608,6 +657,7 @@ export function createRunClaude(
     message: string,
     sessionKey: string | undefined,
     perCallOnProgress: ProgressCallback | undefined,
+    signal: AbortSignal | undefined,
   ): Promise<ClaudeRunResult> {
     const existingSessionId = sessionKey
       ? await sessions.get(sessionKey)
@@ -616,7 +666,7 @@ export function createRunClaude(
     const args = _buildArgs(message, existingSessionId);
 
     try {
-      const output = await _spawn(args, perCallOnProgress);
+      const output = await _spawn(args, perCallOnProgress, signal);
       await _saveSession(sessionKey, output);
       return output;
     } catch (err) {
@@ -634,13 +684,18 @@ export function createRunClaude(
       // close) can self-heal on a second attempt without losing conversation
       // context. Do NOT catch ClaudeTimeoutError — that means the session
       // hung and we should surface the error rather than silently spawning a
-      // second process that would also hang. If the retry also fails,
-      // rethrow the ORIGINAL error and leave the session mapping untouched —
-      // an error (even a burst of them) is never treated as proof the
-      // session itself is corrupt.
-      if (existingSessionId && !(err instanceof ClaudeTimeoutError)) {
+      // second process that would also hang. Do NOT retry ClaudeAbortedError
+      // either — the user asked to cancel, so spawning a second process would
+      // defy that. If the retry also fails, rethrow the ORIGINAL error and
+      // leave the session mapping untouched — an error (even a burst of them)
+      // is never treated as proof the session itself is corrupt.
+      if (
+        existingSessionId &&
+        !(err instanceof ClaudeTimeoutError) &&
+        !(err instanceof ClaudeAbortedError)
+      ) {
         try {
-          const output = await _spawn(args, perCallOnProgress);
+          const output = await _spawn(args, perCallOnProgress, signal);
           await _saveSession(sessionKey, output);
           return { ...output, recoveredFromError: true };
         } catch (retryErr) {
@@ -664,11 +719,12 @@ export function createRunClaude(
     message: string,
     sessionKey?: string,
     onProgress?: ProgressCallback,
+    signal?: AbortSignal,
   ): Promise<ClaudeRunResult> {
     if (sessionKey)
       return _enqueue(sessionKey, () =>
-        _runClaude(message, sessionKey, onProgress),
+        _runClaude(message, sessionKey, onProgress, signal),
       );
-    return _runClaude(message, undefined, onProgress);
+    return _runClaude(message, undefined, onProgress, signal);
   };
 }

@@ -102,9 +102,12 @@ const SAMPLE_MESSAGE = {
   body: "Hello!",
   claimedBy: "agent-1",
   claimedAt: new Date().toISOString(),
+  heartbeatAt: null,
+  cancelRequestedAt: null,
   repliedAt: null,
   tokens: null,
   costUsd: null,
+  attachmentFilename: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 };
@@ -281,16 +284,32 @@ describe("HttpChatServiceClient.claimMessage", () => {
 // ─── heartbeat ──────────────────────────────────────────────────────────────────
 
 describe("HttpChatServiceClient.heartbeat", () => {
-  it("resolves on 200", async () => {
+  it("resolves to { cancelRequested: false } when the message has no cancel request", async () => {
     const client = new HttpChatServiceClient({
       baseUrl: BASE_URL,
       token: TOKEN,
-      fetchFn: fakeFetch(200, SAMPLE_MESSAGE),
+      fetchFn: fakeFetch(200, {
+        ...SAMPLE_MESSAGE,
+        cancelRequestedAt: null,
+      }),
     });
 
-    await expect(
-      client.heartbeat(THREAD_ID, MESSAGE_ID),
-    ).resolves.toBeUndefined();
+    const result = await client.heartbeat(THREAD_ID, MESSAGE_ID);
+    expect(result.cancelRequested).toBe(false);
+  });
+
+  it("derives cancelRequested=true from a non-null cancelRequestedAt", async () => {
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fakeFetch(200, {
+        ...SAMPLE_MESSAGE,
+        cancelRequestedAt: new Date().toISOString(),
+      }),
+    });
+
+    const result = await client.heartbeat(THREAD_ID, MESSAGE_ID);
+    expect(result.cancelRequested).toBe(true);
   });
 
   it("calls POST /threads/:threadId/messages/:messageId/heartbeat", async () => {
@@ -376,6 +395,25 @@ describe("HttpChatServiceClient.replyToMessage", () => {
       body: "reply text",
       tokens,
       costUsd: 0.001,
+    });
+  });
+
+  it("sends errorKind in the request body when provided", async () => {
+    const { fn, calls } = capturingFetch(201, SAMPLE_REPLY_RESULT);
+    const client = new HttpChatServiceClient({
+      baseUrl: BASE_URL,
+      token: TOKEN,
+      fetchFn: fn,
+    });
+
+    await client.replyToMessage(THREAD_ID, MESSAGE_ID, {
+      body: "Cancelled.",
+      errorKind: "cancelled",
+    });
+
+    expect(calls[0].body).toEqual({
+      body: "Cancelled.",
+      errorKind: "cancelled",
     });
   });
 
