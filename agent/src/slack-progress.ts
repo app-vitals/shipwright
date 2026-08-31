@@ -191,16 +191,26 @@ export class SlackProgress {
       this.postInFlight = false;
       return;
     }
+    const sentLabel = this.latestLabel;
     try {
       const result = await this.client.chat.postMessage({
         channel: this.channel,
         thread_ts: this.threadTs,
-        text: this.latestLabel,
+        text: sentLabel,
       });
       const ts = (result as { ts?: string } | undefined)?.ts;
       if (ts) {
         this.messageTs = ts;
-        this.hasUnflushedUpdate = false;
+        if (this.latestLabel === sentLabel) {
+          this.hasUnflushedUpdate = false;
+        } else {
+          // A newer milestone arrived while this post was in flight — its
+          // label was never sent (chat.postMessage captured sentLabel
+          // synchronously before this await suspended). Leave the pending
+          // flag set and schedule a flush so it isn't silently dropped.
+          this.hasUnflushedUpdate = true;
+          this.scheduleThrottledUpdate();
+        }
       }
     } catch (err) {
       this.handleIfRateLimited(err);

@@ -194,6 +194,53 @@ describe("SlackProgress — lazy first post", () => {
     expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
   });
 
+  test("a milestone that arrives while the lazy post is in flight is not dropped", async () => {
+    // Reproduces the race: onProgress kicks off postInitialMessage(), which
+    // captures `text` from latestLabel synchronously before the awaited
+    // chat.postMessage call resolves. If a second, different milestone
+    // arrives before that promise settles, it must still reach Slack —
+    // either folded into this post, or flushed promptly afterward via the
+    // normal throttle path — rather than being silently discarded.
+    let resolvePost!: (result: { ts: string }) => void;
+    const client = makeMockClient();
+    client.chat.postMessage.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePost = resolve;
+        }),
+    );
+    const { progress, client: c, clock, timers } = makeProgress({ client });
+
+    clock.advance(3000);
+    progress.onProgress({}, "reading"); // kicks off the lazy post; not yet resolved
+    expect(c.chat.postMessage).toHaveBeenCalledTimes(1);
+    expect(c.chat.postMessage.mock.calls[0]?.[0]).toMatchObject({
+      text: expect.stringContaining("Reading files"),
+    });
+
+    // A newer milestone arrives while the first post is still in flight.
+    progress.onProgress({}, "editing");
+
+    // Now let the original postMessage call land.
+    resolvePost({ ts: "progress.ts.1" });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // The newer milestone must not be silently discarded: either a flush
+    // was scheduled immediately, or it fires on the next throttle tick.
+    timers.fire();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(c.chat.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ts: "progress.ts.1",
+        text: expect.stringContaining("Editing files"),
+      }),
+    );
+  });
+
   test("remembers the posted message ts for later update/delete", async () => {
     const { progress, client, clock, timers } = makeProgress();
     clock.advance(3000);
