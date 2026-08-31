@@ -374,6 +374,16 @@ async function startServer(): Promise<void> {
     .filter(Boolean);
   const appBaseUrl =
     process.env.SHIPWRIGHT_ADMIN_APP_BASE_URL ?? `http://localhost:${port}`;
+  // Read once at startup (not per-request) and interpolated into the
+  // service worker's cache name — see admin/src/pwa.ts's
+  // buildServiceWorkerBody. Falls back to "0.0.0" if version.txt is
+  // missing so a broken read never blocks server startup.
+  const appVersion = await Bun.file(
+    join(import.meta.dir, "..", "..", "version.txt"),
+  )
+    .text()
+    .then((v) => v.trim())
+    .catch(() => "0.0.0");
   const adminApiKeys = parseAdminApiKeys(process.env.SHIPWRIGHT_ADMIN_API_KEYS);
   // Repo slug for the public read-only task board (GET /public/tasks). When set,
   // the board renders unauthenticated, scoped to this repo; when absent the route
@@ -641,6 +651,7 @@ async function startServer(): Promise<void> {
     slackClient,
     githubAppClient,
     appBaseUrl,
+    appVersion,
     publicRepo,
     devAuthEnabled: isDevAuthAllowed(process.env),
     timezone: adminTz,
