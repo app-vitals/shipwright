@@ -1,165 +1,260 @@
-# demo/scenes.yaml — "Inside a task" walkthrough
+# demo/scenes.yaml — Shipwright Generic Sizzle + "Bold Move" Ad Campaign
 #
-# A factual, step-by-step explainer of the 14 steps /shipwright:dev-task runs
-# when it picks up a ticket. Mirrors the "Inside a task" tab on the homepage
-# (site/src/pages/index.astro → devTaskSteps), which is itself faithful to
-# plugins/shipwright/commands/dev-task.md.
+# FULL 15-SLIDE DECK — generic version for:
+#   - shipwrightharness.com  (hero video embed)
+#   - app-vitals.com         (homepage "See what we built" section)
 #
-# Style: one branded title-card per step. Narration explains, in human terms,
-# what the step does and why a developer finds it useful. Works fully offline —
-# no running stack required.
+# Ad campaign hook: "You're still paying your developers to write code?
+#                    Bold move. Good luck." — leads every placement.
+#
+# All HTML slides live in demo/slides/ and are served by `task demo:serve`
+# (see Taskfile.yml demo:serve target). Two title-card scenes (ad-hook, close)
+# use ffmpeg drawtext and need no local server.
 #
 # Workflow:
-#   1. /demo-recorder:demo-preview            — review the shot list
-#   2. /demo-recorder:demo-record             — draft video (say/Piper narration)
-#   3. approve narration, edit lines here
-#   4. /demo-recorder:demo-record --final     — swap in ElevenLabs narration
-#   5. commit demo/output/inside-a-task.mp4 + the .script.md artifact
+#   1. task demo:serve            (in a separate pane)
+#   2. /sizzle:preview            — review the shot list
+#   3. /sizzle:record --final     — record with ElevenLabs narration
+#   4. bash demo/brand-overlay.sh demo/output/shipwright-hero.mp4
+#   5. Commit demo/output/shipwright-hero.mp4 + .script.md artifact
+#
+# Source for HTML slide templates: demo/slides/*.html
+# Source for real metrics: https://proof.shipwrightharness.com/public/dashboard
+# Refresh the Proof slide metrics before every re-record.
 
 video:
-  title: "Inside a Task — The 14 Steps of /shipwright:dev-task"
-  output_name: "inside-a-task"
+  title: "Shipwright — Bold Move (Full Deck)"
+  output_name: "shipwright-hero"
   formats:
-    - "16:9"   # website embed on the homepage "Inside a task" tab
+    - "16:9"   # website embed, YouTube
+    - "9:16"   # Shorts, LinkedIn portrait
   font: "JetBrains Mono"
   theme: "dark"
+  transition: "fade"
 
 scenes:
   # ---------------------------------------------------------------------------
-  # Intro card — frame the walkthrough.
+  # 00 — Ad Campaign Hook (6s) — title-card, no server needed
+  # The new advertising initiative. Provocative open. Works as a standalone
+  # ad clip too — crop this scene alone for social.
+  # ---------------------------------------------------------------------------
+  - id: "ad-hook"
+    type: title-card
+    duration: 6
+    text: "You're still paying your developers\nto write code?"
+    subtext: "Bold move. Good luck."
+    background: "#080E1E"
+    narration: "You're still paying your developers to write code? Bold move. Good luck."
+
+  # ---------------------------------------------------------------------------
+  # 01 — Intro (15s)
+  # "Almost everyone has adopted AI. Almost no one has integrated it."
+  # Generic — no client name.
   # ---------------------------------------------------------------------------
   - id: "intro"
-    type: title-card
-    duration: 11
-    text: "Inside a task\nThe 14 steps of dev-task"
-    subtext: "shipwrightharness.com"
-    background: "#080E1E"
-    narration: "When Shipwright picks up a ticket, fourteen steps run end to end — from reading your toolchain to opening a green pull request. Here is each one, and why it matters."
-
-  # --- SETUP ----------------------------------------------------------------
-  - id: "step-01"
-    type: title-card
-    duration: 12
-    text: "01\nDetect the toolchain"
-    subtext: "Setup · Step 1 of 14"
-    background: "#080E1E"
-    narration: "First it reads your build config and learns your test, lint, and typecheck commands — so every later step runs your project's real commands, not guesses."
-
-  - id: "step-02"
-    type: title-card
-    duration: 11
-    text: "02\nPick the next task"
-    subtext: "Setup · Step 2 of 14"
-    background: "#080E1E"
-    narration: "It resumes anything left in progress, or pulls the next ready item off the queue and checks it has everything it needs — so work never starts on a half-defined ticket."
-
-  - id: "step-03"
-    type: title-card
-    duration: 10
-    text: "03\nMark in-progress"
-    subtext: "Setup · Step 3 of 14"
-    background: "#080E1E"
-    narration: "It clears out any leftover branch or PR from a crashed run, then flips the task to in-progress — so the board always reflects what is actually happening."
-
-  - id: "step-04"
-    type: title-card
-    duration: 11
-    text: "04\nBuild the brief"
-    subtext: "Setup · Step 4 of 14"
-    background: "#080E1E"
-    narration: "It turns the ticket's title, description, acceptance criteria, and layer into a single implementation brief — the same context a developer would gather before writing a line."
-
-  - id: "step-05"
-    type: title-card
-    duration: 10
-    text: "05\nSet up a worktree"
-    subtext: "Setup · Step 5 of 14"
-    background: "#080E1E"
-    narration: "It creates an isolated git worktree on the task's own branch — never on main — so the work is sandboxed and your main branch stays clean."
-
-  # --- BUILD ----------------------------------------------------------------
-  - id: "step-06"
-    type: title-card
-    duration: 10
-    text: "06\nTests first, then code"
-    subtext: "Build · Step 6 of 14"
-    background: "#080E1E"
-    narration: "It writes failing tests first, makes them pass, then refactors — so behavior is pinned by tests before any production code exists."
-
-  # --- VERIFY ---------------------------------------------------------------
-  - id: "step-07"
-    type: title-card
-    duration: 11
-    text: "07\nSimplify"
-    subtext: "Verify · Step 7 of 14"
-    background: "#080E1E"
-    narration: "It re-reads its own diff for duplication, dead code, and needless complexity, and fixes them — the cleanup pass reviewers usually have to ask for."
-
-  - id: "step-08"
-    type: title-card
-    duration: 10
-    text: "08\nVerify the spec"
-    subtext: "Verify · Step 8 of 14"
-    background: "#080E1E"
-    narration: "A second, independent agent checks every acceptance criterion against the diff and patches whatever is missing — a fresh set of eyes before anyone is notified."
-
-  - id: "step-09"
-    type: title-card
-    duration: 10
-    text: "09\nGrade requirements"
-    subtext: "Verify · Step 9 of 14"
-    background: "#080E1E"
-    narration: "It scores each criterion met, partial, or not-met, and blocks the task if anything is still unmet — so a pull request never claims to be done when it is not."
-
-  # --- PRE-SHIP -------------------------------------------------------------
-  - id: "step-10"
-    type: title-card
-    duration: 11
-    text: "10\nPre-ship checks"
-    subtext: "Pre-ship · Step 10 of 14"
-    background: "#080E1E"
-    narration: "It runs validate, lint, test, and typecheck, and reports how coverage moved against your threshold — the same gate your CI will enforce, caught early."
-
-  - id: "step-11"
-    type: title-card
-    duration: 10
-    text: "11\nRefresh the docs"
-    subtext: "Pre-ship · Step 11 of 14"
-    background: "#080E1E"
-    narration: "A docs agent updates anything the change made stale and commits it separately — so documentation lands with the feature instead of drifting behind it."
-
-  # --- SHIP -----------------------------------------------------------------
-  - id: "step-12"
-    type: title-card
-    duration: 10
-    text: "12\nPush & open the PR"
-    subtext: "Ship · Step 12 of 14"
-    background: "#080E1E"
-    narration: "It pushes the branch and opens a pull request — or adds commits to the existing one — with a summary and the acceptance-criteria table already filled in."
-
-  - id: "step-13"
-    type: title-card
-    duration: 10
-    text: "13\nWatch CI, fix failures"
-    subtext: "Ship · Step 13 of 14"
-    background: "#080E1E"
-    narration: "It polls CI, reads the failure logs, and retries fixes up to six times before giving up — turning red builds green without anyone having to step in."
-
-  - id: "step-14"
-    type: title-card
-    duration: 10
-    text: "14\nRecord metrics & hand off"
-    subtext: "Ship · Step 14 of 14"
-    background: "#080E1E"
-    narration: "Finally it moves the task to pr-open, records the metrics, and prints a handoff summary — so the next task, and the next measurement, are ready to go."
+    type: browser
+    duration: 15
+    narration: "Almost everyone has adopted AI. Almost no one has integrated it. This is why the agent that ships your backlog should run in your cloud, on your codebase."
+    url: "http://localhost:4321/slides/intro.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
-  # Close card — the payoff.
+  # 02 — Problem: Stats (20s)
+  # Data-driven: code output up, review time up, bugs up, incidents up.
+  # ---------------------------------------------------------------------------
+  - id: "problem-stats"
+    type: browser
+    duration: 20
+    narration: "AI made code generation fast. Nothing after it got faster. Output is up ninety-eight percent. Review time up four hundred percent. Bugs per developer up fifty-four. Incidents per change, two forty-three. Speed without structure is just louder."
+    url: "http://localhost:4321/slides/problem-stats.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 03 — Problem: Babysitting (18s)
+  # "Your most expensive people are babysitting code generation."
+  # ---------------------------------------------------------------------------
+  - id: "problem-babysitting"
+    type: browser
+    duration: 18
+    narration: "Your most expensive engineers are inside the loop of every AI task. Prompting, watching, steering — one task at a time. Output is capped by one person's attention. With Shipwright, the coding leaves their day — in the cloud, around the clock, through quality gates the team controls."
+    url: "http://localhost:4321/slides/problem-babysitting.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 04 — What It Is (15s)
+  # "A delivery system, not another assistant."
+  # ---------------------------------------------------------------------------
+  - id: "what-it-is"
+    type: browser
+    duration: 15
+    narration: "Shipwright is a delivery system, not another assistant. A cloud agent you deploy into your own environment. It picks up queued work, ships on a schedule, and talks to the team where they already are. Deploy to your cloud. Talks in Slack. Ships on cron. One governed pipeline."
+    url: "http://localhost:4321/slides/what-it-is.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 05 — The Pipeline (18s)
+  # "Every Change, The Same Way" — Spec → Plan → Build → Review → Ship
+  # ---------------------------------------------------------------------------
+  - id: "pipeline"
+    type: browser
+    duration: 18
+    narration: "Every change, the same way. Spec — product intent captured as a reviewable spec. Plan — estimated, dependency-ordered tasks. Build — tests first, every criterion independently verified. Review — policy-controlled with confidence thresholds. Ship — green CI and an approved review, merged and deployed via Helm."
+    url: "http://localhost:4321/slides/pipeline.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 06 — For The Architect (15s)
+  # "An enforced quality bar." — tests before code, independent verification.
+  # ---------------------------------------------------------------------------
+  - id: "quality-bar"
+    type: browser
+    duration: 15
+    narration: "An enforced quality bar. Tests are written before code and land in the same change. A second agent independently grades every acceptance criterion against the diff. A pull request is blocked if anything is unmet. Enforced by the system, not suggested by a prompt."
+    url: "http://localhost:4321/slides/quality-bar.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 07 — Governance (15s)
+  # "Humans keep the judgment calls."
+  # ---------------------------------------------------------------------------
+  - id: "governance"
+    type: browser
+    duration: 15
+    narration: "Humans keep the judgment calls. Sensitive work is routed to a person at planning time — before any code is written. The agent never touches credentials or production access on its own. Every autonomy level is a toggle your team controls."
+    url: "http://localhost:4321/slides/governance.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 08 — The Last Mile (18s)
+  # "Most AI tools stop when the code is written. Shipwright carries it further."
+  # ---------------------------------------------------------------------------
+  - id: "last-mile"
+    type: browser
+    duration: 18
+    narration: "Most AI tools stop when the code is written. Shipwright carries it the rest of the way. Review — findings fixed on a schedule. Merge — green CI, approved review. Deploy — into your own environment. Canary — an opt-in staged rollout, when your pipeline supports it. Auto-revert, available when something fails."
+    url: "http://localhost:4321/slides/last-mile.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 09 — Measured (15s)
+  # "AI ROI becomes a number, not a feeling."
+  # ---------------------------------------------------------------------------
+  - id: "measured"
+    type: browser
+    duration: 15
+    narration: "AI ROI becomes a number, not a feeling. First-time quality rate. Cycle time. Review verdicts. Estimation accuracy. Every task graded, on a dashboard you host."
+    url: "http://localhost:4321/slides/measured.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 10 — Standing Maintenance (15s)
+  # "The upkeep no one prioritizes, done continuously."
+  # ---------------------------------------------------------------------------
+  - id: "maintenance"
+    type: browser
+    duration: 15
+    narration: "The upkeep no one prioritizes, done continuously. Security patrol. Error patrol. Code-health patrol. Dependency patrol. Documentation patrol. Each on its own schedule. Findings become queued, reviewable work."
+    url: "http://localhost:4321/slides/maintenance.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 11 — Ownership (15s)
+  # "Free. Open source. Yours." — MIT, no seats, runs in your cloud.
+  # ---------------------------------------------------------------------------
+  - id: "ownership"
+    type: browser
+    duration: 15
+    narration: "Free. Open source. Yours. Closed, hosted agents charge per seat and run on someone else's infrastructure. Shipwright is MIT throughout. No tiers, no seats. Runs entirely in your cloud, on any stack — Node, Go, Rust, Python, Ruby."
+    url: "http://localhost:4321/slides/ownership.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 12 — Proof (18s)
+  # "Shipwright builds Shipwright." — LIVE METRICS from proof dashboard.
+  # ⚠️  UPDATE THESE NUMBERS before re-recording. Source:
+  #     https://proof.shipwrightharness.com/public/dashboard (90-day window)
+  # ---------------------------------------------------------------------------
+  - id: "proof"
+    type: browser
+    duration: 18
+    narration: "Shipwright builds Shipwright. Over eighteen hundred changes merged — mostly shipped by the agent itself. Two hundred thirty-two tasks completed in the last ninety days. Ninety-one percent passed all automated checks on the first try. Ninety-four percent approved on first review. Live and public at proof.shipwrightharness.com."
+    url: "http://localhost:4321/slides/proof.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 13 — Live Dashboard (15s)
+  # Actual screenshot of the public proof dashboard — browser capture.
+  # ⚠️  Requires proof.shipwrightharness.com to be live and accessible.
+  # ---------------------------------------------------------------------------
+  - id: "dashboard"
+    type: browser
+    duration: 15
+    narration: "The metrics dashboard runs in your cloud. Self-hosted. Yours forever. Every number is yours to keep."
+    url: "https://proof.shipwrightharness.com/public/dashboard"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.overview-section', { timeout: 20000 });
+      await page.waitForTimeout(1500);
+
+  # ---------------------------------------------------------------------------
+  # 14 — Adoption Ramp (15s)
+  # "Autonomy is a ramp, not a switch."
+  # ---------------------------------------------------------------------------
+  - id: "adoption"
+    type: browser
+    duration: 15
+    narration: "Autonomy is a ramp, not a switch. Build — start with the plugin, review everything. Review and patch — the agent handles feedback, CI stays green. Autonomous delivery — full pipeline, ships on a schedule. You control the rate of handoff."
+    url: "http://localhost:4321/slides/adoption.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(800);
+
+  # ---------------------------------------------------------------------------
+  # 15 — Close (10s) — title-card, no server needed
   # ---------------------------------------------------------------------------
   - id: "close"
-    type: title-card
+    type: browser
     duration: 10
-    text: "Fourteen steps. One command.\nTested, reviewed, documented, measured."
-    subtext: "shipwrightharness.com"
-    background: "#080E1E"
-    narration: "Fourteen steps, one command. Every task ships the same way — tested, reviewed, documented, and measured. That's Shipwright."
+    narration: "MIT. Self-hosted. Your code never leaves your infrastructure. Shipwright."
+    url: "http://localhost:4321/slides/close.html"
+    action: screenshot
+    playwright: |
+      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForTimeout(600);
