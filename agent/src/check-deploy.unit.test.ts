@@ -19,7 +19,6 @@ import {
   type GhReview,
   buildProductionDeps,
   getDeployCandidates,
-  isHeldByLabel,
 } from "./check-deploy.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 
@@ -50,8 +49,6 @@ interface MakeDepsOptions {
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
   isBundleComplete?: (branch: string) => Promise<boolean>;
-  isAutoMergeAnyAuthorRepo?: (repo: string) => boolean;
-  getAutoMergeHoldLabel?: () => string;
 }
 
 function makeDeps({
@@ -65,8 +62,6 @@ function makeDeps({
   getScopedRepos = () => repos,
   hasScopeSynced = () => true,
   isBundleComplete,
-  isAutoMergeAnyAuthorRepo = () => false,
-  getAutoMergeHoldLabel = () => "",
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: async () => currentUser,
@@ -77,8 +72,6 @@ function makeDeps({
     repos,
     getScopedRepos,
     hasScopeSynced,
-    isAutoMergeAnyAuthorRepo,
-    getAutoMergeHoldLabel,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
     fetchCiRuns: async (
@@ -972,193 +965,6 @@ describe("getDeployCandidates", () => {
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/example-repo#50");
   });
-
-  // ─── AM-1: scoped any-author auto-merge + hold-label support ─────────────
-
-  test("AC1: a non-agent-authored, approved, CI-green PR in a repo ON auto_merge_any_author_repos becomes a candidate", async () => {
-    const pr = makeGhPr({
-      author: { login: "some-human" },
-      reviewDecision: "APPROVED",
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        currentUser: "bodhi-agent",
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        isAutoMergeAnyAuthorRepo: (repo) => repo === "acme/example-repo",
-      }),
-    );
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toBe("acme/example-repo#50");
-  });
-
-  test("AC2 (regression): the same non-agent-authored PR shape in a repo NOT on auto_merge_any_author_repos is still excluded", async () => {
-    const pr = makeGhPr({
-      author: { login: "some-human" },
-      reviewDecision: "APPROVED",
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        currentUser: "bodhi-agent",
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        isAutoMergeAnyAuthorRepo: (repo) => repo === "acme/some-other-repo",
-      }),
-    );
-    expect(result).toEqual([]);
-  });
-
-  test("AC2 (regression): non-agent-authored PR is excluded when isAutoMergeAnyAuthorRepo is entirely absent from deps", async () => {
-    const pr = makeGhPr({
-      author: { login: "some-human" },
-      reviewDecision: "APPROVED",
-    });
-    const deps = makeDeps({
-      currentUser: "bodhi-agent",
-      prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-    });
-    deps.isAutoMergeAnyAuthorRepo = undefined;
-    const result = await getDeployCandidates(deps);
-    expect(result).toEqual([]);
-  });
-
-  test("AC3: a PR carrying the hold label is excluded from candidacy even when approved + CI green", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      labels: [{ name: "do-not-merge" }],
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        getAutoMergeHoldLabel: () => "do-not-merge",
-      }),
-    );
-    expect(result).toEqual([]);
-  });
-
-  test("AC3: a PR without the hold label is unaffected when auto_merge_hold_label is set", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      labels: [{ name: "some-other-label" }],
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        getAutoMergeHoldLabel: () => "do-not-merge",
-      }),
-    );
-    expect(result).toHaveLength(1);
-  });
-
-  test("AC3: hold label matching is exact-string (case-sensitive), mirroring check-review.ts's automated-label precedent", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      labels: [{ name: "Do-Not-Merge" }],
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-        getAutoMergeHoldLabel: () => "do-not-merge",
-      }),
-    );
-    expect(result).toHaveLength(1);
-  });
-
-  test("AC5 (regression): candidate selection across the agent's full repo set is unchanged when both new fields are unset", async () => {
-    // Representative of every production repo this agent tracks — none of
-    // them has opted into either new policy field.
-    for (const repo of [
-      "acme/repo-alpha",
-      "acme/repo-beta",
-      "acme/repo-gamma",
-      "acme/repo-delta",
-    ]) {
-      // Same-author, approved, CI-green PR: still a candidate.
-      const agentPr = makeGhPr({
-        number: 1,
-        headRefOid: "sha-agent",
-        author: { login: "bodhi-agent" },
-        reviewDecision: "APPROVED",
-      });
-      const agentResult = await getDeployCandidates(
-        makeDeps({
-          repos: [repo],
-          currentUser: "bodhi-agent",
-          prs: { [repo]: [agentPr] },
-          ciRuns: {
-            "sha-agent": [{ status: "completed", conclusion: "success" }],
-          },
-          isAutoMergeAnyAuthorRepo: () => false,
-          getAutoMergeHoldLabel: () => "",
-        }),
-      );
-      expect(agentResult).toHaveLength(1);
-      expect(agentResult[0].id).toBe(`${repo}#1`);
-
-      // Non-agent-authored, approved, CI-green PR: still excluded (hard
-      // authorship filter unchanged when the repo has not opted in).
-      const humanPr = makeGhPr({
-        number: 2,
-        headRefOid: "sha-human",
-        author: { login: "some-human" },
-        reviewDecision: "APPROVED",
-      });
-      const humanResult = await getDeployCandidates(
-        makeDeps({
-          repos: [repo],
-          currentUser: "bodhi-agent",
-          prs: { [repo]: [humanPr] },
-          ciRuns: {
-            "sha-human": [{ status: "completed", conclusion: "success" }],
-          },
-          isAutoMergeAnyAuthorRepo: () => false,
-          getAutoMergeHoldLabel: () => "",
-        }),
-      );
-      expect(humanResult).toEqual([]);
-
-      // A PR carrying some arbitrary label is unaffected when no hold label
-      // is configured.
-      const labeledPr = makeGhPr({
-        number: 3,
-        headRefOid: "sha-labeled",
-        author: { login: "bodhi-agent" },
-        reviewDecision: "APPROVED",
-        labels: [{ name: "do-not-merge" }],
-      });
-      const labeledResult = await getDeployCandidates(
-        makeDeps({
-          repos: [repo],
-          currentUser: "bodhi-agent",
-          prs: { [repo]: [labeledPr] },
-          ciRuns: {
-            "sha-labeled": [{ status: "completed", conclusion: "success" }],
-          },
-          isAutoMergeAnyAuthorRepo: () => false,
-          getAutoMergeHoldLabel: () => "",
-        }),
-      );
-      expect(labeledResult).toHaveLength(1);
-      expect(labeledResult[0].id).toBe(`${repo}#3`);
-    }
-  });
-
-  test("AC5 (regression): behavior unchanged when isAutoMergeAnyAuthorRepo/getAutoMergeHoldLabel are entirely absent from deps", async () => {
-    const agentPr = makeGhPr({ reviewDecision: "APPROVED" });
-    const deps = makeDeps({
-      currentUser: "bodhi-agent",
-      prs: { "acme/example-repo": [agentPr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-    });
-    deps.isAutoMergeAnyAuthorRepo = undefined;
-    deps.getAutoMergeHoldLabel = undefined;
-    const result = await getDeployCandidates(deps);
-    expect(result).toHaveLength(1);
-  });
 });
 
 // ─── buildProductionDeps ────────────────────────────────────────────────────
@@ -1261,7 +1067,7 @@ describe("buildProductionDeps", () => {
       "--repo",
       "acme/example-repo",
       "--json",
-      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus,labels",
+      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
     ]);
   });
 
@@ -1456,107 +1262,6 @@ describe("buildProductionDeps", () => {
     expect(typeof deps.isSelfReviewAllowed).toBe("function");
     expect(deps.isSelfReviewAllowed()).toBe(false);
   });
-
-  test("isAutoMergeAnyAuthorRepo reflects readAutoMergeAnyAuthorRepos' default ([]) when no policy file is present (AM-1)", async () => {
-    const deps = await buildProductionDeps({
-      ghJson: async <T>() => [] as unknown as T,
-    });
-    expect(typeof deps.isAutoMergeAnyAuthorRepo).toBe("function");
-    expect(deps.isAutoMergeAnyAuthorRepo?.("acme/example-repo")).toBe(false);
-  });
-
-  test("isAutoMergeAnyAuthorRepo reflects a repo present in state/agent-policy.md's auto_merge_any_author_repos list (AM-1)", async () => {
-    const scratchDir = mkdtempSync(
-      join(tmpdir(), "check-deploy-buildProductionDeps-am1-"),
-    );
-    try {
-      mkdirSync(join(scratchDir, "state"), { recursive: true });
-      writeFileSync(
-        join(scratchDir, "state", "agent-policy.md"),
-        "auto_merge_any_author_repos: [acme/opted-in-repo]",
-      );
-      process.env.WORKSPACE_PATH = scratchDir;
-
-      const deps = await buildProductionDeps({
-        ghJson: async <T>() => [] as unknown as T,
-      });
-
-      expect(deps.isAutoMergeAnyAuthorRepo?.("acme/opted-in-repo")).toBe(true);
-      expect(deps.isAutoMergeAnyAuthorRepo?.("acme/other-repo")).toBe(false);
-    } finally {
-      rmSync(scratchDir, { recursive: true, force: true });
-    }
-  });
-
-  test("getAutoMergeHoldLabel reflects readAutoMergeHoldLabel's default ('') when no policy file is present (AM-1)", async () => {
-    const deps = await buildProductionDeps({
-      ghJson: async <T>() => [] as unknown as T,
-    });
-    expect(typeof deps.getAutoMergeHoldLabel).toBe("function");
-    expect(deps.getAutoMergeHoldLabel?.()).toBe("");
-  });
-
-  test("getAutoMergeHoldLabel reflects state/agent-policy.md's auto_merge_hold_label field (AM-1)", async () => {
-    const scratchDir = mkdtempSync(
-      join(tmpdir(), "check-deploy-buildProductionDeps-am1-label-"),
-    );
-    try {
-      mkdirSync(join(scratchDir, "state"), { recursive: true });
-      writeFileSync(
-        join(scratchDir, "state", "agent-policy.md"),
-        "auto_merge_hold_label: do-not-merge",
-      );
-      process.env.WORKSPACE_PATH = scratchDir;
-
-      const deps = await buildProductionDeps({
-        ghJson: async <T>() => [] as unknown as T,
-      });
-
-      expect(deps.getAutoMergeHoldLabel?.()).toBe("do-not-merge");
-    } finally {
-      rmSync(scratchDir, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("isHeldByLabel", () => {
-  function pr(labels?: { name: string }[]): GhPr {
-    return {
-      number: 1,
-      headRefOid: "sha1",
-      headRefName: "feat/x",
-      author: { login: "bodhi-agent" },
-      reviewDecision: null,
-      mergeStateStatus: null,
-      labels,
-    };
-  }
-
-  test("returns false when holdLabel is an empty string, regardless of the PR's labels", () => {
-    expect(isHeldByLabel(pr([{ name: "do-not-merge" }]), "")).toBe(false);
-  });
-
-  test("returns false when the PR has no labels field at all", () => {
-    expect(isHeldByLabel(pr(undefined), "do-not-merge")).toBe(false);
-  });
-
-  test("returns false when the PR's labels don't include holdLabel", () => {
-    expect(isHeldByLabel(pr([{ name: "some-other-label" }]), "do-not-merge")).toBe(
-      false,
-    );
-  });
-
-  test("returns true when the PR carries a label matching holdLabel exactly", () => {
-    expect(isHeldByLabel(pr([{ name: "do-not-merge" }]), "do-not-merge")).toBe(
-      true,
-    );
-  });
-
-  test("matches case-sensitively (exact string match, mirroring check-review.ts's automated-label precedent)", () => {
-    expect(isHeldByLabel(pr([{ name: "Do-Not-Merge" }]), "do-not-merge")).toBe(
-      false,
-    );
-  });
 });
 
 describe("getDeployCandidates isSelfReviewAllowed live-read behavior (PLR-1.1)", () => {
@@ -1581,47 +1286,6 @@ describe("getDeployCandidates isSelfReviewAllowed live-read behavior (PLR-1.1)",
       prs: { "acme/example-repo": [pr] },
       reviews: { 50: reviews },
       ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-    });
-
-    const firstResult = await getDeployCandidates(deps);
-    expect(firstResult).toEqual([]);
-
-    const secondResult = await getDeployCandidates(deps);
-    expect(secondResult).toHaveLength(1);
-  });
-});
-
-describe("getDeployCandidates isAutoMergeAnyAuthorRepo/getAutoMergeHoldLabel live-read behavior (AM-1, mirrors PLR-1.1)", () => {
-  test("isAutoMergeAnyAuthorRepo getter is invoked fresh on every call, not memoized", async () => {
-    const pr = makeGhPr({
-      author: { login: "some-human" },
-      reviewDecision: "APPROVED",
-    });
-    const values = [false, true];
-    const deps = makeDeps({
-      currentUser: "bodhi-agent",
-      prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-      isAutoMergeAnyAuthorRepo: () => values.shift() as boolean,
-    });
-
-    const firstResult = await getDeployCandidates(deps);
-    expect(firstResult).toEqual([]);
-
-    const secondResult = await getDeployCandidates(deps);
-    expect(secondResult).toHaveLength(1);
-  });
-
-  test("getAutoMergeHoldLabel getter is invoked fresh on every call, not memoized", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      labels: [{ name: "do-not-merge" }],
-    });
-    const values = ["do-not-merge", ""];
-    const deps = makeDeps({
-      prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
-      getAutoMergeHoldLabel: () => values.shift() as string,
     });
 
     const firstResult = await getDeployCandidates(deps);
