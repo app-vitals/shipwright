@@ -4102,7 +4102,7 @@ export function renderChatThreadPage(
   const rawTitle = thread.title ?? "Untitled Thread";
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
-  function renderMessageBubble(m: ChatMessage): string {
+  function renderMessageBubble(m: ChatMessage, retryBody: string | null): string {
     const isUser = m.role === "user";
     const isAssistant = m.role === "assistant";
     const isSystem = m.role === "system";
@@ -4147,11 +4147,12 @@ export function renderChatThreadPage(
                     ? "Stalled"
                     : "Error";
       const retryable =
-        m.errorKind === "cancelled" ||
-        m.errorKind === "incomplete" ||
-        m.errorKind === "stalled";
+        (m.errorKind === "cancelled" ||
+          m.errorKind === "incomplete" ||
+          m.errorKind === "stalled") &&
+        retryBody !== null;
       const retryAction = retryable
-        ? `<button type="button" class="chat-retry-btn" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
+        ? `<button type="button" class="chat-retry-btn" data-retry-body="${escapeHtml(retryBody as string)}" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
         : "";
       errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center">${errorLabel}${retryAction}</div>`;
     }
@@ -4214,7 +4215,16 @@ export function renderChatThreadPage(
     </div>`;
   }
 
-  const messageBubbles = messages.map(renderMessageBubble).join("\n");
+  // Track the most recent user message body while iterating so an error
+  // reply's Retry button can resend the exact text that triggered it.
+  let lastUserBody: string | null = null;
+  const messageBubbles = messages
+    .map((m) => {
+      const html = renderMessageBubble(m, lastUserBody);
+      if (m.role === "user") lastUserBody = m.body;
+      return html;
+    })
+    .join("\n");
 
   const emptyState =
     messages.length === 0
@@ -4449,10 +4459,7 @@ export function renderChatThreadPage(
     if (fileName) fileName.textContent = '';
   }
 
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-    var text = input.value.trim();
-    var file = fileInput && fileInput.files && fileInput.files[0];
+  function sendText(text, file) {
     if (!text && !file) return;
 
     // Disable send button
@@ -4468,12 +4475,8 @@ export function renderChatThreadPage(
     if (file) fd.append('file', file);
     var attachmentName = file ? file.name : null;
 
-    // Clear inputs
-    input.value = '';
-
     // Add user bubble optimistically (with attachment badge if present)
     addBubble('user', text, false, attachmentName);
-    clearFile();
 
     // Show thinking indicator
     addThinkingIndicator();
@@ -4498,6 +4501,29 @@ export function renderChatThreadPage(
     // Start polling every 3 seconds
     pollCount = 0;
     pollTimer = setInterval(poll, 3000);
+  }
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (!text && !file) return;
+    input.value = '';
+    clearFile();
+    sendText(text, file);
+  });
+
+  // Retry buttons resend the exact user message body that triggered the
+  // errored/cancelled/incomplete/stalled reply — rendered server-side as a
+  // data attribute on each button (see renderMessageBubble).
+  document.querySelectorAll('.chat-retry-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      if (btn.disabled) return;
+      var body = btn.getAttribute('data-retry-body');
+      if (!body) return;
+      btn.disabled = true;
+      sendText(body, null);
+    });
   });
 
   // Scroll to bottom on load

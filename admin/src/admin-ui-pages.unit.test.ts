@@ -5783,12 +5783,40 @@ describe("renderChatThreadPage", () => {
     expect(html).toContain("Stalled");
   });
 
-  test("cancelled/incomplete/stalled errorKinds render a Retry action", () => {
+  test("cancelled/incomplete/stalled errorKinds render a Retry action wired to resend the originating user message", () => {
     for (const kind of ["cancelled", "incomplete", "stalled"]) {
-      const msg: ChatMessage = { ...ERROR_MSG, errorKind: kind };
-      const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+      const errMsg: ChatMessage = { ...ERROR_MSG, errorKind: kind };
+      const html = renderChatThreadPage(
+        "agent-xyz",
+        THREAD,
+        [USER_MSG, errMsg],
+        "alice",
+      );
       expect(html).toContain("Retry");
+      expect(html).toContain('class="chat-retry-btn"');
+      expect(html).toContain(`data-retry-body="${USER_MSG.body}"`);
     }
+  });
+
+  test("Retry action is omitted when there is no preceding user message to resend", () => {
+    const errMsg: ChatMessage = { ...ERROR_MSG, errorKind: "cancelled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [errMsg], "alice");
+    // The inline JS statically wires up any '.chat-retry-btn' elements that
+    // exist, so it always contains the class name — assert no button element
+    // with that class was actually rendered into the message markup instead.
+    expect(html).not.toContain('class="chat-retry-btn"');
+  });
+
+  test("Retry click handler resends the button's data-retry-body via the shared send path", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG, { ...ERROR_MSG, errorKind: "stalled" }],
+      "alice",
+    );
+    expect(html).toContain("querySelectorAll('.chat-retry-btn')");
+    expect(html).toContain("getAttribute('data-retry-body')");
+    expect(html).toContain("sendText(body, null)");
   });
 
   test("empty thread shows empty state message", () => {
