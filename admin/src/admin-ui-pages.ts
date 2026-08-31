@@ -4821,7 +4821,7 @@ export function renderChatThreadPage(
 
   const sidebar =
     threads !== null
-      ? `<div class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
+      ? `<div id="chat-thread-sidebar-panel" class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -4841,8 +4841,10 @@ export function renderChatThreadPage(
   const drawerScrim = sidebar
     ? `<label for="chat-drawer-toggle" class="chat-drawer-scrim" aria-label="Close thread list"></label>`
     : "";
+  // aria-controls references the revealed panel's own id (not the checkbox) —
+  // matches the aria-controls="vos-nav-content" pattern in lib/web/toolbar.ts.
   const drawerHamburger = sidebar
-    ? `<label for="chat-drawer-toggle" class="chat-drawer-hamburger" role="button" tabindex="0" aria-label="Toggle thread list" aria-expanded="false" aria-controls="chat-drawer-toggle">☰</label>`
+    ? `<label for="chat-drawer-toggle" class="chat-drawer-hamburger" role="button" tabindex="0" aria-label="Toggle thread list" aria-expanded="false" aria-controls="chat-thread-sidebar-panel">☰</label>`
     : "";
 
   return renderAdminPage({
