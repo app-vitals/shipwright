@@ -112,12 +112,6 @@ function makeMockClient() {
     },
     chat: {
       postMessage: mock(async (_args: unknown) => ({ ts: "posted.ts.1" })),
-      // SlackProgress's chat.update/chat.delete targets (CFB-5.1) — present
-      // so the mock client matches the real Bolt client shape, even though
-      // this suite's synchronous mockRunClaude resolution never crosses the
-      // 3s lazy-post threshold in real wall-clock time.
-      update: mock(async (_args: unknown) => ({ ok: true })),
-      delete: mock(async (_args: unknown) => ({ ok: true })),
     },
   };
 }
