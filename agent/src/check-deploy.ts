@@ -32,6 +32,8 @@ import {
   isTaskBlockedForDispatch,
   mapReposTolerant,
   readAllowSelfReview,
+  readAutoMergeAnyAuthorRepos,
+  readAutoMergeHoldLabel,
   resolveAllRepos,
   resolveWorkspacePath,
   splitOrgRepo,
@@ -50,6 +52,13 @@ export interface GhPr {
   reviewDecision: string | null;
   createdAt?: string;
   mergeStateStatus: string | null;
+  /**
+   * PR labels, used by isHeldByLabel() (AM-1) to exclude a PR carrying the
+   * `auto_merge_hold_label` policy field's configured label from candidacy.
+   * Optional/absent-safe — a PR fetched without labels (or a repo that never
+   * sets `auto_merge_hold_label`) behaves exactly as before.
+   */
+  labels?: { name: string }[];
 }
 
 export interface GhReview {
@@ -88,6 +97,29 @@ export interface CheckDeployDeps {
    * readAllowSelfReview(workspacePath)` (check-helpers.ts).
    */
   isSelfReviewAllowed: () => boolean;
+  /**
+   * Whether `repo` (an "org/repo" string) is on the `auto_merge_any_author_repos`
+   * policy list (AM-1, state/agent-policy.md) — when true, the hard authorship
+   * filter below is skipped for PRs in that repo only. Approval (via the
+   * existing GitHub-native or self-review paths above it) is still required
+   * regardless of this flag. A live getter invoked fresh per-PR, mirroring
+   * isSelfReviewAllowed's live-read pattern (PLR-1.1) — a state/agent-policy.md
+   * edit takes effect on the very next call without an agent restart.
+   * Optional — when absent, behaves as if every repo answers false (today's
+   * behavior, unchanged).
+   */
+  isAutoMergeAnyAuthorRepo?: (repo: string) => boolean;
+  /**
+   * The `auto_merge_hold_label` policy field (AM-1, state/agent-policy.md) —
+   * any PR carrying this label (exact string match against `GhPr.labels`,
+   * mirroring check-review.ts's `automated-label` exclusion precedent) is
+   * excluded from candidacy. A live getter, invoked fresh on every
+   * getDeployCandidates() call, mirroring isSelfReviewAllowed's live-read
+   * pattern. An empty string (the default when unset) never matches any
+   * label, so this is a no-op until a repo opts in. Optional — when absent,
+   * behaves as if the field were unset (today's behavior, unchanged).
+   */
+  getAutoMergeHoldLabel?: () => string;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
   fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
@@ -171,6 +203,20 @@ function hasSelfApproveReview(reviews: GhReview[], userLogin: string): boolean {
   );
 }
 
+/**
+ * True when `pr` carries `holdLabel` (AM-1, the `auto_merge_hold_label`
+ * policy field). Exact-string match — mirrors check-review.ts's
+ * `automated-label` exclusion (`pr.labels?.some((l) => l.name === "automated")`),
+ * the only existing label-comparison precedent in this codebase; no
+ * case-insensitive matching precedent exists to follow instead. An empty
+ * `holdLabel` (the default when the policy field is unset) never matches —
+ * `""` is not a valid GitHub label name, so this is always a safe no-op.
+ */
+export function isHeldByLabel(pr: GhPr, holdLabel: string): boolean {
+  if (!holdLabel) return false;
+  return pr.labels?.some((l) => l.name === holdLabel) ?? false;
+}
+
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
@@ -236,8 +282,20 @@ export async function getDeployCandidates(
 
       if (!approved) continue;
 
-      // Hard authorship filter: only deploy PRs authored by the current user
-      if (pr.author.login !== currentUser) continue;
+      // Hold-label exclusion (AM-1): a PR carrying the configured
+      // auto_merge_hold_label is never a candidate, regardless of
+      // authorship/approval. Checked at scan time here; re-checked again
+      // immediately before the actual merge (plugins/shipwright/commands/
+      // deploy.md Step 4b) to close the label-added-mid-scan race.
+      const holdLabel = deps.getAutoMergeHoldLabel?.() ?? "";
+      if (isHeldByLabel(pr, holdLabel)) continue;
+
+      // Hard authorship filter: only deploy PRs authored by the current
+      // user, UNLESS this repo is on the auto_merge_any_author_repos policy
+      // list (AM-1) — approval (GitHub-native or self-review, checked above)
+      // is still required either way.
+      const anyAuthorRepo = deps.isAutoMergeAnyAuthorRepo?.(repo) ?? false;
+      if (!anyAuthorRepo && pr.author.login !== currentUser) continue;
 
       const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
       if (!isCiGreen(ciRuns)) continue;
@@ -329,6 +387,7 @@ interface GhPrListJson {
   reviewDecision: string | null;
   createdAt?: string;
   mergeStateStatus: string | null;
+  labels?: { name: string }[];
 }
 
 interface GhPrReviewsJson {
@@ -362,6 +421,9 @@ export async function buildProductionDeps(opts: {
   return {
     getCurrentUser,
     isSelfReviewAllowed: () => readAllowSelfReview(workspacePath),
+    isAutoMergeAnyAuthorRepo: (repo: string) =>
+      readAutoMergeAnyAuthorRepos(workspacePath).includes(repo),
+    getAutoMergeHoldLabel: () => readAutoMergeHoldLabel(workspacePath),
     repos: allRepos,
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
     hasScopeSynced: opts.hasScopeSynced ?? agentReposRef.hasSynced,
@@ -392,7 +454,7 @@ export async function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus,labels",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {

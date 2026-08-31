@@ -410,6 +410,160 @@ describe("readAllowSelfReview", () => {
 });
 
 // ---------------------------------------------------------------------------
+// parseAutoMergeAnyAuthorRepos / readAutoMergeAnyAuthorRepos (AM-1)
+// ---------------------------------------------------------------------------
+
+describe("parseAutoMergeAnyAuthorRepos", () => {
+  test("parses a bracketed comma-separated list", () => {
+    expect(
+      checkHelpers.parseAutoMergeAnyAuthorRepos(
+        "auto_merge_any_author_repos: [acme/repo-a, acme/repo-b]",
+      ),
+    ).toEqual(["acme/repo-a", "acme/repo-b"]);
+  });
+
+  test("parses a table-cell style bracketed list", () => {
+    expect(
+      checkHelpers.parseAutoMergeAnyAuthorRepos(
+        "| `auto_merge_any_author_repos` | [acme/repo-a] |",
+      ),
+    ).toEqual(["acme/repo-a"]);
+  });
+
+  test("parses a bold-style bracketed list", () => {
+    expect(
+      checkHelpers.parseAutoMergeAnyAuthorRepos(
+        "**auto_merge_any_author_repos**: [acme/repo-a, acme/repo-b]",
+      ),
+    ).toEqual(["acme/repo-a", "acme/repo-b"]);
+  });
+
+  test("returns an empty array for an explicit empty bracket list", () => {
+    expect(
+      checkHelpers.parseAutoMergeAnyAuthorRepos(
+        "auto_merge_any_author_repos: []",
+      ),
+    ).toEqual([]);
+  });
+
+  test("defaults to an empty array when the field is missing entirely", () => {
+    expect(checkHelpers.parseAutoMergeAnyAuthorRepos("no policy here")).toEqual(
+      [],
+    );
+  });
+
+  test("trims whitespace around each entry", () => {
+    expect(
+      checkHelpers.parseAutoMergeAnyAuthorRepos(
+        "auto_merge_any_author_repos: [ acme/repo-a ,  acme/repo-b ]",
+      ),
+    ).toEqual(["acme/repo-a", "acme/repo-b"]);
+  });
+});
+
+describe("readAutoMergeAnyAuthorRepos", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(
+      join(tmpdir(), "read-auto-merge-any-author-repos-test-"),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "auto_merge_any_author_repos: [acme/repo-a]",
+    );
+    expect(checkHelpers.readAutoMergeAnyAuthorRepos(tmpDir)).toEqual([
+      "acme/repo-a",
+    ]);
+  });
+
+  test("defaults to an empty array when the policy file does not exist", () => {
+    expect(checkHelpers.readAutoMergeAnyAuthorRepos(tmpDir)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseAutoMergeHoldLabel / readAutoMergeHoldLabel (AM-1)
+// ---------------------------------------------------------------------------
+
+describe("parseAutoMergeHoldLabel", () => {
+  test("parses a table-cell style bare label", () => {
+    expect(
+      checkHelpers.parseAutoMergeHoldLabel(
+        "| `auto_merge_hold_label` | do-not-merge |",
+      ),
+    ).toBe("do-not-merge");
+  });
+
+  test("parses a bold-style bare label", () => {
+    expect(
+      checkHelpers.parseAutoMergeHoldLabel(
+        "**auto_merge_hold_label**: do-not-merge",
+      ),
+    ).toBe("do-not-merge");
+  });
+
+  test("parses a plain YAML frontmatter style label", () => {
+    expect(
+      checkHelpers.parseAutoMergeHoldLabel(
+        "---\nauto_merge_hold_label: hold\n---\n",
+      ),
+    ).toBe("hold");
+  });
+
+  test("strips surrounding quotes", () => {
+    expect(
+      checkHelpers.parseAutoMergeHoldLabel(
+        'auto_merge_hold_label: "do not merge"',
+      ),
+    ).toBe("do not merge");
+  });
+
+  test("defaults to an empty string when the field is missing entirely", () => {
+    expect(checkHelpers.parseAutoMergeHoldLabel("no policy here")).toBe("");
+  });
+
+  test("defaults to an empty string when the value itself is empty", () => {
+    expect(checkHelpers.parseAutoMergeHoldLabel("auto_merge_hold_label:")).toBe(
+      "",
+    );
+  });
+});
+
+describe("readAutoMergeHoldLabel", () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "read-auto-merge-hold-label-test-"));
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("reads and parses state/agent-policy.md when present", () => {
+    mkdirSync(join(tmpDir, "state"), { recursive: true });
+    writeFileSync(
+      join(tmpDir, "state", "agent-policy.md"),
+      "auto_merge_hold_label: do-not-merge",
+    );
+    expect(checkHelpers.readAutoMergeHoldLabel(tmpDir)).toBe("do-not-merge");
+  });
+
+  test("defaults to an empty string when the policy file does not exist", () => {
+    expect(checkHelpers.readAutoMergeHoldLabel(tmpDir)).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // parseCleanupMergedWorktrees
 // ---------------------------------------------------------------------------
 
