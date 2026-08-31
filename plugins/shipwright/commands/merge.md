@@ -156,26 +156,40 @@ If no matching review is found (or `allow_self_review` is false), print and stop
     2. Run /shipwright:review on the PR — once an APPROVE review is posted, re-run /shipwright:merge.
 ```
 
-### 2b. Verify CI is Green
+### 2b. Verify All Checks Are Green
 
-Fetch the most recent CI runs on the PR's head commit:
+Fetch the PR's head commit and its full check-status rollup in a single call:
 
 ```bash
-HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid')
-REPO="{org}/{repo}"
-gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
-  --jq '[.workflow_runs[] | select(.name | ascii_downcase == "ci") | {status, conclusion}]'
+PR_JSON=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid,statusCheckRollup)
+HEAD_SHA=$(echo "$PR_JSON" | jq -r '.headRefOid')
+ALL_GREEN=$(echo "$PR_JSON" | jq -r '
+  (.statusCheckRollup // []) as $r
+  | ($r | length > 0) and ($r | all(
+      if .__typename == "CheckRun" then
+        (.status == "COMPLETED") and ((.conclusion // "") as $c | ["SUCCESS","NEUTRAL","SKIPPED"] | index($c) != null)
+      elif .__typename == "StatusContext" then
+        .state == "SUCCESS"
+      else
+        false
+      end
+    ))
+')
 ```
 
-Matched case-insensitively — a repo's CI workflow `name:` field may be `CI` or `ci` (both are
-common conventions; e.g. `app-vitals/squadron`'s `.github/workflows/ci.yml` uses `name: ci`), and
-an exact-case match here would silently and permanently exclude that repo's PRs from ever
-passing this check.
+`statusCheckRollup` covers every check on the PR's head commit — GitHub Actions check runs
+(`__typename == "CheckRun"`) and legacy commit statuses (`__typename == "StatusContext"`) alike —
+not just a single named CI workflow. This catches required checks a single-workflow filter would
+miss entirely (e.g. `pr-title-lint`, or any other repo-specific required check).
 
-If no CI run has `conclusion == "success"` (or no CI run exists at all), print and stop:
+A `CheckRun` is green when `status == "COMPLETED"` and `conclusion` is one of `SUCCESS`,
+`NEUTRAL`, or `SKIPPED`. A `StatusContext` is green when `state == "SUCCESS"`. All checks must
+be green, and there must be at least one check — an empty rollup is not green.
+
+If `ALL_GREEN` is not `"true"` (or the rollup is empty), print and stop:
 ```
-✗ Pre-flight failed: CI is not green on PR #{pr} head ({HEAD_SHA[0..7]}).
-  Resolve CI failures before merging.
+✗ Pre-flight failed: not all checks are green on PR #{pr} head ({HEAD_SHA[0..7]}).
+  Resolve check failures before merging.
 ```
 
 ### 2c. Pre-flight Summary
@@ -184,7 +198,7 @@ If both checks pass:
 ```
 ✓ Pre-flight passed
   Approval:    {if approval_source == "github": "GitHub — approved by: {approvers}" | if approval_source == "self_review": "Self-review — APPROVE found in GitHub review body"}
-  CI:          green ({HEAD_SHA[0..7]})
+  Checks:      all green ({HEAD_SHA[0..7]})
 ```
 
 ---
