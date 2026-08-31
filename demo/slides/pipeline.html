@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — The Pipeline</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content {
+    position: absolute;
+    top: 140px; left: var(--margin); right: var(--margin); bottom: 120px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .headline {
+    font-size: 60px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 56px;
+  }
+  .headline em { color: var(--brand-green); font-style: normal; }
+
+  .pipeline-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 20px;
+    max-width: 1600px;
+  }
+
+  .step-card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    padding: 32px 28px;
+  }
+  .step-card.featured {
+    border-color: var(--brand-green);
+    border-width: 2px;
+    background: rgba(52, 199, 123, 0.04);
+  }
+
+  .step-num {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-faint);
+    letter-spacing: 0.1em;
+    margin-bottom: 16px;
+  }
+  .step-num.green { color: var(--brand-green); }
+
+  .step-name {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    letter-spacing: -0.01em;
+  }
+
+  .step-body {
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text-muted);
+  }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+
+  <div class="brand-lockup">
+    <div class="brand-mark"></div>
+    <span class="brand-wordmark">Shipwright Harness</span>
+  </div>
+  <div class="brand-rule"></div>
+
+  <div class="content">
+    <p class="eyebrow">Every Change, The Same Way</p>
+    <h1 class="headline">Spec → Plan → Build → Review → <em>Ship</em></h1>
+
+    <div class="pipeline-grid">
+      <div class="step-card">
+        <div class="step-num">01</div>
+        <div class="step-name">Spec</div>
+        <div class="step-body">Product intent captured as a reviewable spec</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">02</div>
+        <div class="step-name">Plan</div>
+        <div class="step-body">Estimated, dependency-ordered tasks</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">03</div>
+        <div class="step-name">Build</div>
+        <div class="step-body">Tests first; every acceptance criterion independently verified</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">04</div>
+        <div class="step-name">Review</div>
+        <div class="step-body">Policy-controlled, with confidence thresholds</div>
+      </div>
+      <div class="step-card featured">
+        <div class="step-num green">05</div>
+        <div class="step-name">Ship</div>
+        <div class="step-body">Merge, deploy, canary — automatic revert on failure</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <span>The pipeline</span>
+    <span>shipwrightharness.com</span>
+  </div>
+
+  <div class="slide-ready"></div>
+</body>
+</html>

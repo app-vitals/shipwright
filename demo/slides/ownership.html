@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Ownership</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content { position: absolute; top: 140px; left: var(--margin); right: var(--margin); bottom: 120px; display: flex; flex-direction: column; justify-content: center; }
+  .headline { font-size: 64px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 52px; }
+  .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; max-width: 1400px; }
+  .compare-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 44px 40px; }
+  .compare-card.featured { border-color: var(--brand-green); border-width: 2px; }
+  .card-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-faint); margin-bottom: 16px; }
+  .card-label.green { color: var(--brand-green); }
+  .card-title { font-size: 28px; font-weight: 700; margin-bottom: 20px; }
+  .card-body { font-size: 19px; line-height: 1.6; color: var(--text-muted); }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">Ownership</p>
+    <h1 class="headline">Free. Open source. Yours.</h1>
+    <div class="compare-grid">
+      <div class="compare-card">
+        <div class="card-label">Closed, Hosted Agents — Rented</div>
+        <div class="card-title">Per-seat pricing</div>
+        <div class="card-body">Runs on someone else's infrastructure. Your code leaves your control.</div>
+      </div>
+      <div class="compare-card featured">
+        <div class="card-label green">Shipwright Harness — Owned</div>
+        <div class="card-title">MIT throughout. No tiers, no seats.</div>
+        <div class="card-body">Runs entirely in your cloud, on any stack — Node, Go, Rust, Python, Ruby.</div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-footer"><span>Why adopt it · 6 / 6</span><span>shipwrightharness.com</span></div>
+  <div class="slide-ready"></div>
+</body>
+</html>

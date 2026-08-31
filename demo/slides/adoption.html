@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Adoption</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content { position: absolute; top: 140px; left: var(--margin); right: var(--margin); bottom: 120px; display: flex; flex-direction: column; justify-content: center; }
+  .headline { font-size: 60px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 52px; }
+  .stage-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; max-width: 1300px; }
+  .stage-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 44px 36px; }
+  .stage-num { font-family: var(--font-mono); font-size: 13px; color: var(--text-faint); letter-spacing: 0.1em; margin-bottom: 16px; }
+  .stage-name { font-size: 30px; font-weight: 700; margin-bottom: 16px; }
+  .stage-body { font-size: 18px; line-height: 1.6; color: var(--text-muted); }
+  .stage-card:last-child { border-color: var(--brand-green); border-width: 2px; }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">Adoption</p>
+    <h1 class="headline">Autonomy is a ramp, not a switch.</h1>
+    <div class="stage-grid">
+      <div class="stage-card">
+        <div class="stage-num">Stage 01</div>
+        <div class="stage-name">Build</div>
+        <div class="stage-body">Start with the plugin. Review everything. The agent writes — you approve every step.</div>
+      </div>
+      <div class="stage-card">
+        <div class="stage-num">Stage 02</div>
+        <div class="stage-name">Review &amp; patch</div>
+        <div class="stage-body">The agent handles review feedback and keeps CI green. You stay in the loop on merges.</div>
+      </div>
+      <div class="stage-card">
+        <div class="stage-num">Stage 03</div>
+        <div class="stage-name">Autonomous delivery</div>
+        <div class="stage-body">Full pipeline. Ships on a schedule. You control the rate of handoff.</div>
+      </div>
+    </div>
+  </div>
+  <div class="slide-footer"><span>Adoption</span><span>shipwrightharness.com</span></div>
+  <div class="slide-ready"></div>
+</body>
+</html>

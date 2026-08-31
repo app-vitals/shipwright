@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Intro</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 var(--margin);
+    padding-top: 140px; /* below brand lockup */
+    max-width: 1300px;
+  }
+
+  .headline {
+    font-size: 72px;
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    margin-bottom: 36px;
+  }
+  .headline em { color: var(--brand-teal); font-style: normal; }
+
+  .subtext {
+    font-size: 28px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    max-width: 900px;
+  }
+  .subtext strong { color: var(--text-primary); font-weight: 600; }
+</style>
+</head>
+<body>
+  <!-- Background orbs -->
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+
+  <!-- Brand lockup -->
+  <div class="brand-lockup">
+    <div class="brand-mark"></div>
+    <span class="brand-wordmark">Shipwright Harness</span>
+  </div>
+  <div class="brand-rule"></div>
+
+  <!-- Eyebrow -->
+  <div class="content">
+    <p class="eyebrow">Shipwright Harness · Open Source · Built on Claude Code</p>
+
+    <h1 class="headline">
+      Almost everyone has <em>adopted</em> AI.<br>
+      Almost no one has <em>integrated</em> it.
+    </h1>
+
+    <p class="subtext">
+      Why the agent that ships your backlog should run in <strong>your</strong> cloud,
+      on <strong>your</strong> codebase.
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div class="slide-footer">
+    <span>The open-source autonomous delivery agent for Claude Code</span>
+    <span>shipwrightharness.com</span>
+  </div>
+
+  <div class="slide-ready"></div>
+</body>
+</html>
