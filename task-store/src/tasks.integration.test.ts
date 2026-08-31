@@ -27,6 +27,9 @@ describeOrSkip("Task store schema (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     await prisma.taskToken.deleteMany();
+    // TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — clear event rows
+    // before their parent Task rows.
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
   });
 

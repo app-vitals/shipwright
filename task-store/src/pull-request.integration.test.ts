@@ -1338,14 +1338,17 @@ describeOrSkip(
       // rows before their parent PullRequest rows, since claim()/etc. write them.
       await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
+      await prisma.taskEvent.deleteMany();
       await prisma.task.deleteMany();
     });
 
     afterEach(async () => {
       // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
       // rows before their parent PullRequest rows, since claim()/etc. write them.
+      // TaskEvent's FK is ON DELETE RESTRICT too (TCS-1.1) — same ordering.
       await prisma.pullRequestEvent.deleteMany();
       await prisma.pullRequest.deleteMany();
+      await prisma.taskEvent.deleteMany();
       await prisma.task.deleteMany();
       await prisma.$disconnect();
     });

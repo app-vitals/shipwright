@@ -607,9 +607,21 @@ export class TaskService implements TaskServiceLike {
     }
   }
 
+  /**
+   * Delete a task. TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — a task
+   * that has ever been claimed/updated/etc. has audit rows referencing it, so
+   * its TaskEvent rows must be deleted first, in the same transaction, or the
+   * delete would fail with a foreign-key violation. Unlike an incidental
+   * cascade, this is the one call path that explicitly removes a task
+   * (`DELETE /tasks/:id`), so deliberately wiping its audit trail here is the
+   * caller's explicit intent, not an accidental side effect elsewhere.
+   */
   async remove(id: string): Promise<void> {
     try {
-      await this.prisma.task.delete({ where: { id } });
+      await this.prisma.$transaction([
+        this.prisma.taskEvent.deleteMany({ where: { taskId: id } }),
+        this.prisma.task.delete({ where: { id } }),
+      ]);
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }

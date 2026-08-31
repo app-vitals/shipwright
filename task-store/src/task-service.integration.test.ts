@@ -40,6 +40,9 @@ describeOrSkip(
     beforeEach(async () => {
       prisma = makePrisma();
       service = new TaskService(prisma);
+      // TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — clear event rows
+      // before their parent Task rows, since claim()/etc. write them.
+      await prisma.taskEvent.deleteMany();
       await prisma.task.deleteMany();
     });
 
@@ -175,6 +178,31 @@ describeOrSkip(
       // timestamps from separate writes.
       const atValues = new Set(events.map((e) => e.at));
       expect(atValues.size).toBe(1);
+    });
+
+    it("remove() deletes a task that has TaskEvent rows, without a foreign-key violation (TCS-1.1)", async () => {
+      const task = await prisma.task.create({
+        data: { title: "remove-with-events", status: "pending" },
+      });
+      await service.claim(task.id, "agent-a");
+
+      const eventsBefore = await prisma.taskEvent.count({
+        where: { taskId: task.id },
+      });
+      expect(eventsBefore).toBeGreaterThan(0);
+
+      // TaskEvent's FK is ON DELETE RESTRICT — a naive prisma.task.delete()
+      // would throw a foreign-key violation here. remove() must clear the
+      // task's TaskEvent rows first, in the same transaction.
+      await service.remove(task.id);
+
+      const row = await prisma.task.findUnique({ where: { id: task.id } });
+      expect(row).toBeNull();
+
+      const eventsAfter = await prisma.taskEvent.count({
+        where: { taskId: task.id },
+      });
+      expect(eventsAfter).toBe(0);
     });
   },
 );
