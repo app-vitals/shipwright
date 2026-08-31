@@ -179,9 +179,18 @@ function buildMockChatClient(): ChatClient {
   };
 }
 
+// ─── Degraded-mode switch (CFB-2.3) ──────────────────────────────────────────
+// When ADMIN_E2E_CHAT_CLIENT_ABSENT=1, buildTestApp() omits chatClient
+// entirely — mirroring production when SHIPWRIGHT_CHAT_SERVICE_URL /
+// SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are unset — so the /admin/chat* routes
+// fall back to the degraded alert instead of the real chat UI. This proves
+// chatClient is a genuine injection point and that the other chat e2e suites
+// are exercising the real UI, not a silently-degraded fallback.
+const CHAT_CLIENT_ABSENT = process.env.ADMIN_E2E_CHAT_CLIENT_ABSENT === "1";
+
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function buildMockDeps(): AdminUIDeps {
+function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
   return {
     prisma: {
       agent: {
@@ -371,7 +380,7 @@ function buildMockDeps(): AdminUIDeps {
       }),
     },
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
-    chatClient: buildMockChatClient(),
+    chatClient,
   };
 }
 
@@ -398,7 +407,8 @@ function buildTestApp(): Hono {
   app.get("/health", (c) => c.text("ok"));
 
   // Mount the admin UI
-  const adminApp = createAdminUIApp(buildMockDeps());
+  const chatClient = CHAT_CLIENT_ABSENT ? undefined : buildMockChatClient();
+  const adminApp = createAdminUIApp(buildMockDeps(chatClient));
   app.route("/", adminApp);
 
   return app;
