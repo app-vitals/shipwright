@@ -1049,6 +1049,45 @@ describe("GET /admin/chat/:agentId/threads/:threadId/messages.json", () => {
     const body = (await res.json()) as { messages: ChatMessage[] };
     expect(body.messages).toEqual([]);
   });
+
+  // CFB-2.3: each message carries server-rendered bubbleHtml so polled bubbles
+  // are byte-identical to a full page reload's server-rendered bubble.
+  it("attaches bubbleHtml to each message", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const body = (await res.json()) as {
+      messages: (ChatMessage & { bubbleHtml: string })[];
+    };
+    expect(typeof body.messages[0].bubbleHtml).toBe("string");
+    expect(body.messages[0].bubbleHtml).toContain(
+      `data-message-id="${MOCK_MESSAGE.id}"`,
+    );
+  });
+
+  // CFB-2.3: ?since=<messageId> returns only messages ordered after that id.
+  it("filters messages with ?since=<messageId>", async () => {
+    const older: ChatMessage = { ...MOCK_MESSAGE, id: "older-1" };
+    const newer: ChatMessage = { ...MOCK_MESSAGE, id: "newer-1" };
+    const chatClient = makeMockChatClient({
+      listMessages: async (_threadId, opts) => {
+        // The admin layer applies the since filter itself over the full list,
+        // so the mock ignores opts.since and returns everything ordered.
+        void opts;
+        return { messages: [older, newer], total: 2, limit: 50, offset: 0 };
+      },
+    });
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages.json?since=older-1`,
+      { headers: { Cookie: `admin_session=${sessionCookie}` } },
+    );
+    const body = (await res.json()) as { messages: ChatMessage[] };
+    expect(body.messages.map((m) => m.id)).toEqual(["newer-1"]);
+  });
 });
 
 // ─── JSON API: POST messages.json ─────────────────────────────────────────────
@@ -1198,7 +1237,7 @@ describe("GET /admin/chat/:agentId/threads/:threadId — conversation window", (
     expect(html).toContain("Rate limited");
   });
 
-  it("includes thinking-indicator id in inline JS", async () => {
+  it("includes the live status bubble id in inline JS (CFB-2.3)", async () => {
     const chatClient = makeMockChatClient();
     const app = createAdminUIApp(makeBaseDeps({ chatClient }));
     const res = await app.request(
@@ -1206,7 +1245,7 @@ describe("GET /admin/chat/:agentId/threads/:threadId — conversation window", (
       { headers: { Cookie: `admin_session=${sessionCookie}` } },
     );
     const html = await res.text();
-    expect(html).toContain("thinking-indicator");
+    expect(html).toContain("live-status-bubble");
   });
 
   it("includes messages-container and send-btn in the page", async () => {

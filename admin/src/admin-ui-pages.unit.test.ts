@@ -23,11 +23,13 @@ import {
   type ToolItem,
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
+  ERROR_KIND_LABELS,
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
@@ -5775,9 +5777,9 @@ describe("renderChatThreadPage", () => {
     expect(html).toContain("messages-container");
   });
 
-  test("page includes thinking-indicator id in the inline JS", () => {
+  test("page includes the live status bubble id in the inline JS", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
-    expect(html).toContain("thinking-indicator");
+    expect(html).toContain("live-status-bubble");
   });
 
   test("page includes send-btn id for send button", () => {
@@ -5790,12 +5792,13 @@ describe("renderChatThreadPage", () => {
     expect(html).toContain("messages.json");
   });
 
-  test("page's poll loop extends the timeout on heartbeatAt/claimedAt progress instead of a flat cutoff", () => {
+  test("page's poll loop uses the CFB-2.3 stall/absolute-max model, not the old poll-count timeouts", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
-    expect(html).toContain("heartbeatAt");
-    expect(html).toContain("IDLE_TIMEOUT_POLLS");
-    expect(html).toContain("ABSOLUTE_MAX_POLLS");
-    expect(html).not.toContain("var MAX_POLLS =");
+    // The new millisecond-based model replaces the old poll-count constants.
+    expect(html).toContain("STALL_WARN_AFTER_MS");
+    expect(html).toContain("ABSOLUTE_MAX_MS");
+    expect(html).not.toContain("IDLE_TIMEOUT_POLLS");
+    expect(html).not.toContain("ABSOLUTE_MAX_POLLS");
   });
 
   test("XSS: user message body is escaped", () => {
@@ -6137,15 +6140,203 @@ describe("renderChatThreadPage — CFB-1.3 class migration", () => {
     expect(html).toContain("justify-content:flex-start");
   });
 
-  test("inline JS bubble builder (addBubble) uses the same chat-bubble class constants as the server renderer", () => {
+  test("inline JS optimistic user bubble uses the same chat-bubble class constants as the server renderer", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
     // The class names baked into server-rendered HTML must also appear inside
     // the inline <script> block, proving both come from the same source.
     expect(html).toContain(
-      "bubble.className = 'chat-bubble chat-bubble--' + role;",
+      "bubble.className = 'chat-bubble chat-bubble--user';",
     );
     expect(html).toContain('class="chat-bubble-inner"');
     expect(html).not.toContain("bubble.style.cssText");
+  });
+});
+
+// ─── CFB-2.3 — live progress, elapsed timer, stall state ─────────────────────
+
+describe("renderChatMessageBubble (hoisted module-level renderer)", () => {
+  const BASE_MSG: ChatMessage = {
+    id: "msg-cfb23-1",
+    threadId: "thread-abc",
+    role: "assistant",
+    body: "Here is **bold** and `code`.",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: "2024-01-01T00:00:05.000Z",
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  test("renders a data-message-id attribute for id-based dedupe", () => {
+    const html = renderChatMessageBubble(BASE_MSG);
+    expect(html).toContain('data-message-id="msg-cfb23-1"');
+  });
+
+  test("assistant markdown is rendered (bold → <strong>, code → <code>)", () => {
+    const html = renderChatMessageBubble(BASE_MSG);
+    expect(html).toContain("<strong>bold</strong>");
+    expect(html).toContain("<code>code</code>");
+  });
+
+  test("user body is escaped, not markdown-rendered", () => {
+    const html = renderChatMessageBubble({
+      ...BASE_MSG,
+      role: "user",
+      body: "<script>alert(1)</script> **not bold**",
+    });
+    expect(html).not.toContain("<script>alert(1)</script>");
+    expect(html).toContain("&lt;script&gt;");
+    // user bodies are plain-text/pre-wrap — no markdown conversion
+    expect(html).not.toContain("<strong>not bold</strong>");
+  });
+
+  test("errorKind uses the shared ERROR_KIND_LABELS mapping", () => {
+    for (const [kind, label] of Object.entries(ERROR_KIND_LABELS)) {
+      const html = renderChatMessageBubble({ ...BASE_MSG, errorKind: kind });
+      expect(html).toContain(label);
+    }
+  });
+
+  test("unknown errorKind falls back to the default label", () => {
+    const html = renderChatMessageBubble({
+      ...BASE_MSG,
+      errorKind: "something-weird",
+    });
+    expect(html).toContain("Error");
+  });
+});
+
+describe("renderChatThreadPage — CFB-2.3 live progress inline JS + status bubble", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "Live Progress Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const PENDING_USER_MSG: ChatMessage = {
+    id: "msg-pending-1",
+    threadId: "thread-abc",
+    role: "user",
+    body: "do a thing",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: "agent-xyz",
+    claimedAt: "2024-01-01T00:00:01.000Z",
+    heartbeatAt: "2024-01-01T00:00:02.000Z",
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+    progressPhase: "reading",
+    progressSeq: 3,
+    cancelRequestedAt: null,
+  };
+
+  const REPLIED_MSG: ChatMessage = {
+    ...PENDING_USER_MSG,
+    id: "msg-replied-1",
+    repliedAt: "2024-01-01T00:00:10.000Z",
+  };
+
+  test("simpleMarkdown is deleted from the inline JS", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).not.toContain("simpleMarkdown");
+  });
+
+  test("inline JS contains a 1s ticker (setInterval(..., 1000)) for the elapsed timer", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).toContain("setInterval(tick, 1000)");
+  });
+
+  test("inline JS uses an id-based renderedIds dedupe set", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).toContain("renderedIds");
+    expect(html).toContain("data-message-id");
+  });
+
+  test("inline JS renders every new server message, not just the last", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    // renderServerBubble is called in a loop over all msgs (the old code took
+    // replies[replies.length - 1]).
+    expect(html).toContain("renderServerBubble");
+    expect(html).not.toContain("replies[replies.length - 1]");
+  });
+
+  test("inline JS serializes ERROR_KIND_LABELS from the shared source", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).toContain("var ERROR_KIND_LABELS =");
+    expect(html).toContain(JSON.stringify(ERROR_KIND_LABELS));
+  });
+
+  test("STALL_WARN_AFTER_MS defaults to 120000 and ABSOLUTE_MAX_MS to 3900000", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).toContain("var STALL_WARN_AFTER_MS = 120000");
+    expect(html).toContain("var ABSOLUTE_MAX_MS = 3900000");
+  });
+
+  test("stallWarnAfterMs override is threaded into the inline JS", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [REPLIED_MSG],
+      null,
+      "u",
+      null,
+      { stallWarnAfterMs: 500 },
+    );
+    expect(html).toContain("var STALL_WARN_AFTER_MS = 500");
+  });
+
+  test("server-renders the live status bubble when the last user message is unreplied", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [PENDING_USER_MSG],
+      "u",
+    );
+    expect(html).toContain('id="live-status-bubble"');
+    // milestone from the progressPhase label + elapsed seed
+    expect(html).toContain("Reading files");
+    expect(html).toContain('id="live-status-elapsed"');
+    // data-created-at drives the zero-network ticker
+    expect(html).toContain("data-created-at=");
+    expect(html).toContain("data-progress-seq=");
+  });
+
+  test("no live status bubble when the last message is already replied", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    expect(html).not.toContain('id="live-status-bubble"');
+  });
+
+  test("pending message with null progressPhase renders elapsed but no milestone text", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [{ ...PENDING_USER_MSG, progressPhase: null }],
+      "u",
+    );
+    expect(html).toContain('id="live-status-bubble"');
+    expect(html).toContain('id="live-status-elapsed"');
+    // milestone span present but empty
+    expect(html).toContain('id="live-status-milestone"></span>');
+  });
+
+  test("stall CSS honors prefers-reduced-motion", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [PENDING_USER_MSG],
+      "u",
+    );
+    expect(html).toContain("prefers-reduced-motion: reduce");
+    expect(html).toContain("chat-stall-indicator");
   });
 });
 
