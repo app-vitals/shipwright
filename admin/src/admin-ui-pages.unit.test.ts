@@ -6209,6 +6209,138 @@ describe("renderChatMessageBubble (hoisted module-level renderer)", () => {
   });
 });
 
+describe("renderChatThreadPage — CFB-3.2 mobile drawer", () => {
+  const THREAD: ChatThread = {
+    id: "thread-abc",
+    agentId: "agent-xyz",
+    title: "Drawer Thread",
+    memberId: null,
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+
+  const USER_MSG: ChatMessage = {
+    id: "msg-1",
+    threadId: "thread-abc",
+    role: "user",
+    body: "Hello",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    claimedBy: null,
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+  };
+
+  const THREADS_LIST: ChatThread[] = [
+    {
+      id: "thread-other",
+      agentId: "agent-xyz",
+      title: "Other Thread",
+      memberId: null,
+      createdAt: "2024-01-01T00:00:00.000Z",
+      updatedAt: "2024-01-01T00:00:00.000Z",
+    },
+  ];
+
+  // Criterion #2: DOM order is load-bearing — the ~ sibling combinator that
+  // reveals the drawer off its :checked state requires the checkbox to appear
+  // BEFORE the sidebar in source order.
+  test("drawer checkbox appears before the sidebar in DOM order", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    const checkboxIndex = html.indexOf('id="chat-drawer-toggle"');
+    // Match the sidebar's rendered markup, not the class name in the <style>
+    // block (which always appears earlier). The sidebar div carries both the
+    // `card` and `chat-thread-sidebar` classes in the body.
+    const sidebarIndex = html.indexOf('class="card chat-thread-sidebar"');
+    expect(checkboxIndex).toBeGreaterThanOrEqual(0);
+    expect(sidebarIndex).toBeGreaterThanOrEqual(0);
+    expect(checkboxIndex).toBeLessThan(sidebarIndex);
+  });
+
+  test("renders a scrim label bound to the drawer toggle", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    // The scrim is a <label> in the body bound to the toggle; assert on the
+    // rendered element, not the class name that also appears in the <style>.
+    expect(html).toContain('class="chat-drawer-scrim"');
+    expect(html).toContain('for="chat-drawer-toggle"');
+  });
+
+  test("mobile media block no longer hides the sidebar with display:none", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    expect(html).not.toContain(".chat-thread-sidebar { display:none }");
+  });
+
+  test("emits a standalone keyboard-inset script separate from the progress IIFE", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    // The visualViewport listener sets a --kb-inset custom property and must
+    // guard on visualViewport absence exactly as the brief specifies.
+    expect(html).toContain("--kb-inset");
+    expect(html).toContain("window.visualViewport");
+  });
+
+  test("composer applies sticky positioning and safe-area padding", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    expect(html).toContain("position:sticky");
+    expect(html).toContain("env(safe-area-inset-bottom)");
+  });
+
+  test("bubble inner wraps long words and code fences scroll horizontally", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG],
+      THREADS_LIST,
+      "alice",
+    );
+    expect(html).toContain("overflow-wrap:anywhere");
+    expect(html).toContain("overflow-x:auto");
+  });
+
+  // Degraded/no-threads mode: sidebar ternary yields "" — the drawer chrome
+  // (checkbox/scrim/hamburger) must not render orphaned without a sidebar.
+  test("omits drawer chrome when there is no thread list", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [USER_MSG], "alice");
+    // The drawer input/scrim/hamburger elements must not render without a
+    // sidebar (the class names still appear in the always-emitted <style>).
+    expect(html).not.toContain('id="chat-drawer-toggle"');
+    expect(html).not.toContain('class="chat-drawer-scrim"');
+    expect(html).not.toContain('class="chat-drawer-hamburger"');
+  });
+});
+
 describe("renderChatThreadPage — CFB-2.3 live progress inline JS + status bubble", () => {
   const THREAD: ChatThread = {
     id: "thread-abc",

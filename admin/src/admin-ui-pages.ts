@@ -3880,7 +3880,45 @@ const chatPageStyles = `
       .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
       /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
       .chat-thread-layout { flex-direction:column }
-      .chat-thread-sidebar { display:none }
+      /* ─── Mobile thread drawer (CFB-3.2) ──────────────────────────────────
+         The sidebar becomes an off-canvas drawer instead of display:none, so
+         the thread list is reachable on mobile. It is translated off the left
+         edge by default and slid in when the checkbox is :checked. A scrim
+         dims/blocks the background and closes the drawer on tap. */
+      .chat-thread-sidebar {
+        position:fixed;top:0;left:0;bottom:0;z-index:60;
+        width:80%;max-width:300px;min-width:0;
+        margin:0;border-radius:0;overflow-y:auto;
+        transform:translateX(-100%);
+        transition:transform 0.2s ease;
+      }
+      .chat-drawer-toggle:checked ~ .chat-thread-sidebar { transform:translateX(0) }
+      /* Scrim toggles display (not just opacity) so it's genuinely absent from
+         the a11y/visibility tree when closed — Playwright's toBeVisible() (and
+         assistive tech) treat an opacity:0 element as still visible. */
+      .chat-drawer-scrim {
+        display:none;position:fixed;inset:0;z-index:55;
+        background:rgba(0,0,0,0.4);cursor:pointer;
+      }
+      .chat-drawer-toggle:checked ~ .chat-drawer-scrim { display:block }
+      .chat-drawer-hamburger { display:inline-block }
+      @media (prefers-reduced-motion: reduce) {
+        .chat-thread-sidebar { transition:none }
+      }
+      /* Collapse the header to a compact ~48px control row + 16px meta line so
+         the message stream sits above the fold at 375px (criterion #4). The
+         title rides inline in the control row; the thread-id meta stays as the
+         single 16px line. Per-thread token stats and the rename/delete
+         disclosure are pushed off-header on mobile (still reachable via the
+         drawer / desktop) to keep the header under 96px. */
+      .chat-thread-header { padding-top:2px;padding-bottom:2px }
+      .chat-thread-header-top { margin-bottom:2px !important }
+      .chat-thread-header .chat-drawer-hamburger { padding:4px 8px }
+      .chat-thread-header .btn { margin-bottom:0 !important;padding:4px 10px }
+      .chat-thread-header .page-title { font-size:15px;line-height:1.2;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+      .chat-thread-header .chat-thread-meta { margin-top:2px !important }
+      .chat-thread-header .chat-thread-stats { display:none }
+      .chat-thread-header .chat-thread-actions { display:none }
       .chat-bubble-inner { max-width:90% }
       #message-input { font-size:16px }
       /* Composer row: let the textarea keep adequate width instead of being
@@ -3889,8 +3927,14 @@ const chatPageStyles = `
       .chat-message-input { flex-basis:100%; }
       /* .chat-thread-page combines with .vos-page (specificity 0,2,0), which
          otherwise beats .vos-page's own mobile padding rule (0,1,0) — pin the
-         effective mobile padding back to match .vos-page's mobile padding. */
-      .chat-thread-page { padding:16px 12px 48px }
+         effective mobile padding here. The bottom padding is intentionally
+         small: the sticky composer carries its own safe-area bottom inset, and
+         a large page bottom padding would steal scarce vertical space when the
+         keyboard shrinks the viewport (CFB-3.2 criterion #3). */
+      .chat-thread-page { padding:8px 12px 8px }
+      /* Tighten the gap between the header and the message column so the
+         message stream starts higher (criterion #4). */
+      .chat-thread-layout { margin-top:8px !important }
     }`;
 
 // ─── Chat thread page — class-driven bubble/composer styling (CFB-1.3) ────────
@@ -4077,7 +4121,7 @@ const chatThreadStyles = `
        flex-column body: min-height:100vh as a baseline, then min-height:100dvh
        as a progressive enhancement (dynamic viewport height accounts for
        mobile browser chrome that can grow the toolbar without breaking layout). */
-    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh }
+    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;height:100dvh }
     .chat-thread-page { display:flex;flex-direction:column;flex:1;min-height:0;max-width:900px;margin:0 auto;padding:0 24px;width:100% }
     .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
     /* Collapsed-by-default rename/delete disclosure (CFB-3.1 #5) — keeps the
@@ -4085,19 +4129,28 @@ const chatThreadStyles = `
     .chat-thread-actions { margin-top:12px }
     .chat-thread-actions-summary { cursor:pointer;font-size:13px;color:#6b7280;user-select:none }
     .chat-thread-actions-summary:hover { color:#374151 }
-    .chat-messages-container { flex:1;overflow-y:auto;padding:8px 0;min-height:0 }
+    .chat-messages-container { flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 0;min-height:0 }
     .${CHAT_BUBBLE_CLASS} { display:flex;margin-bottom:12px }
     .${chatBubbleRoleClass("user")} { justify-content:flex-end }
     .${chatBubbleRoleClass("assistant")} { justify-content:flex-start }
     .${chatBubbleRoleClass("system")} { justify-content:center }
     .${chatBubbleRoleClass("other")} { justify-content:flex-start }
-    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06) }
+    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06);overflow-wrap:anywhere }
+    /* renderMarkdown emits <pre><code> for fenced blocks — let long code lines
+       scroll horizontally inside the bubble instead of forcing the whole page
+       to overflow. Scoped to the bubble so it doesn't affect other <pre>. */
+    .${CHAT_BUBBLE_INNER_CLASS} pre { overflow-x:auto }
     .${CHAT_BUBBLE_INNER_CLASS}.${CHAT_BUBBLE_INNER_WIDE_CLASS} { max-width:80% }
     .${chatBubbleRoleClass("user")} .${CHAT_BUBBLE_INNER_CLASS} { background:#eef2ff }
     .${chatBubbleRoleClass("assistant")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f0fdf4 }
     .${chatBubbleRoleClass("system")} .${CHAT_BUBBLE_INNER_CLASS} { background:#fef9c3 }
     .${chatBubbleRoleClass("other")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f3f4f6 }
-    .chat-composer-form { flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px }
+    /* Sticky composer: pins to the bottom of the scroll container so it stays
+       reachable as messages grow. padding-bottom folds in the iOS safe-area
+       inset plus --kb-inset (set by the visualViewport listener when the
+       on-screen keyboard shrinks the visual viewport) so the composer isn't
+       slid under the keyboard on iOS, where dvh does NOT shrink the layout. */
+    .chat-composer-form { flex-shrink:0;position:sticky;bottom:0;background:#f7f7fb;padding:16px 0;padding-bottom:calc(12px + env(safe-area-inset-bottom) + var(--kb-inset, 0px));border-top:1px solid #e5e7eb;margin-top:8px }
     .chat-composer-row { display:flex;gap:8px;align-items:flex-end }
     .chat-message-input { flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none }
     .chat-composer-btn { flex-shrink:0;height:44px }
@@ -4112,7 +4165,18 @@ const chatThreadStyles = `
     @keyframes chat-stall-pulse { 0%,100% { opacity:1 } 50% { opacity:0.55 } }
     @media (prefers-reduced-motion: reduce) {
       .${STALL_INDICATOR_CLASS} .${CHAT_BUBBLE_INNER_CLASS} { animation:none }
-    }`;
+    }
+    /* ─── Thread drawer (CFB-3.2) ────────────────────────────────────────────
+       CSS-only collapsible sidebar mirroring the toolbar hamburger idiom. On
+       desktop the sidebar is an ordinary flex column and the drawer chrome
+       (toggle checkbox, scrim, hamburger) is inert/hidden — everything below
+       only activates inside the mobile @media block in chatPageStyles. DOM
+       order is load-bearing: the checkbox precedes the sidebar so the ~ sibling
+       combinator can reach it. */
+    .chat-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
+    .chat-drawer-hamburger { display:none;background:none;border:1px solid #e5e7eb;border-radius:6px;font-size:18px;line-height:1;padding:6px 10px;cursor:pointer;color:#374151 }
+    .chat-drawer-hamburger:hover { color:#4f46e5 }
+    .chat-drawer-scrim { display:none }`;
 
 export function renderChatPage(
   agents: AgentOption[],
@@ -4686,6 +4750,50 @@ export function renderChatThreadPage(
 })();
 </script>`;
 
+  // Standalone drawer + keyboard-inset script (CFB-3.2). Deliberately emitted
+  // as its OWN <script> block — NOT inside the progress IIFE above — so the two
+  // concerns don't fight the ongoing live-progress rewrite. Three tiny jobs:
+  //   1. visualViewport → --kb-inset: on iOS the on-screen keyboard shrinks the
+  //      VISUAL viewport but leaves the LAYOUT viewport (and dvh) alone, sliding
+  //      the sticky composer under the keyboard. Setting --kb-inset to the
+  //      occluded height lets CSS pad the composer back into view. Guarded by
+  //      `if (!vv) return` — no speculative fallback for browsers without it.
+  //   2. aria-expanded sync on the hamburger, mirroring the toolbar idiom.
+  //   3. Escape closes the drawer (a bare checkbox can't listen for keys).
+  const drawerScript = `
+<script>
+(function() {
+  var vv = window.visualViewport;
+  if (!vv) return;
+  var root = document.documentElement;
+  function updateKbInset() {
+    // Occluded height = layout viewport height minus the visual viewport
+    // height (plus its offset). Clamp to >= 0. On Android where dvh already
+    // shrinks the layout this stays ~0, which is correct.
+    var occluded = window.innerHeight - vv.height - vv.offsetTop;
+    root.style.setProperty('--kb-inset', (occluded > 0 ? occluded : 0) + 'px');
+  }
+  vv.addEventListener('resize', updateKbInset);
+  vv.addEventListener('scroll', updateKbInset);
+  updateKbInset();
+})();
+(function() {
+  var toggle = document.getElementById('chat-drawer-toggle');
+  if (!toggle) return;
+  var burger = document.querySelector('.chat-drawer-hamburger');
+  function syncAria() {
+    if (burger) burger.setAttribute('aria-expanded', toggle.checked ? 'true' : 'false');
+  }
+  toggle.addEventListener('change', syncAria);
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'Escape' || e.key === 'Esc') && toggle.checked) {
+      toggle.checked = false;
+      syncAria();
+    }
+  });
+})();
+</script>`;
+
   // Thread list sidebar pane
   // NOTE: no inline font-size here — an inline style would beat the
   // .form-input mobile @media override by specificity and reintroduce the
@@ -4722,6 +4830,21 @@ export function renderChatThreadPage(
         </div>`
       : "";
 
+  // Drawer chrome (CFB-3.2). Only render the CSS-only toggle + scrim + hamburger
+  // when there's actually a sidebar to reveal — in degraded/no-threads mode the
+  // sidebar ternary yields "" and the drawer would be an empty shell. DOM order
+  // is load-bearing: the checkbox must precede the sidebar and scrim so the
+  // `~` sibling combinator can reach them from `:checked`.
+  const drawerToggle = sidebar
+    ? `<input type="checkbox" id="chat-drawer-toggle" class="chat-drawer-toggle" aria-hidden="true">`
+    : "";
+  const drawerScrim = sidebar
+    ? `<label for="chat-drawer-toggle" class="chat-drawer-scrim" aria-label="Close thread list"></label>`
+    : "";
+  const drawerHamburger = sidebar
+    ? `<label for="chat-drawer-toggle" class="chat-drawer-hamburger" role="button" tabindex="0" aria-label="Toggle thread list" aria-expanded="false" aria-controls="chat-drawer-toggle">☰</label>`
+    : "";
+
   return renderAdminPage({
     title: `${rawTitle} - Shipwright Admin`,
     // NOTE: chatThreadStyles must be concatenated before chatPageStyles here —
@@ -4736,9 +4859,12 @@ export function renderChatThreadPage(
   <div class="vos-page chat-thread-page">
     <div class="page-header chat-thread-header">
       <div>
-        <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
+        <div class="chat-thread-header-top" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${drawerHamburger}
+          <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary">&larr; Back to threads</a>
+        </div>
         <h1 class="page-title">${title}</h1>
-        <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
+        <div class="chat-thread-meta" style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
         ${
           stats &&
           (
@@ -4746,15 +4872,17 @@ export function renderChatThreadPage(
               stats.totalOutputTokens > 0 ||
               stats.totalCostUsd > 0
           )
-            ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
+            ? `<div class="chat-thread-stats" style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
             : ""
         }
         ${threadActionsDetails}
       </div>
     </div>
     <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
+      ${drawerToggle}
       ${sidebar}
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      ${drawerScrim}
+      <div style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
         <div id="messages-container" class="chat-messages-container">
           ${messageBubbles}
@@ -4789,6 +4917,6 @@ export function renderChatThreadPage(
       </div>
     </div>
   </div>`,
-    bodyEnd: inlineScript,
+    bodyEnd: `${inlineScript}\n${drawerScript}`,
   });
 }
