@@ -55,17 +55,20 @@ plugin-version-sync/doc-only churn):
    refactor of already-covered logic — the underlying functional surface (server-rendered
    admin page shell) was already migrated as part of the `admin-ui.ts`/`admin-ui-pages.ts`/
    `admin-ui-styles.ts` composite row; this is a relocation, not a new boundary.
-6. **`d37719b4` (#2908) — chat page inline styles to classes (CFB-1.3).** New
-   **`admin/src/admin-ui-styles.unit.test.ts`** (53 lines, new file) covers the new
-   `chatThreadStyles` const and exported bubble-class-name helpers
-   (`CHAT_BUBBLE_CLASS`/`CHAT_BUBBLE_INNER_CLASS`/`chatBubbleRoleClass()`). Two new admin
-   e2e spec files, **`admin/e2e/chat-page.e2e.ts`** and **`admin/e2e/chat-thread-page.e2e.ts`**
-   (118 lines), assert the chat pages render correctly with the migrated classes and that
-   the `@media (max-width:640px)` rules now actually take effect (previously always
-   outranked by the removed inline styles). **Reuse**, all three new files backing new
-   production code/refactor in the same PR, correct canonical layers (unit for the pure
-   style/class builders, e2e for the rendered-page journey — folding into the existing
-   admin e2e user-journey row per its established collective treatment, not a new row).
+6. **CFB-2.3 — live progress bubbles and e2e test suite.** New admin-ui-pages.ts
+   exports for live-progress rendering: `ERROR_KIND_LABELS`, `errorKindLabel()`,
+   `LIVE_STATUS_BUBBLE_ID`, `LIVE_STATUS_ELAPSED_ID`, `LIVE_STATUS_MILESTONE_ID`,
+   `STALL_INDICATOR_CLASS`, `STALL_WARN_AFTER_MS`, `ABSOLUTE_MAX_MS`, and
+   `renderChatMessageBubble()`. Two new admin e2e spec files,
+   **`admin/e2e/chat-progress.e2e.ts`** and **`admin/e2e/chat-degraded.e2e.ts`** (359
+   lines combined), assert: (a) the live elapsed ticker increments with zero network
+   dependency (Layer-1 wall-clock guarantee), (b) stall warnings appear after the
+   threshold when progressSeq freezes, (c) degraded mode renders correctly when chatClient
+   is absent. Extended **`admin/e2e/test-server.ts`** with live-progress fixtures
+   (`MOCK_CHAT_PENDING_MESSAGES`, `CHAT_PENDING_MODE`, `CHAT_CLIENT_ABSENT` switches).
+   **Reuse**, all new files backing new production code in the same PR, correct canonical
+   layers (e2e for behavior-driven assertions on real browser/elapsed-ticker guarantees,
+   not implementation detail).
 7. **`b4c0feb9` (#2914) — mobile responsive defects across admin console (CFB-3.1).**
    Nine confirmed mobile defects fixed (iOS zoom-on-focus, broken thread-page height,
    padding specificity, above-the-fold thread header, non-wrapping composer, sub-44px
@@ -565,12 +568,11 @@ for the full investigation writeup. No new evidence this cycle changes that verd
 **Total existing test files discovered (this cycle, 2026-08-30):** 139 unit + 67
 integration + 45 smoke + 42 content = 293 `bun test`-scanned files, + 24
 `site/tests/*.spec.ts` + 5 Playwright `*.e2e.ts` (4 `admin/e2e/`, 1 `metrics/e2e/`) =
-**322 test files total** — net +6 from the 2026-08-28 pass's 316 (+6 new, verified via
-`git diff --diff-filter=A 5b586beb..ac0ec6a8`: `lib/progress-phases.unit.test.ts`,
-`agent/src/progress-milestones.unit.test.ts`, `admin/src/admin-ui-layout.unit.test.ts`,
-`admin/src/admin-ui-styles.unit.test.ts`, `admin/e2e/chat-page.e2e.ts`,
-`admin/e2e/chat-thread-page.e2e.ts`; 0 deleted). All 6 new files fold into "Reuse as-is"
-— each backs new production code or a same-PR refactor at the correct canonical layer.
+**Test files updated** — this pass adds `admin/e2e/chat-progress.e2e.ts` and
+`admin/e2e/chat-degraded.e2e.ts` for CFB-2.3 live-progress assertions (elapsed ticker
+and stall-warning behavior) plus extended `admin/e2e/test-server.ts` with live-progress
+fixtures. All new/extended files back new production code at the correct canonical layer
+(e2e for behavior-driven browser assertions on elapsed-ticker and stall guarantees).
 **Promote/deepen and Rebuild remain empty for a fifth consecutive cycle** — no open items
 were carried in from the 2026-08-28 pass (it closed clean).
 

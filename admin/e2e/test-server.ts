@@ -107,6 +107,44 @@ export const MOCK_CHAT_MESSAGES: ChatMessage[] = [
   },
 ];
 
+// ─── Live-progress fixture (CFB-2.3) ─────────────────────────────────────────
+// When ADMIN_E2E_CHAT_PENDING=1, the mock thread's last message is an
+// UNREPLIED user message whose progressSeq stays frozen — so the server
+// renders the live status bubble and the client ticker + stall state can be
+// asserted by chat-progress.e2e.ts without any real agent. createdAt is
+// computed at boot so the elapsed value starts near 0 and visibly increments.
+export const MOCK_CHAT_PENDING_MESSAGES: ChatMessage[] = [
+  {
+    id: "msg-pending-e2e-1",
+    threadId: MOCK_CHAT_THREAD.id,
+    role: "user",
+    body: "Kick off a long-running task, please.",
+    // Anchored at boot so elapsed starts small and climbs across DOM reads.
+    createdAt: new Date().toISOString(),
+    claimedBy: "agent-e2e-1",
+    claimedAt: new Date().toISOString(),
+    heartbeatAt: new Date().toISOString(),
+    repliedAt: null,
+    tokens: null,
+    costUsd: null,
+    errorKind: null,
+    attachmentFilename: null,
+    attachmentSize: null,
+    // progressPhase set so a milestone label renders; progressSeq is FROZEN
+    // (never advances across polls) so the stall state trips once the
+    // (test-shortened) STALL_WARN_AFTER_MS elapses.
+    progressPhase: "reading",
+    progressSeq: 1,
+    cancelRequestedAt: null,
+  },
+];
+
+const CHAT_PENDING_MODE = process.env.ADMIN_E2E_CHAT_PENDING === "1";
+
+function chatMessages(): ChatMessage[] {
+  return CHAT_PENDING_MODE ? MOCK_CHAT_PENDING_MESSAGES : MOCK_CHAT_MESSAGES;
+}
+
 function buildMockChatClient(): ChatClient {
   return {
     listThreads: async () => ({
@@ -119,25 +157,40 @@ function buildMockChatClient(): ChatClient {
     createThread: async () => MOCK_CHAT_THREAD,
     updateThread: async () => MOCK_CHAT_THREAD,
     deleteThread: async () => {},
-    listMessages: async () => ({
-      messages: MOCK_CHAT_MESSAGES,
-      total: MOCK_CHAT_MESSAGES.length,
-      limit: 50,
-      offset: 0,
-    }),
-    createMessage: async () => MOCK_CHAT_MESSAGES[0],
-    getThreadStats: async () => ({
-      messageCount: MOCK_CHAT_MESSAGES.length,
-      totalInputTokens: 0,
-      totalOutputTokens: 0,
-      totalCostUsd: 0,
-    }),
+    listMessages: async () => {
+      const messages = chatMessages();
+      return {
+        messages,
+        total: messages.length,
+        limit: 50,
+        offset: 0,
+      };
+    },
+    createMessage: async () => chatMessages()[0],
+    getThreadStats: async () => {
+      const messages = chatMessages();
+      return {
+        messageCount: messages.length,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostUsd: 0,
+      };
+    },
   };
 }
 
+// ─── Degraded-mode switch (CFB-2.3) ──────────────────────────────────────────
+// When ADMIN_E2E_CHAT_CLIENT_ABSENT=1, buildTestApp() omits chatClient
+// entirely — mirroring production when SHIPWRIGHT_CHAT_SERVICE_URL /
+// SHIPWRIGHT_CHAT_SERVICE_ADMIN_TOKEN are unset — so the /admin/chat* routes
+// fall back to the degraded alert instead of the real chat UI. This proves
+// chatClient is a genuine injection point and that the other chat e2e suites
+// are exercising the real UI, not a silently-degraded fallback.
+const CHAT_CLIENT_ABSENT = process.env.ADMIN_E2E_CHAT_CLIENT_ABSENT === "1";
+
 // ─── Mock deps factory ────────────────────────────────────────────────────────
 
-function buildMockDeps(): AdminUIDeps {
+function buildMockDeps(chatClient: ChatClient | undefined): AdminUIDeps {
   return {
     prisma: {
       agent: {
@@ -327,7 +380,7 @@ function buildMockDeps(): AdminUIDeps {
       }),
     },
     appBaseUrl: `http://localhost:${ADMIN_E2E_PORT}`,
-    chatClient: buildMockChatClient(),
+    chatClient,
   };
 }
 
@@ -354,7 +407,8 @@ function buildTestApp(): Hono {
   app.get("/health", (c) => c.text("ok"));
 
   // Mount the admin UI
-  const adminApp = createAdminUIApp(buildMockDeps());
+  const chatClient = CHAT_CLIENT_ABSENT ? undefined : buildMockChatClient();
+  const adminApp = createAdminUIApp(buildMockDeps(chatClient));
   app.route("/", adminApp);
 
   return app;

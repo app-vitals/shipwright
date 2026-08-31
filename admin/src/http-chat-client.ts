@@ -40,6 +40,17 @@ export interface ChatMessage {
   errorKind?: string | null;
   attachmentFilename: string | null;
   attachmentSize: number | null;
+  /**
+   * Live-progress columns (added chat-side in CFB-2.2). The agent's heartbeat
+   * reports a coarse `progressPhase` (one of lib/progress-phases.ts's closed
+   * set, or null before the first phase is reported) and bumps `progressSeq`
+   * every time it makes forward progress. `cancelRequestedAt` is set when a
+   * cancel has been requested for the in-flight reply. All optional so older
+   * fixtures / responses that predate these columns deserialize cleanly.
+   */
+  progressPhase?: string | null;
+  progressSeq?: number;
+  cancelRequestedAt?: string | null;
 }
 
 export interface ThreadStats {
@@ -78,6 +89,13 @@ export interface ListThreadsOptions {
 export interface ListMessagesOptions {
   limit?: number;
   offset?: number;
+  /**
+   * Return only messages ordered *after* the message with this id. Applied as
+   * a read-side filter over the full ordered result (the chat service itself
+   * only understands limit/offset), so incremental polls stay cheap without
+   * changing the chat service HTTP API.
+   */
+  since?: string;
 }
 
 export interface CreateThreadOptions {
@@ -121,6 +139,22 @@ export interface ChatClient {
   ): Promise<ChatMessage>;
 
   getThreadStats(threadId: string): Promise<ThreadStats>;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Return only the messages ordered *after* the message whose id is `since`,
+ * assuming `messages` is in chronological order. If `since` isn't found (e.g.
+ * the client's last-seen id was trimmed away), returns the full list so the
+ * caller re-syncs rather than silently dropping everything.
+ */
+export function filterSince(
+  messages: ChatMessage[],
+  since: string,
+): ChatMessage[] {
+  const idx = messages.findIndex((m) => m.id === since);
+  return idx === -1 ? messages : messages.slice(idx + 1);
 }
 
 // ─── Http implementation ──────────────────────────────────────────────────────
@@ -244,7 +278,11 @@ export class HttpChatClient implements ChatClient {
         `chat-service GET /threads/${threadId}/messages failed: ${res.status} ${res.statusText}`,
       );
     }
-    return res.json() as Promise<ListMessagesResult>;
+    const result = (await res.json()) as ListMessagesResult;
+    if (opts?.since) {
+      return { ...result, messages: filterSince(result.messages, opts.since) };
+    }
+    return result;
   }
 
   async createMessage(
@@ -372,6 +410,9 @@ export class NoopChatClient implements ChatClient {
       errorKind: null,
       attachmentFilename: attachment?.filename ?? null,
       attachmentSize: attachment?.size ?? null,
+      progressPhase: null,
+      progressSeq: 0,
+      cancelRequestedAt: null,
     };
   }
 
