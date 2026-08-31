@@ -58,7 +58,7 @@ scenes:
     url: "http://localhost:4321/slides/intro.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -72,7 +72,7 @@ scenes:
     url: "http://localhost:4321/slides/problem-stats.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -81,12 +81,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "problem-babysitting"
     type: browser
-    duration: 18
+    duration: 19
     narration: "Your most expensive engineers are inside the loop of every AI task. Prompting, watching, steering — one task at a time. Output is capped by one person's attention. With Shipwright, the coding leaves their day — in the cloud, around the clock, through quality gates the team controls."
     url: "http://localhost:4321/slides/problem-babysitting.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -95,12 +95,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "what-it-is"
     type: browser
-    duration: 15
+    duration: 19
     narration: "Shipwright is a delivery system, not another assistant. A cloud agent you deploy into your own environment. It picks up queued work, ships on a schedule, and talks to the team where they already are. Deploy to your cloud. Talks in Slack. Ships on cron. One governed pipeline."
     url: "http://localhost:4321/slides/what-it-is.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -109,12 +109,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "pipeline"
     type: browser
-    duration: 18
+    duration: 24
     narration: "Every change, the same way. Spec — product intent captured as a reviewable spec. Plan — estimated, dependency-ordered tasks. Build — tests first, every criterion independently verified. Review — policy-controlled with confidence thresholds. Ship — green CI and an approved review, merged and deployed via Helm."
     url: "http://localhost:4321/slides/pipeline.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -123,12 +123,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "quality-bar"
     type: browser
-    duration: 15
+    duration: 17
     narration: "An enforced quality bar. Tests are written before code and land in the same change. A second agent independently grades every acceptance criterion against the diff. A pull request is blocked if anything is unmet. Enforced by the system, not suggested by a prompt."
     url: "http://localhost:4321/slides/quality-bar.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -137,12 +137,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "governance"
     type: browser
-    duration: 15
+    duration: 17
     narration: "Humans keep the judgment calls. Sensitive work is routed to a person at planning time — before any code is written. The agent never touches credentials or production access on its own. Every autonomy level is a toggle your team controls."
     url: "http://localhost:4321/slides/governance.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -151,12 +151,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "last-mile"
     type: browser
-    duration: 18
+    duration: 20
     narration: "Most AI tools stop when the code is written. Shipwright carries it the rest of the way. Review — findings fixed on a schedule. Merge — green CI, approved review. Deploy — into your own environment. Canary — an opt-in staged rollout, when your pipeline supports it. Auto-revert, available when something fails."
     url: "http://localhost:4321/slides/last-mile.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -170,7 +170,7 @@ scenes:
     url: "http://localhost:4321/slides/measured.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -179,12 +179,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "maintenance"
     type: browser
-    duration: 15
+    duration: 17
     narration: "The upkeep no one prioritizes, done continuously. Security patrol. Error patrol. Code-health patrol. Dependency patrol. Documentation patrol. Each on its own schedule. Findings become queued, reviewable work."
     url: "http://localhost:4321/slides/maintenance.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -193,12 +193,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "ownership"
     type: browser
-    duration: 15
+    duration: 17
     narration: "Free. Open source. Yours. Closed, hosted agents charge per seat and run on someone else's infrastructure. Shipwright is MIT throughout. No tiers, no seats. Runs entirely in your cloud, on any stack — Node, Go, Rust, Python, Ruby."
     url: "http://localhost:4321/slides/ownership.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ scenes:
     url: "http://localhost:4321/slides/proof.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -229,8 +229,8 @@ scenes:
     url: "https://proof.shipwrightharness.com/public/dashboard"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.overview-section', { timeout: 20000 });
-      await page.waitForTimeout(1500);
+      await page.waitForSelector('.kpi-grid', { timeout: 20000 });
+      await page.waitForTimeout(3000);
 
   # ---------------------------------------------------------------------------
   # 14 — Adoption Ramp (15s)
@@ -238,12 +238,12 @@ scenes:
   # ---------------------------------------------------------------------------
   - id: "adoption"
     type: browser
-    duration: 15
+    duration: 19
     narration: "Autonomy is a ramp, not a switch. Build — start with the plugin, review everything. Review and patch — the agent handles feedback, CI stays green. Autonomous delivery — full pipeline, ships on a schedule. You control the rate of handoff."
     url: "http://localhost:4321/slides/adoption.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(800);
 
   # ---------------------------------------------------------------------------
@@ -256,5 +256,5 @@ scenes:
     url: "http://localhost:4321/slides/close.html"
     action: screenshot
     playwright: |
-      await page.waitForSelector('.slide-ready', { timeout: 10000 });
+      await page.waitForSelector('.slide-ready', { state: 'attached', timeout: 10000 });
       await page.waitForTimeout(600);
