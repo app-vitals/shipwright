@@ -748,6 +748,47 @@
         }
       }
     },
+    "/threads/{threadId}/messages/{id}/cancel": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Request cancellation of an in-flight reply — the claiming agent aborts on its next heartbeat tick",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated message with cancelRequestedAt set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{threadId}/messages/{id}": {
       "get": {
         "tags": [
@@ -1511,6 +1552,13 @@
           "costUsd": {
             "type": "number",
             "example": 0.02
+          },
+          "errorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "cancelled"
           }
         }
       }

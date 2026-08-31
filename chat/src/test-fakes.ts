@@ -292,11 +292,17 @@ export function fakeMessageService(
         progressSeq: 0,
         cancelRequestedAt: null,
         repliedAt: null,
-        errorKind: null,
+        errorKind: data.errorKind ?? null,
         createdAt: new Date(),
       };
       store.push(assistant);
       return { userMessage: userMsg, assistantMessage: assistant };
+    },
+    async requestCancel(id) {
+      const msg = store.find((m) => m.id === id);
+      if (!msg) return null;
+      msg.cancelRequestedAt = new Date();
+      return msg;
     },
   };
 }

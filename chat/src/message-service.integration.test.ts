@@ -605,5 +605,75 @@ describeOrSkip("MessageService (integration)", () => {
       });
       expect(result).toBeNull();
     });
+
+    it("stamps an errorKind on the assistant message when provided", async () => {
+      const threadId = await createThread(prisma);
+      const userMessage = await prisma.message.create({
+        data: { threadId, role: "user", body: "question" },
+      });
+
+      const result = await service.reply(userMessage.id, {
+        body: "Cancelled by user.",
+        errorKind: "cancelled",
+      });
+
+      expect(result?.assistantMessage.errorKind).toBe("cancelled");
+      expect(result?.userMessage.repliedAt).not.toBeNull();
+    });
+  });
+
+  // ─── requestCancel() ──────────────────────────────────────────────────────────
+
+  describe("requestCancel()", () => {
+    it("stamps cancelRequestedAt on a claimed, unreplied message", async () => {
+      const threadId = await createThread(prisma);
+      const clock = FixedClock(new Date("2026-05-01T10:00:00Z"));
+      const svc = new MessageService(prisma, clock);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+      expect(claimed.cancelRequestedAt).toBeNull();
+
+      const updated = await svc.requestCancel(claimed.id);
+
+      expect(updated?.cancelRequestedAt).toEqual(
+        new Date("2026-05-01T10:00:00Z"),
+      );
+    });
+
+    it("returns null when the message does not exist", async () => {
+      const svc = new MessageService(prisma);
+      const updated = await svc.requestCancel("does-not-exist");
+      expect(updated).toBeNull();
+    });
+
+    it("cancel is reflected in a subsequent heartbeat's returned message", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      await svc.requestCancel(claimed.id);
+      const beat = await svc.heartbeat(claimed.id, "worker-1");
+
+      expect(beat?.cancelRequestedAt).not.toBeNull();
+    });
   });
 });

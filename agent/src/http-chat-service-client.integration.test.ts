@@ -227,9 +227,8 @@ describe("HttpChatServiceClient.heartbeat (recorded fixtures)", () => {
       "heartbeat_success",
     );
 
-    await expect(
-      client.heartbeat(THREAD_ID, MESSAGE_ID),
-    ).resolves.toBeUndefined();
+    const result = await client.heartbeat(THREAD_ID, MESSAGE_ID);
+    expect(result.cancelRequested).toBe(false);
 
     const req = lastRequest();
     expect(req.method).toBe("POST");

@@ -87,6 +87,11 @@ export interface MessageServiceLike {
    * Post an agent reply to a claimed message.
    * Creates an assistant message and marks the user message with repliedAt.
    * Returns null if the user message is not found.
+   *
+   * When `errorKind` is set it is stamped on the assistant message (e.g.
+   * "cancelled" / "incomplete" / "stalled") so the UI can render a Retry
+   * affordance. The whole reply runs in a single transaction — a partial
+   * failure never leaves repliedAt set with no assistant message.
    */
   reply(
     messageId: string,
@@ -94,8 +99,16 @@ export interface MessageServiceLike {
       body: string;
       tokens?: JsonValue;
       costUsd?: number;
+      errorKind?: string | null;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null>;
+
+  /**
+   * Request cancellation of an in-flight reply by stamping cancelRequestedAt.
+   * The claiming agent observes this on its next heartbeat tick and aborts.
+   * Returns the updated message, or null if the message is not found.
+   */
+  requestCancel(id: string): Promise<Message | null>;
 }
 
 export class MessageService implements MessageServiceLike {
@@ -270,6 +283,7 @@ export class MessageService implements MessageServiceLike {
       body: string;
       tokens?: JsonValue;
       costUsd?: number;
+      errorKind?: string | null;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null> {
     const userMessage = await this.prisma.message.findUnique({
@@ -279,7 +293,10 @@ export class MessageService implements MessageServiceLike {
     if (userMessage.repliedAt !== null) return null;
 
     const now = this.clock.now();
-    const [updatedUser, assistant] = await Promise.all([
+    // A real transaction, not Promise.all: either both the repliedAt stamp and
+    // the assistant message land, or neither does. A partial failure must never
+    // leave repliedAt set with no reply to show.
+    const [updatedUser, assistant] = await this.prisma.$transaction([
       this.prisma.message.update({
         where: { id: messageId },
         data: { repliedAt: now },
@@ -294,11 +311,24 @@ export class MessageService implements MessageServiceLike {
               ? (data.tokens as Prisma.InputJsonValue)
               : Prisma.DbNull,
           costUsd: data.costUsd ?? null,
+          errorKind: data.errorKind ?? null,
         },
       }),
     ]);
 
     return { userMessage: updatedUser, assistantMessage: assistant };
+  }
+
+  async requestCancel(id: string): Promise<Message | null> {
+    try {
+      return await this.prisma.message.update({
+        where: { id },
+        data: { cancelRequestedAt: this.clock.now() },
+      });
+    } catch (err: unknown) {
+      if (isPrismaNotFound(err)) return null;
+      throw err;
+    }
   }
 }
 

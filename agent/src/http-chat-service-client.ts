@@ -27,12 +27,23 @@ export interface Message {
   claimedBy: string | null;
   claimedAt: Date | string | null;
   heartbeatAt: Date | string | null;
+  cancelRequestedAt: Date | string | null;
   repliedAt: Date | string | null;
   tokens: unknown;
   costUsd: number | null;
   attachmentFilename: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
+}
+
+/**
+ * Result of a heartbeat tick. The tick is bidirectional: the same request that
+ * proves liveness returns whether a cancel was requested, so there is no second
+ * polling loop and no inbound HTTP surface on the agent.
+ */
+export interface HeartbeatResult {
+  /** True when cancelRequestedAt is set on the message — the run should abort. */
+  cancelRequested: boolean;
 }
 
 export interface ReplyResult {
@@ -57,6 +68,8 @@ export interface ReplyOptions {
   body: string;
   tokens?: unknown;
   costUsd?: number;
+  /** Stamped on the assistant message so the UI can offer a Retry action. */
+  errorKind?: string;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -79,10 +92,13 @@ export interface ChatServiceClient {
   claimMessage(threadId: string): Promise<Message | null>;
   /**
    * Bump a claimed message's heartbeatAt — proof of life while a long-running
-   * reply is in progress. Best-effort: callers should swallow failures rather
-   * than let a heartbeat blip abort the reply itself.
+   * reply is in progress — and learn whether a cancel was requested. The tick
+   * is bidirectional (see HeartbeatResult): the returned message carries
+   * cancelRequestedAt, from which cancelRequested is derived. Best-effort:
+   * callers should swallow failures rather than let a heartbeat blip abort the
+   * reply itself.
    */
-  heartbeat(threadId: string, messageId: string): Promise<void>;
+  heartbeat(threadId: string, messageId: string): Promise<HeartbeatResult>;
   replyToMessage(
     threadId: string,
     messageId: string,
@@ -176,7 +192,10 @@ export class HttpChatServiceClient implements ChatServiceClient {
     return res.json() as Promise<Message>;
   }
 
-  async heartbeat(threadId: string, messageId: string): Promise<void> {
+  async heartbeat(
+    threadId: string,
+    messageId: string,
+  ): Promise<HeartbeatResult> {
     const url = `${this.baseUrl}/threads/${threadId}/messages/${messageId}/heartbeat`;
 
     const res = await this.fetchFn(url, {
@@ -190,6 +209,9 @@ export class HttpChatServiceClient implements ChatServiceClient {
         `POST /threads/${threadId}/messages/${messageId}/heartbeat failed: ${res.status}`,
       );
     }
+
+    const message = (await res.json()) as Message;
+    return { cancelRequested: message.cancelRequestedAt != null };
   }
 
   async replyToMessage(
@@ -202,6 +224,7 @@ export class HttpChatServiceClient implements ChatServiceClient {
     const body: Record<string, unknown> = { body: opts.body };
     if (opts.tokens !== undefined) body.tokens = opts.tokens;
     if (opts.costUsd !== undefined) body.costUsd = opts.costUsd;
+    if (opts.errorKind !== undefined) body.errorKind = opts.errorKind;
 
     const res = await this.fetchFn(url, {
       method: "POST",

@@ -33,7 +33,7 @@ function makeFakeClient(
   return {
     listThreads: async () => ({ threads: [], total: 0, limit: 50, offset: 0 }),
     claimMessage: async () => null,
-    heartbeat: async () => {},
+    heartbeat: async () => ({ cancelRequested: false }),
     replyToMessage: async () => {
       throw new Error("replyToMessage not stubbed for this test");
     },

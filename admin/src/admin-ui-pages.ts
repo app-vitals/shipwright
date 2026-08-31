@@ -3959,11 +3959,16 @@ export function chatBubbleRoleClass(role: string): string {
  * (JSON.stringify(ERROR_KIND_LABELS)) so the client copy is generated from
  * this exact object and cannot drift — same pattern as CHAT_BUBBLE_CLASS.
  * A kind not present here falls back to DEFAULT_ERROR_LABEL.
+ * `cancelled`/`incomplete`/`stalled` (CFB-2.4) are also retryable — see
+ * RETRYABLE_ERROR_KINDS below.
  */
 export const ERROR_KIND_LABELS: Record<string, string> = {
   "rate-limited": "Rate limited",
   upstream: "Request failed",
   timeout: "Timed out",
+  cancelled: "Cancelled",
+  incomplete: "Incomplete",
+  stalled: "Stalled",
 };
 export const DEFAULT_ERROR_LABEL = "Error";
 
@@ -3971,6 +3976,19 @@ export const DEFAULT_ERROR_LABEL = "Error";
 export function errorKindLabel(kind: string): string {
   return ERROR_KIND_LABELS[kind] ?? DEFAULT_ERROR_LABEL;
 }
+
+/**
+ * Error kinds recoverable via the Retry button (CFB-2.4) — the reply never
+ * really completed (cancelled via heartbeat tick, cut off mid-stream, or
+ * stalled out), so re-sending the originating user message is safe and
+ * likely to succeed. Kinds like rate-limited/timeout/upstream are excluded:
+ * those already represent a completed, failed round-trip.
+ */
+export const RETRYABLE_ERROR_KINDS: ReadonlySet<string> = new Set([
+  "cancelled",
+  "incomplete",
+  "stalled",
+]);
 
 // Stable DOM id/class for the live status bubble (elapsed + milestone). The
 // server renders one when the last user message is unreplied, and the inline
@@ -4002,8 +4020,17 @@ export const ABSOLUTE_MAX_MS = 3_900_000;
  * same string is returned as `bubbleHtml` from messages.json so polled bubbles
  * are byte-identical to reloaded ones. Every message bubble carries a stable
  * `data-message-id` so the client can dedupe via an id-based renderedIds set.
+ *
+ * `retryBody` (CFB-2.4) is the body of the most recent preceding user message
+ * — when set and `m.errorKind` is one of RETRYABLE_ERROR_KINDS, the error
+ * badge also renders a Retry button that resends that exact text. Callers
+ * iterating a message list should track the last-seen user body and pass it
+ * through per-message (see renderChatThreadPage and the messages.json route).
  */
-export function renderChatMessageBubble(m: ChatMessage): string {
+export function renderChatMessageBubble(
+  m: ChatMessage,
+  retryBody: string | null = null,
+): string {
   const isUser = m.role === "user";
   const isAssistant = m.role === "assistant";
   const isSystem = m.role === "system";
@@ -4022,10 +4049,16 @@ export function renderChatMessageBubble(m: ChatMessage): string {
     ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
     : CHAT_BUBBLE_INNER_CLASS;
 
-  // Render error badge if errorKind is set
+  // Render error badge if errorKind is set. cancelled/incomplete/stalled are
+  // recoverable states (CFB-2.4), so they also render a Retry action that
+  // re-sends the originating user message.
   let errorBadge = "";
   if (m.errorKind) {
-    errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">${errorKindLabel(m.errorKind)}</div>`;
+    const retryable = RETRYABLE_ERROR_KINDS.has(m.errorKind) && retryBody !== null;
+    const retryAction = retryable
+      ? `<button type="button" class="chat-retry-btn" data-retry-body="${escapeHtml(retryBody as string)}" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
+      : "";
+    errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center">${errorKindLabel(m.errorKind)}${retryAction}</div>`;
   }
 
   // Parse markers from assistant messages to extract URLs/paths and clean text
@@ -4346,7 +4379,19 @@ export function renderChatThreadPage(
   const rawTitle = thread.title ?? "Untitled Thread";
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
-  const messageBubbles = messages.map(renderChatMessageBubble).join("\n");
+  // Track the most recent user message body while iterating so an error
+  // reply's Retry button (CFB-2.4) can resend the exact text that triggered
+  // it. renderChatMessageBubble is the module-level renderer (hoisted in
+  // CFB-2.3) so the same retryBody-aware logic is shared with the
+  // messages.json poll route.
+  let lastUserBody: string | null = null;
+  const messageBubbles = messages
+    .map((m) => {
+      const html = renderChatMessageBubble(m, lastUserBody);
+      if (m.role === "user") lastUserBody = m.body;
+      return html;
+    })
+    .join("\n");
 
   // Server-render the live status bubble when the last user message has no
   // reply yet — so a full-page reload mid-run shows the elapsed/milestone
@@ -4612,10 +4657,14 @@ export function renderChatThreadPage(
 
         // Render every new (un-rendered) message from the server, in order —
         // fixes "only the last reply appears" and "agent-initiated messages
-        // need a reload". Assistant/user/system all go through server bubbleHtml.
+        // need a reload". Assistant/user/system all go through server
+        // bubbleHtml, which already includes any Retry button (CFB-2.4) since
+        // the server computes retryBody per-message; wire up any new buttons
+        // after insertion (see wireRetryButtons below).
         for (var i = 0; i < msgs.length; i++) {
           renderServerBubble(msgs[i]);
         }
+        wireRetryButtons();
 
         // Determine whether a reply is still pending (last message is an
         // unreplied user message).
@@ -4675,10 +4724,7 @@ export function renderChatThreadPage(
     if (fileName) fileName.textContent = '';
   }
 
-  form.addEventListener('submit', function(e) {
-    e.preventDefault();
-    var text = input.value.trim();
-    var file = fileInput && fileInput.files && fileInput.files[0];
+  function sendText(text, file) {
     if (!text && !file) return;
 
     // Disable send button
@@ -4691,12 +4737,8 @@ export function renderChatThreadPage(
     if (file) fd.append('file', file);
     var attachmentName = file ? file.name : null;
 
-    // Clear inputs
-    input.value = '';
-
     // Add user bubble optimistically (with attachment badge if present).
     addUserBubble(text, attachmentName);
-    clearFile();
 
     // Show the live status bubble + start the ticker immediately — Layer 1
     // begins ticking with zero network dependency.
@@ -4729,7 +4771,40 @@ export function renderChatThreadPage(
 
     // Start the fast poll loop.
     schedulePoll(POLL_PENDING_MS);
+  }
+
+  form.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var text = input.value.trim();
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (!text && !file) return;
+    input.value = '';
+    clearFile();
+    sendText(text, file);
   });
+
+  // Retry buttons (CFB-2.4) resend the exact user message body that
+  // triggered the errored/cancelled/incomplete/stalled reply — rendered
+  // server-side as a data attribute on each button (see
+  // renderChatMessageBubble). Buttons can arrive either on initial page load
+  // or later via renderServerBubble during a poll (which dedupes by
+  // data-message-id, so a given button is only ever inserted into the DOM
+  // once); re-running this after every render pass is therefore safe and
+  // never double-wires a button.
+  function wireRetryButtons() {
+    document.querySelectorAll('.chat-retry-btn').forEach(function(btn) {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', function() {
+        if (btn.disabled) return;
+        var body = btn.getAttribute('data-retry-body');
+        if (!body) return;
+        btn.disabled = true;
+        sendText(body, null);
+      });
+    });
+  }
+  wireRetryButtons();
 
   // On load: if the server rendered a live status bubble (mid-run reload),
   // start the ticker immediately and begin polling on the pending cadence.

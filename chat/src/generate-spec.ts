@@ -95,6 +95,9 @@ const stubMessageService: MessageServiceLike = {
   async reply() {
     return null;
   },
+  async requestCancel() {
+    return null;
+  },
 };
 
 // ─── Spec assembly ────────────────────────────────────────────────────────────

@@ -5767,6 +5767,60 @@ describe("renderChatThreadPage", () => {
     expect(html.toLowerCase()).toMatch(/error|#ef4444|#fee2e2|#b91c1c|#dc2626/);
   });
 
+  test("errorKind cancelled renders a human-readable 'Cancelled' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "cancelled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Cancelled");
+  });
+
+  test("errorKind incomplete renders a human-readable 'Incomplete' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "incomplete" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Incomplete");
+  });
+
+  test("errorKind stalled renders a human-readable 'Stalled' badge", () => {
+    const msg: ChatMessage = { ...ERROR_MSG, errorKind: "stalled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [msg], "alice");
+    expect(html).toContain("Stalled");
+  });
+
+  test("cancelled/incomplete/stalled errorKinds render a Retry action wired to resend the originating user message", () => {
+    for (const kind of ["cancelled", "incomplete", "stalled"]) {
+      const errMsg: ChatMessage = { ...ERROR_MSG, errorKind: kind };
+      const html = renderChatThreadPage(
+        "agent-xyz",
+        THREAD,
+        [USER_MSG, errMsg],
+        "alice",
+      );
+      expect(html).toContain("Retry");
+      expect(html).toContain('class="chat-retry-btn"');
+      expect(html).toContain(`data-retry-body="${USER_MSG.body}"`);
+    }
+  });
+
+  test("Retry action is omitted when there is no preceding user message to resend", () => {
+    const errMsg: ChatMessage = { ...ERROR_MSG, errorKind: "cancelled" };
+    const html = renderChatThreadPage("agent-xyz", THREAD, [errMsg], "alice");
+    // The inline JS statically wires up any '.chat-retry-btn' elements that
+    // exist, so it always contains the class name — assert no button element
+    // with that class was actually rendered into the message markup instead.
+    expect(html).not.toContain('class="chat-retry-btn"');
+  });
+
+  test("Retry click handler resends the button's data-retry-body via the shared send path", () => {
+    const html = renderChatThreadPage(
+      "agent-xyz",
+      THREAD,
+      [USER_MSG, { ...ERROR_MSG, errorKind: "stalled" }],
+      "alice",
+    );
+    expect(html).toContain("querySelectorAll('.chat-retry-btn')");
+    expect(html).toContain("getAttribute('data-retry-body')");
+    expect(html).toContain("sendText(body, null)");
+  });
+
   test("empty thread shows empty state message", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [], "alice");
     expect(html).toContain("No messages");

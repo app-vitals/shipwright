@@ -131,6 +131,11 @@ const ReplyBodySchema = z
       .optional()
       .openapi({ example: { input_tokens: 10, output_tokens: 20 } }),
     costUsd: z.number().optional().openapi({ example: 0.02 }),
+    errorKind: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "cancelled" }),
   })
   .openapi("ReplyBody");
 
@@ -230,6 +235,28 @@ const getAttachmentRoute = createRoute({
     },
     404: {
       description: "Thread not found, message not found, or no attachment",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
+const cancelRoute = createRoute({
+  method: "post",
+  path: "/:id/cancel",
+  tags: ["messages"],
+  summary:
+    "Request cancellation of an in-flight reply — the claiming agent aborts " +
+    "on its next heartbeat tick",
+  request: {
+    params: MessageIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Updated message with cancelRequestedAt set",
+      content: { "application/json": { schema: MessageSchema } },
+    },
+    404: {
+      description: "Thread or message not found",
       content: { "application/json": { schema: ErrorSchema } },
     },
   },
@@ -499,6 +526,24 @@ export function createMessagesRoutes(
     });
   });
 
+  // ─── Cancel (queue API) ──────────────────────────────────────────────────────
+  // Registered before /:id so "/:id/cancel" is matched as its own route rather
+  // than being swallowed by the generic /:id handler. Auth is the existing
+  // requireThread — the same scope that guards claim/heartbeat/reply.
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(cancelRoute, async (c): Promise<any> => {
+    const threadId = c.req.param("threadId") as string;
+    await requireThread(c, threadService, threadId);
+
+    const existing = await messageService.findById(c.req.param("id"));
+    if (!existing || existing.threadId !== threadId)
+      throw new NotFoundError("message not found");
+
+    const updated = await messageService.requestCancel(c.req.param("id"));
+    if (!updated) throw new NotFoundError("message not found");
+    return c.json(updated, 200);
+  });
+
   // ─── Get ───────────────────────────────────────────────────────────────────
   // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
   app.openapi(getOneRoute, async (c): Promise<any> => {
@@ -605,6 +650,10 @@ export function createMessagesRoutes(
       tokens:
         body.tokens !== undefined ? (body.tokens as JsonValue) : undefined,
       costUsd: typeof body.costUsd === "number" ? body.costUsd : undefined,
+      errorKind:
+        typeof body.errorKind === "string" || body.errorKind === null
+          ? (body.errorKind as string | null)
+          : undefined,
     });
     if (!result) throw new NotFoundError("message not found");
     return c.json(result, 201);

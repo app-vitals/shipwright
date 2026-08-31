@@ -588,6 +588,114 @@ describe("POST /threads/:id/messages/:msgId/reply", () => {
     );
     expect(res2.status).toBe(409);
   });
+
+  it("persists an errorKind on the assistant reply when provided", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Cancelled.", errorKind: "cancelled" }),
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      assistantMessage: Message;
+    };
+    expect(body.assistantMessage.errorKind).toBe("cancelled");
+  });
+});
+
+// ─── Queue API: cancel ────────────────────────────────────────────────────────
+
+describe("POST /threads/:id/messages/:msgId/cancel", () => {
+  it("stamps cancelRequestedAt and returns 200 for a claimed message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "long task",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/cancel`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Message & {
+      cancelRequestedAt: string | null;
+    };
+    expect(body.cancelRequestedAt).toBeTruthy();
+  });
+
+  it("a subsequent heartbeat reflects the cancel request", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "long task",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const cancelRes = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/cancel`,
+      { method: "POST", headers: H.get },
+    );
+    expect(cancelRes.status).toBe(200);
+
+    const beatRes = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+    expect(beatRes.status).toBe(200);
+    const beat = (await beatRes.json()) as Message & {
+      cancelRequestedAt: string | null;
+    };
+    expect(beat.cancelRequestedAt).toBeTruthy();
+  });
+
+  it("returns 404 for an unknown message", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/nope/cancel`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 404 when the message belongs to another thread", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const thread2 = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "long task",
+    });
+    await ms.claim(thread.id, "admin");
+    const app = buildApp(ts, ms);
+
+    const res = await app.request(
+      `/threads/${thread2.id}/messages/${userMsg.id}/cancel`,
+      { method: "POST", headers: H.get },
+    );
+    expect(res.status).toBe(404);
+  });
 });
 
 // ─── Agent scoping: queue API ─────────────────────────────────────────────────

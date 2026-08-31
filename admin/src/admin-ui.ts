@@ -3251,6 +3251,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       try {
         const result = await chatClient.listMessages(threadId);
+        // Track retryBody (CFB-2.4) over the FULL ordered list — not the
+        // ?since-filtered slice — so a retry button on a polled-in error
+        // reply still resolves to its originating user message even when
+        // that user message was delivered in an earlier poll response.
+        const retryBodyByMessageId = new Map<string, string | null>();
+        let lastUserBody: string | null = null;
+        for (const m of result.messages) {
+          retryBodyByMessageId.set(m.id, lastUserBody);
+          if (m.role === "user") lastUserBody = m.body;
+        }
         // ?since filtering is applied here at the admin (server) layer over the
         // full ordered list, so it works regardless of the chat client impl.
         const ordered = since
@@ -3260,7 +3270,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         // byte-identical to a full reload's server-rendered bubble.
         const messages = ordered.map((m) => ({
           ...m,
-          bubbleHtml: renderChatMessageBubble(m),
+          bubbleHtml: renderChatMessageBubble(
+            m,
+            retryBodyByMessageId.get(m.id) ?? null,
+          ),
         }));
         return c.json({ messages });
       } catch {
