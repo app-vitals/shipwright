@@ -110,7 +110,7 @@ scenes:
   - id: "pipeline"
     type: browser
     duration: 18
-    narration: "Every change, the same way. Spec — product intent captured as a reviewable spec. Plan — estimated, dependency-ordered tasks. Build — tests first, every criterion independently verified. Review — policy-controlled with confidence thresholds. Ship — merge, deploy, canary, automatic revert on failure."
+    narration: "Every change, the same way. Spec — product intent captured as a reviewable spec. Plan — estimated, dependency-ordered tasks. Build — tests first, every criterion independently verified. Review — policy-controlled with confidence thresholds. Ship — green CI and an approved review, merged and deployed via Helm."
     url: "http://localhost:4321/slides/pipeline.html"
     action: screenshot
     playwright: |
@@ -152,7 +152,7 @@ scenes:
   - id: "last-mile"
     type: browser
     duration: 18
-    narration: "Most AI tools stop when the code is written. Shipwright carries it the rest of the way. Review — findings fixed on a schedule. Merge — green CI, approved review. Deploy — into your own environment. Canary — watched after release. Auto-revert when something fails."
+    narration: "Most AI tools stop when the code is written. Shipwright carries it the rest of the way. Review — findings fixed on a schedule. Merge — green CI, approved review. Deploy — into your own environment. Canary — an opt-in staged rollout, when your pipeline supports it. Auto-revert, available when something fails."
     url: "http://localhost:4321/slides/last-mile.html"
     action: screenshot
     playwright: |
