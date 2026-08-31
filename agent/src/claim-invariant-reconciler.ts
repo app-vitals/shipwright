@@ -178,7 +178,6 @@ interface TaskListResponseJson {
 export function buildProductionDeps(opts: {
   getScopedRepos: () => string[];
   fetchFn?: (url: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  pageLimit?: number;
 }): ClaimInvariantReconcilerDeps {
   const taskStoreUrl = (process.env.SHIPWRIGHT_TASK_STORE_URL ?? "").trim();
   const taskStoreToken = (process.env.SHIPWRIGHT_TASK_STORE_TOKEN ?? "").trim();
@@ -191,7 +190,6 @@ export function buildProductionDeps(opts: {
 
   return {
     getScopedRepos: opts.getScopedRepos,
-    ...(opts.pageLimit !== undefined ? { pageLimit: opts.pageLimit } : {}),
     listPendingTasks: async (repo: string, limit: number, offset: number) => {
       const params = new URLSearchParams({
         status: "pending",
