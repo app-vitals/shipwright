@@ -50,6 +50,7 @@ export interface GhPr {
   reviewDecision: string | null;
   createdAt?: string;
   mergeStateStatus: string | null;
+  statusCheckRollup: StatusCheckRollupEntry[];
 }
 
 export interface GhReview {
@@ -58,10 +59,23 @@ export interface GhReview {
   state: string;
 }
 
-export interface CiRun {
+// A single entry of `gh pr list --json statusCheckRollup`. Each entry is
+// EITHER a GitHub Actions CheckRun OR a legacy commit StatusContext (e.g. a
+// third-party status like license/cla) — discriminated by __typename.
+export interface CheckRunEntry {
+  __typename: "CheckRun";
+  name?: string;
   status: string;
   conclusion: string | null;
 }
+
+export interface StatusContextEntry {
+  __typename: "StatusContext";
+  context?: string;
+  state: string;
+}
+
+export type StatusCheckRollupEntry = CheckRunEntry | StatusContextEntry;
 
 export interface WorkflowRun {
   name: string;
@@ -90,7 +104,6 @@ export interface CheckDeployDeps {
   isSelfReviewAllowed: () => boolean;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
-  fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
   fetchPrReviews: (
     org: string,
     repo: string,
@@ -146,10 +159,25 @@ export interface CheckDeployDeps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function isCiGreen(runs: CiRun[]): boolean {
-  return runs.some(
-    (run) => run.status === "completed" && run.conclusion === "success",
+const GREEN_CHECK_RUN_CONCLUSIONS = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
+
+function isEntryGreen(entry: StatusCheckRollupEntry): boolean {
+  if (entry.__typename === "StatusContext") {
+    return entry.state === "SUCCESS";
+  }
+  return (
+    entry.status === "COMPLETED" &&
+    entry.conclusion !== null &&
+    GREEN_CHECK_RUN_CONCLUSIONS.has(entry.conclusion)
   );
+}
+
+// A PR is CI-green only when its statusCheckRollup is non-empty and every
+// entry (GitHub Actions CheckRun or legacy commit StatusContext) is green.
+// Fail-closed: an empty rollup, or any entry that is failing, cancelled, or
+// still queued/pending, means the PR is not a deploy candidate.
+function isCiGreen(rollup: StatusCheckRollupEntry[]): boolean {
+  return rollup.length > 0 && rollup.every(isEntryGreen);
 }
 
 // Queued runs older than 1 hour are treated as stuck/ghost runs and ignored.
@@ -239,8 +267,7 @@ export async function getDeployCandidates(
       // Hard authorship filter: only deploy PRs authored by the current user
       if (pr.author.login !== currentUser) continue;
 
-      const ciRuns = await deps.fetchCiRuns(org, repoName, pr.headRefOid);
-      if (!isCiGreen(ciRuns)) continue;
+      if (!isCiGreen(pr.statusCheckRollup)) continue;
 
       // Skip DIRTY (merge-conflicted, unmergeable) PRs
       if (pr.mergeStateStatus === "DIRTY") continue;
@@ -329,6 +356,7 @@ interface GhPrListJson {
   reviewDecision: string | null;
   createdAt?: string;
   mergeStateStatus: string | null;
+  statusCheckRollup: StatusCheckRollupEntry[];
 }
 
 interface GhPrReviewsJson {
@@ -392,7 +420,7 @@ export async function buildProductionDeps(opts: {
         "--repo",
         repo,
         "--json",
-        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+        "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus,statusCheckRollup",
       ]);
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
@@ -406,15 +434,6 @@ export async function buildProductionDeps(opts: {
         "reviews",
       ]);
       return data.reviews;
-    },
-    fetchCiRuns: async (org: string, repo: string, headSha: string) => {
-      const data = await ghJson<GhWorkflowRunsJson>([
-        "api",
-        `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
-      ]);
-      return data.workflow_runs
-        .filter((r) => r.name.toLowerCase() === "ci")
-        .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),
