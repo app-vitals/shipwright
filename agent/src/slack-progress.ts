@@ -106,6 +106,15 @@ export class SlackProgress {
    */
   private postInFlight = false;
 
+  /**
+   * The in-flight postInitialMessage() promise, if one is running. finish()
+   * awaits this before deciding whether a message needs cleanup — otherwise
+   * a run that completes while the lazy post is still in flight would see
+   * messageTs still unset, skip cleanup, and orphan the message once the
+   * post lands after finish() already returned.
+   */
+  private postPromise: Promise<void> | undefined;
+
   /** Pending trailing-edge throttle timer, if one is running. */
   private throttleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -169,7 +178,7 @@ export class SlackProgress {
       const elapsed = this.clock.now().getTime() - this.startedAtMs;
       if (elapsed >= LAZY_POST_THRESHOLD_MS) {
         this.postInFlight = true;
-        void this.postInitialMessage();
+        this.postPromise = this.postInitialMessage();
       }
       return;
     }
@@ -234,6 +243,11 @@ export class SlackProgress {
       this.clearTimeoutFn(this.throttleTimer);
       this.throttleTimer = undefined;
     }
+
+    // Let an in-flight lazy post land first — otherwise messageTs is still
+    // unset here, cleanup is skipped, and the message posted moments later
+    // is orphaned in the channel forever.
+    if (this.postPromise) await this.postPromise;
 
     await this.setStatus("");
 

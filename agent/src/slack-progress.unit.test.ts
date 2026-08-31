@@ -466,6 +466,18 @@ describe("SlackProgress — finish()", () => {
     await expect(progress.finish()).resolves.toBeUndefined();
   });
 
+  test("awaits an in-flight lazy post before deciding whether cleanup is needed", async () => {
+    const { progress, client, clock } = makeProgress();
+    clock.advance(3000);
+    progress.onProgress({}, "reading"); // kicks off postInitialMessage(), not yet resolved
+    // finish() is called immediately, before the postMessage promise lands —
+    // messageTs is still unset at this instant.
+    await progress.finish();
+    expect(client.chat.delete).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: CHANNEL, ts: "progress.ts.1" }),
+    );
+  });
+
   test("does not call chat.postMessage/update/delete when no progress message was ever posted", async () => {
     const { progress, client } = makeProgress();
     // No onProgress calls at all — sub-3s / no milestone case.
