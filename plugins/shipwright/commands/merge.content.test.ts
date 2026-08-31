@@ -139,11 +139,12 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     expect(section).toContain('sub("^\\\\*+";"")');
   });
 
-  it("verifies CI is green on the PR head commit", () => {
+  it("verifies all checks are green on the PR head commit via statusCheckRollup", () => {
     const section = extractStep2Section(content);
     expect(section).toContain("headRefOid");
-    expect(section).toContain('ascii_downcase == "ci"');
-    expect(section).toContain('conclusion == "success"');
+    expect(section).toContain("statusCheckRollup");
+    expect(section).toContain("CheckRun");
+    expect(section).toContain("StatusContext");
   });
 
   it("has a pre-flight summary subsection", () => {
@@ -157,9 +158,9 @@ describe("merge.md — Step 2: Pre-flight Checks", () => {
     expect(section).toContain("not approved");
   });
 
-  it("fails with a clear message when CI is not green", () => {
+  it("fails with a clear message when not all checks are green", () => {
     const section = extractStep2Section(content);
-    expect(section).toContain("CI is not green");
+    expect(section).toContain("not all checks are green");
   });
 });
 
