@@ -19,6 +19,16 @@ import type { Prisma, PrismaClient, Task } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
+import { computeTaskTransitionDiff } from "./task-transition-diff.ts";
+
+/**
+ * The Prisma client surface shared by the top-level client and a
+ * $transaction callback's `tx`. recordTaskTransition() accepts this so it
+ * can run against either — the write path always hands it the same `tx`
+ * that performed the source update, keeping the event insert(s) atomic with
+ * it. Mirrors PrismaTxClient in pull-request-service.ts.
+ */
+type PrismaTxClient = Pick<Prisma.TransactionClient, "task" | "taskEvent">;
 
 // Re-export so callers can import from task-service without reaching into blocked-by.
 export type { BlockedByEntry };
@@ -573,7 +583,26 @@ export class TaskService implements TaskServiceLike {
 
   async update(id: string, data: Prisma.TaskUpdateInput): Promise<Task> {
     try {
-      return await this.prisma.task.update({ where: { id }, data });
+      return await this.prisma.$transaction(async (tx) => {
+        const existing = await tx.task.findUnique({ where: { id } });
+        if (!existing) {
+          throw new NotFoundError("task not found");
+        }
+        const record = await tx.task.update({ where: { id }, data });
+        // update() has no single owning actor the way claim/release/recordSkip
+        // do (a generic PATCH may be issued by any caller) — attribute to the
+        // task's current claimant if one holds it, else "system". Mirrors
+        // recordSkip()/resetSkip()'s ?? "system" fallback pattern in
+        // pull-request-service.ts.
+        await this.recordTaskTransition(
+          tx,
+          existing,
+          record,
+          "update",
+          existing.claimedBy ?? "system",
+        );
+        return record;
+      });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -595,30 +624,57 @@ export class TaskService implements TaskServiceLike {
    * Single conditional UPDATE — `WHERE id = $1 AND status = 'pending' AND "claimedBy" IS NULL`.
    * If 0 rows are affected the task is either missing or already claimed: distinguish the
    * two with a follow-up read so callers get 404 vs 409.
+   *
+   * Wrapped in an interactive $transaction (rather than a bare $executeRaw)
+   * so the before/after reads and the TaskEvent audit insert land atomically
+   * with the conditional UPDATE — mirrors PullRequestService.claim()'s
+   * pattern. The conditional UPDATE's WHERE-guard/conflict-detection
+   * semantics are unchanged: Postgres, holding the row lock inside the
+   * transaction, is still the sole arbiter of a concurrent claim, and a
+   * losing writer still observes affected===0 and 404s/409s exactly as
+   * before.
    */
   async claim(id: string, claimedBy: string): Promise<Task> {
     const now = this.clock.now().toISOString();
-    const affected = await this.prisma.$executeRaw`
-      UPDATE "Task"
-      SET status = 'in_progress',
-          "claimedBy" = ${claimedBy},
-          "claimedAt" = ${now},
-          "heartbeatAt" = ${now},
-          "startedAt" = COALESCE("startedAt", ${now}),
-          "updatedAt" = now()
-      WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
-    `;
 
-    if (affected === 0) {
-      const existing = await this.prisma.task.findUnique({ where: { id } });
-      if (!existing) throw new NotFoundError("task not found");
-      throw new ConflictError("task is already claimed");
-    }
+    return this.prisma.$transaction(async (tx) => {
+      const before = await tx.task.findUnique({ where: { id } });
 
-    return this.requireTask(id);
+      const affected = await tx.$executeRaw`
+        UPDATE "Task"
+        SET status = 'in_progress',
+            "claimedBy" = ${claimedBy},
+            "claimedAt" = ${now},
+            "heartbeatAt" = ${now},
+            "startedAt" = COALESCE("startedAt", ${now}),
+            "updatedAt" = now()
+        WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
+      `;
+
+      if (affected === 0) {
+        if (!before) throw new NotFoundError("task not found");
+        throw new ConflictError("task is already claimed");
+      }
+
+      const after = await tx.task.findUnique({ where: { id } });
+      if (!after) throw new NotFoundError("task not found");
+
+      await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
+
+      return after;
+    });
   }
 
-  /** Touch heartbeatAt for liveness. Errors if the task is missing. */
+  /**
+   * Touch heartbeatAt for liveness. Errors if the task is missing.
+   *
+   * Deliberately writes NO audit event and stays outside a $transaction: a
+   * bare heartbeat only ever changes heartbeatAt, which is excluded from the
+   * audit trail (see computeTaskTransitionDiff), so recordTaskTransition()
+   * would be a guaranteed no-op here. Skipping it entirely keeps this hot
+   * liveness path a single cheap UPDATE. Mirrors
+   * PullRequestService.heartbeat()'s identical rationale.
+   */
   async heartbeat(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
     try {
@@ -635,9 +691,25 @@ export class TaskService implements TaskServiceLike {
   async complete(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
     try {
-      return await this.prisma.task.update({
-        where: { id },
-        data: { status: "done", completedAt: now },
+      return await this.prisma.$transaction(async (tx) => {
+        // Capture the before-state up front — the actor is the current
+        // claimant that completed the task.
+        const before = await tx.task.findUnique({ where: { id } });
+        if (!before) {
+          throw new NotFoundError("task not found");
+        }
+        const record = await tx.task.update({
+          where: { id },
+          data: { status: "done", completedAt: now },
+        });
+        await this.recordTaskTransition(
+          tx,
+          before,
+          record,
+          "complete",
+          before.claimedBy ?? "system",
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
@@ -648,13 +720,27 @@ export class TaskService implements TaskServiceLike {
   async fail(id: string, reason?: string): Promise<Task> {
     const now = this.clock.now().toISOString();
     try {
-      return await this.prisma.task.update({
-        where: { id },
-        data: {
-          status: "blocked",
-          blockedAt: now,
-          ...(reason ? { blockedReason: reason } : {}),
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.task.findUnique({ where: { id } });
+        if (!before) {
+          throw new NotFoundError("task not found");
+        }
+        const record = await tx.task.update({
+          where: { id },
+          data: {
+            status: "blocked",
+            blockedAt: now,
+            ...(reason ? { blockedReason: reason } : {}),
+          },
+        });
+        await this.recordTaskTransition(
+          tx,
+          before,
+          record,
+          "fail",
+          before.claimedBy ?? "system",
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
@@ -664,14 +750,29 @@ export class TaskService implements TaskServiceLike {
   /** Unclaim a task — reset claim fields and return it to pending. */
   async release(id: string): Promise<Task> {
     try {
-      return await this.prisma.task.update({
-        where: { id },
-        data: {
-          status: "pending",
-          claimedBy: null,
-          claimedAt: null,
-          heartbeatAt: null,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.task.findUnique({ where: { id } });
+        if (!before) {
+          throw new NotFoundError("task not found");
+        }
+        const record = await tx.task.update({
+          where: { id },
+          data: {
+            status: "pending",
+            claimedBy: null,
+            claimedAt: null,
+            heartbeatAt: null,
+          },
+        });
+        // Actor is whoever held the claim being given up.
+        await this.recordTaskTransition(
+          tx,
+          before,
+          record,
+          "release",
+          before.claimedBy ?? "system",
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
@@ -690,20 +791,38 @@ export class TaskService implements TaskServiceLike {
   async recordSkip(id: string): Promise<Task> {
     const now = this.clock.now().toISOString();
     try {
-      const updated = await this.prisma.task.update({
-        where: { id },
-        data: { skipCount: { increment: 1 }, lastSkippedAt: now },
-      });
-      if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
-        return await this.prisma.task.update({
+      return await this.prisma.$transaction(async (tx) => {
+        // Snapshot before the first update so the audit diff spans the whole
+        // recordSkip (both the increment and any threshold auto-block).
+        const before = await tx.task.findUnique({ where: { id } });
+        if (!before) {
+          throw new NotFoundError("task not found");
+        }
+        let updated = await tx.task.update({
           where: { id },
-          data: {
-            status: "blocked",
-            blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
-          },
+          data: { skipCount: { increment: 1 }, lastSkippedAt: now },
         });
-      }
-      return updated;
+        if (updated.skipCount >= SKIP_BLOCK_THRESHOLD) {
+          updated = await tx.task.update({
+            where: { id },
+            data: {
+              status: "blocked",
+              blockedReason: `Auto-blocked after ${updated.skipCount} consecutive skips (dispatched but found nothing to do)`,
+            },
+          });
+        }
+        // Actor is the claim holder if any; recordSkip can fire on unclaimed
+        // tasks (no actor in scope at the route), in which case attribute to
+        // "system".
+        await this.recordTaskTransition(
+          tx,
+          before,
+          updated,
+          "recordSkip",
+          before.claimedBy ?? "system",
+        );
+        return updated;
+      });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
@@ -712,9 +831,23 @@ export class TaskService implements TaskServiceLike {
   /** Reset skip tracking — sets skipCount back to 0 and lastSkippedAt to null. */
   async resetSkip(id: string): Promise<Task> {
     try {
-      return await this.prisma.task.update({
-        where: { id },
-        data: { skipCount: 0, lastSkippedAt: null },
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.task.findUnique({ where: { id } });
+        if (!before) {
+          throw new NotFoundError("task not found");
+        }
+        const record = await tx.task.update({
+          where: { id },
+          data: { skipCount: 0, lastSkippedAt: null },
+        });
+        await this.recordTaskTransition(
+          tx,
+          before,
+          record,
+          "resetSkip",
+          before.claimedBy ?? "system",
+        );
+        return record;
       });
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
@@ -727,6 +860,45 @@ export class TaskService implements TaskServiceLike {
     const task = await this.prisma.task.findUnique({ where: { id } });
     if (!task) throw new NotFoundError("task not found");
     return task;
+  }
+
+  /**
+   * Write the audit trail for a single mutation: diff `before` vs `after` and
+   * insert one TaskEvent row per changed, auditable field. Runs on the same
+   * `tx` the source update ran on, so the event rows land atomically with the
+   * field change (or not at all). Mirrors
+   * PullRequestService.recordTransition() exactly.
+   *
+   * heartbeatAt-only changes produce zero rows (see
+   * computeTaskTransitionDiff); a create-path `before === null` also produces
+   * zero rows. Every row is stamped with the same `at` timestamp from the
+   * injected Clock so an entire transition's rows share one instant, and
+   * carries the `method` name and `actor` that drove the write for later
+   * diagnostics.
+   */
+  private async recordTaskTransition(
+    tx: PrismaTxClient,
+    before: Task | null,
+    after: Task,
+    method: string,
+    actor: string | null,
+  ): Promise<void> {
+    const changes = computeTaskTransitionDiff(before, after);
+    if (changes.length === 0) return;
+    const at = this.clock.now().toISOString();
+    for (const change of changes) {
+      await tx.taskEvent.create({
+        data: {
+          taskId: after.id,
+          field: change.field,
+          oldValue: change.oldValue,
+          newValue: change.newValue,
+          actor,
+          method,
+          at,
+        },
+      });
+    }
   }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */

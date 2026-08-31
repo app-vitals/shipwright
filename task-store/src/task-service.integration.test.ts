@@ -128,5 +128,53 @@ describeOrSkip(
       expect(row?.claimedBy).toBe("agent-a");
       expect(row?.status).toBe("in_progress");
     });
+
+    it("claim() writes exactly the expected TaskEvent rows atomically (TCS-1.1)", async () => {
+      const task = await prisma.task.create({
+        data: { title: "claim-writes-task-events", status: "pending" },
+      });
+
+      const claimed = await service.claim(task.id, "agent-a");
+      expect(claimed.status).toBe("in_progress");
+
+      const events = await prisma.taskEvent.findMany({
+        where: { taskId: task.id },
+        orderBy: { field: "asc" },
+      });
+
+      // claim() changes status/claimedBy/claimedAt/startedAt/heartbeatAt in
+      // the underlying UPDATE, but heartbeatAt is excluded from the audit
+      // trail entirely (computeTaskTransitionDiff's TASK_AUDITED_FIELDS
+      // allowlist omits it) — so exactly 4 rows are expected, one per
+      // audited field that actually changed.
+      const byField = Object.fromEntries(events.map((e) => [e.field, e]));
+      expect(Object.keys(byField).sort()).toEqual(
+        ["claimedAt", "claimedBy", "startedAt", "status"].sort(),
+      );
+
+      expect(byField.status.oldValue).toBe("pending");
+      expect(byField.status.newValue).toBe("in_progress");
+      expect(byField.status.method).toBe("claim");
+      expect(byField.status.actor).toBe("agent-a");
+
+      expect(byField.claimedBy.oldValue).toBeNull();
+      expect(byField.claimedBy.newValue).toBe("agent-a");
+
+      expect(byField.claimedAt.oldValue).toBeNull();
+      expect(byField.claimedAt.newValue).not.toBeNull();
+
+      expect(byField.startedAt.oldValue).toBeNull();
+      expect(byField.startedAt.newValue).not.toBeNull();
+
+      // No heartbeatAt row exists at all — confirms the exclusion holds even
+      // though claim() does write heartbeatAt on the Task row itself.
+      expect(byField.heartbeatAt).toBeUndefined();
+
+      // Every row from this single claim() call shares the same `at` stamp —
+      // confirms they were written together as one transition, not drifting
+      // timestamps from separate writes.
+      const atValues = new Set(events.map((e) => e.at));
+      expect(atValues.size).toBe(1);
+    });
   },
 );

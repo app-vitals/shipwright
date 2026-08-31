@@ -19,6 +19,7 @@ export {
 export type {
   Task,
   TaskToken,
+  TaskEvent,
   PullRequest,
   PrFinding,
   PullRequestEvent,
