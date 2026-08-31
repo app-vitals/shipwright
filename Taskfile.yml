@@ -255,6 +255,11 @@ tasks:
     cmds:
       - bun run scripts/minikube.ts --profile cloud-native-traefik
 
+  demo:serve:
+    desc: "Serve demo/ statically at http://localhost:4321 for sizzle slide recording (see demo/scenes.yaml)"
+    cmds:
+      - bun scripts/demo-serve.ts
+
   pre-public:
     desc: Full pre-public audit gate (check-strings + secret-scan). Run before making the repo public.
     cmds:
