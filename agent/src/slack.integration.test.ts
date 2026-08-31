@@ -210,13 +210,6 @@ function makeMockClient() {
       getPermalink: mock(async (_args: unknown) => ({
         permalink: "https://slack.com/archives/C1/p1234",
       })),
-      // SlackProgress's lazy first post / trailing-edge update / finish()
-      // targets — CFB-5.1. A handler's synchronous mockRunClaude resolution
-      // never crosses the 3s lazy-post threshold in real wall-clock time, so
-      // these are exercised directly in slack-progress.unit.test.ts; present
-      // here so the shared client fixture matches the real Bolt client shape.
-      update: mock(async (_args: unknown) => ({ ok: true })),
-      delete: mock(async (_args: unknown) => ({ ok: true })),
     },
     users: {
       info: mock(async (_args: unknown) => ({
@@ -479,16 +472,12 @@ describe("message handler — DM routing", () => {
     });
   });
 
-  test("a sub-3s reply posts no progress message at all (AC #4) — no chat.update/delete beyond the real reply's say()", async () => {
-    // mockRunClaude resolves on the same microtask tick — real wall-clock
-    // time never crosses SlackProgress's 3s lazy-post threshold, so no
-    // progress chat.postMessage/update/delete call should ever fire; only
-    // the real reply goes out via say().
+  test("a reply posts no chat message from SlackProgress — only the real reply via say()", async () => {
+    // SlackProgress is status-only (assistant.threads.setStatus); it never
+    // calls chat.postMessage. The real reply goes out via say().
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
     expect(say).toHaveBeenCalledTimes(1);
     expect(client.chat.postMessage).not.toHaveBeenCalled();
-    expect(client.chat.update).not.toHaveBeenCalled();
-    expect(client.chat.delete).not.toHaveBeenCalled();
   });
 
   test("passes an onProgress function through to the runner as the third arg (AC #1)", async () => {
@@ -1002,15 +991,13 @@ describe("app_mention handler", () => {
     });
   });
 
-  test("a sub-3s mention reply posts no progress message at all (AC #4)", async () => {
+  test("a mention reply posts no chat message from SlackProgress — only the real reply via say()", async () => {
     const { client, say } = await invokeMention({
       channel: "C999",
       ts: "222.333",
     });
     expect(say).toHaveBeenCalledTimes(1);
     expect(client.chat.postMessage).not.toHaveBeenCalled();
-    expect(client.chat.update).not.toHaveBeenCalled();
-    expect(client.chat.delete).not.toHaveBeenCalled();
   });
 
   test("passes an onProgress function through to the runner as the third arg on mention (AC #1)", async () => {
@@ -2082,15 +2069,13 @@ describe("reaction_added handler", () => {
     });
   });
 
-  test("a sub-3s reaction reply posts no progress message beyond the real reply (AC #4)", async () => {
+  test("a reaction reply posts exactly one chat message — the real reply, not a SlackProgress message", async () => {
     mockRunClaude.mockResolvedValueOnce({
       result: "Logged your walk!",
       sessionId: "sess-progress-1",
     });
     const { client } = await invokeReactionAdded();
     expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
-    expect(client.chat.update).not.toHaveBeenCalled();
-    expect(client.chat.delete).not.toHaveBeenCalled();
   });
 
   test("builds prompt containing emoji name and display name", async () => {
