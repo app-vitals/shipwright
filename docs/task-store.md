@@ -186,6 +186,8 @@ POST /tasks/:id/claim
 
 Atomically claims a pending task — a single conditional `UPDATE ... WHERE status='pending' AND "claimedBy" IS NULL`. Sets `status=in_progress`, `claimedBy`, `claimedAt`, `heartbeatAt`, and `startedAt` (or keeps existing if already set) in one round-trip. No request body is sent by agent tokens — the service pins `claimedBy` to the calling agent's ID server-side. Admin tokens must supply `{ claimedBy: string }` in the body. Returns `200` with the updated task on success, or `409` if already claimed or not in pending status.
 
+**Database-level invariant:** The `Task` table enforces a CHECK constraint that prevents a row from ever having `status='pending'` with a non-null `claimedBy` simultaneously. This is a defense-in-depth safeguard: any write path (including manual admin PATCHes or future code paths) that violates this invariant is rejected at the database layer, ensuring the application can never persist a task in an inconsistent claimed-yet-pending state.
+
 #### Heartbeat
 
 ```
