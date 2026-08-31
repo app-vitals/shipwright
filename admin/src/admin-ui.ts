@@ -40,6 +40,7 @@ import {
   type WorkQueueItem,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
@@ -81,7 +82,11 @@ import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
-import type { ChatClient, ChatThread } from "./http-chat-client.ts";
+import {
+  type ChatClient,
+  type ChatThread,
+  filterSince,
+} from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
@@ -2957,6 +2962,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const agentId = c.req.param("agentId");
     const threadId = c.req.param("threadId");
 
+    // Test-only override for the live-progress stall-warning threshold so e2e
+    // doesn't need a real 2-minute wait. Clamped to a sane range; production
+    // never passes it, so the 120s default stands.
+    const rawStall = c.req.query("stallWarnAfterMs");
+    const stallWarnAfterMs =
+      rawStall !== undefined &&
+      Number.isFinite(Number(rawStall)) &&
+      Number(rawStall) > 0
+        ? Number(rawStall)
+        : undefined;
+
     if (!chatClient) {
       return html(
         renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
@@ -2980,6 +2996,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           threadList,
           c.var.userEmail,
           statsResult,
+          { stallWarnAfterMs },
         ),
       );
     } catch {
@@ -3225,6 +3242,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
       const threadId = c.req.param("threadId");
+      // ?since=<messageId> → incremental poll: only messages after that id.
+      const since = c.req.query("since") || undefined;
 
       if (!chatClient) {
         return c.json({ messages: [] });
@@ -3232,7 +3251,31 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       try {
         const result = await chatClient.listMessages(threadId);
-        return c.json({ messages: result.messages });
+        // Track retryBody (CFB-2.4) over the FULL ordered list — not the
+        // ?since-filtered slice — so a retry button on a polled-in error
+        // reply still resolves to its originating user message even when
+        // that user message was delivered in an earlier poll response.
+        const retryBodyByMessageId = new Map<string, string | null>();
+        let lastUserBody: string | null = null;
+        for (const m of result.messages) {
+          retryBodyByMessageId.set(m.id, lastUserBody);
+          if (m.role === "user") lastUserBody = m.body;
+        }
+        // ?since filtering is applied here at the admin (server) layer over the
+        // full ordered list, so it works regardless of the chat client impl.
+        const ordered = since
+          ? filterSince(result.messages, since)
+          : result.messages;
+        // Attach the server-rendered bubbleHtml so polled bubbles are
+        // byte-identical to a full reload's server-rendered bubble.
+        const messages = ordered.map((m) => ({
+          ...m,
+          bubbleHtml: renderChatMessageBubble(
+            m,
+            retryBodyByMessageId.get(m.id) ?? null,
+          ),
+        }));
+        return c.json({ messages });
       } catch {
         return c.json({ messages: [] });
       }

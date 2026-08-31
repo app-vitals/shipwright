@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Standing Maintenance</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content { position: absolute; top: 140px; left: var(--margin); right: var(--margin); bottom: 120px; display: flex; flex-direction: column; justify-content: center; max-width: 1200px; }
+  .headline { font-size: 60px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 52px; }
+  .pills { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 36px; }
+  .pill { display: inline-flex; align-items: center; gap: 10px; padding: 16px 28px; border-radius: 100px; border: 1px solid var(--card-border); background: var(--card-bg); font-size: 19px; font-weight: 500; color: var(--text-muted); }
+  .pill.green { border-color: rgba(52,199,123,0.4); background: rgba(52,199,123,0.06); color: var(--brand-green); }
+  .pill-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .subline { font-size: 20px; color: var(--text-muted); }
+  .subline strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">Standing Maintenance</p>
+    <h1 class="headline">The upkeep no one prioritizes,<br>done continuously.</h1>
+    <div class="pills">
+      <div class="pill green"><span class="pill-dot"></span> Security patrol</div>
+      <div class="pill green"><span class="pill-dot"></span> Error patrol</div>
+      <div class="pill green"><span class="pill-dot"></span> Code-health patrol</div>
+      <div class="pill green"><span class="pill-dot"></span> Dependency patrol</div>
+      <div class="pill green"><span class="pill-dot"></span> Documentation patrol</div>
+    </div>
+    <p class="subline">Each on its own schedule. Findings become <strong>queued, reviewable work</strong>.</p>
+  </div>
+  <div class="slide-footer"><span>Why adopt it · 5 / 6</span><span>shipwrightharness.com</span></div>
+  <div class="slide-ready"></div>
+</body>
+</html>

@@ -1,0 +1,104 @@
+/* Base styles for all Shipwright sizzle slides */
+/* 1920x1080 target. Each slide is a full-viewport card. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-base:        #080E1E;
+  --brand-green:    #34C77B;
+  --brand-teal:     #2DD4BF;
+  --text-primary:   #FFFFFF;
+  --text-muted:     rgba(255,255,255,0.5);
+  --text-faint:     rgba(255,255,255,0.25);
+  --card-border:    rgba(255,255,255,0.08);
+  --card-bg:        rgba(255,255,255,0.03);
+  --green-glow:     rgba(52, 199, 123, 0.12);
+  --stat-green:     #34C77B;
+  --stat-red:       #F87171;
+  --margin:         72px;
+  --font-mono:      'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+  --font-display:   'Inter', system-ui, sans-serif;
+}
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === Top-left brand lockup === */
+.brand-lockup {
+  position: absolute;
+  top: var(--margin);
+  left: var(--margin);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  /* Shipwright green diamond mark placeholder — replace with actual SVG */
+  background: var(--brand-green);
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  flex-shrink: 0;
+}
+.brand-wordmark {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+.brand-rule {
+  position: absolute;
+  top: calc(var(--margin) + 50px);
+  left: var(--margin);
+  width: 360px;
+  height: 2px;
+  background: var(--brand-green);
+  opacity: 0.85;
+}
+
+/* === Footer === */
+.slide-footer {
+  position: absolute;
+  bottom: var(--margin);
+  left: var(--margin);
+  right: var(--margin);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-faint);
+  letter-spacing: 0.08em;
+}
+
+/* === Eyebrow label === */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--brand-teal);
+  margin-bottom: 28px;
+}
+
+/* === Background glow orbs === */
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+.glow-tr { top: -15%; right: -8%; width: 600px; height: 600px; background: var(--green-glow); }
+.glow-bl { bottom: -20%; left: -10%; width: 500px; height: 500px; background: rgba(45, 212, 191, 0.06); }
+
+/* Slide-ready sentinel — Playwright waits for this */
+.slide-ready { display: none; }

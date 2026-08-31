@@ -345,8 +345,6 @@ export const AgentCronRunSchema = z
   })
   .openapi("AgentCronRun");
 
-export type AgentCronRunType = z.infer<typeof AgentCronRunSchema>;
-
 export const CronRunsListSchema = z
   .object({
     items: z.array(AgentCronRunSchema),
@@ -482,14 +480,10 @@ const CronRunLastRunSchema = z
   })
   .openapi("CronRunLastRun");
 
-export const AgentCronJobWithRunSummarySchema = AgentCronJobSchema.extend({
+const AgentCronJobWithRunSummarySchema = AgentCronJobSchema.extend({
   lastRun: CronRunLastRunSchema.nullable().openapi({ example: null }),
   runCountToday: z.number().int().openapi({ example: 3 }),
 }).openapi("AgentCronJobWithRunSummary");
-
-export type AgentCronJobWithRunSummaryType = z.infer<
-  typeof AgentCronJobWithRunSummarySchema
->;
 
 export const CronsWithSummaryWrapperSchema = z
   .object({ crons: z.array(AgentCronJobWithRunSummarySchema) })
@@ -528,7 +522,6 @@ export const PatchAgentToolBodySchema = z
 
 /**
  * Token metadata returned from list/create (never the hash).
- * Exported as both AgentTokenSchema (canonical per brief) and AgentTokenMetaSchema (alias).
  */
 export const AgentTokenSchema = z
   .object({
@@ -549,9 +542,6 @@ export const AgentTokenSchema = z
   .openapi("AgentToken");
 
 export type AgentToken = z.infer<typeof AgentTokenSchema>;
-
-/** @deprecated Use AgentTokenSchema */
-export const AgentTokenMetaSchema = AgentTokenSchema;
 
 /**
  * POST /agents/:id/tokens → 201. rawToken is returned once and not stored.
@@ -701,10 +691,6 @@ export const AgentWorkQueueSnapshotSchema = z
   })
   .openapi("AgentWorkQueueSnapshot");
 
-export type AgentWorkQueueSnapshotType = z.infer<
-  typeof AgentWorkQueueSnapshotSchema
->;
-
 // ─── Path param schemas ───────────────────────────────────────────────────────
 
 export const AgentIdParamSchema = z.object({
@@ -799,10 +785,6 @@ export const AgentChatTokenUsageDailySchema = z
   })
   .openapi("AgentChatTokenUsageDailyByModel");
 
-export type AgentChatTokenUsageDailyType = z.infer<
-  typeof AgentChatTokenUsageDailySchema
->;
-
 // ─── CronRunTokenStats ────────────────────────────────────────────────────────
 
 /**
@@ -879,7 +861,7 @@ export type ChatTokenStatsType = z.infer<typeof ChatTokenStatsSchema>;
 
 // ─── AgentConfig (runtime GET /agents/:id/config response) ───────────────────
 
-export const AgentConfigPluginSchema = z
+const AgentConfigPluginSchema = z
   .object({
     marketplace: z.string().openapi({ example: "shipwright" }),
     plugin: z.string().openapi({ example: "shipwright" }),

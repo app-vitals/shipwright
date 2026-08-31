@@ -21,13 +21,6 @@ export type AdminAuthEnv = {
 };
 
 /**
- * Declarative authorization policy for the admin service.
- * - `public`  — no auth check; used for unauthenticated read-only routes.
- * - `session` — requires a valid session cookie or bearer token (default).
- */
-export type AdminAuthzPolicy = { kind: "public" } | { kind: "session" };
-
-/**
  * No-op middleware for routes declared with policy kind "public".
  * Allows unauthenticated requests to pass through without a 401.
  */

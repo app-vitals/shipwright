@@ -15,6 +15,7 @@ import {
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
+import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -3879,7 +3880,45 @@ const chatPageStyles = `
       .chat-list-sidebar { width:100%;max-width:100%;min-width:0 }
       /* chat-thread-layout: flex wrapper for thread+message area; stacks to column on mobile */
       .chat-thread-layout { flex-direction:column }
-      .chat-thread-sidebar { display:none }
+      /* ─── Mobile thread drawer (CFB-3.2) ──────────────────────────────────
+         The sidebar becomes an off-canvas drawer instead of display:none, so
+         the thread list is reachable on mobile. It is translated off the left
+         edge by default and slid in when the checkbox is :checked. A scrim
+         dims/blocks the background and closes the drawer on tap. */
+      .chat-thread-sidebar {
+        position:fixed;top:0;left:0;bottom:0;z-index:60;
+        width:80%;max-width:300px;min-width:0;
+        margin:0;border-radius:0;overflow-y:auto;
+        transform:translateX(-100%);
+        transition:transform 0.2s ease;
+      }
+      .chat-drawer-toggle:checked ~ .chat-thread-sidebar { transform:translateX(0) }
+      /* Scrim toggles display (not just opacity) so it's genuinely absent from
+         the a11y/visibility tree when closed — Playwright's toBeVisible() (and
+         assistive tech) treat an opacity:0 element as still visible. */
+      .chat-drawer-scrim {
+        display:none;position:fixed;inset:0;z-index:55;
+        background:rgba(0,0,0,0.4);cursor:pointer;
+      }
+      .chat-drawer-toggle:checked ~ .chat-drawer-scrim { display:block }
+      .chat-drawer-hamburger { display:inline-block }
+      @media (prefers-reduced-motion: reduce) {
+        .chat-thread-sidebar { transition:none }
+      }
+      /* Collapse the header to a compact ~48px control row + 16px meta line so
+         the message stream sits above the fold at 375px (criterion #4). The
+         title rides inline in the control row; the thread-id meta stays as the
+         single 16px line. Per-thread token stats and the rename/delete
+         disclosure are pushed off-header on mobile (still reachable via the
+         drawer / desktop) to keep the header under 96px. */
+      .chat-thread-header { padding-top:2px;padding-bottom:2px }
+      .chat-thread-header-top { margin-bottom:2px !important }
+      .chat-thread-header .chat-drawer-hamburger { padding:4px 8px }
+      .chat-thread-header .btn { margin-bottom:0 !important;padding:4px 10px }
+      .chat-thread-header .page-title { font-size:15px;line-height:1.2;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis }
+      .chat-thread-header .chat-thread-meta { margin-top:2px !important }
+      .chat-thread-header .chat-thread-stats { display:none }
+      .chat-thread-header .chat-thread-actions { display:none }
       .chat-bubble-inner { max-width:90% }
       #message-input { font-size:16px }
       /* Composer row: let the textarea keep adequate width instead of being
@@ -3888,8 +3927,14 @@ const chatPageStyles = `
       .chat-message-input { flex-basis:100%; }
       /* .chat-thread-page combines with .vos-page (specificity 0,2,0), which
          otherwise beats .vos-page's own mobile padding rule (0,1,0) — pin the
-         effective mobile padding back to match .vos-page's mobile padding. */
-      .chat-thread-page { padding:16px 12px 48px }
+         effective mobile padding here. The bottom padding is intentionally
+         small: the sticky composer carries its own safe-area bottom inset, and
+         a large page bottom padding would steal scarce vertical space when the
+         keyboard shrinks the viewport (CFB-3.2 criterion #3). */
+      .chat-thread-page { padding:8px 12px 8px }
+      /* Tighten the gap between the header and the message column so the
+         message stream starts higher (criterion #4). */
+      .chat-thread-layout { margin-top:8px !important }
     }`;
 
 // ─── Chat thread page — class-driven bubble/composer styling (CFB-1.3) ────────
@@ -3906,6 +3951,202 @@ export function chatBubbleRoleClass(role: string): string {
   return `${CHAT_BUBBLE_CLASS}--${role}`;
 }
 
+// ─── Live progress (CFB-2.3) ──────────────────────────────────────────────────
+
+/**
+ * Human-readable label per errorKind. Single source of truth: used by the
+ * server renderer (renderChatMessageBubble) AND serialized into the inline JS
+ * (JSON.stringify(ERROR_KIND_LABELS)) so the client copy is generated from
+ * this exact object and cannot drift — same pattern as CHAT_BUBBLE_CLASS.
+ * A kind not present here falls back to DEFAULT_ERROR_LABEL.
+ * `cancelled`/`incomplete`/`stalled` (CFB-2.4) are also retryable — see
+ * RETRYABLE_ERROR_KINDS below.
+ */
+export const ERROR_KIND_LABELS: Record<string, string> = {
+  "rate-limited": "Rate limited",
+  upstream: "Request failed",
+  timeout: "Timed out",
+  cancelled: "Cancelled",
+  incomplete: "Incomplete",
+  stalled: "Stalled",
+};
+export const DEFAULT_ERROR_LABEL = "Error";
+
+/** Resolve an errorKind to its label, with the shared default fallback. */
+export function errorKindLabel(kind: string): string {
+  return ERROR_KIND_LABELS[kind] ?? DEFAULT_ERROR_LABEL;
+}
+
+/**
+ * Error kinds recoverable via the Retry button (CFB-2.4) — the reply never
+ * really completed (cancelled via heartbeat tick, cut off mid-stream, or
+ * stalled out), so re-sending the originating user message is safe and
+ * likely to succeed. Kinds like rate-limited/timeout/upstream are excluded:
+ * those already represent a completed, failed round-trip.
+ */
+export const RETRYABLE_ERROR_KINDS: ReadonlySet<string> = new Set([
+  "cancelled",
+  "incomplete",
+  "stalled",
+]);
+
+// Stable DOM id/class for the live status bubble (elapsed + milestone). The
+// server renders one when the last user message is unreplied, and the inline
+// ticker JS finds/updates/creates it by this exact id so the "just loaded,
+// agent still working" and "just sent, agent now working" bubbles are one and
+// the same element.
+export const LIVE_STATUS_BUBBLE_ID = "live-status-bubble";
+export const LIVE_STATUS_ELAPSED_ID = "live-status-elapsed";
+export const LIVE_STATUS_MILESTONE_ID = "live-status-milestone";
+export const STALL_INDICATOR_CLASS = "chat-stall-indicator";
+
+/**
+ * Layer-1 elapsed-timer guarantee: the client-side 1s ticker computes
+ * `now - createdAt` with ZERO network dependency. Layer-2 milestone text
+ * refreshes off the existing messages.json poll (adaptive 2s pending / 10s
+ * idle). STALL_WARN_AFTER_MS is a *visible warning* (not a giveup) shown once
+ * progressSeq has been unchanged for this long; ABSOLUTE_MAX_MS is the only
+ * hard stop.
+ */
+export const STALL_WARN_AFTER_MS = 120_000;
+// 65min — mirrors lib/claim-ttl.ts's DEFAULT_CLAIM_TTL_MS
+// (DEFAULT_CLAUDE_TIMEOUT_MS 1hr + CLAIM_TTL_BUFFER_MS 5min). Inline JS can't
+// import the lib file, so the value is hardcoded here with this reference.
+export const ABSOLUTE_MAX_MS = 3_900_000;
+
+/**
+ * Module-level pure bubble renderer (hoisted out of renderChatThreadPage in
+ * CFB-2.3). Returns the exact HTML the server emits on a full page load; the
+ * same string is returned as `bubbleHtml` from messages.json so polled bubbles
+ * are byte-identical to reloaded ones. Every message bubble carries a stable
+ * `data-message-id` so the client can dedupe via an id-based renderedIds set.
+ *
+ * `retryBody` (CFB-2.4) is the body of the most recent preceding user message
+ * — when set and `m.errorKind` is one of RETRYABLE_ERROR_KINDS, the error
+ * badge also renders a Retry button that resends that exact text. Callers
+ * iterating a message list should track the last-seen user body and pass it
+ * through per-message (see renderChatThreadPage and the messages.json route).
+ */
+export function renderChatMessageBubble(
+  m: ChatMessage,
+  retryBody: string | null = null,
+): string {
+  const isUser = m.role === "user";
+  const isAssistant = m.role === "assistant";
+  const isSystem = m.role === "system";
+
+  const bubbleRoleClass = chatBubbleRoleClass(
+    isUser ? "user" : isAssistant ? "assistant" : isSystem ? "system" : "other",
+  );
+  const bubbleColor = isUser
+    ? "#4f46e5"
+    : isAssistant
+      ? "#166534"
+      : isSystem
+        ? "#854d0e"
+        : "#374151";
+  const bubbleInnerClass = isSystem
+    ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
+    : CHAT_BUBBLE_INNER_CLASS;
+
+  // Render error badge if errorKind is set. cancelled/incomplete/stalled are
+  // recoverable states (CFB-2.4), so they also render a Retry action that
+  // re-sends the originating user message.
+  let errorBadge = "";
+  if (m.errorKind) {
+    const retryable = RETRYABLE_ERROR_KINDS.has(m.errorKind) && retryBody !== null;
+    const retryAction = retryable
+      ? `<button type="button" class="chat-retry-btn" data-retry-body="${escapeHtml(retryBody as string)}" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
+      : "";
+    errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center">${errorKindLabel(m.errorKind)}${retryAction}</div>`;
+  }
+
+  // Parse markers from assistant messages to extract URLs/paths and clean text
+  let cleanedBody = m.body;
+  let markerBadges = "";
+  if (isAssistant) {
+    const { cleaned, uploads, planUrls } = parseChatMarkers(m.body);
+    cleanedBody = cleaned;
+
+    // Render upload badges
+    const uploadBadges = uploads
+      .map((path) => {
+        const filename = path.split("/").pop() || path;
+        return `<div style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(filename)}</div>`;
+      })
+      .join("");
+
+    // Render plan links
+    const planLinks = planUrls
+      .map(
+        (url) =>
+          `<a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:12px;text-decoration:none">View plan →</a>`,
+      )
+      .join("");
+
+    markerBadges = uploadBadges + planLinks;
+  }
+
+  // Render body: assistant messages get markdown, others get escaped text
+  const bodyHtml = isAssistant
+    ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(cleanedBody)}</div>`
+    : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
+
+  // Attachment badge (metadata only — content is ephemeral, no re-download).
+  const attachmentBadge = m.attachmentFilename
+    ? `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
+    : "";
+
+  let tokenBadge = "";
+  if (isAssistant && m.tokens !== null && typeof m.tokens === "object") {
+    const t = m.tokens as MessageTokens;
+    const inTok = t.input_tokens ?? 0;
+    const outTok = t.output_tokens ?? 0;
+    const costPart = m.costUsd !== null ? ` · $${m.costUsd.toFixed(4)}` : "";
+    tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
+  }
+
+  return `<div class="${CHAT_BUBBLE_CLASS} ${bubbleRoleClass}" data-message-id="${escapeHtml(m.id)}">
+      <div class="${bubbleInnerClass}">
+        <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
+        ${bodyHtml}
+        ${markerBadges}
+        ${attachmentBadge}
+        ${errorBadge}
+        ${tokenBadge}
+        <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
+      </div>
+    </div>`;
+}
+
+/**
+ * Server-rendered live status bubble shown when the last user message is
+ * unreplied (`role === 'user' && !repliedAt`). Renders the elapsed timer seed
+ * and (optionally) the current milestone. Uses stable ids so the inline
+ * ticker finds and updates it on load without fabricating one. `progressPhase`
+ * null ⇒ no milestone text (heartbeat hasn't reported a phase yet). The
+ * elapsed seed is 0s server-side; the client ticker takes over immediately
+ * from `data-created-at` with zero network dependency.
+ */
+export function renderLiveStatusBubble(m: ChatMessage): string {
+  const milestone =
+    m.progressPhase &&
+    PROGRESS_LABELS[m.progressPhase as keyof typeof PROGRESS_LABELS]
+      ? PROGRESS_LABELS[m.progressPhase as keyof typeof PROGRESS_LABELS]
+      : "";
+  const milestoneHtml = `<span id="${LIVE_STATUS_MILESTONE_ID}">${escapeHtml(milestone)}</span>`;
+  const createdAtMs = new Date(m.createdAt).getTime();
+  const seq = m.progressSeq ?? 0;
+  return `<div id="${LIVE_STATUS_BUBBLE_ID}" class="${CHAT_BUBBLE_CLASS} ${chatBubbleRoleClass("assistant")}" data-created-at="${createdAtMs}" data-progress-seq="${seq}">
+      <div class="${CHAT_BUBBLE_INNER_CLASS}">
+        <div style="font-size:14px;color:#166534;font-style:italic">
+          ${milestoneHtml}
+          <span id="${LIVE_STATUS_ELAPSED_ID}">working… (0s)</span>
+        </div>
+      </div>
+    </div>`;
+}
+
 const chatThreadStyles = `
     /* The toolbar (.vos-toolbar) is a normal-flow sibling above .chat-thread-page,
        not fixed/absolute — so the page doesn't need to subtract a hardcoded
@@ -3913,7 +4154,7 @@ const chatThreadStyles = `
        flex-column body: min-height:100vh as a baseline, then min-height:100dvh
        as a progressive enhancement (dynamic viewport height accounts for
        mobile browser chrome that can grow the toolbar without breaking layout). */
-    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh }
+    body { display:flex;flex-direction:column;min-height:100vh;min-height:100dvh;height:100dvh }
     .chat-thread-page { display:flex;flex-direction:column;flex:1;min-height:0;max-width:900px;margin:0 auto;padding:0 24px;width:100% }
     .chat-thread-header { padding-top:20px;padding-bottom:16px;flex-shrink:0 }
     /* Collapsed-by-default rename/delete disclosure (CFB-3.1 #5) — keeps the
@@ -3921,24 +4162,54 @@ const chatThreadStyles = `
     .chat-thread-actions { margin-top:12px }
     .chat-thread-actions-summary { cursor:pointer;font-size:13px;color:#6b7280;user-select:none }
     .chat-thread-actions-summary:hover { color:#374151 }
-    .chat-messages-container { flex:1;overflow-y:auto;padding:8px 0;min-height:0 }
+    .chat-messages-container { flex:1;overflow-y:auto;overscroll-behavior:contain;padding:8px 0;min-height:0 }
     .${CHAT_BUBBLE_CLASS} { display:flex;margin-bottom:12px }
     .${chatBubbleRoleClass("user")} { justify-content:flex-end }
     .${chatBubbleRoleClass("assistant")} { justify-content:flex-start }
     .${chatBubbleRoleClass("system")} { justify-content:center }
     .${chatBubbleRoleClass("other")} { justify-content:flex-start }
-    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06) }
+    .${CHAT_BUBBLE_INNER_CLASS} { max-width:70%;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06);overflow-wrap:anywhere }
+    /* renderMarkdown emits <pre><code> for fenced blocks — let long code lines
+       scroll horizontally inside the bubble instead of forcing the whole page
+       to overflow. Scoped to the bubble so it doesn't affect other <pre>. */
+    .${CHAT_BUBBLE_INNER_CLASS} pre { overflow-x:auto }
     .${CHAT_BUBBLE_INNER_CLASS}.${CHAT_BUBBLE_INNER_WIDE_CLASS} { max-width:80% }
     .${chatBubbleRoleClass("user")} .${CHAT_BUBBLE_INNER_CLASS} { background:#eef2ff }
     .${chatBubbleRoleClass("assistant")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f0fdf4 }
     .${chatBubbleRoleClass("system")} .${CHAT_BUBBLE_INNER_CLASS} { background:#fef9c3 }
     .${chatBubbleRoleClass("other")} .${CHAT_BUBBLE_INNER_CLASS} { background:#f3f4f6 }
-    .chat-composer-form { flex-shrink:0;padding:16px 0;border-top:1px solid #e5e7eb;margin-top:8px }
+    /* Sticky composer: pins to the bottom of the scroll container so it stays
+       reachable as messages grow. padding-bottom folds in the iOS safe-area
+       inset plus --kb-inset (set by the visualViewport listener when the
+       on-screen keyboard shrinks the visual viewport) so the composer isn't
+       slid under the keyboard on iOS, where dvh does NOT shrink the layout. */
+    .chat-composer-form { flex-shrink:0;position:sticky;bottom:0;background:#f7f7fb;padding:16px 0;padding-bottom:calc(12px + env(safe-area-inset-bottom) + var(--kb-inset, 0px));border-top:1px solid #e5e7eb;margin-top:8px }
     .chat-composer-row { display:flex;gap:8px;align-items:flex-end }
     .chat-message-input { flex:1;resize:vertical;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5;outline:none }
     .chat-composer-btn { flex-shrink:0;height:44px }
     .chat-composer-btn--attach { padding:0 16px }
-    .chat-composer-btn--send { padding:0 20px }`;
+    .chat-composer-btn--send { padding:0 20px }
+    /* Live-progress stall state (CFB-2.3): when progressSeq hasn't advanced for
+       STALL_WARN_AFTER_MS the status bubble gains .${STALL_INDICATOR_CLASS},
+       which pulses to draw the eye. Motion is suppressed for users who ask for
+       reduced motion — the amber colour still conveys the state statically. */
+    .${STALL_INDICATOR_CLASS} { color:#b45309 }
+    .${STALL_INDICATOR_CLASS} .${CHAT_BUBBLE_INNER_CLASS} { background:#fffbeb;animation:chat-stall-pulse 1.4s ease-in-out infinite }
+    @keyframes chat-stall-pulse { 0%,100% { opacity:1 } 50% { opacity:0.55 } }
+    @media (prefers-reduced-motion: reduce) {
+      .${STALL_INDICATOR_CLASS} .${CHAT_BUBBLE_INNER_CLASS} { animation:none }
+    }
+    /* ─── Thread drawer (CFB-3.2) ────────────────────────────────────────────
+       CSS-only collapsible sidebar mirroring the toolbar hamburger idiom. On
+       desktop the sidebar is an ordinary flex column and the drawer chrome
+       (toggle checkbox, scrim, hamburger) is inert/hidden — everything below
+       only activates inside the mobile @media block in chatPageStyles. DOM
+       order is load-bearing: the checkbox precedes the sidebar so the ~ sibling
+       combinator can reach it. */
+    .chat-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
+    .chat-drawer-hamburger { display:none;background:none;border:1px solid #e5e7eb;border-radius:6px;font-size:18px;line-height:1;padding:6px 10px;cursor:pointer;color:#374151 }
+    .chat-drawer-hamburger:hover { color:#4f46e5 }
+    .chat-drawer-scrim { display:none }`;
 
 export function renderChatPage(
   agents: AgentOption[],
@@ -4069,7 +4340,13 @@ export function renderChatThreadPage(
   threadsOrUserName: ChatThread[] | null | string,
   userNameArg?: string,
   stats?: ThreadStats | null,
+  opts?: { stallWarnAfterMs?: number },
 ): string {
+  // The stall-warning threshold is normally the 120s production default, but
+  // the e2e suite overrides it to a tiny value (via a query param the route
+  // handler forwards here) so the stall-state assertion doesn't need a real
+  // two-minute wait. Production behaviour is unaffected.
+  const stallWarnAfterMs = opts?.stallWarnAfterMs ?? STALL_WARN_AFTER_MS;
   // Support both 4-arg (threads omitted) and 5-arg call signatures
   const threads: ChatThread[] | null =
     typeof threadsOrUserName === "string" ? null : threadsOrUserName;
@@ -4102,129 +4379,27 @@ export function renderChatThreadPage(
   const rawTitle = thread.title ?? "Untitled Thread";
   const title = thread.title ? escapeHtml(thread.title) : "Untitled Thread";
 
-  function renderMessageBubble(m: ChatMessage, retryBody: string | null): string {
-    const isUser = m.role === "user";
-    const isAssistant = m.role === "assistant";
-    const isSystem = m.role === "system";
-
-    const bubbleRoleClass = chatBubbleRoleClass(
-      isUser
-        ? "user"
-        : isAssistant
-          ? "assistant"
-          : isSystem
-            ? "system"
-            : "other",
-    );
-    const bubbleColor = isUser
-      ? "#4f46e5"
-      : isAssistant
-        ? "#166534"
-        : isSystem
-          ? "#854d0e"
-          : "#374151";
-    const bubbleInnerClass = isSystem
-      ? `${CHAT_BUBBLE_INNER_CLASS} ${CHAT_BUBBLE_INNER_WIDE_CLASS}`
-      : CHAT_BUBBLE_INNER_CLASS;
-
-    // Render error badge if errorKind is set. cancelled/incomplete/stalled are
-    // recoverable states, so they also render a Retry action that re-sends the
-    // originating user message.
-    let errorBadge = "";
-    if (m.errorKind) {
-      const errorLabel =
-        m.errorKind === "rate-limited"
-          ? "Rate limited"
-          : m.errorKind === "upstream"
-            ? "Request failed"
-            : m.errorKind === "timeout"
-              ? "Timed out"
-              : m.errorKind === "cancelled"
-                ? "Cancelled"
-                : m.errorKind === "incomplete"
-                  ? "Incomplete"
-                  : m.errorKind === "stalled"
-                    ? "Stalled"
-                    : "Error";
-      const retryable =
-        (m.errorKind === "cancelled" ||
-          m.errorKind === "incomplete" ||
-          m.errorKind === "stalled") &&
-        retryBody !== null;
-      const retryAction = retryable
-        ? `<button type="button" class="chat-retry-btn" data-retry-body="${escapeHtml(retryBody as string)}" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
-        : "";
-      errorBadge = `<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600;display:inline-flex;align-items:center">${errorLabel}${retryAction}</div>`;
-    }
-
-    // Parse markers from assistant messages to extract URLs/paths and clean text
-    let cleanedBody = m.body;
-    let markerBadges = "";
-    if (isAssistant) {
-      const { cleaned, uploads, planUrls } = parseChatMarkers(m.body);
-      cleanedBody = cleaned;
-
-      // Render upload badges
-      const uploadBadges = uploads
-        .map((path) => {
-          const filename = path.split("/").pop() || path;
-          return `<div style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(filename)}</div>`;
-        })
-        .join("");
-
-      // Render plan links
-      const planLinks = planUrls
-        .map(
-          (url) =>
-            `<a href="${escapeHtml(url)}" target="_blank" style="display:inline-block;margin-right:6px;margin-top:8px;padding:3px 8px;background:#dbeafe;color:#1e40af;border-radius:6px;font-size:12px;text-decoration:none">View plan →</a>`,
-        )
-        .join("");
-
-      markerBadges = uploadBadges + planLinks;
-    }
-
-    // Render body: assistant messages get markdown, others get escaped text
-    const bodyHtml = isAssistant
-      ? `<div style="font-size:14px;line-height:1.6;color:${bubbleColor}">${renderMarkdown(cleanedBody)}</div>`
-      : `<div style="font-size:14px;white-space:pre-wrap;color:${bubbleColor}">${escapeHtml(m.body)}</div>`;
-
-    // Attachment badge (metadata only — content is ephemeral, no re-download).
-    const attachmentBadge = m.attachmentFilename
-      ? `<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ${escapeHtml(m.attachmentFilename)}</div>`
-      : "";
-
-    let tokenBadge = "";
-    if (isAssistant && m.tokens !== null && typeof m.tokens === "object") {
-      const t = m.tokens as MessageTokens;
-      const inTok = t.input_tokens ?? 0;
-      const outTok = t.output_tokens ?? 0;
-      const costPart = m.costUsd !== null ? ` · $${m.costUsd.toFixed(4)}` : "";
-      tokenBadge = `<div style="font-size:11px;color:#6b7280;margin-top:4px">${escapeHtml(`${inTok} in / ${outTok} out${costPart}`)}</div>`;
-    }
-
-    return `<div class="${CHAT_BUBBLE_CLASS} ${bubbleRoleClass}">
-      <div class="${bubbleInnerClass}">
-        <div style="font-size:11px;font-weight:600;color:${bubbleColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">${escapeHtml(m.role)}</div>
-        ${bodyHtml}
-        ${markerBadges}
-        ${attachmentBadge}
-        ${errorBadge}
-        ${tokenBadge}
-        <div style="font-size:11px;color:#9ca3af;margin-top:6px">${escapeHtml(new Date(m.createdAt).toLocaleString())}</div>
-      </div>
-    </div>`;
-  }
-
   // Track the most recent user message body while iterating so an error
-  // reply's Retry button can resend the exact text that triggered it.
+  // reply's Retry button (CFB-2.4) can resend the exact text that triggered
+  // it. renderChatMessageBubble is the module-level renderer (hoisted in
+  // CFB-2.3) so the same retryBody-aware logic is shared with the
+  // messages.json poll route.
   let lastUserBody: string | null = null;
   const messageBubbles = messages
     .map((m) => {
-      const html = renderMessageBubble(m, lastUserBody);
+      const html = renderChatMessageBubble(m, lastUserBody);
       if (m.role === "user") lastUserBody = m.body;
       return html;
     })
     .join("\n");
+
+  // Server-render the live status bubble when the last user message has no
+  // reply yet — so a full-page reload mid-run shows the elapsed/milestone
+  // immediately instead of a 3s-later blank until the first poll ticks in.
+  const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
+  const pendingMsg =
+    lastMsg && lastMsg.role === "user" && !lastMsg.repliedAt ? lastMsg : null;
+  const liveStatusBubble = pendingMsg ? renderLiveStatusBubble(pendingMsg) : "";
 
   const emptyState =
     messages.length === 0
@@ -4257,7 +4432,21 @@ export function renderChatThreadPage(
       ${deleteForm}
     </details>`;
 
-  // Inline JS for the send/poll flow
+  // Inline JS for the send/poll/live-progress flow (CFB-2.3).
+  //
+  // Two layers, per the brief:
+  //   Layer 1 — a 1s client-side ticker computing now - createdAt with ZERO
+  //     network dependency. A dead agent, dead chat service or offline laptop
+  //     still ticks; that is the actual "never go silent" guarantee.
+  //   Layer 2 — milestone text refreshed off the messages.json poll, adaptive
+  //     2s while pending / 10s idle. The milestone is content, not the
+  //     guarantee.
+  //
+  // The live status bubble (${LIVE_STATUS_BUBBLE_ID}) is a single element the
+  // server may have rendered (mid-run reload) or the client creates on send.
+  // Its data-created-at drives the ticker; data-progress-seq drives skew-free
+  // stall detection (compare poll counts since progressSeq last changed, never
+  // wall clocks).
   const inlineScript = `
 <script>
 (function() {
@@ -4273,23 +4462,48 @@ export function renderChatThreadPage(
   var messagesJsonUrl = '/admin/chat/' + encodeURIComponent(agentId) + '/threads/' + encodeURIComponent(threadId) + '/messages.json';
   var uploadUrl = '/admin/chat/' + encodeURIComponent(agentId) + '/threads/' + encodeURIComponent(threadId) + '/messages/upload';
 
+  // errorKind → label, generated from the server's single source of truth so
+  // the two copies cannot drift.
+  var ERROR_KIND_LABELS = ${JSON.stringify(ERROR_KIND_LABELS)};
+  var DEFAULT_ERROR_LABEL = ${JSON.stringify(DEFAULT_ERROR_LABEL)};
+  function errorKindLabel(kind) {
+    return ERROR_KIND_LABELS[kind] || DEFAULT_ERROR_LABEL;
+  }
+
+  // Milestone labels, likewise serialized from lib/progress-phases.ts.
+  var PROGRESS_LABELS = ${JSON.stringify(PROGRESS_LABELS)};
+
+  // Stall-warning threshold — 120s in prod; e2e overrides to a tiny value.
+  var STALL_WARN_AFTER_MS = ${stallWarnAfterMs};
+  // Hard ceiling: 65min, mirrors lib/claim-ttl.ts DEFAULT_CLAIM_TTL_MS
+  // (1hr DEFAULT_CLAUDE_TIMEOUT_MS + 5min CLAIM_TTL_BUFFER_MS). Only hard stop.
+  var ABSOLUTE_MAX_MS = ${ABSOLUTE_MAX_MS};
+
+  var LIVE_STATUS_BUBBLE_ID = ${JSON.stringify(LIVE_STATUS_BUBBLE_ID)};
+  var LIVE_STATUS_ELAPSED_ID = ${JSON.stringify(LIVE_STATUS_ELAPSED_ID)};
+  var LIVE_STATUS_MILESTONE_ID = ${JSON.stringify(LIVE_STATUS_MILESTONE_ID)};
+  var STALL_INDICATOR_CLASS = ${JSON.stringify(STALL_INDICATOR_CLASS)};
+  var ASSISTANT_ROLE_CLASS = '${CHAT_BUBBLE_CLASS} ${chatBubbleRoleClass("assistant")}';
+
+  // Poll cadence.
+  var POLL_PENDING_MS = 2000; // adaptive fast poll while a reply is pending
+  var POLL_IDLE_MS = 10000;   // slow idle poll for agent-initiated messages
+
+  // Rendered-message dedupe: every server bubble carries data-message-id;
+  // seed the set from what's already in the DOM so polls never double-render.
+  var renderedIds = {};
+  Array.prototype.forEach.call(
+    container.querySelectorAll('[data-message-id]'),
+    function(el) { renderedIds[el.getAttribute('data-message-id')] = true; }
+  );
+
   var pollTimer = null;
-  var pollCount = 0;
-  // Bail out after this many consecutive polls with no progress signal at all
-  // (message never claimed, or claimed but no heartbeat/reply) — 90 seconds
-  // at 3s intervals, same as the old flat timeout.
-  var IDLE_TIMEOUT_POLLS = 30;
-  // Hard cap regardless of how much heartbeat activity keeps arriving, so a
-  // truly wedged agent can't poll forever — 10 minutes at 3s intervals.
-  var ABSOLUTE_MAX_POLLS = 200;
-  var lastUserMessageTime = null;
-  // Proof-of-life tracking for the in-flight reply: reset whenever the
-  // pending message's claimedAt/heartbeatAt advances to a new value, so a
-  // long multi-turn run keeps extending the timeout via its heartbeats
-  // instead of tripping the same 90s cutoff that catches a truly stuck agent.
-  var lastProgressPollCount = 0;
-  var lastSeenClaimedAt = null;
-  var lastSeenHeartbeatAt = null;
+  var tickerTimer = null;
+  // Skew-free stall tracking: remember the progressSeq we last saw and the
+  // wall-clock ms at which it last CHANGED (client clock only — never compared
+  // against server timestamps).
+  var lastProgressSeq = null;
+  var lastProgressChangeMs = null;
 
   function escHtml(str) {
     return String(str)
@@ -4299,147 +4513,198 @@ export function renderChatThreadPage(
       .replace(/"/g, '&quot;');
   }
 
-  function simpleMarkdown(text) {
-    var escaped = escHtml(text);
-    // Bold: **text**
-    escaped = escaped.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
-    // Inline code: \`code\`
-    escaped = escaped.replace(/\`([^\`]+)\`/g, '<code>$1</code>');
-    return escaped;
-  }
-
-  function addBubble(role, body, isError, attachmentName) {
-    var isUser = role === 'user';
-    var color = isUser ? '#4f46e5' : '#166534';
-    var bodyHtml = isUser
-      ? '<div style="font-size:14px;white-space:pre-wrap;color:' + color + '">' + escHtml(body) + '</div>'
-      : '<div style="font-size:14px;line-height:1.6;color:' + color + '">' + simpleMarkdown(body) + '</div>';
-    var errorHtml = isError
-      ? '<div style="margin-top:6px;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">' + escHtml(body) + '</div>'
-      : '';
+  // Optimistic user bubble (pre-round-trip; body is plain text, so no markdown
+  // — matches the server's white-space:pre-wrap user rendering). Assistant and
+  // reloaded bubbles are NEVER built here: they come from server bubbleHtml.
+  function addUserBubble(body, attachmentName) {
+    var color = '#4f46e5';
     var attachmentHtml = attachmentName
       ? '<div style="display:inline-block;margin-top:8px;padding:3px 8px;background:#e5e7eb;color:#374151;border-radius:6px;font-size:12px">📎 ' + escHtml(attachmentName) + '</div>'
       : '';
     var bubble = document.createElement('div');
-    bubble.className = '${CHAT_BUBBLE_CLASS} ${CHAT_BUBBLE_CLASS}--' + role;
+    bubble.className = '${CHAT_BUBBLE_CLASS} ${CHAT_BUBBLE_CLASS}--user';
     bubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
-      + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">' + escHtml(role) + '</div>'
-      + (isError ? errorHtml : bodyHtml)
+      + '<div style="font-size:11px;font-weight:600;color:' + color + ';margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em">user</div>'
+      + '<div style="font-size:14px;white-space:pre-wrap;color:' + color + '">' + escHtml(body) + '</div>'
       + attachmentHtml
       + '</div>';
-    container.appendChild(bubble);
+    insertBeforeLiveStatus(bubble);
     container.scrollTop = container.scrollHeight;
     return bubble;
   }
 
-  function addThinkingIndicator() {
-    var div = document.createElement('div');
-    div.id = 'thinking-indicator';
-    div.style.cssText = 'display:flex;justify-content:flex-start;margin-bottom:12px';
-    div.innerHTML = '<div style="max-width:70%;background:#f0fdf4;border-radius:12px;padding:12px 16px;box-shadow:0 1px 2px rgba(0,0,0,0.06)">'
-      + '<div id="thinking-indicator-text" style="font-size:14px;color:#166534;font-style:italic">thinking…</div>'
-      + '</div>';
-    container.appendChild(div);
+  // Insert a bubble before the live-status bubble (so status stays at the
+  // bottom) or append if there's no live-status bubble.
+  function insertBeforeLiveStatus(node) {
+    var live = document.getElementById(LIVE_STATUS_BUBBLE_ID);
+    if (live) container.insertBefore(node, live);
+    else container.appendChild(node);
+  }
+
+  // Insert a server-rendered bubbleHtml string, deduped by id.
+  function renderServerBubble(m) {
+    if (!m || !m.id || renderedIds[m.id]) return false;
+    renderedIds[m.id] = true;
+    if (!m.bubbleHtml) return false;
+    var tpl = document.createElement('template');
+    tpl.innerHTML = m.bubbleHtml.trim();
+    var node = tpl.content.firstChild;
+    if (node) insertBeforeLiveStatus(node);
+    return true;
+  }
+
+  // Ensure the live status bubble exists (creating it on the client when the
+  // user just sent a message and the server hasn't rendered one).
+  function ensureLiveStatusBubble(createdAtMs) {
+    var live = document.getElementById(LIVE_STATUS_BUBBLE_ID);
+    if (live) return live;
+    live = document.createElement('div');
+    live.id = LIVE_STATUS_BUBBLE_ID;
+    live.className = ASSISTANT_ROLE_CLASS;
+    live.setAttribute('data-created-at', String(createdAtMs));
+    live.setAttribute('data-progress-seq', '0');
+    live.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
+      + '<div style="font-size:14px;color:#166534;font-style:italic">'
+      + '<span id="' + LIVE_STATUS_MILESTONE_ID + '"></span> '
+      + '<span id="' + LIVE_STATUS_ELAPSED_ID + '">working… (0s)</span>'
+      + '</div></div>';
+    container.appendChild(live);
     container.scrollTop = container.scrollHeight;
+    return live;
   }
 
-  function setThinkingText(text) {
-    var el = document.getElementById('thinking-indicator-text');
-    if (el) el.textContent = text;
+  function removeLiveStatusBubble() {
+    var live = document.getElementById(LIVE_STATUS_BUBBLE_ID);
+    if (live && live.parentNode) live.parentNode.removeChild(live);
+    lastProgressSeq = null;
+    lastProgressChangeMs = null;
   }
 
-  function removeThinkingIndicator() {
-    var el = document.getElementById('thinking-indicator');
-    if (el) el.parentNode.removeChild(el);
+  // Layer 1: the ZERO-network ticker. Runs every 1s off the live bubble's
+  // data-created-at. Also applies the stall class when progressSeq has been
+  // frozen past STALL_WARN_AFTER_MS, and hard-stops at ABSOLUTE_MAX_MS.
+  function tick() {
+    var live = document.getElementById(LIVE_STATUS_BUBBLE_ID);
+    if (!live) return;
+    var createdAtMs = Number(live.getAttribute('data-created-at')) || Date.now();
+    var elapsedMs = Date.now() - createdAtMs;
+    var elapsedSec = Math.max(0, Math.round(elapsedMs / 1000));
+    var elapsedEl = document.getElementById(LIVE_STATUS_ELAPSED_ID);
+    if (elapsedEl) elapsedEl.textContent = 'working… (' + elapsedSec + 's)';
+
+    // Stall detection is time-since-progressSeq-last-changed, on the client
+    // clock only. Seed the change time on first sight.
+    if (lastProgressChangeMs === null) lastProgressChangeMs = Date.now();
+    var stalledFor = Date.now() - lastProgressChangeMs;
+    if (stalledFor >= STALL_WARN_AFTER_MS) {
+      live.classList.add(STALL_INDICATOR_CLASS);
+    } else {
+      live.classList.remove(STALL_INDICATOR_CLASS);
+    }
+
+    if (elapsedMs >= ABSOLUTE_MAX_MS) {
+      // Only hard stop: replace the live bubble with a terminal error and
+      // stop everything.
+      stopAll();
+      removeLiveStatusBubble();
+      var errBubble = document.createElement('div');
+      errBubble.className = ASSISTANT_ROLE_CLASS;
+      errBubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
+        + '<div style="margin-top:0;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">Request timed out. Please try again.</div>'
+        + '</div>';
+      container.appendChild(errBubble);
+      enableSend();
+    }
+  }
+
+  function startTicker() {
+    if (tickerTimer) return;
+    tick();
+    tickerTimer = setInterval(tick, 1000);
+  }
+
+  function updateMilestone(phase) {
+    var el = document.getElementById(LIVE_STATUS_MILESTONE_ID);
+    if (!el) return;
+    el.textContent = phase && PROGRESS_LABELS[phase] ? PROGRESS_LABELS[phase] : '';
   }
 
   function stopPolling() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-    pollCount = 0;
-    lastProgressPollCount = 0;
-    lastSeenClaimedAt = null;
-    lastSeenHeartbeatAt = null;
+    if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
   }
+  function stopTicker() {
+    if (tickerTimer) { clearInterval(tickerTimer); tickerTimer = null; }
+  }
+  function stopAll() { stopPolling(); stopTicker(); }
 
   function enableSend() {
     sendBtn.disabled = false;
     sendBtn.textContent = 'Send';
   }
 
-  function poll() {
-    pollCount++;
+  // Adaptive poll: fast while a reply is pending, slow while idle (so
+  // agent-initiated messages still appear without a reload).
+  function schedulePoll(delay) {
+    stopPolling();
+    pollTimer = setTimeout(poll, delay);
+  }
 
+  function poll() {
     fetch(messagesJsonUrl)
       .then(function(r) { return r.json(); })
       .then(function(data) {
         var msgs = data.messages || [];
-        // Guard the null cutoff: comparing a Date against null coerces to a
-        // compare against 0, which would treat every assistant message in the
-        // thread as a new reply.
-        var cutoff = lastUserMessageTime;
-        var replies = cutoff ? msgs.filter(function(m) {
-          return m.role === 'assistant' && new Date(m.createdAt) > cutoff;
-        }) : [];
-        if (replies.length > 0) {
-          stopPolling();
-          removeThinkingIndicator();
-          var reply = replies[replies.length - 1];
-          if (reply.errorKind) {
-            var label = reply.errorKind === 'rate-limited' ? 'Rate limited'
-              : reply.errorKind === 'upstream' ? 'Request failed'
-              : reply.errorKind === 'timeout' ? 'Timed out'
-              : reply.errorKind === 'cancelled' ? 'Cancelled'
-              : reply.errorKind === 'incomplete' ? 'Incomplete'
-              : reply.errorKind === 'stalled' ? 'Stalled'
-              : 'Error';
-            addBubble('assistant', label, true);
-          } else {
-            addBubble('assistant', reply.body, false);
-          }
-          enableSend();
-          return;
-        }
 
-        // No reply yet — check the pending user message for proof of life
-        // (claimed, or a heartbeat while it works a long-running run) and
-        // extend the idle-timeout window whenever either one advances.
-        var pending = msgs.filter(function(m) {
-          return m.role === 'user' && !m.repliedAt;
-        }).pop();
+        // Render every new (un-rendered) message from the server, in order —
+        // fixes "only the last reply appears" and "agent-initiated messages
+        // need a reload". Assistant/user/system all go through server
+        // bubbleHtml, which already includes any Retry button (CFB-2.4) since
+        // the server computes retryBody per-message; wire up any new buttons
+        // after insertion (see wireRetryButtons below).
+        for (var i = 0; i < msgs.length; i++) {
+          renderServerBubble(msgs[i]);
+        }
+        wireRetryButtons();
+
+        // Determine whether a reply is still pending (last message is an
+        // unreplied user message).
+        var last = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+        var pending = last && last.role === 'user' && !last.repliedAt ? last : null;
+
         if (pending) {
-          if (pending.claimedAt && pending.claimedAt !== lastSeenClaimedAt) {
-            lastSeenClaimedAt = pending.claimedAt;
-            lastProgressPollCount = pollCount;
-          }
-          if (pending.heartbeatAt && pending.heartbeatAt !== lastSeenHeartbeatAt) {
-            lastSeenHeartbeatAt = pending.heartbeatAt;
-            lastProgressPollCount = pollCount;
-          }
-          if (pending.claimedAt) {
-            // Prefer the server's createdAt so elapsed survives a reload and
-            // never depends on lastUserMessageTime, which is null on a fresh
-            // page load and would throw here.
-            var startedAt = pending.createdAt
-              ? new Date(pending.createdAt).getTime()
-              : (lastUserMessageTime ? lastUserMessageTime.getTime() : Date.now());
-            var elapsedSec = Math.round((Date.now() - startedAt) / 1000);
-            setThinkingText('still working… (' + elapsedSec + 's)');
-          }
-        }
+          // Keep the live status bubble present and in sync.
+          var createdAtMs = pending.createdAt ? new Date(pending.createdAt).getTime() : Date.now();
+          var live = ensureLiveStatusBubble(createdAtMs);
+          live.setAttribute('data-created-at', String(createdAtMs));
+          startTicker();
+          updateMilestone(pending.progressPhase);
 
-        var idlePolls = pollCount - lastProgressPollCount;
-        if (idlePolls > IDLE_TIMEOUT_POLLS || pollCount > ABSOLUTE_MAX_POLLS) {
-          stopPolling();
-          removeThinkingIndicator();
-          addBubble('assistant', 'Request timed out. Please try again.', true);
+          // Skew-free stall tracking: reset the change clock only when
+          // progressSeq actually advances.
+          var seq = typeof pending.progressSeq === 'number' ? pending.progressSeq : 0;
+          if (lastProgressSeq === null || seq !== lastProgressSeq) {
+            lastProgressSeq = seq;
+            lastProgressChangeMs = Date.now();
+          }
+          live.setAttribute('data-progress-seq', String(seq));
+
+          container.scrollTop = container.scrollHeight;
+          schedulePoll(POLL_PENDING_MS);
+        } else {
+          // No reply pending: reply landed (or nothing in flight). Tear down
+          // the live status bubble and re-enable send, then keep a slow idle
+          // poll running so agent-initiated messages still show up live.
+          removeLiveStatusBubble();
+          stopTicker();
           enableSend();
+          container.scrollTop = container.scrollHeight;
+          schedulePoll(POLL_IDLE_MS);
         }
       })
       .catch(function() {
-        // network error — keep polling
+        // Network error — Layer 1 ticker keeps going untouched; just retry the
+        // poll on the pending cadence.
+        schedulePoll(POLL_PENDING_MS);
       });
   }
 
@@ -4466,20 +4731,21 @@ export function renderChatThreadPage(
     sendBtn.disabled = true;
     sendBtn.textContent = 'Sending…';
 
-    // Record the time before sending so we can filter replies
-    lastUserMessageTime = new Date();
-
     // Build multipart body before clearing the inputs
     var fd = new FormData();
     fd.append('body', text);
     if (file) fd.append('file', file);
     var attachmentName = file ? file.name : null;
 
-    // Add user bubble optimistically (with attachment badge if present)
-    addBubble('user', text, false, attachmentName);
+    // Add user bubble optimistically (with attachment badge if present).
+    addUserBubble(text, attachmentName);
 
-    // Show thinking indicator
-    addThinkingIndicator();
+    // Show the live status bubble + start the ticker immediately — Layer 1
+    // begins ticking with zero network dependency.
+    ensureLiveStatusBubble(Date.now());
+    lastProgressSeq = null;
+    lastProgressChangeMs = Date.now();
+    startTicker();
 
     // POST multipart to the upload endpoint
     fetch(uploadUrl, {
@@ -4488,19 +4754,23 @@ export function renderChatThreadPage(
     }).then(function(r) {
       if (!r.ok) {
         return r.json().then(function(data) {
-          stopPolling();
-          removeThinkingIndicator();
-          addBubble('assistant', (data && data.error) || 'Upload failed.', true);
+          stopAll();
+          removeLiveStatusBubble();
+          var errBubble = document.createElement('div');
+          errBubble.className = ASSISTANT_ROLE_CLASS;
+          errBubble.innerHTML = '<div class="${CHAT_BUBBLE_INNER_CLASS}">'
+            + '<div style="margin-top:0;padding:4px 8px;background:#fee2e2;color:#b91c1c;border-radius:4px;font-size:12px;font-weight:600">' + escHtml((data && data.error) || 'Upload failed.') + '</div>'
+            + '</div>';
+          container.appendChild(errBubble);
           enableSend();
         });
       }
     }).catch(function() {
-      // POST failed — still start polling for a reply
+      // POST failed — Layer 1 ticker keeps going; poll loop still starts.
     });
 
-    // Start polling every 3 seconds
-    pollCount = 0;
-    pollTimer = setInterval(poll, 3000);
+    // Start the fast poll loop.
+    schedulePoll(POLL_PENDING_MS);
   }
 
   form.addEventListener('submit', function(e) {
@@ -4513,21 +4783,89 @@ export function renderChatThreadPage(
     sendText(text, file);
   });
 
-  // Retry buttons resend the exact user message body that triggered the
-  // errored/cancelled/incomplete/stalled reply — rendered server-side as a
-  // data attribute on each button (see renderMessageBubble).
-  document.querySelectorAll('.chat-retry-btn').forEach(function(btn) {
-    btn.addEventListener('click', function() {
-      if (btn.disabled) return;
-      var body = btn.getAttribute('data-retry-body');
-      if (!body) return;
-      btn.disabled = true;
-      sendText(body, null);
+  // Retry buttons (CFB-2.4) resend the exact user message body that
+  // triggered the errored/cancelled/incomplete/stalled reply — rendered
+  // server-side as a data attribute on each button (see
+  // renderChatMessageBubble). Buttons can arrive either on initial page load
+  // or later via renderServerBubble during a poll (which dedupes by
+  // data-message-id, so a given button is only ever inserted into the DOM
+  // once); re-running this after every render pass is therefore safe and
+  // never double-wires a button.
+  function wireRetryButtons() {
+    document.querySelectorAll('.chat-retry-btn').forEach(function(btn) {
+      if (btn.dataset.wired) return;
+      btn.dataset.wired = '1';
+      btn.addEventListener('click', function() {
+        if (btn.disabled) return;
+        var body = btn.getAttribute('data-retry-body');
+        if (!body) return;
+        btn.disabled = true;
+        sendText(body, null);
+      });
     });
-  });
+  }
+  wireRetryButtons();
+
+  // On load: if the server rendered a live status bubble (mid-run reload),
+  // start the ticker immediately and begin polling on the pending cadence.
+  // Otherwise begin a slow idle poll so agent-initiated messages appear live.
+  var serverLive = document.getElementById(LIVE_STATUS_BUBBLE_ID);
+  if (serverLive) {
+    var seedSeq = Number(serverLive.getAttribute('data-progress-seq'));
+    lastProgressSeq = isNaN(seedSeq) ? 0 : seedSeq;
+    lastProgressChangeMs = Date.now();
+    startTicker();
+    schedulePoll(POLL_PENDING_MS);
+  } else {
+    schedulePoll(POLL_IDLE_MS);
+  }
 
   // Scroll to bottom on load
   container.scrollTop = container.scrollHeight;
+})();
+</script>`;
+
+  // Standalone drawer + keyboard-inset script (CFB-3.2). Deliberately emitted
+  // as its OWN <script> block — NOT inside the progress IIFE above — so the two
+  // concerns don't fight the ongoing live-progress rewrite. Three tiny jobs:
+  //   1. visualViewport → --kb-inset: on iOS the on-screen keyboard shrinks the
+  //      VISUAL viewport but leaves the LAYOUT viewport (and dvh) alone, sliding
+  //      the sticky composer under the keyboard. Setting --kb-inset to the
+  //      occluded height lets CSS pad the composer back into view. Guarded by
+  //      `if (!vv) return` — no speculative fallback for browsers without it.
+  //   2. aria-expanded sync on the hamburger, mirroring the toolbar idiom.
+  //   3. Escape closes the drawer (a bare checkbox can't listen for keys).
+  const drawerScript = `
+<script>
+(function() {
+  var vv = window.visualViewport;
+  if (!vv) return;
+  var root = document.documentElement;
+  function updateKbInset() {
+    // Occluded height = layout viewport height minus the visual viewport
+    // height (plus its offset). Clamp to >= 0. On Android where dvh already
+    // shrinks the layout this stays ~0, which is correct.
+    var occluded = window.innerHeight - vv.height - vv.offsetTop;
+    root.style.setProperty('--kb-inset', (occluded > 0 ? occluded : 0) + 'px');
+  }
+  vv.addEventListener('resize', updateKbInset);
+  vv.addEventListener('scroll', updateKbInset);
+  updateKbInset();
+})();
+(function() {
+  var toggle = document.getElementById('chat-drawer-toggle');
+  if (!toggle) return;
+  var burger = document.querySelector('.chat-drawer-hamburger');
+  function syncAria() {
+    if (burger) burger.setAttribute('aria-expanded', toggle.checked ? 'true' : 'false');
+  }
+  toggle.addEventListener('change', syncAria);
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'Escape' || e.key === 'Esc') && toggle.checked) {
+      toggle.checked = false;
+      syncAria();
+    }
+  });
 })();
 </script>`;
 
@@ -4558,7 +4896,7 @@ export function renderChatThreadPage(
 
   const sidebar =
     threads !== null
-      ? `<div class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
+      ? `<div id="chat-thread-sidebar-panel" class="card chat-thread-sidebar" style="min-width:220px;max-width:280px;flex-shrink:0">
           <div class="card-title">Threads</div>
           ${newThreadForm}
           <div class="thread-pane-list">
@@ -4566,6 +4904,23 @@ export function renderChatThreadPage(
           </div>
         </div>`
       : "";
+
+  // Drawer chrome (CFB-3.2). Only render the CSS-only toggle + scrim + hamburger
+  // when there's actually a sidebar to reveal — in degraded/no-threads mode the
+  // sidebar ternary yields "" and the drawer would be an empty shell. DOM order
+  // is load-bearing: the checkbox must precede the sidebar and scrim so the
+  // `~` sibling combinator can reach them from `:checked`.
+  const drawerToggle = sidebar
+    ? `<input type="checkbox" id="chat-drawer-toggle" class="chat-drawer-toggle" aria-hidden="true">`
+    : "";
+  const drawerScrim = sidebar
+    ? `<label for="chat-drawer-toggle" class="chat-drawer-scrim" aria-label="Close thread list"></label>`
+    : "";
+  // aria-controls references the revealed panel's own id (not the checkbox) —
+  // matches the aria-controls="vos-nav-content" pattern in lib/web/toolbar.ts.
+  const drawerHamburger = sidebar
+    ? `<label for="chat-drawer-toggle" class="chat-drawer-hamburger" role="button" tabindex="0" aria-label="Toggle thread list" aria-expanded="false" aria-controls="chat-thread-sidebar-panel">☰</label>`
+    : "";
 
   return renderAdminPage({
     title: `${rawTitle} - Shipwright Admin`,
@@ -4581,9 +4936,12 @@ export function renderChatThreadPage(
   <div class="vos-page chat-thread-page">
     <div class="page-header chat-thread-header">
       <div>
-        <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary" style="margin-bottom:8px">&larr; Back to threads</a>
+        <div class="chat-thread-header-top" style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          ${drawerHamburger}
+          <a href="/admin/chat?agentId=${safeAgentId}" class="btn btn-secondary">&larr; Back to threads</a>
+        </div>
         <h1 class="page-title">${title}</h1>
-        <div style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
+        <div class="chat-thread-meta" style="font-size:12px;color:#9ca3af;margin-top:4px">Thread <span class="mono">${safeThreadId}</span></div>
         ${
           stats &&
           (
@@ -4591,18 +4949,21 @@ export function renderChatThreadPage(
               stats.totalOutputTokens > 0 ||
               stats.totalCostUsd > 0
           )
-            ? `<div style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
+            ? `<div class="chat-thread-stats" style="font-size:12px;color:#6b7280;margin-top:4px">${escapeHtml(`${formatTokenCount(stats.totalInputTokens)} in / ${formatTokenCount(stats.totalOutputTokens)} out | $${stats.totalCostUsd.toFixed(4)}`)}</div>`
             : ""
         }
         ${threadActionsDetails}
       </div>
     </div>
     <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">
+      ${drawerToggle}
       ${sidebar}
-      <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+      ${drawerScrim}
+      <div style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column">
         <!-- Messages area (scrollable) -->
         <div id="messages-container" class="chat-messages-container">
           ${messageBubbles}
+          ${liveStatusBubble}
           ${emptyState}
         </div>
 
@@ -4633,6 +4994,6 @@ export function renderChatThreadPage(
       </div>
     </div>
   </div>`,
-    bodyEnd: inlineScript,
+    bodyEnd: `${inlineScript}\n${drawerScript}`,
   });
 }
