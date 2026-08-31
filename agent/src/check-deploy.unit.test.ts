@@ -14,15 +14,22 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CheckDeployDeps,
-  type CiRun,
   type GhPr,
   type GhReview,
+  type StatusCheckRollupEntry,
   buildProductionDeps,
   getDeployCandidates,
 } from "./check-deploy.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const GREEN_CHECK_RUN: StatusCheckRollupEntry = {
+  __typename: "CheckRun",
+  name: "ci",
+  status: "COMPLETED",
+  conclusion: "SUCCESS",
+};
 
 function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
   return {
@@ -34,6 +41,7 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
     reviewDecision: null,
     createdAt: "2026-05-01T00:00:00.000Z",
     mergeStateStatus: null,
+    statusCheckRollup: [GREEN_CHECK_RUN],
     ...overrides,
   };
 }
@@ -42,7 +50,6 @@ interface MakeDepsOptions {
   repos?: string[];
   prs?: Record<string, GhPr[]>;
   reviews?: Record<number, GhReview[]>;
-  ciRuns?: Record<string, CiRun[]>;
   currentUser?: string;
   isSelfReviewAllowed?: boolean | (() => boolean);
   taskStatus?: Record<string, LinkedTaskInfo | null>;
@@ -55,7 +62,6 @@ function makeDeps({
   repos = ["acme/example-repo"],
   prs = {},
   reviews = {},
-  ciRuns = {},
   currentUser = "bodhi-agent",
   isSelfReviewAllowed = true,
   taskStatus = {},
@@ -74,11 +80,6 @@ function makeDeps({
     hasScopeSynced,
     fetchActiveDeployRuns: async () => [],
     listOpenPrs: async (repo: string) => prs[repo] ?? [],
-    fetchCiRuns: async (
-      _org: string,
-      _repo: string,
-      headSha: string,
-    ): Promise<CiRun[]> => ciRuns[headSha] ?? [],
     fetchPrReviews: async (
       _org: string,
       _repo: string,
@@ -112,7 +113,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -129,7 +129,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toEqual([]);
@@ -149,7 +148,6 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: true,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -169,7 +167,6 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: false,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toEqual([]);
@@ -193,7 +190,6 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: true,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -217,7 +213,6 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: true,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toEqual([]);
@@ -241,7 +236,6 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: true,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -265,40 +259,150 @@ describe("getDeployCandidates", () => {
         isSelfReviewAllowed: true,
         prs: { "acme/example-repo": [pr] },
         reviews: { 50: reviews },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but CI is not green (in_progress)", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+  test("returns empty array when PR is approved but CI is not green (still IN_PROGRESS CheckRun)", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "IN_PROGRESS",
+          conclusion: null,
+        },
+      ],
+    });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "in_progress", conclusion: null }] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but CI failed", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+  test("returns empty array when PR is approved but CI failed (FAILURE CheckRun)", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "COMPLETED",
+          conclusion: "FAILURE",
+        },
+      ],
+    });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "failure" }] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but no CI run exists", async () => {
-    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+  test("returns empty array when PR is approved but the rollup is empty (no checks at all)", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [],
+    });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: {},
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns a candidate when the rollup is all-green via StatusContext entries only", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        { __typename: "StatusContext", context: "license/cla", state: "SUCCESS" },
+        { __typename: "StatusContext", context: "codecov/patch", state: "SUCCESS" },
+      ],
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns a candidate when the rollup is a green mix of CheckRun and StatusContext entries", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "COMPLETED",
+          conclusion: "SUCCESS",
+        },
+        {
+          __typename: "CheckRun",
+          name: "pr-title-lint",
+          status: "COMPLETED",
+          conclusion: "NEUTRAL",
+        },
+        {
+          __typename: "CheckRun",
+          name: "some-skipped-check",
+          status: "COMPLETED",
+          conclusion: "SKIPPED",
+        },
+        { __typename: "StatusContext", context: "license/cla", state: "SUCCESS" },
+      ],
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+      }),
+    );
+    expect(result).toHaveLength(1);
+  });
+
+  test("returns empty array when a mixed rollup has one failing StatusContext entry among otherwise-green CheckRuns", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "COMPLETED",
+          conclusion: "SUCCESS",
+        },
+        { __typename: "StatusContext", context: "license/cla", state: "FAILURE" },
+      ],
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+      }),
+    );
+    expect(result).toEqual([]);
+  });
+
+  test("returns empty array when a mixed rollup has one still-PENDING StatusContext entry among otherwise-green CheckRuns", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      statusCheckRollup: [
+        {
+          __typename: "CheckRun",
+          name: "ci",
+          status: "COMPLETED",
+          conclusion: "SUCCESS",
+        },
+        { __typename: "StatusContext", context: "license/cla", state: "PENDING" },
+      ],
+    });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
       }),
     );
     expect(result).toEqual([]);
@@ -313,7 +417,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha999: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -337,7 +440,6 @@ describe("getDeployCandidates", () => {
           "acme/example-repo": [pr1],
           "acme/other-repo": [pr2],
         },
-        ciRuns: { sha20: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toHaveLength(1);
@@ -370,15 +472,6 @@ describe("getDeployCandidates", () => {
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
         if (repo === "acme/failing-repo") throw new Error("rate limited");
         return [pr];
-      },
-      fetchCiRuns: async (
-        _org: string,
-        _repo: string,
-        headSha: string,
-      ): Promise<CiRun[]> => {
-        return headSha === "sha50"
-          ? [{ status: "completed", conclusion: "success" }]
-          : [];
       },
       fetchPrReviews: async (): Promise<GhReview[]> => [],
     };
@@ -420,11 +513,6 @@ describe("getDeployCandidates", () => {
           "acme/repo-b": [pr2],
           "acme/repo-c": [pr3],
         },
-        ciRuns: {
-          sha1: [{ status: "completed", conclusion: "success" }],
-          sha2: [{ status: "completed", conclusion: "success" }],
-          sha3: [{ status: "completed", conclusion: "success" }],
-        },
       }),
     );
     expect(result).toHaveLength(3);
@@ -459,7 +547,6 @@ describe("getDeployCandidates", () => {
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
       listOpenPrs: async (repo: string) =>
         repo === "acme/busy-repo" ? [pr1] : [pr2],
-      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
       fetchPrReviews: async () => [],
     };
     const result = await getDeployCandidates(deps);
@@ -483,7 +570,6 @@ describe("getDeployCandidates", () => {
         { name: "Deploy", status: "queued" }, // no createdAt
       ],
       listOpenPrs: async () => [pr1],
-      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
       fetchPrReviews: async () => [],
     };
     const result = await getDeployCandidates(deps);
@@ -511,7 +597,6 @@ describe("getDeployCandidates", () => {
         },
       ],
       listOpenPrs: async () => [pr1],
-      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
       fetchPrReviews: async () => [],
     };
     const result = await getDeployCandidates(deps);
@@ -540,7 +625,6 @@ describe("getDeployCandidates", () => {
         },
       ],
       listOpenPrs: async () => [pr1],
-      fetchCiRuns: async () => [{ status: "completed", conclusion: "success" }],
       fetchPrReviews: async () => [],
     };
     const result = await getDeployCandidates(deps);
@@ -577,11 +661,11 @@ describe("getDeployCandidates", () => {
       hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
       listOpenPrs: async () => [goodPr, badPr],
-      fetchCiRuns: async (_org, _repo, headSha: string) => {
-        if (headSha === "sha2") throw new Error("gh api rate limited");
-        return [{ status: "completed", conclusion: "success" }];
-      },
       fetchPrReviews: async () => [],
+      queryTaskStatus: async (_repo, prNumber) => {
+        if (prNumber === 2) throw new Error("gh api rate limited");
+        return null;
+      },
     };
 
     const result = await getDeployCandidates(deps);
@@ -592,7 +676,7 @@ describe("getDeployCandidates", () => {
     expect(
       stderrLines.some(
         (l) =>
-          l.includes("gh query failed for PR 2") &&
+          l.includes("task-status lookup failed for PR 2") &&
           l.includes("gh api rate limited"),
       ),
     ).toBe(true);
@@ -607,7 +691,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => ({
       status: "in_progress",
@@ -624,7 +707,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
     const result = await getDeployCandidates(deps);
@@ -638,7 +720,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => ({
       status: "in_progress",
@@ -664,7 +745,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryPrRecord = async () => ({ claimedBy: "agent-other" });
     const result = await getDeployCandidates(deps);
@@ -678,7 +758,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryPrRecord = async () => null;
     const result = await getDeployCandidates(deps);
@@ -692,7 +771,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryPrRecord = async () => {
       throw new Error("task-store unavailable");
@@ -708,7 +786,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
     deps.queryPrRecord = async () => ({ blocked: true });
@@ -723,7 +800,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
     deps.queryPrRecord = async () => ({ blocked: false });
@@ -741,7 +817,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       }),
     );
     expect(result).toEqual([]);
@@ -756,7 +831,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => ({ status: "blocked" });
     const result = await getDeployCandidates(deps);
@@ -770,7 +844,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => null;
     const result = await getDeployCandidates(deps);
@@ -786,7 +859,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: true });
     const result = await getDeployCandidates(deps);
@@ -800,7 +872,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: false });
     const result = await getDeployCandidates(deps);
@@ -814,7 +885,6 @@ describe("getDeployCandidates", () => {
     });
     const deps = makeDeps({
       prs: { "acme/example-repo": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
     deps.queryTaskStatus = async () => {
       throw new Error("task-store unreachable");
@@ -862,10 +932,6 @@ describe("getDeployCandidates", () => {
           "acme/in-scope": [inScopePr],
           "acme/out-of-scope": [outOfScopePr],
         },
-        ciRuns: {
-          sha50: [{ status: "completed", conclusion: "success" }],
-          sha60: [{ status: "completed", conclusion: "success" }],
-        },
         getScopedRepos: () => ["acme/in-scope"],
       }),
     );
@@ -883,7 +949,6 @@ describe("getDeployCandidates", () => {
     const deps = makeDeps({
       repos: ["acme/newly-added"],
       prs: { "acme/newly-added": [pr] },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
       getScopedRepos: () => scope,
     });
 
@@ -905,7 +970,6 @@ describe("getDeployCandidates", () => {
       makeDeps({
         repos: ["acme/never-synced"],
         prs: { "acme/never-synced": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         getScopedRepos: () => [],
         hasScopeSynced: () => false,
       }),
@@ -923,7 +987,6 @@ describe("getDeployCandidates", () => {
       makeDeps({
         repos: ["acme/some-repo"],
         prs: { "acme/some-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         getScopedRepos: () => [],
         hasScopeSynced: () => true,
       }),
@@ -940,7 +1003,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         isBundleComplete: async (branch: string) =>
           branch !== "feat/bundle-incomplete",
       }),
@@ -957,7 +1019,6 @@ describe("getDeployCandidates", () => {
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
-        ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
         isBundleComplete: async (branch: string) =>
           branch === "feat/bundle-complete",
       }),
@@ -1050,6 +1111,9 @@ describe("buildProductionDeps", () => {
             reviewDecision: "APPROVED",
             createdAt: "2026-05-01T00:00:00Z",
             mergeStateStatus: "CLEAN",
+            statusCheckRollup: [
+              { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" },
+            ],
           },
         ] as unknown as T;
       },
@@ -1067,7 +1131,7 @@ describe("buildProductionDeps", () => {
       "--repo",
       "acme/example-repo",
       "--json",
-      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus,statusCheckRollup",
     ]);
   });
 
@@ -1092,46 +1156,6 @@ describe("buildProductionDeps", () => {
     expect(reviews).toEqual([
       { author: { login: "reviewer1" }, body: "APPROVE", state: "APPROVED" },
     ]);
-  });
-
-  test("fetchCiRuns filters workflow_runs down to name 'CI' (case-insensitive) and maps status/conclusion", async () => {
-    const deps = await buildProductionDeps({
-      ghJson: async <T>(args: string[]) => {
-        expect(args[1]).toContain(
-          "repos/acme/widgets/actions/runs?head_sha=deadbeef",
-        );
-        return {
-          workflow_runs: [
-            { name: "CI", status: "completed", conclusion: "success" },
-            { name: "Deploy", status: "completed", conclusion: "success" },
-          ],
-        } as unknown as T;
-      },
-    });
-
-    const runs = await deps.fetchCiRuns("acme", "widgets", "deadbeef");
-    expect(runs).toEqual([{ status: "completed", conclusion: "success" }]);
-  });
-
-  // Regression test: a repo whose CI workflow's `name:` field is lowercase
-  // `ci` (a valid, common convention — see .github/workflows/ci.yml's `name:`
-  // key) was silently excluded from deploy candidacy forever, since the old
-  // filter did an exact-case match against "CI". isCiGreen() always returned
-  // false for such a repo regardless of actual CI status.
-  test("fetchCiRuns matches a lowercase workflow name ('ci')", async () => {
-    const deps = await buildProductionDeps({
-      ghJson: async <T>() => {
-        return {
-          workflow_runs: [
-            { name: "ci", status: "completed", conclusion: "success" },
-            { name: "build-image", status: "completed", conclusion: "success" },
-          ],
-        } as unknown as T;
-      },
-    });
-
-    const runs = await deps.fetchCiRuns("acme", "widgets", "deadbeef");
-    expect(runs).toEqual([{ status: "completed", conclusion: "success" }]);
   });
 
   test("fetchActiveDeployRuns merges in_progress and queued runs, filters to name 'Deploy' (case-insensitive), and maps created_at", async () => {
@@ -1285,7 +1309,6 @@ describe("getDeployCandidates isSelfReviewAllowed live-read behavior (PLR-1.1)",
       isSelfReviewAllowed: () => values.shift() as boolean,
       prs: { "acme/example-repo": [pr] },
       reviews: { 50: reviews },
-      ciRuns: { sha50: [{ status: "completed", conclusion: "success" }] },
     });
 
     const firstResult = await getDeployCandidates(deps);
