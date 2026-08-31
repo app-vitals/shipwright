@@ -29,7 +29,7 @@ import {
   ClaudeTimeoutError,
   createRunClaude,
 } from "./claude.ts";
-import type { ModelUsage, TokenUsage } from "./claude.ts";
+import type { ModelUsage, ProgressCallback, TokenUsage } from "./claude.ts";
 import type { markdownToBlocks } from "./format.ts";
 import { threadKey } from "./sessions.ts";
 import {
@@ -62,6 +62,7 @@ const mockRunClaude = mock(
   async (
     _msg: string,
     _key?: string,
+    _onProgress?: ProgressCallback,
   ): Promise<{
     result: string;
     sessionId?: string;
@@ -209,6 +210,13 @@ function makeMockClient() {
       getPermalink: mock(async (_args: unknown) => ({
         permalink: "https://slack.com/archives/C1/p1234",
       })),
+      // SlackProgress's lazy first post / trailing-edge update / finish()
+      // targets — CFB-5.1. A handler's synchronous mockRunClaude resolution
+      // never crosses the 3s lazy-post threshold in real wall-clock time, so
+      // these are exercised directly in slack-progress.unit.test.ts; present
+      // here so the shared client fixture matches the real Bolt client shape.
+      update: mock(async (_args: unknown) => ({ ok: true })),
+      delete: mock(async (_args: unknown) => ({ ok: true })),
     },
     users: {
       info: mock(async (_args: unknown) => ({
@@ -382,6 +390,7 @@ describe("message handler — DM routing", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "Hello from rich text",
       "D123:111.222",
+      expect.any(Function),
     );
   });
 
@@ -405,6 +414,7 @@ describe("message handler — DM routing", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "Plain text wins",
       "D123:111.222",
+      expect.any(Function),
     );
   });
 
@@ -423,12 +433,20 @@ describe("message handler — DM routing", () => {
       channel: "D123",
       ts: "111.222",
     });
-    expect(mockRunClaude).toHaveBeenCalledWith("Do the thing", "D123:111.222");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "Do the thing",
+      "D123:111.222",
+      expect.any(Function),
+    );
   });
 
   test("uses thread_ts as sessionKey when available", async () => {
     await invokeDM({ channel: "D456", ts: "1.1", thread_ts: "0.9" });
-    expect(mockRunClaude).toHaveBeenCalledWith("Hello bot", "D456:0.9");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "Hello bot",
+      "D456:0.9",
+      expect.any(Function),
+    );
   });
 
   test("formats result with markdownToSlack before posting", async () => {
@@ -459,6 +477,24 @@ describe("message handler — DM routing", () => {
       thread_ts: "111.222",
       status: "",
     });
+  });
+
+  test("a sub-3s reply posts no progress message at all (AC #4) — no chat.update/delete beyond the real reply's say()", async () => {
+    // mockRunClaude resolves on the same microtask tick — real wall-clock
+    // time never crosses SlackProgress's 3s lazy-post threshold, so no
+    // progress chat.postMessage/update/delete call should ever fire; only
+    // the real reply goes out via say().
+    const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+    expect(client.chat.update).not.toHaveBeenCalled();
+    expect(client.chat.delete).not.toHaveBeenCalled();
+  });
+
+  test("passes an onProgress function through to the runner as the third arg (AC #1)", async () => {
+    await invokeDM({ text: "hi", channel: "D123", ts: "111.222" });
+    const call = mockRunClaude.mock.calls.at(-1) as unknown[];
+    expect(call[2]).toBeTypeOf("function");
   });
 
   test("posts error message when runClaude throws", async () => {
@@ -583,6 +619,7 @@ describe("message handler — channel thread routing", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[Thread message — respond normally, or use [silent] if no response is needed]\nFollowup message",
       "C123:1.0",
+      expect.any(Function),
     );
     expect(say).toHaveBeenCalled();
   });
@@ -605,6 +642,7 @@ describe("message handler — channel thread routing", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[Thread message — respond normally, or use [silent] if no response is needed]\nFollowup message",
       "C123:1.0",
+      expect.any(Function),
     );
     expect(say).toHaveBeenCalled();
   });
@@ -626,6 +664,7 @@ describe("message handler — channel thread routing", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[Thread message — respond normally, or use [silent] if no response is needed]\nGood work bot",
       "C-CRON:200.0",
+      expect.any(Function),
     );
     expect(say).toHaveBeenCalled();
   });
@@ -793,6 +832,7 @@ describe("message handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[file: /tmp/test-image.jpg]\nlook at this",
       "D1:1.1",
+      expect.any(Function),
     );
   });
 
@@ -816,6 +856,7 @@ describe("message handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[file: /tmp/test.pdf]",
       "D1:1.1",
+      expect.any(Function),
     );
   });
 
@@ -837,7 +878,11 @@ describe("message handler — file handling", () => {
       client,
     });
 
-    expect(mockRunClaude).toHaveBeenCalledWith("here is a file", "D1:1.1");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "here is a file",
+      "D1:1.1",
+      expect.any(Function),
+    );
   });
 
   test("continues without file when downloader throws", async () => {
@@ -860,7 +905,11 @@ describe("message handler — file handling", () => {
       client,
     });
 
-    expect(mockRunClaude).toHaveBeenCalledWith("with erroring file", "D1:1.1");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "with erroring file",
+      "D1:1.1",
+      expect.any(Function),
+    );
   });
 
   test("returns early when no text and no files and files array is empty", async () => {
@@ -923,6 +972,7 @@ describe("app_mention handler", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "<@UBOT> do something",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 
@@ -931,6 +981,7 @@ describe("app_mention handler", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "<@UBOT> do something",
       "C999:1.1",
+      expect.any(Function),
     );
   });
 
@@ -949,6 +1000,23 @@ describe("app_mention handler", () => {
       thread_ts: "222.333",
       status: "",
     });
+  });
+
+  test("a sub-3s mention reply posts no progress message at all (AC #4)", async () => {
+    const { client, say } = await invokeMention({
+      channel: "C999",
+      ts: "222.333",
+    });
+    expect(say).toHaveBeenCalledTimes(1);
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+    expect(client.chat.update).not.toHaveBeenCalled();
+    expect(client.chat.delete).not.toHaveBeenCalled();
+  });
+
+  test("passes an onProgress function through to the runner as the third arg on mention (AC #1)", async () => {
+    await invokeMention({ channel: "C999", ts: "222.333" });
+    const call = mockRunClaude.mock.calls.at(-1) as unknown[];
+    expect(call[2]).toBeTypeOf("function");
   });
 
   test("posts error message when runClaude throws on mention", async () => {
@@ -1090,6 +1158,7 @@ describe("app_mention handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[file: /tmp/test-mention-image.jpg]\n<@UBOT> look at this",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 
@@ -1120,6 +1189,7 @@ describe("app_mention handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "<@UBOT> here is a file",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 
@@ -1136,6 +1206,7 @@ describe("app_mention handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "<@UBOT> with erroring file",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 
@@ -1166,6 +1237,7 @@ describe("app_mention handler — file handling", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[file: /tmp/mention-image.jpg]\n<@UBOT> look at this",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 });
@@ -1448,7 +1520,11 @@ describe("user name context — message handler", () => {
       say,
       client,
     });
-    expect(mockRunClaude).toHaveBeenCalledWith("[Dan]: hello", "D1:1.1");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "[Dan]: hello",
+      "D1:1.1",
+      expect.any(Function),
+    );
   });
 
   test("does not prepend when user field is absent", async () => {
@@ -1464,7 +1540,11 @@ describe("user name context — message handler", () => {
       say,
       client,
     });
-    expect(mockRunClaude).toHaveBeenCalledWith("hello", "D1:1.1");
+    expect(mockRunClaude).toHaveBeenCalledWith(
+      "hello",
+      "D1:1.1",
+      expect.any(Function),
+    );
   });
 });
 
@@ -1491,6 +1571,7 @@ describe("user name context — app_mention handler", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[Dan]: <@UBOT> do something",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 
@@ -1509,6 +1590,7 @@ describe("user name context — app_mention handler", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "<@UBOT> do something",
       "C999:222.333",
+      expect.any(Function),
     );
   });
 });
@@ -1979,6 +2061,36 @@ describe("reaction_added handler", () => {
     expect(mockRunClaude).toHaveBeenCalledTimes(1);
     // Runner receives the session key — it resolves the session ID internally
     expect(mockRunClaude.mock.calls[0][1]).toBe("D1:100.1");
+  });
+
+  test("passes an onProgress function through to the runner as the third arg (AC #1)", async () => {
+    await invokeReactionAdded();
+    expect(mockRunClaude.mock.calls[0][2]).toBeTypeOf("function");
+  });
+
+  test("sets and clears the AI-app status around the run — SlackProgress owns setStatus here too (AC #1)", async () => {
+    const { client } = await invokeReactionAdded();
+    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+      channel_id: "D1",
+      thread_ts: "100.1",
+      status: "Thinking...",
+    });
+    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+      channel_id: "D1",
+      thread_ts: "100.1",
+      status: "",
+    });
+  });
+
+  test("a sub-3s reaction reply posts no progress message beyond the real reply (AC #4)", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: "Logged your walk!",
+      sessionId: "sess-progress-1",
+    });
+    const { client } = await invokeReactionAdded();
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+    expect(client.chat.update).not.toHaveBeenCalled();
+    expect(client.chat.delete).not.toHaveBeenCalled();
   });
 
   test("builds prompt containing emoji name and display name", async () => {

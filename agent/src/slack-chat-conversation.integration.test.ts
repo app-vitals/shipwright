@@ -112,6 +112,12 @@ function makeMockClient() {
     },
     chat: {
       postMessage: mock(async (_args: unknown) => ({ ts: "posted.ts.1" })),
+      // SlackProgress's chat.update/chat.delete targets (CFB-5.1) — present
+      // so the mock client matches the real Bolt client shape, even though
+      // this suite's synchronous mockRunClaude resolution never crosses the
+      // 3s lazy-post threshold in real wall-clock time.
+      update: mock(async (_args: unknown) => ({ ok: true })),
+      delete: mock(async (_args: unknown) => ({ ok: true })),
     },
   };
 }
@@ -155,6 +161,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[U1]: Hey, can you look into the failing build?",
       "D100:1000.001",
+      expect.any(Function),
     );
     expect(say1).toHaveBeenCalledWith({
       text: "Hi! How can I help?",
@@ -197,6 +204,7 @@ describe("Slack chat conversation journey — DM multi-turn continuity", () => {
     expect(mockRunClaude).toHaveBeenLastCalledWith(
       "[U1]: Any update?",
       establishedKey,
+      expect.any(Function),
     );
     expect(say2).toHaveBeenCalledWith({
       text: "Found it — the linter step is timing out.",
@@ -245,6 +253,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
     expect(mockRunClaude).toHaveBeenCalledWith(
       "[U2]: <@UBOT123> can you check the deploy?",
       mentionKey,
+      expect.any(Function),
     );
     expect(say1).toHaveBeenCalledWith({
       text: "On it — checking the deploy logs.",
@@ -284,6 +293,7 @@ describe("Slack chat conversation journey — channel app_mention thread continu
     expect(mockRunClaude).toHaveBeenLastCalledWith(
       "[Thread message — respond normally, or use [silent] if no response is needed]\n[U2]: thanks, any update?",
       mentionKey,
+      expect.any(Function),
     );
     expect(say2).toHaveBeenCalledWith({
       text: "Deploy looks healthy now.",

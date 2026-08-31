@@ -22,7 +22,11 @@ import {
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
 import { ClaudeRunError, ClaudeTimeoutError } from "./claude.ts";
-import type { ClaudeRunResult, TokenUsage } from "./claude.ts";
+import type {
+  ClaudeRunResult,
+  ProgressCallback,
+  TokenUsage,
+} from "./claude.ts";
 import {
   formatPlanLink,
   markdownToBlocks,
@@ -31,6 +35,7 @@ import {
 } from "./format.ts";
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
+import { SlackProgress } from "./slack-progress.ts";
 import type { VoiceConfig } from "./voice.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
 
@@ -142,6 +147,7 @@ type GetSessionFn = (key: string) => Promise<string | undefined>;
 export type ClaudeRunner = (
   message: string,
   sessionKey?: string,
+  onProgress?: ProgressCallback,
 ) => Promise<ClaudeRunResult>;
 
 export type ResolveUserFn = (
@@ -513,13 +519,12 @@ export function createSlackApp(
     const sessionKey = getThreadKey(msg.channel, msg.thread_ts ?? msg.ts);
     const replyTs = msg.thread_ts ?? msg.ts;
 
-    const setStatus = async (status: string) => {
-      // biome-ignore lint/suspicious/noExplicitAny: Bolt types don't include Agents API yet
-      await (client.assistant.threads as any)
-        .setStatus({ channel_id: msg.channel, thread_ts: replyTs, status })
-        .catch(() => {});
-    };
-    await setStatus("Thinking...");
+    const progress = new SlackProgress({
+      client,
+      channel: msg.channel,
+      threadTs: replyTs,
+    });
+    await progress.start();
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -543,7 +548,7 @@ export function createSlackApp(
     }
 
     try {
-      const runResult = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -621,7 +626,7 @@ export function createSlackApp(
         thread_ts: msg.thread_ts ?? msg.ts,
       });
     } finally {
-      await setStatus("");
+      await progress.finish();
     }
   });
 
@@ -656,13 +661,12 @@ export function createSlackApp(
       return;
     }
 
-    const setStatus = async (status: string) => {
-      // biome-ignore lint/suspicious/noExplicitAny: Bolt types don't include Agents API yet
-      await (client.assistant.threads as any)
-        .setStatus({ channel_id: ev.channel, thread_ts: replyTs, status })
-        .catch(() => {});
-    };
-    await setStatus("Thinking...");
+    const progress = new SlackProgress({
+      client,
+      channel: ev.channel,
+      threadTs: replyTs,
+    });
+    await progress.start();
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -710,7 +714,7 @@ export function createSlackApp(
     }
 
     try {
-      const runResult = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -779,7 +783,7 @@ export function createSlackApp(
       sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
-      await setStatus("");
+      await progress.finish();
     }
   });
 
@@ -811,8 +815,15 @@ export function createSlackApp(
     const name = await resolveUserFn(ev.user, client).catch(() => ev.user);
     const prompt = `[${name} reacted with :${ev.reaction}: to your message]`;
 
+    const progress = new SlackProgress({
+      client,
+      channel: ev.item.channel,
+      threadTs: ev.item.ts,
+    });
+    await progress.start();
+
     try {
-      const runResult = await runner(prompt, sessionKey);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -888,6 +899,8 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
+    } finally {
+      await progress.finish();
     }
   });
 
