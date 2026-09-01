@@ -1014,6 +1014,87 @@
         }
       }
     },
+    "/tasks/{id}/events": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clx1234567890"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Max records to return",
+              "example": "50"
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Pagination offset",
+              "example": "0"
+            },
+            "required": false,
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task's event history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskEventsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/tokens": {
       "get": {
         "tags": [
@@ -2615,6 +2696,98 @@
             "example": "build failed"
           }
         }
+      },
+      "TaskEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "clxevent123456"
+          },
+          "taskId": {
+            "type": "string",
+            "example": "clx0987654321"
+          },
+          "field": {
+            "type": "string",
+            "example": "status"
+          },
+          "oldValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "pending"
+          },
+          "newValue": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "in_progress"
+          },
+          "actor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "agent-abc123"
+          },
+          "method": {
+            "type": "string",
+            "example": "claim"
+          },
+          "at": {
+            "type": "string",
+            "example": "2026-08-17T12:00:00.000Z"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-08-17T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "taskId",
+          "field",
+          "oldValue",
+          "newValue",
+          "actor",
+          "method",
+          "at",
+          "createdAt"
+        ]
+      },
+      "TaskEventsResponse": {
+        "type": "object",
+        "properties": {
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskEvent"
+            },
+            "description": "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first)."
+          },
+          "total": {
+            "type": "integer",
+            "example": 1
+          },
+          "limit": {
+            "type": "integer",
+            "example": 50
+          },
+          "offset": {
+            "type": "integer",
+            "example": 0
+          }
+        },
+        "required": [
+          "events",
+          "total",
+          "limit",
+          "offset"
+        ]
       },
       "TaskToken": {
         "type": "object",
