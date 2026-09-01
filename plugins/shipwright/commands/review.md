@@ -152,25 +152,33 @@ Path or self-claim) — both paths reconverge at this point before Step 5 runs. 
 enrichment only: any failure leaves `TASK_MODEL` unset and prints a one-line warning, never
 a hard stop.
 
+Query the task store directly by repo+PR (same shape as `agent/src/check-helpers.ts`'s
+`createTaskStatusQuery`) instead of reading `PullRequest.taskId` off the claimed PR record —
+that field is populated on only ~10% of PR records (0% in several repos), so the old lookup
+silently no-op'd for most PRs. A PR can link more than one task (bundles, confirmed on ~7%
+of PR-linked task groups); when more than one task matches, escalate to the **highest**
+model tier among all matched tasks' models — `opus` > `sonnet` > `haiku` — mirroring
+plan-session.md's "bundle inherits highest tier" rule, not just the first match:
+
 ```bash
 TASK_MODEL=""
-if [ -n "$PR_RECORD_ID" ]; then
-  PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID") || echo "⚠ failed to fetch PR record for model lookup — continuing"
-  TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
-  if [ -n "$TASK_ID" ]; then
-    TASK_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-      "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID") || echo "⚠ failed to fetch task $TASK_ID for model lookup — continuing"
-    TASK_MODEL=$(echo "$TASK_RECORD" | jq -r '.model // empty')
-  fi
-else
-  echo "⚠ no PR_RECORD_ID available — skipping task model lookup"
+TASKS_RESPONSE=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}") || echo "⚠ failed to fetch linked tasks for model lookup — continuing"
+if [ -n "$TASKS_RESPONSE" ]; then
+  TASK_MODEL=$(echo "$TASKS_RESPONSE" | jq -r '
+    [.tasks[]?.model | select(. != null)] as $models
+    | {opus: 3, sonnet: 2, haiku: 1} as $rank
+    | ($models | map($rank[.]) | max) as $maxRank
+    | if $maxRank == null then empty
+      else ($rank | to_entries | map(select(.value == $maxRank)) | .[0].key)
+      end
+  ')
 fi
 ```
 
-A non-200 at either fetch (e.g. a 403 when the linked task is assigned to a different agent
-or unassigned — task-store agent tokens are scoped) leaves `TASK_MODEL` unset; Step 7 falls
-back to `'sonnet'`.
+A non-200 (e.g. a 403 when a linked task is assigned to a different agent — task-store
+agent tokens are scoped) or zero matching tasks (still the common case today) leaves
+`TASK_MODEL` unset; Step 7 falls back to `'sonnet'`, unchanged from before.
 
 ---
 

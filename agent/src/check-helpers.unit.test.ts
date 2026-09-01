@@ -1338,6 +1338,129 @@ describe("createTaskStatusQuery", () => {
       "SHIPWRIGHT_TASK_STORE_URL/SHIPWRIGHT_TASK_STORE_TOKEN not configured",
     );
   });
+
+  // ─── PTL-1.1: multi-task-aware lookup + OR-blocked semantics ──────────────
+  //
+  // GET /tasks?repo=&pr= can return MORE than one task for the same
+  // (repo, pr) — a bundle where several tasks share one PR (91/1294 linked
+  // groups, ~7%, per the live task-store). Taking only tasks[0] means a
+  // blocked/hitl bundle-mate can be silently missed depending on API return
+  // order. These tests pin down the OR-across-all-matches behavior:
+  // isTaskBlockedForDispatch on the returned LinkedTaskInfo must be true if
+  // ANY matched task is hitl:true or status:"blocked", regardless of which
+  // position it appears in.
+
+  test("bundle: only the SECOND of two matched tasks is hitl:true — result still reports hitl:true (OR across all matches)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "First bundle-mate",
+              status: "pr_open",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Second bundle-mate",
+              status: "pr_open",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: true,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).not.toBeNull();
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
+
+  test("bundle: only the SECOND of two matched tasks has status:'blocked' — result still reports blocked (OR across all matches)", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "First bundle-mate",
+              status: "pr_open",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Second bundle-mate",
+              status: "blocked",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: false,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).not.toBeNull();
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
+
+  test("bundle: neither of two matched tasks is hitl/blocked — result is not blocked", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "First bundle-mate",
+              status: "pr_open",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: false,
+            },
+            {
+              id: "T-2",
+              title: "Second bundle-mate",
+              status: "in_progress",
+              createdAt: "2026-05-02T00:00:00.000Z",
+              hitl: false,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(result).not.toBeNull();
+    expect(isTaskBlockedForDispatch(result)).toBe(false);
+  });
+
+  test("single matched task (existing behavior unchanged): hitl:true still reports blocked", async () => {
+    const fakeFetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          tasks: [
+            {
+              id: "T-1",
+              title: "Solo task",
+              status: "pr_open",
+              createdAt: "2026-05-01T00:00:00.000Z",
+              hitl: true,
+            },
+          ],
+        }),
+      }) as Response) as unknown as typeof fetch;
+
+    const query = createTaskStatusQuery({ fetchFn: fakeFetch });
+    const result = await query("acme/example-repo", 42);
+    expect(isTaskBlockedForDispatch(result)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

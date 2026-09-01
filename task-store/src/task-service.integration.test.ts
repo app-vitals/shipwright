@@ -204,5 +204,51 @@ describeOrSkip(
       });
       expect(eventsAfter).toBe(0);
     });
+
+    it("getEvents() returns rows from both a claim() and a subsequent release(), ordered oldest-first (TCS-1.2)", async () => {
+      const task = await prisma.task.create({
+        data: { title: "claim-then-release-events", status: "pending" },
+      });
+
+      await service.claim(task.id, "agent-x");
+      await service.release(task.id);
+
+      const result = await service.getEvents(task.id);
+
+      // claim() writes 4 rows (status/claimedBy/claimedAt/startedAt) and
+      // release() writes 3 rows (status/claimedBy/claimedAt) — both
+      // transitions' rows must be present in the audit trail.
+      expect(result.total).toBe(7);
+      expect(result.events).toHaveLength(7);
+
+      const claimEvents = result.events.filter((e) => e.method === "claim");
+      const releaseEvents = result.events.filter(
+        (e) => e.method === "release",
+      );
+      expect(claimEvents).toHaveLength(4);
+      expect(releaseEvents).toHaveLength(3);
+
+      // Ordered oldest-first by `at` — every claim() row must precede every
+      // release() row given the sequential await above.
+      const claimAts = claimEvents.map((e) => e.at);
+      const releaseAts = releaseEvents.map((e) => e.at);
+      const maxClaimAt = claimAts.sort().at(-1) as string;
+      const minReleaseAt = releaseAts.sort()[0] as string;
+      expect(maxClaimAt <= minReleaseAt).toBe(true);
+
+      // The returned array itself is sorted ascending by `at`.
+      const ats = result.events.map((e) => e.at);
+      const sortedAts = [...ats].sort();
+      expect(ats).toEqual(sortedAts);
+
+      // Spot-check the status transition rows from each phase.
+      const statusClaim = claimEvents.find((e) => e.field === "status");
+      expect(statusClaim?.oldValue).toBe("pending");
+      expect(statusClaim?.newValue).toBe("in_progress");
+
+      const statusRelease = releaseEvents.find((e) => e.field === "status");
+      expect(statusRelease?.oldValue).toBe("in_progress");
+      expect(statusRelease?.newValue).toBe("pending");
+    });
   },
 );

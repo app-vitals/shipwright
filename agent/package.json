@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/agent",
-  "version": "1.207.0",
+  "version": "1.215.0",
   "private": true,
   "description": "Shipwright agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
@@ -12,8 +12,8 @@
     "@sentry/bun": "^10.63.0",
     "@shipwright/admin": "workspace:*",
     "@shipwright/lib": "workspace:*",
-    "@slack/bolt": "^4.7.3",
-    "@slack/web-api": "^7.16.0",
+    "@slack/bolt": "^5.0.0",
+    "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",
     "node-cron": "^4.6.0",
     "openapi-fetch": "^0.13",

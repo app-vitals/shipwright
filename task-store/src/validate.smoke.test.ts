@@ -187,6 +187,9 @@ function fakeTaskService(
     ): Promise<{ sessions: string[]; repos: string[]; orgs: string[] }> {
       return Promise.resolve({ sessions: [], repos: [], orgs: [] });
     },
+    async getEvents() {
+      return { events: [], total: 0 };
+    },
   };
 }
 

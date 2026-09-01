@@ -187,6 +187,9 @@ function fakeTaskService(): TaskServiceLike {
     async resetSkip() {
       return null as never;
     },
+    async getEvents() {
+      return { events: [], total: 0 };
+    },
   };
 }
 

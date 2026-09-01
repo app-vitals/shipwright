@@ -512,15 +512,40 @@ export class TaskStoreProvider implements MetricsProvider {
     return map;
   }
 
-  private groupPrsByPrefix(prs: PrRecord[]): Map<string, PrRecord[]> {
+  /**
+   * Groups PR records by feature prefix, originating from `tasks` rather than
+   * `pr.taskId` — that field is populated only ~10% of the time (0% in
+   * several repos), so grouping from it silently dropped the large majority
+   * of PRs. Each task supplies its own id-derived prefix and its `.pr`
+   * field is matched against the fetched PR list by (repo, prNumber) to find
+   * the PR record to attach. Because the loop is per-task, a PR shared by
+   * multiple tasks (the bundle case) is attached under each of those tasks'
+   * own feature buckets rather than only one.
+   */
+  private groupPrsByPrefix(
+    tasks: TaskRecord[],
+    prs: PrRecord[],
+  ): Map<string, PrRecord[]> {
     const map = new Map<string, PrRecord[]>();
-    for (const pr of prs) {
-      const id = pr.taskId ?? "";
-      const p = featurePrefix(id);
-      if (!p) continue;
-      const arr = map.get(p) ?? [];
+    for (const t of tasks) {
+      const prefix = featurePrefix(t.id);
+      if (!prefix) continue;
+      if (t.pr == null) continue;
+      // `Task.repo` is nullable (a legal state for unscoped tasks; see
+      // docs/task-store.md), whereas `PullRequest.repo` is always a non-null
+      // string. A strict `p.repo === t.repo` therefore silently drops every
+      // null-repo task's PR — the same silent-drop class this method exists to
+      // fix. Treat a null/undefined `t.repo` as unscoped and match on prNumber
+      // alone; otherwise require the repo to match so two PRs sharing a number
+      // across repos can't be confused.
+      const pr = prs.find(
+        (p) =>
+          (t.repo == null || p.repo === t.repo) && p.prNumber === t.pr,
+      );
+      if (!pr) continue;
+      const arr = map.get(prefix) ?? [];
       arr.push(pr);
-      map.set(p, arr);
+      map.set(prefix, arr);
     }
     return map;
   }
@@ -570,8 +595,8 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const prs = await this.prs(win);
-    const groups = this.groupPrsByPrefix(prs);
+    const [tasks, prs] = await Promise.all([this.tasks(win), this.prs(win)]);
+    const groups = this.groupPrsByPrefix(tasks, prs);
     const columns = ["feature_prefix", "reviews_total", "reviews_ship_it"];
     const rows = [...groups.entries()].map(([prefix, group]) => [
       prefix,
@@ -763,7 +788,17 @@ export class TaskStoreProvider implements MetricsProvider {
       costUsd: number;
     };
     const merged = new Map<string, Cells>();
-    const add = (key1: string, key2: string, a: { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd?: number }) => {
+    const add = (
+      key1: string,
+      key2: string,
+      a: {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheCreation: number;
+        costUsd?: number;
+      },
+    ) => {
       const k = `${key1}\0${key2}`;
       const existing = merged.get(k) ?? {
         input: 0,
@@ -905,7 +940,13 @@ export class TaskStoreProvider implements MetricsProvider {
     // Collapse multiple agents' byModel rows into a single per-model-family total.
     const fleetByModel = new Map<
       string,
-      { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd: number }
+      {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheCreation: number;
+        costUsd: number;
+      }
     >();
 
     for (const entry of cronStats.byModel) {
@@ -957,7 +998,13 @@ export class TaskStoreProvider implements MetricsProvider {
         OPUS_MODEL,
       );
       const savingsUsd = opusUsd - routedUsd;
-      rows.push([`agent:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
+      rows.push([
+        `agent:${entry.key1}`,
+        modelFamily,
+        routedUsd,
+        opusUsd,
+        savingsUsd,
+      ]);
     }
 
     // ── Per-cron×model rows (byCronModel) ────────────────────────────────────
@@ -974,7 +1021,13 @@ export class TaskStoreProvider implements MetricsProvider {
         OPUS_MODEL,
       );
       const savingsUsd = opusUsd - routedUsd;
-      rows.push([`cron:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
+      rows.push([
+        `cron:${entry.key1}`,
+        modelFamily,
+        routedUsd,
+        opusUsd,
+        savingsUsd,
+      ]);
     }
 
     return table(columns, rows);

@@ -32,6 +32,7 @@
  *   POST   /tasks/:id/release   unclaim → pending
  *   POST   /tasks/:id/skip      increment skipCount, auto-block at threshold
  *   POST   /tasks/:id/skip/reset  reset skipCount back to 0
+ *   GET    /tasks/:id/events    fetch a TaskEvent audit trail (?limit, ?offset)
  */
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
@@ -47,6 +48,8 @@ import {
   DistinctResponseSchema,
   ErrorSchema,
   FailBodySchema,
+  TaskEventsQuerySchema,
+  TaskEventsResponseSchema,
   TaskIdParamSchema,
   TaskListQuerySchema,
   TaskListResponseSchema,
@@ -540,6 +543,36 @@ const skipResetRoute = createRoute({
   },
 });
 
+const eventsRoute = createRoute({
+  method: "get",
+  path: "/:id/events",
+  tags: ["tasks"],
+  summary:
+    "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
+  request: {
+    params: TaskIdParamSchema,
+    query: TaskEventsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: "Task's event history",
+      content: { "application/json": { schema: TaskEventsResponseSchema } },
+    },
+    401: {
+      description: "Unauthorized",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    403: {
+      description: "Forbidden",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+    404: {
+      description: "Not found",
+      content: { "application/json": { schema: ErrorSchema } },
+    },
+  },
+});
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 export function createTasksRoutes(
@@ -872,6 +905,40 @@ export function createTasksRoutes(
     await requireOwnership(taskService, c.req.param("id"), agentId, repos);
     const task = await taskService.resetSkip(c.req.param("id"));
     return c.json(task, 200);
+  });
+
+  // ─── Events ────────────────────────────────────────────────────────────────
+  // biome-ignore lint/suspicious/noExplicitAny: service returns Prisma types; JSON serialization handles Date→string correctly at runtime
+  app.openapi(eventsRoute, async (c): Promise<any> => {
+    const agentId = c.get("agentId");
+    const repos = c.get("repos") ?? [];
+    await requireOwnership(taskService, c.req.param("id"), agentId, repos);
+
+    const limitRaw = c.req.query("limit");
+    const offsetRaw = c.req.query("offset");
+    const limit =
+      limitRaw !== undefined
+        ? Number.parseInt(limitRaw, 10) || undefined
+        : undefined;
+    const offset =
+      offsetRaw !== undefined
+        ? Number.parseInt(offsetRaw, 10) || undefined
+        : undefined;
+
+    const result = await taskService.getEvents(c.req.param("id"), {
+      limit,
+      offset,
+    });
+
+    return c.json(
+      {
+        events: result.events,
+        total: result.total,
+        limit: limit ?? 50,
+        offset: offset ?? 0,
+      },
+      200,
+    );
   });
 
   return app;

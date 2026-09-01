@@ -190,8 +190,8 @@ function createSlackApp(
 
 function makeMockClient() {
   return {
-    assistant: {
-      threads: {
+    agents: {
+      sessions: {
         setStatus: mock(async (_args: unknown) => {}),
       },
     },
@@ -413,10 +413,10 @@ describe("message handler — DM routing", () => {
 
   test("sets thinking status on receipt", async () => {
     const { client } = await invokeDM();
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
       channel_id: "D123",
       thread_ts: "111.222",
-      status: "Thinking...",
+      status: "processing",
     });
   });
 
@@ -465,15 +465,15 @@ describe("message handler — DM routing", () => {
 
   test("clears status after successful response", async () => {
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "D123",
       thread_ts: "111.222",
-      status: "",
+      status: "active",
     });
   });
 
   test("a reply posts no chat message from SlackProgress — only the real reply via say()", async () => {
-    // SlackProgress is status-only (assistant.threads.setStatus); it never
+    // SlackProgress is status-only (agents.sessions.setStatus); it never
     // calls chat.postMessage. The real reply goes out via say().
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
     expect(say).toHaveBeenCalledTimes(1);
@@ -498,17 +498,17 @@ describe("message handler — DM routing", () => {
   test("clears status even when runClaude throws", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("spawn failed"));
     const { client } = await invokeDM({ channel: "D123", ts: "1.1" });
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "D123",
       thread_ts: "1.1",
-      status: "",
+      status: "active",
     });
   });
 
   test("does not throw when setStatus fails", async () => {
     const client = makeMockClient();
     const say = makeSay();
-    client.assistant.threads.setStatus.mockRejectedValueOnce(
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api error"),
     );
 
@@ -949,10 +949,10 @@ describe("app_mention handler", () => {
 
   test("sets thinking status on mention", async () => {
     const { client } = await invokeMention();
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
       channel_id: "C999",
       thread_ts: "222.333",
-      status: "Thinking...",
+      status: "processing",
     });
   });
 
@@ -984,10 +984,10 @@ describe("app_mention handler", () => {
 
   test("clears status after successful mention response", async () => {
     const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "C999",
       thread_ts: "222.333",
-      status: "",
+      status: "active",
     });
   });
 
@@ -1018,17 +1018,17 @@ describe("app_mention handler", () => {
   test("clears status after mention handler error", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("timeout"));
     const { client } = await invokeMention({ channel: "C999", ts: "2.2" });
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "C999",
       thread_ts: "2.2",
-      status: "",
+      status: "active",
     });
   });
 
   test("does not throw when setStatus fails on mention", async () => {
     const client = makeMockClient();
     const say = makeSay();
-    client.assistant.threads.setStatus.mockRejectedValueOnce(
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api error"),
     );
 
@@ -1282,10 +1282,10 @@ describe("marker dispatch — DM message handler", () => {
   test("[silent] — skips say() and clears status", async () => {
     const { say, client } = await invokeDMWithResult("[silent]");
     expect(say).not.toHaveBeenCalled();
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "D1",
       thread_ts: "1.1",
-      status: "",
+      status: "active",
     });
   });
 
@@ -2057,15 +2057,15 @@ describe("reaction_added handler", () => {
 
   test("sets and clears the AI-app status around the run — SlackProgress owns setStatus here too (AC #1)", async () => {
     const { client } = await invokeReactionAdded();
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
       channel_id: "D1",
       thread_ts: "100.1",
-      status: "Thinking...",
+      status: "processing",
     });
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
       channel_id: "D1",
       thread_ts: "100.1",
-      status: "",
+      status: "active",
     });
   });
 

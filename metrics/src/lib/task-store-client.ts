@@ -62,13 +62,20 @@ export type TaskRecord = Pick<
   | "simplifyNaming"
   | "simplifyComplexity"
   | "simplifyConsistency"
+  | "pr"
 > &
   Partial<TaskOptionalOverrides>;
 
 /** Fields required on the generated PullRequest schema that PrRecord treats as optional. */
 type PrOptionalOverrides = Pick<
   PullRequestSchema,
-  "id" | "repo" | "reviewState" | "createdAt" | "reviewCycles" | "patchCycles"
+  | "id"
+  | "repo"
+  | "reviewState"
+  | "createdAt"
+  | "reviewCycles"
+  | "patchCycles"
+  | "prNumber"
 >;
 
 /**

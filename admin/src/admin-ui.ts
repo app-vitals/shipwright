@@ -24,13 +24,13 @@
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
+import { join } from "node:path";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
-import { join } from "node:path";
 import {
   type AgentDetail,
   type AgentOption,
@@ -89,13 +89,14 @@ import {
   filterSince,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
+import type { PushService } from "./push-service.ts";
 import {
+  PWA_ASSETS_DIR,
+  PWA_ICONS,
   buildManifest,
   buildOfflinePageHtml,
   buildServiceWorkerBody,
   getPrecacheList,
-  PWA_ASSETS_DIR,
-  PWA_ICONS,
   renderPwaHeadTags,
 } from "./pwa.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
@@ -239,6 +240,32 @@ interface PrismaLike {
       count: number;
     }>;
   };
+  // Web Push (CFB-4.2). Present on the real PrismaClient after the migration;
+  // narrowed here to only what the admin UI routes touch. Optional so existing
+  // test doubles (which never enable push) stay valid — the push routes only
+  // touch these when pushEnabled is true.
+  pushSubscription?: {
+    upsert(args: {
+      where: { endpoint: string };
+      create: {
+        userEmail: string;
+        endpoint: string;
+        p256dh: string;
+        auth: string;
+      };
+      update: { userEmail: string; p256dh: string; auth: string };
+    }): Promise<{ id: string }>;
+    deleteMany(args: {
+      where: { endpoint: string; userEmail?: string };
+    }): Promise<{ count: number }>;
+  };
+  chatThreadWatch?: {
+    upsert(args: {
+      where: { userEmail_threadId: { userEmail: string; threadId: string } };
+      create: { userEmail: string; threadId: string; agentId: string };
+      update: { agentId: string };
+    }): Promise<{ id: string }>;
+  };
 }
 
 export interface AdminUIDeps {
@@ -362,11 +389,6 @@ export interface AdminUIDeps {
    */
   timezone?: string;
   /**
-   * Fetch the pull request linked to a task from the task-store service.
-   * If absent or the query fails, the task detail page renders without a PR section.
-   */
-  fetchTaskStorePr?: (taskId: string) => Promise<PullRequestItem | null>;
-  /**
    * Fetch a paginated list of pull requests from the task-store service.
    * If absent, the PRs page renders in degraded mode (empty table + warning banner).
    */
@@ -431,6 +453,17 @@ export interface AdminUIDeps {
    * reading the file inside the route handler.
    */
   appVersion?: string;
+  /**
+   * Web Push (CFB-4.2). All three are set together or none: main.ts only wires
+   * them when isPushEnabled() is true (public + private + subject all set), so
+   * when push is not fully configured pushService is undefined, the routes 503,
+   * and the toggle renders "" (page degrades to the CFB-3.2 page).
+   */
+  pushService?: PushService;
+  /** VAPID PUBLIC key — sent to the browser (NOT a secret). "" disables the toggle. */
+  vapidPublicKey?: string;
+  /** Shared token the chat service presents to the push-notify webhook. */
+  pushWebhookToken?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -607,7 +640,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     releaseTask,
     fetchDistinctTaskValues,
     timezone = "America/Los_Angeles",
-    fetchTaskStorePr,
     fetchTaskStorePrs,
     fetchTaskStorePrById,
     adminListTokens,
@@ -618,11 +650,39 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
     appVersion = "0.0.0",
+    pushService,
+    vapidPublicKey = "",
+    pushWebhookToken,
   } = deps;
+
+  // Push is enabled only when the service was constructed (VAPID fully set) AND
+  // a public key is available for the browser. A single derived flag so the
+  // toggle-render gate and the route-503 gate can't drift.
+  const pushEnabled = Boolean(pushService && vapidPublicKey);
 
   const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into a
+  // request cycle — push is a convenience layer, so a watch-write failure must
+  // not fail the message send it rides along with.
+  async function watchThread(
+    userEmail: string,
+    agentId: string,
+    threadId: string,
+  ): Promise<void> {
+    if (!prisma.chatThreadWatch) return;
+    try {
+      await prisma.chatThreadWatch.upsert({
+        where: { userEmail_threadId: { userEmail, threadId } },
+        create: { userEmail, threadId, agentId },
+        update: { agentId },
+      });
+    } catch (err) {
+      console.error("[push] watchThread upsert failed:", err);
+    }
+  }
 
   // ─── HTML helper ──────────────────────────────────────────────────────────
 
@@ -2856,11 +2916,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    // Fetch linked pull request — failure or absence renders the page without a PR section
+    // Fetch linked pull request via a live repo+prNumber lookup — failure,
+    // absence of the fetcher, or the task missing repo/pr renders the page
+    // without a PR section.
     let pullRequest: PullRequestItem | undefined;
-    if (fetchTaskStorePr) {
+    if (fetchTaskStorePrs && task.repo && task.pr) {
       try {
-        pullRequest = (await fetchTaskStorePr(taskId)) ?? undefined;
+        const result = await fetchTaskStorePrs(
+          new URLSearchParams({ repo: task.repo, prNumber: String(task.pr) }),
+        );
+        pullRequest = result.prs[0];
       } catch {
         // swallow — page renders without PR section
       }
@@ -2960,22 +3025,72 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (!fetchTaskStorePrs) {
       degraded = true;
     } else {
-      const params = new URLSearchParams();
-      if (stateParam) params.set("state", stateParam);
-      if (reviewState) params.set("reviewState", reviewState);
-      for (const r of repo ?? []) params.append("repo", r);
-      for (const o of org ?? []) params.append("org", o);
-      if (taskId) params.set("taskId", taskId);
-      if (blockedParam === "true") params.set("blocked", "true");
-      params.set("limit", String(limit));
-      params.set("offset", String(offset));
-      params.set("sort", "desc");
-      try {
-        const result = await fetchTaskStorePrs(params);
-        prs = result.prs;
-        total = result.total;
-      } catch {
-        degraded = true;
+      // The taskId filter is resolved live against the task-store rather than
+      // forwarded as a stored `taskId=` query param (PTL-2.1) — look up the
+      // task's repo+pr and filter /prs by those instead. If the task isn't
+      // found, or has no linked pr, render an empty list rather than an
+      // unfiltered one.
+      let taskFilterRepo: string | undefined;
+      let taskFilterPr: number | undefined;
+      let taskFilterUnresolved = false;
+      if (taskId) {
+        if (!fetchTaskStoreTask) {
+          taskFilterUnresolved = true;
+        } else {
+          try {
+            const task = await fetchTaskStoreTask(taskId);
+            if (task?.repo && task.pr) {
+              taskFilterRepo = task.repo;
+              taskFilterPr = task.pr;
+            } else {
+              taskFilterUnresolved = true;
+            }
+          } catch {
+            taskFilterUnresolved = true;
+          }
+        }
+      }
+
+      // A user-supplied repo/org filter lives in the same <form> as the
+      // taskId filter, so both can be submitted together. If the task's
+      // resolved repo doesn't satisfy the user's own repo filter, the
+      // combination is unsatisfiable — render an empty list rather than
+      // silently overwriting (and losing) the user's repo selection.
+      if (
+        taskFilterRepo &&
+        repo &&
+        repo.length > 0 &&
+        !repo.includes(taskFilterRepo)
+      ) {
+        taskFilterUnresolved = true;
+      }
+
+      if (taskFilterUnresolved) {
+        // Task not found / no linked pr / lookup failed / conflicts with the
+        // user's own repo filter — render empty list.
+        prs = [];
+        total = 0;
+      } else {
+        const params = new URLSearchParams();
+        if (stateParam) params.set("state", stateParam);
+        if (reviewState) params.set("reviewState", reviewState);
+        for (const r of repo ?? []) params.append("repo", r);
+        for (const o of org ?? []) params.append("org", o);
+        if (taskFilterRepo && taskFilterPr) {
+          params.set("repo", taskFilterRepo);
+          params.set("prNumber", String(taskFilterPr));
+        }
+        if (blockedParam === "true") params.set("blocked", "true");
+        params.set("limit", String(limit));
+        params.set("offset", String(offset));
+        params.set("sort", "desc");
+        try {
+          const result = await fetchTaskStorePrs(params);
+          prs = result.prs;
+          total = result.total;
+        } catch {
+          degraded = true;
+        }
       }
     }
 
@@ -2990,6 +3105,40 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     if (agentIds.length > 0) {
       const agents = await agentService.listByIds(agentIds);
       for (const a of agents) agentNames[a.id] = a.name;
+    }
+
+    // Resolve linked task(s) per PR via a live GET /tasks?repo=&pr= lookup,
+    // one request per distinct (repo, prNumber) pair, run in parallel to
+    // avoid an N+1 sequential-await chain (PTL-2.1). Falls back to an empty
+    // task list per row if the fetcher is absent or a lookup throws.
+    const linkedTasksByPr: Record<string, TaskItem[]> = {};
+    if (fetchTaskStoreTasks && prs.length > 0) {
+      const distinctPairs = new Map<string, { repo: string; pr: number }>();
+      for (const pr of prs) {
+        distinctPairs.set(`${pr.repo}#${pr.prNumber}`, {
+          repo: pr.repo,
+          pr: pr.prNumber,
+        });
+      }
+      const pairResults = await Promise.all(
+        [...distinctPairs.entries()].map(
+          async ([key, { repo: r, pr: p }]): Promise<[string, TaskItem[]]> => {
+            try {
+              const result = await fetchTaskStoreTasks(
+                new URLSearchParams({ repo: r, pr: String(p) }),
+              );
+              return [key, result.tasks];
+            } catch {
+              return [key, []];
+            }
+          },
+        ),
+      );
+      const tasksByPairKey = new Map(pairResults);
+      for (const pr of prs) {
+        linkedTasksByPr[pr.id] =
+          tasksByPairKey.get(`${pr.repo}#${pr.prNumber}`) ?? [];
+      }
     }
 
     const suggestions = fetchDistinctTaskValues
@@ -3015,6 +3164,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         { total, limit, page },
         timezone,
         suggestions,
+        linkedTasksByPr,
       ),
     );
   });
@@ -3120,7 +3270,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           threadList,
           c.var.userEmail,
           statsResult,
-          { stallWarnAfterMs },
+          { stallWarnAfterMs, pushEnabled, vapidPublicKey },
         ),
       );
     } catch {
@@ -3287,6 +3437,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         // swallow — redirect back regardless
       }
 
+      // Record that this user is watching the thread so the agent's reply can
+      // be targeted back to them via push (CFB-4.2). Only on user messages, and
+      // only when push is configured. Best-effort — never block the redirect.
+      if (pushEnabled && role === "user") {
+        await watchThread(c.var.userEmail, agentId, threadId);
+      }
+
       return c.redirect(backUrl, 302);
     },
   );
@@ -3432,12 +3589,109 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       try {
         const message = await chatClient.createMessage(threadId, "user", body);
+        if (pushEnabled) {
+          await watchThread(c.var.userEmail, c.req.param("agentId"), threadId);
+        }
         return c.json({ message });
       } catch {
         return c.json({ message: null }, 500);
       }
     },
   );
+
+  // ─── Web Push routes (CFB-4.2) ────────────────────────────────────────────
+  // All 503 when push is not fully configured server-side, so the client-side
+  // toggle (which is itself absent in that case) degrades cleanly.
+
+  app.post("/admin/chat/:agentId/push/subscribe", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
+
+    let payload: { endpoint?: string; p256dh?: string; auth?: string };
+    try {
+      payload = await c.req.json();
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    const { endpoint, p256dh, auth } = payload;
+    if (!endpoint || !p256dh || !auth) {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!prisma.pushSubscription)
+      return c.json({ error: "push_disabled" }, 503);
+    try {
+      await prisma.pushSubscription.upsert({
+        where: { endpoint },
+        create: { userEmail: c.var.userEmail, endpoint, p256dh, auth },
+        update: { userEmail: c.var.userEmail, p256dh, auth },
+      });
+    } catch (err) {
+      console.error("[push] subscribe upsert failed:", err);
+      return c.json({ error: "store_failed" }, 500);
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post("/admin/chat/:agentId/push/unsubscribe", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
+
+    let endpoint: string | undefined;
+    try {
+      endpoint = (await c.req.json<{ endpoint?: string }>()).endpoint;
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!endpoint) return c.json({ error: "bad_request" }, 400);
+    if (!prisma.pushSubscription)
+      return c.json({ error: "push_disabled" }, 503);
+    try {
+      // Scope the delete to the caller so a stale endpoint can't be used to
+      // prune another user's subscription.
+      await prisma.pushSubscription.deleteMany({
+        where: { endpoint, userEmail: c.var.userEmail },
+      });
+    } catch (err) {
+      console.error("[push] unsubscribe delete failed:", err);
+    }
+    return c.json({ ok: true });
+  });
+
+  // Inbound webhook the chat service calls when an agent posts a reply, so the
+  // watching user(s) get notified. Authenticated by a shared bearer token
+  // (SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN) — NOT a user session — since the
+  // caller is a service, not a browser.
+  app.post("/admin/push/notify", async (c) => {
+    if (!pushEnabled || !pushService || !pushWebhookToken) {
+      return c.json({ error: "push_disabled" }, 503);
+    }
+    const auth = c.req.header("authorization") ?? "";
+    const presented = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (!presented || presented !== pushWebhookToken) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    let body: {
+      threadId?: string;
+      agentId?: string;
+      title?: string | null;
+      preview?: string | null;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!body.threadId || !body.agentId) {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    const result = await pushService.notifyThreadReply({
+      threadId: body.threadId,
+      agentId: body.agentId,
+      title: body.title ?? null,
+      preview: body.preview ?? null,
+    });
+    return c.json({ ok: true, ...result });
+  });
 
   // ─── Task-store token proxy routes ────────────────────────────────────────
 

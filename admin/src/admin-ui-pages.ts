@@ -7,6 +7,7 @@
  * metrics/src/dashboard/dashboard-page.ts.
  */
 
+import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
 import { renderAdminPage } from "./admin-ui-layout.ts";
 import {
   BREAKPOINT_MOBILE_MAX,
@@ -15,7 +16,6 @@ import {
 } from "./admin-ui-styles.ts";
 import type { ManualStep } from "./agent-deletion-checklist.ts";
 import type { AgentTypeOption } from "./agent-type-manifest-loader.ts";
-import { PROGRESS_LABELS } from "@shipwright/lib/progress-phases";
 import { parseChatMarkers } from "./chat-markers.ts";
 import type {
   ChatMessage,
@@ -24,6 +24,7 @@ import type {
   ThreadStats,
 } from "./http-chat-client.ts";
 import type { ModelBreakdownEntry } from "./openapi-schemas.ts";
+import { renderPushToggle } from "./push-toggle.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -2955,6 +2956,7 @@ export function renderPrsPage(
   },
   timezone = "America/Los_Angeles",
   suggestions?: { repos?: string[]; orgs?: string[] },
+  linkedTasksByPr: Record<string, TaskItem[]> = {},
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -2991,9 +2993,11 @@ export function renderPrsPage(
                   agentNames[pr.claimedBy] ?? pr.claimedBy,
                 )
               : '<span style="color:#9ca3af">—</span>';
-            const taskCell = pr.taskId
-              ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
-              : '<span style="color:#9ca3af">—</span>';
+            const linkedTasks = linkedTasksByPr[pr.id] ?? [];
+            const taskCell =
+              linkedTasks.length > 0
+                ? linkedTasks.map((t) => taskLink(t.id)).join(", ")
+                : '<span style="color:#9ca3af">—</span>';
             const createdCell = pr.createdAt
               ? escapeHtml(
                   (() => {
@@ -4054,7 +4058,8 @@ export function renderChatMessageBubble(
   // re-sends the originating user message.
   let errorBadge = "";
   if (m.errorKind) {
-    const retryable = RETRYABLE_ERROR_KINDS.has(m.errorKind) && retryBody !== null;
+    const retryable =
+      RETRYABLE_ERROR_KINDS.has(m.errorKind) && retryBody !== null;
     const retryAction = retryable
       ? `<button type="button" class="chat-retry-btn" data-retry-body="${escapeHtml(retryBody as string)}" style="margin-left:8px;padding:2px 8px;background:#fff;color:#b91c1c;border:1px solid #b91c1c;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer">Retry</button>`
       : "";
@@ -4340,7 +4345,15 @@ export function renderChatThreadPage(
   threadsOrUserName: ChatThread[] | null | string,
   userNameArg?: string,
   stats?: ThreadStats | null,
-  opts?: { stallWarnAfterMs?: number },
+  opts?: {
+    stallWarnAfterMs?: number;
+    // Push-notification toggle (CFB-4.2). When push is disabled server-side
+    // (VAPID not fully configured), pushEnabled is false / vapidPublicKey is
+    // absent, renderPushToggle returns "", and the page degrades to exactly the
+    // CFB-3.2 page (acceptance criterion 6).
+    pushEnabled?: boolean;
+    vapidPublicKey?: string;
+  },
 ): string {
   // The stall-warning threshold is normally the 120s production default, but
   // the e2e suite overrides it to a tiny value (via a query param the route
@@ -4953,6 +4966,12 @@ export function renderChatThreadPage(
             : ""
         }
         ${threadActionsDetails}
+        ${renderPushToggle({
+          pushEnabled: opts?.pushEnabled ?? false,
+          vapidPublicKey: opts?.vapidPublicKey ?? "",
+          agentId,
+          threadId,
+        })}
       </div>
     </div>
     <div class="chat-thread-layout" style="display:flex;gap:24px;flex:1;min-height:0;margin-top:16px">

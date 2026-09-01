@@ -24,7 +24,6 @@ import { sentry } from "@sentry/hono/bun";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import type { PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -55,6 +54,8 @@ import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpOktaAuthClient } from "./okta-auth-client.ts";
+import { isPushEnabled } from "./push-sender.ts";
+import { PushService } from "./push-service.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
@@ -528,22 +529,6 @@ async function startServer(): Promise<void> {
               orgs: string[];
             }>;
           },
-          fetchTaskStorePr: async (taskId: string) => {
-            const res = await fetch(
-              `${taskStoreUrl}/prs?taskId=${encodeURIComponent(taskId)}`,
-              {
-                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-              },
-            );
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /prs?taskId=${taskId} → ${res.status}`,
-              );
-            const data = (await res.json()) as { prs?: unknown[] };
-            const prs = data.prs ?? [];
-            return prs.length > 0 ? (prs[0] as PullRequestItem) : null;
-          },
           fetchTaskStorePrs: async (params: URLSearchParams) => {
             const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
             const res = await fetch(url, {
@@ -623,6 +608,22 @@ async function startServer(): Promise<void> {
       ? new HttpChatClient(chatServiceUrl, chatServiceAdminToken)
       : undefined;
 
+  // Web Push (CFB-4.2). Enabled ONLY when public + private + subject are all
+  // set — a partial config must not half-enable the feature. When disabled,
+  // pushService is undefined, the push routes 503, and the toggle renders "".
+  const vapidConfig = {
+    publicKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.SHIPWRIGHT_ADMIN_VAPID_SUBJECT ?? "",
+  };
+  const pushWebhookToken = process.env.SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN;
+  // Operator ceiling for how much detail a notification may reveal on a locked
+  // screen. Defaults to "title" per the content policy.
+  const pushMaxDetail = process.env.SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL ?? "title";
+  const pushService = isPushEnabled(vapidConfig)
+    ? new PushService(prisma as never, vapidConfig, fetch, pushMaxDetail)
+    : undefined;
+
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
     agentEnvService,
@@ -656,6 +657,13 @@ async function startServer(): Promise<void> {
     devAuthEnabled: isDevAuthAllowed(process.env),
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
+    ...(pushService
+      ? {
+          pushService,
+          vapidPublicKey: vapidConfig.publicKey,
+          ...(pushWebhookToken ? { pushWebhookToken } : {}),
+        }
+      : {}),
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);

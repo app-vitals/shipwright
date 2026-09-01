@@ -5,6 +5,10 @@ on:
     workflows: ["CI"]
     types: [completed]
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 # Least privilege at the workflow level; the build-and-push job widens to
 # packages:write. Neither job needs contents:write — the "Tag release" step
 # creates a git tag via the GitHub API using secrets.DISPATCH_TOKEN, not the

@@ -15,11 +15,11 @@
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
-import type { Prisma, PrismaClient, Task } from "./index.ts";
+import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
-import { computeTaskTransitionDiff } from "./task-transition-diff.ts";
+import { writeTaskEvents } from "./task-transition-diff.ts";
 
 /**
  * The Prisma client surface shared by the top-level client and a
@@ -241,6 +241,12 @@ export interface TaskListResult {
   offset: number;
 }
 
+/** Result from TaskService.getEvents. */
+export interface GetTaskEventsResult {
+  events: TaskEvent[];
+  total: number;
+}
+
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
@@ -273,6 +279,10 @@ export interface TaskServiceLike {
   release(id: string): Promise<Task>;
   recordSkip(id: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
+  getEvents(
+    id: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<GetTaskEventsResult>;
 }
 
 export class TaskService implements TaskServiceLike {
@@ -647,33 +657,47 @@ export class TaskService implements TaskServiceLike {
    */
   async claim(id: string, claimedBy: string): Promise<Task> {
     const now = this.clock.now().toISOString();
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.task.findUnique({ where: { id } });
 
-    return this.prisma.$transaction(async (tx) => {
-      const before = await tx.task.findUnique({ where: { id } });
+        const affected = await tx.$executeRaw`
+          UPDATE "Task"
+          SET status = 'in_progress',
+              "claimedBy" = ${claimedBy},
+              "claimedAt" = ${now},
+              "heartbeatAt" = ${now},
+              "startedAt" = COALESCE("startedAt", ${now}),
+              "updatedAt" = now()
+          WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
+        `;
 
-      const affected = await tx.$executeRaw`
-        UPDATE "Task"
-        SET status = 'in_progress',
-            "claimedBy" = ${claimedBy},
-            "claimedAt" = ${now},
-            "heartbeatAt" = ${now},
-            "startedAt" = COALESCE("startedAt", ${now}),
-            "updatedAt" = now()
-        WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
-      `;
+        if (affected === 0) {
+          if (!before) throw new NotFoundError("task not found");
+          throw new ConflictError("task is already claimed");
+        }
 
-      if (affected === 0) {
-        if (!before) throw new NotFoundError("task not found");
-        throw new ConflictError("task is already claimed");
+        const after = await tx.task.findUnique({ where: { id } });
+        if (!after) throw new NotFoundError("task not found");
+
+        await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
+
+        return after;
+      });
+    } catch (err: unknown) {
+      if (err instanceof NotFoundError || err instanceof ConflictError) {
+        throw err;
       }
-
-      const after = await tx.task.findUnique({ where: { id } });
-      if (!after) throw new NotFoundError("task not found");
-
-      await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
-
-      return after;
-    });
+      // The Aug 29 500-on-reclaim didn't come from the documented
+      // ConflictError/NotFoundError path above — log unexpected claim()
+      // failures with enough context (task id + attempted claimedBy) to
+      // diagnose a repeat instead of guessing at it.
+      console.error(
+        `[task-store] claim() failed unexpectedly for task ${id} (claimedBy: ${claimedBy}):`,
+        err,
+      );
+      throw err;
+    }
   }
 
   /**
@@ -851,6 +875,41 @@ export class TaskService implements TaskServiceLike {
     }
   }
 
+  /**
+   * Fetch a task's TaskEvent audit trail (TCS-1.2), ordered by `at` ascending
+   * (oldest first) — uses the (taskId, at) index (TCS-1.1). Existence-checks
+   * the task first (mirrors PullRequestService.getEvents()) so a missing task
+   * surfaces as a clean NotFoundError rather than an empty result being
+   * indistinguishable from "task exists but has zero events".
+   */
+  async getEvents(
+    id: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<GetTaskEventsResult> {
+    const existing = await this.prisma.task.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("task not found");
+    }
+
+    const limit = opts.limit ?? 50;
+    const offset = opts.offset ?? 0;
+
+    const [events, total] = await this.prisma.$transaction([
+      this.prisma.taskEvent.findMany({
+        where: { taskId: id },
+        orderBy: { at: "asc" },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.taskEvent.count({ where: { taskId: id } }),
+    ]);
+
+    return { events, total };
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private async requireTask(id: string): Promise<Task> {
@@ -864,7 +923,9 @@ export class TaskService implements TaskServiceLike {
    * insert one TaskEvent row per changed, auditable field. Runs on the same
    * `tx` the source update ran on, so the event rows land atomically with the
    * field change (or not at all). Mirrors
-   * PullRequestService.recordTransition() exactly.
+   * PullRequestService.recordTransition() exactly. Delegates the actual
+   * diff+write to the shared `writeTaskEvents` helper (also used by
+   * StaleClaimReaper, TCS-1.3) so the two call sites can't drift.
    *
    * heartbeatAt-only changes produce zero rows (see
    * computeTaskTransitionDiff); a create-path `before === null` also produces
@@ -880,22 +941,8 @@ export class TaskService implements TaskServiceLike {
     method: string,
     actor: string | null,
   ): Promise<void> {
-    const changes = computeTaskTransitionDiff(before, after);
-    if (changes.length === 0) return;
     const at = this.clock.now().toISOString();
-    for (const change of changes) {
-      await tx.taskEvent.create({
-        data: {
-          taskId: after.id,
-          field: change.field,
-          oldValue: change.oldValue,
-          newValue: change.newValue,
-          actor,
-          method,
-          at,
-        },
-      });
-    }
+    await writeTaskEvents(tx, before, after, method, actor, at);
   }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */

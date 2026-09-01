@@ -35,6 +35,10 @@ When the chat service is configured with `SHIPWRIGHT_CHAT_AGENTS_URL` + `SHIPWRI
 
 The resolver calls `GET {SHIPWRIGHT_CHAT_AGENTS_URL}/agents/{agentId}` with the admin API key and reads the `repos` array from the response. Any error (network failure, non-200, malformed body) falls back to `[]` silently.
 
+### Outbound reply notifier (optional)
+
+When configured with `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL` + `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN`, the chat service fires a fire-and-forget webhook after every agent reply persists — the mechanism that triggers a "your agent replied" push notification on the admin side (`POST /admin/push/notify`). It mirrors the scope resolver's env-gated factory pattern (`chat/src/reply-notifier.ts`, `createReplyNotifier()`) but uses its own dedicated credential — never the agents-service API key — since notifying someone's phone is a different trust level than reading agent metadata. The outbound payload is `{ threadId, agentId, title }`: `agentId` is the **thread's** owning agent, not the caller's identity, and `title` can be `null`. No message body or preview text ever crosses this wire — that stays admin's job, via its own separate fetch of the message when a subscription's preview level allows it. The call has a 5s timeout and never throws: a push failure (timeout, network error, non-2xx) is logged and swallowed so it can never fail the reply. When the env vars are unset, the notifier is disabled and `main.ts` logs it, mirroring the scope resolver's on/off log line.
+
 ---
 
 ## Tokens
@@ -309,6 +313,8 @@ Indexes: `[threadId, createdAt]` (message list ordering), `[claimed, threadId]` 
 | `PORT` | no | HTTP port (default `3000`). |
 | `SHIPWRIGHT_CHAT_AGENTS_URL` | no | Base URL of the Shipwright agents (admin) service, used to resolve agent token repo scopes. Requires `SHIPWRIGHT_CHAT_AGENTS_API_KEY` to be set alongside it. When unset, agent tokens default to an empty repo list and scope resolution is disabled. |
 | `SHIPWRIGHT_CHAT_AGENTS_API_KEY` | no | Bearer token the chat service uses to call the agents service. Required alongside `SHIPWRIGHT_CHAT_AGENTS_URL`. Env-var-only (secret). |
+| `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL` | no | Full endpoint URL of the admin service's inbound push webhook (not a base URL). Requires `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN` to be set alongside it. When unset, the outbound reply notifier is disabled. |
+| `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN` | no | Bearer token the chat service presents to the admin push webhook. Required alongside `SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL`. Env-var-only (secret); a distinct credential from `SHIPWRIGHT_CHAT_AGENTS_API_KEY`. |
 | `CHAT_SEED_ADMIN_TOKEN` | no | Bootstrap admin token seeded into the chat service on startup (idempotent upsert). Local-dev convenience only — not a real secret. |
 | `CHAT_STALLED_AFTER_MS` | no | Stall threshold (ms) for the background stall reaper (`stall-reaper.ts`), which terminalizes a claimed, unreplied user message with `errorKind: "stalled"` once its `heartbeatAt` (or `claimedAt`, if the agent died before its first beat) is older than this cutoff. Defaults to `300000` (5 min) — deliberately 2.5x the admin UI's 120s stall-warning threshold, since a warning is free but reaping is destructive (it marks the message stalled; it never unclaims it for retry). The sweep runs every 60s from `main.ts` and reuses `MessageService.reply()`, which is naturally idempotent (returns `null` if already replied), so the sweep is race-safe against an agent that resumes and safe across multiple replicas. |
 

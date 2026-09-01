@@ -52,8 +52,8 @@ export interface AppManifest {
       messages_tab_read_only_enabled?: boolean;
     };
     bot_user?: AppManifestBotUser;
-    assistant_view?: {
-      assistant_description?: string;
+    agent_view?: {
+      agent_description?: string;
       suggested_prompts?: { title: string; message: string }[];
     };
   };
@@ -113,7 +113,7 @@ export interface SlackProvisioningClient {
  *
  * Used for both initial provisioning (pass redirectUri for the OAuth callback)
  * and subsequent manifest syncs (omit redirectUri to keep localhost default).
- * Socket Mode and the full event/assistant config are always applied — there
+ * Socket Mode and the full event/agent view config are always applied — there
  * is no separate "provisioning-only" manifest.
  *
  * The canonical bot scope list is exported as `AGENT_BOT_SCOPES` so that other
@@ -158,8 +158,8 @@ export function buildAgentManifest(
         display_name: appName,
         always_online: true,
       },
-      assistant_view: {
-        assistant_description: `${appName} — powered by Shipwright`,
+      agent_view: {
+        agent_description: `${appName} — powered by Shipwright`,
         suggested_prompts: [],
       },
     },
@@ -175,8 +175,6 @@ export function buildAgentManifest(
       event_subscriptions: {
         bot_events: [
           "app_mention",
-          "assistant_thread_context_changed",
-          "assistant_thread_started",
           "message.channels",
           "message.groups",
           "message.im",

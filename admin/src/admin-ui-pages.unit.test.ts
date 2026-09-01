@@ -13,6 +13,7 @@ import {
   type CronJobItem,
   type CronRunItem,
   type DependencyNode,
+  ERROR_KIND_LABELS,
   type MemberItem,
   type PluginItem,
   type PrListItem,
@@ -23,7 +24,6 @@ import {
   type ToolItem,
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
-  ERROR_KIND_LABELS,
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
@@ -4039,9 +4039,48 @@ describe("renderPrsPage", () => {
     expect(html).toContain("3");
   });
 
-  test("renders taskId when present", () => {
-    const html = render([PR_LIST_ITEM_1]);
+  test("renders linked task ids when present in linkedTasksByPr", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1],
+      {},
+      false,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: 1, limit: 50, page: 1 },
+      "America/Los_Angeles",
+      undefined,
+      {
+        [PR_LIST_ITEM_1.id]: [{ id: "TASK-1", title: "T", status: "done" }],
+      },
+    );
     expect(html).toContain("TASK-1");
+    expect(html).toContain("/admin/tasks/TASK-1");
+  });
+
+  test("renders all linked task ids when a PR has 2 linked tasks", () => {
+    const html = renderPrsPage(
+      [PR_LIST_ITEM_1],
+      {},
+      false,
+      USER_NAME,
+      { "agent-001": "Alpha Agent" },
+      { total: 1, limit: 50, page: 1 },
+      "America/Los_Angeles",
+      undefined,
+      {
+        [PR_LIST_ITEM_1.id]: [
+          { id: "TASK-A", title: "A", status: "done" },
+          { id: "TASK-B", title: "B", status: "done" },
+        ],
+      },
+    );
+    expect(html).toContain("/admin/tasks/TASK-A");
+    expect(html).toContain("/admin/tasks/TASK-B");
+  });
+
+  test("renders empty-state dash when a PR has no linked tasks", () => {
+    const html = render([PR_LIST_ITEM_1]);
+    expect(html).toContain('<span style="color:#9ca3af">—</span>');
   });
 
   test("degraded warning shown when degraded=true", () => {

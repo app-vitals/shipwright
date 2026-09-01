@@ -95,39 +95,69 @@ resolves the target PR — this is independent of claim state (reading the linke
 model doesn't require holding a claim), and the computed value is reused as-is at Step 4b,
 Step 5b, Step 6c, and Step 5a.7. None of those four sites re-fetches it.
 
+`PullRequest.taskId` is populated only a fraction of the time (most PRs have no reliable
+task linkage via that field) — query the task store directly by PR number instead of
+trusting it:
+
 ```bash
-PR_TASK_ID=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-  "$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}" | jq -r '.prs[0].taskId // empty')
+MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}")
 ```
 
-- **`PR_TASK_ID` non-empty** (the PR has a linked task): fetch that task's planned model
-  and escalate one tier:
-  ```bash
-  TASK_MODEL=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.model // "sonnet"')
-  ```
-  Compute `PATCH_MODEL` by escalating `TASK_MODEL` one tier up the same ladder
-  `dev-task.md`'s Step 5c BLOCKED handling already climbs — a patch dispatch is always
-  reacting to a problem the way a BLOCKED implementation subagent is, so it starts where
-  that ladder's first escalation would land, instead of waiting to hit it:
-  `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already at the top tier — stays put).
+- **One or more tasks match**: this PR can have more than one task linked to it (e.g. a
+  bundled multi-task branch), so compute `PATCH_MODEL` from the **highest tier among ALL
+  matched tasks' `.model` fields** (`model ?? 'sonnet'` for any task with the field unset),
+  escalated one tier up the same ladder `dev-task.md`'s Step 5c BLOCKED handling already
+  climbs — a patch dispatch is always reacting to a problem the way a BLOCKED
+  implementation subagent is, so it starts where that ladder's first escalation would land,
+  instead of waiting to hit it: `haiku`->`sonnet`, `sonnet`->`opus`, `opus`->`opus` (already
+  at the top tier — stays put). This mirrors the "highest tier among all matches" rule
+  PTL-1.2 applies to review.md's equivalent lookup — same idea, applied here.
 
-  | `TASK_MODEL` (or `model ?? 'sonnet'` if the field is unset) | `PATCH_MODEL` |
+  | Highest `TASK_MODEL` among matches (or `model ?? 'sonnet'` if the field is unset) | `PATCH_MODEL` |
   |---|---|
   | `haiku` | `sonnet` |
   | `sonnet` | `opus` |
   | `opus` | `opus` (already at the top tier — stays put) |
 
-- **`PR_TASK_ID` is unresolved (empty), or either `curl -sf` call above fails (non-200)**:
-  `PATCH_MODEL = "sonnet"` — plain `sonnet`, with **no escalation**. Print a one-line
-  warning and continue; this is **not a hard stop**:
+  ```bash
+  TIER_RANK='{"haiku":0,"sonnet":1,"opus":2}'
+  TIER_NEXT='{"haiku":"sonnet","sonnet":"opus","opus":"opus"}'
+
+  PATCH_MODEL=$(echo "$MATCHED_TASKS" | jq -r --argjson rank "$TIER_RANK" --argjson next "$TIER_NEXT" '
+    [.tasks[]? | (.model // "sonnet")] as $models
+    | ($models | map($rank[.]) | max) as $maxRank
+    | ($models | map($rank[.]) | index($maxRank)) as $idx
+    | $next[$models[$idx]]
+  ')
+  PR_TASK_ID=$(echo "$MATCHED_TASKS" | jq -r --argjson rank "$TIER_RANK" '
+    [.tasks[]? | (.model // "sonnet")] as $models
+    | ($models | map($rank[.]) | max) as $maxRank
+    | ($models | map($rank[.]) | index($maxRank)) as $idx
+    | .tasks[$idx].id // empty
+  ')
+  ```
+
+  Also set `PR_TASK_ID` to the id of the task that produced the highest tier (the first
+  match on a tie). Several sites further down this file — Step 4c's BLOCKED handling, Step
+  5a.7, Step 5c's BLOCKED handling, and `references/escalation-pattern.md`'s shared
+  PATCH/comment/release sequence — reuse `PR_TASK_ID` as a single scalar to PATCH one task
+  to `status: blocked` during HITL escalation. The model-tier calculation above now
+  considers every matched task, but that downstream escalation-PATCH mechanism still only
+  ever flags one task, so `PR_TASK_ID` stays a single value here rather than becoming a set.
+
+- **Zero tasks match, or the `curl -sf` call above fails (non-200)**: `PATCH_MODEL =
+  "sonnet"` — plain `sonnet`, with **no escalation**. `PR_TASK_ID` is empty. Print a
+  one-line warning and continue; this is **not a hard stop**:
   ```bash
   PATCH_MODEL="sonnet"
-  echo "⚠ no linked task found (or lookup failed) for PR #{pr} — PATCH_MODEL defaulting to sonnet, no escalation"
+  PR_TASK_ID=""
+  echo "⚠ no matching tasks found (or lookup failed) for PR #{pr} — PATCH_MODEL defaulting to sonnet, no escalation"
   ```
   There's no known baseline tier to escalate from on a PR Shipwright didn't create (or
-  whose task record isn't reachable), so defaulting straight to `opus` would be a surprise
-  cost spike with no signal backing it — `sonnet` is the safe, unescalated default.
+  whose linked task records aren't reachable), so defaulting straight to `opus` would be a
+  surprise cost spike with no signal backing it — `sonnet` is the safe, unescalated
+  default.
 
 ---
 
@@ -781,10 +811,10 @@ comment and the claim release:
 - **`{temp_file_slug}`**: `escalation` (temp file: `/tmp/shipwright-patch-escalation-{pr}.txt`
   — note this site's slug is `escalation`, not `blocked-5a7`, since it fires before
   dispatch rather than after a BLOCKED report)
-- **`PR_TASK_ID`**: reused from Step 2.1 (no fresh fetch — Step 2.1 fetched
-  `GET /prs?repo={org}/{repo}&prNumber={pr}` and captured `.prs[0].taskId` right after Step 2
-  resolved this same PR, independent of any claim, so it's already available by the time
-  this check runs)
+- **`PR_TASK_ID`**: reused from Step 2.1 (no fresh fetch — Step 2.1 queried
+  `GET /tasks?repo={org}/{repo}&pr={pr}` and resolved `PR_TASK_ID` to the highest-tier match
+  right after Step 2 resolved this same PR, independent of any claim, so it's already
+  available by the time this check runs)
 - **Claim released**: the pre-work claim from Step 5a.6
 
 **Extra step, unique to this site — resolve unresolved inline threads before releasing the
@@ -1320,17 +1350,25 @@ already has an unresolved HITL escalation.
    PR_RECORD=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID")
    PR_BLOCKED=$(echo "$PR_RECORD" | jq -r '.blocked // false')
-   PR_TASK_ID=$(echo "$PR_RECORD" | jq -r '.taskId // empty')
    ```
-2. If `PR_TASK_ID` is non-empty, also fetch the linked task and check its `status` field:
+2. Query the task store directly by PR number instead of reading `PR_RECORD.taskId` — that
+   field is populated only a fraction of the time, so a direct query finds every task linked
+   to this PR rather than relying on it:
    ```bash
-   TASK_BLOCKED=false
-   if [ -n "$PR_TASK_ID" ]; then
-     TASK_STATUS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-       "$SHIPWRIGHT_TASK_STORE_URL/tasks/$PR_TASK_ID" | jq -r '.status // empty')
-     [ "$TASK_STATUS" = "blocked" ] && TASK_BLOCKED=true
-   fi
+   MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+     "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}")
+   TASK_BLOCKED=$(echo "$MATCHED_TASKS" | jq -r \
+     '[.tasks[]? | select(.hitl == true or .status == "blocked")] | length > 0')
+   PR_TASK_ID=$(echo "$MATCHED_TASKS" | jq -r '.tasks[0].id // empty')
    ```
+   `TASK_BLOCKED` is an **OR across every matched task** — `true` if ANY matched task has
+   `hitl === true` OR `status === 'blocked'`, not just the first one. This mirrors the same
+   multi-match semantics task PTL-1.1 applies on the TypeScript side in
+   `agent/src/check-helpers.ts`'s `isTaskBlockedForDispatch`, kept consistent here in prose
+   form. `PR_TASK_ID` is set to the first matched task's id (or empty if zero tasks match) —
+   Step 6d's BLOCKED handling reuses this single scalar for its own PATCH-to-blocked
+   escalation, so one task id is still exposed here even though the blocked-check above
+   considers every match.
 
 **If `PR_BLOCKED` is `true` OR `TASK_BLOCKED` is `true`** (an unresolved HITL escalation already
 exists — most likely from Step 5a.7 on this same PR, this cycle or a prior one): skip —
@@ -1350,9 +1388,13 @@ decision already recorded on the PR.
    ```
 3. Move to the next PR in List D. If no candidates remain, continue to Step 7.
 
-**Otherwise** (neither the PR record has `blocked: true` nor its linked task has
-`status: 'blocked'`): no escalation
-is on record for this PR — proceed to Step 6b.7.
+**Otherwise** (neither the PR record has `blocked: true` nor any matched task has
+`hitl === true` or `status === 'blocked'`): no escalation is on record for this PR —
+proceed to Step 6b.7. If no matching tasks were found for this PR (zero results from the
+`GET /tasks?repo=&pr=` query), this branch is the only possible outcome for the task side
+of the check — there's no task-based escalation signal to read, so only `PR_BLOCKED` (from
+the PR record) can trigger the escalation branch above, same as today's no-linked-task
+default.
 
 ### Step 6b.7: Bundle Completeness Gate (PH-1.1)
 

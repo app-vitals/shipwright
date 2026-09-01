@@ -80,9 +80,32 @@ BLOCKED_PRS=$(echo "$BLOCKED_PRS_JSON" | jq -c '.prs[]')
 `GET /prs?blocked=true` returns PRs where `pr.blocked === true` **OR** the PR has a linked
 task whose `task.status === 'blocked'`. That means a PR with a linked blocked task can
 appear in **both** this list and the blocked-tasks list from Step 2 — dedupe on the
-task/PR pairing: when a blocked PR's `taskId` is non-null and that task also came back from
-Step 2, triage it once as a task-with-PR item (Step 5's task.pr-having path), not twice.
-Only PRs with **no linked task** (`taskId` is null) are genuinely PR-only records.
+task/PR pairing.
+
+**Do not dedupe on `PullRequest.taskId`.** It is populated only ~10% of the time — most
+task↔PR links exist solely in the `Task.pr` direction — so a taskId-based dedup treats most
+blocked PRs with a real linked task as PR-only records, and a bundle PR (multiple tasks on
+one branch) only ever dedupes against whichever single task happened to be stamped into
+`taskId`. Instead, for every blocked PR, query the task store live for its linked task(s):
+
+```bash
+while IFS= read -r pr; do
+  PR_REPO=$(echo "$pr" | jq -r '.repo')
+  PR_NUMBER=$(echo "$pr" | jq -r '.prNumber')
+  LINKED_TASKS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo=${PR_REPO}&pr=${PR_NUMBER}")
+  LINKED_TASKS=$(echo "$LINKED_TASKS_JSON" | jq -c '.tasks[]')
+  # ... match each task in $LINKED_TASKS against $BLOCKED_TASKS by id, below
+done <<< "$BLOCKED_PRS"
+```
+
+`GET /tasks?repo=&pr=` can return **more than one** task for a single PR — a bundle branch
+carries several tasks against the same `pr` number. Dedupe against **every** matched task,
+not just one: for each task returned by the lookup, if that task's `id` also appears in the
+Step 2 `BLOCKED_TASKS` list, triage it once as a task-with-PR item (Step 5's task.pr-having
+path) per match — a two-task bundle where both tasks are blocked produces two triage items,
+not one collapsed item. Only when the `/tasks?repo=&pr=` lookup returns **zero** tasks is
+the PR a genuinely PR-only record with no linked task to dedupe against.
 
 If both `BLOCKED_TASKS` and `BLOCKED_PRS` are empty after dedup, print and stop:
 

@@ -18,6 +18,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
 import { createChatServiceApp } from "./app.ts";
 import type { Message } from "./message-service.ts";
 import {
@@ -34,11 +35,13 @@ const AGENT_ID = "agent-1";
 function buildApp(
   threadService: ReturnType<typeof fakeThreadService>,
   messageService: ReturnType<typeof fakeMessageService>,
+  replyNotifier?: (event: ReplyNotificationEvent) => Promise<void>,
 ) {
   return createChatServiceApp({
     tokenService: fakeAdminTokenService(ADMIN_TOKEN),
     threadService,
     messageService,
+    replyNotifier,
   });
 }
 
@@ -876,5 +879,241 @@ describe("GET /threads/:id/messages/:msgId/attachment", () => {
       { headers: H.get },
     );
     expect(res2.status).toBe(404);
+  });
+});
+
+// ─── Reply notifier wiring (CFB-4.3) ──────────────────────────────────────────
+
+/** Build a spy replyNotifier that records every call it receives. */
+function spyReplyNotifier(behavior: "resolve" | "throw" = "resolve") {
+  const calls: ReplyNotificationEvent[] = [];
+  const notifier = async (event: ReplyNotificationEvent): Promise<void> => {
+    calls.push(event);
+    if (behavior === "throw") throw new Error("push webhook unavailable");
+  };
+  return { notifier, calls };
+}
+
+describe("POST /threads/:id/messages/:msgId/reply — reply notifier", () => {
+  it("fires the notifier exactly once for a persisted reply", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1", title: "Deploy help" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Sure, here is the answer." }),
+      },
+    );
+
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("notifier payload carries threadId, the thread's agentId, and title — no message body text", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({
+      agentId: "owning-agent",
+      title: "Deploy help",
+    });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    await app.request(`/threads/${thread.id}/messages/${userMsg.id}/reply`, {
+      method: "POST",
+      headers: H.post,
+      body: JSON.stringify({ body: "Sure, here is the answer." }),
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({
+      threadId: thread.id,
+      agentId: "owning-agent",
+      title: "Deploy help",
+    });
+    expect(Object.keys(calls[0] as object)).not.toContain("body");
+    expect(Object.keys(calls[0] as object)).not.toContain("preview");
+  });
+
+  it("payload uses the thread's agentId, not the calling agent token's identity", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: AGENT_ID });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = createChatServiceApp({
+      tokenService: fakeAgentTokenService(AGENT_TOKEN, AGENT_ID),
+      threadService: ts,
+      messageService: ms,
+      replyNotifier: notifier,
+    });
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: AGENT_H.post,
+        body: JSON.stringify({ body: "Here you go" }),
+      },
+    );
+
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.agentId).toBe(AGENT_ID);
+    expect(calls[0]?.title).toBeNull();
+  });
+
+  it("null thread title is passed through as null, not coerced to an empty string", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    await app.request(`/threads/${thread.id}/messages/${userMsg.id}/reply`, {
+      method: "POST",
+      headers: H.post,
+      body: JSON.stringify({ body: "Answer" }),
+    });
+
+    expect(calls[0]?.title).toBeNull();
+  });
+
+  it("reply still returns 201 when the injected notifier throws", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const { notifier, calls } = spyReplyNotifier("throw");
+    const app = buildApp(ts, ms, notifier);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Sure, here is the answer." }),
+      },
+    );
+
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { assistantMessage: Message };
+    expect(body.assistantMessage.body).toBe("Sure, here is the answer.");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("reply returns 201 as usual when no notifier is configured (undefined dep)", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Help!" });
+    const app = buildApp(ts, ms, undefined);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Answer" }),
+      },
+    );
+
+    expect(res.status).toBe(201);
+  });
+
+  it("does not fire the notifier on heartbeat", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, {
+      role: "user",
+      body: "Long-running question",
+    });
+    await ms.claim(thread.id, "admin");
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    const res = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/heartbeat`,
+      { method: "POST", headers: H.get },
+    );
+
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not fire the notifier on claim", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    await ms.create(thread.id, { role: "user", body: "Claim me" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    const res = await app.request(`/threads/${thread.id}/messages/claim`, {
+      method: "POST",
+      headers: H.get,
+    });
+
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not fire the notifier on message create", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    const res = await app.request(`/threads/${thread.id}/messages`, {
+      method: "POST",
+      headers: H.post,
+      body: JSON.stringify({ role: "user", body: "Hello!" }),
+    });
+
+    expect(res.status).toBe(201);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("does not fire the notifier for a duplicate reply attempt (409)", async () => {
+    const ts = fakeThreadService();
+    const ms = fakeMessageService();
+    const thread = await ts.create({ agentId: "a1" });
+    const userMsg = await ms.create(thread.id, { role: "user", body: "Hello" });
+    const { notifier, calls } = spyReplyNotifier();
+    const app = buildApp(ts, ms, notifier);
+
+    const res1 = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "First reply" }),
+      },
+    );
+    expect(res1.status).toBe(201);
+    expect(calls).toHaveLength(1);
+
+    const res2 = await app.request(
+      `/threads/${thread.id}/messages/${userMsg.id}/reply`,
+      {
+        method: "POST",
+        headers: H.post,
+        body: JSON.stringify({ body: "Duplicate reply" }),
+      },
+    );
+    expect(res2.status).toBe(409);
+    // Still exactly one — the second attempt never persisted a reply.
+    expect(calls).toHaveLength(1);
   });
 });

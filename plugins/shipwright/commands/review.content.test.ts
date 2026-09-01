@@ -110,10 +110,39 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
     expect(step5Idx).toBeGreaterThan(-1);
     const section = content.slice(claimSectionIdx, step5Idx);
 
-    expect(section).toContain("/prs/$PR_RECORD_ID");
-    expect(section).toContain(".taskId");
-    expect(section).toContain("/tasks/");
+    expect(section).toContain("/tasks?repo=");
+    expect(section).toContain("&pr=");
     expect(section).toContain("TASK_MODEL");
+  });
+
+  it("no longer reads PullRequest.taskId off the claimed PR record (PTL-1.2)", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    expect(section).not.toContain(".taskId // empty");
+    expect(section).not.toContain("/prs/$PR_RECORD_ID");
+  });
+
+  it("queries GET /tasks?repo={org}/{repo}&pr={pr} directly, same shape as check-helpers.ts's createTaskStatusQuery (PTL-1.2)", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    expect(section).toContain("createTaskStatusQuery");
+  });
+
+  it("documents the highest-tier-wins rule for multiple matched tasks (PTL-1.2)", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    expect(section).toContain("highest");
+    expect(section).toContain("opus");
+    expect(section).toContain("sonnet");
+    expect(section).toContain("haiku");
+    expect(section).toContain("bundle inherits highest tier");
   });
 
   it("the TASK_MODEL lookup runs once, regardless of which Step 14 path produced PR_RECORD_ID", () => {
@@ -125,19 +154,27 @@ describe("review.md — task model tier passed to code-reviewer subagent (MTR-1.
     // reconverge here before Step 5, so a single occurrence covers both).
     const occurrences = section.split("TASK_MODEL").length - 1;
     expect(occurrences).toBeGreaterThan(0);
-    expect(section).toContain("PR_RECORD_ID");
   });
 
   it("the TASK_MODEL lookup fails gracefully -- warns and continues, never a hard stop", () => {
     const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
     const step5Idx = content.indexOf("## Step 5: Gather Context");
     const section = content.slice(claimSectionIdx, step5Idx);
-    const lookupIdx = section.indexOf("TASK_MODEL");
+    const lookupIdx = section.indexOf("TASKS_RESPONSE");
     expect(lookupIdx).toBeGreaterThan(-1);
-    const lookupSection = section.slice(Math.max(0, lookupIdx - 800), lookupIdx + 800);
+    const lookupSection = section.slice(Math.max(0, lookupIdx - 200), lookupIdx + 800);
 
     expect(lookupSection).toContain("continuing");
     expect(lookupSection).not.toContain("set -e");
+  });
+
+  it("zero matching tasks (the common case today) leaves TASK_MODEL unset, falling back to the existing default unchanged", () => {
+    const claimSectionIdx = content.indexOf("### Claim using pre-captured commit SHA");
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const section = content.slice(claimSectionIdx, step5Idx);
+
+    expect(section).toContain("zero matching tasks");
+    expect(section).toContain("common case today");
   });
 
   it("Step 7's code-reviewer dispatch passes model: TASK_MODEL ?? 'sonnet'", () => {

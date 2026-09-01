@@ -12,9 +12,13 @@ comment — breaks that loop by giving a human the context to decide, and by giv
 Each call site in `patch.md` links here for the mechanics and states its own trigger
 condition and parameter values inline. `PR_TASK_ID` and `PR_RECORD_ID` are assumed already
 resolved by the caller before this sequence runs — most sites reuse `PR_TASK_ID` from Step
-2.1 (resolved once, right after Step 2 resolves the target PR); Step 6d's BLOCKED handling
-instead reuses the `PR_TASK_ID` resolved by Step 6b.6's escalation check. `PR_RECORD_ID`
-comes from that site's own pre-work claim (Step 4a.6 / 5a.6 / 6b.5).
+2.1 (resolved once, right after Step 2 resolves the target PR, by querying
+`GET /tasks?repo=&pr=` and picking the task among the matches that produced the highest
+model tier); Step 6d's BLOCKED handling instead reuses the `PR_TASK_ID` resolved by Step
+6b.6's escalation check (its own `GET /tasks?repo=&pr=` query, picking the first matched
+task). Either way this sequence only ever PATCHes a single task — the multi-match
+resolution behind `PR_TASK_ID` at each site does not change that. `PR_RECORD_ID` comes from
+that site's own pre-work claim (Step 4a.6 / 5a.6 / 6b.5).
 
 ## Parameters
 
