@@ -165,35 +165,35 @@ If no matching review is found (or `allow_self_review` is false), print and stop
 
 ### 3b. Verify All Checks Are Green
 
-Fetch the PR's head commit and its full check-status rollup in a single call:
+Fetch the PR's head commit, then query the Actions API directly for every workflow run at
+that SHA (Actions:Read scope — works on public and private repos with a fine-grained PAT,
+unlike `statusCheckRollup`, which requires the GitHub Checks permission that fine-grained
+PATs cannot be granted on private repos):
 
 ```bash
-PR_JSON=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid,statusCheckRollup)
-HEAD_SHA=$(echo "$PR_JSON" | jq -r '.headRefOid')
-ALL_GREEN=$(echo "$PR_JSON" | jq -r '
-  (.statusCheckRollup // []) as $r
-  | ($r | length > 0) and ($r | all(
-      if .__typename == "CheckRun" then
-        (.status == "COMPLETED") and ((.conclusion // "") as $c | ["SUCCESS","NEUTRAL","SKIPPED"] | index($c) != null)
-      elif .__typename == "StatusContext" then
-        .state == "SUCCESS"
-      else
-        false
-      end
-    ))
+HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA")
+ALL_GREEN=$(echo "$RUNS_JSON" | jq -r '
+  .workflow_runs as $r
+  | ($r
+      | group_by(.name)
+      | map(max_by(.created_at))
+    ) as $latest
+  | ($latest | length > 0) and ($latest | all(.conclusion == "success"))
 ')
 ```
 
-`statusCheckRollup` covers every check on the PR's head commit — GitHub Actions check runs
-(`__typename == "CheckRun"`) and legacy commit statuses (`__typename == "StatusContext"`) alike —
-not just a single named CI workflow. This catches required checks a single-workflow filter would
-miss entirely (e.g. `pr-title-lint`, or any other repo-specific required check).
+No workflow-name filter is applied — every run for the head SHA is fetched, then grouped by
+workflow `name` and reduced to the latest run per name (by `created_at`), so a
+fixed-and-rerun workflow isn't permanently blocked by its own stale failure. This catches
+every required check (e.g. `pr-title-lint`, or any other repo-specific required workflow),
+not just a single named CI workflow.
 
-A `CheckRun` is green when `status == "COMPLETED"` and `conclusion` is one of `SUCCESS`,
-`NEUTRAL`, or `SKIPPED`. A `StatusContext` is green when `state == "SUCCESS"`. All checks must
-be green, and there must be at least one check — an empty rollup is not green.
+A run is green only when its latest-per-name entry has `conclusion == "success"`. All
+latest-per-name runs must be green, and there must be at least one run — an empty run list
+is not green (fail-closed).
 
-If `ALL_GREEN` is not `"true"` (or the rollup is empty), print and stop:
+If `ALL_GREEN` is not `"true"` (or the run list is empty), print and stop:
 ```
 ✗ Pre-flight failed: not all checks are green on PR #{pr} head ({HEAD_SHA[0..7]}).
   Resolve check failures before deploying.
