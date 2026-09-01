@@ -14,9 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type CheckDeployDeps,
+  type CiRun,
   type GhPr,
   type GhReview,
-  type StatusCheckRollupEntry,
   buildProductionDeps,
   getDeployCandidates,
 } from "./check-deploy.ts";
@@ -24,11 +24,11 @@ import type { LinkedTaskInfo } from "./check-helpers.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const GREEN_CHECK_RUN: StatusCheckRollupEntry = {
-  __typename: "CheckRun",
+const GREEN_CI_RUN: CiRun = {
   name: "ci",
-  status: "COMPLETED",
-  conclusion: "SUCCESS",
+  status: "completed",
+  conclusion: "success",
+  createdAt: "2026-05-01T00:00:00.000Z",
 };
 
 function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
@@ -41,7 +41,6 @@ function makeGhPr(overrides: Partial<GhPr> = {}): GhPr {
     reviewDecision: null,
     createdAt: "2026-05-01T00:00:00.000Z",
     mergeStateStatus: null,
-    statusCheckRollup: [GREEN_CHECK_RUN],
     ...overrides,
   };
 }
@@ -56,6 +55,11 @@ interface MakeDepsOptions {
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
   isBundleComplete?: (branch: string) => Promise<boolean>;
+  // CI runs fixture, keyed by headRefOid (sha) — defaults every unseen sha to
+  // a single green run so existing tests that don't care about CI shape
+  // (approval/self-review/scope/etc. scenarios) keep passing candidates
+  // through the CI-green gate unless they opt into a specific fixture.
+  ciRuns?: Record<string, CiRun[]>;
 }
 
 function makeDeps({
@@ -68,6 +72,7 @@ function makeDeps({
   getScopedRepos = () => repos,
   hasScopeSynced = () => true,
   isBundleComplete,
+  ciRuns = {},
 }: MakeDepsOptions = {}): CheckDeployDeps {
   return {
     getCurrentUser: async () => currentUser,
@@ -85,6 +90,8 @@ function makeDeps({
       _repo: string,
       pr: number,
     ): Promise<GhReview[]> => reviews[pr] ?? [],
+    fetchCiRuns: async (_org: string, _repo: string, headSha: string) =>
+      ciRuns[headSha] ?? [GREEN_CI_RUN],
     queryTaskStatus: async (repo: string, prNumber: number) => {
       const key = `${repo}#${prNumber}`;
       return taskStatus[key] ?? null;
@@ -264,145 +271,162 @@ describe("getDeployCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but CI is not green (still IN_PROGRESS CheckRun)", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        {
-          __typename: "CheckRun",
-          name: "ci",
-          status: "IN_PROGRESS",
-          conclusion: null,
+  test("returns empty array when PR is approved but CI is not green (still in_progress workflow run)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "in_progress",
+              conclusion: null,
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+          ],
         },
-      ],
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but CI failed (FAILURE CheckRun)", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        {
-          __typename: "CheckRun",
-          name: "ci",
-          status: "COMPLETED",
-          conclusion: "FAILURE",
+  test("returns empty array when PR is approved but CI failed (failure conclusion)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
+    const result = await getDeployCandidates(
+      makeDeps({
+        prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "failure",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+          ],
         },
-      ],
-    });
-    const result = await getDeployCandidates(
-      makeDeps({
-        prs: { "acme/example-repo": [pr] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when PR is approved but the rollup is empty (no checks at all)", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [],
-    });
+  test("returns empty array when PR is approved but there are no workflow runs at all (empty list)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
+        ciRuns: { sha50: [] },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns a candidate when the rollup is all-green via StatusContext entries only", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        { __typename: "StatusContext", context: "license/cla", state: "SUCCESS" },
-        { __typename: "StatusContext", context: "codecov/patch", state: "SUCCESS" },
-      ],
-    });
+  test("returns a candidate when multiple distinct workflows are all green", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              name: "some-other-check",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+          ],
+        },
       }),
     );
     expect(result).toHaveLength(1);
   });
 
-  test("returns a candidate when the rollup is a green mix of CheckRun and StatusContext entries", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        {
-          __typename: "CheckRun",
-          name: "ci",
-          status: "COMPLETED",
-          conclusion: "SUCCESS",
-        },
-        {
-          __typename: "CheckRun",
-          name: "pr-title-lint",
-          status: "COMPLETED",
-          conclusion: "NEUTRAL",
-        },
-        {
-          __typename: "CheckRun",
-          name: "some-skipped-check",
-          status: "COMPLETED",
-          conclusion: "SKIPPED",
-        },
-        { __typename: "StatusContext", context: "license/cla", state: "SUCCESS" },
-      ],
-    });
+  test("returns a candidate when a workflow has an old FAILED run and a newer SUCCEEDED run for the same name (latest-wins on retry)", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "failure",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:10:00.000Z",
+            },
+          ],
+        },
       }),
     );
     expect(result).toHaveLength(1);
   });
 
-  test("returns empty array when a mixed rollup has one failing StatusContext entry among otherwise-green CheckRuns", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        {
-          __typename: "CheckRun",
-          name: "ci",
-          status: "COMPLETED",
-          conclusion: "SUCCESS",
-        },
-        { __typename: "StatusContext", context: "license/cla", state: "FAILURE" },
-      ],
-    });
+  test("returns empty array when one workflow's latest run is still failing, even though other workflows are green", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "failure",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+          ],
+        },
       }),
     );
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when a mixed rollup has one still-PENDING StatusContext entry among otherwise-green CheckRuns", async () => {
-    const pr = makeGhPr({
-      reviewDecision: "APPROVED",
-      statusCheckRollup: [
-        {
-          __typename: "CheckRun",
-          name: "ci",
-          status: "COMPLETED",
-          conclusion: "SUCCESS",
-        },
-        { __typename: "StatusContext", context: "license/cla", state: "PENDING" },
-      ],
-    });
+  test("returns empty array when one workflow is still queued/in_progress (no conclusion yet), even though other workflows are green", async () => {
+    const pr = makeGhPr({ reviewDecision: "APPROVED" });
     const result = await getDeployCandidates(
       makeDeps({
         prs: { "acme/example-repo": [pr] },
+        ciRuns: {
+          sha50: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+            {
+              name: "pr-title-lint",
+              status: "queued",
+              conclusion: null,
+              createdAt: "2026-05-01T00:00:00.000Z",
+            },
+          ],
+        },
       }),
     );
     expect(result).toEqual([]);
@@ -469,6 +493,7 @@ describe("getDeployCandidates", () => {
       getScopedRepos: () => ["acme/failing-repo", "acme/example-repo"],
       hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async (repo: string): Promise<GhPr[]> => {
         if (repo === "acme/failing-repo") throw new Error("rate limited");
         return [pr];
@@ -545,6 +570,7 @@ describe("getDeployCandidates", () => {
       hasScopeSynced: () => true,
       fetchActiveDeployRuns: async (_org, repo) =>
         repo === "busy-repo" ? [{ name: "Deploy", status: "in_progress" }] : [],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async (repo: string) =>
         repo === "acme/busy-repo" ? [pr1] : [pr2],
       fetchPrReviews: async () => [],
@@ -569,6 +595,7 @@ describe("getDeployCandidates", () => {
       fetchActiveDeployRuns: async () => [
         { name: "Deploy", status: "queued" }, // no createdAt
       ],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async () => [pr1],
       fetchPrReviews: async () => [],
     };
@@ -596,6 +623,7 @@ describe("getDeployCandidates", () => {
           createdAt: "2026-06-01T00:00:00.000Z", // 2h old, older than 1h threshold
         },
       ],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async () => [pr1],
       fetchPrReviews: async () => [],
     };
@@ -624,6 +652,7 @@ describe("getDeployCandidates", () => {
           createdAt: "2026-06-01T00:00:00.000Z", // 30min old, under 1h threshold
         },
       ],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async () => [pr1],
       fetchPrReviews: async () => [],
     };
@@ -660,6 +689,7 @@ describe("getDeployCandidates", () => {
       getScopedRepos: () => ["acme/example-repo"],
       hasScopeSynced: () => true,
       fetchActiveDeployRuns: async () => [],
+      fetchCiRuns: async () => [GREEN_CI_RUN],
       listOpenPrs: async () => [goodPr, badPr],
       fetchPrReviews: async () => [],
       queryTaskStatus: async (_repo, prNumber) => {
@@ -1096,7 +1126,7 @@ describe("buildProductionDeps", () => {
     }
   });
 
-  test("listOpenPrs queries gh pr list with the expected --json field set for the given repo", async () => {
+  test("listOpenPrs queries gh pr list with the expected --json field set for the given repo (no statusCheckRollup)", async () => {
     const seenArgs: string[][] = [];
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
@@ -1111,9 +1141,6 @@ describe("buildProductionDeps", () => {
             reviewDecision: "APPROVED",
             createdAt: "2026-05-01T00:00:00Z",
             mergeStateStatus: "CLEAN",
-            statusCheckRollup: [
-              { __typename: "CheckRun", status: "COMPLETED", conclusion: "SUCCESS" },
-            ],
           },
         ] as unknown as T;
       },
@@ -1131,7 +1158,55 @@ describe("buildProductionDeps", () => {
       "--repo",
       "acme/example-repo",
       "--json",
-      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus,statusCheckRollup",
+      "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
+    ]);
+    expect(seenArgs[0]?.at(-1)).not.toContain("statusCheckRollup");
+  });
+
+  test("fetchCiRuns queries gh api actions/runs with head_sha and maps the workflow_runs response with no name filter", async () => {
+    const seenArgs: string[][] = [];
+    const deps = await buildProductionDeps({
+      ghJson: async <T>(args: string[]) => {
+        seenArgs.push(args);
+        return {
+          workflow_runs: [
+            {
+              name: "ci",
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-05-01T00:00:00Z",
+            },
+            {
+              name: "pr-title-lint",
+              status: "completed",
+              conclusion: "success",
+              created_at: "2026-05-01T00:01:00Z",
+            },
+          ],
+        } as unknown as T;
+      },
+    });
+
+    const runs = await deps.fetchCiRuns("acme", "widgets", "sha123");
+
+    expect(runs).toEqual([
+      {
+        name: "ci",
+        status: "completed",
+        conclusion: "success",
+        createdAt: "2026-05-01T00:00:00Z",
+      },
+      {
+        name: "pr-title-lint",
+        status: "completed",
+        conclusion: "success",
+        createdAt: "2026-05-01T00:01:00Z",
+      },
+    ]);
+    expect(seenArgs).toHaveLength(1);
+    expect(seenArgs[0]).toEqual([
+      "api",
+      "repos/acme/widgets/actions/runs?head_sha=sha123",
     ]);
   });
 
