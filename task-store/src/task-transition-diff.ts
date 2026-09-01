@@ -26,8 +26,10 @@
  *     opted in — safer than silently auditing (and potentially leaking) a
  *     new field.
  *   - `before === null` (create path) returns [] — no events on creation.
- *   - Values are compared via `String(value)` stringification so null/
- *     undefined are treated identically.
+ *   - Values are compared via stringification (`String(value)` for
+ *     primitives, `JSON.stringify(value)` for object/array values such as
+ *     `metadata`) so null/undefined are treated identically and object
+ *     transitions remain meaningful and detectable.
  */
 
 import type { Task } from "./index.ts";
@@ -98,9 +100,21 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "metadata",
 ];
 
-/** Stringify a scalar field value for storage as an event's old/new value. */
+/**
+ * Stringify a scalar field value for storage as an event's old/new value.
+ *
+ * `metadata` (`Json?`) is the only object/array-shaped field in
+ * TASK_AUDITED_FIELDS — `String(value)` on a plain object/array always
+ * yields the useless literal `"[object Object]"` (identical across
+ * different objects, so real transitions would silently produce zero
+ * TaskEvent rows). Object/array values are JSON.stringify'd instead so the
+ * recorded value is meaningful and two different objects compare unequal.
+ * Every other audited field is a primitive (string/number/boolean) — the
+ * plain `String(value)` path is unchanged for those.
+ */
 function toEventValue(value: unknown): string | null {
   if (value === null || value === undefined) return null;
+  if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 

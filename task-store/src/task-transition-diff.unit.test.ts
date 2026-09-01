@@ -220,4 +220,46 @@ describe("computeTaskTransitionDiff()", () => {
       newValue: "5",
     });
   });
+
+  test("metadata object → different object transition is detected and JSON-stringified", () => {
+    const before = task({ metadata: { attempt: 1, tags: ["a"] } });
+    const after = task({ metadata: { attempt: 2, tags: ["b"] } });
+
+    const changes = computeTaskTransitionDiff(before, after);
+    const byField = Object.fromEntries(changes.map((c) => [c.field, c]));
+
+    expect(byField.metadata).toBeDefined();
+    // Not silently dropped, and not the useless String() coercion.
+    expect(byField.metadata?.oldValue).not.toBe("[object Object]");
+    expect(byField.metadata?.newValue).not.toBe("[object Object]");
+    expect(byField.metadata?.oldValue).toBe(
+      JSON.stringify({ attempt: 1, tags: ["a"] }),
+    );
+    expect(byField.metadata?.newValue).toBe(
+      JSON.stringify({ attempt: 2, tags: ["b"] }),
+    );
+    // The stringified values must round-trip as valid, meaningful JSON.
+    expect(JSON.parse(byField.metadata?.oldValue as string)).toEqual({
+      attempt: 1,
+      tags: ["a"],
+    });
+    expect(JSON.parse(byField.metadata?.newValue as string)).toEqual({
+      attempt: 2,
+      tags: ["b"],
+    });
+  });
+
+  test("metadata null → object transition records oldValue null and JSON newValue", () => {
+    const changes = computeTaskTransitionDiff(
+      task({ metadata: null }),
+      task({ metadata: { attempt: 1 } }),
+    );
+    expect(changes).toEqual([
+      {
+        field: "metadata",
+        oldValue: null,
+        newValue: JSON.stringify({ attempt: 1 }),
+      },
+    ]);
+  });
 });
