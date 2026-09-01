@@ -39,6 +39,7 @@ describeOrSkip("task-store API (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     await prisma.taskToken.deleteMany();
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
 
     const taskService = new TaskService(prisma);

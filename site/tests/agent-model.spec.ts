@@ -49,7 +49,7 @@ test("component reference lists all 12 components", async ({ page }) => {
     "entropy-patrol",
     "docs-refresh",
     "test-audit",
-    "dependabot-triage",
+    "dependency-bot-triage",
     "migrations",
     "task-store",
     "dev-task",

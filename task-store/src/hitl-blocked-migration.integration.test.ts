@@ -89,6 +89,7 @@ describeOrSkip("split-hitl/blocked data migration (integration)", () => {
     // sharing TEST_DB left rows behind.
     await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
     await addOldColumns(prisma);
   });
