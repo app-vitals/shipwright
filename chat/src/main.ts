@@ -16,6 +16,7 @@ import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { PrismaClient } from "./index.ts";
 import { MessageService } from "./message-service.ts";
+import { createReplyNotifier } from "./reply-notifier.ts";
 import { StallReaper } from "./stall-reaper.ts";
 import { ThreadService } from "./thread-service.ts";
 import { ChatTokenService } from "./token-service.ts";
@@ -116,11 +117,32 @@ async function startServer(): Promise<void> {
     );
   }
 
+  // Build the outbound reply-notification webhook when configured. Its own
+  // dedicated credential — never reuses SHIPWRIGHT_CHAT_AGENTS_API_KEY —
+  // even though in deployment it is set to the same shared-secret value as
+  // the admin side's SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN. See
+  // chat/src/reply-notifier.ts.
+  const pushWebhookUrl = process.env.SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL;
+  const pushWebhookToken = process.env.SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN;
+  const replyNotifier =
+    pushWebhookUrl && pushWebhookToken
+      ? createReplyNotifier(pushWebhookUrl, pushWebhookToken)
+      : undefined;
+
+  if (replyNotifier) {
+    console.log(`[chat] reply notifier configured (${pushWebhookUrl})`);
+  } else {
+    console.log(
+      "[chat] reply notifier disabled (SHIPWRIGHT_CHAT_PUSH_WEBHOOK_URL not set)",
+    );
+  }
+
   const app = createChatServiceApp({
     tokenService,
     threadService,
     messageService,
     scopeResolver,
+    replyNotifier,
   });
 
   const server = Bun.serve({ port, fetch: app.fetch });

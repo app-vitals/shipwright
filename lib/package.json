@@ -6,6 +6,7 @@
   "exports": {
     "./admin-types": "./admin-types.ts",
     "./agent-default-tools": "./agent-default-tools.ts",
+    "./chat-notify": "./chat-notify.ts",
     "./claim-ttl": "./claim-ttl.ts",
     "./github-login": "./github-login.ts",
     "./http": "./http.ts",
