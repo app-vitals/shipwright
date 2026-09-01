@@ -35,6 +35,9 @@ describeOrSkip("TaskService.recordSkip/resetSkip (integration)", () => {
 
   beforeEach(async () => {
     prisma = makePrisma();
+    // TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — clear event rows
+    // before their parent Task rows, since recordSkip()/resetSkip() write them.
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
   });
 
