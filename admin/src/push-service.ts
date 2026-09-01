@@ -102,13 +102,11 @@ export class PushService {
       // Group subscriptions by their effective detail level so each group gets
       // a single payload build. Different opt-ins → different visible content.
       const byPayload = new Map<string, PushSubscriptionLike[]>();
-      const payloadFor = new Map<string, string>();
       for (const s of subs) {
         const level = resolveDetailLevel(this.maxDetail, s.detailOptIn);
         const payload = JSON.stringify(buildNotificationPayload(level, thread));
         if (!byPayload.has(payload)) {
           byPayload.set(payload, []);
-          payloadFor.set(payload, payload);
         }
         byPayload.get(payload)?.push({
           endpoint: s.endpoint,

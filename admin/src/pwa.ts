@@ -189,7 +189,7 @@ self.addEventListener("push", (event) => {
   let payload = { title: "Your agent replied", body: "", url: "/admin/chat" };
   try {
     if (event.data) payload = Object.assign(payload, event.data.json());
-  } catch (e) {
+  } catch {
     // Malformed payload — fall back to the generic default.
   }
   event.waitUntil(
