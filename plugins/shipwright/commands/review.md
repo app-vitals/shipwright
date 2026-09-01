@@ -318,8 +318,9 @@ agent tokens are scoped) or zero matching tasks (still the common case today) le
    built via `compute-unaddressed-findings.ts`'s exported `reviewRef(review)` helper: the
    review's FULL, untruncated `commit.oid` plus `submittedAt`, joined by `@`
    (`${review.commit.oid}@${review.submittedAt}`) — never a truncated/short SHA, since the
-   GraphQL query above does not fetch a review `id`/`url` field and `isResolvedByPriorFindingsStatus`
-   later does an exact string match against this exact format. When
+   GraphQL query above does not fetch a review `id`/`url` field and the findings-ledger
+   exclusion (`isResolvedByLedger`, PFL-3.2) later does an exact string match against this
+   exact format when matching a ledger entry's `ref` back to a specific prior review. When
    `priorQualifyingReviews` is empty (no prior reviews, or all excluded by the two reused
    exclusions above — e.g. a self-authored PR whose only prior reviews were clean self-approves
    or superseded self-reviews), the field is simply empty and Step 7 omits the corresponding
@@ -549,9 +550,10 @@ Step 8 and Step 9 (Step 9's Re-Review "Prior Findings Resolution" table is popul
 
 Once `priorFindingsStatus[]` has been parsed above, persist each `resolved: true` attestation
 to the findings ledger. **This does not change the attestation itself** — Step 9's Re-Review
-table and Step 9.5's `isResolvedByPriorFindingsStatus` exclusion still consume
-`priorFindingsStatus[]` exactly as parsed; this is purely additive logging of the subagent's
-own determination, using its own evidence string verbatim:
+table still consumes `priorFindingsStatus[]` exactly as parsed; this POST is what makes the
+attestation durable so that Step 9.5's findings-ledger exclusion (`isResolvedByLedger`,
+PFL-3.2) picks it up on the current and future passes. This is purely additive logging of the
+subagent's own determination, using its own evidence string verbatim:
 
 ```bash
 for entry in priorFindingsStatus[] where entry.resolved === true:
@@ -792,27 +794,25 @@ A PR has **unaddressed findings** when ANY of the following are true:
     the same author (per DRO-1.2 — a self-authored PR reviewed via a fresh review object each
     round, rather than a body rewrite, never triggers the clean-self-APPROVE exclusion above
     for earlier rounds even after every finding in them is fixed), and
-  - a prior CURRENT_USER review attested resolved by the CURRENT pass's structured
-    `priorFindingsStatus[]` (per PVD-1.3 — `isResolvedByPriorFindingsStatus`): when the
-    code-reviewer subagent's Step 7 output contains a `{ ref, resolved, evidence }` entry that
-    references that review (matched by `reviewRef` — full `commit.oid` + `submittedAt`) with
-    `resolved: true` and non-empty `evidence`, the prior review is excluded. Fourth exclusion;
-    closes a structural deadlock: because Step 10/11 always posts a NEW review object per
-    pass (never rewriting a prior body), the DRO-1.2 supersession exclusion above can only
-    fire when a LATER self-review is itself a clean `Verdict: APPROVE` — but that later review
-    can only be clean if `unaddressedFindings` was already false for its own pass, so a single
-    self-authored `Verdict: COMMENT` finding pins the PR at COMMENT forever, even after the
-    finding is fixed. `priorFindingsStatus[]` breaks the cycle by letting the current pass
-    attest the earlier finding resolved directly.
-
-    **Option B — each finding judged independently.** Each `priorFindingsStatus[]` entry is
-    evaluated on its own; a fresh, unrelated blocking finding elsewhere in the same pass does
-    **not** prevent an already-verified resolution from being excluded (that fresh finding
-    still forces `COMMENT` on its own via `currentPassHasBlockingFindings` and/or the normal
-    qualifying-review path). We trust the subagent's evidence-backed, per-finding attestation
-    without requiring the whole pass to be clean. Applies only to CURRENT_USER's own prior
-    reviews — a third-party reviewer's finding is never self-attested away this way (that
-    path stays governed by the CPF-2.3 author-reply exclusion above).
+  - a prior review whose finding is attested resolved/superseded in the findings ledger (per
+    `isResolvedByLedger`/PFL-3.2): when the task-store ledger holds an entry (`source:
+    "review"`) whose `ref` matches that review — matched by `reviewRef`, full `commit.oid` +
+    `submittedAt` — with disposition `resolved` or `superseded`, the prior review is excluded.
+    The entry is written durably by an earlier pass (see the "Findings Ledger Persistence —
+    Prior Findings Attestations" subsection above). Routing resolution through the persisted
+    ledger closes a structural deadlock: because Step 10/11 always posts a new review object per
+    pass (never rewriting a prior body), a clean-self-APPROVE exclusion could only fire when a
+    LATER self-review is itself clean — but that review can only be clean if
+    `unaddressedFindings` was already false for its own pass, so a single self-authored
+    `Verdict: COMMENT` finding would otherwise pin the PR at COMMENT forever, even after the
+    finding is fixed. The ledger breaks the cycle by recording the finding resolved once,
+    durably, so every subsequent pass sees it excluded. Each ledger entry is judged
+    independently: a fresh, unrelated blocking finding elsewhere in a pass does **not** prevent
+    an already-verified resolution from being excluded (that fresh finding still forces
+    `COMMENT` on its own via `currentPassHasBlockingFindings` and/or the normal
+    qualifying-review path). Unlike the removed self-review inference heuristics,
+    `isResolvedByLedger` is NOT gated on self-authorship — it resolves the review it references
+    regardless of whose review it was.
 
 This is the same computation patch.md's Step 3a performs to decide whether a PR belongs in
 its List A — see that section for the full clean-APPROVE, author-reply, and
