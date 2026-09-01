@@ -3,36 +3,27 @@
  *
  * Status-only progress driver for Slack thread replies.
  *
- * Drives `assistant.threads.setStatus` (Slack's AI-app status surface) for
- * the lifecycle of a single Claude run: "Thinking..." on start, the current
- * milestone label on each real progress phase, and cleared on finish. No
- * visible chat message is posted, updated, or deleted — SlackProgress never
- * calls chat.postMessage/chat.update/chat.delete.
+ * Drives `agents.sessions.setStatus` (Slack's Agent Sessions API, part of
+ * the Agent messaging experience rolled out 2026-08-20 — the replacement for
+ * the deprecated Assistant messaging experience's `assistant.threads.setStatus`)
+ * for the lifecycle of a single Claude run: "processing" on start, "active"
+ * on finish. No visible chat message is posted, updated, or deleted —
+ * SlackProgress never calls chat.postMessage/chat.update/chat.delete.
  *
- * Phase-stomping fix: `agent/src/claude.ts`'s onProgress callback fires
- * twice per stream line for most turns — once with a real phase (via
- * `phaseForBlock`) and once with no phase when the line carries usage data
- * only. `onProgress` here only calls setStatus when `phase !== undefined`
- * (mirroring `chat/src/message-service.ts`'s `if (phase !== undefined)
- * data.progressPhase = phase;` pattern) — a usage-only tick is a no-op, so
- * the last real milestone label stays visible instead of being immediately
- * overwritten by a generic default.
+ * Unlike the old `assistant.threads.setStatus`, `status` here is a fixed
+ * lifecycle enum (active/processing/suspended/closed), not free text — there
+ * is no replacement for the old per-phase custom labels ("Reading files...",
+ * "Running tests...", etc.), so `onProgress` no longer drives any Slack API
+ * call. "active" (not "closed") is used on finish because Shipwright threads
+ * stay open for follow-up messages — "closed" is for ending a conversation
+ * entirely.
  *
  * Every Slack API call is wrapped in .catch(() => {}) — a progress failure
  * must never throw or break the real reply.
  */
 
-import {
-  PROGRESS_LABELS,
-  type ProgressPhase,
-} from "@shipwright/lib/progress-phases";
 import type { ModelUsage } from "./claude.ts";
-
-const DEFAULT_STATUS_LABEL = "Working...";
-
-function labelForPhase(phase: ProgressPhase): string {
-  return PROGRESS_LABELS[phase] ?? DEFAULT_STATUS_LABEL;
-}
+import type { ProgressPhase } from "@shipwright/lib/progress-phases";
 
 // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
 type SlackClient = any;
@@ -44,10 +35,11 @@ export interface SlackProgressOptions {
 }
 
 /**
- * Drives the assistant.threads.setStatus AI-app status for a single Claude
- * run. One instance per run — construct it where "Thinking..." used to be
- * set, pass `progress.onProgress` (bound) as the runner's third arg, and
- * call `progress.finish()` in the handler's completion path.
+ * Drives the agents.sessions.setStatus lifecycle status for a single Claude
+ * run. One instance per run — construct it where "processing" used to be
+ * set, pass `progress.onProgress` (bound) as the runner's third arg (kept as
+ * a no-op for API-shape compatibility with the runner's callback signature),
+ * and call `progress.finish()` in the handler's completion path.
  */
 export class SlackProgress {
   private readonly client: SlackClient;
@@ -60,13 +52,15 @@ export class SlackProgress {
     this.threadTs = opts.threadTs;
   }
 
-  /** Announces the initial "Thinking..." AI-app status. Call once, up front. */
+  /** Announces the initial "processing" agent-session status. Call once, up front. */
   async start(): Promise<void> {
-    await this.setStatus("Thinking...");
+    await this.setStatus("processing");
   }
 
-  private async setStatus(status: string): Promise<void> {
-    await this.client.assistant.threads
+  private async setStatus(
+    status: "active" | "processing" | "suspended" | "closed",
+  ): Promise<void> {
+    await this.client.agents.sessions
       .setStatus({
         channel_id: this.channel,
         thread_ts: this.threadTs,
@@ -76,21 +70,19 @@ export class SlackProgress {
   }
 
   /**
-   * The callback passed as the Claude runner's third arg. Only updates the
-   * AI-app status when a real phase is present — a usage-only tick
-   * (phase === undefined) is a no-op, leaving the last real milestone label
-   * in place.
+   * The callback passed as the Claude runner's third arg. The Agent Sessions
+   * API has no per-phase text slot (status is a fixed lifecycle enum), so
+   * this is a documented no-op — kept only so existing call sites can keep
+   * wiring it in as the runner's onProgress callback without change.
    */
-  onProgress = (_usage: ModelUsage, phase?: ProgressPhase): void => {
-    if (phase === undefined) return;
-    void this.setStatus(labelForPhase(phase));
-  };
+  onProgress = (_usage: ModelUsage, _phase?: ProgressPhase): void => {};
 
   /**
    * Call in the handler's completion path (finally block or equivalent).
-   * Clears the AI-app status.
+   * Sets the agent-session status back to "active" (idle/ready) — Shipwright
+   * threads stay open for follow-up messages, so "closed" would be wrong here.
    */
   async finish(): Promise<void> {
-    await this.setStatus("");
+    await this.setStatus("active");
   }
 }

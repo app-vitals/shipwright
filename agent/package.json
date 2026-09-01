@@ -13,7 +13,7 @@
     "@shipwright/admin": "workspace:*",
     "@shipwright/lib": "workspace:*",
     "@slack/bolt": "^4.7.3",
-    "@slack/web-api": "^7.16.0",
+    "@slack/web-api": "^8.1.0",
     "hono": "^4.13.1",
     "node-cron": "^4.6.0",
     "openapi-fetch": "^0.13",
