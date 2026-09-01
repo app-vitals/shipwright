@@ -55,6 +55,8 @@ import { HttpGoogleAuthClient } from "./google-auth-client.ts";
 import { HttpChatClient } from "./http-chat-client.ts";
 import { HttpKubernetesClient } from "./kubernetes-client.ts";
 import { HttpOktaAuthClient } from "./okta-auth-client.ts";
+import { isPushEnabled } from "./push-sender.ts";
+import { PushService } from "./push-service.ts";
 import { HttpSlackProvisioningClient } from "./slack-provisioning-client.ts";
 import type { TaskStoreProvisioningClient } from "./task-store-provisioning-client.ts";
 import {
@@ -623,6 +625,22 @@ async function startServer(): Promise<void> {
       ? new HttpChatClient(chatServiceUrl, chatServiceAdminToken)
       : undefined;
 
+  // Web Push (CFB-4.2). Enabled ONLY when public + private + subject are all
+  // set — a partial config must not half-enable the feature. When disabled,
+  // pushService is undefined, the push routes 503, and the toggle renders "".
+  const vapidConfig = {
+    publicKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.SHIPWRIGHT_ADMIN_VAPID_SUBJECT ?? "",
+  };
+  const pushWebhookToken = process.env.SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN;
+  // Operator ceiling for how much detail a notification may reveal on a locked
+  // screen. Defaults to "title" per the content policy.
+  const pushMaxDetail = process.env.SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL ?? "title";
+  const pushService = isPushEnabled(vapidConfig)
+    ? new PushService(prisma as never, vapidConfig, fetch, pushMaxDetail)
+    : undefined;
+
   const adminUIApp = createAdminUIApp({
     prisma: prisma as never,
     agentEnvService,
@@ -656,6 +674,13 @@ async function startServer(): Promise<void> {
     devAuthEnabled: isDevAuthAllowed(process.env),
     timezone: adminTz,
     ...(chatClient ? { chatClient } : {}),
+    ...(pushService
+      ? {
+          pushService,
+          vapidPublicKey: vapidConfig.publicKey,
+          ...(pushWebhookToken ? { pushWebhookToken } : {}),
+        }
+      : {}),
     ...taskStoreFetchers,
   });
   root.route("/", adminUIApp);

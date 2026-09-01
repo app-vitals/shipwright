@@ -251,3 +251,44 @@ model AgentWorkQueueSnapshot {
   createdAt  DateTime @default(now())
 }
 
+// ─── Push Subscription ──────────────────────────────────────────────────────
+// A single browser/device Web Push subscription (RFC 8291) belonging to a
+// user. One user may have many rows (multi-device). Keyed by the unique push
+// `endpoint`; `p256dh` and `auth` are the subscription's public key + auth
+// secret used to encrypt the payload. `detailOptIn` is the USER'S opt-in for
+// how much notification detail they want on a locked screen — the effective
+// level is min(operator ceiling SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL, detailOptIn).
+// Values: "generic" | "title" | "preview". Never carries an agentId — targeting
+// is by userEmail via ChatThreadWatch, so a subscription is agent-agnostic.
+model PushSubscription {
+  id          String   @id @default(cuid())
+  userEmail   String
+  endpoint    String   @unique
+  p256dh      String   // base64url of the UA public key
+  auth        String   // base64url of the UA auth secret
+  detailOptIn String   @default("generic") // user opt-in: generic | title | preview
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userEmail])
+}
+
+// ─── Chat Thread Watch ──────────────────────────────────────────────────────
+// Records that a user is "watching" a chat thread so the agent's reply can be
+// targeted to exactly the right subscriber(s) without fanning out to every
+// member of the agent. Upserted whenever a user sends a message in a thread.
+// The chat Message model has no author column, and admin is the only web front
+// door that knows both userEmail and threadId at send time — so authorship
+// targeting lives here, not in the chat service.
+model ChatThreadWatch {
+  id        String   @id @default(cuid())
+  userEmail String
+  threadId  String
+  agentId   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userEmail, threadId])
+  @@index([threadId])
+}
+

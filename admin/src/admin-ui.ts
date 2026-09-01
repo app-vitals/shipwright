@@ -24,13 +24,13 @@
  * Allowed users are controlled by the adminAllowedEmails allowlist in deps.
  */
 
+import { join } from "node:path";
 import { isGithubLogin } from "@shipwright/lib/github-login";
 import { isOrgRepo } from "@shipwright/lib/org-repo";
 import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
-import { Hono, type Context, type MiddlewareHandler } from "hono";
+import { type Context, Hono, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
-import { join } from "node:path";
 import {
   type AgentDetail,
   type AgentOption,
@@ -89,13 +89,14 @@ import {
   filterSince,
 } from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
+import type { PushService } from "./push-service.ts";
 import {
+  PWA_ASSETS_DIR,
+  PWA_ICONS,
   buildManifest,
   buildOfflinePageHtml,
   buildServiceWorkerBody,
   getPrecacheList,
-  PWA_ASSETS_DIR,
-  PWA_ICONS,
   renderPwaHeadTags,
 } from "./pwa.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
@@ -238,6 +239,32 @@ interface PrismaLike {
     deleteMany(args: { where: { id: string; agentId: string } }): Promise<{
       count: number;
     }>;
+  };
+  // Web Push (CFB-4.2). Present on the real PrismaClient after the migration;
+  // narrowed here to only what the admin UI routes touch. Optional so existing
+  // test doubles (which never enable push) stay valid — the push routes only
+  // touch these when pushEnabled is true.
+  pushSubscription?: {
+    upsert(args: {
+      where: { endpoint: string };
+      create: {
+        userEmail: string;
+        endpoint: string;
+        p256dh: string;
+        auth: string;
+      };
+      update: { userEmail: string; p256dh: string; auth: string };
+    }): Promise<{ id: string }>;
+    deleteMany(args: {
+      where: { endpoint: string; userEmail?: string };
+    }): Promise<{ count: number }>;
+  };
+  chatThreadWatch?: {
+    upsert(args: {
+      where: { userEmail_threadId: { userEmail: string; threadId: string } };
+      create: { userEmail: string; threadId: string; agentId: string };
+      update: { agentId: string };
+    }): Promise<{ id: string }>;
   };
 }
 
@@ -431,6 +458,17 @@ export interface AdminUIDeps {
    * reading the file inside the route handler.
    */
   appVersion?: string;
+  /**
+   * Web Push (CFB-4.2). All three are set together or none: main.ts only wires
+   * them when isPushEnabled() is true (public + private + subject all set), so
+   * when push is not fully configured pushService is undefined, the routes 503,
+   * and the toggle renders "" (page degrades to the CFB-3.2 page).
+   */
+  pushService?: PushService;
+  /** VAPID PUBLIC key — sent to the browser (NOT a secret). "" disables the toggle. */
+  vapidPublicKey?: string;
+  /** Shared token the chat service presents to the push-notify webhook. */
+  pushWebhookToken?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -618,11 +656,39 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
     appVersion = "0.0.0",
+    pushService,
+    vapidPublicKey = "",
+    pushWebhookToken,
   } = deps;
+
+  // Push is enabled only when the service was constructed (VAPID fully set) AND
+  // a public key is available for the browser. A single derived flag so the
+  // toggle-render gate and the route-503 gate can't drift.
+  const pushEnabled = Boolean(pushService && vapidPublicKey);
 
   const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into a
+  // request cycle — push is a convenience layer, so a watch-write failure must
+  // not fail the message send it rides along with.
+  async function watchThread(
+    userEmail: string,
+    agentId: string,
+    threadId: string,
+  ): Promise<void> {
+    if (!prisma.chatThreadWatch) return;
+    try {
+      await prisma.chatThreadWatch.upsert({
+        where: { userEmail_threadId: { userEmail, threadId } },
+        create: { userEmail, threadId, agentId },
+        update: { agentId },
+      });
+    } catch (err) {
+      console.error("[push] watchThread upsert failed:", err);
+    }
+  }
 
   // ─── HTML helper ──────────────────────────────────────────────────────────
 
@@ -3120,7 +3186,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           threadList,
           c.var.userEmail,
           statsResult,
-          { stallWarnAfterMs },
+          { stallWarnAfterMs, pushEnabled, vapidPublicKey },
         ),
       );
     } catch {
@@ -3287,6 +3353,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         // swallow — redirect back regardless
       }
 
+      // Record that this user is watching the thread so the agent's reply can
+      // be targeted back to them via push (CFB-4.2). Only on user messages, and
+      // only when push is configured. Best-effort — never block the redirect.
+      if (pushEnabled && role === "user") {
+        await watchThread(c.var.userEmail, agentId, threadId);
+      }
+
       return c.redirect(backUrl, 302);
     },
   );
@@ -3432,12 +3505,109 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       try {
         const message = await chatClient.createMessage(threadId, "user", body);
+        if (pushEnabled) {
+          await watchThread(c.var.userEmail, c.req.param("agentId"), threadId);
+        }
         return c.json({ message });
       } catch {
         return c.json({ message: null }, 500);
       }
     },
   );
+
+  // ─── Web Push routes (CFB-4.2) ────────────────────────────────────────────
+  // All 503 when push is not fully configured server-side, so the client-side
+  // toggle (which is itself absent in that case) degrades cleanly.
+
+  app.post("/admin/chat/:agentId/push/subscribe", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
+
+    let payload: { endpoint?: string; p256dh?: string; auth?: string };
+    try {
+      payload = await c.req.json();
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    const { endpoint, p256dh, auth } = payload;
+    if (!endpoint || !p256dh || !auth) {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!prisma.pushSubscription)
+      return c.json({ error: "push_disabled" }, 503);
+    try {
+      await prisma.pushSubscription.upsert({
+        where: { endpoint },
+        create: { userEmail: c.var.userEmail, endpoint, p256dh, auth },
+        update: { userEmail: c.var.userEmail, p256dh, auth },
+      });
+    } catch (err) {
+      console.error("[push] subscribe upsert failed:", err);
+      return c.json({ error: "store_failed" }, 500);
+    }
+    return c.json({ ok: true });
+  });
+
+  app.post("/admin/chat/:agentId/push/unsubscribe", requireAuth, async (c) => {
+    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    if (!pushEnabled) return c.json({ error: "push_disabled" }, 503);
+
+    let endpoint: string | undefined;
+    try {
+      endpoint = (await c.req.json<{ endpoint?: string }>()).endpoint;
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!endpoint) return c.json({ error: "bad_request" }, 400);
+    if (!prisma.pushSubscription)
+      return c.json({ error: "push_disabled" }, 503);
+    try {
+      // Scope the delete to the caller so a stale endpoint can't be used to
+      // prune another user's subscription.
+      await prisma.pushSubscription.deleteMany({
+        where: { endpoint, userEmail: c.var.userEmail },
+      });
+    } catch (err) {
+      console.error("[push] unsubscribe delete failed:", err);
+    }
+    return c.json({ ok: true });
+  });
+
+  // Inbound webhook the chat service calls when an agent posts a reply, so the
+  // watching user(s) get notified. Authenticated by a shared bearer token
+  // (SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN) — NOT a user session — since the
+  // caller is a service, not a browser.
+  app.post("/admin/push/notify", async (c) => {
+    if (!pushEnabled || !pushService || !pushWebhookToken) {
+      return c.json({ error: "push_disabled" }, 503);
+    }
+    const auth = c.req.header("authorization") ?? "";
+    const presented = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+    if (!presented || presented !== pushWebhookToken) {
+      return c.json({ error: "unauthorized" }, 401);
+    }
+    let body: {
+      threadId?: string;
+      agentId?: string;
+      title?: string | null;
+      preview?: string | null;
+    };
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    if (!body.threadId || !body.agentId) {
+      return c.json({ error: "bad_request" }, 400);
+    }
+    const result = await pushService.notifyThreadReply({
+      threadId: body.threadId,
+      agentId: body.agentId,
+      title: body.title ?? null,
+      preview: body.preview ?? null,
+    });
+    return c.json({ ok: true, ...result });
+  });
 
   // ─── Task-store token proxy routes ────────────────────────────────────────
 
