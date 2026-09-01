@@ -146,6 +146,40 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     expect(rowBB?.[colIndex(t, "reviews_ship_it")]).toBe(1);
   });
 
+  test("a task with repo null and a matching pr groups against a non-null-repo PR record", async () => {
+    const tasks: TaskRecord[] = [
+      {
+        id: "EE-1.1",
+        status: "merged",
+        repo: null,
+        pr: 55,
+        startedAt: "2026-06-02T08:00:00.000Z",
+        completedAt: "2026-06-02T12:00:00.000Z",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+        createdAt: "2026-06-01T08:00:00.000Z",
+      },
+    ];
+    const prs: PrRecord[] = [
+      {
+        taskId: null,
+        prNumber: 55,
+        repo: "org/repo",
+        reviewState: "approved",
+        mergedAt: "2026-06-02T12:00:00.000Z",
+      },
+    ];
+
+    const provider = buildProvider(tasks, prs);
+    const t = await provider.query({ kind: "featuresReviews", range: RANGE });
+
+    const row = t.results.find(
+      (r) => r[colIndex(t, "feature_prefix")] === "EE",
+    );
+    expect(row).toBeDefined();
+    expect(row?.[colIndex(t, "reviews_total")]).toBe(1);
+    expect(row?.[colIndex(t, "reviews_ship_it")]).toBe(1);
+  });
+
   test("a task with no matching PR (missing .pr or no matching record) contributes nothing, no crash", async () => {
     const tasks: TaskRecord[] = [
       {

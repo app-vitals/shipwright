@@ -531,7 +531,17 @@ export class TaskStoreProvider implements MetricsProvider {
       const prefix = featurePrefix(t.id);
       if (!prefix) continue;
       if (t.pr == null) continue;
-      const pr = prs.find((p) => p.repo === t.repo && p.prNumber === t.pr);
+      // `Task.repo` is nullable (a legal state for unscoped tasks; see
+      // docs/task-store.md), whereas `PullRequest.repo` is always a non-null
+      // string. A strict `p.repo === t.repo` therefore silently drops every
+      // null-repo task's PR — the same silent-drop class this method exists to
+      // fix. Treat a null/undefined `t.repo` as unscoped and match on prNumber
+      // alone; otherwise require the repo to match so two PRs sharing a number
+      // across repos can't be confused.
+      const pr = prs.find(
+        (p) =>
+          (t.repo == null || p.repo === t.repo) && p.prNumber === t.pr,
+      );
       if (!pr) continue;
       const arr = map.get(prefix) ?? [];
       arr.push(pr);
