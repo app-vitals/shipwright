@@ -26,6 +26,24 @@
  * on the client Bolt builds. This is the only test in the suite that would
  * catch a future re-pin or transitive bump that un-dedupes the nested
  * @slack/web-api copy from the top-level one again.
+ *
+ * CPS-1.1 follow-up: Bolt 5.x's `App` constructor — independent of
+ * `socketMode`/receiver config, confirmed by reading App.js's init()
+ * (node_modules/@slack/bolt/dist/App.js) — calls `this.client.auth.test({
+ * token })` to verify the token, gated on the constructor's
+ * `tokenVerificationEnabled` option (defaults to `true`). With this suite's
+ * dummy token that call reached the real Slack API and rejected with
+ * WebAPIPlatformError("invalid_auth") shortly *after* construction
+ * returned — this test's assertion had already run and the (synchronous)
+ * test had already finished, so bun:test had no handle on that promise. It
+ * surfaced process-wide as an "Unhandled error between tests" landing in
+ * whichever file happened to be running at that moment — the root cause of
+ * the "different unrelated test fails every CI run" pattern observed on PR
+ * #3006 and #3008. `tokenVerificationEnabled: false` below disables that
+ * auth.test() call entirely, matching what this test's own docstring above
+ * already promised ("construction only ... no live connection") but wasn't
+ * actually achieving — the client shape assertion doesn't depend on
+ * verifying the dummy token is valid.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -38,6 +56,7 @@ describe("real @slack/bolt App — client dependency resolution", () => {
       appToken: "xapp-dummy-token",
       socketMode: true,
       signingSecret: "dummy-signing-secret",
+      tokenVerificationEnabled: false,
     });
 
     expect(typeof app.client.agents?.sessions?.setStatus).toBe("function");
