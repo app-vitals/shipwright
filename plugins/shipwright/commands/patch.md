@@ -120,6 +120,24 @@ MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN"
   | `sonnet` | `opus` |
   | `opus` | `opus` (already at the top tier — stays put) |
 
+  ```bash
+  TIER_RANK='{"haiku":0,"sonnet":1,"opus":2}'
+  TIER_NEXT='{"haiku":"sonnet","sonnet":"opus","opus":"opus"}'
+
+  PATCH_MODEL=$(echo "$MATCHED_TASKS" | jq -r --argjson rank "$TIER_RANK" --argjson next "$TIER_NEXT" '
+    [.tasks[]? | (.model // "sonnet")] as $models
+    | ($models | map($rank[.]) | max) as $maxRank
+    | ($models | map($rank[.]) | index($maxRank)) as $idx
+    | $next[$models[$idx]]
+  ')
+  PR_TASK_ID=$(echo "$MATCHED_TASKS" | jq -r --argjson rank "$TIER_RANK" '
+    [.tasks[]? | (.model // "sonnet")] as $models
+    | ($models | map($rank[.]) | max) as $maxRank
+    | ($models | map($rank[.]) | index($maxRank)) as $idx
+    | .tasks[$idx].id // empty
+  ')
+  ```
+
   Also set `PR_TASK_ID` to the id of the task that produced the highest tier (the first
   match on a tie). Several sites further down this file — Step 4c's BLOCKED handling, Step
   5a.7, Step 5c's BLOCKED handling, and `references/escalation-pattern.md`'s shared

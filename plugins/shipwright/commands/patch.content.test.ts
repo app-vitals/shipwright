@@ -1000,6 +1000,19 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(section).toContain("PTL-1.2");
   });
 
+  it("Step 2.1 has real jq/bash computing PATCH_MODEL and PR_TASK_ID from $MATCHED_TASKS, not just prose (mirrors Step 6b.6's jq mechanics)", () => {
+    const section = getStep2_1Section();
+    // Must reference the tasks array and each task's model field via jq, not just describe
+    // the computation in prose.
+    expect(section).toMatch(/\.tasks\[\]/);
+    expect(section).toMatch(/\.model/);
+    expect(section).toContain("jq -r");
+    expect(section).toContain("echo \"$MATCHED_TASKS\"");
+    // Must actually assign both output variables from that jq, not just declare them.
+    expect(section).toMatch(/PATCH_MODEL=\$\(/);
+    expect(section).toMatch(/PR_TASK_ID=\$\(/);
+  });
+
   it("Step 2.1 still resolves a single PR_TASK_ID scalar for downstream single-task escalation-PATCH reuse, and documents why", () => {
     const section = getStep2_1Section();
     expect(section).toContain("PR_TASK_ID");
