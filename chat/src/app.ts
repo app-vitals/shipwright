@@ -16,6 +16,7 @@
  * Thrown ApiError subclasses are mapped to HTTP responses by the onError hook.
  */
 
+import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
 import { Hono } from "hono";
 import { type ChatAuthEnv, createBearerAuthMiddleware } from "./auth.ts";
 import { ApiError } from "./errors.ts";
@@ -32,11 +33,15 @@ export interface ChatServiceDeps {
   messageService: MessageServiceLike;
   /** Optional scope resolver for agent tokens — returns repos from agents service. */
   scopeResolver?: (agentId: string) => Promise<string[]>;
+  /**
+   * Optional outbound reply-notification webhook (CFB-4.3) — fired
+   * fire-and-forget after a reply persists. Must never throw; see
+   * chat/src/reply-notifier.ts.
+   */
+  replyNotifier?: (event: ReplyNotificationEvent) => Promise<void>;
 }
 
-export function createChatServiceApp(
-  deps: ChatServiceDeps,
-): Hono<ChatAuthEnv> {
+export function createChatServiceApp(deps: ChatServiceDeps): Hono<ChatAuthEnv> {
   const app = new Hono<ChatAuthEnv>();
 
   // Map typed errors to responses; everything else is a 500.
@@ -50,9 +55,7 @@ export function createChatServiceApp(
   });
 
   // Health check — no auth.
-  app.get("/health", (c) =>
-    c.json({ status: "ok", service: "chat" }, 200),
-  );
+  app.get("/health", (c) => c.json({ status: "ok", service: "chat" }, 200));
 
   // Everything below requires a valid bearer token.
   app.use(
@@ -67,7 +70,11 @@ export function createChatServiceApp(
   app.route("/threads", createThreadsRoutes(deps.threadService));
   app.route(
     "/threads/:threadId/messages",
-    createMessagesRoutes(deps.threadService, deps.messageService),
+    createMessagesRoutes(
+      deps.threadService,
+      deps.messageService,
+      deps.replyNotifier,
+    ),
   );
 
   return app;

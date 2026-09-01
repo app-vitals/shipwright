@@ -26,6 +26,7 @@
  */
 
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { ReplyNotificationEvent } from "@shipwright/lib/chat-notify";
 import { readJson } from "@shipwright/lib/http";
 import type { ChatAuthEnv } from "../auth.ts";
 import {
@@ -392,6 +393,7 @@ const replyRoute = createRoute({
 export function createMessagesRoutes(
   threadService: ThreadServiceLike,
   messageService: MessageServiceLike,
+  replyNotifier?: (event: ReplyNotificationEvent) => Promise<void>,
 ): OpenAPIHono<ChatAuthEnv> {
   const app = new OpenAPIHono<ChatAuthEnv>();
 
@@ -656,6 +658,24 @@ export function createMessagesRoutes(
           : undefined,
     });
     if (!result) throw new NotFoundError("message not found");
+
+    // Fire-and-forget outbound reply notification (CFB-4.3) — fires exactly
+    // once, after the reply has persisted. A push failure must never fail
+    // the reply: createReplyNotifier() itself never throws/rejects, but this
+    // is wrapped defensively in case a caller injects a notifier that does.
+    if (replyNotifier) {
+      const thread = await threadService.findById(threadId);
+      if (thread) {
+        replyNotifier({
+          threadId,
+          agentId: thread.agentId,
+          title: thread.title,
+        }).catch((err) => {
+          console.error("[chat] reply notifier threw unexpectedly:", err);
+        });
+      }
+    }
+
     return c.json(result, 201);
   });
 

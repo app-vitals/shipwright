@@ -28,6 +28,7 @@ describe("SECRET_ENV_VARS", () => {
       "SHIPWRIGHT_ENCRYPTION_KEY",
       "SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY",
       "SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN",
+      "SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN",
       "GOOGLE_CLIENT_SECRET",
     ];
 
@@ -37,7 +38,7 @@ describe("SECRET_ENV_VARS", () => {
   });
 
   test("has exactly the expected number of entries (catches accidental additions/removals)", () => {
-    expect(SECRET_ENV_VARS.length).toBe(20);
+    expect(SECRET_ENV_VARS.length).toBe(21);
   });
 
   test("every entry is a non-empty string", () => {

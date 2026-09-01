@@ -31,5 +31,10 @@ export const SECRET_ENV_VARS = [
   // Shared token the chat service presents to admin's push-notify webhook so
   // an unauthenticated caller can't trigger notifications.
   "SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN",
+  // Bearer token the chat service presents to admin's push-notify webhook
+  // when firing outbound reply notifications. Same shared-secret value as
+  // SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN in deployment, but a distinct env
+  // var name (chat-side vs. admin-side).
+  "SHIPWRIGHT_CHAT_PUSH_WEBHOOK_TOKEN",
   "GOOGLE_CLIENT_SECRET",
 ] as const;
