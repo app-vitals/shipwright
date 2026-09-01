@@ -2,15 +2,14 @@
  * agent/src/slack-progress.unit.test.ts
  *
  * Unit tests for SlackProgress — the status-only progress driver for Slack
- * thread replies. Covers start()/onProgress()/finish() calling
- * `assistant.threads.setStatus`, the phase-stomping bug fix (a usage-only
- * onProgress tick — phase === undefined — must leave the last real milestone
- * label in place rather than resetting it), and that every Slack API failure
- * is swallowed rather than thrown.
+ * thread replies. Covers start()/finish() calling `agents.sessions.setStatus`
+ * with the fixed lifecycle values ("processing" / "active"), that onProgress()
+ * no longer drives any Slack API call (the new API has no per-phase text
+ * slot), and that every Slack API failure is swallowed rather than thrown.
  *
  * The mock Slack client is a plain object of mock fns — no mock.module(), no
- * global overrides. No Clock injection is needed: SlackProgress no longer
- * does any time-based scheduling.
+ * global overrides. No Clock injection is needed: SlackProgress does no
+ * time-based scheduling.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -20,8 +19,8 @@ import { SlackProgress } from "./slack-progress.ts";
 
 function makeMockClient() {
   return {
-    assistant: {
-      threads: {
+    agents: {
+      sessions: {
         setStatus: mock(async (_args: unknown) => {}),
       },
     },
@@ -46,72 +45,49 @@ function makeProgress(
 // ─── status-on-start ───────────────────────────────────────────────────────────
 
 describe("SlackProgress — start()", () => {
-  test("sets status to Thinking...", async () => {
+  test("sets status to processing", async () => {
     const { progress, client } = makeProgress();
     await progress.start();
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
       channel_id: CHANNEL,
       thread_ts: THREAD_TS,
-      status: "Thinking...",
+      status: "processing",
     });
   });
 });
 
-// ─── status-updates-on-real-phase ───────────────────────────────────────────────
+// ─── onProgress is a no-op for phase transitions ───────────────────────────────
 
-describe("SlackProgress.onProgress — real phase", () => {
-  test("calls setStatus with the label for the phase", () => {
+describe("SlackProgress.onProgress — phase transitions", () => {
+  test("does not call setStatus when a real phase is present", () => {
     const { progress, client } = makeProgress();
     progress.onProgress({}, "reading");
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
-      channel_id: CHANNEL,
-      thread_ts: THREAD_TS,
-      status: "Reading files",
-    });
+    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+  });
+
+  test("does not call setStatus for a usage-only tick (phase undefined)", () => {
+    const { progress, client } = makeProgress();
+    progress.onProgress({}, undefined);
+    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+  });
+
+  test("does not throw regardless of phase", () => {
+    const { progress } = makeProgress();
+    expect(() => progress.onProgress({}, "editing")).not.toThrow();
+    expect(() => progress.onProgress({}, undefined)).not.toThrow();
   });
 });
 
-// ─── status-untouched-on-usage-only-tick (the bug fix) ─────────────────────────
-
-describe("SlackProgress.onProgress — usage-only tick (phase undefined)", () => {
-  test("does not call setStatus at all when phase is undefined", () => {
-    const { progress, client } = makeProgress();
-    progress.onProgress({}, undefined);
-    expect(client.assistant.threads.setStatus).not.toHaveBeenCalled();
-  });
-
-  test("leaves the last real milestone label in place instead of resetting it", () => {
-    const { progress, client } = makeProgress();
-    progress.onProgress({}, "reading");
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
-      channel_id: CHANNEL,
-      thread_ts: THREAD_TS,
-      status: "Reading files",
-    });
-
-    // A usage-only tick (no phase) immediately follows, as happens in
-    // claude.ts for most stream lines — this must NOT stomp the real
-    // milestone label with a generic default.
-    progress.onProgress({}, undefined);
-    expect(client.assistant.threads.setStatus).toHaveBeenLastCalledWith({
-      channel_id: CHANNEL,
-      thread_ts: THREAD_TS,
-      status: "Reading files",
-    });
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledTimes(1);
-  });
-});
-
-// ─── status-cleared-on-finish ───────────────────────────────────────────────────
+// ─── status-set-to-active-on-finish ─────────────────────────────────────────────
 
 describe("SlackProgress — finish()", () => {
-  test("clears status to empty string", async () => {
+  test("sets status to active (idle/ready — thread stays open for follow-ups)", async () => {
     const { progress, client } = makeProgress();
     await progress.finish();
-    expect(client.assistant.threads.setStatus).toHaveBeenCalledWith({
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
       channel_id: CHANNEL,
       thread_ts: THREAD_TS,
-      status: "",
+      status: "active",
     });
   });
 });
@@ -121,23 +97,16 @@ describe("SlackProgress — finish()", () => {
 describe("SlackProgress — errors swallowed", () => {
   test("start() does not throw when setStatus rejects", async () => {
     const client = makeMockClient();
-    client.assistant.threads.setStatus.mockRejectedValueOnce(
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api down"),
     );
     const { progress } = makeProgress({ client });
     await expect(progress.start()).resolves.toBeUndefined();
   });
 
-  test("onProgress does not throw when setStatus rejects", () => {
-    const client = makeMockClient();
-    client.assistant.threads.setStatus.mockRejectedValueOnce(new Error("boom"));
-    const { progress } = makeProgress({ client });
-    expect(() => progress.onProgress({}, "editing")).not.toThrow();
-  });
-
   test("finish() does not throw when setStatus rejects", async () => {
     const client = makeMockClient();
-    client.assistant.threads.setStatus.mockRejectedValueOnce(
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api down"),
     );
     const { progress } = makeProgress({ client });
