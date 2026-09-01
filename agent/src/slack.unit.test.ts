@@ -165,8 +165,8 @@ const mockGatingSlackConfig = {
 
 function makeMockClient() {
   return {
-    assistant: {
-      threads: {
+    agents: {
+      sessions: {
         setStatus: mock(async (_args: unknown) => {}),
       },
     },
