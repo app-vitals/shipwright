@@ -140,6 +140,12 @@ export interface CronHandlerDeps {
   agentId?: string;
   /** Clock for deterministic time in tests. Defaults to SystemClock(). */
   clock?: Clock;
+  /**
+   * Spawner used to run the preCheck script. Defaults to the real
+   * Bun.spawn — overridable in tests to inject a fake process instead of
+   * spawning ~15 real bun child processes per test run (CPS-1.1).
+   */
+  spawner?: typeof Bun.spawn;
 }
 
 export async function handleCronRequest(
@@ -167,6 +173,7 @@ export async function handleCronRequest(
     cronRunReporter,
     agentId,
     clock = SystemClock(),
+    spawner = Bun.spawn,
   } = deps;
 
   const startedAt = clock.now();
@@ -259,7 +266,7 @@ export async function handleCronRequest(
     // files like `state/agent-policy.md`. Without this the cwd roots at /app and
     // workspace-relative reads fail. Mirrors the claude run, which is already
     // rooted at the workspace.
-    const checkProc = Bun.spawn(["bun", scriptPath], {
+    const checkProc = spawner(["bun", scriptPath], {
       ...(workspace ? { cwd: workspace } : {}),
       // env: process.env is required — Bun.spawn otherwise snapshots env at Bun
       // startup and misses runtime mutations from config-sync (index.ts does

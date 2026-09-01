@@ -27,19 +27,23 @@
  * catch a future re-pin or transitive bump that un-dedupes the nested
  * @slack/web-api copy from the top-level one again.
  *
- * tokenVerificationEnabled: false is required — with the (Bolt) default of
- * true, the App constructor fires a REAL, unawaited `client.auth.test(...)`
- * call against the live Slack API as a side effect of building the
- * `authorize` function, even though this test never calls .start() or
- * emits an event. With a dummy token that call rejects (invalid_auth) on
- * its own timeline; since nothing in this test awaits or catches it, the
- * rejection surfaces as an unhandled rejection attributed to whichever
- * *other* test happens to be running when the network response lands —
- * only reproducible under full-suite load, where enough wall-clock time
- * passes for the response to arrive mid-suite. Disabling eager token
- * verification defers the auth.test call until `authorize` is actually
- * invoked, which never happens here, and doesn't change what this test
- * verifies (the client's dependency-resolution shape).
+ * CPS-1.1 follow-up: Bolt 5.x's `App` constructor — independent of
+ * `socketMode`/receiver config, confirmed by reading App.js's init()
+ * (node_modules/@slack/bolt/dist/App.js) — calls `this.client.auth.test({
+ * token })` to verify the token, gated on the constructor's
+ * `tokenVerificationEnabled` option (defaults to `true`). With this suite's
+ * dummy token that call reached the real Slack API and rejected with
+ * WebAPIPlatformError("invalid_auth") shortly *after* construction
+ * returned — this test's assertion had already run and the (synchronous)
+ * test had already finished, so bun:test had no handle on that promise. It
+ * surfaced process-wide as an "Unhandled error between tests" landing in
+ * whichever file happened to be running at that moment — the root cause of
+ * the "different unrelated test fails every CI run" pattern observed on PR
+ * #3006 and #3008. `tokenVerificationEnabled: false` below disables that
+ * auth.test() call entirely, matching what this test's own docstring above
+ * already promised ("construction only ... no live connection") but wasn't
+ * actually achieving — the client shape assertion doesn't depend on
+ * verifying the dummy token is valid.
  */
 
 import { describe, expect, test } from "bun:test";

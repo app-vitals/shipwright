@@ -533,4 +533,3 @@ describe("cron dispatch on an agent with no Slack credentials", () => {
     expect(completeCalls[0]?.outcome).toBe("completed");
   });
 });
-
