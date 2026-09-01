@@ -32,6 +32,10 @@ import {
   NoopChatTokenReporter,
 } from "./chat-token-reporter.ts";
 import { ghGraphql, ghJson } from "./check-helpers.ts";
+import {
+  buildProductionDeps as buildClaimInvariantReconcilerDeps,
+  reconcileClaimInvariant,
+} from "./claim-invariant-reconciler.ts";
 import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
@@ -342,12 +346,26 @@ if (runtimeClient && agentId) {
 // flows through the existing PR-state-reconciler pass above, since
 // buildPrStateReconcilerDeps (buildProductionDeps in pr-state-reconciler.ts)
 // constructs removeWorktree internally.
+//
+// TCS-4.1 adds a fourth, independent pass on this SAME tick: a claim-
+// invariant self-heal sweep (reconcileClaimInvariant) that scans
+// status:"pending" task-store tasks in scope for a non-null claimedBy (the
+// AGH-3.4 shape — a pending task should never carry a claim) and releases
+// each violation via POST /tasks/:id/release. Pure task-store HTTP, no
+// GitHub calls, so it lives in its own sibling module
+// (claim-invariant-reconciler.ts) rather than pr-state-reconciler.ts. Same
+// lazy-deps + own-try/catch shape as the three passes above — an independent
+// safety net alongside TCS-2.1's DB constraint on the same invariant, not a
+// replacement for it.
 if (runtimeClient && agentId) {
   let reconcilerDeps: ReturnType<typeof buildPrStateReconcilerDeps> | undefined;
   let reviewStateReconcilerDeps:
     | ReturnType<typeof buildReviewStateReconcilerDeps>
     | undefined;
   let worktreeReaperDeps: ReturnType<typeof buildWorktreeReaperDeps> | undefined;
+  let claimInvariantReconcilerDeps:
+    | ReturnType<typeof buildClaimInvariantReconcilerDeps>
+    | undefined;
 
   async function runPrStateReconciler() {
     try {
@@ -384,6 +402,18 @@ if (runtimeClient && agentId) {
     } catch (err) {
       console.error(
         "[pr-state-reconciler:worktree-reaper] tick failed (non-fatal):",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+
+    try {
+      claimInvariantReconcilerDeps ??= buildClaimInvariantReconcilerDeps({
+        getScopedRepos: agentReposRef.get,
+      });
+      await reconcileClaimInvariant(claimInvariantReconcilerDeps);
+    } catch (err) {
+      console.error(
+        "[claim-invariant-reconciler] tick failed (non-fatal):",
         err instanceof Error ? err.message : String(err),
       );
     }
