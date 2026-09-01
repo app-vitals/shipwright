@@ -9,9 +9,6 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { WebClient } from "@slack/web-api";
 import {
   ClaudeRunError,
@@ -534,52 +531,5 @@ describe("cron dispatch on an agent with no Slack credentials", () => {
 
     expect(channels).toEqual(["C-X"]);
     expect(completeCalls[0]?.outcome).toBe("completed");
-  });
-});
-
-// ─── preCheck: real subprocess (default spawner wiring) ──────────────────────
-
-describe("handleCronRequest — preCheck default spawner wiring", () => {
-  /**
-   * The one true end-to-end preCheck test: NO spawner is injected, so
-   * `deps.spawner ?? Bun.spawn` falls back to the real Bun.spawn and a real
-   * bun child process actually runs the script on disk. This guards the
-   * default-fallback path itself — cron-handler.unit.test.ts covers all
-   * preCheck *behavior* with a fake spawner instead (CPS-1.1), so this is
-   * the only test in the suite that spawns a real subprocess.
-   */
-  test("with no spawner injected, preCheck runs a real bun subprocess and its output becomes the prompt", async () => {
-    const tmpWorkspace = mkdtempSync(
-      join(tmpdir(), "cron-precheck-real-spawn-"),
-    );
-    const scriptPath = join(tmpWorkspace, "check.ts");
-    writeFileSync(
-      scriptPath,
-      `console.log("real subprocess output"); process.exit(0);`,
-    );
-
-    let capturedPrompt: string | undefined;
-    const runner = async (message: string): Promise<ClaudeRunResult> => {
-      capturedPrompt = message;
-      return { result: "done [silent]", sessionId: "s1" };
-    };
-
-    await handleCronRequest(
-      {
-        jobId: "precheck-real-subprocess",
-        prompt: "original prompt",
-        silent: true,
-        preCheck: scriptPath,
-      },
-      {
-        slack: mockSlack,
-        runner,
-        workspace: tmpWorkspace,
-        // No `spawner` — exercises the real `deps.spawner ?? Bun.spawn`
-        // default-fallback wiring end-to-end.
-      },
-    );
-
-    expect(capturedPrompt).toContain("real subprocess output");
   });
 });

@@ -14,9 +14,17 @@
  * the actual spawn once a scriptPath is found still goes through the fake
  * spawner.
  *
- * The one true end-to-end test that spawns a REAL subprocess (exercising the
- * `deps.spawner ?? Bun.spawn` default-fallback wiring) lives in
- * cron-handler.integration.test.ts.
+ * No test in this suite spawns a real subprocess, including the
+ * `spawner ?? Bun.spawn` default-fallback itself — that default is a single
+ * destructuring assignment (cron-handler.ts:176), the same shape as
+ * claude.ts's `spawner: typeof Bun.spawn = Bun.spawn`, whose own test suite
+ * (claude.unit.test.ts) likewise never exercises the real-Bun.spawn path
+ * with an actual child process. An earlier revision of this suite kept one
+ * real-subprocess integration test to "verify the wiring end-to-end"; it was
+ * removed after real subprocess spawns were identified as the likely source
+ * of intermittent CI failures (random `Cannot call describe()/afterEach()
+ * after the test run has completed` errors in unrelated files under GH
+ * Actions load) — see CPS-1.1.
  */
 
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
