@@ -728,13 +728,15 @@ post-fix update in Step 5c.5 — no second claim call is needed. Proceed to Step
 ### Step 5a.7: Second-Round Escalation Check (RPF-1.3)
 
 RPF-1.1/1.2 let a REJECTed finding get rebutted (a PR-author comment posted via
-`gh pr comment`) and `reviewState` reset to `pending` so a fresh review can re-evaluate the
-rebuttal. If that fresh review still flags the same (or an equivalent) issue, another
-rebuttal+reset cycle would repeat indefinitely — the reviewer and the fix subagent disagree,
-and that is a genuine human-judgment deadlock, not something another automated pass will
-resolve. Before dispatching the fix subagent (which is where RPF-1.1's rebuttal-comment step
-lives, in Step 5b Instructions [D]), check whether this PR's List A finding is a *second*
-round of the same disagreement.
+`gh pr comment`) and a `rejected` ledger entry recorded (Step 5c.5), which
+`check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) treats as new information,
+re-qualifying the PR for a fresh review to re-evaluate the rebuttal. If that fresh review
+still flags the same (or an equivalent) issue, another rebuttal cycle would repeat
+indefinitely — the reviewer and the fix subagent disagree, and that is a genuine
+human-judgment deadlock, not something another automated pass will resolve. Before
+dispatching the fix subagent (which is where RPF-1.1's rebuttal-comment step lives, in Step
+5b Instructions [D]), check whether this PR's List A finding is a *second* round of the
+same disagreement.
 
 **Step 1 — cheap timestamp pre-filter to find candidate prior replies.** This stays a cheap
 pre-filter, not the final gate — see Step 2 below for the decisive judgment. For each
@@ -1060,13 +1062,7 @@ INSTRUCTIONS — follow in order:
 
 Parse the subagent's STATUS:
 
-- **DONE**: Record the findings addressed. A `DONE` status always followed a push (no-push
-  cycles only ever report `DONE_WITH_CONCERNS` per Step 5b Instructions [D]), so this cycle
-  does not qualify for the `reviewState` reset:
-  ```bash
-  NO_PUSH_REBUTTAL_CONFIRMED=false
-  ```
-  Proceed to Step 5c.5 (upsert PR record).
+- **DONE**: Record the findings addressed. Proceed to Step 5c.5 (upsert PR record).
 - **DONE_WITH_CONCERNS**: Read concerns. If any concern reports a REJECTed finding (per
   Step 5b Instructions [D], this fires whenever at least one finding was REJECTed —
   whether every finding in the run was REJECTed with no push at all, one branch of a mixed
@@ -1084,32 +1080,15 @@ Parse the subagent's STATUS:
   report (the reflagging loop will otherwise persist regardless of which no-push variant
   produced it). For other, non-REJECT correctness-gap concerns, just log them in the
   report. Either way, always proceed to Step 5c.5 (upsert PR record) — when a push happened
-  there IS a new commit SHA to record, and when no push happened Step 5c.5 still needs to
-  run so it can reset `reviewState` to `pending` (see below), even though there is no new
-  commit SHA. Carry forward into Step 5c.5 whether this cycle had no push
-  (`HEAD_SHA_POST_PATCH` unchanged from before dispatch) with at least one REJECTed finding
-  rebuttal-confirmed — regardless of whether every finding in the run was REJECTed — that's
-  the condition that gates the `reviewState` reset there. Make this explicit by setting
-  `NO_PUSH_REBUTTAL_CONFIRMED` before proceeding to Step 5c.5:
-  ```bash
-  if [ "$HEAD_SHA_POST_PATCH" = "$HEAD_SHA_PRE_PATCH" ] && \
-     [ <at least one REJECTed finding this cycle, with rebuttal comment posted and its
-        inline thread(s) resolved, per the confirmation check above> ]; then
-    NO_PUSH_REBUTTAL_CONFIRMED=true
-  else
-    NO_PUSH_REBUTTAL_CONFIRMED=false
-  fi
-  ```
-  The second condition is a judgment call from the subagent's STATUS/CONCERNS report, not a
-  literal shell test — evaluate it the same way you just evaluated the "confirm ... rebuttal
-  ... AND ... resolved the inline threads" check earlier in this bullet, then set the
-  variable accordingly before Step 5c.5 reads it.
+  there IS a new commit SHA to record, and when no push happened Step 5c.5's ledger write
+  for any REJECTed findings still needs to run (see below), even though there is no new
+  commit SHA.
 
-  Separately from `NO_PUSH_REBUTTAL_CONFIRMED`, also record the set of REJECTed findings
-  from this cycle for Step 5c.5's ledger write, whenever the rebuttal-confirmation check
-  above found at least one REJECTed finding (independent of push/no-push — a mixed
-  ACCEPT+REJECT run that also pushed a commit still has REJECTed findings needing a ledger
-  entry). For each REJECTed finding in the subagent's CONCERNS, capture:
+  Record the set of REJECTed findings from this cycle for Step 5c.5's ledger write,
+  whenever the rebuttal-confirmation check above found at least one REJECTed finding
+  (independent of push/no-push — a mixed ACCEPT+REJECT run that also pushed a commit still
+  has REJECTed findings needing a ledger entry). For each REJECTed finding in the
+  subagent's CONCERNS, capture:
   - **`ref`**: the same identifier already used to resolve that finding's thread in Step 5b
     Instructions [D] — the inline thread's `path:line` for inline findings, or a short slug
     for PR-body-level findings with no inline thread.
@@ -1168,14 +1147,6 @@ if [ -n "$PR_RECORD_ID" ]; then
     -d "{\"ref\": \"{finding.ref}\", \"disposition\": \"rejected\", \"source\": \"patch\", \"evidence\": \"{finding.evidence}\", \"agentId\": \"$SHIPWRIGHT_AGENT_ID\"}" \
     > /dev/null 2>&1 || \
     echo "⚠ POST /prs/$PR_RECORD_ID/findings (rejected) failed — continuing"
-  if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]; then
-    curl -sf -X PATCH \
-      -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-      -H "Content-Type: application/json" \
-      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID" \
-      -d '{"reviewState": "pending"}' > /dev/null 2>&1 || \
-      echo "⚠ PATCH /prs/$PR_RECORD_ID reviewState reset failed — continuing"
-  fi
 else
   echo "⚠ no PR_RECORD_ID from pre-work claim — skipping PR record update"
 fi
@@ -1188,25 +1159,17 @@ in Step 5c — see there for how it's populated), POSTing one `source: "patch"`,
 slug, for PR-body-level findings) and `evidence` set to the rejection reason already used in
 the rebuttal comment. If `REJECTED_FINDINGS_THIS_CYCLE` is empty, skip this call entirely —
 there is nothing to record. This runs unconditionally whenever
-`REJECTED_FINDINGS_THIS_CYCLE` is non-empty — independent of `NO_PUSH_REBUTTAL_CONFIRMED`,
-so it also fires on a mixed ACCEPT+REJECT run that pushed a commit, not only the no-push
-case. This is additive: it does not replace or gate the existing manual
-`reviewState: "pending"` reset below, which stays exactly as it was and remains the only
-mechanism that makes a no-push rebuttal cycle re-qualify for review today (that dependency
-is removed in a later task, PFL-4.1, only after PFL-3.1 makes the ledger the read-side
-source of truth for re-review eligibility).
+`REJECTED_FINDINGS_THIS_CYCLE` is non-empty, on both a no-push all-REJECT cycle and a mixed
+ACCEPT+REJECT run that pushed a commit.
 
-`NO_PUSH_REBUTTAL_CONFIRMED` is assigned in Step 5c, before this step runs — see there for
-the exact condition. It does not require every finding in the run to be REJECTed — a mixed
-run where the ACCEPTED/MODIFIED findings all resolved to zero-diff no-ops still qualifies,
-since what matters for the commit-SHA-based dedup is whether the SHA actually changed, not
-how the findings were classified. The rest of this paragraph is the "why": in this no-push
-case, `headRefOid` never changes, so without this reset the PR's `reviewState` would stay
-at whatever the prior review left it and the PR could never re-qualify as a review
-candidate in `check-review.ts`'s dedup — resetting it to `pending` here makes it re-qualify
-despite the unchanged commit SHA, so a fresh review can evaluate the rebuttal and post an
-actual APPROVE. Any cycle where a push did happen re-qualifies naturally via the changed
-commit SHA, so the `reviewState` reset must not fire there.
+This ledger POST is now the sole mechanism that makes a no-push rebuttal cycle re-qualify
+for review: `agent/src/check-review.ts`'s `hasFreshLedgerFinding` (PFL-3.1) treats any
+`PrFinding.at` newer than the record's `reviewedAt` as new information, re-qualifying the PR
+for review regardless of whether `headRefOid` changed. (PFL-4.1 removed this step's earlier
+manual `reviewState: "pending"` reset, kept deliberately by PFL-2.2 as a stopgap until
+PFL-3.1's ledger-timestamp trigger went live in production — the ledger POST above already
+fires on every REJECTed finding, so the manual reset was fully redundant once PFL-3.1
+shipped.)
 
 Proceed to Step 5d (cleanup).
 
