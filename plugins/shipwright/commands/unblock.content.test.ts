@@ -59,6 +59,25 @@ describe("unblock.md — discovery (AC1)", () => {
     const lower = content.toLowerCase();
     expect(lower).toContain("dependency");
   });
+
+  it("dedupes blocked PRs via a live GET /tasks?repo=&pr= lookup, not PullRequest.taskId", () => {
+    expect(content).toMatch(/\/tasks\?repo=.*&pr=/);
+    const lower = content.toLowerCase();
+    expect(lower).toContain("do not dedupe on `pullrequest.taskid`");
+  });
+
+  it("documents that a PR can have multiple linked tasks and each is triaged once per match", () => {
+    const lower = content.toLowerCase();
+    expect(lower).toContain("more than one");
+    expect(lower).toContain("bundle");
+    expect(lower).toContain("not one collapsed item");
+  });
+
+  it("still treats a PR with zero linked tasks as a PR-only record", () => {
+    const lower = content.toLowerCase();
+    expect(lower).toContain("zero");
+    expect(lower).toContain("pr-only record with no linked task");
+  });
 });
 
 describe("unblock.md — phase inference (AC2)", () => {
