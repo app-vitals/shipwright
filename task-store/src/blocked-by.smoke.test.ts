@@ -177,6 +177,9 @@ function fakeTaskService(
     async distinct(_agentId?) {
       return { sessions: [], repos: [], orgs: [] };
     },
+    async getEvents(_id, _opts) {
+      return { events: [], total: 0 };
+    },
   };
 }
 

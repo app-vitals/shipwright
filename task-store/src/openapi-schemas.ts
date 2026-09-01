@@ -299,6 +299,25 @@ export const PullRequestEventSchema = z
 
 export type PullRequestEvent = z.infer<typeof PullRequestEventSchema>;
 
+export const TaskEventSchema = z
+  .object({
+    id: z.string().openapi({ example: "clxevent123456" }),
+    taskId: z.string().openapi({ example: "clx0987654321" }),
+    field: z.string().openapi({ example: "status" }),
+    oldValue: z.string().nullable().openapi({ example: "pending" }),
+    newValue: z.string().nullable().openapi({ example: "in_progress" }),
+    actor: z.string().nullable().openapi({ example: "agent-abc123" }),
+    method: z.string().openapi({ example: "claim" }),
+    at: z.string().openapi({ example: "2026-08-17T12:00:00.000Z" }),
+    createdAt: z
+      .string()
+      .datetime()
+      .openapi({ example: "2026-08-17T12:00:00.000Z" }),
+  })
+  .openapi("TaskEvent");
+
+export type TaskEvent = z.infer<typeof TaskEventSchema>;
+
 // ─── Pull Request ─────────────────────────────────────────────────────────────
 
 export const PullRequestSchema = z
@@ -723,6 +742,33 @@ export const PrEventsResponseSchema = z
     offset: z.number().int().openapi({ example: 0 }),
   })
   .openapi("PrEventsResponse");
+
+/** Query params for GET /tasks/:id/events */
+export const TaskEventsQuerySchema = z
+  .object({
+    limit: z
+      .string()
+      .optional()
+      .openapi({ example: "50", description: "Max records to return" }),
+    offset: z
+      .string()
+      .optional()
+      .openapi({ example: "0", description: "Pagination offset" }),
+  })
+  .openapi("TaskEventsQuery");
+
+/** Response for GET /tasks/:id/events */
+export const TaskEventsResponseSchema = z
+  .object({
+    events: z.array(TaskEventSchema).openapi({
+      description:
+        "This task's TaskEvent audit trail, ordered by `at` ascending (oldest first).",
+    }),
+    total: z.number().int().openapi({ example: 1 }),
+    limit: z.number().int().openapi({ example: 50 }),
+    offset: z.number().int().openapi({ example: 0 }),
+  })
+  .openapi("TaskEventsResponse");
 
 export const ClaimPrBodySchema = z
   .object({

@@ -181,6 +181,9 @@ function fakeTaskService(opts: {
     async distinct() {
       return { sessions: [], repos: [], orgs: [] };
     },
+    async getEvents() {
+      return { events: [], total: 0 };
+    },
   };
 }
 
