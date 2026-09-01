@@ -977,6 +977,91 @@ These map to the agent voice env vars (`WHISPER_SERVICE_URL`,
 
 ---
 
+## Web Push notifications (optional)
+
+Web Push notifications alert users when an agent replies, enabling **always-on chat**
+even when the admin console tab is in the background. When disabled (the default),
+the chat page polls for new messages but does not render a notification opt-in toggle.
+
+To enable Web Push, you must generate VAPID keypair (used to sign RFC 8292
+`Authorization` headers for Web Push Protocol requests):
+
+```bash
+# Generate a VAPID keypair (do this once, outside the cluster)
+npx web-push generate-vapid-keys
+
+# Example output:
+#   Public Key: BEfJ3...
+#   Private Key: aBc1...
+```
+
+Then configure the three required env vars and an optional webhook token:
+
+```yaml
+admin:
+  extraEnv:
+    - name: SHIPWRIGHT_ADMIN_VAPID_PUBLIC_KEY
+      value: "BEfJ3..."                       # Public key (base64url, sent to browser — NOT secret)
+    - name: SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY
+      valueFrom:
+        secretKeyRef:
+          name: shipwright-secrets            # Secret name (default)
+          key: shipwright-admin-vapid-private-key  # Secret key
+    - name: SHIPWRIGHT_ADMIN_VAPID_SUBJECT
+      value: "mailto:admin@example.com"       # RFC 8292 subject: mailto or https URL
+    - name: SHIPWRIGHT_ADMIN_PUSH_MAX_DETAIL
+      value: "title"                          # Hard ceiling: "generic" | "title" | "preview" (default: "title")
+```
+
+Add the private key to the Secret:
+
+```bash
+kubectl -n shipwright patch secret shipwright-secrets --type merge \
+  -p '{"stringData":{"shipwright-admin-vapid-private-key":"aBc1..."}}'
+```
+
+If deploying the chat service (which triggers notifications on agent replies), also
+configure the shared bearer token the chat service uses to authenticate its webhook:
+
+```bash
+kubectl -n shipwright patch secret shipwright-secrets --type merge \
+  -p "{\"stringData\":{\"shipwright-admin-push-webhook-token\":\"$(openssl rand -hex 32)\"}}"
+```
+
+```yaml
+admin:
+  extraEnv:
+    - name: SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: shipwright-secrets
+          key: shipwright-admin-push-webhook-token
+```
+
+Separately, inject the same token into the chat service:
+
+```yaml
+chat:
+  extraEnv:
+    - name: SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: shipwright-secrets
+          key: shipwright-admin-push-webhook-token
+```
+
+**Graceful degradation:** when any VAPID config is missing, the `POST /admin/push/notify`
+webhook returns `503 Service Unavailable` (safe for the calling chat service — it
+retries), and the chat page's notification toggle does not render (users see the
+poll-only experience instead). When `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` is unset,
+the webhook returns `401 Unauthorized` and the chat service's notification trigger
+request is rejected; set the token to enable the inbound trigger path.
+
+See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
+for the full list of Web Push env vars and their defaults.
+
+---
+
 ## Authentication modes
 
 The admin service's `auth.mode` selects how users authenticate to the admin UI.
