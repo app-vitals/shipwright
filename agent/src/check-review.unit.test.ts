@@ -2505,8 +2505,8 @@ describe("traceReviewCandidacyDecision", () => {
           id: "f1",
           prRecordId: "pr1",
           ref: "src/foo.ts:1",
-          disposition: "resolved",
-          source: "review",
+          disposition: "rejected",
+          source: "patch",
           evidence: "reviewedAt was never set on this record.",
           at: "2026-01-01T00:00:00.000Z",
           createdAt: "2026-01-01T00:00:00.000Z",
@@ -2549,6 +2549,95 @@ describe("traceReviewCandidacyDecision", () => {
     };
     const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
     expect(trace).toEqual({ check: "eligible" });
+  });
+
+  // ─── PFL-3.3: source:"review" findings never count as fresh ──────────────
+  //
+  // PFL-3.1's freshness check originally counted ANY finding (source:"review"
+  // or source:"patch") postdating reviewedAt as fresh. That's the PR #89/#107
+  // race: every source:"review" ledger write (review.md's PFL-2.1 self-review
+  // judgments and prior-findings attestations) is a retrospective disposition
+  // about an OLDER review, computed and POSTed within the same pass that
+  // stamps reviewedAt — by review.md's own ordering rule that POST must land
+  // before that same pass's Step 11b, so a source:"review" finding postdating
+  // reviewedAt can only reflect an ordering violation within that pass, never
+  // genuine new information. Only source:"patch" (a later patch/rebuttal
+  // cycle) represents information genuinely new since the last review. These
+  // two tests assert a source:"review" finding newer than reviewedAt no
+  // longer bypasses either exclusion, closing that race at the code level
+  // instead of relying solely on review.md's procedural ordering rule.
+
+  test("already-reviewed-terminal: a source:\"review\" finding newer than reviewedAt does NOT bypass the terminal-skip exclusion (PFL-3.3)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-21T04:10:53.897Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "resolved",
+          source: "review",
+          evidence:
+            "PFL-2.1 self-review judgment POSTed a few seconds after Step 11b's /complete call (the PR #89 race).",
+          at: "2026-08-21T04:11:06.780Z",
+          createdAt: "2026-08-21T04:11:06.780Z",
+        },
+      ],
+    };
+    const trace = traceReviewCandidacyDecision(baseArgs({ pr, record }));
+    expect(trace).toEqual({
+      check: "already-reviewed-terminal",
+      reviewedCommitSha: "sha111",
+      headRefOid: "sha111",
+      reviewState: "posted",
+    });
+  });
+
+  test("already-reviewed-live: a source:\"review\" finding newer than reviewedAt does NOT bypass the live-review-dedup exclusion (PFL-3.3)", () => {
+    const pr = makePr({ headRefOid: "sha111" });
+    const record: PrRecord = {
+      commitSha: "sha111",
+      reviewedCommitSha: "sha111",
+      reviewState: "posted",
+      reviewedAt: "2026-08-21T04:10:53.897Z",
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "src/foo.ts:1",
+          disposition: "resolved",
+          source: "review",
+          evidence:
+            "PFL-2.1 self-review judgment POSTed a few seconds after Step 11b's /complete call (the PR #89 race).",
+          at: "2026-08-21T04:11:06.780Z",
+          createdAt: "2026-08-21T04:11:06.780Z",
+        },
+      ],
+    };
+    const reviewData = makeReviewData({
+      headRefOid: "sha111",
+      reviews: {
+        nodes: [
+          makeReviewNode({
+            state: "APPROVED",
+            commit: { oid: "sha111" },
+            body: "LGTM",
+          }),
+        ],
+      },
+    });
+    const trace = traceReviewCandidacyDecision(
+      baseArgs({ pr, record, reviewData, hasFreshAuthorReply: false }),
+    );
+    expect(trace).toEqual({
+      check: "already-reviewed-live",
+      classifiedState: "approved",
+      hasFreshAuthorReply: false,
+    });
   });
 
   // ─── PFL-3.1: ledger-finding bypass reachable through the live-review dedup ──
