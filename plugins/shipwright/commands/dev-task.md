@@ -1064,13 +1064,26 @@ curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 
 ### 10a. Update Queue
 
+Capture the HTTP status of the PATCH explicitly — same shape as Step 2's `CLAIM_CODE` —
+instead of piping straight to `jq` and assuming success:
+
 ```bash
 PR_CREATED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-curl -sf -X PATCH -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+PATCH_CODE=$(curl -s -o /tmp/task_patch_10a.json -w '%{http_code}' -X PATCH \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{id}" \
-  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}" | jq .
+  -d "{\"status\": \"pr_open\", \"pr\": {pr_number}, \"prCreatedAt\": \"$PR_CREATED_AT\", \"ciFixAttempts\": {ci_attempt}, \"simplifyTotal\": {simplify_total}, \"simplifyDry\": {simplify_dry}, \"simplifyDeadCode\": {simplify_dead_code}, \"simplifyNaming\": {simplify_naming}, \"simplifyComplexity\": {simplify_complexity}, \"simplifyConsistency\": {simplify_consistency}, \"coverageDelta\": {coverage_delta}, \"model\": \"{EFFECTIVE_MODEL}\"}")
 ```
+
+- **2xx**: updated successfully. Print the updated task: `jq . /tmp/task_patch_10a.json`.
+  Continue to Step 10d.
+- **non-2xx**: the handoff did not succeed — the task store still thinks this task is
+  unclaimed/`in_progress` even though the PR is open. Print:
+  ```
+  ⚠ Step 10a PATCH failed with status $PATCH_CODE — task-store not updated, handoff aborted.
+  ```
+  Do not proceed to Step 10d's DONE handoff — stop here instead of reporting success.
 
 ### 10d. Print Handoff
 

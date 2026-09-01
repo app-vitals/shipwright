@@ -132,6 +132,57 @@ describe("dev-task.md Step 2 — atomic claim", () => {
   });
 });
 
+describe("dev-task.md Step 10a — PATCH status check", () => {
+  const getStep10aSection = () => {
+    const step10aIdx = content.indexOf("### 10a. Update Queue");
+    expect(step10aIdx).toBeGreaterThan(-1);
+    const step10dIdx = content.indexOf("### 10d. Print Handoff");
+    expect(step10dIdx).toBeGreaterThan(step10aIdx);
+    return content.slice(step10aIdx, step10dIdx);
+  };
+
+  it("captures the HTTP status code of the PATCH call (mirrors Step 2's claim pattern)", () => {
+    const section = getStep10aSection();
+    expect(section).toContain("%{http_code}");
+    expect(section).toMatch(/PATCH_CODE=\$\(curl/);
+  });
+
+  it("writes the PATCH response body to a temp file instead of piping straight to jq", () => {
+    const section = getStep10aSection();
+    expect(section).toMatch(/-o \/tmp\/task_patch_10a\.json/);
+  });
+
+  it("still PATCHes the same status/pr/simplify/coverage/model fields unchanged", () => {
+    const section = getStep10aSection();
+    expect(section).toContain('\\"status\\": \\"pr_open\\"');
+    expect(section).toContain('\\"pr\\": {pr_number}');
+    expect(section).toContain('\\"prCreatedAt\\": \\"$PR_CREATED_AT\\"');
+    expect(section).toContain('\\"ciFixAttempts\\": {ci_attempt}');
+    expect(section).toContain('\\"simplifyTotal\\": {simplify_total}');
+    expect(section).toContain('\\"simplifyDry\\": {simplify_dry}');
+    expect(section).toContain('\\"simplifyDeadCode\\": {simplify_dead_code}');
+    expect(section).toContain('\\"simplifyNaming\\": {simplify_naming}');
+    expect(section).toContain('\\"simplifyComplexity\\": {simplify_complexity}');
+    expect(section).toContain('\\"simplifyConsistency\\": {simplify_consistency}');
+    expect(section).toContain('\\"coverageDelta\\": {coverage_delta}');
+    expect(section).toContain('\\"model\\": \\"{EFFECTIVE_MODEL}\\"');
+  });
+
+  it("branches on a non-2xx status with a clear failure message and halts before the DONE handoff", () => {
+    const section = getStep10aSection();
+    expect(section).toMatch(/non-2xx/i);
+    expect(section).toMatch(/Step 10a PATCH failed/i);
+    expect(section).toMatch(/task-store not updated/i);
+    expect(section).toMatch(/handoff aborted/i);
+    expect(section).toMatch(/do not proceed to Step 10d/i);
+  });
+
+  it("prints the successful response on a 2xx status", () => {
+    const section = getStep10aSection();
+    expect(section).toMatch(/jq \. \/tmp\/task_patch_10a\.json/);
+  });
+});
+
 describe("Step 4 — stale bundle branch detection", () => {
   it("checks --state merged before entering the bundled-task path", () => {
     // The merged-PR check must appear BEFORE the bundled worktree add command
