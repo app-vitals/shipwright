@@ -5224,7 +5224,7 @@ describe("admin UI — tasks page", () => {
     );
   });
 
-  it("GET /admin/tasks/:id renders PR section when fetchTaskStorePr returns a result", async () => {
+  it("GET /admin/tasks/:id renders PR section when fetchTaskStorePrs finds a PR via repo+prNumber lookup", async () => {
     const mockTask = {
       id: "task-42",
       title: "Build the thing",
@@ -5235,12 +5235,14 @@ describe("admin UI — tasks page", () => {
       claimedBy: "agent-unknown",
       session: null,
       repo: "org/repo",
+      pr: 100,
       claimedAt: "2024-01-15T10:00:00.000Z",
     };
-    const MOCK_PR_ITEM: PullRequestItem = {
+    const MOCK_PR_ITEM: PrListItem = {
       id: "pr-test-1",
-      repo: "app-vitals/shipwright",
+      repo: "org/repo",
       prNumber: 100,
+      staged: false,
       state: "open",
       reviewState: "approved",
       patchCycles: 1,
@@ -5248,11 +5250,15 @@ describe("admin UI — tasks page", () => {
       reviewedAt: "2026-06-20T10:00:00Z",
       patchedAt: null,
     };
+    let capturedParams: URLSearchParams | null = null;
     const app = createAdminUIApp(
       makeMockDeps({
         fetchTaskStoreTask: async (id: string) =>
           id === "task-42" ? mockTask : null,
-        fetchTaskStorePr: async (_id: string) => MOCK_PR_ITEM,
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { prs: [MOCK_PR_ITEM], total: 1, limit: 50, offset: 0 };
+        },
       }),
     );
     const res = await app.request("/admin/tasks/task-42", {
@@ -5262,9 +5268,14 @@ describe("admin UI — tasks page", () => {
     const html = await res.text();
     expect(html).toContain("Pull Request Review");
     expect(html).toContain("#100");
+    expect(capturedParams).not.toBeNull();
+    const captured = capturedParams as unknown as URLSearchParams;
+    expect(captured.get("repo")).toBe("org/repo");
+    expect(captured.get("prNumber")).toBe("100");
+    expect(captured.has("taskId")).toBe(false);
   });
 
-  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePr throws", async () => {
+  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePrs throws", async () => {
     const mockTask = {
       id: "task-42",
       title: "Build the thing",
@@ -5275,13 +5286,14 @@ describe("admin UI — tasks page", () => {
       claimedBy: "agent-unknown",
       session: null,
       repo: "org/repo",
+      pr: 100,
       claimedAt: "2024-01-15T10:00:00.000Z",
     };
     const app = createAdminUIApp(
       makeMockDeps({
         fetchTaskStoreTask: async (id: string) =>
           id === "task-42" ? mockTask : null,
-        fetchTaskStorePr: async (_id: string) => {
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
           throw new Error("task store unavailable");
         },
       }),
@@ -5294,7 +5306,7 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("Pull Request Review");
   });
 
-  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePr is absent", async () => {
+  it("GET /admin/tasks/:id renders without PR section when fetchTaskStorePrs is absent", async () => {
     const mockTask = {
       id: "task-42",
       title: "Build the thing",
@@ -5305,6 +5317,7 @@ describe("admin UI — tasks page", () => {
       claimedBy: "agent-unknown",
       session: null,
       repo: "org/repo",
+      pr: 100,
       claimedAt: "2024-01-15T10:00:00.000Z",
     };
     const app = createAdminUIApp(
@@ -5319,6 +5332,39 @@ describe("admin UI — tasks page", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).not.toContain("Pull Request Review");
+  });
+
+  it("GET /admin/tasks/:id renders without PR section when task has no repo/pr set", async () => {
+    const mockTask = {
+      id: "task-43",
+      title: "Build another thing",
+      status: "pending",
+      description: "Do more work",
+      branch: null,
+      assignee: null,
+      claimedBy: null,
+      session: null,
+      repo: null,
+      pr: null,
+    };
+    let called = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-43" ? mockTask : null,
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          called = true;
+          return { prs: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-43", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("Pull Request Review");
+    expect(called).toBe(false);
   });
 
   it("GET /admin/tasks with no ?state= forwards no state to task-store (show all)", async () => {
@@ -6452,6 +6498,257 @@ describe("admin UI — PRs page", () => {
     expect(html).toContain("PR store unavailable");
   });
 
+  it("GET /admin/prs renders all linked tasks for a PR with 2 linked tasks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [MOCK_PR],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStoreTasks: async (params: URLSearchParams) => {
+          if (
+            params.get("repo") === "app-vitals/shipwright" &&
+            params.get("pr") === "42"
+          ) {
+            return {
+              tasks: [
+                { id: "TASK-A", title: "A", status: "done" },
+                { id: "TASK-B", title: "B", status: "done" },
+              ],
+              total: 2,
+              limit: 50,
+              offset: 0,
+            };
+          }
+          return { tasks: [], total: 0, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<a href="/admin/tasks/TASK-A"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-B"');
+  });
+
+  it("GET /admin/prs renders the empty-state dash for a PR with 0 linked tasks", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [MOCK_PR],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStoreTasks: async (_params: URLSearchParams) => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain('<a href="/admin/tasks/task-abc"');
+    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+  });
+
+  it("GET /admin/prs degrades linked tasks to empty when fetchTaskStoreTasks throws", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [MOCK_PR],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStoreTasks: async (_params: URLSearchParams) => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+  });
+
+  it("GET /admin/prs renders empty-state dash for linked tasks when fetchTaskStoreTasks is absent", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrs: async () => ({
+          prs: [MOCK_PR],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        // fetchTaskStoreTasks intentionally absent
+      }),
+    );
+    const res = await app.request("/admin/prs", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<span style="color:#9ca3af">—</span>');
+  });
+
+  it("GET /admin/prs?taskId= resolves the task's repo+pr live instead of forwarding taskId to /prs", async () => {
+    let capturedPrsParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-abc"
+            ? {
+                id: "task-abc",
+                title: "Some task",
+                status: "done",
+                repo: "app-vitals/shipwright",
+                pr: 42,
+              }
+            : null,
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedPrsParams = params;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs?taskId=task-abc", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Filter form still shows what the user typed
+    expect(html).toContain('value="task-abc"');
+    expect(capturedPrsParams).not.toBeNull();
+    const capturedPrs = capturedPrsParams as unknown as URLSearchParams;
+    expect(capturedPrs.get("repo")).toBe("app-vitals/shipwright");
+    expect(capturedPrs.get("prNumber")).toBe("42");
+    expect(capturedPrs.has("taskId")).toBe(false);
+  });
+
+  it("GET /admin/prs?taskId=&repo= with a repo filter matching the task's resolved repo still applies the task filter", async () => {
+    let capturedPrsParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-abc"
+            ? {
+                id: "task-abc",
+                title: "Some task",
+                status: "done",
+                repo: "app-vitals/shipwright",
+                pr: 42,
+              }
+            : null,
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedPrsParams = params;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(
+      "/admin/prs?taskId=task-abc&repo=app-vitals%2Fshipwright",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(capturedPrsParams).not.toBeNull();
+    const capturedPrs = capturedPrsParams as unknown as URLSearchParams;
+    expect(capturedPrs.getAll("repo")).toEqual(["app-vitals/shipwright"]);
+    expect(capturedPrs.get("prNumber")).toBe("42");
+  });
+
+  it("GET /admin/prs?taskId=&repo= with a repo filter conflicting with the task's resolved repo renders empty list instead of silently overwriting the user's repo filter", async () => {
+    let prsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-abc"
+            ? {
+                id: "task-abc",
+                title: "Some task",
+                status: "done",
+                repo: "app-vitals/shipwright",
+                pr: 42,
+              }
+            : null,
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
+          prsCalled = true;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(
+      "/admin/prs?taskId=task-abc&repo=some-other-org%2Fother-repo",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(prsCalled).toBe(false);
+    expect(html).toContain("No PRs found");
+    // The user's own repo selection is preserved in the form, not silently dropped.
+    expect(html).toContain("some-other-org/other-repo");
+  });
+
+  it("GET /admin/prs?taskId= for a task with no pr set renders empty list without an unfiltered query", async () => {
+    let prsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-nopr"
+            ? {
+                id: "task-nopr",
+                title: "No PR yet",
+                status: "pending",
+                repo: "app-vitals/shipwright",
+                pr: null,
+              }
+            : null,
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
+          prsCalled = true;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs?taskId=task-nopr", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(prsCalled).toBe(false);
+    expect(html).toContain("No PRs found");
+  });
+
+  it("GET /admin/prs?taskId= for an unknown task renders empty list without an unfiltered query", async () => {
+    let prsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (_id: string) => null,
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
+          prsCalled = true;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs?taskId=missing-task", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(prsCalled).toBe(false);
+    expect(html).toContain("No PRs found");
+  });
+
   it("GET /admin/prs/:id returns 200 with PR detail when fetchTaskStorePrById is injected and returns a PR", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -7230,17 +7527,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
 
   it("returns 503 when push is not enabled", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/subscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
+      method: "POST",
+      body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "push_disabled" });
   });
@@ -7257,17 +7551,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
       vapidPublicKey: "test-vapid-public-key",
     });
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/subscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${memberCookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
+      method: "POST",
+      body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${memberCookie}`,
       },
-    );
+    });
     expect(res.status).toBe(403);
   });
 
@@ -7281,17 +7572,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
       deleteMany: async () => ({ count: 0 }),
     };
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/subscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify({ endpoint: "https://push.example.com/sub-1" }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
+      method: "POST",
+      body: JSON.stringify({ endpoint: "https://push.example.com/sub-1" }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "bad_request" });
   });
@@ -7310,17 +7598,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
       deleteMany: async () => ({ count: 0 }),
     };
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/subscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/subscribe`, {
+      method: "POST",
+      body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(upsertCalledWith).toBeDefined();
@@ -7336,17 +7621,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
 
   it("returns 503 when push is not enabled", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
+      method: "POST",
+      body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(503);
     expect(await res.json()).toEqual({ error: "push_disabled" });
   });
@@ -7363,17 +7645,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
       vapidPublicKey: "test-vapid-public-key",
     });
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${memberCookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
+      method: "POST",
+      body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${memberCookie}`,
       },
-    );
+    });
     expect(res.status).toBe(403);
   });
 
@@ -7387,17 +7666,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
       deleteMany: async () => ({ count: 0 }),
     };
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify({}),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(400);
     expect(await res.json()).toEqual({ error: "bad_request" });
   });
@@ -7416,17 +7692,14 @@ describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
       },
     };
     const app = createAdminUIApp(deps);
-    const res = await app.request(
-      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
-      {
-        method: "POST",
-        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
-        headers: {
-          "Content-Type": "application/json",
-          Cookie: `admin_session=${cookie}`,
-        },
+    const res = await app.request(`/admin/chat/${AGENT_ID}/push/unsubscribe`, {
+      method: "POST",
+      body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
       },
-    );
+    });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
     expect(deleteCalledWith).toBeDefined();
