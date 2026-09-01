@@ -200,4 +200,24 @@ describe("computeTaskTransitionDiff()", () => {
     });
     expect(computeTaskTransitionDiff(before, after)).toEqual([]);
   });
+
+  test("execution-metrics fields (e.g. costUsd, simplifyTotal) are audited", () => {
+    const before = task({ costUsd: null, simplifyTotal: null });
+    const after = task({ costUsd: 1.23, simplifyTotal: 5 });
+
+    const changes = computeTaskTransitionDiff(before, after);
+    const byField = Object.fromEntries(changes.map((c) => [c.field, c]));
+
+    expect(changes).toHaveLength(2);
+    expect(byField.costUsd).toEqual({
+      field: "costUsd",
+      oldValue: null,
+      newValue: "1.23",
+    });
+    expect(byField.simplifyTotal).toEqual({
+      field: "simplifyTotal",
+      oldValue: null,
+      newValue: "5",
+    });
+  });
 });

@@ -82,6 +82,20 @@ export const TASK_AUDITED_FIELDS: ReadonlyArray<keyof Task> = [
   "claimedBy",
   "agentHint",
   "claimedAt",
+  "simplifyTotal",
+  "simplifyDry",
+  "simplifyDeadCode",
+  "simplifyNaming",
+  "simplifyComplexity",
+  "simplifyConsistency",
+  "coverageDelta",
+  "effortLevel",
+  "inputTokens",
+  "outputTokens",
+  "cacheReadTokens",
+  "cacheCreationTokens",
+  "costUsd",
+  "metadata",
 ];
 
 /** Stringify a scalar field value for storage as an event's old/new value. */
