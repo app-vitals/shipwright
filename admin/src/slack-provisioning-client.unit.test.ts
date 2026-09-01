@@ -23,16 +23,14 @@ describe("buildAgentManifest", () => {
       expect(events).toContain("message.channels");
       expect(events).toContain("message.groups");
       expect(events).toContain("app_mention");
-      expect(events).toContain("assistant_thread_started");
-      expect(events).toContain("assistant_thread_context_changed");
       expect(events).toContain("reaction_added");
     });
 
-    it("includes assistant_view", () => {
-      expect(manifest.features?.assistant_view).toBeDefined();
-      expect(
-        manifest.features?.assistant_view?.assistant_description,
-      ).toContain(NAME);
+    it("includes agent_view", () => {
+      expect(manifest.features?.agent_view).toBeDefined();
+      expect(manifest.features?.agent_view?.agent_description).toContain(
+        NAME,
+      );
     });
 
     it("sets always_online: true", () => {
@@ -72,8 +70,8 @@ describe("buildAgentManifest", () => {
       expect(manifest.settings?.socket_mode_enabled).toBe(true);
     });
 
-    it("still includes assistant_view", () => {
-      expect(manifest.features?.assistant_view).toBeDefined();
+    it("still includes agent_view", () => {
+      expect(manifest.features?.agent_view).toBeDefined();
     });
   });
 });
