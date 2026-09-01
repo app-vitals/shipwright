@@ -104,6 +104,11 @@ import {
   AGENT_BOT_SCOPES,
   buildAgentManifest,
 } from "./slack-provisioning-client.ts";
+import {
+  PROVISION_STATE_COOKIE,
+  PROVISION_STATE_TTL_SECONDS,
+  SlackProvisioningService,
+} from "./slack-provisioning-service.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -663,6 +668,20 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
+  // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
+  // branch and the new per-agent /admin/agents/:id/connect-slack routes so
+  // both reach the same outcome via the same code path.
+  const slackProvisioningService = new SlackProvisioningService({
+    slackClient,
+    agentService,
+    agentEnvService,
+    agentCronJobService,
+    sessionSecret,
+    appBaseUrl,
+    secretEnvVars: new Set(SECRET_ENV_VARS),
+  });
 
   // Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into a
   // request cycle — push is a convenience layer, so a watch-write failure must
@@ -1953,9 +1972,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   );
 
   // ─── Provisioning state constants ────────────────────────────────────────
-
-  const PROVISION_STATE_COOKIE = "slack_provision_state";
-  const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
+  // PROVISION_STATE_COOKIE / PROVISION_STATE_TTL_SECONDS now live in
+  // slack-provisioning-service.ts (UAP-1.1) — re-imported above so every
+  // route in this file keeps using the same names.
 
   // GitHub org login name pattern (matches GitHub's own username/org-name
   // rules: alphanumeric, single hyphens, no leading/trailing hyphen, max 39
@@ -2058,6 +2077,160 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     return c.redirect(`/admin/agents/${agentId}?success=manifest_synced`, 302);
   });
+
+  // ─── connect-slack (UAP-1.1) ───────────────────────────────────────────────
+  // Per-agent equivalents of the legacy /admin/provision/* Slack wizard,
+  // scoped to an already-existing agent id. All three delegate to the same
+  // SlackProvisioningService the wizard now calls — pure routing/rendering
+  // here, no business logic.
+
+  app.post("/admin/agents/:id/connect-slack", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    let xoxpToken: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      xoxpToken = formData.get("xoxpToken")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+
+    const result = await slackProvisioningService.startConnect(
+      agentId,
+      xoxpToken,
+    );
+
+    if (!result.ok) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(result.error)}`,
+        302,
+      );
+    }
+
+    setCookie(c, PROVISION_STATE_COOKIE, result.provisionStateToken, {
+      httpOnly: true,
+      maxAge: PROVISION_STATE_TTL_SECONDS,
+      sameSite: "Lax",
+      path: "/",
+      secure: appBaseUrl.startsWith("https://"),
+    });
+
+    return c.redirect(result.oauthRedirectUrl, 302);
+  });
+
+  app.get(
+    "/admin/agents/:id/connect-slack/callback",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
+      const code = c.req.query("code");
+      const result = await slackProvisioningService.completeConnect(
+        rawStateCookie,
+        code,
+      );
+
+      if (result.outcome === "invalid_state") {
+        deleteCookie(c, PROVISION_STATE_COOKIE);
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "missing_code") {
+        // Cookie must remain intact so the user can restart the provision flow.
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      // Every other outcome consumed the cookie's OAuth code — clear it now.
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+
+      if (result.outcome === "exchange_failed") {
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "reinstalled") {
+        return c.redirect(
+          `/admin/agents/${result.agentId}?success=reinstalled`,
+          302,
+        );
+      }
+
+      // result.outcome === "needs_app_token"
+      return html(
+        renderProvisionXappTokenPage(userEmail, {
+          agentId: result.agentId,
+        }),
+      );
+    },
+  );
+
+  app.post(
+    "/admin/agents/:id/connect-slack/app-token",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      let xappToken: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        xappToken = formData.get("xappToken")?.toString();
+      } catch {
+        return html(
+          renderProvisionXappTokenPage(userEmail, {
+            agentId,
+            error: "Invalid form submission.",
+          }),
+        );
+      }
+
+      const result = await slackProvisioningService.saveAppToken(
+        agentId,
+        xappToken,
+      );
+
+      if (!result.ok) {
+        return html(
+          renderProvisionXappTokenPage(userEmail, {
+            agentId: result.agentId,
+            error: result.error,
+          }),
+        );
+      }
+
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: true,
+          agentId: result.agentId,
+        }),
+      );
+    },
+  );
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
@@ -2215,6 +2388,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // ── Call Slack — first external action ────────────────────────────────
+    // Delegates to SlackProvisioningService.createAppManifest() (UAP-1.1) —
+    // the same apps.manifest.create call the new connect-slack routes use.
 
     let slackResult: {
       appId: string;
@@ -2224,9 +2399,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       signingSecret: string;
     };
     try {
-      const redirectUri = `${appBaseUrl}/admin/provision/complete`;
-      const manifest = buildAgentManifest(agent.name, redirectUri);
-      slackResult = await slackClient.createAppManifest(xoxpToken, manifest);
+      slackResult = await slackProvisioningService.createAppManifest(
+        agent.name,
+        xoxpToken,
+      );
     } catch (err) {
       const msg =
         err instanceof Error
@@ -2267,21 +2443,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ghAuthMode === "app" && ghAppMode === "auto";
 
     // ── Sign provision-state cookie ───────────────────────────────────────
+    // Delegates to SlackProvisioningService.signProvisionState() (UAP-1.1),
+    // folding in the wizard-only githubOrg field via `extra`.
 
-    const now = Math.floor(Date.now() / 1000);
-    const provisionToken = await sign(
-      {
-        agentId: resolvedAgentId,
-        clientId,
-        clientSecret,
-        signingSecret,
-        appId,
-        iat: now,
-        exp: now + PROVISION_STATE_TTL_SECONDS,
-        ...(isGithubAppAutoProvision ? { githubOrg } : {}),
-      },
-      sessionSecret,
-      "HS256",
+    const provisionToken = await slackProvisioningService.signProvisionState(
+      resolvedAgentId,
+      { clientId, clientSecret, signingSecret, appId },
+      isGithubAppAutoProvision ? { githubOrg } : undefined,
     );
 
     // TODO(BP-2.2): this cookie is consumed by the OAuth exchange handler in
@@ -2354,126 +2522,62 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   // GET — OAuth callback → exchange code, store SLACK_BOT_TOKEN, show xapp-token page
+  // Delegates to SlackProvisioningService.completeConnect() (UAP-1.1) — the
+  // handler only owns cookie read/clear + HTML/redirect rendering.
   app.get("/admin/provision/complete", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
-    // Read and validate the provision state cookie
     const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
-    if (!rawStateCookie) {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: false,
-          error:
-            "Provision session expired or missing. Please start the provisioning flow again.",
-        }),
-      );
-    }
-
-    let provisionState: {
-      agentId: string;
-      clientId: string;
-      clientSecret: string;
-      signingSecret: string;
-      appId: string;
-    };
-    try {
-      const payload = (await verify(
-        rawStateCookie,
-        sessionSecret,
-        "HS256",
-      )) as Record<string, unknown>;
-      if (
-        typeof payload.agentId !== "string" ||
-        typeof payload.clientId !== "string" ||
-        typeof payload.clientSecret !== "string" ||
-        typeof payload.signingSecret !== "string" ||
-        typeof payload.appId !== "string"
-      ) {
-        throw new Error("invalid payload shape");
-      }
-      provisionState = {
-        agentId: payload.agentId,
-        clientId: payload.clientId,
-        clientSecret: payload.clientSecret,
-        signingSecret: payload.signingSecret,
-        appId: payload.appId,
-      };
-    } catch {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: false,
-          error:
-            "Provision session expired or invalid. Please start the provisioning flow again.",
-        }),
-      );
-    }
-
-    // Read the OAuth code param before consuming the cookie — if code is absent
-    // the cookie must remain intact so the user can restart the provision flow.
     const code = c.req.query("code");
-    if (!code) {
+    const result = await slackProvisioningService.completeConnect(
+      rawStateCookie,
+      code,
+    );
+
+    if (result.outcome === "invalid_state") {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
-          error:
-            "Authorization was not completed (no OAuth code received). Please restart the provisioning flow from the beginning.",
+          error: result.error,
         }),
       );
     }
 
+    if (result.outcome === "missing_code") {
+      // Cookie must remain intact so the user can restart the provision flow.
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    // Every other outcome consumed the cookie's OAuth code — clear it now.
     deleteCookie(c, PROVISION_STATE_COOKIE);
 
-    // Exchange the OAuth code for a bot token
-    let botToken: string;
-    try {
-      const result = await slackClient.exchangeOAuthCode(
-        code,
-        provisionState.clientId,
-        provisionState.clientSecret,
-        `${appBaseUrl}/admin/provision/complete`,
-      );
-      botToken = result.botToken;
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error exchanging OAuth code.";
+    if (result.outcome === "exchange_failed") {
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
-          error: `OAuth exchange failed: ${msg}`,
+          error: result.error,
         }),
       );
     }
 
-    // Store SLACK_BOT_TOKEN in agent env
-    // Fetch config bundle to get real (unmasked) values for merge check
-    const existingBundle = await agentEnvService.getConfigBundle(
-      provisionState.agentId,
-    );
-    // Use patch() to merge SLACK_BOT_TOKEN without overwriting other keys
-    await agentEnvService.patch(
-      provisionState.agentId,
-      { SLACK_BOT_TOKEN: botToken },
-      new Set(SECRET_ENV_VARS),
-    );
-
-    // If SLACK_APP_TOKEN is already set this is a reinstall (not fresh provisioning).
-    // Skip the xapp-token page and redirect directly to the agent detail page.
-    if (existingBundle?.env.SLACK_APP_TOKEN) {
+    if (result.outcome === "reinstalled") {
       return c.redirect(
-        `/admin/agents/${provisionState.agentId}?success=reinstalled`,
+        `/admin/agents/${result.agentId}?success=reinstalled`,
         302,
       );
     }
 
-    // Render xapp-token page
+    // result.outcome === "needs_app_token"
     return html(
       renderProvisionXappTokenPage(userEmail, {
-        agentId: provisionState.agentId,
+        agentId: result.agentId,
       }),
     );
   });
@@ -2636,6 +2740,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   // POST /admin/provision/xapp-token — save xapp token, create scoped token, seed crons
+  // Delegates to SlackProvisioningService.saveAppToken() (UAP-1.1) — the
+  // handler only owns form parsing + HTML rendering.
   app.post("/admin/provision/xapp-token", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
@@ -2655,63 +2761,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
 
-    if (!agentId) {
+    const result = await slackProvisioningService.saveAppToken(
+      agentId,
+      xappToken,
+    );
+
+    if (!result.ok) {
       return html(
         renderProvisionXappTokenPage(userEmail, {
-          agentId: "",
-          error: "Agent ID is required.",
+          agentId: result.agentId,
+          error: result.error,
         }),
       );
     }
 
-    if (!xappToken || !xappToken.startsWith("xapp-")) {
-      return html(
-        renderProvisionXappTokenPage(userEmail, {
-          agentId,
-          error: "App-Level Token must start with xapp-",
-        }),
-      );
-    }
-
-    try {
-      // SHIPWRIGHT_AGENT_API_KEY and SHIPWRIGHT_TASK_STORE_TOKEN are NOT minted
-      // here. K8s-managed agents already have both minted straight into the K8s
-      // Secret by provisioner.provision() (agent-provisioner.ts) — that Secret is
-      // the sole source of truth (via secretKeyRef in the Deployment manifest).
-      // Self-hosted agents never run the containerized entrypoint that reads
-      // SHIPWRIGHT_AGENT_API_KEY (agent/src/entrypoint.ts), and use the
-      // GitHub-backed task-store CLI config instead of a bearer token, so they
-      // don't need either key in AgentEnv. Minting them here previously orphaned
-      // a second, different, unused live credential per key on every provision.
-
-      // Use patch() to merge new keys without overwriting existing env vars
-      await agentEnvService.patch(
-        agentId,
-        { SLACK_APP_TOKEN: xappToken },
-        new Set(SECRET_ENV_VARS),
-      );
-
-      // Seed system crons
-      await agentCronJobService.reconcileSystemCrons(agentId);
-
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: true,
-          agentId,
-        }),
-      );
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error completing provisioning.";
-      return html(
-        renderProvisionXappTokenPage(userEmail, {
-          agentId,
-          error: msg,
-        }),
-      );
-    }
+    return html(
+      renderProvisionCompletePage(userEmail, {
+        success: true,
+        agentId: result.agentId,
+      }),
+    );
   });
 
   // ─── Member management (admin only) ──────────────────────────────────────

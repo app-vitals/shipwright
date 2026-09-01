@@ -1,0 +1,352 @@
+/**
+ * admin/src/slack-provisioning-service.ts
+ * SlackProvisioningService — Slack app-manifest-creation/OAuth orchestration
+ * for connecting an already-existing agent to Slack.
+ *
+ * Extracted out of admin-ui.ts's inline /admin/provision/* handlers (UAP-1.1)
+ * so the same logic can be reused by both the legacy provisioning wizard
+ * (POST /admin/provision/start Slack branch, GET /admin/provision/complete,
+ * POST /admin/provision/xapp-token) and the new per-agent connect-slack
+ * routes (POST /admin/agents/:id/connect-slack, GET .../callback, POST
+ * .../app-token). Pure extraction — no behavior change.
+ *
+ * HTTP-specific mechanics (reading/writing the PROVISION_STATE_COOKIE,
+ * issuing redirects, rendering HTML) stay in the route handlers; this service
+ * owns the Slack API calls, the signed provision-state token payload, and the
+ * env/cron side effects.
+ */
+
+import { sign, verify } from "hono/jwt";
+import type { AdminUISlackClient } from "./admin-ui.ts";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
+import type { AgentEnvService } from "./agent-envs.ts";
+import type { AgentService } from "./agents.ts";
+import { buildAgentManifest } from "./slack-provisioning-client.ts";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/** Shared with admin-ui.ts — the signed cookie carrying provision state across the Slack OAuth redirect. */
+export const PROVISION_STATE_COOKIE = "slack_provision_state";
+export const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+export interface ProvisionStatePayload {
+  agentId: string;
+  clientId: string;
+  clientSecret: string;
+  signingSecret: string;
+  appId: string;
+}
+
+export type StartConnectResult =
+  | {
+      ok: true;
+      /** Signed JWT to store in the PROVISION_STATE_COOKIE. */
+      provisionStateToken: string;
+      /** Slack OAuth v2 authorize URL to redirect the operator to. */
+      oauthRedirectUrl: string;
+    }
+  | { ok: false; error: string };
+
+export type CompleteConnectResult =
+  | {
+      /** Provision-state cookie missing or invalid/expired — restart the flow. */
+      outcome: "invalid_state";
+      error: string;
+    }
+  | {
+      /** Valid state but no OAuth code param (e.g. user denied consent). Cookie must NOT be cleared by the caller in this case. */
+      outcome: "missing_code";
+      error: string;
+    }
+  | {
+      /** OAuth code exchange with Slack failed. */
+      outcome: "exchange_failed";
+      error: string;
+    }
+  | {
+      /** Success, and this is a reinstall (SLACK_APP_TOKEN was already set) — redirect straight to the agent page. */
+      outcome: "reinstalled";
+      agentId: string;
+    }
+  | {
+      /** Success, fresh provisioning — show the xapp-token page next. */
+      outcome: "needs_app_token";
+      agentId: string;
+    };
+
+export type SaveAppTokenResult =
+  | { ok: true; agentId: string }
+  | { ok: false; agentId: string; error: string };
+
+export interface SlackAppManifestResult {
+  appId: string;
+  oauthRedirectUrl: string;
+  clientId: string;
+  clientSecret: string;
+  signingSecret: string;
+}
+
+export interface SlackProvisioningServiceDeps {
+  slackClient: AdminUISlackClient;
+  agentService: Pick<AgentService, "getDetail">;
+  agentEnvService: Pick<AgentEnvService, "patch" | "getConfigBundle">;
+  agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
+  sessionSecret: string;
+  appBaseUrl: string;
+  /** Env var keys that must be stored as secrets — mirrors SECRET_ENV_VARS. */
+  secretEnvVars: Set<string>;
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
+export class SlackProvisioningService {
+  constructor(private readonly deps: SlackProvisioningServiceDeps) {}
+
+  private redirectUri(): string {
+    return `${this.deps.appBaseUrl}/admin/provision/complete`;
+  }
+
+  /**
+   * Calls apps.manifest.create for `agentName` and returns the raw Slack
+   * result (app id, OAuth authorize URL, and OAuth credentials). Low-level
+   * building block shared by startConnect() below and by the legacy POST
+   * /admin/provision/start wizard's Slack branch — the wizard needs the raw
+   * credentials to sign its own provision-state cookie (which additionally
+   * carries `githubOrg` for the GitHub-App-auto-provision sub-flow), so it
+   * calls this instead of startConnect().
+   */
+  async createAppManifest(
+    agentName: string,
+    xoxpToken: string,
+  ): Promise<SlackAppManifestResult> {
+    const manifest = buildAgentManifest(agentName, this.redirectUri());
+    return this.deps.slackClient.createAppManifest(xoxpToken, manifest);
+  }
+
+  /**
+   * Signs a provision-state token (for the PROVISION_STATE_COOKIE) carrying
+   * the given Slack OAuth credentials for `agentId`. Exposed so the legacy
+   * wizard can fold its own extra `githubOrg` field into the same signed
+   * payload shape that completeConnect() below verifies.
+   */
+  async signProvisionState(
+    agentId: string,
+    creds: {
+      clientId: string;
+      clientSecret: string;
+      signingSecret: string;
+      appId: string;
+    },
+    extra?: Record<string, unknown>,
+  ): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    return sign(
+      {
+        agentId,
+        ...creds,
+        iat: now,
+        exp: now + PROVISION_STATE_TTL_SECONDS,
+        ...extra,
+      },
+      this.deps.sessionSecret,
+      "HS256",
+    );
+  }
+
+  /**
+   * Creates the Slack app manifest for `agentId` via apps.manifest.create and
+   * returns a signed provision-state token (for the PROVISION_STATE_COOKIE)
+   * plus the Slack OAuth authorize URL to redirect to.
+   *
+   * Mirrors the Slack branch of the legacy POST /admin/provision/start
+   * handler (validation + apps.manifest.create + cookie payload), but for an
+   * agent that already exists — no agent-creation/rollback orchestration.
+   */
+  async startConnect(
+    agentId: string,
+    xoxpToken: string | undefined,
+  ): Promise<StartConnectResult> {
+    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
+      return {
+        ok: false,
+        error: "Slack app configuration token must start with xoxe.xoxp-",
+      };
+    }
+
+    const agent = await this.deps.agentService.getDetail(agentId);
+    if (!agent) {
+      return { ok: false, error: "Agent not found." };
+    }
+
+    let slackResult: SlackAppManifestResult;
+    try {
+      slackResult = await this.createAppManifest(agent.name, xoxpToken);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Unknown error creating Slack app.";
+      return { ok: false, error: msg };
+    }
+
+    const { appId, oauthRedirectUrl, clientId, clientSecret, signingSecret } =
+      slackResult;
+
+    const provisionStateToken = await this.signProvisionState(agentId, {
+      clientId,
+      clientSecret,
+      signingSecret,
+      appId,
+    });
+
+    return { ok: true, provisionStateToken, oauthRedirectUrl };
+  }
+
+  /**
+   * Verifies the provision-state token, exchanges the OAuth `code` for a bot
+   * token, and stores SLACK_BOT_TOKEN. Mirrors the legacy
+   * GET /admin/provision/complete handler exactly.
+   *
+   * The caller (route handler) is responsible for reading the raw cookie
+   * value and for clearing it — this method never has cookie access; it only
+   * decides whether the "invalid state" outcome should tell the caller to
+   * clear the cookie (yes, for invalid_state) or not (no, for missing_code,
+   * where the cookie must survive a retry).
+   */
+  async completeConnect(
+    rawStateCookie: string | undefined,
+    code: string | undefined,
+  ): Promise<CompleteConnectResult> {
+    if (!rawStateCookie) {
+      return {
+        outcome: "invalid_state",
+        error:
+          "Provision session expired or missing. Please start the provisioning flow again.",
+      };
+    }
+
+    let provisionState: ProvisionStatePayload;
+    try {
+      const payload = (await verify(
+        rawStateCookie,
+        this.deps.sessionSecret,
+        "HS256",
+      )) as Record<string, unknown>;
+      if (
+        typeof payload.agentId !== "string" ||
+        typeof payload.clientId !== "string" ||
+        typeof payload.clientSecret !== "string" ||
+        typeof payload.signingSecret !== "string" ||
+        typeof payload.appId !== "string"
+      ) {
+        throw new Error("invalid payload shape");
+      }
+      provisionState = {
+        agentId: payload.agentId,
+        clientId: payload.clientId,
+        clientSecret: payload.clientSecret,
+        signingSecret: payload.signingSecret,
+        appId: payload.appId,
+      };
+    } catch {
+      return {
+        outcome: "invalid_state",
+        error:
+          "Provision session expired or invalid. Please start the provisioning flow again.",
+      };
+    }
+
+    if (!code) {
+      return {
+        outcome: "missing_code",
+        error:
+          "Authorization was not completed (no OAuth code received). Please restart the provisioning flow from the beginning.",
+      };
+    }
+
+    let botToken: string;
+    try {
+      const result = await this.deps.slackClient.exchangeOAuthCode(
+        code,
+        provisionState.clientId,
+        provisionState.clientSecret,
+        this.redirectUri(),
+      );
+      botToken = result.botToken;
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Unknown error exchanging OAuth code.";
+      return {
+        outcome: "exchange_failed",
+        error: `OAuth exchange failed: ${msg}`,
+      };
+    }
+
+    const existingBundle = await this.deps.agentEnvService.getConfigBundle(
+      provisionState.agentId,
+    );
+    await this.deps.agentEnvService.patch(
+      provisionState.agentId,
+      { SLACK_BOT_TOKEN: botToken },
+      this.deps.secretEnvVars,
+    );
+
+    if (existingBundle?.env.SLACK_APP_TOKEN) {
+      return { outcome: "reinstalled", agentId: provisionState.agentId };
+    }
+
+    return { outcome: "needs_app_token", agentId: provisionState.agentId };
+  }
+
+  /**
+   * Stores SLACK_APP_TOKEN and reconciles system crons. Mirrors the legacy
+   * POST /admin/provision/xapp-token handler exactly.
+   */
+  async saveAppToken(
+    agentId: string | undefined,
+    xappToken: string | undefined,
+  ): Promise<SaveAppTokenResult> {
+    if (!agentId) {
+      return { ok: false, agentId: "", error: "Agent ID is required." };
+    }
+
+    if (!xappToken || !xappToken.startsWith("xapp-")) {
+      return {
+        ok: false,
+        agentId,
+        error: "App-Level Token must start with xapp-",
+      };
+    }
+
+    try {
+      // SHIPWRIGHT_AGENT_API_KEY and SHIPWRIGHT_TASK_STORE_TOKEN are NOT minted
+      // here. K8s-managed agents already have both minted straight into the K8s
+      // Secret by provisioner.provision() (agent-provisioner.ts) — that Secret is
+      // the sole source of truth (via secretKeyRef in the Deployment manifest).
+      // Self-hosted agents never run the containerized entrypoint that reads
+      // SHIPWRIGHT_AGENT_API_KEY (agent/src/entrypoint.ts), and use the
+      // GitHub-backed task-store CLI config instead of a bearer token, so they
+      // don't need either key in AgentEnv. Minting them here previously orphaned
+      // a second, different, unused live credential per key on every provision.
+      await this.deps.agentEnvService.patch(
+        agentId,
+        { SLACK_APP_TOKEN: xappToken },
+        this.deps.secretEnvVars,
+      );
+
+      await this.deps.agentCronJobService.reconcileSystemCrons(agentId);
+
+      return { ok: true, agentId };
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Unknown error completing provisioning.";
+      return { ok: false, agentId, error: msg };
+    }
+  }
+}

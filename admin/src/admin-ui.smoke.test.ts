@@ -4560,6 +4560,281 @@ describe("admin UI — xapp-token route", () => {
   });
 });
 
+// ─── connect-slack routes (UAP-1.1) ────────────────────────────────────────────
+//
+// New per-agent routes that delegate to the same extracted
+// SlackProvisioningService the legacy /admin/provision/* wizard now calls —
+// they must reach the same successful outcomes as that wizard's Slack path,
+// for an already-existing agent id passed explicitly in the URL.
+
+describe("admin UI — POST /admin/agents/:id/connect-slack", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  it("valid xoxe.xoxp- token → 302 redirect to slack.com/oauth authorize URL with provision-state cookie set", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+
+    const body = new URLSearchParams({
+      xoxpToken: "xoxe.xoxp-1-fake-token-for-testing",
+    });
+    const res = await app.request(`/admin/agents/${AGENT_ID}/connect-slack`, {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("https://slack.com/oauth/authorize");
+    const setCookie = res.headers.get("set-cookie") ?? "";
+    expect(setCookie).toContain("slack_provision_state=");
+  });
+
+  it("missing xoxpToken → redirects back to the agent page with an error", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+
+    const res = await app.request(`/admin/agents/${AGENT_ID}/connect-slack`, {
+      method: "POST",
+      body: new URLSearchParams({}).toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+      redirect: "manual",
+    });
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain(`/admin/agents/${AGENT_ID}`);
+    expect(location).toContain("error=");
+  });
+
+  it("agent id that doesn't exist → redirects back with an error, no Slack call", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          listAll: async () => [],
+          listByIds: async () => [],
+          searchByName: async () => [],
+          listOptions: async () => [],
+          create: async () => {
+            throw new Error("not implemented");
+          },
+          delete: async () => {},
+          getDetail: async () => null,
+          updateFields: async () => {
+            throw new Error("not implemented");
+          },
+        },
+      }),
+    );
+
+    const body = new URLSearchParams({
+      xoxpToken: "xoxe.xoxp-1-fake-token-for-testing",
+    });
+    const res = await app.request(
+      "/admin/agents/nonexistent-agent/connect-slack",
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${adminCookie}`,
+        },
+        redirect: "manual",
+      },
+    );
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("location") ?? "";
+    expect(location).toContain("/admin/agents/nonexistent-agent");
+    expect(location).toContain("error=");
+  });
+});
+
+describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
+  let adminCookie: string;
+  const PROVISION_STATE_COOKIE = "slack_provision_state";
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  async function makeProvisionStateCookie(
+    opts: { agentId?: string; expired?: boolean } = {},
+  ): Promise<string> {
+    const now = Math.floor(Date.now() / 1000);
+    return sign(
+      {
+        agentId: opts.agentId ?? AGENT_ID,
+        clientId: "test-client-id",
+        clientSecret: "test-client-secret",
+        signingSecret: "test-signing-secret",
+        appId: "A0123456789",
+        iat: now,
+        exp: opts.expired ? now - 10 : now + 300,
+      },
+      SESSION_SECRET,
+      "HS256",
+    );
+  }
+
+  it("valid state cookie + code param → stores SLACK_BOT_TOKEN and renders the xapp-token page (same outcome as /admin/provision/complete)", async () => {
+    const patchCalls: Array<{ env: Record<string, string> }> = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async (_agentId: string, env: Record<string, string>) => {
+            patchCalls.push({ env });
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+
+    const provisionState = await makeProvisionStateCookie();
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-slack/callback?code=valid-oauth-code`,
+      {
+        headers: {
+          Cookie: `admin_session=${adminCookie}; ${PROVISION_STATE_COOKIE}=${provisionState}`,
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.toLowerCase()).toContain("xapp");
+    expect(patchCalls.some((c) => "SLACK_BOT_TOKEN" in c.env)).toBe(true);
+  });
+
+  it("missing state cookie → renders an error page", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-slack/callback?code=some-code`,
+      {
+        headers: { Cookie: `admin_session=${adminCookie}` },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.toLowerCase()).toContain("error");
+  });
+});
+
+describe("admin UI — POST /admin/agents/:id/connect-slack/app-token", () => {
+  let adminCookie: string;
+
+  beforeAll(async () => {
+    adminCookie = await makeSessionCookie();
+  });
+
+  it("valid xapp- token → 200, SLACK_APP_TOKEN stored, crons reconciled (same outcome as /admin/provision/xapp-token)", async () => {
+    const patchCalls: Array<{ env: Record<string, string> }> = [];
+    const reconcileCalls: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async (_agentId: string, env: Record<string, string>) => {
+            patchCalls.push({ env });
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        agentCronJobService: {
+          list: async () => [MOCK_CRON],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async (agentId: string) => {
+            reconcileCalls.push(agentId);
+            return { created: 3, updated: 0, deleted: 0 };
+          },
+        },
+      }),
+    );
+
+    const body = new URLSearchParams({
+      xappToken: "xapp-1-TEST-fake-socket-token",
+    });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-slack/app-token`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${adminCookie}`,
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    expect(
+      patchCalls.some(
+        (c) => c.env.SLACK_APP_TOKEN === "xapp-1-TEST-fake-socket-token",
+      ),
+    ).toBe(true);
+    expect(reconcileCalls).toContain(AGENT_ID);
+  });
+
+  it("invalid xappToken (missing xapp- prefix) → shows error, no env write", async () => {
+    let patched = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {
+            patched = true;
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+
+    const body = new URLSearchParams({
+      xappToken: "not-a-valid-xapp-token",
+    });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-slack/app-token`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${adminCookie}`,
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html.toLowerCase()).toContain("error");
+    expect(patched).toBe(false);
+  });
+});
+
 // ─── Tasks page ───────────────────────────────────────────────────────────────
 
 describe("admin UI — tasks page", () => {
