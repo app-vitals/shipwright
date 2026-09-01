@@ -6637,6 +6637,69 @@ describe("admin UI — PRs page", () => {
     expect(capturedPrs.has("taskId")).toBe(false);
   });
 
+  it("GET /admin/prs?taskId=&repo= with a repo filter matching the task's resolved repo still applies the task filter", async () => {
+    let capturedPrsParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-abc"
+            ? {
+                id: "task-abc",
+                title: "Some task",
+                status: "done",
+                repo: "app-vitals/shipwright",
+                pr: 42,
+              }
+            : null,
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedPrsParams = params;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(
+      "/admin/prs?taskId=task-abc&repo=app-vitals%2Fshipwright",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    expect(capturedPrsParams).not.toBeNull();
+    const capturedPrs = capturedPrsParams as unknown as URLSearchParams;
+    expect(capturedPrs.getAll("repo")).toEqual(["app-vitals/shipwright"]);
+    expect(capturedPrs.get("prNumber")).toBe("42");
+  });
+
+  it("GET /admin/prs?taskId=&repo= with a repo filter conflicting with the task's resolved repo renders empty list instead of silently overwriting the user's repo filter", async () => {
+    let prsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTask: async (id: string) =>
+          id === "task-abc"
+            ? {
+                id: "task-abc",
+                title: "Some task",
+                status: "done",
+                repo: "app-vitals/shipwright",
+                pr: 42,
+              }
+            : null,
+        fetchTaskStorePrs: async (_params: URLSearchParams) => {
+          prsCalled = true;
+          return { prs: [MOCK_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request(
+      "/admin/prs?taskId=task-abc&repo=some-other-org%2Fother-repo",
+      { headers: { Cookie: `admin_session=${cookie}` } },
+    );
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(prsCalled).toBe(false);
+    expect(html).toContain("No PRs found");
+    // The user's own repo selection is preserved in the form, not silently dropped.
+    expect(html).toContain("some-other-org/other-repo");
+  });
+
   it("GET /admin/prs?taskId= for a task with no pr set renders empty list without an unfiltered query", async () => {
     let prsCalled = false;
     const app = createAdminUIApp(

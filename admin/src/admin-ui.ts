@@ -3051,8 +3051,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         }
       }
 
+      // A user-supplied repo/org filter lives in the same <form> as the
+      // taskId filter, so both can be submitted together. If the task's
+      // resolved repo doesn't satisfy the user's own repo filter, the
+      // combination is unsatisfiable — render an empty list rather than
+      // silently overwriting (and losing) the user's repo selection.
+      if (
+        taskFilterRepo &&
+        repo &&
+        repo.length > 0 &&
+        !repo.includes(taskFilterRepo)
+      ) {
+        taskFilterUnresolved = true;
+      }
+
       if (taskFilterUnresolved) {
-        // Task not found / no linked pr / lookup failed — render empty list.
+        // Task not found / no linked pr / lookup failed / conflicts with the
+        // user's own repo filter — render empty list.
         prs = [];
         total = 0;
       } else {
