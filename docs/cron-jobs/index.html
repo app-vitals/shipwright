@@ -101,7 +101,7 @@ child row’s <code>enabled</code> toggle (via <code>resolveLoopPhaseToggles</co
 directly as part of the loop’s own run. Re-enabling <code>shipwright-loop</code> is what restores real
 dispatch — not the phase cron’s own schedule kicking back in.</p>
 <p>By contrast, the maintenance crons — <code>shipwright-test-readiness</code>, <code>shipwright-docs-freshness</code>,
-<code>learn-dream</code>, <code>dependabot-triage</code>, and the entropy/error/security/consolidation patrol crons —
+<code>learn-dream</code>, <code>dependency-bot-triage</code>, and the entropy/error/security/consolidation patrol crons —
 are <strong>standalone</strong>. Each is fully self-contained: its own <code>preCheck</code> does its own discovery (e.g.
 scanning repos for stale docs, or querying Sentry for unresolved errors), with no dependency on
 <code>shipwright-loop</code> at all.</p>
@@ -183,12 +183,12 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 <td>Mines the last day of merged PRs for durable learnings.</td>
 </tr>
 <tr>
-<td><code>dependabot-triage</code></td>
+<td><code>dependency-bot-triage</code></td>
 <td>daily 08:00</td>
-<td><code>/shipwright:triage-dependabot-prs</code></td>
-<td>triage-dependabot-prs</td>
+<td><code>/shipwright:triage-dependency-bot-prs</code></td>
+<td>triage-dependency-bot-prs</td>
 <td>off</td>
-<td>Reviews and triages open Dependabot PRs.</td>
+<td>Reviews and triages open Dependabot/Renovate PRs, posting triage comments directly by default (opt out via <code>auto_post_dependency_bot_triage: false</code>).</td>
 </tr>
 <tr>
 <td><code>entropy-patrol-maintenance</code></td>
