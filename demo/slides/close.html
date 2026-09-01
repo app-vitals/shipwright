@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Close</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 0 var(--margin);
+  }
+  .headline { font-size: 64px; font-weight: 700; line-height: 1.15; letter-spacing: -0.03em; margin-bottom: 36px; }
+  .install-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    padding: 18px 32px;
+    background: rgba(52,199,123,0.08);
+    border: 1px solid rgba(52,199,123,0.3);
+    border-radius: 100px;
+    font-family: var(--font-mono);
+    font-size: 20px;
+    color: var(--brand-green);
+    margin-bottom: 48px;
+  }
+  .links { display: flex; gap: 40px; justify-content: center; }
+  .link { font-size: 18px; color: var(--text-faint); text-decoration: none; }
+  .link.primary { color: var(--text-primary); font-weight: 600; }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">Shipwright Harness</p>
+    <h1 class="headline">The open-source autonomous<br>delivery agent for Claude Code.</h1>
+    <div class="install-pill">/plugin install shipwright@app-vitals/shipwright</div>
+    <div class="links">
+      <span class="link primary">shipwrightharness.com</span>
+      <span class="link">github.com/app-vitals/shipwright</span>
+      <span class="link">proof.shipwrightharness.com</span>
+    </div>
+  </div>
+  <div class="slide-ready"></div>
+</body>
+</html>

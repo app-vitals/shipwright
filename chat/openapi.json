@@ -748,6 +748,47 @@
         }
       }
     },
+    "/threads/{threadId}/messages/{id}/cancel": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Request cancellation of an in-flight reply — the claiming agent aborts on its next heartbeat tick",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "example": "clxmessage123456"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated message with cancelRequestedAt set",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Thread or message not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/threads/{threadId}/messages/{id}": {
       "get": {
         "tags": [
@@ -882,7 +923,7 @@
         "tags": [
           "messages"
         ],
-        "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply)",
+        "summary": "Bump a claimed message's heartbeatAt (proof of life for a long-running reply), optionally recording the current progress phase",
         "parameters": [
           {
             "schema": {
@@ -894,6 +935,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatBody"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Updated message",
@@ -901,6 +952,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }
@@ -1296,6 +1357,26 @@
             "format": "date-time",
             "example": null
           },
+          "progressPhase": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "reading"
+          },
+          "progressSeq": {
+            "type": "integer",
+            "default": 0,
+            "example": 3
+          },
+          "cancelRequestedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "example": null
+          },
           "repliedAt": {
             "type": [
               "string",
@@ -1429,6 +1510,15 @@
           }
         }
       },
+      "HeartbeatBody": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string",
+            "example": "reading"
+          }
+        }
+      },
       "ReplyResponse": {
         "type": "object",
         "properties": {
@@ -1462,6 +1552,13 @@
           "costUsd": {
             "type": "number",
             "example": 0.02
+          },
+          "errorKind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "cancelled"
           }
         }
       }

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Proof</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content { position: absolute; top: 140px; left: var(--margin); right: var(--margin); bottom: 120px; display: flex; flex-direction: column; justify-content: center; }
+  .headline { font-size: 60px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 52px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 24px; max-width: 1500px; margin-bottom: 32px; }
+  .stat-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 36px 28px; }
+  .stat-value { font-family: var(--font-mono); font-size: 52px; font-weight: 700; color: var(--brand-green); line-height: 1; margin-bottom: 12px; }
+  .stat-label { font-size: 17px; color: var(--text-muted); line-height: 1.4; }
+  .fine-print { font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); }
+  .fine-print a { color: var(--brand-teal); }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">Proof</p>
+    <h1 class="headline">Shipwright builds Shipwright.</h1>
+    <div class="stats-grid">
+      <!-- UPDATE THESE NUMBERS before re-recording. Source: proof.shipwrightharness.com/public/dashboard (90-day window). Refreshed 2026-08-30. -->
+      <div class="stat-card"><div class="stat-value">930+</div><div class="stat-label">tasks shipped in the last 90 days — mostly by the agent itself</div></div>
+      <div class="stat-card"><div class="stat-value">89%</div><div class="stat-label">passed all automated checks on the first try</div></div>
+      <div class="stat-card"><div class="stat-value">81%</div><div class="stat-label">approved on first review</div></div>
+      <div class="stat-card"><div class="stat-value">6.5h</div><div class="stat-label">average cycle time, task start to merge</div></div>
+    </div>
+    <p class="fine-print">Built in ~10 weeks, part-time, by a two-person team · Live &amp; public: proof.shipwrightharness.com · 90-day window</p>
+  </div>
+  <div class="slide-footer"><span>Proof · measured in the open</span><span>shipwrightharness.com</span></div>
+  <div class="slide-ready"></div>
+</body>
+</html>

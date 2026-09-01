@@ -946,11 +946,25 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
    * ConflictError test below fails) if claim()'s WHERE clause regresses.
    * Also implements task.findUnique to support the existing 404-vs-409 disambiguation.
    */
+  interface ClaimPrismaDouble {
+    $executeRaw(
+      strings: TemplateStringsArray,
+      ...values: unknown[]
+    ): Promise<number>;
+    task: {
+      findUnique(args: { where: { id: string } }): Promise<Task | null>;
+    };
+    taskEvent: {
+      create(): Promise<void>;
+    };
+    $transaction<T>(fn: (tx: ClaimPrismaDouble) => Promise<T>): Promise<T>;
+  }
+
   function makeClaimPrismaDouble(initialTask: Task) {
     // In-memory row state — must be let because $executeRaw mutates it
     let row = { ...initialTask };
 
-    const prisma = {
+    const prisma: ClaimPrismaDouble = {
       async $executeRaw(
         strings: TemplateStringsArray,
         ...values: unknown[]
@@ -994,6 +1008,21 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
           }
           return Promise.resolve(null);
         },
+      },
+      taskEvent: {
+        create(): Promise<void> {
+          return Promise.resolve();
+        },
+      },
+      // claim() wraps the before/after reads and the conditional UPDATE in an
+      // interactive $transaction (TCS-1.1) so the TaskEvent audit insert lands
+      // atomically with the update. This double just hands the callback the
+      // same object back — its `task`/`taskEvent`/`$executeRaw` members are
+      // already what claim() needs — which is close enough for this unit
+      // test's purposes (no real transactional isolation semantics are being
+      // exercised here).
+      $transaction<T>(fn: (tx: ClaimPrismaDouble) => Promise<T>): Promise<T> {
+        return fn(prisma);
       },
     };
 

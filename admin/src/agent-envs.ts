@@ -30,7 +30,7 @@ export interface AgentEnvEntry {
  * Return type for getByAgentId().
  * Secret values are masked as "***" in env; their keys are listed in secretKeys.
  */
-export interface AgentEnvResult {
+interface AgentEnvResult {
   env: Record<string, string>;
   secretKeys: string[];
 }

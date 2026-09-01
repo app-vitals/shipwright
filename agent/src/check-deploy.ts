@@ -58,14 +58,22 @@ export interface GhReview {
   state: string;
 }
 
-export interface CiRun {
-  status: string;
-  conclusion: string | null;
-}
-
 export interface WorkflowRun {
   name: string;
   status: string;
+  createdAt?: string;
+}
+
+// A single entry from `gh api repos/{org}/{repo}/actions/runs?head_sha=...`
+// (Actions:Read scope — works on every repo/token combo, unlike the GitHub
+// Checks-permission-gated `statusCheckRollup` field, which fine-grained PATs
+// cannot be granted on private repos). No name filter is applied when
+// fetching — a workflow can be named anything (e.g. "pr-title-lint", not
+// just "ci"), so every run for the head SHA is evaluated.
+export interface CiRun {
+  name: string;
+  status: string;
+  conclusion: string | null;
   createdAt?: string;
 }
 
@@ -90,13 +98,18 @@ export interface CheckDeployDeps {
   isSelfReviewAllowed: () => boolean;
   repos: string[];
   listOpenPrs: (repo: string) => Promise<GhPr[]>;
-  fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
   fetchPrReviews: (
     org: string,
     repo: string,
     pr: number,
   ) => Promise<GhReview[]>;
   fetchActiveDeployRuns: (org: string, repo: string) => Promise<WorkflowRun[]>;
+  // Fetches ALL workflow runs for the PR's head SHA (Actions:Read scope, no
+  // GitHub Checks permission needed — works on public and private repos with
+  // a fine-grained PAT, unlike the abandoned statusCheckRollup approach).
+  // Deliberately unfiltered by workflow name — isCiGreen groups by name and
+  // requires every workflow's latest run to be green.
+  fetchCiRuns: (org: string, repo: string, headSha: string) => Promise<CiRun[]>;
   // Returns the current time as an ISO string. Injected for testability.
   clock?: () => string;
   // Bundle completeness gate: returns false if any bundle-mate task on the branch
@@ -146,10 +159,43 @@ export interface CheckDeployDeps {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Reduces a list of Actions API runs to the latest run per workflow name
+// (highest createdAt). A workflow can have multiple historical runs at the
+// same SHA from retries/reruns — only the latest should count, so a
+// fixed-and-rerun workflow isn't permanently blocked by its own stale
+// failure. Runs with no createdAt are never preferred over one that has a
+// timestamp (mirrors isActiveRun's conservative handling of missing
+// timestamps elsewhere in this file); ties (equal createdAt, or neither run
+// having one) keep the first-seen run — arbitrary but deterministic.
+function latestRunPerName(runs: CiRun[]): CiRun[] {
+  const latestByName = new Map<string, CiRun>();
+  for (const run of runs) {
+    const current = latestByName.get(run.name);
+    if (!current) {
+      latestByName.set(run.name, run);
+      continue;
+    }
+    if (
+      run.createdAt &&
+      (!current.createdAt || run.createdAt > current.createdAt)
+    ) {
+      latestByName.set(run.name, run);
+    }
+  }
+  return [...latestByName.values()];
+}
+
+// A PR is CI-green only when it has at least one workflow run for its head
+// SHA and, grouping runs by workflow name and keeping only the latest run
+// per name, every one of those latest runs completed with conclusion
+// "success". Fail-closed: an empty run list, or any latest-per-name run that
+// is failing, cancelled, or still queued/in_progress, means the PR is not a
+// deploy candidate. No name filter — every workflow at the SHA is evaluated,
+// not just one hardcoded to be named "ci" (the pre-#2948 bug this restores
+// past).
 function isCiGreen(runs: CiRun[]): boolean {
-  return runs.some(
-    (run) => run.status === "completed" && run.conclusion === "success",
-  );
+  if (runs.length === 0) return false;
+  return latestRunPerName(runs).every((run) => run.conclusion === "success");
 }
 
 // Queued runs older than 1 hour are treated as stuck/ghost runs and ignored.
@@ -395,6 +441,25 @@ export async function buildProductionDeps(opts: {
         "number,title,headRefOid,headRefName,author,reviewDecision,createdAt,mergeStateStatus",
       ]);
     },
+    fetchCiRuns: async (org: string, repo: string, headSha: string) => {
+      try {
+        const data = await ghJson<GhWorkflowRunsJson>([
+          "api",
+          `repos/${org}/${repo}/actions/runs?head_sha=${headSha}`,
+        ]);
+        return data.workflow_runs.map((r) => ({
+          name: r.name,
+          status: r.status,
+          conclusion: r.conclusion,
+          createdAt: r.created_at,
+        }));
+      } catch (err) {
+        process.stderr.write(
+          `check-deploy: actions/runs query failed for ${org}/${repo} sha ${headSha}: ${String(err)}\n`,
+        );
+        return [];
+      }
+    },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
       const data = await ghJson<GhPrReviewsJson>([
         "pr",
@@ -406,15 +471,6 @@ export async function buildProductionDeps(opts: {
         "reviews",
       ]);
       return data.reviews;
-    },
-    fetchCiRuns: async (org: string, repo: string, headSha: string) => {
-      const data = await ghJson<GhWorkflowRunsJson>([
-        "api",
-        `repos/${org}/${repo}/actions/runs?head_sha=${headSha}&per_page=20`,
-      ]);
-      return data.workflow_runs
-        .filter((r) => r.name.toLowerCase() === "ci")
-        .map((r) => ({ status: r.status, conclusion: r.conclusion }));
     },
     isBundleComplete: createBundleCompleteQuery({ fetchFn: opts.fetchFn }),
     queryPrRecord: createPrRecordQuery<PrRecord>({ fetchFn: opts.fetchFn }),

@@ -30,6 +30,7 @@ import { SECRET_ENV_VARS } from "@shipwright/lib/secret-env-vars";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { sign, verify } from "hono/jwt";
+import { join } from "node:path";
 import {
   type AgentDetail,
   type AgentOption,
@@ -40,6 +41,7 @@ import {
   type WorkQueueItem,
   renderAgentDetailPage,
   renderAgentsPage,
+  renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
   renderCronLogsPage,
@@ -81,8 +83,21 @@ import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
-import type { ChatClient, ChatThread } from "./http-chat-client.ts";
+import {
+  type ChatClient,
+  type ChatThread,
+  filterSince,
+} from "./http-chat-client.ts";
 import type { OktaAuthClient } from "./okta-auth-client.ts";
+import {
+  buildManifest,
+  buildOfflinePageHtml,
+  buildServiceWorkerBody,
+  getPrecacheList,
+  PWA_ASSETS_DIR,
+  PWA_ICONS,
+  renderPwaHeadTags,
+} from "./pwa.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 import {
   AGENT_BOT_SCOPES,
@@ -401,6 +416,21 @@ export interface AdminUIDeps {
    * When absent, all chat routes render in degraded mode (notice, no table/messages).
    */
   chatClient?: ChatClient;
+  /**
+   * Base directory the PWA shell's icon route reads committed PNGs from.
+   * Injectable for tests; defaults to the committed admin/pwa-assets/icons
+   * dir (see admin/src/pwa.ts's PWA_ASSETS_DIR, populated by the
+   * one-time/on-demand scripts/build-pwa-icons.ts).
+   */
+  pwaAssetsDir?: string;
+  /**
+   * App version string interpolated into the service worker's cache name
+   * (see admin/src/pwa.ts's buildServiceWorkerBody) so a version bump busts
+   * any previously installed cache. Read once from version.txt at startup —
+   * matches the "inject time via a Clock" isolation convention rather than
+   * reading the file inside the route handler.
+   */
+  appVersion?: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -586,6 +616,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     taskStoreBaseUrl,
     publicRepo,
     chatClient,
+    pwaAssetsDir = PWA_ASSETS_DIR,
+    appVersion = "0.0.0",
   } = deps;
 
   const app = new Hono<AdminUIEnv>();
@@ -594,9 +626,45 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── HTML helper ──────────────────────────────────────────────────────────
 
-  function html(content: string): Response {
-    return new Response(content, {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
+  // Precomputed once per app instance (not per-request): the manifest link +
+  // SW-registration script, gated on appBaseUrl being https (see
+  // admin/src/pwa.ts's renderPwaHeadTags — "" when the gate fails, e.g. a
+  // home-lab operator on plain HTTP).
+  const pwaHeadTags = renderPwaHeadTags(appBaseUrl);
+
+  /**
+   * Splices the PWA head tags in just before </head> so every rendered
+   * admin page gets the manifest link + SW registration site-wide, without
+   * threading appBaseUrl through admin-ui-pages.ts's 24 render*Page
+   * functions. A no-op when pwaHeadTags is "" (non-https appBaseUrl).
+   */
+  function injectPwaHeadTags(content: string): string {
+    if (!pwaHeadTags) return content;
+    return content.replace("</head>", `  ${pwaHeadTags}\n</head>`);
+  }
+
+  /**
+   * `includePwaTags` defaults to true for every /admin/* page. The one
+   * opt-out is GET /public/tasks — its manifest scope is /admin/, and that
+   * unauthenticated read-only board must never reference /admin/ URLs at
+   * all (see the "does not leak /admin/ links" contract below).
+   */
+  function html(
+    content: string,
+    opts?: { includePwaTags?: boolean },
+  ): Response {
+    const body =
+      opts?.includePwaTags === false ? content : injectPwaHeadTags(content);
+    return new Response(body, {
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        // CSP is out of scope (would need unsafe-inline today and buys
+        // nothing here) — these three are the low-risk, high-value headers
+        // for a server-rendered admin console.
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "same-origin",
+        "X-Frame-Options": "DENY",
+      },
     });
   }
 
@@ -726,6 +794,67 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     return { returnTo };
   }
+
+  // ─── PWA shell (manifest, service worker, icons, offline page) ───────────
+  //
+  // Deliberately unauthenticated (no requireAuth) — this is required, not a
+  // shortcut. Browsers fetch the manifest and service worker with
+  // credentials:omit, so gating either behind the session cookie would 302
+  // to /admin/login and silently break install. Neither route leaks
+  // secrets: the manifest is static config, and the SW's own caching
+  // predicate (admin/src/pwa.ts) refuses every authenticated document/JSON
+  // route by construction.
+
+  app.get("/admin/manifest.webmanifest", (c) => {
+    return c.json(buildManifest(), 200, {
+      "Content-Type": "application/manifest+json",
+    });
+  });
+
+  app.get("/admin/sw.js", (c) => {
+    const body = buildServiceWorkerBody(appVersion, getPrecacheList());
+    return new Response(body, {
+      headers: {
+        "Content-Type": "application/javascript; charset=utf-8",
+        // A cached service worker is unupdatable — browsers must always
+        // revalidate this file so a version bump's new cache name (and any
+        // precache-list change) actually takes effect.
+        "Cache-Control": "no-cache",
+      },
+    });
+  });
+
+  app.get("/admin/offline.html", (c) => {
+    return new Response(buildOfflinePageHtml(), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  });
+
+  const PWA_ICON_FILENAMES = new Set(PWA_ICONS.map((icon) => icon.filename));
+
+  app.get("/admin/icons/:filename", async (c) => {
+    const filename = c.req.param("filename");
+    if (!PWA_ICON_FILENAMES.has(filename)) {
+      return c.json({ error: "Not found" }, 404);
+    }
+    try {
+      const body = await Bun.file(
+        join(pwaAssetsDir, "icons", filename),
+      ).arrayBuffer();
+      return new Response(body, {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=86400",
+        },
+      });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return c.json({ error: "Not found" }, 404);
+      }
+      console.error(`[admin-ui] PWA icon read error [${filename}]:`, err);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  });
 
   app.get("/admin/login", (c) => {
     const error = c.req.query("error") ?? undefined;
@@ -2957,6 +3086,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const agentId = c.req.param("agentId");
     const threadId = c.req.param("threadId");
 
+    // Test-only override for the live-progress stall-warning threshold so e2e
+    // doesn't need a real 2-minute wait. Clamped to a sane range; production
+    // never passes it, so the 120s default stands.
+    const rawStall = c.req.query("stallWarnAfterMs");
+    const stallWarnAfterMs =
+      rawStall !== undefined &&
+      Number.isFinite(Number(rawStall)) &&
+      Number(rawStall) > 0
+        ? Number(rawStall)
+        : undefined;
+
     if (!chatClient) {
       return html(
         renderChatThreadPage(agentId, null, null, null, c.var.userEmail),
@@ -2980,6 +3120,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           threadList,
           c.var.userEmail,
           statsResult,
+          { stallWarnAfterMs },
         ),
       );
     } catch {
@@ -3225,6 +3366,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
       const threadId = c.req.param("threadId");
+      // ?since=<messageId> → incremental poll: only messages after that id.
+      const since = c.req.query("since") || undefined;
 
       if (!chatClient) {
         return c.json({ messages: [] });
@@ -3232,7 +3375,31 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
       try {
         const result = await chatClient.listMessages(threadId);
-        return c.json({ messages: result.messages });
+        // Track retryBody (CFB-2.4) over the FULL ordered list — not the
+        // ?since-filtered slice — so a retry button on a polled-in error
+        // reply still resolves to its originating user message even when
+        // that user message was delivered in an earlier poll response.
+        const retryBodyByMessageId = new Map<string, string | null>();
+        let lastUserBody: string | null = null;
+        for (const m of result.messages) {
+          retryBodyByMessageId.set(m.id, lastUserBody);
+          if (m.role === "user") lastUserBody = m.body;
+        }
+        // ?since filtering is applied here at the admin (server) layer over the
+        // full ordered list, so it works regardless of the chat client impl.
+        const ordered = since
+          ? filterSince(result.messages, since)
+          : result.messages;
+        // Attach the server-rendered bubbleHtml so polled bubbles are
+        // byte-identical to a full reload's server-rendered bubble.
+        const messages = ordered.map((m) => ({
+          ...m,
+          bubbleHtml: renderChatMessageBubble(
+            m,
+            retryBodyByMessageId.get(m.id) ?? null,
+          ),
+        }));
+        return c.json({ messages });
       } catch {
         return c.json({ messages: [] });
       }
@@ -3461,6 +3628,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         true, // readOnly
         timezone,
       ),
+      // The PWA manifest's scope is /admin/ — this unauthenticated public
+      // board must never reference /admin/ URLs at all.
+      { includePwaTags: false },
     );
   });
 

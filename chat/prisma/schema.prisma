@@ -65,6 +65,15 @@ model Message {
   // pollers can tell "still working" apart from "wedged" (see heartbeat()
   // in message-service.ts). Only ever set on claimed user messages.
   heartbeatAt        DateTime?
+  // Last-write-wins progress tracking (see heartbeat() in message-service.ts).
+  // Latest milestone + elapsed only, not a transcript — deliberately NOT an
+  // append-only events table. Deliberately NOT indexed: unindexed updates to
+  // these narrow columns stay HOT (heap-only tuple), so heartbeat churn (up
+  // to ~1200 writes/message over a 1h ceiling at a 3s cadence) produces no
+  // index bloat.
+  progressPhase      String?
+  progressSeq        Int       @default(0)
+  cancelRequestedAt  DateTime?
   repliedAt          DateTime?
   errorKind          String?
   createdAt          DateTime  @default(now())

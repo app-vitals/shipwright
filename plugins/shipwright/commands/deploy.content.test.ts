@@ -40,6 +40,12 @@ function extractStep3aSection(md: string): string {
   return match?.[0] ?? "";
 }
 
+function extractStep3bSection(md: string): string {
+  const match = md.match(/### 3b\. Verify[\s\S]*?(?=\n#{2,3} |\n---)/);
+  expect(match).not.toBeNull();
+  return match?.[0] ?? "";
+}
+
 describe("deploy.md — own-PRs-only check (AC1 & AC2)", () => {
   it("contains own GH login check (AGENT_LOGIN or 'own GH login')", () => {
     const hasAgentLogin = content.includes("AGENT_LOGIN");
@@ -963,5 +969,37 @@ describe("deploy.md — self-review approval fallback (RHA-1.1)", () => {
     expect(occurrences).toBe(1);
     const step4bSection = extractStep4bSection(content);
     expect(step4bSection).not.toContain("--admin");
+  });
+});
+
+describe("deploy.md — Step 3b: verify all checks are green (CGC-1.1)", () => {
+  it("verifies all checks are green on the PR head commit via the actions/runs API", () => {
+    const section = extractStep3bSection(content);
+    expect(section).toContain("headRefOid");
+    expect(section).toContain("actions/runs");
+    expect(section).toContain("head_sha");
+  });
+
+  it("does not query gh pr view for statusCheckRollup / CheckRun / StatusContext fields", () => {
+    const section = extractStep3bSection(content);
+    expect(section).not.toContain("json headRefOid,statusCheckRollup");
+    expect(section).not.toContain("CheckRun");
+    expect(section).not.toContain("StatusContext");
+  });
+
+  it("does not filter workflow runs by a hardcoded CI workflow name", () => {
+    const section = extractStep3bSection(content);
+    expect(section).not.toContain('ascii_downcase == "ci"');
+  });
+
+  it("groups runs by workflow name and keeps only the latest run per name", () => {
+    const section = extractStep3bSection(content);
+    expect(section).toContain("group_by(.name)");
+    expect(section).toContain("max_by(.created_at)");
+  });
+
+  it("fails with a clear message when not all checks are green", () => {
+    const section = extractStep3bSection(content);
+    expect(section).toContain("not all checks are green");
   });
 });

@@ -8,6 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { PrismaClient } from "../prisma/client/index.js";
 import { FixedClock } from "./clock.ts";
+import { BadRequestError } from "./errors.ts";
 import { MessageService } from "./message-service.ts";
 
 const TEST_DB = process.env.DATABASE_URL_SHIPWRIGHT_CHAT;
@@ -453,6 +454,104 @@ describeOrSkip("MessageService (integration)", () => {
       });
       expect(reloaded?.heartbeatAt).toBeNull();
     });
+
+    it("bumps heartbeatAt and increments progressSeq when phase is omitted", async () => {
+      const threadId = await createThread(prisma);
+      const clock = FixedClock(new Date("2026-05-01T10:00:00Z"));
+      const svc = new MessageService(prisma, clock);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+      expect(claimed.progressSeq).toBe(0);
+      expect(claimed.progressPhase).toBeNull();
+
+      const updated = await svc.heartbeat(claimed.id, "worker-1");
+
+      expect(updated?.heartbeatAt).toEqual(new Date("2026-05-01T10:00:00Z"));
+      expect(updated?.progressSeq).toBe(1);
+      expect(updated?.progressPhase).toBeNull();
+    });
+
+    it("persists progressPhase and increments progressSeq in one update when a valid phase is given", async () => {
+      const threadId = await createThread(prisma);
+      const clock = FixedClock(new Date("2026-05-01T10:00:00Z"));
+      const svc = new MessageService(prisma, clock);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      const updated = await svc.heartbeat(claimed.id, "worker-1", "reading");
+
+      expect(updated?.heartbeatAt).toEqual(new Date("2026-05-01T10:00:00Z"));
+      expect(updated?.progressPhase).toBe("reading");
+      expect(updated?.progressSeq).toBe(1);
+    });
+
+    it("rejects an invalid phase with BadRequestError and does not touch the row", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      await expect(
+        svc.heartbeat(claimed.id, "worker-1", "not-a-real-phase"),
+      ).rejects.toThrow(BadRequestError);
+
+      const reloaded = await prisma.message.findUnique({
+        where: { id: claimed.id },
+      });
+      expect(reloaded?.progressSeq).toBe(0);
+      expect(reloaded?.progressPhase).toBeNull();
+      expect(reloaded?.heartbeatAt).toBeNull();
+    });
+
+    it("increments progressSeq monotonically across repeated heartbeats", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      const first = await svc.heartbeat(claimed.id, "worker-1", "thinking");
+      expect(first?.progressSeq).toBe(1);
+
+      const second = await svc.heartbeat(claimed.id, "worker-1", "editing");
+      expect(second?.progressSeq).toBe(2);
+      expect(second?.progressPhase).toBe("editing");
+    });
   });
 
   // ─── reply() ────────────────────────────────────────────────────────────────
@@ -505,6 +604,76 @@ describeOrSkip("MessageService (integration)", () => {
         body: "second answer",
       });
       expect(result).toBeNull();
+    });
+
+    it("stamps an errorKind on the assistant message when provided", async () => {
+      const threadId = await createThread(prisma);
+      const userMessage = await prisma.message.create({
+        data: { threadId, role: "user", body: "question" },
+      });
+
+      const result = await service.reply(userMessage.id, {
+        body: "Cancelled by user.",
+        errorKind: "cancelled",
+      });
+
+      expect(result?.assistantMessage.errorKind).toBe("cancelled");
+      expect(result?.userMessage.repliedAt).not.toBeNull();
+    });
+  });
+
+  // ─── requestCancel() ──────────────────────────────────────────────────────────
+
+  describe("requestCancel()", () => {
+    it("stamps cancelRequestedAt on a claimed, unreplied message", async () => {
+      const threadId = await createThread(prisma);
+      const clock = FixedClock(new Date("2026-05-01T10:00:00Z"));
+      const svc = new MessageService(prisma, clock);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+      expect(claimed.cancelRequestedAt).toBeNull();
+
+      const updated = await svc.requestCancel(claimed.id);
+
+      expect(updated?.cancelRequestedAt).toEqual(
+        new Date("2026-05-01T10:00:00Z"),
+      );
+    });
+
+    it("returns null when the message does not exist", async () => {
+      const svc = new MessageService(prisma);
+      const updated = await svc.requestCancel("does-not-exist");
+      expect(updated).toBeNull();
+    });
+
+    it("cancel is reflected in a subsequent heartbeat's returned message", async () => {
+      const threadId = await createThread(prisma);
+      const svc = new MessageService(prisma);
+
+      const claimed = await prisma.message.create({
+        data: {
+          threadId,
+          role: "user",
+          body: "long question",
+          claimed: true,
+          claimedAt: new Date("2026-05-01T09:59:00Z"),
+          claimedBy: "worker-1",
+        },
+      });
+
+      await svc.requestCancel(claimed.id);
+      const beat = await svc.heartbeat(claimed.id, "worker-1");
+
+      expect(beat?.cancelRequestedAt).not.toBeNull();
     });
   });
 });

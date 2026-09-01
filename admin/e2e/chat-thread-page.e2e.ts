@@ -326,3 +326,119 @@ test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-3.1 mobile res
     expect(pageHeight).toBeGreaterThan(400);
   });
 });
+
+// ─── CFB-3.2 — mobile drawer, sticky composer, collapsed header ────────────────
+
+test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-3.2 mobile drawer", () => {
+  // Criterion #1: the drawer opens and closes at 375px, with a scrim.
+  test("at 375px the drawer opens via the hamburger and a scrim appears, then closes", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const sidebar = page.locator(".chat-thread-sidebar");
+    const scrim = page.locator(".chat-drawer-scrim");
+
+    // Closed by default: the sidebar is off-canvas (its left edge is at or
+    // beyond the left viewport edge, i.e. translated out of view) and the
+    // scrim is not interactable.
+    const closedLeft = await sidebar.evaluate(
+      (el) => el.getBoundingClientRect().left,
+    );
+    expect(closedLeft).toBeLessThan(0);
+    await expect(scrim).not.toBeVisible();
+
+    // Open it via the hamburger label.
+    await page.locator(".chat-drawer-hamburger").click();
+
+    await expect(scrim).toBeVisible();
+    // The drawer slides in via a 0.2s transform transition — poll until its
+    // left edge settles on-screen rather than sampling mid-animation.
+    await expect
+      .poll(async () =>
+        sidebar.evaluate((el) => el.getBoundingClientRect().left),
+      )
+      .toBeGreaterThanOrEqual(0);
+
+    // Clicking the scrim closes it again. The drawer (z-index 60) overlaps the
+    // left ~280px of the full-viewport scrim, so click the scrim on its
+    // uncovered right edge rather than its (covered) center.
+    await scrim.click({ position: { x: 340, y: 400 } });
+    await expect(scrim).not.toBeVisible();
+    await expect
+      .poll(async () =>
+        sidebar.evaluate((el) => el.getBoundingClientRect().left),
+      )
+      .toBeLessThan(0);
+  });
+
+  // Criterion #5: aria-expanded flips and Escape closes the drawer.
+  test("aria-expanded flips on open and Escape closes the drawer", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const hamburger = page.locator(".chat-drawer-hamburger");
+    const toggle = page.locator("#chat-drawer-toggle");
+
+    expect(await hamburger.getAttribute("aria-expanded")).toBe("false");
+
+    await hamburger.click();
+    expect(await toggle.isChecked()).toBe(true);
+    expect(await hamburger.getAttribute("aria-expanded")).toBe("true");
+
+    await page.keyboard.press("Escape");
+    expect(await toggle.isChecked()).toBe(false);
+    expect(await hamburger.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  // Criterion #4: header bounding height <= 96px and messages container top
+  // < 200px at 375px.
+  test("at 375px the header is <= 96px tall and messages start above 200px", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await loadChatThreadPage(page, context);
+
+    const headerHeight = await page
+      .locator(".chat-thread-header")
+      .evaluate((el) => el.getBoundingClientRect().height);
+    expect(headerHeight).toBeLessThanOrEqual(96);
+
+    const messagesTop = await page
+      .locator("#messages-container")
+      .evaluate((el) => el.getBoundingClientRect().top);
+    expect(messagesTop).toBeLessThan(200);
+  });
+
+  // Criterion #3: composer stays in the viewport with the keyboard open
+  // (proxied by shrinking the viewport height to 400).
+  test("composer stays within the viewport when height shrinks to 400", async ({
+    page,
+    context,
+  }) => {
+    await page.setViewportSize({ width: 375, height: 400 });
+    await loadChatThreadPage(page, context);
+
+    const { composerBottom, viewportHeight } = await page.evaluate(() => {
+      const form = document.querySelector(
+        ".chat-composer-form",
+      ) as HTMLElement | null;
+      return {
+        composerBottom: form
+          ? form.getBoundingClientRect().bottom
+          : Number.POSITIVE_INFINITY,
+        viewportHeight: window.innerHeight,
+      };
+    });
+
+    // The composer's bottom edge must not fall below the visible viewport.
+    // A 1px rounding tolerance guards against sub-pixel layout.
+    expect(composerBottom).toBeLessThanOrEqual(viewportHeight + 1);
+  });
+});

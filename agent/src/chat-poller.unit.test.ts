@@ -9,8 +9,8 @@ import { describe, expect, it, mock } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createChatPoller } from "./chat-poller.ts";
-import type { ProgressCallback } from "./claude.ts";
+import { createChatPoller, deriveReply } from "./chat-poller.ts";
+import type { ClaudeRunResult, ProgressCallback } from "./claude.ts";
 import type { ChatServiceClient } from "./http-chat-service-client.ts";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -35,6 +35,7 @@ function makeMessage(threadId: string, messageId = "msg-1") {
     claimedBy: "agent-1",
     claimedAt: new Date(),
     heartbeatAt: null,
+    cancelRequestedAt: null,
     repliedAt: null,
     tokens: null,
     costUsd: null,
@@ -65,7 +66,7 @@ function makeFakeClient(
   return {
     listThreads: async () => ({ threads: [], total: 0, limit: 50, offset: 0 }),
     claimMessage: async () => null,
-    heartbeat: async () => {},
+    heartbeat: async () => ({ cancelRequested: false }),
     replyToMessage: async () => ({
       userMessage: makeMessage("thread-1"),
       assistantMessage: makeMessage("thread-1"),
@@ -167,7 +168,12 @@ describe("createChatPoller poll: claim then reply", () => {
 
     // Runner called with the message body and correct session key
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(runner).toHaveBeenCalledWith(message.body, `chat:${threadId}`);
+    const [runBody, runKey] = runner.mock.calls[0] as unknown as [
+      string,
+      string,
+    ];
+    expect(runBody).toBe(message.body);
+    expect(runKey).toBe(`chat:${threadId}`);
 
     // Reply posted with runner output
     expect(replyToMessage).toHaveBeenCalledTimes(1);
@@ -212,7 +218,12 @@ describe("createChatPoller poll: claim then reply", () => {
     await poller.pollOnce();
 
     // Runner must receive the stable session key so it can resume the session
-    expect(runner).toHaveBeenCalledWith(message.body, `chat:${threadId}`);
+    const [runBody2, runKey2] = runner.mock.calls[0] as unknown as [
+      string,
+      string,
+    ];
+    expect(runBody2).toBe(message.body);
+    expect(runKey2).toBe(`chat:${threadId}`);
   });
 });
 
@@ -347,7 +358,12 @@ function makeFakeInterval() {
   const tick = (times = 1) => {
     for (let i = 0; i < times; i++) for (const fn of [...active.values()]) fn();
   };
-  return { setIntervalFn, clearIntervalFn, tick, activeCount: () => active.size };
+  return {
+    setIntervalFn,
+    clearIntervalFn,
+    tick,
+    activeCount: () => active.size,
+  };
 }
 
 describe("createChatPoller poll: heartbeat during a long-running reply", () => {
@@ -358,7 +374,7 @@ describe("createChatPoller poll: heartbeat during a long-running reply", () => {
     const message = makeMessage(threadId, messageId);
     const replyResult = makeReplyResult(message);
 
-    const heartbeat = mock(async () => {});
+    const heartbeat = mock(async () => ({ cancelRequested: false }));
     const client = makeFakeClient({
       listThreads: async () => ({
         threads: [thread],
@@ -399,7 +415,7 @@ describe("createChatPoller poll: heartbeat during a long-running reply", () => {
     const message = makeMessage(threadId, "msg-hb-stop");
     const replyResult = makeReplyResult(message);
 
-    const heartbeat = mock(async () => {});
+    const heartbeat = mock(async () => ({ cancelRequested: false }));
     const client = makeFakeClient({
       listThreads: async () => ({
         threads: [makeThread(threadId)],
@@ -432,7 +448,7 @@ describe("createChatPoller poll: heartbeat during a long-running reply", () => {
     const threadId = "thread-hb-throw";
     const message = makeMessage(threadId, "msg-hb-throw");
 
-    const heartbeat = mock(async () => {});
+    const heartbeat = mock(async () => ({ cancelRequested: false }));
     const client = makeFakeClient({
       listThreads: async () => ({
         threads: [makeThread(threadId)],
@@ -491,6 +507,144 @@ describe("createChatPoller poll: heartbeat during a long-running reply", () => {
 
     await expect(poller.pollOnce()).resolves.toBeUndefined();
     expect(replyToMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ─── poll: always replies (errorKind on failure, non-empty on incomplete) ──────
+
+describe("createChatPoller poll: always replies with an errorKind on failure", () => {
+  it("replies with a non-empty body and an errorKind when the runner throws", async () => {
+    const threadId = "thread-fail-reply";
+    const message = makeMessage(threadId, "msg-fail");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    const runner = mock(async () => {
+      throw new Error("runner exploded");
+    });
+
+    const poller = createChatPoller({ client, runner });
+    await poller.pollOnce();
+
+    // The message must NOT be left claimed-forever: a reply is always posted.
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown as [
+      string,
+      string,
+      { body: string; errorKind?: string },
+    ];
+    expect(opts.errorKind).toBeTruthy();
+    expect(opts.body.length).toBeGreaterThan(0);
+  });
+
+  it("replies with a non-empty body and errorKind=incomplete when the run streamIncomplete's with empty result", async () => {
+    const threadId = "thread-incomplete";
+    const message = makeMessage(threadId, "msg-inc");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+    });
+
+    // Empty result + streamIncomplete — the poller must NOT post an empty reply.
+    const runner = mock(async () => ({ result: "", streamIncomplete: true }));
+
+    const poller = createChatPoller({ client, runner });
+    await poller.pollOnce();
+
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown as [
+      string,
+      string,
+      { body: string; errorKind?: string },
+    ];
+    expect(opts.body.length).toBeGreaterThan(0);
+    expect(opts.errorKind).toBe("incomplete");
+  });
+});
+
+// ─── poll: cancel via the heartbeat tick ───────────────────────────────────────
+
+describe("createChatPoller poll: cancel via heartbeat", () => {
+  it("aborts the in-flight run when a heartbeat reports cancelRequested, replying with errorKind=cancelled", async () => {
+    const threadId = "thread-cancel";
+    const message = makeMessage(threadId, "msg-cancel");
+    const replyResult = makeReplyResult(message);
+
+    const replyToMessage = mock(async () => replyResult);
+    // Heartbeat reports cancelRequested on the first beat.
+    const heartbeat = mock(async () => ({ cancelRequested: true }));
+    const client = makeFakeClient({
+      listThreads: async () => ({
+        threads: [makeThread(threadId)],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+      claimMessage: async () => message,
+      replyToMessage,
+      heartbeat,
+    });
+
+    const fake = makeFakeInterval();
+
+    // The runner observes the injected AbortSignal and rejects when it aborts,
+    // mirroring how createRunClaude throws ClaudeAbortedError on cancel.
+    const runner = mock(
+      (
+        _msg: string,
+        _key?: string,
+        _onProgress?: ProgressCallback,
+        signal?: AbortSignal,
+      ) =>
+        new Promise<{ result: string }>((_resolve, reject) => {
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              const err = new Error("aborted");
+              err.name = "ClaudeAbortedError";
+              reject(err);
+            });
+          }
+          // Fire a heartbeat tick — which sees cancelRequested and aborts.
+          fake.tick(1);
+        }),
+    );
+
+    const poller = createChatPoller({
+      client,
+      runner,
+      setIntervalFn: fake.setIntervalFn,
+      clearIntervalFn: fake.clearIntervalFn,
+    });
+    await poller.pollOnce();
+
+    // The run was cancelled and a cancelled reply was posted.
+    expect(replyToMessage).toHaveBeenCalledTimes(1);
+    const [, , opts] = replyToMessage.mock.calls[0] as unknown as [
+      string,
+      string,
+      { body: string; errorKind?: string },
+    ];
+    expect(opts.errorKind).toBe("cancelled");
   });
 });
 
@@ -755,5 +909,55 @@ describe("createChatPoller start: overlap guard", () => {
     expect(listThreads).toHaveBeenCalledTimes(2);
 
     poller.stop();
+  });
+});
+
+// ─── deriveReply: always non-empty body + correct errorKind ────────────────────
+
+describe("deriveReply", () => {
+  const R = (over: Partial<ClaudeRunResult>): ClaudeRunResult => ({
+    result: "",
+    ...over,
+  });
+
+  it("cancelled: fixed body + cancelled errorKind", () => {
+    const d = deriveReply(undefined, "cancelled");
+    expect(d.body.length).toBeGreaterThan(0);
+    expect(d.errorKind).toBe("cancelled");
+  });
+
+  it("thrown runner (stalled): non-empty body + stalled errorKind", () => {
+    const d = deriveReply(undefined, "stalled");
+    expect(d.body.length).toBeGreaterThan(0);
+    expect(d.errorKind).toBe("stalled");
+  });
+
+  it("streamIncomplete with empty result: non-empty body + incomplete errorKind", () => {
+    const d = deriveReply(R({ result: "", streamIncomplete: true }), undefined);
+    expect(d.body.length).toBeGreaterThan(0);
+    expect(d.errorKind).toBe("incomplete");
+  });
+
+  it("clean finish with empty result: non-empty body + incomplete errorKind", () => {
+    const d = deriveReply(R({ result: "   " }), undefined);
+    expect(d.body.length).toBeGreaterThan(0);
+    expect(d.errorKind).toBe("incomplete");
+  });
+
+  it("clean finish with real result: passes body + usage through, no errorKind", () => {
+    const usage = {
+      input_tokens: 1,
+      output_tokens: 2,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    };
+    const d = deriveReply(
+      R({ result: "the answer", usage, totalCostUsd: 0.01 }),
+      undefined,
+    );
+    expect(d.body).toBe("the answer");
+    expect(d.tokens).toEqual(usage);
+    expect(d.costUsd).toBe(0.01);
+    expect(d.errorKind).toBeUndefined();
   });
 });

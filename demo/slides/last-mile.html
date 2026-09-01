@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Shipwright — Last Mile</title>
+<link rel="stylesheet" href="base-styles.css">
+<style>
+  .content { position: absolute; top: 140px; left: var(--margin); right: var(--margin); bottom: 120px; display: flex; flex-direction: column; justify-content: center; }
+  .headline { font-size: 60px; font-weight: 700; line-height: 1.1; letter-spacing: -0.03em; margin-bottom: 16px; }
+  .subhead { font-size: 28px; color: var(--text-muted); margin-bottom: 52px; }
+  .pipeline-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; max-width: 1600px; }
+  .step-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 32px 28px; }
+  .step-card.featured { border-color: var(--brand-green); border-width: 2px; background: rgba(52,199,123,0.04); }
+  .step-name { font-size: 26px; font-weight: 700; margin-bottom: 14px; }
+  .step-body { font-size: 16px; line-height: 1.6; color: var(--text-muted); }
+</style>
+</head>
+<body>
+  <div class="glow-orb glow-tr"></div>
+  <div class="glow-orb glow-bl"></div>
+  <div class="brand-lockup"><div class="brand-mark"></div><span class="brand-wordmark">Shipwright Harness</span></div>
+  <div class="brand-rule"></div>
+  <div class="content">
+    <p class="eyebrow">The Last Mile</p>
+    <h1 class="headline">Most AI tools stop when the code is written.</h1>
+    <p class="subhead">Shipwright carries it the rest of the way.</p>
+    <div class="pipeline-grid">
+      <div class="step-card"><div class="step-name">Review</div><div class="step-body">Findings fixed on a schedule</div></div>
+      <div class="step-card"><div class="step-name">Merge</div><div class="step-body">Green CI, approved review</div></div>
+      <div class="step-card"><div class="step-name">Deploy</div><div class="step-body">Into your own environment</div></div>
+      <div class="step-card"><div class="step-name">Canary</div><div class="step-body">Opt-in staged rollout, when your pipeline supports it</div></div>
+      <div class="step-card featured"><div class="step-name">Auto-revert</div><div class="step-body">Available when something fails</div></div>
+    </div>
+  </div>
+  <div class="slide-footer"><span>Why adopt it · 3 / 6</span><span>shipwrightharness.com</span></div>
+  <div class="slide-ready"></div>
+</body>
+</html>

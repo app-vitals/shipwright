@@ -210,7 +210,21 @@ Returns `404` if not found, otherwise the deleted message with `200`.
 POST /threads/:threadId/messages/:id/heartbeat
 ```
 
-Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this on a fixed interval (`heartbeatIntervalMs`, default 3s) that runs for the whole duration of the reply — interval-driven rather than tied to Claude's turn cadence, since a single long-running tool call can go quiet for minutes between stream events. The admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Scoped to the claim's owner: the caller's identity (`agentId`, or `"admin"` for the admin UI) must match the message's `claimedBy`, or the update no-ops. Returns `404` if the message doesn't exist, doesn't belong to `:threadId`, isn't currently claimed by the caller, or has already been replied to; otherwise the updated message with `200`.
+Bumps `heartbeatAt` to now on the target message — proof of life while the claiming agent works a long-running reply. The agent's chat poll loop calls this on a fixed interval (`heartbeatIntervalMs`, default 3s) that runs for the whole duration of the reply — interval-driven rather than tied to Claude's turn cadence, since a single long-running tool call can go quiet for minutes between stream events. The admin chat UI uses `heartbeatAt` (alongside `claimedAt`) to extend its own timeout instead of tripping a flat cutoff. Scoped to the claim's owner: the caller's identity (`agentId`, or `"admin"` for the admin UI) must match the message's `claimedBy`, or the update no-ops.
+
+Optional request body: `{ phase?: string }`. When `phase` is provided, it must be one of the valid `PROGRESS_PHASES` — otherwise returns `400`. On success, `progressPhase` is updated and `progressSeq` is incremented atomically alongside `heartbeatAt`.
+
+The heartbeat is **bidirectional**: the returned message carries `cancelRequestedAt`, so the same 3s tick that proves liveness also tells the agent whether a cancel was requested — no second polling loop and no inbound HTTP surface on the agent (the pull-only architecture is preserved). The agent derives `HeartbeatResult { cancelRequested }` from that field and, when set, aborts the in-flight Claude run (worst-case cancel latency ≈ one heartbeat interval, ~3s).
+
+Returns `400` if `phase` is provided but invalid, `404` if the message doesn't exist, doesn't belong to `:threadId`, isn't currently claimed by the caller, or has already been replied to; otherwise the updated message with `200`.
+
+#### Cancel (queue API)
+
+```
+POST /threads/:threadId/messages/:id/cancel
+```
+
+Requests cancellation of an in-flight reply by stamping `cancelRequestedAt` on the target message. Auth is the same `requireThread` scope as the rest of the queue API; the route is registered before the generic `/:id` routes so `/:id/cancel` matches its own handler. Returns `404` if the message doesn't exist or doesn't belong to `:threadId`; otherwise the updated message with `200`. The claiming agent observes the request on its next heartbeat tick (see above) and aborts — the aborted run remains resumable (its session id is still saved) and is **not** retried.
 
 #### Reply (queue API)
 
@@ -218,14 +232,14 @@ Bumps `heartbeatAt` to now on the target message — proof of life while the cla
 POST /threads/:threadId/messages/:id/reply
 ```
 
-Posts an agent's reply to a claimed user message — the second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number }`. `body` is required.
+Posts an agent's reply to a claimed user message — the second half of the claim/reply queue cycle. Body: `{ body: string, tokens?: JsonValue, costUsd?: number, errorKind?: string | null }`. `body` is required. `errorKind` (e.g. `"cancelled"`, `"incomplete"`, `"stalled"`) is stamped on the assistant message so the admin chat UI can render a status badge and a Retry action.
 
 Preconditions, checked in order:
 1. The target message must exist and belong to `:threadId` — `404`
 2. `role` must be `"user"` — replying to an assistant message returns `400`
 3. `repliedAt` must be `null` — replying twice returns `409`
 
-On success, sets `repliedAt` on the user message and creates a new `role: "assistant"` message in the same thread. Returns `201` with `{ userMessage: Message, assistantMessage: Message }`.
+On success, sets `repliedAt` on the user message and creates a new `role: "assistant"` message in the same thread — both writes run inside a single `prisma.$transaction`, so a partial failure can never leave `repliedAt` set with no assistant message. Returns `201` with `{ userMessage: Message, assistantMessage: Message }`.
 
 ---
 
@@ -276,6 +290,9 @@ Indexes: `[agentId, updatedAt desc]` (list-by-agent ordering), `[memberId]`.
 | `claimedAt` | `DateTime?` | |
 | `claimedBy` | `String?` | Caller `agentId`, or `"admin"` |
 | `heartbeatAt` | `DateTime?` | Bumped by the heartbeat queue endpoint while a claimed message is being worked |
+| `progressPhase` | `String?` | Latest milestone + elapsed during claim processing; last-write-wins, not append-only; updated by heartbeat endpoint when `phase` is provided |
+| `progressSeq` | `Int` | Default `0`; incremented with each heartbeat to track change events across same-timestamp updates |
+| `cancelRequestedAt` | `DateTime?` | Cancellation request timestamp, if set |
 | `repliedAt` | `DateTime?` | Set by the reply queue endpoint; guards against double-reply |
 | `errorKind` | `String?` | |
 | `createdAt` | `DateTime` | |
@@ -293,6 +310,7 @@ Indexes: `[threadId, createdAt]` (message list ordering), `[claimed, threadId]` 
 | `SHIPWRIGHT_CHAT_AGENTS_URL` | no | Base URL of the Shipwright agents (admin) service, used to resolve agent token repo scopes. Requires `SHIPWRIGHT_CHAT_AGENTS_API_KEY` to be set alongside it. When unset, agent tokens default to an empty repo list and scope resolution is disabled. |
 | `SHIPWRIGHT_CHAT_AGENTS_API_KEY` | no | Bearer token the chat service uses to call the agents service. Required alongside `SHIPWRIGHT_CHAT_AGENTS_URL`. Env-var-only (secret). |
 | `CHAT_SEED_ADMIN_TOKEN` | no | Bootstrap admin token seeded into the chat service on startup (idempotent upsert). Local-dev convenience only — not a real secret. |
+| `CHAT_STALLED_AFTER_MS` | no | Stall threshold (ms) for the background stall reaper (`stall-reaper.ts`), which terminalizes a claimed, unreplied user message with `errorKind: "stalled"` once its `heartbeatAt` (or `claimedAt`, if the agent died before its first beat) is older than this cutoff. Defaults to `300000` (5 min) — deliberately 2.5x the admin UI's 120s stall-warning threshold, since a warning is free but reaping is destructive (it marks the message stalled; it never unclaims it for retry). The sweep runs every 60s from `main.ts` and reuses `MessageService.reply()`, which is naturally idempotent (returns `null` if already replied), so the sweep is race-safe against an agent that resumes and safe across multiple replicas. |
 
 On boot, `main.ts` runs `prisma migrate deploy` against `DATABASE_URL_SHIPWRIGHT_CHAT` as an idempotent preflight, throwing if migrations fail, before serving traffic.
 

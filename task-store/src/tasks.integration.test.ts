@@ -27,6 +27,9 @@ describeOrSkip("Task store schema (integration)", () => {
   beforeEach(async () => {
     prisma = makePrisma();
     await prisma.taskToken.deleteMany();
+    // TaskEvent's FK is ON DELETE RESTRICT (TCS-1.1) — clear event rows
+    // before their parent Task rows.
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
   });
 
@@ -41,7 +44,10 @@ describeOrSkip("Task store schema (integration)", () => {
     const created = await prisma.task.create({
       data: {
         title: "Scaffold the task store",
-        status: "pending",
+        // in_progress, not pending: claimedBy/claimedAt/heartbeatAt/agentHint
+        // are populated below, and the pending/claimedBy DB invariant
+        // (TCS-2.1) forbids status=pending with a non-null claimedBy.
+        status: "in_progress",
         source: "plan-session",
         session: "TSS-1",
         repo: "shipwright",
@@ -99,7 +105,7 @@ describeOrSkip("Task store schema (integration)", () => {
     if (!read) return;
 
     expect(read.title).toBe("Scaffold the task store");
-    expect(read.status).toBe("pending");
+    expect(read.status).toBe("in_progress");
     expect(read.source).toBe("plan-session");
     expect(read.session).toBe("TSS-1");
     expect(read.repo).toBe("shipwright");

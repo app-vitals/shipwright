@@ -310,7 +310,7 @@ test("crons section documents the default scheduled jobs", async ({
     "test-readiness",
     "docs-freshness",
     "learn-dream",
-    "dependabot-triage",
+    "dependency-bot-triage",
     "entropy-patrol",
   ]) {
     await expect(

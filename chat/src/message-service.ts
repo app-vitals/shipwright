@@ -3,8 +3,10 @@
  * MessageService — CRUD for messages + queue operations (claim/reply).
  */
 
+import { PROGRESS_PHASES } from "@shipwright/lib/progress-phases";
 import { Prisma } from "../prisma/client/index.js";
 import { type Clock, SystemClock } from "./clock.ts";
+import { BadRequestError } from "./errors.ts";
 import type { Message, PrismaClient } from "./index.ts";
 
 export type { Message };
@@ -68,13 +70,28 @@ export interface MessageServiceLike {
    * Bump a claimed message's heartbeatAt to now — proof of life for a
    * long-running reply. Scoped to the claim's owner: returns null unless the
    * message is an unreplied user message currently claimed by `claimedBy`.
+   *
+   * When `phase` is provided it must be one of PROGRESS_PHASES — otherwise
+   * this throws BadRequestError and no write happens. progressSeq is always
+   * incremented by exactly 1 in the same update as heartbeatAt (and
+   * progressPhase, when phase is given) — last-write-wins, not an
+   * append-only log.
    */
-  heartbeat(id: string, claimedBy: string): Promise<Message | null>;
+  heartbeat(
+    id: string,
+    claimedBy: string,
+    phase?: string,
+  ): Promise<Message | null>;
 
   /**
    * Post an agent reply to a claimed message.
    * Creates an assistant message and marks the user message with repliedAt.
    * Returns null if the user message is not found.
+   *
+   * When `errorKind` is set it is stamped on the assistant message (e.g.
+   * "cancelled" / "incomplete" / "stalled") so the UI can render a Retry
+   * affordance. The whole reply runs in a single transaction — a partial
+   * failure never leaves repliedAt set with no assistant message.
    */
   reply(
     messageId: string,
@@ -82,8 +99,16 @@ export interface MessageServiceLike {
       body: string;
       tokens?: JsonValue;
       costUsd?: number;
+      errorKind?: string | null;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null>;
+
+  /**
+   * Request cancellation of an in-flight reply by stamping cancelRequestedAt.
+   * The claiming agent observes this on its next heartbeat tick and aborts.
+   * Returns the updated message, or null if the message is not found.
+   */
+  requestCancel(id: string): Promise<Message | null>;
 }
 
 export class MessageService implements MessageServiceLike {
@@ -215,7 +240,26 @@ export class MessageService implements MessageServiceLike {
     }
   }
 
-  async heartbeat(id: string, claimedBy: string): Promise<Message | null> {
+  async heartbeat(
+    id: string,
+    claimedBy: string,
+    phase?: string,
+  ): Promise<Message | null> {
+    if (phase !== undefined && !PROGRESS_PHASES.includes(phase as never)) {
+      throw new BadRequestError(
+        `invalid phase: ${phase} (must be one of ${PROGRESS_PHASES.join(", ")})`,
+      );
+    }
+
+    const data: Prisma.MessageUpdateInput = {
+      heartbeatAt: this.clock.now(),
+      // progressSeq is a deterministic, clock-skew-free change-detector: under
+      // FixedClock, heartbeatAt is byte-identical across two beats, so an
+      // incrementing integer is what makes "did this heartbeat land" testable.
+      progressSeq: { increment: 1 },
+    };
+    if (phase !== undefined) data.progressPhase = phase;
+
     try {
       // Scoped to the current owner of an in-flight claim: only the agent that
       // actually claimed this message, and only while the reply is still
@@ -223,7 +267,7 @@ export class MessageService implements MessageServiceLike {
       // the thread keep an arbitrary message looking alive.
       return await this.prisma.message.update({
         where: { id, role: "user", claimed: true, repliedAt: null, claimedBy },
-        data: { heartbeatAt: this.clock.now() },
+        data,
       });
     } catch (err: unknown) {
       // Not found, unclaimed, already replied, or owned by another worker —
@@ -239,6 +283,7 @@ export class MessageService implements MessageServiceLike {
       body: string;
       tokens?: JsonValue;
       costUsd?: number;
+      errorKind?: string | null;
     },
   ): Promise<{ userMessage: Message; assistantMessage: Message } | null> {
     const userMessage = await this.prisma.message.findUnique({
@@ -248,7 +293,10 @@ export class MessageService implements MessageServiceLike {
     if (userMessage.repliedAt !== null) return null;
 
     const now = this.clock.now();
-    const [updatedUser, assistant] = await Promise.all([
+    // A real transaction, not Promise.all: either both the repliedAt stamp and
+    // the assistant message land, or neither does. A partial failure must never
+    // leave repliedAt set with no reply to show.
+    const [updatedUser, assistant] = await this.prisma.$transaction([
       this.prisma.message.update({
         where: { id: messageId },
         data: { repliedAt: now },
@@ -263,11 +311,24 @@ export class MessageService implements MessageServiceLike {
               ? (data.tokens as Prisma.InputJsonValue)
               : Prisma.DbNull,
           costUsd: data.costUsd ?? null,
+          errorKind: data.errorKind ?? null,
         },
       }),
     ]);
 
     return { userMessage: updatedUser, assistantMessage: assistant };
+  }
+
+  async requestCancel(id: string): Promise<Message | null> {
+    try {
+      return await this.prisma.message.update({
+        where: { id },
+        data: { cancelRequestedAt: this.clock.now() },
+      });
+    } catch (err: unknown) {
+      if (isPrismaNotFound(err)) return null;
+      throw err;
+    }
   }
 }
 

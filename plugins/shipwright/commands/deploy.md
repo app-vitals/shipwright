@@ -163,26 +163,40 @@ If no matching review is found (or `allow_self_review` is false), print and stop
     2. Run /shipwright:review on the PR — once an APPROVE review is posted, re-run /shipwright:deploy.
 ```
 
-### 3b. Verify CI is Green
+### 3b. Verify All Checks Are Green
 
-Fetch the most recent CI runs on the PR's head commit:
+Fetch the PR's head commit, then query the Actions API directly for every workflow run at
+that SHA (Actions:Read scope — works on public and private repos with a fine-grained PAT,
+unlike `statusCheckRollup`, which requires the GitHub Checks permission that fine-grained
+PATs cannot be granted on private repos):
 
 ```bash
-HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid --jq '.headRefOid')
-REPO="{org}/{repo}"
-gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=20" \
-  --jq '[.workflow_runs[] | select(.name | ascii_downcase == "ci") | {status, conclusion}]'
+HEAD_SHA=$(gh pr view {pr} --repo {org}/{repo} --json headRefOid -q '.headRefOid')
+RUNS_JSON=$(gh api "repos/{org}/{repo}/actions/runs?head_sha=$HEAD_SHA")
+ALL_GREEN=$(echo "$RUNS_JSON" | jq -r '
+  .workflow_runs as $r
+  | ($r
+      | group_by(.name)
+      | map(max_by(.created_at))
+    ) as $latest
+  | ($latest | length > 0) and ($latest | all(.conclusion == "success"))
+')
 ```
 
-Matched case-insensitively — a repo's CI workflow `name:` field may be `CI` or `ci` (both are
-common conventions; e.g. `app-vitals/squadron`'s `.github/workflows/ci.yml` uses `name: ci`), and
-an exact-case match here would silently and permanently exclude that repo's PRs from ever
-passing this check.
+No workflow-name filter is applied — every run for the head SHA is fetched, then grouped by
+workflow `name` and reduced to the latest run per name (by `created_at`), so a
+fixed-and-rerun workflow isn't permanently blocked by its own stale failure. This catches
+every required check (e.g. `pr-title-lint`, or any other repo-specific required workflow),
+not just a single named CI workflow.
 
-If no CI run has `conclusion == "success"` (or no CI run exists at all), print and stop:
+A run is green only when its latest-per-name entry has `conclusion == "success"`. All
+latest-per-name runs must be green, and there must be at least one run — an empty run list
+is not green (fail-closed).
+
+If `ALL_GREEN` is not `"true"` (or the run list is empty), print and stop:
 ```
-✗ Pre-flight failed: CI is not green on PR #{pr} head ({HEAD_SHA[0..7]}).
-  Resolve CI failures before deploying.
+✗ Pre-flight failed: not all checks are green on PR #{pr} head ({HEAD_SHA[0..7]}).
+  Resolve check failures before deploying.
 ```
 
 ### 3c. Pre-flight Summary
@@ -191,7 +205,7 @@ If both checks pass:
 ```
 ✓ Pre-flight passed
   Approval:    {if approval_source == "github": "GitHub — approved by: {approvers}" | if approval_source == "self_review": "Self-review — APPROVE found in GitHub review body"}
-  CI:          green ({HEAD_SHA[0..7]})
+  Checks:      all green ({HEAD_SHA[0..7]})
 ```
 
 ---

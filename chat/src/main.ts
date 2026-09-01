@@ -16,6 +16,7 @@ import { createChatServiceApp } from "./app.ts";
 import { createScopeResolver } from "./auth.ts";
 import { PrismaClient } from "./index.ts";
 import { MessageService } from "./message-service.ts";
+import { StallReaper } from "./stall-reaper.ts";
 import { ThreadService } from "./thread-service.ts";
 import { ChatTokenService } from "./token-service.ts";
 
@@ -79,6 +80,19 @@ async function startServer(): Promise<void> {
   const tokenService = new ChatTokenService(prisma);
   const threadService = new ThreadService(prisma);
   const messageService = new MessageService(prisma);
+
+  // Sweeps stalled claims so a dead agent cannot wedge a message — see
+  // stall-reaper.ts. Wired here (not in app.ts) because createChatServiceApp
+  // must stay side-effect-free; it is constructed fresh in every smoke test.
+  const stallReaper = new StallReaper(prisma, messageService);
+  setInterval(
+    () =>
+      stallReaper
+        .reap()
+        .catch((err) => console.error("[stall-reaper] reap error:", err)),
+    60_000,
+  );
+  console.log("[chat] stall reaper started (interval: 60s)");
 
   const seedToken = process.env.CHAT_SEED_ADMIN_TOKEN;
   if (seedToken) {
