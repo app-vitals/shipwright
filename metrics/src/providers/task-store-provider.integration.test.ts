@@ -65,6 +65,7 @@ const TASKS: TaskRecord[] = [
     session: "cron",
     hours: 5,
     complexity: 3,
+    pr: 1,
     startedAt: "2026-06-02T08:00:00.000Z",
     completedAt: "2026-06-02T12:00:00.000Z",
     mergedAt: "2026-06-02T12:00:00.000Z",
@@ -85,6 +86,7 @@ const TASKS: TaskRecord[] = [
     session: "cron",
     hours: 3,
     complexity: 2,
+    pr: 2,
     startedAt: "2026-06-03T09:00:00.000Z",
     completedAt: "2026-06-03T15:00:00.000Z",
     mergedAt: "2026-06-03T15:00:00.000Z",
@@ -123,10 +125,16 @@ const TASKS: TaskRecord[] = [
   },
 ];
 
+// `taskId` is deliberately left null on both — mirrors production, where the
+// field is populated only ~10% of the time. featuresReviews() groups from
+// `tasks` (via task.id-derived prefix + task.pr matched against `prNumber`),
+// not from `pr.taskId`; see the "featuresReviews groups by feature prefix"
+// test below.
 const PRS: PrRecord[] = [
   {
     id: "pr-1",
-    taskId: "QS-1.1",
+    taskId: null,
+    prNumber: 1,
     reviewState: "approved",
     createdAt: "2026-06-02T11:00:00.000Z",
     mergedAt: "2026-06-02T12:00:00.000Z",
@@ -135,7 +143,8 @@ const PRS: PrRecord[] = [
   },
   {
     id: "pr-2",
-    taskId: "QS-1.2",
+    taskId: null,
+    prNumber: 2,
     reviewState: "posted",
     createdAt: "2026-06-03T14:00:00.000Z",
     mergedAt: "2026-06-03T15:00:00.000Z",
@@ -231,7 +240,13 @@ const CRON_STATS_WITH_PHASE: CronRunTokenStats = {
 const CHAT_STATS: ChatTokenStats = {
   totals: agg(400, 200, 80, 40, 0.6),
   byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
-  byModel: [{ key1: "agent-a", key2: "claude-sonnet-4-5", ...agg(400, 200, 80, 40, 0.6) }],
+  byModel: [
+    {
+      key1: "agent-a",
+      key2: "claude-sonnet-4-5",
+      ...agg(400, 200, 80, 40, 0.6),
+    },
+  ],
   daily: [{ period: "2026-06-03", ...agg(400, 200, 80, 40, 0.6) }],
 };
 
@@ -481,6 +496,25 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "tasks_approved")]).toBe(1);
     // task-store PR records carry no findings count → always null
     expect(row[colIndex(t, "avg_review_findings")]).toBeNull();
+  });
+
+  test("featuresReviews groups PRs by feature prefix via task.pr, not pr.taskId", async () => {
+    // Both PRS fixtures have taskId: null (the common production case) but a
+    // matching TASKS[i].pr → prNumber. Grouping must originate from tasks.
+    const provider = buildProvider();
+    const t = await provider.query({ kind: "featuresReviews", range: RANGE });
+    expect(t.columns).toEqual([
+      "feature_prefix",
+      "reviews_total",
+      "reviews_ship_it",
+    ]);
+    const qsRow = t.results.find(
+      (r) => r[colIndex(t, "feature_prefix")] === "QS",
+    );
+    expect(qsRow).toBeDefined();
+    // pr-1 (approved, QS-1.1) + pr-2 (posted, QS-1.2) both group under "QS".
+    expect(qsRow?.[colIndex(t, "reviews_total")]).toBe(2);
+    expect(qsRow?.[colIndex(t, "reviews_ship_it")]).toBe(1);
   });
 
   test("trends includes coverage_reports and avg_coverage_delta columns computed per period", async () => {
@@ -986,7 +1020,9 @@ describe("TaskStoreProvider (integration)", () => {
 
     // Correctness is unaffected by the cache — computed values still match
     // what a non-coalesced call would produce.
-    expect(summaryTable.results[0][colIndex(summaryTable, "tasks_completed")]).toBe(2);
+    expect(
+      summaryTable.results[0][colIndex(summaryTable, "tasks_completed")],
+    ).toBe(2);
     expect(cycleTimeTable.columns).toEqual(["avg_cycle_time_hours"]);
     expect(cycleTimeTable.results[0][0]).not.toBeNull();
   });
