@@ -90,8 +90,8 @@ forces the recommendation to at least `review` (or `hold` if the group also has 
 row), regardless of what the table analysis alone would have produced.
 
 This label convention is **repo-specific** — it comes from that repo's own `renovate.json`
-config (e.g. vitals-os's `renovate.json` defines `renovate:needs-human`), not from Renovate
-itself. Other repos may not have any such label configured, or may name it differently. The
+config, not from Renovate itself. Some repos define a label like `renovate:needs-human` for
+this purpose; others may not have any such label configured, or may name it differently. The
 table-based heuristics above must degrade gracefully when no matching label is present or
 configured — i.e. they must still produce a correct recommendation from the table alone,
 with the label check only ever adding a stricter floor, never something the analysis
