@@ -1663,7 +1663,7 @@ describe("review.md — Step 9.5 unaddressed-findings gate retains its PVD-1.1 c
   });
 });
 
-describe("review.md — Step 9.5 wires the fourth exclusion via priorFindingsStatus (PVD-1.3)", () => {
+describe("review.md — Step 9.5 excludes prior reviews via the findings ledger (PFL-3.2/PFL-4.1)", () => {
   let step95Section: string;
 
   beforeAll(() => {
@@ -1674,25 +1674,27 @@ describe("review.md — Step 9.5 wires the fourth exclusion via priorFindingsSta
     step95Section = content.slice(step95Idx, step10Idx);
   });
 
-  it("references PVD-1.3 and the new isResolvedByPriorFindingsStatus predicate", () => {
-    expect(step95Section).toContain("PVD-1.3");
-    expect(step95Section).toContain("isResolvedByPriorFindingsStatus");
+  it("references the findings-ledger exclusion (isResolvedByLedger/PFL-3.2), not the removed isResolvedByPriorFindingsStatus predicate", () => {
+    expect(step95Section).toContain("isResolvedByLedger");
+    expect(step95Section).toContain("PFL-3.2");
+    // PFL-4.1 removed the ephemeral in-pass predicate; Step 9.5 must no longer
+    // document it as a live exclusion.
+    expect(step95Section).not.toContain("isResolvedByPriorFindingsStatus");
   });
 
-  it("documents the fourth exclusion: a prior CURRENT_USER review attested resolved by priorFindingsStatus[]", () => {
-    expect(step95Section).toContain("priorFindingsStatus");
-    expect(step95Section).toContain("resolved: true");
-    expect(step95Section).toContain("evidence");
+  it("documents the exclusion: a prior review attested resolved/superseded in the findings ledger", () => {
+    expect(step95Section).toContain("ledger");
+    expect(step95Section).toContain("resolved");
+    expect(step95Section).toContain("superseded");
     expect(step95Section).toContain("reviewRef");
   });
 
-  it("describes the deadlock the fourth exclusion closes (new review object per pass, DRO-1.2 can't fire)", () => {
+  it("describes the deadlock the ledger exclusion closes (new review object per pass)", () => {
     expect(step95Section).toContain("deadlock");
     expect(step95Section.toLowerCase()).toContain("new review object");
   });
 
-  it("documents the Option B rationale: each finding judged independently, no coupling to currentPassHasBlockingFindings", () => {
-    expect(step95Section).toContain("Option B");
+  it("documents the per-finding rationale: each finding judged independently, no coupling to currentPassHasBlockingFindings", () => {
     expect(step95Section).toContain("independently");
     expect(step95Section).toContain("currentPassHasBlockingFindings");
   });
@@ -1702,9 +1704,9 @@ describe("review.md — Step 9.5 wires the fourth exclusion via priorFindingsSta
     expect(step95Section).toContain("priorFindingsStatus: $priorFindingsStatus");
   });
 
-  it("scopes the fourth exclusion to CURRENT_USER's own prior reviews only, not third-party findings", () => {
-    expect(step95Section).toContain("third-party");
-    expect(step95Section).toContain("CPF-2.3");
+  it("notes the ledger exclusion is not gated on self-authorship, unlike the removed inference heuristics", () => {
+    expect(step95Section).toContain("self-authorship");
+    expect(step95Section.toLowerCase()).toContain("removed");
   });
 });
 
