@@ -32,7 +32,15 @@
  *     transitions remain meaningful and detectable.
  */
 
-import type { Task } from "./index.ts";
+import type { Prisma, Task } from "./index.ts";
+
+/**
+ * The Prisma client surface `writeTaskEvents` needs — just the `taskEvent`
+ * delegate. Callers pass either the top-level PrismaClient or a
+ * `$transaction` callback's `tx` so the event insert(s) land atomically with
+ * whatever wrote `after`.
+ */
+type TaskEventWriter = Pick<Prisma.TransactionClient, "taskEvent">;
 
 /** A single field-level change between a before/after Task state. */
 export interface TaskTransitionChange {
@@ -144,4 +152,42 @@ export function computeTaskTransitionDiff(
     }
   }
   return changes;
+}
+
+/**
+ * Diff `before`/`after` and insert one TaskEvent row per changed, auditable
+ * field — the shared write-path behind `computeTaskTransitionDiff`. Used by
+ * both TaskService.recordTaskTransition() (per-row claim/complete/etc.
+ * mutations) and StaleClaimReaper (bulk reap of stale in_progress tasks), so
+ * the two call sites can't drift on how a Task transition becomes TaskEvent
+ * rows.
+ *
+ * Every row from one call shares the same `at` timestamp, passed in by the
+ * caller (usually `clock.now().toISOString()`) rather than computed here, so
+ * a caller reaping/mutating many rows in one pass can stamp them all with a
+ * single instant. Writes nothing when there are no changes (heartbeatAt-only
+ * diffs, or `before === null`).
+ */
+export async function writeTaskEvents(
+  tx: TaskEventWriter,
+  before: Task | null,
+  after: Task,
+  method: string,
+  actor: string | null,
+  at: string,
+): Promise<void> {
+  const changes = computeTaskTransitionDiff(before, after);
+  for (const change of changes) {
+    await tx.taskEvent.create({
+      data: {
+        taskId: after.id,
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+        actor,
+        method,
+        at,
+      },
+    });
+  }
 }

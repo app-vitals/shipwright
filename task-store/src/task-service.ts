@@ -19,7 +19,7 @@ import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
-import { computeTaskTransitionDiff } from "./task-transition-diff.ts";
+import { writeTaskEvents } from "./task-transition-diff.ts";
 
 /**
  * The Prisma client surface shared by the top-level client and a
@@ -923,7 +923,9 @@ export class TaskService implements TaskServiceLike {
    * insert one TaskEvent row per changed, auditable field. Runs on the same
    * `tx` the source update ran on, so the event rows land atomically with the
    * field change (or not at all). Mirrors
-   * PullRequestService.recordTransition() exactly.
+   * PullRequestService.recordTransition() exactly. Delegates the actual
+   * diff+write to the shared `writeTaskEvents` helper (also used by
+   * StaleClaimReaper, TCS-1.3) so the two call sites can't drift.
    *
    * heartbeatAt-only changes produce zero rows (see
    * computeTaskTransitionDiff); a create-path `before === null` also produces
@@ -939,22 +941,8 @@ export class TaskService implements TaskServiceLike {
     method: string,
     actor: string | null,
   ): Promise<void> {
-    const changes = computeTaskTransitionDiff(before, after);
-    if (changes.length === 0) return;
     const at = this.clock.now().toISOString();
-    for (const change of changes) {
-      await tx.taskEvent.create({
-        data: {
-          taskId: after.id,
-          field: change.field,
-          oldValue: change.oldValue,
-          newValue: change.newValue,
-          actor,
-          method,
-          at,
-        },
-      });
-    }
+    await writeTaskEvents(tx, before, after, method, actor, at);
   }
 
   /** Map Prisma's P2025 (record not found) to a NotFoundError; re-throw the rest. */
