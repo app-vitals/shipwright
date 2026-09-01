@@ -155,6 +155,29 @@ GET /tasks/:id
 
 Returns `404` if the task doesn't exist or is outside the agent's scope.
 
+#### Get task events
+
+```
+GET /tasks/:id/events
+```
+
+Fetch a task's `TaskEvent` audit trail — a complete history of field-level state transitions recorded in append-only order.
+
+Query params:
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `limit` | number | Page size. Defaults to `50` when omitted. |
+| `offset` | number | Page offset. Defaults to `0` when omitted. |
+
+Returns `{ events: TaskEvent[], total: number, limit: number, offset: number }` where:
+- `events` — the task's `TaskEvent` objects, ordered by `at` ascending (oldest first)
+- `total` — count of all events for this task (independent of `limit`/`offset`)
+- `limit` — the limit applied (defaults to 50)
+- `offset` — the offset applied (defaults to 0)
+
+Returns `404` if the task doesn't exist or is outside the agent's scope.
+
 #### Update task
 
 ```

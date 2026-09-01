@@ -40,9 +40,11 @@ describeOrSkip("Task pending/claimedBy DB invariant (integration)", () => {
     prisma = makePrisma();
     // PullRequestEvent's FK is ON DELETE RESTRICT (PSA-1.2) — clear event
     // rows before their parent PullRequest rows, in case another test file
-    // sharing TEST_DB left rows behind.
+    // sharing TEST_DB left rows behind. TaskEvent's FK is ON DELETE RESTRICT
+    // too (TCS-1.1) — same reasoning applies to Task rows (TCS-1.2).
     await prisma.pullRequestEvent.deleteMany();
     await prisma.pullRequest.deleteMany();
+    await prisma.taskEvent.deleteMany();
     await prisma.task.deleteMany();
   });
 

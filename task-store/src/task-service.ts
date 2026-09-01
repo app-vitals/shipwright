@@ -15,7 +15,7 @@
 import { type BlockedByEntry, computeBlockedBy } from "./blocked-by.ts";
 import { type Clock, SystemClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
-import type { Prisma, PrismaClient, Task } from "./index.ts";
+import type { Prisma, PrismaClient, Task, TaskEvent } from "./index.ts";
 import { buildRepoOrgWhere } from "./lib/repo-org-filter.ts";
 import { resolveReadyTasks } from "./ready.ts";
 import { CLOSED_STATUSES, OPEN_STATUSES } from "./statuses.ts";
@@ -241,6 +241,12 @@ export interface TaskListResult {
   offset: number;
 }
 
+/** Result from TaskService.getEvents. */
+export interface GetTaskEventsResult {
+  events: TaskEvent[];
+  total: number;
+}
+
 /** The subset of TaskService the routes depend on. */
 export interface TaskServiceLike {
   list(filters?: TaskListFilters): Promise<TaskListResult>;
@@ -273,6 +279,10 @@ export interface TaskServiceLike {
   release(id: string): Promise<Task>;
   recordSkip(id: string): Promise<Task>;
   resetSkip(id: string): Promise<Task>;
+  getEvents(
+    id: string,
+    opts?: { limit?: number; offset?: number },
+  ): Promise<GetTaskEventsResult>;
 }
 
 export class TaskService implements TaskServiceLike {
@@ -863,6 +873,41 @@ export class TaskService implements TaskServiceLike {
     } catch (err: unknown) {
       throw this.translateNotFound(err, "task not found");
     }
+  }
+
+  /**
+   * Fetch a task's TaskEvent audit trail (TCS-1.2), ordered by `at` ascending
+   * (oldest first) — uses the (taskId, at) index (TCS-1.1). Existence-checks
+   * the task first (mirrors PullRequestService.getEvents()) so a missing task
+   * surfaces as a clean NotFoundError rather than an empty result being
+   * indistinguishable from "task exists but has zero events".
+   */
+  async getEvents(
+    id: string,
+    opts: { limit?: number; offset?: number } = {},
+  ): Promise<GetTaskEventsResult> {
+    const existing = await this.prisma.task.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("task not found");
+    }
+
+    const limit = opts.limit ?? 50;
+    const offset = opts.offset ?? 0;
+
+    const [events, total] = await this.prisma.$transaction([
+      this.prisma.taskEvent.findMany({
+        where: { taskId: id },
+        orderBy: { at: "asc" },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.taskEvent.count({ where: { taskId: id } }),
+    ]);
+
+    return { events, total };
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

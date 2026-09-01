@@ -10,8 +10,8 @@
 import { describe, expect, it } from "bun:test";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import type { TaskStoreAuthEnv } from "../auth.ts";
-import { ApiError, BadRequestError } from "../errors.ts";
-import type { Task } from "../index.ts";
+import { ApiError, BadRequestError, NotFoundError } from "../errors.ts";
+import type { Task, TaskEvent } from "../index.ts";
 import type { TaskServiceLike } from "../task-service.ts";
 import { createTasksRoutes } from "./tasks.ts";
 
@@ -78,6 +78,21 @@ function withBlockedBy(task: Task) {
   return { ...task, blockedBy: [] };
 }
 
+function makeEvent(overrides: Partial<TaskEvent> = {}): TaskEvent {
+  return {
+    id: "event-1",
+    taskId: "task-1",
+    field: "status",
+    oldValue: "pending",
+    newValue: "in_progress",
+    actor: "agent-abc123",
+    method: "claim",
+    at: "2026-08-17T00:00:00.000Z",
+    createdAt: new Date(),
+    ...overrides,
+  } as TaskEvent;
+}
+
 function fakeTaskService(
   opts: {
     tasks?: Task[];
@@ -85,6 +100,11 @@ function fakeTaskService(
     onBulk?: (tasks: unknown) => void;
     onUpdate?: (id: string, data: unknown) => void;
     onCreate?: (data: unknown) => void;
+    eventsResult?: { events: TaskEvent[]; total: number } | Error;
+    getEventsCalls?: Array<{
+      id: string;
+      opts?: { limit?: number; offset?: number };
+    }>;
   } = {},
 ): TaskServiceLike {
   const tasks = opts.tasks ?? [];
@@ -146,6 +166,16 @@ function fakeTaskService(
     },
     async distinct() {
       return { sessions: [], repos: [], orgs: [] };
+    },
+    async getEvents(id, eventsOpts) {
+      opts.getEventsCalls?.push({ id, opts: eventsOpts });
+      if (opts.eventsResult !== undefined) {
+        if (opts.eventsResult instanceof Error) throw opts.eventsResult;
+        return opts.eventsResult;
+      }
+      const exists = tasks.some((t) => t.id === id);
+      if (!exists) throw new NotFoundError("task not found");
+      return { events: [], total: 0 };
     },
   };
 }
@@ -878,5 +908,144 @@ describe("POST / and POST /bulk — strip removed 'hitlNotifiedAt' field (HSR-1.
     const tasks = received as Record<string, unknown>[];
     expect(tasks).toHaveLength(1);
     expect("hitlNotifiedAt" in (tasks[0] ?? {})).toBe(false);
+  });
+});
+
+describe("GET /:id/events (TCS-1.2)", () => {
+  it("returns 200 with an events array in ascending `at` order, plus total/limit/offset", async () => {
+    const task = makeTask({ id: "t-1" });
+    const events = [
+      makeEvent({
+        id: "event-1",
+        taskId: "t-1",
+        field: "status",
+        oldValue: "pending",
+        newValue: "in_progress",
+        method: "claim",
+        at: "2026-08-17T00:00:00.000Z",
+      }),
+      makeEvent({
+        id: "event-2",
+        taskId: "t-1",
+        field: "status",
+        oldValue: "in_progress",
+        newValue: "pending",
+        method: "release",
+        at: "2026-08-17T01:00:00.000Z",
+      }),
+    ];
+    const app = createTasksRoutes(
+      fakeTaskService({ tasks: [task], eventsResult: { events, total: 2 } }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/t-1/events");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      events: TaskEvent[];
+      total: number;
+      limit: number;
+      offset: number;
+    };
+    expect(body.events).toHaveLength(2);
+    expect(body.events[0]?.id).toBe("event-1");
+    expect(body.events[0]?.at).toBe("2026-08-17T00:00:00.000Z");
+    expect(body.events[1]?.id).toBe("event-2");
+    expect(body.events[1]?.at).toBe("2026-08-17T01:00:00.000Z");
+    expect(body.total).toBe(2);
+    expect(typeof body.limit).toBe("number");
+    expect(typeof body.offset).toBe("number");
+  });
+
+  it("returns 404 when the task does not exist", async () => {
+    const app = createTasksRoutes(fakeTaskService({ tasks: [] }));
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/missing/events");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 200 with an empty array when the task has zero events (not 404)", async () => {
+    const task = makeTask({ id: "t-1" });
+    const app = createTasksRoutes(
+      fakeTaskService({ tasks: [task], eventsResult: { events: [], total: 0 } }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/t-1/events");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { events: TaskEvent[]; total: number };
+    expect(body.events).toEqual([]);
+    expect(body.total).toBe(0);
+  });
+
+  it("?limit=&offset= parses limit/offset and forwards them to the service", async () => {
+    const task = makeTask({ id: "t-1" });
+    const getEventsCalls: Array<{
+      id: string;
+      opts?: { limit?: number; offset?: number };
+    }> = [];
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        eventsResult: { events: [], total: 0 },
+        getEventsCalls,
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/t-1/events?limit=10&offset=5");
+    expect(res.status).toBe(200);
+    expect(getEventsCalls).toHaveLength(1);
+    expect(getEventsCalls[0]?.id).toBe("t-1");
+    expect(getEventsCalls[0]?.opts?.limit).toBe(10);
+    expect(getEventsCalls[0]?.opts?.offset).toBe(5);
+  });
+
+  it("without limit/offset leaves them undefined (service applies defaults)", async () => {
+    const task = makeTask({ id: "t-1" });
+    const getEventsCalls: Array<{
+      id: string;
+      opts?: { limit?: number; offset?: number };
+    }> = [];
+    const app = createTasksRoutes(
+      fakeTaskService({
+        tasks: [task],
+        eventsResult: { events: [], total: 0 },
+        getEventsCalls,
+      }),
+    );
+    const parent = makeAdminParent(app);
+
+    const res = await parent.request("/t-1/events");
+    expect(res.status).toBe(200);
+    expect(getEventsCalls).toHaveLength(1);
+    expect(getEventsCalls[0]?.opts?.limit).toBeUndefined();
+    expect(getEventsCalls[0]?.opts?.offset).toBeUndefined();
+  });
+
+  it("agent token with no ownership (not assignee/claimant, repo outside scope) -> 403", async () => {
+    const task = makeTask({
+      id: "t-1",
+      assignee: "agent-other",
+      claimedBy: "agent-other",
+      repo: "acme-inc/backend-api",
+    });
+    const app = createTasksRoutes(fakeTaskService({ tasks: [task] }));
+    const parent = makeAgentParent(app, "agent-1", ["some-other/repo"]);
+
+    const res = await parent.request("/t-1/events");
+    expect(res.status).toBe(403);
+  });
+
+  it("agent token that is the assignee -> 200 (ownership enforced, not blanket-denied)", async () => {
+    const task = makeTask({ id: "t-1", assignee: "agent-1" });
+    const app = createTasksRoutes(
+      fakeTaskService({ tasks: [task], eventsResult: { events: [], total: 0 } }),
+    );
+    const parent = makeAgentParent(app, "agent-1", []);
+
+    const res = await parent.request("/t-1/events");
+    expect(res.status).toBe(200);
   });
 });
