@@ -234,7 +234,7 @@ crons — each fully self-contained, doing its own discovery with no dependency 
 | `shipwright-test-readiness` | off | Full test-readiness audit for repos with stale/missing test artifacts. |
 | `shipwright-docs-freshness` | off | Refreshes docs that have drifted from the code they describe. |
 | `learn-dream` | off | Mines the last day of merged PRs for durable learnings. |
-| `dependency-bot-triage` | off | Reviews and triages open Dependabot/Renovate PRs. |
+| `dependency-bot-triage` | off | Reviews and triages open Dependabot/Renovate PRs, posting triage comments directly by default (opt out via `auto_post_dependency_bot_triage: false`). |
 | `entropy-patrol-maintenance` | off | Scans for code entropy (dead code, duplication, layering drift) and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | off | Scans unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | off | Scans for security vulnerabilities and fixes what's PR-worthy. |

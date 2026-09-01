@@ -4,7 +4,7 @@
  *
  * Pre-check for the dependency-bot-triage cron.
  *
- * Lifts the triage-dependabot-prs skill's own Step 3 ("Discover open
+ * Lifts the triage-dependency-bot-prs skill's own Step 3 ("Discover open
  * Dependabot PRs") into a cheap, side-effect-free precheck: for each repo,
  * list open PRs authored by either app/dependabot or app/renovate and diff
  * them against the non-terminal entries in state/dependency-bot-reviews.json.
@@ -116,7 +116,7 @@ export async function run(deps: Deps): Promise<RunResult> {
         return {
           exit: 0,
           output:
-            "Open dependency-bot PRs need triage — run /shipwright:triage-dependabot-prs",
+            "Open dependency-bot PRs need triage — run /shipwright:triage-dependency-bot-prs",
         };
       }
     }
