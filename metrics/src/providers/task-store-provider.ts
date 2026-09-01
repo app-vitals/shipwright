@@ -512,15 +512,30 @@ export class TaskStoreProvider implements MetricsProvider {
     return map;
   }
 
-  private groupPrsByPrefix(prs: PrRecord[]): Map<string, PrRecord[]> {
+  /**
+   * Groups PR records by feature prefix, originating from `tasks` rather than
+   * `pr.taskId` — that field is populated only ~10% of the time (0% in
+   * several repos), so grouping from it silently dropped the large majority
+   * of PRs. Each task supplies its own id-derived prefix and its `.pr`
+   * field is matched against the fetched PR list by (repo, prNumber) to find
+   * the PR record to attach. Because the loop is per-task, a PR shared by
+   * multiple tasks (the bundle case) is attached under each of those tasks'
+   * own feature buckets rather than only one.
+   */
+  private groupPrsByPrefix(
+    tasks: TaskRecord[],
+    prs: PrRecord[],
+  ): Map<string, PrRecord[]> {
     const map = new Map<string, PrRecord[]>();
-    for (const pr of prs) {
-      const id = pr.taskId ?? "";
-      const p = featurePrefix(id);
-      if (!p) continue;
-      const arr = map.get(p) ?? [];
+    for (const t of tasks) {
+      const prefix = featurePrefix(t.id);
+      if (!prefix) continue;
+      if (t.pr == null) continue;
+      const pr = prs.find((p) => p.repo === t.repo && p.prNumber === t.pr);
+      if (!pr) continue;
+      const arr = map.get(prefix) ?? [];
       arr.push(pr);
-      map.set(p, arr);
+      map.set(prefix, arr);
     }
     return map;
   }
@@ -570,8 +585,8 @@ export class TaskStoreProvider implements MetricsProvider {
     from: string;
     to: string;
   }): Promise<MetricTable> {
-    const prs = await this.prs(win);
-    const groups = this.groupPrsByPrefix(prs);
+    const [tasks, prs] = await Promise.all([this.tasks(win), this.prs(win)]);
+    const groups = this.groupPrsByPrefix(tasks, prs);
     const columns = ["feature_prefix", "reviews_total", "reviews_ship_it"];
     const rows = [...groups.entries()].map(([prefix, group]) => [
       prefix,
