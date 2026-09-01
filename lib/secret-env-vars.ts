@@ -25,5 +25,11 @@ export const SECRET_ENV_VARS = [
   "SHIPWRIGHT_ADMIN_API_KEYS",
   "SHIPWRIGHT_SESSION_SECRET",
   "SHIPWRIGHT_ENCRYPTION_KEY",
+  // VAPID private key for Web Push (RFC 8292). The PUBLIC key is NOT secret —
+  // it's sent to the browser — so only the private key is listed here.
+  "SHIPWRIGHT_ADMIN_VAPID_PRIVATE_KEY",
+  // Shared token the chat service presents to admin's push-notify webhook so
+  // an unauthenticated caller can't trigger notifications.
+  "SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN",
   "GOOGLE_CLIENT_SECRET",
 ] as const;

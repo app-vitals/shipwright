@@ -163,6 +163,27 @@ describe("buildServiceWorkerBody", () => {
   });
 });
 
+describe("buildServiceWorkerBody — push + notificationclick (CFB-4.2)", () => {
+  it("registers a push listener that shows a notification", () => {
+    const body = buildServiceWorkerBody("1.200.0", getPrecacheList());
+    expect(body).toContain('addEventListener("push"');
+    expect(body).toContain("showNotification");
+  });
+
+  it("registers a notificationclick listener that focuses/opens the thread", () => {
+    const body = buildServiceWorkerBody("1.200.0", getPrecacheList());
+    expect(body).toContain('addEventListener("notificationclick"');
+    expect(body).toContain("clients.openWindow");
+  });
+
+  it("reads the deep-link url from the notification payload data", () => {
+    const body = buildServiceWorkerBody("1.200.0", getPrecacheList());
+    // The push payload is JSON {title, body, url}; the SW must parse it.
+    expect(body).toContain("event.data");
+    expect(body).toContain(".url");
+  });
+});
+
 describe("buildOfflinePageHtml", () => {
   it("renders a self-contained document with no external requests", () => {
     const html = buildOfflinePageHtml();

@@ -181,6 +181,44 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => cached || fetch(request)),
   );
 });
+
+// Web Push (CFB-4.2). The payload is JSON {title, body, url}; the body is
+// deliberately austere (see admin/src/push-content.ts) — it renders on a
+// locked screen, so it never carries ids, repo names, paths, or costs.
+self.addEventListener("push", (event) => {
+  let payload = { title: "Your agent replied", body: "", url: "/admin/chat" };
+  try {
+    if (event.data) payload = Object.assign(payload, event.data.json());
+  } catch (e) {
+    // Malformed payload — fall back to the generic default.
+  }
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body || undefined,
+      data: { url: payload.url },
+      tag: "shipwright-agent-reply",
+    }),
+  );
+});
+
+// Focus an existing tab on the target thread, or open one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target =
+    (event.notification.data && event.notification.data.url) || "/admin/chat";
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((wins) => {
+        for (const win of wins) {
+          if (win.url.indexOf(target) !== -1 && "focus" in win) {
+            return win.focus();
+          }
+        }
+        return self.clients.openWindow(target);
+      }),
+  );
+});
 `;
 }
 
