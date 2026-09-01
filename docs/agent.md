@@ -209,7 +209,7 @@ note and the fix (enable `shipwright-loop`).
 | `shipwright-test-readiness` | `0 6 * * *` (daily, 06:00) | off | Iterates repos in `repos/` with a `docs/test-readiness/` directory and runs the full test-readiness audit (`--full --publish`) once per qualifying repo, each in its own worktree + branch. Via the `check-test-readiness.ts` preCheck, only repos with stale or missing phase artifacts are invoked. |
 | `shipwright-docs-freshness` | `0 7 * * *` (daily, 07:00) | off | Scans all repos in `repos/` for source changes and refreshes docs that drifted from the code via the docs-freshness agent (`research-docs --auto`). Iterates per-repo, checking each against its `state/docs-last-synced.json` anchor — skips repos without `docs/` directories. |
 | `learn-dream` | `0 3 * * *` (daily, 03:00) | off | Mines the last day of merged PRs for durable learnings. |
-| `dependabot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open Dependabot PRs. |
+| `dependency-bot-triage` | `0 8 * * *` (daily, 08:00) | off | Reviews and triages open dependency-bot PRs (Dependabot, Renovate). |
 | `entropy-patrol-maintenance` | `0 4 * * 1` (weekly, Mon 04:00) | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | `0 4 * * *` (daily, 04:00) | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | `0 6 * * 1` (weekly, Mon 06:00) | off | Scans for security vulnerabilities and fixes what's PR-worthy. |
