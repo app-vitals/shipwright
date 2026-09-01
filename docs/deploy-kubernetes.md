@@ -1054,8 +1054,11 @@ chat:
 webhook returns `503 Service Unavailable` (safe for the calling chat service — it
 retries), and the chat page's notification toggle does not render (users see the
 poll-only experience instead). When `SHIPWRIGHT_ADMIN_PUSH_WEBHOOK_TOKEN` is unset,
-the webhook returns `401 Unauthorized` and the chat service's notification trigger
-request is rejected; set the token to enable the inbound trigger path.
+the webhook also returns `503 Service Unavailable` (the handler treats a missing
+token the same as push being disabled, before it ever checks the caller's bearer
+token) — set the token, alongside the VAPID keys, to enable the inbound trigger
+path. `401 Unauthorized` is only returned once the token is configured server-side
+and the chat service presents a bearer value that doesn't match it.
 
 See [`configuration.md`](./configuration.md#metrics--admin--chat--task-store-services)
 for the full list of Web Push env vars and their defaults.

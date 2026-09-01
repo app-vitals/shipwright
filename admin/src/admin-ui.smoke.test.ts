@@ -25,6 +25,7 @@ import type {
   OktaTokenResponse,
   OktaUserInfo,
 } from "./okta-auth-client.ts";
+import type { PushService } from "./push-service.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -7194,5 +7195,322 @@ describe("admin UI — Okta-authenticated access control", () => {
       headers: { Cookie: `admin_session=${memberCookie}` },
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// ─── Web Push routes (CFB-4.2) ─────────────────────────────────────────────
+
+const PUSH_WEBHOOK_TOKEN = "test-push-webhook-token";
+const PUSH_SUBSCRIPTION_BODY = {
+  endpoint: "https://push.example.com/sub-1",
+  p256dh: "test-p256dh-key",
+  auth: "test-auth-secret",
+};
+
+function makeFakePushService(
+  notifyThreadReply: (thread: {
+    threadId: string;
+    agentId: string;
+    title: string | null;
+    preview: string | null;
+  }) => Promise<{ delivered: number; pruned: number }> = async () => ({
+    delivered: 0,
+    pruned: 0,
+  }),
+): PushService {
+  return { notifyThreadReply } as unknown as PushService;
+}
+
+describe("admin UI — POST /admin/chat/:agentId/push/subscribe", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("returns 503 when push is not enabled", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/subscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "push_disabled" });
+  });
+
+  it("returns 403 for a non-admin session", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      "member@example.com",
+      false,
+    );
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/subscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${memberCookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when the body is missing required fields", async () => {
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    deps.prisma.pushSubscription = {
+      upsert: async () => ({ id: "sub-1" }),
+      deleteMany: async () => ({ count: 0 }),
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/subscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint: "https://push.example.com/sub-1" }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "bad_request" });
+  });
+
+  it("upserts the subscription and returns ok:true when push is enabled", async () => {
+    let upsertCalledWith: unknown;
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    deps.prisma.pushSubscription = {
+      upsert: async (args: unknown) => {
+        upsertCalledWith = args;
+        return { id: "sub-1" };
+      },
+      deleteMany: async () => ({ count: 0 }),
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/subscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify(PUSH_SUBSCRIPTION_BODY),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(upsertCalledWith).toBeDefined();
+  });
+});
+
+describe("admin UI — POST /admin/chat/:agentId/push/unsubscribe", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("returns 503 when push is not enabled", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "push_disabled" });
+  });
+
+  it("returns 403 for a non-admin session", async () => {
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      "member@example.com",
+      false,
+    );
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${memberCookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 400 when the body is missing the endpoint", async () => {
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    deps.prisma.pushSubscription = {
+      upsert: async () => ({ id: "sub-1" }),
+      deleteMany: async () => ({ count: 0 }),
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "bad_request" });
+  });
+
+  it("deletes the caller's subscription and returns ok:true when push is enabled", async () => {
+    let deleteCalledWith: unknown;
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+    });
+    deps.prisma.pushSubscription = {
+      upsert: async () => ({ id: "sub-1" }),
+      deleteMany: async (args: unknown) => {
+        deleteCalledWith = args;
+        return { count: 1 };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/push/unsubscribe`,
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint: PUSH_SUBSCRIPTION_BODY.endpoint }),
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(deleteCalledWith).toBeDefined();
+  });
+});
+
+describe("admin UI — POST /admin/push/notify", () => {
+  it("returns 503 when push is not enabled (no pushService/token configured)", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/push/notify", {
+      method: "POST",
+      body: JSON.stringify({ threadId: "thread-1", agentId: AGENT_ID }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "push_disabled" });
+  });
+
+  it("returns 401 when the bearer token does not match", async () => {
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+      pushWebhookToken: PUSH_WEBHOOK_TOKEN,
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/push/notify", {
+      method: "POST",
+      body: JSON.stringify({ threadId: "thread-1", agentId: AGENT_ID }),
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer wrong-token",
+      },
+    });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "unauthorized" });
+  });
+
+  it("returns 400 when the body is missing threadId or agentId", async () => {
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+      pushWebhookToken: PUSH_WEBHOOK_TOKEN,
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/push/notify", {
+      method: "POST",
+      body: JSON.stringify({ threadId: "thread-1" }),
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${PUSH_WEBHOOK_TOKEN}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "bad_request" });
+  });
+
+  it("returns ok:true with delivered/pruned counts on a valid request", async () => {
+    const deps = makeMockDeps({
+      pushService: makeFakePushService(async () => ({
+        delivered: 2,
+        pruned: 1,
+      })),
+      vapidPublicKey: "test-vapid-public-key",
+      pushWebhookToken: PUSH_WEBHOOK_TOKEN,
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/push/notify", {
+      method: "POST",
+      body: JSON.stringify({
+        threadId: "thread-1",
+        agentId: AGENT_ID,
+        title: "Agent replied",
+        preview: "Here's the answer...",
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${PUSH_WEBHOOK_TOKEN}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      delivered: 2,
+      pruned: 1,
+    });
   });
 });
