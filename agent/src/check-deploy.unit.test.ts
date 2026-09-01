@@ -908,6 +908,59 @@ describe("getDeployCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // ─── PTL-1.1: bundle-mate (multi-task-per-PR) OR-blocked exclusion ────────
+  //
+  // A PR can be linked to more than one task-store task (a bundle). These
+  // exercise getDeployCandidates' consumption of the queryTaskStatus result
+  // the way createTaskStatusQuery now returns it — merged/OR'd across every
+  // matched task — so the caller correctly excludes on a bundle-mate's
+  // hitl/blocked signal even though the PR's "own" task looks eligible.
+
+  test("APPROVED + green CI + a bundle-mate task (not the PR's own task) is hitl:true excludes the candidate", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+    });
+    // Simulates createTaskStatusQuery's merged result: the PR's own task is
+    // pr_open/hitl:false, but a bundle-mate is hitl:true, so the merged
+    // LinkedTaskInfo reports hitl:true.
+    deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: true });
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("APPROVED + green CI + a bundle-mate task (not the PR's own task) has status:blocked excludes the candidate", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+    });
+    // Simulates createTaskStatusQuery's merged result: the PR's own task is
+    // pr_open, but a bundle-mate is status:blocked, so the merged
+    // LinkedTaskInfo's status is surfaced as "blocked".
+    deps.queryTaskStatus = async () => ({ status: "blocked" });
+    const result = await getDeployCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("APPROVED + green CI + two linked tasks where neither bundle-mate is hitl/blocked is still an eligible candidate", async () => {
+    const pr = makeGhPr({
+      reviewDecision: "APPROVED",
+      mergeStateStatus: "CLEAN",
+    });
+    const deps = makeDeps({
+      prs: { "acme/example-repo": [pr] },
+    });
+    deps.queryTaskStatus = async () => ({ status: "pr_open", hitl: false });
+    const result = await getDeployCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
   test("APPROVED + green CI + task-status lookup throws excludes the PR (fail-closed) and logs to stderr", async () => {
     const pr = makeGhPr({
       reviewDecision: "APPROVED",

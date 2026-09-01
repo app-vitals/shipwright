@@ -593,6 +593,62 @@ describe("getReviewCandidates", () => {
     expect(resultNoTask).toHaveLength(1);
   });
 
+  // ─── PTL-1.1: bundle-mate (multi-task-per-PR) OR-blocked exclusion ────────
+  //
+  // A PR can be linked to more than one task-store task (a bundle). These
+  // exercise getReviewCandidates' consumption of the queryTaskStatus result
+  // the way createTaskStatusQuery now returns it — merged/OR'd across every
+  // matched task — so the caller correctly excludes on a bundle-mate's
+  // hitl/blocked signal even though the PR's "own" task looks eligible.
+
+  test("a PR whose bundle-mate task (not its own task) is hitl:true is excluded from review candidacy", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        // Simulates createTaskStatusQuery's merged result: the PR's own task
+        // is pr_open/hitl:false, but a bundle-mate is hitl:true, so the
+        // merged LinkedTaskInfo reports hitl:true.
+        async () => ({ status: "pr_open", hitl: true }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR whose bundle-mate task (not its own task) has status:blocked is excluded from review candidacy", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        // Simulates createTaskStatusQuery's merged result: the PR's own task
+        // is pr_open, but a bundle-mate is status:blocked, so the merged
+        // LinkedTaskInfo's status is surfaced as "blocked".
+        async () => ({ status: "blocked", hitl: false }),
+      ),
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  test("a PR with two linked tasks where neither bundle-mate is hitl/blocked is still an eligible candidate", async () => {
+    const pr = makePr();
+    const result = await getReviewCandidates(
+      makeDeps(
+        [pr],
+        async () => null,
+        "bodhi-agent",
+        false,
+        async () => ({ status: "pr_open", hitl: false }),
+      ),
+    );
+    expect(result).toHaveLength(1);
+  });
+
   test("readyForReviewAt is never used for age sourcing when a task is linked", async () => {
     const pr = makePr({
       headRefOid: "newsha",

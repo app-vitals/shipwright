@@ -759,6 +759,37 @@ export function isPrRecordBlockedForDispatch(
 }
 
 /**
+ * Merge every task matched by a `?repo=&pr=` lookup into a single
+ * LinkedTaskInfo, OR-ing the blocked/hitl signal across ALL of them (PTL-1.1).
+ *
+ * A PR can be linked to more than one task (a bundle — ~7% of PR-linked
+ * task-store groups have 2+ tasks sharing one PR). Taking only the first
+ * match silently misses a blocked/hitl bundle-mate depending on API return
+ * order, so `hitl`/`status: "blocked"` must be computed across every matched
+ * task, not just tasks[0]. `status` and `createdAt` are otherwise sourced
+ * from the first task (unchanged single-task behavior — those two fields are
+ * used for display/ordering, not gating, so no aggregation is needed for
+ * them beyond the blocked override below).
+ */
+function mergeLinkedTasks(tasks: Task[]): LinkedTaskInfo | null {
+  const [first, ...rest] = tasks;
+  if (!first) return null;
+  const anyBlockedStatus = tasks.some((t) => t.status === "blocked");
+  const anyHitl = first.hitl === true || rest.some((t) => t.hitl === true);
+  return {
+    status:
+      anyBlockedStatus && first.status !== "blocked"
+        ? "blocked"
+        : first.status,
+    createdAt: first.createdAt,
+    // Preserve first.hitl's original value (including undefined) unless a
+    // bundle-mate is hitl:true, in which case the merged result must report
+    // hitl:true regardless of what the first task's own hitl field was.
+    hitl: anyHitl ? true : first.hitl,
+  };
+}
+
+/**
  * Build a `(repo, prNumber) => LinkedTaskInfo | null` query function against
  * the task-store `/tasks` endpoint's `?repo=&pr=` filters. Returns null ONLY
  * on a confirmed empty result (no linked task) — a PR simply has no task yet.
@@ -766,6 +797,10 @@ export function isPrRecordBlockedForDispatch(
  * response, so a caller who needs a go/no-go decision (unlike
  * createPrRecordQuery's non-gating age field) can distinguish "no task" from
  * "couldn't tell" and fail closed on the latter.
+ *
+ * Aggregates over EVERY task returned by the lookup, not just tasks[0]
+ * (PTL-1.1) — see mergeLinkedTasks's doc comment for why. Single- and
+ * zero-match behavior is unchanged.
  *
  * Accepts an optional `fetchFn` for dependency injection in tests, matching
  * createPrRecordQuery's pattern.
@@ -812,9 +847,7 @@ export function createTaskStatusQuery(opts?: {
         `Unexpected task-store response format: ${JSON.stringify(data)}`,
       );
     }
-    const task = tasks[0];
-    if (!task) return null;
-    return { status: task.status, createdAt: task.createdAt, hitl: task.hitl };
+    return mergeLinkedTasks(tasks);
   };
 }
 
