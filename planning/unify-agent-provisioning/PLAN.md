@@ -29,6 +29,20 @@ existing agent" picker. There's no way today to attach a GitHub App to an agent
 that already has Slack connected (or vice versa) without re-running the whole
 wizard.
 
+**Bugs found mid-implementation.** While UAP-1.1/UAP-1.2 were underway, an
+audit of the same code surface (prompted by a live agent missing its "Sync
+Manifest" button) turned up two real gaps, split into their own follow-on
+tasks (UAP-1.3, UAP-1.4) rather than folded into the in-flight extraction
+tasks, so UAP-1.1/UAP-1.2 stay pure extractions with no behavior change:
+
+- `agent.slackId` is never populated by the OAuth wizard (`exchangeOAuthCode`
+  only returns a bot token; nothing calls Slack's `auth.test` to resolve and
+  persist the bot's own user id). This silently hides the "Sync Manifest"
+  button for every agent provisioned through the current flow.
+- The GitHub App manifest exchange discards `clientId`/`clientSecret` instead
+  of persisting them, and the GitHub App install step never calls
+  `reconcileSystemCrons()` (unlike the Slack path's parity step).
+
 ## Design
 
 1. **Decouple** Slack-connect and GitHub-connect into independently callable
@@ -62,6 +76,8 @@ wizard.
 |---|---|---|---|---|---|---|
 | UAP-1.1 | Extract Slack provisioning into a service fn + new `/admin/agents/:id/connect-slack*` routes | API | 4 | 4 / sonnet | | — |
 | UAP-1.2 | Extract GitHub App/PAT provisioning into a service fn + new `/admin/agents/:id/connect-github*` routes | API | 3 | 4 / sonnet | | — |
+| UAP-1.3 | Resolve and persist `agent.slackId` after Slack OAuth completes (bug fix) | API | 2 | 3 / sonnet | | UAP-1.1 |
+| UAP-1.4 | Persist GitHub App client id/secret + reconcile crons after install (bug fix) | API | 2 | 2 / sonnet | | UAP-1.2 |
 | UAP-2.1 | Unified agent-creation page (core fields + Anthropic key + Slack/GitHub toggles) | Frontend | 5 | 4 / sonnet | | UAP-1.1, UAP-1.2 |
 | UAP-2.2 | Single "+ New agent" CTA on the agents list page | Frontend | 1 | 2 / haiku | | UAP-2.1 |
 | UAP-2.3 | Agent detail page: connect-later actions for Slack/GitHub | Frontend/API | 3 | 3 / sonnet | | UAP-1.1, UAP-1.2 |
@@ -74,12 +90,18 @@ wizard.
 
 ```
 [START]
-  ├─ UAP-1.1 ─┐
-  └─ UAP-1.2 ─┴─→ UAP-2.1 ─→ UAP-2.2 ─┐
-              │                        ├─→ UAP-3.1 ─→ UAP-4.1
-              └──→ UAP-2.3 ────────────┘
+  ├─ UAP-1.1 ─┬─→ UAP-1.3
+  └─ UAP-1.2 ─┴─→ UAP-1.4
+  UAP-1.1 ─┐
+  UAP-1.2 ─┴─→ UAP-2.1 ─→ UAP-2.2 ─┐
+           │                        ├─→ UAP-3.1 ─→ UAP-4.1
+           └──→ UAP-2.3 ────────────┘
   UAP-1.1, UAP-1.2 ──→ UAP-3.2 ⚠HITL ──→ UAP-3.3
 ```
+
+UAP-1.3 and UAP-1.4 are independent bug-fix follow-ons — nothing in UAP-2.x/3.x
+depends on them, since the unification work doesn't require either fix to
+function correctly.
 
 ### Breaking-change safety
 
