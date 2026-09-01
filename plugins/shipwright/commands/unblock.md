@@ -89,14 +89,14 @@ one branch) only ever dedupes against whichever single task happened to be stamp
 `taskId`. Instead, for every blocked PR, query the task store live for its linked task(s):
 
 ```bash
-for pr in $BLOCKED_PRS; do
+while IFS= read -r pr; do
   PR_REPO=$(echo "$pr" | jq -r '.repo')
   PR_NUMBER=$(echo "$pr" | jq -r '.prNumber')
   LINKED_TASKS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo=${PR_REPO}&pr=${PR_NUMBER}")
   LINKED_TASKS=$(echo "$LINKED_TASKS_JSON" | jq -c '.tasks[]')
   # ... match each task in $LINKED_TASKS against $BLOCKED_TASKS by id, below
-done
+done <<< "$BLOCKED_PRS"
 ```
 
 `GET /tasks?repo=&pr=` can return **more than one** task for a single PR — a bundle branch
