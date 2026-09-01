@@ -2956,6 +2956,7 @@ export function renderPrsPage(
   },
   timezone = "America/Los_Angeles",
   suggestions?: { repos?: string[]; orgs?: string[] },
+  linkedTasksByPr: Record<string, TaskItem[]> = {},
 ): string {
   const degradedHtml = degraded
     ? `<div class="alert alert-warning">PR store unavailable — data shown may be stale or empty.</div>`
@@ -2992,9 +2993,11 @@ export function renderPrsPage(
                   agentNames[pr.claimedBy] ?? pr.claimedBy,
                 )
               : '<span style="color:#9ca3af">—</span>';
-            const taskCell = pr.taskId
-              ? `<a href="/admin/tasks/${escapeHtml(pr.taskId)}" style="color:#6366f1;text-decoration:none">${escapeHtml(pr.taskId)}</a>`
-              : '<span style="color:#9ca3af">—</span>';
+            const linkedTasks = linkedTasksByPr[pr.id] ?? [];
+            const taskCell =
+              linkedTasks.length > 0
+                ? linkedTasks.map((t) => taskLink(t.id)).join(", ")
+                : '<span style="color:#9ca3af">—</span>';
             const createdCell = pr.createdAt
               ? escapeHtml(
                   (() => {

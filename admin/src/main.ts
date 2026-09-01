@@ -24,7 +24,6 @@ import { sentry } from "@sentry/hono/bun";
 import { buildSentryInitOptions, initSentry } from "@shipwright/lib/sentry";
 import { Hono } from "hono";
 import { PrismaClient } from "../prisma/client/index.js";
-import type { PullRequestItem } from "./admin-ui-pages.ts";
 import { createAdminUIApp } from "./admin-ui.ts";
 import { AgentChatTokenService } from "./agent-chat-tokens.ts";
 import { AgentCronJobService } from "./agent-cron-jobs.ts";
@@ -529,22 +528,6 @@ async function startServer(): Promise<void> {
               repos: string[];
               orgs: string[];
             }>;
-          },
-          fetchTaskStorePr: async (taskId: string) => {
-            const res = await fetch(
-              `${taskStoreUrl}/prs?taskId=${encodeURIComponent(taskId)}`,
-              {
-                headers: { Authorization: `Bearer ${taskStoreAdminToken}` },
-              },
-            );
-            if (res.status === 404) return null;
-            if (!res.ok)
-              throw new Error(
-                `task-store GET /prs?taskId=${taskId} → ${res.status}`,
-              );
-            const data = (await res.json()) as { prs?: unknown[] };
-            const prs = data.prs ?? [];
-            return prs.length > 0 ? (prs[0] as PullRequestItem) : null;
           },
           fetchTaskStorePrs: async (params: URLSearchParams) => {
             const url = `${taskStoreUrl}/prs${params.size > 0 ? `?${params}` : ""}`;
