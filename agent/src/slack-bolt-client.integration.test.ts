@@ -26,6 +26,20 @@
  * on the client Bolt builds. This is the only test in the suite that would
  * catch a future re-pin or transitive bump that un-dedupes the nested
  * @slack/web-api copy from the top-level one again.
+ *
+ * tokenVerificationEnabled: false is required — with the (Bolt) default of
+ * true, the App constructor fires a REAL, unawaited `client.auth.test(...)`
+ * call against the live Slack API as a side effect of building the
+ * `authorize` function, even though this test never calls .start() or
+ * emits an event. With a dummy token that call rejects (invalid_auth) on
+ * its own timeline; since nothing in this test awaits or catches it, the
+ * rejection surfaces as an unhandled rejection attributed to whichever
+ * *other* test happens to be running when the network response lands —
+ * only reproducible under full-suite load, where enough wall-clock time
+ * passes for the response to arrive mid-suite. Disabling eager token
+ * verification defers the auth.test call until `authorize` is actually
+ * invoked, which never happens here, and doesn't change what this test
+ * verifies (the client's dependency-resolution shape).
  */
 
 import { describe, expect, test } from "bun:test";
@@ -38,6 +52,7 @@ describe("real @slack/bolt App — client dependency resolution", () => {
       appToken: "xapp-dummy-token",
       socketMode: true,
       signingSecret: "dummy-signing-secret",
+      tokenVerificationEnabled: false,
     });
 
     expect(typeof app.client.agents?.sessions?.setStatus).toBe("function");
