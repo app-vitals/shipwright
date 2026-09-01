@@ -778,7 +778,17 @@ export class TaskStoreProvider implements MetricsProvider {
       costUsd: number;
     };
     const merged = new Map<string, Cells>();
-    const add = (key1: string, key2: string, a: { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd?: number }) => {
+    const add = (
+      key1: string,
+      key2: string,
+      a: {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheCreation: number;
+        costUsd?: number;
+      },
+    ) => {
       const k = `${key1}\0${key2}`;
       const existing = merged.get(k) ?? {
         input: 0,
@@ -920,7 +930,13 @@ export class TaskStoreProvider implements MetricsProvider {
     // Collapse multiple agents' byModel rows into a single per-model-family total.
     const fleetByModel = new Map<
       string,
-      { input: number; output: number; cacheRead: number; cacheCreation: number; costUsd: number }
+      {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheCreation: number;
+        costUsd: number;
+      }
     >();
 
     for (const entry of cronStats.byModel) {
@@ -972,7 +988,13 @@ export class TaskStoreProvider implements MetricsProvider {
         OPUS_MODEL,
       );
       const savingsUsd = opusUsd - routedUsd;
-      rows.push([`agent:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
+      rows.push([
+        `agent:${entry.key1}`,
+        modelFamily,
+        routedUsd,
+        opusUsd,
+        savingsUsd,
+      ]);
     }
 
     // ── Per-cron×model rows (byCronModel) ────────────────────────────────────
@@ -989,7 +1011,13 @@ export class TaskStoreProvider implements MetricsProvider {
         OPUS_MODEL,
       );
       const savingsUsd = opusUsd - routedUsd;
-      rows.push([`cron:${entry.key1}`, modelFamily, routedUsd, opusUsd, savingsUsd]);
+      rows.push([
+        `cron:${entry.key1}`,
+        modelFamily,
+        routedUsd,
+        opusUsd,
+        savingsUsd,
+      ]);
     }
 
     return table(columns, rows);

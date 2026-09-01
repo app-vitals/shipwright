@@ -240,7 +240,13 @@ const CRON_STATS_WITH_PHASE: CronRunTokenStats = {
 const CHAT_STATS: ChatTokenStats = {
   totals: agg(400, 200, 80, 40, 0.6),
   byAgent: [{ key: "agent-a", ...agg(400, 200, 80, 40, 0.6) }],
-  byModel: [{ key1: "agent-a", key2: "claude-sonnet-4-5", ...agg(400, 200, 80, 40, 0.6) }],
+  byModel: [
+    {
+      key1: "agent-a",
+      key2: "claude-sonnet-4-5",
+      ...agg(400, 200, 80, 40, 0.6),
+    },
+  ],
   daily: [{ period: "2026-06-03", ...agg(400, 200, 80, 40, 0.6) }],
 };
 
@@ -1014,7 +1020,9 @@ describe("TaskStoreProvider (integration)", () => {
 
     // Correctness is unaffected by the cache — computed values still match
     // what a non-coalesced call would produce.
-    expect(summaryTable.results[0][colIndex(summaryTable, "tasks_completed")]).toBe(2);
+    expect(
+      summaryTable.results[0][colIndex(summaryTable, "tasks_completed")],
+    ).toBe(2);
     expect(cycleTimeTable.columns).toEqual(["avg_cycle_time_hours"]);
     expect(cycleTimeTable.results[0][0]).not.toBeNull();
   });

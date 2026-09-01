@@ -88,7 +88,9 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     const provider = buildProvider(tasks, prs);
     const t = await provider.query({ kind: "featuresReviews", range: RANGE });
 
-    const row = t.results.find((r) => r[colIndex(t, "feature_prefix")] === "QS");
+    const row = t.results.find(
+      (r) => r[colIndex(t, "feature_prefix")] === "QS",
+    );
     expect(row).toBeDefined();
     expect(row?.[colIndex(t, "reviews_total")]).toBe(1);
     expect(row?.[colIndex(t, "reviews_ship_it")]).toBe(1);
@@ -130,8 +132,12 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     const provider = buildProvider(tasks, prs);
     const t = await provider.query({ kind: "featuresReviews", range: RANGE });
 
-    const rowAA = t.results.find((r) => r[colIndex(t, "feature_prefix")] === "AA");
-    const rowBB = t.results.find((r) => r[colIndex(t, "feature_prefix")] === "BB");
+    const rowAA = t.results.find(
+      (r) => r[colIndex(t, "feature_prefix")] === "AA",
+    );
+    const rowBB = t.results.find(
+      (r) => r[colIndex(t, "feature_prefix")] === "BB",
+    );
     expect(rowAA).toBeDefined();
     expect(rowBB).toBeDefined();
     expect(rowAA?.[colIndex(t, "reviews_total")]).toBe(1);
@@ -168,7 +174,11 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     const provider = buildProvider(tasks, prs);
     const t = await provider.query({ kind: "featuresReviews", range: RANGE });
 
-    expect(t.results.find((r) => r[colIndex(t, "feature_prefix")] === "CC")).toBeUndefined();
-    expect(t.results.find((r) => r[colIndex(t, "feature_prefix")] === "DD")).toBeUndefined();
+    expect(
+      t.results.find((r) => r[colIndex(t, "feature_prefix")] === "CC"),
+    ).toBeUndefined();
+    expect(
+      t.results.find((r) => r[colIndex(t, "feature_prefix")] === "DD"),
+    ).toBeUndefined();
   });
 });
