@@ -40,7 +40,7 @@ function collectFiles(dir: string): string[] {
 
 describe("absorbed skills — directories and SKILL.md", () => {
   const requiredSkills = [
-    "triage-dependabot-pr",
+    "triage-dependency-bot-pr",
     "triage-dependency-bot-prs",
     "entropy-fix",
     "entropy-scan",
