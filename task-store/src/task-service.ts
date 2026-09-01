@@ -647,33 +647,47 @@ export class TaskService implements TaskServiceLike {
    */
   async claim(id: string, claimedBy: string): Promise<Task> {
     const now = this.clock.now().toISOString();
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const before = await tx.task.findUnique({ where: { id } });
 
-    return this.prisma.$transaction(async (tx) => {
-      const before = await tx.task.findUnique({ where: { id } });
+        const affected = await tx.$executeRaw`
+          UPDATE "Task"
+          SET status = 'in_progress',
+              "claimedBy" = ${claimedBy},
+              "claimedAt" = ${now},
+              "heartbeatAt" = ${now},
+              "startedAt" = COALESCE("startedAt", ${now}),
+              "updatedAt" = now()
+          WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
+        `;
 
-      const affected = await tx.$executeRaw`
-        UPDATE "Task"
-        SET status = 'in_progress',
-            "claimedBy" = ${claimedBy},
-            "claimedAt" = ${now},
-            "heartbeatAt" = ${now},
-            "startedAt" = COALESCE("startedAt", ${now}),
-            "updatedAt" = now()
-        WHERE id = ${id} AND status = 'pending' AND "claimedBy" IS NULL
-      `;
+        if (affected === 0) {
+          if (!before) throw new NotFoundError("task not found");
+          throw new ConflictError("task is already claimed");
+        }
 
-      if (affected === 0) {
-        if (!before) throw new NotFoundError("task not found");
-        throw new ConflictError("task is already claimed");
+        const after = await tx.task.findUnique({ where: { id } });
+        if (!after) throw new NotFoundError("task not found");
+
+        await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
+
+        return after;
+      });
+    } catch (err: unknown) {
+      if (err instanceof NotFoundError || err instanceof ConflictError) {
+        throw err;
       }
-
-      const after = await tx.task.findUnique({ where: { id } });
-      if (!after) throw new NotFoundError("task not found");
-
-      await this.recordTaskTransition(tx, before, after, "claim", claimedBy);
-
-      return after;
-    });
+      // The Aug 29 500-on-reclaim didn't come from the documented
+      // ConflictError/NotFoundError path above — log unexpected claim()
+      // failures with enough context (task id + attempted claimedBy) to
+      // diagnose a repeat instead of guessing at it.
+      console.error(
+        `[task-store] claim() failed unexpectedly for task ${id} (claimedBy: ${claimedBy}):`,
+        err,
+      );
+      throw err;
+    }
   }
 
   /**
