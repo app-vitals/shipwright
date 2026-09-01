@@ -18,12 +18,14 @@
  * stay open for follow-up messages — "closed" is for ending a conversation
  * entirely.
  *
- * Every Slack API call is wrapped in .catch(() => {}) — a progress failure
- * must never throw or break the real reply.
+ * Every Slack API call is wrapped in try/catch — a progress failure must
+ * never throw or break the real reply. This covers a client that lacks the
+ * `agents` namespace entirely (property access throws synchronously), not
+ * just a setStatus() call that rejects.
  */
 
-import type { ModelUsage } from "./claude.ts";
 import type { ProgressPhase } from "@shipwright/lib/progress-phases";
+import type { ModelUsage } from "./claude.ts";
 
 // biome-ignore lint/suspicious/noExplicitAny: Bolt client type is complex
 type SlackClient = any;
@@ -60,13 +62,25 @@ export class SlackProgress {
   private async setStatus(
     status: "active" | "processing" | "suspended" | "closed",
   ): Promise<void> {
-    await this.client.agents.sessions
-      .setStatus({
+    // The whole call — including the `agents.sessions` property access, not
+    // just the setStatus() promise — is wrapped in try/catch: a Bolt client
+    // built from a `@slack/web-api` version that predates the Agent Sessions
+    // API (as of 2026-08-20) has no `agents` namespace at all, so accessing
+    // it throws synchronously before setStatus() is ever called and a
+    // trailing `.catch()` never attaches. A progress failure must never
+    // throw or break the real reply.
+    try {
+      await this.client.agents.sessions.setStatus({
         channel_id: this.channel,
         thread_ts: this.threadTs,
         status,
-      })
-      .catch(() => {});
+      });
+    } catch (err) {
+      console.warn(
+        `[slack-progress] setStatus(${status}) failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   }
 
   /**

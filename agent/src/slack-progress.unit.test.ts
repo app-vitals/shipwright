@@ -5,14 +5,17 @@
  * thread replies. Covers start()/finish() calling `agents.sessions.setStatus`
  * with the fixed lifecycle values ("processing" / "active"), that onProgress()
  * no longer drives any Slack API call (the new API has no per-phase text
- * slot), and that every Slack API failure is swallowed rather than thrown.
+ * slot), and that every Slack API failure is swallowed rather than thrown
+ * (and logged via console.warn instead — swapped in per-test via a local
+ * save/restore, same pattern as check-helpers.unit.test.ts's
+ * mapReposTolerant suite, since Bun shares the test process globally).
  *
  * The mock Slack client is a plain object of mock fns — no mock.module(), no
  * global overrides. No Clock injection is needed: SlackProgress does no
  * time-based scheduling.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { SlackProgress } from "./slack-progress.ts";
 
 // ─── Mock Slack client ────────────────────────────────────────────────────────
@@ -95,21 +98,76 @@ describe("SlackProgress — finish()", () => {
 // ─── errors-swallowed ────────────────────────────────────────────────────────────
 
 describe("SlackProgress — errors swallowed", () => {
-  test("start() does not throw when setStatus rejects", async () => {
+  let savedWarn: typeof console.warn;
+  let warnCalls: unknown[][];
+
+  beforeEach(() => {
+    savedWarn = console.warn;
+    warnCalls = [];
+    console.warn = (...args: unknown[]) => {
+      warnCalls.push(args);
+    };
+  });
+
+  afterEach(() => {
+    console.warn = savedWarn;
+  });
+
+  test("start() does not throw when setStatus rejects, and warns", async () => {
     const client = makeMockClient();
     client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api down"),
     );
     const { progress } = makeProgress({ client });
     await expect(progress.start()).resolves.toBeUndefined();
+    expect(warnCalls).toEqual([
+      ["[slack-progress] setStatus(processing) failed:", "api down"],
+    ]);
   });
 
-  test("finish() does not throw when setStatus rejects", async () => {
+  test("finish() does not throw when setStatus rejects, and warns", async () => {
     const client = makeMockClient();
     client.agents.sessions.setStatus.mockRejectedValueOnce(
       new Error("api down"),
     );
     const { progress } = makeProgress({ client });
     await expect(progress.finish()).resolves.toBeUndefined();
+    expect(warnCalls).toEqual([
+      ["[slack-progress] setStatus(active) failed:", "api down"],
+    ]);
+  });
+
+  // Regression: a Bolt-supplied client built from a @slack/web-api version
+  // that predates the Agent Sessions API has no `agents` namespace at all —
+  // accessing `.agents.sessions` throws synchronously, before setStatus()
+  // is ever called, so a trailing `.catch()` never attaches.
+  test("start() does not throw when the client has no agents namespace, and warns", async () => {
+    const progress = new SlackProgress({
+      client: {},
+      channel: CHANNEL,
+      threadTs: THREAD_TS,
+    });
+    await expect(progress.start()).resolves.toBeUndefined();
+    expect(warnCalls).toEqual([
+      [
+        "[slack-progress] setStatus(processing) failed:",
+        "undefined is not an object (evaluating 'this.client.agents.sessions')",
+      ],
+    ]);
+  });
+
+  test("finish() does not throw when the client has no agents namespace, and warns", async () => {
+    const progress = new SlackProgress({
+      client: {},
+      channel: CHANNEL,
+      threadTs: THREAD_TS,
+    });
+    await expect(progress.finish()).resolves.toBeUndefined();
+    expect(warnCalls).toEqual([
+      [
+        "[slack-progress] setStatus(active) failed:",
+        "undefined is not an object (evaluating 'this.client.agents.sessions')",
+      ],
+    ]);
   });
 });
