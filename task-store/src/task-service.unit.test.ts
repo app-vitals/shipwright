@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 import { computeBlockedBy } from "./blocked-by.ts";
 import { FixedClock } from "./clock.ts";
 import { BadRequestError, ConflictError, NotFoundError } from "./errors.ts";
@@ -1064,6 +1064,81 @@ describe("TaskService.claim() defense-in-depth claimedBy guard (unit)", () => {
     await expect(service.claim("task-1", "agent-1")).rejects.toThrow(
       ConflictError,
     );
+  });
+
+  it("claim() logs task id and claimedBy before rethrowing an unexpected DB error (TCS-5.1)", async () => {
+    const dbError = new Error("connection terminated unexpectedly");
+    const prisma = {
+      async $executeRaw(): Promise<number> {
+        throw dbError;
+      },
+    } as unknown as PrismaClient;
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      await expect(
+        service.claim("task-1", "agent-1"),
+      ).rejects.toThrow(dbError);
+
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedArgs = consoleErrorSpy.mock.calls.flat().join(" ");
+      expect(loggedArgs).toContain("task-1");
+      expect(loggedArgs).toContain("agent-1");
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it("claim() does NOT log when it throws the expected ConflictError (defense-in-depth guard)", async () => {
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "pending",
+        claimedBy: "agent-original",
+      }),
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      await expect(service.claim("task-1", "agent-new")).rejects.toThrow(
+        ConflictError,
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  });
+
+  it("claim() does NOT log when it throws the expected NotFoundError (missing task)", async () => {
+    const prisma = makeClaimPrismaDouble(
+      makeFullTask({
+        id: "task-1",
+        status: "pending",
+        claimedBy: null,
+      }),
+    );
+    const clock = FixedClock(new Date("2026-08-10T12:00:00.000Z"));
+    const service = new TaskService(prisma, clock);
+
+    const consoleErrorSpy = spyOn(console, "error").mockImplementation(
+      () => {},
+    );
+    try {
+      await expect(service.claim("task-missing", "agent-1")).rejects.toThrow(
+        NotFoundError,
+      );
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
   });
 });
 
