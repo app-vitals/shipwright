@@ -104,7 +104,7 @@ directly as part of the loop's own run. Re-enabling `shipwright-loop` is what re
 dispatch — not the phase cron's own schedule kicking back in.
 
 By contrast, the maintenance crons — `shipwright-test-readiness`, `shipwright-docs-freshness`,
-`learn-dream`, `dependabot-triage`, and the entropy/error/security/consolidation patrol crons —
+`learn-dream`, `dependency-bot-triage`, and the entropy/error/security/consolidation patrol crons —
 are **standalone**. Each is fully self-contained: its own `preCheck` does its own discovery (e.g.
 scanning repos for stale docs, or querying Sentry for unresolved errors), with no dependency on
 `shipwright-loop` at all.
@@ -121,7 +121,7 @@ scanning repos for stale docs, or querying Sentry for unresolved errors), with n
 | `shipwright-test-readiness` | daily 06:00 | `/shipwright:test-readiness --full --publish` | test-readiness | off | Full test-readiness audit for repos with stale or missing artifacts. |
 | `shipwright-docs-freshness` | daily 07:00 | `/shipwright:research-docs --auto` | — | off | Refreshes docs that have drifted from the code. |
 | `learn-dream` | daily 03:00 | `/shipwright:learn-dream --since 1d --review` | — | off | Mines the last day of merged PRs for durable learnings. |
-| `dependabot-triage` | daily 08:00 | `/shipwright:triage-dependabot-prs` | triage-dependabot-prs | off | Reviews and triages open Dependabot PRs. |
+| `dependency-bot-triage` | daily 08:00 | `/shipwright:triage-dependency-bot-prs` | triage-dependency-bot-prs | off | Reviews and triages open Dependabot/Renovate PRs, posting triage comments directly by default (opt out via `auto_post_dependency_bot_triage: false`). |
 | `entropy-patrol-maintenance` | weekly Mon 04:00 | `/shipwright:entropy-scan` → `/shipwright:entropy-fix` | entropy-scan, entropy-fix | off | Scans for code entropy and fixes what's PR-worthy. |
 | `error-patrol-maintenance` | daily 04:00 | `/shipwright:error-scan` → `/shipwright:error-fix` → `/shipwright:error-resolve` | error-scan, error-fix, error-resolve | off | Scans for unresolved Sentry errors and fixes what's PR-worthy. |
 | `security-patrol-maintenance` | weekly Mon 06:00 | `/shipwright:security-scan` → `/shipwright:security-fix` | security-scan, security-fix | off | Scans for security vulnerabilities and fixes what's PR-worthy. |

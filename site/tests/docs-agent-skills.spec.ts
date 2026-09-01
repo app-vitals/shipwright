@@ -78,8 +78,8 @@ const allSkillNames = [
   "test-migration",
   "test-readiness",
   "test-roadmap",
-  "triage-dependabot-pr",
-  "triage-dependabot-prs",
+  "triage-dependency-bot-pr",
+  "triage-dependency-bot-prs",
 ];
 
 test("all 27 skill names appear on the agent-skills page", async ({

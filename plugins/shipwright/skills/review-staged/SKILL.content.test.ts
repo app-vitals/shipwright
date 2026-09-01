@@ -40,3 +40,37 @@ describe("SKILL.md — Step 3b stale-check references record.reviewedCommitSha, 
     expect(content).not.toContain("record.commitSha");
   });
 });
+
+describe("SKILL.md — Step 3c is generalized to a Dependency-bot cross-check", () => {
+  it("renames the step header from 'Dependabot cross-check' to 'Dependency-bot cross-check'", () => {
+    expect(content).toContain("### 3c. Dependency-bot cross-check");
+    expect(content).not.toContain("### 3c. Dependabot cross-check");
+  });
+
+  it("widens the author check to cover app/dependabot, app/renovate, and dependabot[bot]", () => {
+    const step3cIdx = content.indexOf("### 3c. Dependency-bot cross-check");
+    const endIdx = content.indexOf("### 3d.", step3cIdx);
+    expect(step3cIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(step3cIdx);
+    const section = content.slice(step3cIdx, endIdx);
+
+    expect(section).toContain("dependabot[bot]");
+    expect(section).toContain("app/dependabot");
+    expect(section).toContain("app/renovate");
+  });
+
+  it("reads state from state/dependency-bot-reviews.json and not the old dependabot-only path", () => {
+    expect(content).toContain("state/dependency-bot-reviews.json");
+    expect(content).not.toContain("state/dependabot-reviews.json");
+  });
+
+  it("Step 3d presentation line derives the bot label dynamically instead of hardcoding Dependabot", () => {
+    const step3dIdx = content.indexOf("### 3d. Present the PR");
+    expect(step3dIdx).toBeGreaterThan(-1);
+    const section = content.slice(step3dIdx, step3dIdx + 2000);
+
+    expect(section).toContain("Dependabot");
+    expect(section).toContain("Renovate");
+    expect(section).not.toContain('"*Dependabot:*');
+  });
+});

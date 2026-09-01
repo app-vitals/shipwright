@@ -234,26 +234,29 @@ instead of auto-remediating it. Requires security-scan to have run first.
 *Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
 `/shipwright:security-fix` command.
 
-### triage-dependabot-pr
+### triage-dependency-bot-pr
 
-Analyze a single Dependabot PR — fetch metadata and diff, classify risk (merge/review/hold),
-stage a patrol-style comment to `state/dependabot-reviews/`, and update
-`state/dependabot-reviews.json`. Use when asked to triage one specific Dependabot PR. Does not
-post to GitHub. Arguments — `<pr-number>` (required), `--repo owner/repo` (optional; detected
-from cwd if omitted).
-
-*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
-`/shipwright:triage-dependabot-pr` command.
-
-### triage-dependabot-prs
-
-Scan all repos in `repos/` for open Dependabot PRs, triage new ones, and stage patrol-style
-comments for review. Use when asked to triage, scan, or review open Dependabot PRs across
-multiple repos. Does not post to GitHub — staged comments are reviewed conversationally before
-posting.
+Analyze a single Dependabot or Renovate PR — fetch metadata and diff, classify risk
+(merge/review/hold), and post a patrol-style comment directly to the PR via `gh pr comment`
+by default, updating `state/dependency-bot-reviews.json`. Posting is governed by
+`auto_post_dependency_bot_triage` in `state/agent-policy.md` (defaults to `true`); set it to
+`false` to fall back to staging the comment to `state/dependency-bot-reviews/` instead. Use
+when asked to triage one specific dependency-bot PR. Arguments — `<pr-number>` (required),
+`--repo owner/repo` (optional; detected from cwd if omitted).
 
 *Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
-`/shipwright:triage-dependabot-prs` command.
+`/shipwright:triage-dependency-bot-pr` command.
+
+### triage-dependency-bot-prs
+
+Scan all repos in `repos/` for open Dependabot and Renovate PRs, triage new ones, and post
+patrol-style comments directly by default (same `auto_post_dependency_bot_triage` policy
+as `triage-dependency-bot-pr`). Use when asked to triage, scan, or review open dependency-bot
+PRs across multiple repos. When posting is disabled, comments are staged instead and reviewed
+conversationally before posting.
+
+*Invocation:* Auto-triggered by the agent's own judgment based on context — no matching
+`/shipwright:triage-dependency-bot-prs` command.
 
 ## Other
 

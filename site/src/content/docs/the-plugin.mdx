@@ -103,12 +103,12 @@ Skills are autonomous behaviors that run multi-step loops without manual hand-ho
 | `learning-capture` | Capture a durable learning by editing CLAUDE.md or LEARNINGS.md directly |
 | `task-store` | Query and update the Shipwright task store — pick the next ready task, mark status transitions, append new tasks |
 
-### Dependabot
+### Dependency bot
 
 | Skill | What it does |
 |-------|--------------|
-| `triage-dependabot-pr` | Analyze a single Dependabot PR — classify risk (merge/review/hold) and stage a review comment |
-| `triage-dependabot-prs` | Scan all repos for open Dependabot PRs, triage new ones, and stage review comments in batch |
+| `triage-dependency-bot-pr` | Analyze a single Dependabot/Renovate PR — classify risk (merge/review/hold) and post a review comment directly by default (opt out via `auto_post_dependency_bot_triage: false` to stage instead) |
+| `triage-dependency-bot-prs` | Scan all repos for open Dependabot/Renovate PRs, triage new ones, and post review comments in batch by default (opt out via `auto_post_dependency_bot_triage: false` to stage instead) |
 
 ### Test-readiness
 
