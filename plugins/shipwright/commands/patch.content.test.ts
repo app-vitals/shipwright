@@ -830,12 +830,34 @@ describe("patch.md — skip CI-fix dispatch when an unresolved HITL escalation a
     expect(section).toContain("PR_BLOCKED");
   });
 
-  it("also checks the linked task's status field when taskId is present", () => {
+  it("queries GET /tasks?repo=&pr= directly instead of reading PR_RECORD.taskId", () => {
     const section = getStep6b6Section();
-    expect(section).toContain("taskId");
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$');
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    // No jq extraction of .taskId off the PR record anymore.
+    expect(section).not.toMatch(/jq -r '\.taskId/);
+    expect(section).not.toContain('echo "$PR_RECORD" | jq -r \'.taskId');
+  });
+
+  it("treats the PR as HITL-escalated if ANY matched task has hitl===true OR status==='blocked' (OR across all matches, mirrors PTL-1.1's check-helpers.ts semantics)", () => {
+    const section = getStep6b6Section();
     expect(section).toContain("TASK_BLOCKED");
-    expect(section).toContain('.status');
+    expect(section).toMatch(/hitl.{0,20}(===|==)\s*true/i);
+    expect(section).toMatch(/status.{0,20}(===|==)\s*['"]blocked['"]/i);
+    expect(section.toLowerCase()).toContain("any");
+    expect(section).toContain("PTL-1.1");
+    expect(section).toContain("check-helpers.ts");
+  });
+
+  it("zero-match fallback at Step 6b.6 is unchanged: only PR_BLOCKED (from the PR record) matters, no task-based escalation signal", () => {
+    const section = getStep6b6Section();
+    expect(section).toMatch(/no (matching )?tasks?.{0,60}(found|match)/i);
+    expect(section.toLowerCase()).toContain("no task-based escalation signal");
+  });
+
+  it("Step 6b.6 exposes a single PR_TASK_ID (first matched task, or empty if none) for Step 6d's downstream BLOCKED-escalation reuse", () => {
+    const section = getStep6b6Section();
+    expect(section).toContain("PR_TASK_ID");
+    expect(section.toLowerCase()).toMatch(/first match|first task/i);
   });
 
   it("true branch releases the claim, does not dispatch the fix subagent, and moves to the next PR in List D", () => {
@@ -964,11 +986,48 @@ describe("patch.md — shared patch model tier resolution (MTR-2.1)", () => {
     expect(step2_5Idx).toBeGreaterThan(step2_1Idx);
   });
 
-  it("Step 2.1 resolves PR_TASK_ID via GET /prs?repo=...&prNumber=... using the .prs[0].taskId jq path", () => {
+  it("Step 2.1 resolves matched tasks via GET /tasks?repo=&pr= directly, not PullRequest.taskId", () => {
+    const section = getStep2_1Section();
+    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
+    expect(section).not.toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
+    expect(section).not.toContain(".prs[0].taskId");
+  });
+
+  it("Step 2.1 escalates the HIGHEST model tier among ALL matched tasks (mirrors PTL-1.2's review.md rule)", () => {
+    const section = getStep2_1Section();
+    expect(section.toLowerCase()).toContain("highest tier");
+    expect(section).toMatch(/all match(ed|es)/i);
+    expect(section).toContain("PTL-1.2");
+  });
+
+  it("Step 2.1 has real jq/bash computing PATCH_MODEL and PR_TASK_ID from $MATCHED_TASKS, not just prose (mirrors Step 6b.6's jq mechanics)", () => {
+    const section = getStep2_1Section();
+    // Must reference the tasks array and each task's model field via jq, not just describe
+    // the computation in prose.
+    expect(section).toMatch(/\.tasks\[\]/);
+    expect(section).toMatch(/\.model/);
+    expect(section).toContain("jq -r");
+    expect(section).toContain("echo \"$MATCHED_TASKS\"");
+    // Must actually assign both output variables from that jq, not just declare them.
+    expect(section).toMatch(/PATCH_MODEL=\$\(/);
+    expect(section).toMatch(/PR_TASK_ID=\$\(/);
+  });
+
+  it("Step 2.1 still resolves a single PR_TASK_ID scalar for downstream single-task escalation-PATCH reuse, and documents why", () => {
     const section = getStep2_1Section();
     expect(section).toContain("PR_TASK_ID");
-    expect(section).toContain("$SHIPWRIGHT_TASK_STORE_URL/prs?repo={org}/{repo}&prNumber={pr}");
-    expect(section).toContain(".prs[0].taskId // empty");
+    // Must explain the single-scalar choice explicitly, since the model-tier calc now
+    // considers multiple matches but downstream consumers still PATCH one task.
+    expect(section.toLowerCase()).toMatch(/downstream|escalation-patch consumers/i);
+  });
+
+  it("Step 2.1's zero-match fallback is unchanged: PATCH_MODEL=sonnet, warning, not a hard stop", () => {
+    const section = getStep2_1Section();
+    expect(section).toMatch(/no (matching )?tasks?.{0,60}(found|match)/i);
+    expect(section).toMatch(/PATCH_MODEL\s*=\s*"?sonnet"?/);
+    expect(section.toLowerCase()).toContain("no escalation");
+    expect(section.toLowerCase()).toContain("not a hard stop");
+    expect(section).toContain("⚠");
   });
 
   it("Step 2.1 documents the full escalation ladder (haiku->sonnet, sonnet->opus, opus->opus) and the no-task/failed-fetch sonnet fallback with no hard stop", () => {
@@ -1262,7 +1321,7 @@ describe("patch.md — escalate first-time BLOCKED status to HITL before releasi
     const step6cIdx = content.indexOf("### Step 6c: Dispatch Fix Subagent");
     const step6b6Section = content.slice(step6b6Idx, step6cIdx);
     expect(step6b6Section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(step6b6Section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/tasks/$');
+    expect(step6b6Section).toContain("$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}");
 
     const step6dSection = getStep6dSection();
     const blocked = getBlockedBranch(step6dSection);
