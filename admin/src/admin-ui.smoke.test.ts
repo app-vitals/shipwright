@@ -5251,6 +5251,17 @@ describe("admin UI — GET /admin/agents/:id/connect-github/callback", () => {
         c.env.GH_APP_PRIVATE_KEY?.includes("BEGIN RSA PRIVATE KEY"),
       ),
     ).toBe(true);
+    expect(
+      patchCalls.some((c) => c.env.GH_APP_CLIENT_ID === "gh-client-id"),
+    ).toBe(true);
+    expect(
+      patchCalls.some((c) => c.env.GH_APP_CLIENT_SECRET === "gh-client-secret"),
+    ).toBe(true);
+    const clientIdCall = patchCalls.find(
+      (c) => c.env.GH_APP_CLIENT_ID === "gh-client-id",
+    );
+    expect(clientIdCall?.secretKeys?.has("GH_APP_CLIENT_SECRET")).toBe(true);
+    expect(clientIdCall?.secretKeys?.has("GH_APP_CLIENT_ID")).toBe(false);
   });
 
   it("missing state cookie → renders an error page", async () => {
@@ -5353,9 +5364,10 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
     );
   }
 
-  it("valid state cookie + installation_id → writes GH_APP_INSTALLATION_ID, renders success (same outcome as /admin/provision/github-app/installed)", async () => {
+  it("valid state cookie + installation_id → writes GH_APP_INSTALLATION_ID, renders success, reconciles crons (same outcome as /admin/provision/github-app/installed)", async () => {
     const patchCalls: Array<{ agentId: string; env: Record<string, string> }> =
       [];
+    const reconcileCalls: string[] = [];
     const app = createAdminUIApp(
       makeMockDeps({
         agentEnvService: {
@@ -5366,6 +5378,21 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
           },
           deleteKey: async () => {},
           getConfigBundle: async () => null,
+        },
+        agentCronJobService: {
+          list: async () => [MOCK_CRON],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async (agentId: string) => {
+            reconcileCalls.push(agentId);
+            return { created: 2, updated: 0, deleted: 0 };
+          },
         },
       }),
     );
@@ -5389,6 +5416,49 @@ describe("admin UI — GET /admin/agents/:id/connect-github/installed", () => {
           c.agentId === AGENT_ID && c.env.GH_APP_INSTALLATION_ID === "778899",
       ),
     ).toBe(true);
+    expect(reconcileCalls).toContain(AGENT_ID);
+  });
+
+  it("reconcileSystemCrons rejecting → still renders success (best-effort, non-fatal)", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+        agentCronJobService: {
+          list: async () => [MOCK_CRON],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async () => {
+            throw new Error("reconcile boom");
+          },
+        },
+      }),
+    );
+
+    const stateCookie = await makeProvisionStateCookie();
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/connect-github/installed?installation_id=778899`,
+      {
+        headers: {
+          Cookie: `admin_session=${adminCookie}; ${GITHUB_PROVISION_STATE_COOKIE}=${stateCookie}`,
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("alert-success");
   });
 
   it("non-numeric installation_id → error, no env write", async () => {

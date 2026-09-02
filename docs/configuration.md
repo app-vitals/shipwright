@@ -83,6 +83,8 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 | `GH_APP_ID` | `string` | required for App auth | GitHub App ID (integer as string). Env-var-only (secret). |
 | `GH_APP_INSTALLATION_ID` | `string` | required for App auth | Installation ID for the target org/repo. Env-var-only (secret). |
 | `GH_APP_PRIVATE_KEY` | `string` | required for App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Env-var-only (secret). |
+| `GH_APP_CLIENT_ID` | `string` | — | OAuth client ID for the GitHub App, persisted from the manifest-flow exchange so the App's OAuth settings can be reconfigured later without redoing the manifest flow. Env-var-only (not secret). |
+| `GH_APP_CLIENT_SECRET` | `string` | — | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. Env-var-only (secret). |
 | `GH_TOKEN` | `string` | — | Personal Access Token. Used only when GitHub App vars are absent. Env-var-only (secret). |
 
 ### Shipwright platform

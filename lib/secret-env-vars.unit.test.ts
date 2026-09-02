@@ -12,6 +12,7 @@ describe("SECRET_ENV_VARS", () => {
       "ANTHROPIC_API_KEY",
       "CLAUDE_CODE_OAUTH_TOKEN",
       "GH_APP_PRIVATE_KEY",
+      "GH_APP_CLIENT_SECRET",
       "GH_TOKEN",
       "SLACK_BOT_TOKEN",
       "SLACK_APP_TOKEN",
@@ -38,7 +39,7 @@ describe("SECRET_ENV_VARS", () => {
   });
 
   test("has exactly the expected number of entries (catches accidental additions/removals)", () => {
-    expect(SECRET_ENV_VARS.length).toBe(21);
+    expect(SECRET_ENV_VARS.length).toBe(22);
   });
 
   test("every entry is a non-empty string", () => {
