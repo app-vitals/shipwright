@@ -82,6 +82,15 @@ import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
 import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
+import {
+  GITHUB_ORG_PATTERN,
+  GITHUB_PROVISION_STATE_COOKIE,
+  GITHUB_PROVISION_STATE_TTL_SECONDS,
+  GithubProvisioningService,
+  isValidGithubAppId,
+  isValidGithubAppInstallationId,
+  isValidGithubAppPrivateKey,
+} from "./github-provisioning-service.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import {
   type ChatClient,
@@ -104,6 +113,11 @@ import {
   AGENT_BOT_SCOPES,
   buildAgentManifest,
 } from "./slack-provisioning-client.ts";
+import {
+  PROVISION_STATE_COOKIE,
+  PROVISION_STATE_TTL_SECONDS,
+  SlackProvisioningService,
+} from "./slack-provisioning-service.ts";
 
 type AdminUIEnv = { Variables: { userEmail: string; isAdmin: boolean } };
 
@@ -663,6 +677,34 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   const app = new Hono<AdminUIEnv>();
 
   const requireAuth = createUIAuthMiddleware(sessionSecret);
+
+  // Extracted Slack app-manifest-creation/OAuth/app-token orchestration
+  // (UAP-1.1) — shared by the legacy /admin/provision/* wizard's Slack
+  // branch and the new per-agent /admin/agents/:id/connect-slack routes so
+  // both reach the same outcome via the same code path.
+  const slackProvisioningService = new SlackProvisioningService({
+    slackClient,
+    agentService,
+    agentEnvService,
+    agentCronJobService,
+    sessionSecret,
+    appBaseUrl,
+    secretEnvVars: new Set(SECRET_ENV_VARS),
+  });
+
+  // Extracted GitHub App manifest-flow/PAT provisioning orchestration
+  // (UAP-1.2) — shared by the legacy /admin/provision/* wizard's GitHub
+  // branches (+ github-app/complete + github-app/installed) and the new
+  // per-agent /admin/agents/:id/connect-github routes so both reach the same
+  // outcome via the same code path.
+  const githubProvisioningService = new GithubProvisioningService({
+    githubAppClient,
+    agentService,
+    agentEnvService,
+    sessionSecret,
+    appBaseUrl,
+    secretEnvVars: new Set(SECRET_ENV_VARS),
+  });
 
   // Best-effort upsert of a ChatThreadWatch row (CFB-4.2). Never throws into a
   // request cycle — push is a convenience layer, so a watch-write failure must
@@ -1953,16 +1995,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   );
 
   // ─── Provisioning state constants ────────────────────────────────────────
-
-  const PROVISION_STATE_COOKIE = "slack_provision_state";
-  const PROVISION_STATE_TTL_SECONDS = 300; // 5 min
-
-  // GitHub org login name pattern (matches GitHub's own username/org-name
-  // rules: alphanumeric, single hyphens, no leading/trailing hyphen, max 39
-  // chars). Operator-supplied `githubOrg` is validated against this at every
-  // point it's about to be string-interpolated into a github.com redirect
-  // URL — an open-redirect/injection boundary, not defensive-for-no-reason.
-  const GITHUB_ORG_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9-]){0,38}$/;
+  // PROVISION_STATE_COOKIE / PROVISION_STATE_TTL_SECONDS now live in
+  // slack-provisioning-service.ts (UAP-1.1); GITHUB_PROVISION_STATE_COOKIE /
+  // GITHUB_PROVISION_STATE_TTL_SECONDS / GITHUB_ORG_PATTERN now live in
+  // github-provisioning-service.ts (UAP-1.2) — re-imported above so every
+  // route in this file keeps using the same names.
 
   // ─── Manifest sync ────────────────────────────────────────────────────────
 
@@ -2059,6 +2096,394 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}?success=manifest_synced`, 302);
   });
 
+  // ─── connect-slack (UAP-1.1) ───────────────────────────────────────────────
+  // Per-agent equivalents of the legacy /admin/provision/* Slack wizard,
+  // scoped to an already-existing agent id. All three delegate to the same
+  // SlackProvisioningService the wizard now calls — pure routing/rendering
+  // here, no business logic.
+
+  app.post("/admin/agents/:id/connect-slack", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    let xoxpToken: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      xoxpToken = formData.get("xoxpToken")?.toString();
+    } catch {
+      return c.redirect(`/admin/agents/${agentId}?error=missing_fields`, 302);
+    }
+
+    const result = await slackProvisioningService.startConnect(
+      agentId,
+      xoxpToken,
+      `${appBaseUrl}/admin/agents/${agentId}/connect-slack/callback`,
+    );
+
+    if (!result.ok) {
+      return c.redirect(
+        `/admin/agents/${agentId}?error=${encodeURIComponent(result.error)}`,
+        302,
+      );
+    }
+
+    setCookie(c, PROVISION_STATE_COOKIE, result.provisionStateToken, {
+      httpOnly: true,
+      maxAge: PROVISION_STATE_TTL_SECONDS,
+      sameSite: "Lax",
+      path: "/",
+      secure: appBaseUrl.startsWith("https://"),
+    });
+
+    return c.redirect(result.oauthRedirectUrl, 302);
+  });
+
+  app.get(
+    "/admin/agents/:id/connect-slack/callback",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
+      const code = c.req.query("code");
+      const result = await slackProvisioningService.completeConnect(
+        rawStateCookie,
+        code,
+        `${appBaseUrl}/admin/agents/${agentId}/connect-slack/callback`,
+      );
+
+      if (result.outcome === "invalid_state") {
+        deleteCookie(c, PROVISION_STATE_COOKIE);
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "missing_code") {
+        // Cookie must remain intact so the user can restart the provision flow.
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      // Every other outcome consumed the cookie's OAuth code — clear it now.
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+
+      if (result.outcome === "exchange_failed") {
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "reinstalled") {
+        return c.redirect(
+          `/admin/agents/${result.agentId}?success=reinstalled`,
+          302,
+        );
+      }
+
+      // result.outcome === "needs_app_token"
+      return html(
+        renderProvisionXappTokenPage(userEmail, {
+          agentId: result.agentId,
+        }),
+      );
+    },
+  );
+
+  app.post(
+    "/admin/agents/:id/connect-slack/app-token",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      let xappToken: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        xappToken = formData.get("xappToken")?.toString();
+      } catch {
+        return html(
+          renderProvisionXappTokenPage(userEmail, {
+            agentId,
+            error: "Invalid form submission.",
+          }),
+        );
+      }
+
+      const result = await slackProvisioningService.saveAppToken(
+        agentId,
+        xappToken,
+      );
+
+      if (!result.ok) {
+        return html(
+          renderProvisionXappTokenPage(userEmail, {
+            agentId: result.agentId,
+            error: result.error,
+          }),
+        );
+      }
+
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: true,
+          agentId: result.agentId,
+        }),
+      );
+    },
+  );
+
+  // ─── connect-github (UAP-1.2) ───────────────────────────────────────────────
+  // Per-agent equivalents of the legacy /admin/provision/* GitHub App/PAT
+  // wizard branches, scoped to an already-existing agent id. All three
+  // delegate to the same GithubProvisioningService the wizard now calls —
+  // pure routing/rendering here, no business logic. Supports all three modes
+  // selected via `ghAuthMode`/`ghAppMode` form fields, mirroring the legacy
+  // wizard's form shape: pat, app+manual, app+auto.
+
+  app.post("/admin/agents/:id/connect-github", requireAuth, async (c) => {
+    const agentId = c.req.param("id");
+    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    const userEmail = c.var.userEmail;
+
+    let ghAuthMode: string | undefined;
+    let ghPat: string | undefined;
+    let ghAppMode: string | undefined;
+    let ghAppId: string | undefined;
+    let ghAppInstallationId: string | undefined;
+    let ghAppPrivateKey: string | undefined;
+    let githubOrg: string | undefined;
+    try {
+      const formData = await c.req.formData();
+      ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
+      ghPat = formData.get("ghPat")?.toString();
+      ghAppMode = formData.get("ghAppMode")?.toString() ?? "manual";
+      ghAppId = formData.get("ghAppId")?.toString();
+      ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
+      ghAppPrivateKey = formData.get("ghAppPrivateKey")?.toString();
+      githubOrg = formData.get("githubOrg")?.toString()?.trim();
+    } catch {
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          agentId,
+          error: "Invalid form submission.",
+        }),
+      );
+    }
+
+    if (ghAuthMode === "pat") {
+      const result = await githubProvisioningService.startPatConnect(
+        agentId,
+        ghPat,
+      );
+      if (!result.ok) {
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            agentId: result.agentId,
+            error: result.error,
+          }),
+        );
+      }
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: true,
+          agentId: result.agentId,
+        }),
+      );
+    }
+
+    if (ghAppMode === "auto") {
+      const result = await githubProvisioningService.startAppAutoConnect(
+        agentId,
+        githubOrg,
+        {
+          redirectUri: `${appBaseUrl}/admin/agents/${agentId}/connect-github/callback`,
+          setupUrl: `${appBaseUrl}/admin/agents/${agentId}/connect-github/installed`,
+        },
+      );
+      if (!result.ok) {
+        return html(
+          renderProvisionCompletePage(userEmail, {
+            success: false,
+            agentId,
+            error: result.error,
+          }),
+        );
+      }
+      setCookie(c, GITHUB_PROVISION_STATE_COOKIE, result.provisionStateToken, {
+        httpOnly: true,
+        maxAge: GITHUB_PROVISION_STATE_TTL_SECONDS,
+        sameSite: "Lax",
+        path: "/",
+        secure: appBaseUrl.startsWith("https://"),
+      });
+      // Use c.html() so the Set-Cookie header from setCookie() is included
+      return c.html(
+        renderGithubAppManifestRedirectPage(userEmail, {
+          githubOrg: result.githubOrg,
+          manifest: result.manifest,
+        }),
+      );
+    }
+
+    // ghAppMode === "manual" (default)
+    const result = await githubProvisioningService.startAppManualConnect(
+      agentId,
+      { ghAppId, ghAppInstallationId, ghAppPrivateKey },
+    );
+    if (!result.ok) {
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          agentId: result.agentId,
+          error: result.error,
+        }),
+      );
+    }
+    return html(
+      renderProvisionCompletePage(userEmail, {
+        success: true,
+        agentId: result.agentId,
+      }),
+    );
+  });
+
+  app.get(
+    "/admin/agents/:id/connect-github/callback",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      const rawStateCookie = getCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+      const code = c.req.query("code");
+      const result = await githubProvisioningService.completeConnect(
+        rawStateCookie,
+        code,
+        agentId,
+      );
+
+      if (result.outcome === "invalid_state") {
+        deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+        return html(
+          renderGithubAppInstalledPage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "agent_mismatch") {
+        deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      if (result.outcome === "missing_code") {
+        // Cookie must remain intact so the user can restart the provision flow.
+        return html(
+          renderGithubAppInstalledPage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      // Every other outcome consumed the cookie's manifest code — clear it now.
+      deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+
+      if (result.outcome === "exchange_failed") {
+        return html(
+          renderGithubAppInstalledPage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      // result.outcome === "success"
+      return html(
+        renderGithubAppInstallPage(userEmail, {
+          installUrl: result.installUrl,
+        }),
+      );
+    },
+  );
+
+  app.get(
+    "/admin/agents/:id/connect-github/installed",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const userEmail = c.var.userEmail;
+
+      const rawStateCookie = getCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+      const installationId = c.req.query("installation_id");
+      const result = await githubProvisioningService.completeInstalled(
+        rawStateCookie,
+        installationId,
+        agentId,
+      );
+
+      if (result.outcome === "invalid_state") {
+        deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+        return html(
+          renderGithubAppInstalledPage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      if (result.outcome === "agent_mismatch") {
+        deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+        return new Response("Forbidden", { status: 403 });
+      }
+
+      if (result.outcome === "invalid_installation_id") {
+        deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+        return html(
+          renderGithubAppInstalledPage(userEmail, {
+            success: false,
+            error: result.error,
+          }),
+        );
+      }
+
+      // result.outcome === "success"
+      deleteCookie(c, GITHUB_PROVISION_STATE_COOKIE);
+      return html(renderGithubAppInstalledPage(userEmail, { success: true }));
+    },
+  );
+
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
   app.get("/admin/provision", requireAuth, async (c) => {
@@ -2140,19 +2565,15 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           );
         }
       } else {
-        if (!ghAppId || !/^\d+$/.test(ghAppId)) {
+        if (!isValidGithubAppId(ghAppId)) {
           return formError("GitHub App ID must be a numeric value.");
         }
-        if (!ghAppInstallationId || !/^\d+$/.test(ghAppInstallationId)) {
+        if (!isValidGithubAppInstallationId(ghAppInstallationId)) {
           return formError(
             "GitHub App Installation ID must be a numeric value.",
           );
         }
-        if (
-          !ghAppPrivateKey ||
-          !ghAppPrivateKey.includes("BEGIN") ||
-          !ghAppPrivateKey.includes("PRIVATE KEY")
-        ) {
+        if (!isValidGithubAppPrivateKey(ghAppPrivateKey)) {
           return formError(
             "GitHub App Private Key must be a valid PEM-encoded key.",
           );
@@ -2215,6 +2636,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
 
     // ── Call Slack — first external action ────────────────────────────────
+    // Delegates to SlackProvisioningService.createAppManifest() (UAP-1.1) —
+    // the same apps.manifest.create call the new connect-slack routes use.
 
     let slackResult: {
       appId: string;
@@ -2224,9 +2647,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       signingSecret: string;
     };
     try {
-      const redirectUri = `${appBaseUrl}/admin/provision/complete`;
-      const manifest = buildAgentManifest(agent.name, redirectUri);
-      slackResult = await slackClient.createAppManifest(xoxpToken, manifest);
+      slackResult = await slackProvisioningService.createAppManifest(
+        agent.name,
+        xoxpToken,
+        `${appBaseUrl}/admin/provision/complete`,
+      );
     } catch (err) {
       const msg =
         err instanceof Error
@@ -2267,21 +2692,19 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ghAuthMode === "app" && ghAppMode === "auto";
 
     // ── Sign provision-state cookie ───────────────────────────────────────
+    // Delegates to SlackProvisioningService.signProvisionState() (UAP-1.1),
+    // folding in the wizard-only githubOrg field via `extra`.
 
-    const now = Math.floor(Date.now() / 1000);
-    const provisionToken = await sign(
+    const provisionToken = await slackProvisioningService.signProvisionState(
+      resolvedAgentId,
       {
-        agentId: resolvedAgentId,
         clientId,
         clientSecret,
         signingSecret,
         appId,
-        iat: now,
-        exp: now + PROVISION_STATE_TTL_SECONDS,
-        ...(isGithubAppAutoProvision ? { githubOrg } : {}),
+        redirectUri: `${appBaseUrl}/admin/provision/complete`,
       },
-      sessionSecret,
-      "HS256",
+      isGithubAppAutoProvision ? { githubOrg } : undefined,
     );
 
     // TODO(BP-2.2): this cookie is consumed by the OAuth exchange handler in
@@ -2304,18 +2727,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       SLACK_CLIENT_SECRET: clientSecret,
     };
 
-    if (ghAuthMode === "pat") {
-      newEnv.GH_TOKEN = ghPat ?? "";
-    } else if (!isGithubAppAutoProvision) {
-      // Manual GitHub App paste — unchanged from prior behavior.
-      newEnv.GH_APP_ID = ghAppId ?? "";
-      newEnv.GH_APP_INSTALLATION_ID = ghAppInstallationId ?? "";
-      newEnv.GH_APP_PRIVATE_KEY = ghAppPrivateKey ?? "";
-    }
-    // isGithubAppAutoProvision: GH_APP_ID/GH_APP_PRIVATE_KEY/GH_APP_INSTALLATION_ID
-    // are written later by the github-app/complete and github-app/installed
-    // routes, once the manifest-flow code and installation_id are known.
-
     if (anthropicApiKey) {
       newEnv.ANTHROPIC_API_KEY = anthropicApiKey;
     }
@@ -2328,6 +2739,32 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       newEnv,
       new Set(SECRET_ENV_VARS),
     );
+
+    // GitHub PAT / manual-App-paste env vars are written via
+    // GithubProvisioningService — the same startPatConnect()/
+    // startAppManualConnect() the new connect-github routes call — so the
+    // storage logic lives in exactly one place. isGithubAppAutoProvision:
+    // GH_APP_ID/GH_APP_PRIVATE_KEY/GH_APP_INSTALLATION_ID are written later
+    // by the github-app/complete and github-app/installed routes, once the
+    // manifest-flow code and installation_id are known.
+    if (ghAuthMode === "pat") {
+      const result = await githubProvisioningService.startPatConnect(
+        resolvedAgentId,
+        ghPat,
+      );
+      if (!result.ok) {
+        return formError(result.error);
+      }
+    } else if (!isGithubAppAutoProvision) {
+      // Manual GitHub App paste — unchanged from prior behavior.
+      const result = await githubProvisioningService.startAppManualConnect(
+        resolvedAgentId,
+        { ghAppId, ghAppInstallationId, ghAppPrivateKey },
+      );
+      if (!result.ok) {
+        return formError(result.error);
+      }
+    }
 
     if (isGithubAppAutoProvision) {
       // biome-ignore lint/style/noNonNullAssertion: validated above (ghAppMode === "auto" requires a GITHUB_ORG_PATTERN-valid githubOrg)
@@ -2354,126 +2791,63 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
   });
 
   // GET — OAuth callback → exchange code, store SLACK_BOT_TOKEN, show xapp-token page
+  // Delegates to SlackProvisioningService.completeConnect() (UAP-1.1) — the
+  // handler only owns cookie read/clear + HTML/redirect rendering.
   app.get("/admin/provision/complete", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
-    // Read and validate the provision state cookie
     const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
-    if (!rawStateCookie) {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: false,
-          error:
-            "Provision session expired or missing. Please start the provisioning flow again.",
-        }),
-      );
-    }
-
-    let provisionState: {
-      agentId: string;
-      clientId: string;
-      clientSecret: string;
-      signingSecret: string;
-      appId: string;
-    };
-    try {
-      const payload = (await verify(
-        rawStateCookie,
-        sessionSecret,
-        "HS256",
-      )) as Record<string, unknown>;
-      if (
-        typeof payload.agentId !== "string" ||
-        typeof payload.clientId !== "string" ||
-        typeof payload.clientSecret !== "string" ||
-        typeof payload.signingSecret !== "string" ||
-        typeof payload.appId !== "string"
-      ) {
-        throw new Error("invalid payload shape");
-      }
-      provisionState = {
-        agentId: payload.agentId,
-        clientId: payload.clientId,
-        clientSecret: payload.clientSecret,
-        signingSecret: payload.signingSecret,
-        appId: payload.appId,
-      };
-    } catch {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: false,
-          error:
-            "Provision session expired or invalid. Please start the provisioning flow again.",
-        }),
-      );
-    }
-
-    // Read the OAuth code param before consuming the cookie — if code is absent
-    // the cookie must remain intact so the user can restart the provision flow.
     const code = c.req.query("code");
-    if (!code) {
+    const result = await slackProvisioningService.completeConnect(
+      rawStateCookie,
+      code,
+      `${appBaseUrl}/admin/provision/complete`,
+    );
+
+    if (result.outcome === "invalid_state") {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
-          error:
-            "Authorization was not completed (no OAuth code received). Please restart the provisioning flow from the beginning.",
+          error: result.error,
         }),
       );
     }
 
+    if (result.outcome === "missing_code") {
+      // Cookie must remain intact so the user can restart the provision flow.
+      return html(
+        renderProvisionCompletePage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    // Every other outcome consumed the cookie's OAuth code — clear it now.
     deleteCookie(c, PROVISION_STATE_COOKIE);
 
-    // Exchange the OAuth code for a bot token
-    let botToken: string;
-    try {
-      const result = await slackClient.exchangeOAuthCode(
-        code,
-        provisionState.clientId,
-        provisionState.clientSecret,
-        `${appBaseUrl}/admin/provision/complete`,
-      );
-      botToken = result.botToken;
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error exchanging OAuth code.";
+    if (result.outcome === "exchange_failed") {
       return html(
         renderProvisionCompletePage(userEmail, {
           success: false,
-          error: `OAuth exchange failed: ${msg}`,
+          error: result.error,
         }),
       );
     }
 
-    // Store SLACK_BOT_TOKEN in agent env
-    // Fetch config bundle to get real (unmasked) values for merge check
-    const existingBundle = await agentEnvService.getConfigBundle(
-      provisionState.agentId,
-    );
-    // Use patch() to merge SLACK_BOT_TOKEN without overwriting other keys
-    await agentEnvService.patch(
-      provisionState.agentId,
-      { SLACK_BOT_TOKEN: botToken },
-      new Set(SECRET_ENV_VARS),
-    );
-
-    // If SLACK_APP_TOKEN is already set this is a reinstall (not fresh provisioning).
-    // Skip the xapp-token page and redirect directly to the agent detail page.
-    if (existingBundle?.env.SLACK_APP_TOKEN) {
+    if (result.outcome === "reinstalled") {
       return c.redirect(
-        `/admin/agents/${provisionState.agentId}?success=reinstalled`,
+        `/admin/agents/${result.agentId}?success=reinstalled`,
         302,
       );
     }
 
-    // Render xapp-token page
+    // result.outcome === "needs_app_token"
     return html(
       renderProvisionXappTokenPage(userEmail, {
-        agentId: provisionState.agentId,
+        agentId: result.agentId,
       }),
     );
   });
@@ -2483,159 +2857,125 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return new Response("Not Found", { status: 404 });
   });
 
-  /**
-   * Reads and verifies the slack_provision_state cookie for the GitHub App
-   * manifest-flow routes below. Unlike GET /admin/provision/complete, these
-   * routes only make sense mid-GitHub-App-flow, so a valid githubOrg
-   * (re-validated against GITHUB_ORG_PATTERN — never trust round-tripped
-   * input blindly, even though the JWT is signed) is required in the payload
-   * shape, not just the base Slack fields.
-   */
-  async function readGithubAppProvisionState(c: Context<AdminUIEnv>): Promise<
-    | {
-        agentId: string;
-        githubOrg: string;
-      }
-    | { error: string }
-  > {
-    const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
-    if (!rawStateCookie) {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return {
-        error:
-          "Provision session expired or missing. Please start the provisioning flow again.",
-      };
-    }
-    try {
-      const payload = (await verify(
-        rawStateCookie,
-        sessionSecret,
-        "HS256",
-      )) as Record<string, unknown>;
-      if (
-        typeof payload.agentId !== "string" ||
-        typeof payload.githubOrg !== "string" ||
-        !GITHUB_ORG_PATTERN.test(payload.githubOrg)
-      ) {
-        throw new Error("invalid payload shape");
-      }
-      return { agentId: payload.agentId, githubOrg: payload.githubOrg };
-    } catch {
-      deleteCookie(c, PROVISION_STATE_COOKIE);
-      return {
-        error:
-          "Provision session expired or invalid. Please start the provisioning flow again.",
-      };
-    }
-  }
-
   // GET — manifest-flow redirect target: exchange the one-time code for App
   // credentials, store them, and link the operator to the install page.
+  // Delegates to GithubProvisioningService.completeConnect() (UAP-1.2) — the
+  // handler only owns cookie read/clear + HTML rendering. Reads the
+  // slack_provision_state cookie (not a github-specific one): the legacy
+  // wizard folds githubOrg into the same signed cookie payload used for the
+  // Slack OAuth exchange (see POST /admin/provision/start above) — the
+  // service only cares about the payload shape (agentId + githubOrg), not
+  // which cookie carried it, so this still works unchanged.
   app.get("/admin/provision/github-app/complete", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
-    const state = await readGithubAppProvisionState(c);
-    if ("error" in state) {
-      return html(
-        renderGithubAppInstalledPage(userEmail, {
-          success: false,
-          error: state.error,
-        }),
-      );
-    }
-
-    // Read the code param before consuming the cookie — if code is absent the
-    // cookie must remain intact so the user can restart the provisioning flow.
+    const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
     const code = c.req.query("code");
-    if (!code) {
-      return html(
-        renderGithubAppInstalledPage(userEmail, {
-          success: false,
-          error:
-            "GitHub did not return a manifest code. Please restart the provisioning flow from the beginning.",
-        }),
-      );
-    }
-
-    deleteCookie(c, PROVISION_STATE_COOKIE);
-
-    let exchangeResult: {
-      appId: string;
-      slug: string;
-      pem: string;
-      clientId: string;
-      clientSecret: string;
-    };
-    try {
-      exchangeResult = await githubAppClient.exchangeManifestCode(code);
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error exchanging GitHub App manifest code.";
-      return html(
-        renderGithubAppInstalledPage(userEmail, {
-          success: false,
-          error: `GitHub App creation failed: ${msg}`,
-        }),
-      );
-    }
-
-    await agentEnvService.patch(
-      state.agentId,
-      {
-        GH_APP_ID: exchangeResult.appId,
-        GH_APP_PRIVATE_KEY: exchangeResult.pem,
-      },
-      new Set(SECRET_ENV_VARS),
+    const result = await githubProvisioningService.completeConnect(
+      rawStateCookie,
+      code,
     );
 
+    if (result.outcome === "invalid_state") {
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    if (result.outcome === "missing_code") {
+      // Cookie must remain intact so the user can restart the provisioning flow.
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    // Every other outcome consumed the cookie's manifest code — clear it now.
+    deleteCookie(c, PROVISION_STATE_COOKIE);
+
+    if (result.outcome === "exchange_failed") {
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    if (result.outcome === "agent_mismatch") {
+      // Unreachable — this route never passes an expectedAgentId — but
+      // handled explicitly so the switch below narrows to "success" only.
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    // result.outcome === "success"
     return html(
       renderGithubAppInstallPage(userEmail, {
-        installUrl: `https://github.com/apps/${exchangeResult.slug}/installations/new`,
+        installUrl: result.installUrl,
       }),
     );
   });
 
   // GET — the manifest's setup_url target, reached after the operator installs
-  // the newly-created App. Stores GH_APP_INSTALLATION_ID.
+  // the newly-created App. Stores GH_APP_INSTALLATION_ID. Delegates to
+  // GithubProvisioningService.completeInstalled() (UAP-1.2) — see the
+  // /admin/provision/github-app/complete comment above re: which cookie is read.
   app.get("/admin/provision/github-app/installed", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
 
-    const state = await readGithubAppProvisionState(c);
-    if ("error" in state) {
-      return html(
-        renderGithubAppInstalledPage(userEmail, {
-          success: false,
-          error: state.error,
-        }),
-      );
-    }
-
+    const rawStateCookie = getCookie(c, PROVISION_STATE_COOKIE);
     const installationId = c.req.query("installation_id");
-    if (!installationId || !/^\d+$/.test(installationId)) {
+    const result = await githubProvisioningService.completeInstalled(
+      rawStateCookie,
+      installationId,
+    );
+
+    if (result.outcome === "invalid_state") {
       deleteCookie(c, PROVISION_STATE_COOKIE);
       return html(
         renderGithubAppInstalledPage(userEmail, {
           success: false,
-          error:
-            "GitHub did not return a valid installation ID. Please restart the provisioning flow from the beginning.",
+          error: result.error,
         }),
       );
     }
 
+    if (
+      result.outcome === "invalid_installation_id" ||
+      result.outcome === "agent_mismatch"
+    ) {
+      // "agent_mismatch" is unreachable here — this route never passes an
+      // expectedAgentId — but handled explicitly for exhaustive narrowing.
+      deleteCookie(c, PROVISION_STATE_COOKIE);
+      return html(
+        renderGithubAppInstalledPage(userEmail, {
+          success: false,
+          error: result.error,
+        }),
+      );
+    }
+
+    // result.outcome === "success"
     deleteCookie(c, PROVISION_STATE_COOKIE);
-
-    await agentEnvService.patch(state.agentId, {
-      GH_APP_INSTALLATION_ID: installationId,
-    });
-
     return html(renderGithubAppInstalledPage(userEmail, { success: true }));
   });
 
   // POST /admin/provision/xapp-token — save xapp token, create scoped token, seed crons
+  // Delegates to SlackProvisioningService.saveAppToken() (UAP-1.1) — the
+  // handler only owns form parsing + HTML rendering.
   app.post("/admin/provision/xapp-token", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
     const userEmail = c.var.userEmail;
@@ -2655,63 +2995,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       );
     }
 
-    if (!agentId) {
+    const result = await slackProvisioningService.saveAppToken(
+      agentId,
+      xappToken,
+    );
+
+    if (!result.ok) {
       return html(
         renderProvisionXappTokenPage(userEmail, {
-          agentId: "",
-          error: "Agent ID is required.",
+          agentId: result.agentId,
+          error: result.error,
         }),
       );
     }
 
-    if (!xappToken || !xappToken.startsWith("xapp-")) {
-      return html(
-        renderProvisionXappTokenPage(userEmail, {
-          agentId,
-          error: "App-Level Token must start with xapp-",
-        }),
-      );
-    }
-
-    try {
-      // SHIPWRIGHT_AGENT_API_KEY and SHIPWRIGHT_TASK_STORE_TOKEN are NOT minted
-      // here. K8s-managed agents already have both minted straight into the K8s
-      // Secret by provisioner.provision() (agent-provisioner.ts) — that Secret is
-      // the sole source of truth (via secretKeyRef in the Deployment manifest).
-      // Self-hosted agents never run the containerized entrypoint that reads
-      // SHIPWRIGHT_AGENT_API_KEY (agent/src/entrypoint.ts), and use the
-      // GitHub-backed task-store CLI config instead of a bearer token, so they
-      // don't need either key in AgentEnv. Minting them here previously orphaned
-      // a second, different, unused live credential per key on every provision.
-
-      // Use patch() to merge new keys without overwriting existing env vars
-      await agentEnvService.patch(
-        agentId,
-        { SLACK_APP_TOKEN: xappToken },
-        new Set(SECRET_ENV_VARS),
-      );
-
-      // Seed system crons
-      await agentCronJobService.reconcileSystemCrons(agentId);
-
-      return html(
-        renderProvisionCompletePage(userEmail, {
-          success: true,
-          agentId,
-        }),
-      );
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error completing provisioning.";
-      return html(
-        renderProvisionXappTokenPage(userEmail, {
-          agentId,
-          error: msg,
-        }),
-      );
-    }
+    return html(
+      renderProvisionCompletePage(userEmail, {
+        success: true,
+        agentId: result.agentId,
+      }),
+    );
   });
 
   // ─── Member management (admin only) ──────────────────────────────────────
