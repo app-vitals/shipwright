@@ -26,7 +26,7 @@ stat alone:
    `.integration.test.ts` (all new files). **Reuse** — correct canonical
    unit/integration split (pure orchestration logic vs. the OAuth/manifest-flow calls),
    landed alongside the extraction in the same PR, no gap.
-2. **CFB-4.2 (9ed8c542/b6431e74) — PWA shell + Web Push.** New
+2. **CFB-4.2 (#2935/#2964) — PWA shell + Web Push.** New
    `admin/src/pwa.unit.test.ts`, `pwa-https-gating.smoke.test.ts`,
    `pwa-routes.smoke.test.ts`, `pwa-icons.unit.test.ts`, `push-content.unit.test.ts`,
    `push-crypto.unit.test.ts`, `push-sender.unit.test.ts`, `push-service.unit.test.ts`,
@@ -62,7 +62,7 @@ stat alone:
    redundant-assertion overlap found between `slack-progress.unit.test.ts` and
    `slack.unit.test.ts` (the former exercises the extracted status-posting logic in
    isolation; the latter exercises Bolt event-handler wiring, a different boundary).
-6. **CFB-4.3 (bab67156/928a2b56/a1c573a8) — chat reply-notifier + stall-reaper.**
+6. **CFB-4.3 (#2981/#2940/#2913) — chat reply-notifier + stall-reaper.**
    New `chat/src/reply-notifier.unit.test.ts`, `chat/src/stall-reaper.unit.test.ts`,
    `lib/chat-notify.unit.test.ts`. **Reuse** across all — `stall-reaper.unit.test.ts`
    mirrors the existing `task-store/src/stale-claim-reaper.unit.test.ts`'s established
