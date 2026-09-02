@@ -4673,6 +4673,12 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
     const html = await res.text();
     expect(html.toLowerCase()).toContain("xapp");
     expect(patchCalls.some((c) => "SLACK_BOT_TOKEN" in c.env)).toBe(true);
+    // The rendered xapp-token form must submit to the per-agent connect-slack
+    // route, not the removed /admin/provision/xapp-token alias (UAP-3.3).
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT_ID}/connect-slack/app-token"`,
+    );
+    expect(html).not.toContain('action="/admin/provision/xapp-token"');
   });
 
   it("valid state cookie + code param → persists the resolved slackId through the full HTTP route, and the agent detail page then renders the Sync Manifest button (UAP-1.3 acceptance criterion 2)", async () => {
