@@ -1227,6 +1227,80 @@ export function renderAgentDetailPage(
       isAdmin
         ? `<div class="card">
       <div class="card-title">Slack access</div>
+      ${
+        "SLACK_APP_TOKEN" in envVars &&
+        "GH_APP_ID" in envVars &&
+        "GH_TOKEN" in envVars
+          ? ""
+          : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        ${
+          "SLACK_APP_TOKEN" in envVars
+            ? ""
+            : `<details style="position:relative">
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Connect Slack</summary>
+          <div style="position:absolute;left:0;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Connects this agent to a Slack app. Requires a Slack app configuration token (<span class="mono">xoxe.xoxp-</span>).</p>
+            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/connect-slack" style="display:flex;flex-direction:column;gap:8px">
+              <input
+                name="xoxpToken"
+                type="password"
+                class="form-input mono"
+                placeholder="xoxe.xoxp-..."
+                required
+                style="font-size:12px"
+              />
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Connect Slack</button>
+            </form>
+          </div>
+        </details>`
+        }
+        ${
+          "GH_APP_ID" in envVars
+            ? ""
+            : `<details style="position:relative">
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Set up GitHub App</summary>
+          <div style="position:absolute;left:0;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Creates a GitHub App for this agent from a manifest. You'll be redirected to GitHub to finish creating it under the chosen org.</p>
+            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/connect-github" style="display:flex;flex-direction:column;gap:8px">
+              <input type="hidden" name="ghAuthMode" value="app" />
+              <input type="hidden" name="ghAppMode" value="auto" />
+              <input
+                name="githubOrg"
+                type="text"
+                class="form-input"
+                placeholder="my-org"
+                required
+                style="font-size:12px"
+              />
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Set up GitHub App</button>
+            </form>
+          </div>
+        </details>`
+        }
+        ${
+          "GH_TOKEN" in envVars
+            ? ""
+            : `<details style="position:relative">
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">Add GitHub PAT</summary>
+          <div style="position:absolute;left:0;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">Connects this agent to GitHub using a personal access token.</p>
+            <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/connect-github" style="display:flex;flex-direction:column;gap:8px">
+              <input type="hidden" name="ghAuthMode" value="pat" />
+              <input
+                name="ghPat"
+                type="password"
+                class="form-input mono"
+                placeholder="ghp_..."
+                required
+                style="font-size:12px"
+              />
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">Add GitHub PAT</button>
+            </form>
+          </div>
+        </details>`
+        }
+      </div>`
+      }
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
         <div class="form-group" style="display:flex;align-items:center;gap:6px">
           <input

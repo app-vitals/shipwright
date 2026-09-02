@@ -911,6 +911,300 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("admin@example.com");
   });
 
+  describe("connect-later actions (UAP-2.3)", () => {
+    it("no env vars set: shows Connect Slack, Set up GitHub App, and Add GitHub PAT actions, each wired to the correct connect-* route and agent id", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).toContain("Connect Slack");
+      expect(html).toContain("Set up GitHub App");
+      expect(html).toContain("Add GitHub PAT");
+
+      expect(html).toContain(
+        `<form method="POST" action="/admin/agents/${AGENT_ID}/connect-slack"`,
+      );
+      expect(html).toContain(
+        `<form method="POST" action="/admin/agents/${AGENT_ID}/connect-github"`,
+      );
+      // Two distinct connect-github forms (App auto-provision + PAT) both scoped to this agent id.
+      expect(
+        html.split(`/admin/agents/${AGENT_ID}/connect-github`).length - 1,
+      ).toBeGreaterThanOrEqual(2);
+    });
+
+    it("SLACK_APP_TOKEN present: hides Connect Slack but still shows the GitHub actions", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({
+              env: { SLACK_APP_TOKEN: "xapp-1-abc" },
+              secretKeys: ["SLACK_APP_TOKEN"],
+            }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).not.toContain("Connect Slack");
+      expect(html).toContain("Set up GitHub App");
+      expect(html).toContain("Add GitHub PAT");
+    });
+
+    it("GH_APP_ID present: hides Set up GitHub App but still shows Connect Slack and Add GitHub PAT", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({
+              env: { GH_APP_ID: "12345" },
+              secretKeys: [],
+            }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).toContain("Connect Slack");
+      expect(html).not.toContain("Set up GitHub App");
+      expect(html).toContain("Add GitHub PAT");
+    });
+
+    it("GH_TOKEN present: hides Add GitHub PAT but still shows Connect Slack and Set up GitHub App", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({
+              env: { GH_TOKEN: "ghp_abc" },
+              secretKeys: ["GH_TOKEN"],
+            }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).toContain("Connect Slack");
+      expect(html).toContain("Set up GitHub App");
+      expect(html).not.toContain("Add GitHub PAT");
+    });
+
+    it("GH_APP_ID and GH_TOKEN both present (independent signals): hides both GitHub actions but still shows Connect Slack", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({
+              env: { GH_APP_ID: "12345", GH_TOKEN: "ghp_abc" },
+              secretKeys: ["GH_TOKEN"],
+            }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).toContain("Connect Slack");
+      expect(html).not.toContain("Set up GitHub App");
+      expect(html).not.toContain("Add GitHub PAT");
+    });
+
+    it("all three env vars set: none of the connect-later actions render", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({
+              env: {
+                SLACK_APP_TOKEN: "xapp-1-abc",
+                GH_APP_ID: "12345",
+                GH_TOKEN: "ghp_abc",
+              },
+              secretKeys: ["SLACK_APP_TOKEN", "GH_TOKEN"],
+            }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      expect(html).not.toContain("Connect Slack");
+      expect(html).not.toContain("Set up GitHub App");
+      expect(html).not.toContain("Add GitHub PAT");
+    });
+
+    it("Add GitHub PAT form posts ghAuthMode=pat to the connect-github route", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      const html = await res.text();
+
+      // Isolate the Add GitHub PAT popover block and assert its hidden field + input.
+      const patBlockStart = html.indexOf("Add GitHub PAT");
+      expect(patBlockStart).toBeGreaterThan(-1);
+      const patBlock = html.slice(patBlockStart, patBlockStart + 1500);
+      expect(patBlock).toContain(
+        `action="/admin/agents/${AGENT_ID}/connect-github"`,
+      );
+      expect(patBlock).toContain('name="ghAuthMode" value="pat"');
+      expect(patBlock).toContain('name="ghPat"');
+    });
+
+    it("Set up GitHub App form posts ghAuthMode=app + ghAppMode=auto with a githubOrg field to the connect-github route", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      const html = await res.text();
+
+      const appBlockStart = html.indexOf("Set up GitHub App");
+      expect(appBlockStart).toBeGreaterThan(-1);
+      const appBlock = html.slice(appBlockStart, appBlockStart + 1500);
+      expect(appBlock).toContain(
+        `action="/admin/agents/${AGENT_ID}/connect-github"`,
+      );
+      expect(appBlock).toContain('name="ghAuthMode" value="app"');
+      expect(appBlock).toContain('name="ghAppMode" value="auto"');
+      expect(appBlock).toContain('name="githubOrg"');
+    });
+
+    it("Connect Slack form posts xoxpToken to the connect-slack route", async () => {
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${cookie}` },
+      });
+      const html = await res.text();
+
+      const slackBlockStart = html.indexOf("Connect Slack");
+      expect(slackBlockStart).toBeGreaterThan(-1);
+      const slackBlock = html.slice(slackBlockStart, slackBlockStart + 1500);
+      expect(slackBlock).toContain(
+        `action="/admin/agents/${AGENT_ID}/connect-slack"`,
+      );
+      expect(slackBlock).toContain('name="xoxpToken"');
+    });
+
+    it("non-admin member viewer does not see the connect-later actions (Slack access card is admin-only)", async () => {
+      const MEMBER_EMAIL = "member@example.com";
+      const memberCookie = await makeSessionCookie(
+        SESSION_SECRET,
+        "google-sub-member",
+        MEMBER_EMAIL,
+        false,
+      );
+      const app = createAdminUIApp(
+        makeMockDeps({
+          agentEnvService: {
+            getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+            upsert: async () => {},
+            patch: async () => {},
+            deleteKey: async () => {},
+            getConfigBundle: async () => null,
+          },
+          agentMemberService: {
+            listByEmail: async () => [],
+            exists: async (_agentId: string, email: string) =>
+              email === MEMBER_EMAIL,
+            add: async () => ({
+              id: "m1",
+              agentId: AGENT_ID,
+              email: MEMBER_EMAIL,
+              createdAt: new Date(),
+            }),
+            remove: async () => {},
+            listByAgentId: async () => [],
+          },
+        }),
+      );
+      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+        headers: { Cookie: `admin_session=${memberCookie}` },
+      });
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).not.toContain("Connect Slack");
+      expect(html).not.toContain("Set up GitHub App");
+      expect(html).not.toContain("Add GitHub PAT");
+    });
+  });
+
   it("authenticated GET /admin/agents/new returns 200 with a required type select listing the agent types", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents/new", {
