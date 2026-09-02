@@ -650,7 +650,7 @@ export function renderNewLocalAgentPage(
         <a href="/admin/chat">Chat</a> tab first and connect them later from
         the agent detail page.
       </p>
-      <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
+      <form method="POST" action="/admin/agents" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:16px">
         <div class="form-group">
           <label class="form-label" for="name">Agent name <span style="color:#ef4444">*</span></label>
           <input
@@ -808,10 +808,19 @@ export function renderNewLocalAgentPage(
         </fieldset>
         <fieldset id="github-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication (optional)</legend>
+          <!--
+            ghAppMode disambiguates the two ghAuthMode="app" radios below
+            (Create GitHub App = auto, Use existing GitHub App = manual).
+            Each app-mode radio's onchange sets this hidden field alongside
+            showing/hiding its own fields block; it defaults to "auto" so a
+            plain ghAuthMode=app submission (the historical default) is
+            unaffected. See UAP-5.3.
+          -->
+          <input type="hidden" id="ghAppMode" name="ghAppMode" value="auto" />
           <div class="form-group" style="margin-bottom:12px">
             <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
               <input type="radio" name="ghAuthMode" value="skip" checked
-                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none'"
+                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='none'"
               /> Skip
               <span style="font-weight:400;color:#6b7280">
                 — connect GitHub later from the agent detail page.
@@ -819,13 +828,21 @@ export function renderNewLocalAgentPage(
             </label>
             <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
               <input type="radio" name="ghAuthMode" value="pat"
-                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none'"
+                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='none'"
               /> Personal Access Token
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="app"
+                onchange="document.getElementById('ghAppMode').value='auto';document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block';document.getElementById('gh-app-manual-fields').style.display='none'"
+              /> Create GitHub App
             </label>
             <label style="display:block;font-size:13px;font-weight:500">
               <input type="radio" name="ghAuthMode" value="app"
-                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block'"
-              /> Create GitHub App
+                onchange="document.getElementById('ghAppMode').value='manual';document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='block'"
+              /> Use existing GitHub App
+              <span style="font-weight:400;color:#6b7280">
+                — connect a GitHub App you've already created.
+              </span>
             </label>
           </div>
           <div id="gh-pat-fields" style="display:none">
@@ -840,6 +857,23 @@ export function renderNewLocalAgentPage(
               <input id="githubOrg" name="githubOrg" type="text" class="form-input" placeholder="my-org" />
               <p style="font-size:12px;color:#6b7280;margin-top:4px">
                 You'll be redirected to GitHub to create the App under this organization from a manifest.
+              </p>
+            </div>
+          </div>
+          <div id="gh-app-manual-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="ghAppId">GitHub App ID</label>
+              <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="App ID" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppInstallationId">Installation ID</label>
+              <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="Installation ID" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppPrivateKeyFile">Private Key (.pem)</label>
+              <input id="ghAppPrivateKeyFile" name="ghAppPrivateKeyFile" type="file" accept=".pem" class="form-input" />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                Upload the private key <span class="mono">.pem</span> file you downloaded when creating the GitHub App.
               </p>
             </div>
           </div>

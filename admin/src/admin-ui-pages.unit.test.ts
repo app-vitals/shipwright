@@ -875,10 +875,61 @@ describe("renderNewLocalAgentPage", () => {
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*>/);
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/);
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/);
-    // Explicitly no "paste manually" App mode — only pat + auto-app per the
-    // unified page's 3-way radio (that mode stays exclusive to the legacy
-    // /admin/provision wizard).
-    expect(html).not.toMatch(/name="ghAppMode"/);
+    // UAP-5.3: two ghAuthMode="app" radios now exist (Create GitHub App /
+    // Use existing GitHub App), disambiguated by a shared hidden ghAppMode
+    // field the radios' onchange handlers set to "auto"/"manual".
+    expect(html).toMatch(/id="ghAppMode"/);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/g,
+    );
+    expect(appRadios?.length).toBe(2);
+  });
+
+  // ── UAP-5.3: "Use existing GitHub App" as a 4th ghAuthMode option ─────────
+
+  test("renders a 4th 'Use existing GitHub App' radio revealing App ID, Installation ID, and a PEM file upload", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain("Use existing GitHub App");
+    const manualBlock = html.match(
+      /<div id="gh-app-manual-fields"[^>]*style="display:none"[\s\S]*?<\/div>\s*<\/div>/,
+    )?.[0] as string;
+    expect(manualBlock).toBeDefined();
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppId"[^>]*>/);
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppInstallationId"[^>]*>/);
+    expect(manualBlock).toMatch(
+      /<input[^>]*name="ghAppPrivateKeyFile"[^>]*type="file"[^>]*accept="\.pem"[^>]*>/,
+    );
+  });
+
+  test("the 'Use existing GitHub App' radio's onchange sets the hidden ghAppMode input to 'manual' and shows the manual fields block; 'Create GitHub App' sets it to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*\/>/g,
+    ) as string[];
+    expect(appRadios).toHaveLength(2);
+    const [autoRadio, manualRadio] = appRadios;
+    expect(autoRadio).toContain("ghAppMode').value='auto'");
+    expect(manualRadio).toContain("ghAppMode').value='manual'");
+    expect(manualRadio).toContain("gh-app-manual-fields");
+  });
+
+  test("the hidden ghAppMode input defaults to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const hidden = html.match(
+      /<input[^>]*type="hidden"[^>]*id="ghAppMode"[^>]*>/,
+    )?.[0] as string;
+    expect(hidden).toBeDefined();
+    expect(hidden).toContain('name="ghAppMode"');
+    expect(hidden).toContain('value="auto"');
+  });
+
+  test("the New Agent form gains enctype=multipart/form-data now that it contains a file input", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const formTag = html.match(
+      /<form method="POST" action="\/admin\/agents"[^>]*>/,
+    )?.[0] as string;
+    expect(formTag).toBeDefined();
+    expect(formTag).toContain('enctype="multipart/form-data"');
   });
 
   test("skip is the default checked GitHub auth mode", () => {

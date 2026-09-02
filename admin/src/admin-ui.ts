@@ -1233,6 +1233,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let ghAuthMode: string | undefined;
     let ghPat: string | undefined;
     let githubOrg: string | undefined;
+    let ghAppMode: string | undefined;
+    let ghAppId: string | undefined;
+    let ghAppInstallationId: string | undefined;
+    let ghAppPrivateKey: string | undefined;
     try {
       const formData = await c.req.formData();
       name = formData.get("name")?.toString()?.trim();
@@ -1254,6 +1258,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ghAuthMode = formData.get("ghAuthMode")?.toString()?.trim();
       ghPat = formData.get("ghPat")?.toString();
       githubOrg = formData.get("githubOrg")?.toString()?.trim();
+      ghAppMode = formData.get("ghAppMode")?.toString()?.trim();
+      ghAppId = formData.get("ghAppId")?.toString();
+      ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
+      // UAP-5.3: the "Use existing GitHub App" option submits the private
+      // key as a file upload rather than pasted text — read its contents
+      // server-side, mirroring the per-agent connect-github route.
+      const ghAppPrivateKeyFile = formData.get("ghAppPrivateKeyFile");
+      ghAppPrivateKey =
+        ghAppPrivateKeyFile instanceof File
+          ? await ghAppPrivateKeyFile.text()
+          : undefined;
     } catch {
       return c.redirect("/admin/agents/new", 302);
     }
@@ -1459,7 +1474,25 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         return c.redirect(slackResult.oauthRedirectUrl, 302);
       }
 
-      if (ghAuthMode === "app") {
+      if (ghAuthMode === "app" && ghAppMode === "manual") {
+        // UAP-5.3: "Use existing GitHub App" — validates and persists
+        // GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY directly, no
+        // GitHub API call. On success falls through to the shared
+        // redirectWithMembersWarning below, matching the ghAuthMode=pat
+        // branch's success path.
+        const manualResult =
+          await githubProvisioningService.startAppManualConnect(agent.id, {
+            ghAppId,
+            ghAppInstallationId,
+            ghAppPrivateKey,
+          });
+        if (!manualResult.ok) {
+          return c.redirect(
+            `/admin/agents/${agent.id}?error=${encodeURIComponent(manualResult.error)}`,
+            302,
+          );
+        }
+      } else if (ghAuthMode === "app") {
         const appResult = await githubProvisioningService.startAppAutoConnect(
           agent.id,
           githubOrg,

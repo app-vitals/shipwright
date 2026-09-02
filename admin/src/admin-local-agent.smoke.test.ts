@@ -1153,6 +1153,94 @@ describe("admin UI — new local agent create flow", () => {
     expect(calls.deleted).toEqual([]);
   });
 
+  // ── UAP-5.3: ghAuthMode=app + ghAppMode=manual ("Use existing GitHub App") ──
+
+  it("ghAuthMode=app&ghAppMode=manual with a valid App ID/Installation ID/uploaded PEM file persists GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY and redirects to the agent detail page", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const pemContents =
+      "-----BEGIN RSA PRIVATE KEY-----\nfaketestkeydata\n-----END RSA PRIVATE KEY-----";
+    const form = new FormData();
+    form.append("name", "gh-app-manual-agent");
+    form.append("type", "coding");
+    form.append("runtime", "in-cluster");
+    form.append("ghAuthMode", "app");
+    form.append("ghAppMode", "manual");
+    form.append("ghAppId", "12345");
+    form.append("ghAppInstallationId", "67890");
+    form.append(
+      "ghAppPrivateKeyFile",
+      new File([pemContents], "private-key.pem", {
+        type: "application/x-pem-file",
+      }),
+    );
+
+    const res = await createAdminUIApp(deps).request("/admin/agents", {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    const ghAppIdPatch = calls.envPatches.find((p) => p.env.GH_APP_ID);
+    expect(ghAppIdPatch?.env.GH_APP_ID).toBe("12345");
+    const ghAppInstallationIdPatch = calls.envPatches.find(
+      (p) => p.env.GH_APP_INSTALLATION_ID,
+    );
+    expect(ghAppInstallationIdPatch?.env.GH_APP_INSTALLATION_ID).toBe("67890");
+    const ghAppPrivateKeyPatch = calls.envPatches.find(
+      (p) => p.env.GH_APP_PRIVATE_KEY,
+    );
+    expect(ghAppPrivateKeyPatch?.env.GH_APP_PRIVATE_KEY).toBe(pemContents);
+  });
+
+  it("ghAuthMode=app&ghAppMode=manual with a missing/invalid App ID redirects to the detail page with an error — agent is NOT rolled back", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const form = new FormData();
+    form.append("name", "gh-app-manual-bad-id");
+    form.append("type", "coding");
+    form.append("runtime", "in-cluster");
+    form.append("ghAuthMode", "app");
+    form.append("ghAppMode", "manual");
+    form.append("ghAppInstallationId", "67890");
+    form.append(
+      "ghAppPrivateKeyFile",
+      new File(
+        ["-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----"],
+        "private-key.pem",
+      ),
+    );
+
+    const res = await createAdminUIApp(deps).request("/admin/agents", {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toStartWith(`/admin/agents/${NEW_AGENT_ID}?error=`);
+    expect(calls.deleted).toEqual([]);
+    expect(calls.envPatches.find((p) => p.env.GH_APP_ID)).toBeUndefined();
+  });
+
+  it("ghAuthMode=app with ghAppMode omitted still runs the auto/manifest flow — no regression to the default", async () => {
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      provisioner: { ...base.provisioner, canProvision: true },
+    });
+    const res = await postAgent(deps, {
+      name: "gh-app-default-auto",
+      type: "coding",
+      runtime: "in-cluster",
+      ghAuthMode: "app",
+      githubOrg: "my-org",
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("github.com/organizations/my-org/settings/apps/new");
+  });
+
   it("ghAuthMode=skip (or omitted) with connectSlack unchecked behaves exactly like today — plain redirect to detail page", async () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
