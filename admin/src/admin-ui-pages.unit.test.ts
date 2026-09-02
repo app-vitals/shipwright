@@ -993,6 +993,116 @@ describe("renderNewLocalAgentPage", () => {
   });
 });
 
+// ─── renderAgentDetailPage — connect-later actions (UAP-2.3 / UAP-5.4) ───────
+
+describe("renderAgentDetailPage — connect-later actions", () => {
+  function render(envVars: Record<string, string>): string {
+    return renderAgentDetailPage(
+      AGENT,
+      envVars,
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("Connect Slack action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    expect(html).toContain("Connect Slack");
+    const slackForm = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-slack"[\s\S]*?<\/form>/,
+    )?.[0] as string;
+    expect(slackForm).toBeDefined();
+    const inputCount = (slackForm.match(/<input\b/g) ?? []).length;
+    expect(inputCount).toBe(1);
+    expect(slackForm).toMatch(/name="xoxpToken"[^>]*type="password"/);
+  });
+
+  test("Connect Slack action is hidden once SLACK_APP_TOKEN is set", () => {
+    const html = render({ SLACK_APP_TOKEN: "xoxe.xoxp-abc" });
+    expect(html).not.toContain("Connect Slack<");
+  });
+
+  test("Set up GitHub App (auto) action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const autoForm = forms.find((f) => f.includes('value="auto"')) as string;
+    expect(autoForm).toBeDefined();
+    const inputCount = (autoForm.match(/<input\b/g) ?? []).length;
+    // 2 hidden fields (ghAuthMode, ghAppMode) + 1 visible githubOrg field.
+    expect(inputCount).toBe(3);
+    expect(autoForm).toMatch(/name="githubOrg"[^>]*type="text"/);
+  });
+
+  test("Add GitHub PAT action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const patForm = forms.find((f) => f.includes('name="ghPat"')) as string;
+    expect(patForm).toBeDefined();
+    // 1 hidden field (ghAuthMode=pat) + 1 visible ghPat field.
+    const inputCount = (patForm.match(/<input\b/g) ?? []).length;
+    expect(inputCount).toBe(2);
+    expect(patForm).toMatch(/name="ghPat"[^>]*type="password"/);
+  });
+
+  test("Set up GitHub App and Add GitHub PAT are both hidden once GH_APP_ID/GH_TOKEN are set", () => {
+    const html = render({ GH_APP_ID: "12345", GH_TOKEN: "ghp_abc" });
+    expect(html).not.toContain("Set up GitHub App<");
+    expect(html).not.toContain("Add GitHub PAT<");
+  });
+
+  test("'Use existing GitHub App' action appears when GH_APP_ID is not set", () => {
+    const html = render({});
+    expect(html).toContain("Use existing GitHub App");
+  });
+
+  test("'Use existing GitHub App' action is hidden once GH_APP_ID is set (same gate as auto flow)", () => {
+    const html = render({ GH_APP_ID: "12345" });
+    expect(html).not.toContain("Use existing GitHub App");
+  });
+
+  test("'Use existing GitHub App' action posts to connect-github with hidden ghAuthMode=app/ghAppMode=manual", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const manualForm = forms.find(
+      (f) => f.includes('value="manual"') && f.includes("ghAppId"),
+    ) as string;
+    expect(manualForm).toBeDefined();
+    expect(manualForm).toMatch(
+      /<input[^>]*type="hidden"[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/,
+    );
+    expect(manualForm).toMatch(
+      /<input[^>]*type="hidden"[^>]*name="ghAppMode"[^>]*value="manual"[^>]*>/,
+    );
+  });
+
+  test("'Use existing GitHub App' action renders three fields: App ID text, Installation ID text, Private Key file", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const manualForm = forms.find(
+      (f) => f.includes('value="manual"') && f.includes("ghAppId"),
+    ) as string;
+    expect(manualForm).toMatch(/name="ghAppId"[^>]*type="text"/);
+    expect(manualForm).toMatch(/name="ghAppInstallationId"[^>]*type="text"/);
+    expect(manualForm).toMatch(/name="ghAppPrivateKeyFile"[^>]*type="file"/);
+    // The <form> itself must allow file uploads.
+    expect(manualForm).toContain('enctype="multipart/form-data"');
+  });
+});
+
 // ─── renderAgentDetailPage — env vars section ────────────────────────────────
 
 describe("renderAgentDetailPage — env vars", () => {

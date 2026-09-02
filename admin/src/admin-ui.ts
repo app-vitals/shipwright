@@ -2420,7 +2420,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ghAppMode = formData.get("ghAppMode")?.toString() ?? "manual";
       ghAppId = formData.get("ghAppId")?.toString();
       ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
-      ghAppPrivateKey = formData.get("ghAppPrivateKey")?.toString();
+      // The detail page's "Use existing GitHub App" action (UAP-5.4) submits
+      // the private key as a file upload rather than pasted text — read its
+      // contents server-side. Falls back to a plain ghAppPrivateKey text
+      // field for back-compat with any other caller still posting it that
+      // way (e.g. API clients).
+      const ghAppPrivateKeyFile = formData.get("ghAppPrivateKeyFile");
+      ghAppPrivateKey =
+        ghAppPrivateKeyFile instanceof File
+          ? await ghAppPrivateKeyFile.text()
+          : formData.get("ghAppPrivateKey")?.toString();
       githubOrg = formData.get("githubOrg")?.toString()?.trim();
     } catch {
       return html(

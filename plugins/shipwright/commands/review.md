@@ -1052,12 +1052,13 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
    **Never re-execute this POST.** If parsing fails, re-parse the temp file — do not
    re-run `gh api -X POST`, which submits a duplicate review that cannot be deleted or
    dismissed (GitHub does not allow deleting/dismissing COMMENTED reviews via the API).
-3. Capture `html_url` from the temp file:
+3. Capture `html_url` and `submitted_at` from the temp file:
    ```bash
    REVIEW_URL=$(jq -r '.html_url // empty' "/tmp/pr_post_{pr}.json")
+   SUBMITTED_AT=$(jq -r '.submitted_at // empty' "/tmp/pr_post_{pr}.json")
    ```
 4. **Check the post succeeded** before doing anything else — non-zero exit and/or a missing/empty `REVIEW_URL` both count as failure:
-   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 5-6 below.
+   - **Success** (`POST_EXIT == 0` and `REVIEW_URL` present): continue to steps 5-7 below.
    - **Failure**: the GitHub post did not land, so nothing was actually reviewed at HEAD.
      Do not run Step 11b — marking the record posted here would let
      `check-review.ts`'s `commitSha`/`reviewState` dedup permanently hide this PR from
@@ -1070,8 +1071,38 @@ bun run "${CLAUDE_PLUGIN_ROOT}/scripts/compute-review-verdict.ts" \
         ```
      2. Print a warning: `Warning: review post for #{pr} failed (exit {POST_EXIT}) — released claim, will retry next pass.`
      3. Stop — do not proceed to Step 11b.
-5. Run Step 11b to mark the PR record posted.
-6. Print: `Posted review for #{pr}: {REVIEW_URL}`
+5. **Self-review ledger write (PFL-5.2).** `isResolvedByLedger` (PFL-3.2) can only exclude a
+   self-clean-approve once a ledger entry exists for it — but the PFL-2.1 section above only
+   ledgers a *prior* review, evaluated at the start of a *subsequent* pass. A PR whose only
+   review ever posted is a clean self-approve never gets a subsequent pass (nothing changed
+   to re-review, per `check-review.ts`'s own candidacy gate), so PFL-2.1 never runs for it and
+   no ledger entry is ever written — `isResolvedByLedger` stays false for that review forever.
+   Close the gap by ledgering THIS pass's own just-posted review immediately, instead of
+   waiting for a future pass that may never come. The condition below is exactly the one that
+   produces `verdictLabel: APPROVE` in Step 10's truth table (the only row where
+   `selfReview` is true and the verdict is a clean approve) — the same condition
+   `isSelfCleanApprove` matches against the posted body:
+   ```bash
+   if [ "$SELF_REVIEW" = "true" ] && [ "$UNADDRESSED_FINDINGS" = "false" ] && \
+      [ "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" = "false" ] && [ -n "$SUBMITTED_AT" ]; then
+     curl -sf -X POST \
+       -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+       -H "Content-Type: application/json" \
+       "$SHIPWRIGHT_TASK_STORE_URL/prs/${PR_RECORD_ID}/findings" \
+       -d "{\"ref\": \"${headRefOid}@${SUBMITTED_AT}\", \"disposition\": \"resolved\", \"source\": \"review\", \"evidence\": \"Self-review is a clean APPROVE with no blocking findings (recorded at post time, PFL-5.2).\"}" \
+       >/dev/null 2>&1 || echo "⚠ ledger POST failed for ${headRefOid}@${SUBMITTED_AT} — continuing (non-fatal)"
+   fi
+   ```
+   `SELF_REVIEW`, `UNADDRESSED_FINDINGS`, and `CURRENT_PASS_HAS_BLOCKING_FINDINGS` carry over
+   from Step 10 unchanged. Best-effort, non-fatal on failure — same as PFL-2.1's POSTs — but
+   per the PR #89 ordering lesson above, this POST **must complete before step 6 (Step 11b's
+   `/complete` call)** runs next, not deferred to "near the end of the turn."
+   **Scoping note:** this step only fires on this direct-post path. `/shipwright:review-staged`'s
+   separate "post it" action, which also runs Step 11b, does not populate `SUBMITTED_AT` — the
+   `if` above simply no-ops there today (a known, flagged follow-up, not a silent gap: staged
+   posting is the non-default `auto_post_reviews: false` path).
+6. Run Step 11b to mark the PR record posted.
+7. Print: `Posted review for #{pr}: {REVIEW_URL}`
 
 ### If `auto_post_reviews` is false (staged):
 

@@ -4178,6 +4178,54 @@ describe("admin UI — POST /admin/agents/:id/connect-github (mode=app, app-manu
     ).toBe(true);
   });
 
+  it("UAP-5.4: valid App ID/Installation ID/PEM uploaded as a file → 200 completion page, GH_APP_PRIVATE_KEY stored with the file's text content", async () => {
+    const patchCalls: Array<{ env: Record<string, string> }> = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async (_agentId: string, env: Record<string, string>) => {
+            patchCalls.push({ env });
+          },
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+
+    const pemContents =
+      "-----BEGIN RSA PRIVATE KEY-----\nfaketestkeydata\n-----END RSA PRIVATE KEY-----";
+    const form = new FormData();
+    form.append("ghAuthMode", "app");
+    form.append("ghAppMode", "manual");
+    form.append("ghAppId", "12345");
+    form.append("ghAppInstallationId", "67890");
+    form.append(
+      "ghAppPrivateKeyFile",
+      new File([pemContents], "private-key.pem", {
+        type: "application/x-pem-file",
+      }),
+    );
+
+    const res = await app.request(`/admin/agents/${AGENT_ID}/connect-github`, {
+      method: "POST",
+      body: form,
+      headers: {
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(patchCalls.some((c) => c.env.GH_APP_ID === "12345")).toBe(true);
+    expect(
+      patchCalls.some((c) => c.env.GH_APP_INSTALLATION_ID === "67890"),
+    ).toBe(true);
+    expect(
+      patchCalls.some((c) => c.env.GH_APP_PRIVATE_KEY === pemContents),
+    ).toBe(true);
+  });
+
   it("non-numeric App ID → error, no env write", async () => {
     let patched = false;
     const app = createAdminUIApp(
