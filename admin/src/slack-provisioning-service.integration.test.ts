@@ -22,6 +22,10 @@ import type { AppManifest } from "./slack-provisioning-client.ts";
 const SESSION_SECRET = "test-admin-session-secret-32-bytes!";
 const AGENT_ID = "agent-test-123";
 const APP_BASE_URL = "https://example.com";
+/** The per-agent connect-slack callback the new UAP-1.1 route registers with Slack. */
+const CONNECT_SLACK_CALLBACK = `${APP_BASE_URL}/admin/agents/${AGENT_ID}/connect-slack/callback`;
+/** The legacy wizard's OAuth completion route. */
+const LEGACY_PROVISION_COMPLETE = `${APP_BASE_URL}/admin/provision/complete`;
 
 // ─── Cassette fixture ─────────────────────────────────────────────────────────
 
@@ -37,6 +41,10 @@ interface ProvisionCassette {
 
 class RecordedSlackClient implements AdminUISlackClient {
   private cassette: ProvisionCassette;
+  /** Manifests passed to createAppManifest(), in call order — lets tests assert on the registered OAuth redirect_urls. */
+  readonly createdManifests: AppManifest[] = [];
+  /** redirect_uri values passed to exchangeOAuthCode(), in call order. */
+  readonly exchangeRedirectUris: string[] = [];
 
   constructor(cassettePath: string) {
     this.cassette = JSON.parse(readFileSync(cassettePath, "utf-8"));
@@ -44,7 +52,7 @@ class RecordedSlackClient implements AdminUISlackClient {
 
   async createAppManifest(
     _xoxpToken: string,
-    _manifest: AppManifest,
+    manifest: AppManifest,
   ): Promise<{
     appId: string;
     oauthRedirectUrl: string;
@@ -52,6 +60,7 @@ class RecordedSlackClient implements AdminUISlackClient {
     clientSecret: string;
     signingSecret: string;
   }> {
+    this.createdManifests.push(manifest);
     return this.cassette.createAppManifest;
   }
 
@@ -65,8 +74,9 @@ class RecordedSlackClient implements AdminUISlackClient {
     _code: string,
     _clientId: string,
     _clientSecret: string,
-    _redirectUri: string,
+    redirectUri: string,
   ): Promise<{ botToken: string }> {
+    this.exchangeRedirectUris.push(redirectUri);
     return { botToken: "xoxb-test-cassette-bot-token" };
   }
 }
@@ -149,6 +159,9 @@ async function makeProvisionStateToken(
     clientSecret: string;
     signingSecret: string;
     appId: string;
+    redirectUri: string;
+    /** When true, omit redirectUri entirely (simulates a cookie signed before the field existed). */
+    omitRedirectUri: boolean;
     expired: boolean;
     secret: string;
   }> = {},
@@ -161,6 +174,9 @@ async function makeProvisionStateToken(
       clientSecret: overrides.clientSecret ?? "test-client-secret",
       signingSecret: overrides.signingSecret ?? "test-signing-secret",
       appId: overrides.appId ?? "A0123456789",
+      ...(overrides.omitRedirectUri
+        ? {}
+        : { redirectUri: overrides.redirectUri ?? CONNECT_SLACK_CALLBACK }),
       iat: now,
       exp: overrides.expired ? now - 10 : now + 300,
     },
@@ -177,6 +193,7 @@ describe("SlackProvisioningService.startConnect", () => {
     const result = await service.startConnect(
       AGENT_ID,
       "xoxe.xoxp-1-fake-token-for-testing",
+      CONNECT_SLACK_CALLBACK,
     );
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("expected ok result");
@@ -187,9 +204,45 @@ describe("SlackProvisioningService.startConnect", () => {
     expect(result.provisionStateToken.length).toBeGreaterThan(0);
   });
 
+  it("registers the caller-supplied redirectUri in the app manifest's OAuth redirect_urls (per-agent connect-slack flow), and threads it into the signed state so the OAuth exchange reuses the same URL", async () => {
+    const slackClient = new RecordedSlackClient(CASSETTE_PATH);
+    const service = makeService({ slackClient });
+
+    const result = await service.startConnect(
+      AGENT_ID,
+      "xoxe.xoxp-1-fake-token-for-testing",
+      CONNECT_SLACK_CALLBACK,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+
+    // The manifest registered with Slack must carry the per-agent callback,
+    // NOT the legacy /admin/provision/complete route.
+    expect(slackClient.createdManifests.length).toBe(1);
+    expect(
+      slackClient.createdManifests[0].oauth_config?.redirect_urls,
+    ).toEqual([CONNECT_SLACK_CALLBACK]);
+
+    // And the OAuth exchange must use the identical URL, recovered from the
+    // signed state cookie — Slack rejects a mismatch. Prove it by completing
+    // with the token this call produced.
+    const completeResult = await service.completeConnect(
+      result.provisionStateToken,
+      "valid-oauth-code",
+      // Fallback would be the wrong (legacy) URL — the state's own value must win.
+      LEGACY_PROVISION_COMPLETE,
+    );
+    expect(completeResult.outcome).toBe("needs_app_token");
+    expect(slackClient.exchangeRedirectUris).toEqual([CONNECT_SLACK_CALLBACK]);
+  });
+
   it("missing xoxpToken → ok: false with validation error, no Slack call", async () => {
     const service = makeService();
-    const result = await service.startConnect(AGENT_ID, undefined);
+    const result = await service.startConnect(
+      AGENT_ID,
+      undefined,
+      CONNECT_SLACK_CALLBACK,
+    );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected error result");
     expect(result.error).toContain("xoxe.xoxp-");
@@ -200,6 +253,7 @@ describe("SlackProvisioningService.startConnect", () => {
     const result = await service.startConnect(
       AGENT_ID,
       "xoxb-not-a-user-token",
+      CONNECT_SLACK_CALLBACK,
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected error result");
@@ -211,6 +265,7 @@ describe("SlackProvisioningService.startConnect", () => {
     const result = await service.startConnect(
       "nonexistent-agent",
       "xoxe.xoxp-1-fake-token-for-testing",
+      CONNECT_SLACK_CALLBACK,
     );
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected error result");
@@ -224,7 +279,11 @@ describe("SlackProvisioningService.completeConnect", () => {
     const service = makeService({ patchCalls });
     const token = await makeProvisionStateToken();
 
-    const result = await service.completeConnect(token, "valid-oauth-code");
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("needs_app_token");
     if (result.outcome !== "needs_app_token") throw new Error("wrong outcome");
@@ -252,7 +311,11 @@ describe("SlackProvisioningService.completeConnect", () => {
     });
     const token = await makeProvisionStateToken();
 
-    const result = await service.completeConnect(token, "valid-oauth-code");
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("reinstalled");
     if (result.outcome !== "reinstalled") throw new Error("wrong outcome");
@@ -263,7 +326,11 @@ describe("SlackProvisioningService.completeConnect", () => {
     const patchCalls: PatchCall[] = [];
     const service = makeService({ patchCalls });
 
-    const result = await service.completeConnect(undefined, "some-code");
+    const result = await service.completeConnect(
+      undefined,
+      "some-code",
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("invalid_state");
     expect(patchCalls.length).toBe(0);
@@ -274,7 +341,11 @@ describe("SlackProvisioningService.completeConnect", () => {
     const service = makeService({ patchCalls });
     const token = await makeProvisionStateToken({ expired: true });
 
-    const result = await service.completeConnect(token, "some-code");
+    const result = await service.completeConnect(
+      token,
+      "some-code",
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("invalid_state");
     expect(patchCalls.length).toBe(0);
@@ -285,10 +356,50 @@ describe("SlackProvisioningService.completeConnect", () => {
     const service = makeService({ patchCalls });
     const token = await makeProvisionStateToken();
 
-    const result = await service.completeConnect(token, undefined);
+    const result = await service.completeConnect(
+      token,
+      undefined,
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("missing_code");
     expect(patchCalls.length).toBe(0);
+  });
+
+  it("legacy wizard flow: state carries /admin/provision/complete → OAuth exchange uses that URL, not the per-agent callback", async () => {
+    const slackClient = new RecordedSlackClient(CASSETTE_PATH);
+    const service = makeService({ slackClient });
+    const token = await makeProvisionStateToken({
+      redirectUri: LEGACY_PROVISION_COMPLETE,
+    });
+
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      LEGACY_PROVISION_COMPLETE,
+    );
+
+    expect(result.outcome).toBe("needs_app_token");
+    expect(slackClient.exchangeRedirectUris).toEqual([
+      LEGACY_PROVISION_COMPLETE,
+    ]);
+  });
+
+  it("state cookie predating the redirectUri field → OAuth exchange falls back to the caller-supplied URL", async () => {
+    const slackClient = new RecordedSlackClient(CASSETTE_PATH);
+    const service = makeService({ slackClient });
+    const token = await makeProvisionStateToken({ omitRedirectUri: true });
+
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      LEGACY_PROVISION_COMPLETE,
+    );
+
+    expect(result.outcome).toBe("needs_app_token");
+    expect(slackClient.exchangeRedirectUris).toEqual([
+      LEGACY_PROVISION_COMPLETE,
+    ]);
   });
 
   it("OAuth exchange failure → exchange_failed outcome", async () => {
@@ -308,7 +419,11 @@ describe("SlackProvisioningService.completeConnect", () => {
     });
     const token = await makeProvisionStateToken();
 
-    const result = await service.completeConnect(token, "bad-code");
+    const result = await service.completeConnect(
+      token,
+      "bad-code",
+      CONNECT_SLACK_CALLBACK,
+    );
 
     expect(result.outcome).toBe("exchange_failed");
     if (result.outcome !== "exchange_failed") throw new Error("wrong outcome");

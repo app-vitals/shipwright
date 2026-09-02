@@ -2119,6 +2119,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const result = await slackProvisioningService.startConnect(
       agentId,
       xoxpToken,
+      `${appBaseUrl}/admin/agents/${agentId}/connect-slack/callback`,
     );
 
     if (!result.ok) {
@@ -2154,6 +2155,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       const result = await slackProvisioningService.completeConnect(
         rawStateCookie,
         code,
+        `${appBaseUrl}/admin/agents/${agentId}/connect-slack/callback`,
       );
 
       if (result.outcome === "invalid_state") {
@@ -2648,6 +2650,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       slackResult = await slackProvisioningService.createAppManifest(
         agent.name,
         xoxpToken,
+        `${appBaseUrl}/admin/provision/complete`,
       );
     } catch (err) {
       const msg =
@@ -2694,7 +2697,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     const provisionToken = await slackProvisioningService.signProvisionState(
       resolvedAgentId,
-      { clientId, clientSecret, signingSecret, appId },
+      {
+        clientId,
+        clientSecret,
+        signingSecret,
+        appId,
+        redirectUri: `${appBaseUrl}/admin/provision/complete`,
+      },
       isGithubAppAutoProvision ? { githubOrg } : undefined,
     );
 
@@ -2793,6 +2802,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const result = await slackProvisioningService.completeConnect(
       rawStateCookie,
       code,
+      `${appBaseUrl}/admin/provision/complete`,
     );
 
     if (result.outcome === "invalid_state") {

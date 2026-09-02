@@ -37,6 +37,15 @@ export interface ProvisionStatePayload {
   clientSecret: string;
   signingSecret: string;
   appId: string;
+  /**
+   * The OAuth `redirect_uri` registered in the app manifest for this
+   * provisioning attempt. Persisted so completeConnect() replays the exact
+   * same value to `oauth.v2.access` (Slack requires the exchange's
+   * `redirect_uri` to match a registered one). Optional for backwards
+   * compatibility with any cookie signed before this field existed, in which
+   * case the caller-supplied fallback is used.
+   */
+  redirectUri?: string;
 }
 
 export type StartConnectResult =
@@ -104,10 +113,6 @@ export interface SlackProvisioningServiceDeps {
 export class SlackProvisioningService {
   constructor(private readonly deps: SlackProvisioningServiceDeps) {}
 
-  private redirectUri(): string {
-    return `${this.deps.appBaseUrl}/admin/provision/complete`;
-  }
-
   /**
    * Calls apps.manifest.create for `agentName` and returns the raw Slack
    * result (app id, OAuth authorize URL, and OAuth credentials). Low-level
@@ -116,12 +121,22 @@ export class SlackProvisioningService {
    * credentials to sign its own provision-state cookie (which additionally
    * carries `githubOrg` for the GitHub-App-auto-provision sub-flow), so it
    * calls this instead of startConnect().
+   *
+   * `redirectUri` is supplied by the caller and becomes the manifest's OAuth
+   * `redirect_urls` entry, so both the legacy wizard (passing
+   * `/admin/provision/complete`) and the new per-agent connect-slack route
+   * (passing `/admin/agents/:id/connect-slack/callback`) can reuse this same
+   * manifest-building logic while registering different OAuth callback URLs
+   * with Slack. Slack requires the `redirect_uri` sent to `oauth.v2.access`
+   * to match one of the app's registered `redirect_urls`, so the same value
+   * must be threaded through to completeConnect()'s exchange call below.
    */
   async createAppManifest(
     agentName: string,
     xoxpToken: string,
+    redirectUri: string,
   ): Promise<SlackAppManifestResult> {
-    const manifest = buildAgentManifest(agentName, this.redirectUri());
+    const manifest = buildAgentManifest(agentName, redirectUri);
     return this.deps.slackClient.createAppManifest(xoxpToken, manifest);
   }
 
@@ -138,6 +153,11 @@ export class SlackProvisioningService {
       clientSecret: string;
       signingSecret: string;
       appId: string;
+      /**
+       * The manifest's registered OAuth `redirect_uri` for this attempt,
+       * replayed verbatim to `oauth.v2.access` by completeConnect().
+       */
+      redirectUri: string;
     },
     extra?: Record<string, unknown>,
   ): Promise<string> {
@@ -163,10 +183,18 @@ export class SlackProvisioningService {
    * Mirrors the Slack branch of the legacy POST /admin/provision/start
    * handler (validation + apps.manifest.create + cookie payload), but for an
    * agent that already exists — no agent-creation/rollback orchestration.
+   *
+   * `redirectUri` is threaded through to createAppManifest() (registered as
+   * the app's OAuth `redirect_urls`) and folded into the signed
+   * provision-state cookie so completeConnect() can replay the identical URL
+   * to `oauth.v2.access` — Slack rejects an exchange whose `redirect_uri`
+   * doesn't match a registered one. The per-agent connect-slack route passes
+   * its own `/admin/agents/:id/connect-slack/callback` here.
    */
   async startConnect(
     agentId: string,
     xoxpToken: string | undefined,
+    redirectUri: string,
   ): Promise<StartConnectResult> {
     if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
       return {
@@ -182,7 +210,11 @@ export class SlackProvisioningService {
 
     let slackResult: SlackAppManifestResult;
     try {
-      slackResult = await this.createAppManifest(agent.name, xoxpToken);
+      slackResult = await this.createAppManifest(
+        agent.name,
+        xoxpToken,
+        redirectUri,
+      );
     } catch (err) {
       const msg =
         err instanceof Error
@@ -199,6 +231,7 @@ export class SlackProvisioningService {
       clientSecret,
       signingSecret,
       appId,
+      redirectUri,
     });
 
     return { ok: true, provisionStateToken, oauthRedirectUrl };
@@ -214,10 +247,17 @@ export class SlackProvisioningService {
    * decides whether the "invalid state" outcome should tell the caller to
    * clear the cookie (yes, for invalid_state) or not (no, for missing_code,
    * where the cookie must survive a retry).
+   *
+   * `fallbackRedirectUri` is used for the OAuth exchange only when the signed
+   * state cookie predates the `redirectUri` field (cookies signed before this
+   * fix). New cookies carry their own per-flow redirect URI, so callers pass
+   * their own flow's URL as the fallback to preserve behavior for in-flight
+   * legacy sessions.
    */
   async completeConnect(
     rawStateCookie: string | undefined,
     code: string | undefined,
+    fallbackRedirectUri: string,
   ): Promise<CompleteConnectResult> {
     if (!rawStateCookie) {
       return {
@@ -249,6 +289,10 @@ export class SlackProvisioningService {
         clientSecret: payload.clientSecret,
         signingSecret: payload.signingSecret,
         appId: payload.appId,
+        redirectUri:
+          typeof payload.redirectUri === "string"
+            ? payload.redirectUri
+            : undefined,
       };
     } catch {
       return {
@@ -272,7 +316,7 @@ export class SlackProvisioningService {
         code,
         provisionState.clientId,
         provisionState.clientSecret,
-        this.redirectUri(),
+        provisionState.redirectUri ?? fallbackRedirectUri,
       );
       botToken = result.botToken;
     } catch (err) {
