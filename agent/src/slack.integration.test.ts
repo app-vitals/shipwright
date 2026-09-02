@@ -1287,6 +1287,48 @@ describe("app_mention handler", () => {
     expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
+  test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips say() (STS2-2.1 AC #4)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client, say } = await invokeMention({
+      channel: "C999",
+      ts: "222.333",
+    });
+
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toContainEqual({
+      type: "markdown_text",
+      text: "Claude response text",
+    });
+    // Delivered via the stream — say() is not used for the real reply.
+    expect(say).not.toHaveBeenCalled();
+  });
+
+  test("falls back to say() when chat.appendStream rejects (delivery failure never drops the reply) (STS2-2.1 AC #4)", async () => {
+    const client = makeMockClient();
+    client.chat.appendStream.mockImplementation(async () => {
+      throw new Error("streaming_mode_mismatch");
+    });
+    const say = makeSay();
+    createSlackApp({ thinkingStepsEnabled: true });
+    await capturedMentionHandler?.({
+      event: {
+        text: "<@UBOT> do something",
+        channel: "C999",
+        ts: "222.333",
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledWith({
+      text: "[formatted] Claude response text",
+      thread_ts: "222.333",
+    });
+  });
+
   test("passes an onProgress function through to the runner as the third arg on mention (AC #1)", async () => {
     await invokeMention({ channel: "C999", ts: "222.333" });
     const call = mockRunClaude.mock.calls.at(-1) as unknown[];
@@ -2390,6 +2432,53 @@ describe("reaction_added handler", () => {
       task_display_mode: "timeline",
     });
     expect(client.chat.stopStream).toHaveBeenCalled();
+  });
+
+  test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips client.chat.postMessage() (STS2-2.1 AC #4)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const client = makeMockClient();
+    await capturedReactionAddedHandler?.({
+      event: {
+        reaction: "thumbsup",
+        item: { type: "message", channel: "D1", ts: "100.1" },
+        item_user: "UBOT123",
+        user: "U-DAN",
+      },
+      client,
+    });
+
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toContainEqual({
+      type: "markdown_text",
+      text: "Claude response text",
+    });
+    // Delivered via the stream — postMessage() is not used for the real reply.
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("falls back to client.chat.postMessage() when chat.appendStream rejects (delivery failure never drops the reply) (STS2-2.1 AC #4)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const client = makeMockClient();
+    client.chat.appendStream.mockImplementation(async () => {
+      throw new Error("streaming_mode_mismatch");
+    });
+    await capturedReactionAddedHandler?.({
+      event: {
+        reaction: "thumbsup",
+        item: { type: "message", channel: "D1", ts: "100.1" },
+        item_user: "UBOT123",
+        user: "U-DAN",
+      },
+      client,
+    });
+    expect(client.chat.postMessage).toHaveBeenCalledWith({
+      channel: "D1",
+      text: "[formatted] Claude response text",
+    });
   });
 
   test("builds prompt containing emoji name and display name", async () => {
