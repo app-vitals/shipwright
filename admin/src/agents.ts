@@ -78,6 +78,11 @@ export interface UpdateSelfHostedInput {
   repos?: string[];
   authorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
+  /**
+   * Backfills agent.slackId (UAP-1.3) — nullable so it can also be
+   * explicitly cleared via PATCH /agents/:id.
+   */
+  slackId?: string | null;
 }
 
 interface AgentIdAndRepos {
@@ -270,6 +275,7 @@ export class AgentService {
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
           : {}),
+        ...(input.slackId !== undefined ? { slackId: input.slackId } : {}),
       },
       select: DETAIL_SELECT,
     });

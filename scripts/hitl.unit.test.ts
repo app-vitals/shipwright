@@ -19,7 +19,6 @@ import {
   buildHitlConfig,
   buildTaskCommand,
   buildTeeConsoleMethod,
-  computeMissingClones,
   computeProvisionPlan,
   createAppendLineSink,
   createTeeWriter,
@@ -190,45 +189,6 @@ describe("computeProvisionPlan", () => {
     expect(plan.missingDirs).toEqual([]);
     expect(plan.needsClaudeMd).toBe(false);
     expect(plan.needsAgentPolicy).toBe(false);
-  });
-});
-
-describe("computeMissingClones", () => {
-  test("returns [] for an empty repos list", () => {
-    expect(computeMissingClones([], "/ws/repos", () => false)).toEqual([]);
-  });
-
-  test("skips repos already cloned under reposDir", () => {
-    const existing = new Set(["/ws/repos/shipwright"]);
-    const missing = computeMissingClones(
-      ["app-vitals/shipwright"],
-      "/ws/repos",
-      (path) => existing.has(path),
-    );
-    expect(missing).toEqual([]);
-  });
-
-  test("includes missing repos with the correct dest path", () => {
-    const missing = computeMissingClones(
-      ["app-vitals/shipwright"],
-      "/ws/repos",
-      () => false,
-    );
-    expect(missing).toEqual([
-      { repo: "app-vitals/shipwright", dest: "/ws/repos/shipwright" },
-    ]);
-  });
-
-  test("mix of already-cloned and missing repos — only missing ones are returned", () => {
-    const existing = new Set(["/ws/repos/shipwright"]);
-    const missing = computeMissingClones(
-      ["app-vitals/shipwright", "some-org/other-repo"],
-      "/ws/repos",
-      (path) => existing.has(path),
-    );
-    expect(missing).toEqual([
-      { repo: "some-org/other-repo", dest: "/ws/repos/other-repo" },
-    ]);
   });
 });
 

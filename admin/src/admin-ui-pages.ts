@@ -558,13 +558,10 @@ export function renderAgentsPage(
           )
           .join("\n");
 
-  // Primary path is /admin/agents/new — it creates in-cluster or self-hosted
-  // agents and needs no Slack, so it never dead-ends. /admin/provision is the
-  // Slack-app bootstrap wizard (requires an xoxp token), offered as a secondary
-  // action for setups that use Slack.
+  // Single CTA to create an agent — the /admin/agents/new page handles agent
+  // creation and provides inline options to connect Slack/GitHub if desired.
   const createAgentButtons = isAdmin
-    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>
-      <a href="/admin/provision" class="btn btn-secondary" style="margin-left:8px">Connect Slack app</a>`
+    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
     : "";
 
   return renderAdminPage({
@@ -598,6 +595,18 @@ export function renderAgentsPage(
 
 // ─── New agent page ───────────────────────────────────────────────────────────
 
+// The three Slack/GitHub sections (restrict-slack-group, slack-section,
+// github-section) are meaningless for self-hosted agents — self-hosted uses
+// local git config for GitHub auth, not admin-managed provisioning — so they
+// are shown only when "Provisioned in-cluster" is selected. `display` is
+// either "" (visible) or "none" (hidden).
+function runtimeSectionsOnchange(display: "" | "none"): string {
+  const ids = ["restrict-slack-group", "slack-section", "github-section"];
+  return ids
+    .map((id) => `document.getElementById('${id}').style.display='${display}'`)
+    .join(";");
+}
+
 export function renderNewLocalAgentPage(
   userName: string,
   types: AgentTypeOption[],
@@ -609,6 +618,11 @@ export function renderNewLocalAgentPage(
   // "in-cluster" would silently produce an agent row with no pod, so the option
   // is rendered disabled and self-hosted is preselected.
   const canProvision = opts?.canProvision ?? false;
+  // Slack/GitHub sections are only relevant to in-cluster (admin-provisioned)
+  // agents — self-hosted agents use local git config for GitHub auth. Their
+  // initial visibility must match whichever runtime radio is preselected
+  // above (canProvision===true → in-cluster preselected → visible).
+  const runtimeSectionsDisplay: "" | "none" = canProvision ? "" : "none";
   const errorHtml = error
     ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
     : "";
@@ -631,11 +645,12 @@ export function renderNewLocalAgentPage(
     ${errorHtml}
     <div class="card">
       <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
-        Create an agent and choose where it runs. No Slack credentials are needed —
-        talk to the agent from the <a href="/admin/chat">Chat</a> tab. Slack can be
-        connected later from the <span class="mono">/admin/provision</span> wizard.
+        Create an agent and choose where it runs. Slack and GitHub connections
+        below are optional — you can always talk to the agent from the
+        <a href="/admin/chat">Chat</a> tab first and connect them later from
+        the agent detail page.
       </p>
-      <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
+      <form method="POST" action="/admin/agents" enctype="multipart/form-data" style="display:flex;flex-direction:column;gap:16px">
         <div class="form-group">
           <label class="form-label" for="name">Agent name <span style="color:#ef4444">*</span></label>
           <input
@@ -658,14 +673,18 @@ export function renderNewLocalAgentPage(
           <legend style="font-size:13px;font-weight:600;padding:0 8px">Runtime</legend>
           <div class="form-group" style="margin-bottom:0">
             <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
-              <input type="radio" name="runtime" value="in-cluster" ${canProvision ? "checked" : "disabled"} />
+              <input type="radio" name="runtime" value="in-cluster" ${canProvision ? "checked" : "disabled"}
+                onchange="${runtimeSectionsOnchange("")}"
+              />
               Provisioned in-cluster
               <span style="font-weight:400;color:#6b7280">
                 — the admin service creates the Deployment, Secret, and PVC for you.
               </span>
             </label>
             <label style="display:block;font-size:13px;font-weight:500">
-              <input type="radio" name="runtime" value="self-hosted" ${canProvision ? "" : "checked"} />
+              <input type="radio" name="runtime" value="self-hosted" ${canProvision ? "" : "checked"}
+                onchange="${runtimeSectionsOnchange("none")}"
+              />
               Self-hosted
               <span style="font-weight:400;color:#6b7280">
                 — you run the container yourself (<span class="mono">task stack</span>, local Docker).
@@ -695,6 +714,19 @@ export function renderNewLocalAgentPage(
           </p>
         </div>
         <div class="form-group">
+          <label class="form-label" for="anthropicApiKey">Anthropic API Key (optional)</label>
+          <input
+            id="anthropicApiKey"
+            name="anthropicApiKey"
+            type="password"
+            class="form-input"
+            placeholder="sk-ant-..."
+          />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">
+            Stored as the agent's <span class="mono">ANTHROPIC_API_KEY</span>.
+          </p>
+        </div>
+        <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
           <textarea
             id="repos"
@@ -716,14 +748,136 @@ export function renderNewLocalAgentPage(
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
         </div>
-        <div class="form-group" style="display:flex;align-items:center;gap:6px">
-          <input id="restrictSlackToMembers" name="restrictSlackToMembers" type="checkbox" value="true" />
-          <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+        <div id="restrict-slack-group" style="display:${runtimeSectionsDisplay}">
+          <div class="form-group" style="display:flex;align-items:center;gap:6px">
+            <input
+              id="restrictSlackToMembers"
+              name="restrictSlackToMembers"
+              type="checkbox"
+              value="true"
+              onchange="document.getElementById('member-emails-fields').style.display=this.checked?'block':'none'"
+            />
+            <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+          </div>
+          <p style="font-size:12px;color:#6b7280;margin-top:-12px">
+            When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
+            members yet, enabling this will block all Slack senders.
+          </p>
+          <div id="member-emails-fields" style="display:none;margin-top:12px">
+            <div class="form-group">
+              <label class="form-label" for="memberEmails">Member emails (optional, one per line)</label>
+              <textarea
+                id="memberEmails"
+                name="memberEmails"
+                class="form-input"
+                rows="4"
+                placeholder="alice@example.com&#10;bob@example.com"
+              ></textarea>
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">Email address, one per line</p>
+            </div>
+          </div>
         </div>
-        <p style="font-size:12px;color:#6b7280;margin-top:-12px">
-          When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
-          members yet, enabling this will block all Slack senders.
-        </p>
+        <fieldset id="slack-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">Slack (optional)</legend>
+          <div class="form-group" style="display:flex;align-items:center;gap:6px;margin-bottom:0">
+            <input
+              id="connectSlack"
+              name="connectSlack"
+              type="checkbox"
+              value="true"
+              onchange="document.getElementById('slack-fields').style.display=this.checked?'block':'none'"
+            />
+            <label class="form-label" for="connectSlack" style="margin-bottom:0">Connect Slack</label>
+          </div>
+          <div id="slack-fields" style="display:none;margin-top:12px">
+            <div class="form-group">
+              <label class="form-label" for="xoxpToken">Slack App Configuration Token</label>
+              <input
+                id="xoxpToken"
+                name="xoxpToken"
+                type="password"
+                class="form-input"
+                placeholder="xoxe.xoxp-..."
+              />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                This token is used once to create the Slack app manifest. It is not stored. After
+                creating the agent you'll be redirected to authorize the Slack app.
+              </p>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset id="github-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication (optional)</legend>
+          <!--
+            ghAppMode disambiguates the two ghAuthMode="app" radios below
+            (Create GitHub App = auto, Use existing GitHub App = manual).
+            Each app-mode radio's onchange sets this hidden field alongside
+            showing/hiding its own fields block; it defaults to "auto" so a
+            plain ghAuthMode=app submission (the historical default) is
+            unaffected. See UAP-5.3.
+          -->
+          <input type="hidden" id="ghAppMode" name="ghAppMode" value="auto" />
+          <div class="form-group" style="margin-bottom:12px">
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="skip" checked
+                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='none'"
+              /> Skip
+              <span style="font-weight:400;color:#6b7280">
+                — connect GitHub later from the agent detail page.
+              </span>
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="pat"
+                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='none'"
+              /> Personal Access Token
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="app"
+                onchange="document.getElementById('ghAppMode').value='auto';document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block';document.getElementById('gh-app-manual-fields').style.display='none'"
+              /> Create GitHub App
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500">
+              <input type="radio" name="ghAuthMode" value="app"
+                onchange="document.getElementById('ghAppMode').value='manual';document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none';document.getElementById('gh-app-manual-fields').style.display='block'"
+              /> Use existing GitHub App
+              <span style="font-weight:400;color:#6b7280">
+                — connect a GitHub App you've already created.
+              </span>
+            </label>
+          </div>
+          <div id="gh-pat-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="ghPat">Personal Access Token</label>
+              <input id="ghPat" name="ghPat" type="password" class="form-input" placeholder="ghp_..." />
+            </div>
+          </div>
+          <div id="gh-app-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="githubOrg">GitHub org</label>
+              <input id="githubOrg" name="githubOrg" type="text" class="form-input" placeholder="my-org" />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                You'll be redirected to GitHub to create the App under this organization from a manifest.
+              </p>
+            </div>
+          </div>
+          <div id="gh-app-manual-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="ghAppId">GitHub App ID</label>
+              <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="App ID" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppInstallationId">Installation ID</label>
+              <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="Installation ID" />
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="ghAppPrivateKeyFile">Private Key (.pem)</label>
+              <input id="ghAppPrivateKeyFile" name="ghAppPrivateKeyFile" type="file" accept=".pem" class="form-input" />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                Upload the private key <span class="mono">.pem</span> file you downloaded when creating the GitHub App.
+              </p>
+            </div>
+          </div>
+        </fieldset>
         <div>
           <button type="submit" class="btn btn-primary">Create agent →</button>
           <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
@@ -735,6 +889,68 @@ export function renderNewLocalAgentPage(
 }
 
 // ─── Agent detail page ────────────────────────────────────────────────────────
+
+/**
+ * A single "connect later" action on the agent detail page (Connect Slack /
+ * Set up GitHub App / Add GitHub PAT / Use existing GitHub App) — a
+ * `<details>/<summary>` popover mirroring the "Sync Manifest" pattern.
+ * `envKey` is the per-agent AgentEnv key whose presence in `envVars` means
+ * this integration is already configured, hiding the action.
+ *
+ * `inputs` is an array so an action can collect more than one field (e.g.
+ * the manual GitHub App connect needs App ID + Installation ID + a Private
+ * Key file upload) — every existing action still supplies exactly one entry.
+ */
+interface ConnectActionConfig {
+  envKey: string;
+  label: string;
+  description: string;
+  action: string;
+  hiddenFields?: Record<string, string>;
+  inputs: Array<{
+    name: string;
+    type: "text" | "password" | "file";
+    placeholder?: string;
+    mono?: boolean;
+  }>;
+}
+
+function renderConnectAction(
+  envVars: Record<string, string>,
+  cfg: ConnectActionConfig,
+): string {
+  if (cfg.envKey in envVars) return "";
+  const hiddenInputs = Object.entries(cfg.hiddenFields ?? {})
+    .map(
+      ([k, v]) =>
+        `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}" />`,
+    )
+    .join("\n              ");
+  const hasFileInput = cfg.inputs.some((input) => input.type === "file");
+  const visibleInputs = cfg.inputs
+    .map(
+      (input) => `<input
+                name="${escapeHtml(input.name)}"
+                type="${input.type}"
+                class="form-input${input.mono ? " mono" : ""}"
+                ${input.placeholder ? `placeholder="${escapeHtml(input.placeholder)}"` : ""}
+                required
+                style="font-size:12px"
+              />`,
+    )
+    .join("\n              ");
+  return `<details style="position:relative">
+          <summary class="btn btn-secondary" style="cursor:pointer;font-size:12px;list-style:none">${escapeHtml(cfg.label)}</summary>
+          <div style="position:absolute;left:0;margin-top:6px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;box-shadow:0 4px 12px rgba(0,0,0,0.08);z-index:10;min-width:320px">
+            <p style="font-size:12px;color:#6b7280;margin:0 0 10px">${cfg.description}</p>
+            <form method="POST" action="${cfg.action}"${hasFileInput ? ' enctype="multipart/form-data"' : ""} style="display:flex;flex-direction:column;gap:8px">
+              ${hiddenInputs}
+              ${visibleInputs}
+              <button type="submit" class="btn btn-primary" style="font-size:12px;align-self:flex-start">${escapeHtml(cfg.label)}</button>
+            </form>
+          </div>
+        </details>`;
+}
 
 export function renderAgentDetailPage(
   agent: AgentDetail,
@@ -798,6 +1014,77 @@ export function renderAgentDetailPage(
     </tr>`,
           )
           .join("\n");
+
+  // "Connect later" actions (UAP-2.3) — each hidden once its AgentEnv key is
+  // already set, mirroring the "Sync Manifest" visibility pattern.
+  const connectActionConfigs: ConnectActionConfig[] = [
+    {
+      envKey: "SLACK_APP_TOKEN",
+      label: "Connect Slack",
+      description: `Connects this agent to a Slack app. Requires a Slack app configuration token (<span class="mono">xoxe.xoxp-</span>).`,
+      action: `/admin/agents/${escapeHtml(agent.id)}/connect-slack`,
+      inputs: [
+        {
+          name: "xoxpToken",
+          type: "password",
+          placeholder: "xoxe.xoxp-...",
+          mono: true,
+        },
+      ],
+    },
+    {
+      envKey: "GH_APP_ID",
+      label: "Set up GitHub App",
+      description:
+        "Creates a GitHub App for this agent from a manifest. You'll be redirected to GitHub to finish creating it under the chosen org.",
+      action: `/admin/agents/${escapeHtml(agent.id)}/connect-github`,
+      hiddenFields: { ghAuthMode: "app", ghAppMode: "auto" },
+      inputs: [{ name: "githubOrg", type: "text", placeholder: "my-org" }],
+    },
+    {
+      envKey: "GH_APP_ID",
+      label: "Use existing GitHub App",
+      description:
+        "Connects an existing GitHub App you've already created — paste its App ID and Installation ID, and upload its private key (PEM file).",
+      action: `/admin/agents/${escapeHtml(agent.id)}/connect-github`,
+      hiddenFields: { ghAuthMode: "app", ghAppMode: "manual" },
+      inputs: [
+        { name: "ghAppId", type: "text", placeholder: "App ID" },
+        {
+          name: "ghAppInstallationId",
+          type: "text",
+          placeholder: "Installation ID",
+        },
+        { name: "ghAppPrivateKeyFile", type: "file" },
+      ],
+    },
+    {
+      envKey: "GH_TOKEN",
+      label: "Add GitHub PAT",
+      description:
+        "Connects this agent to GitHub using a personal access token.",
+      action: `/admin/agents/${escapeHtml(agent.id)}/connect-github`,
+      hiddenFields: { ghAuthMode: "pat" },
+      inputs: [
+        {
+          name: "ghPat",
+          type: "password",
+          placeholder: "ghp_...",
+          mono: true,
+        },
+      ],
+    },
+  ];
+  const connectActions = connectActionConfigs
+    .map((cfg) => renderConnectAction(envVars, cfg))
+    .filter(Boolean);
+
+  const connectActionsHtml =
+    connectActions.length === 0
+      ? ""
+      : `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+        ${connectActions.join("\n        ")}
+      </div>`;
 
   // Top-level rows exclude any cron parented under another (e.g. shipwright-loop's
   // dev-task/review/patch/deploy phases) — those render nested beneath their
@@ -1227,6 +1514,7 @@ export function renderAgentDetailPage(
       isAdmin
         ? `<div class="card">
       <div class="card-title">Slack access</div>
+      ${connectActionsHtml}
       <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/settings">
         <div class="form-group" style="display:flex;align-items:center;gap:6px">
           <input
@@ -1442,183 +1730,6 @@ export function renderAgentDetailPage(
 
 // ─── Provision pages ──────────────────────────────────────────────────────────
 
-export function renderProvisionStartPage(
-  userName: string,
-  agents: { id: string; name: string }[],
-  opts?: { oauthUrl?: string; error?: string },
-): string {
-  const errorHtml = opts?.error
-    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
-    : "";
-
-  const safeOauthUrl = opts?.oauthUrl?.startsWith("https://")
-    ? opts.oauthUrl
-    : "";
-
-  const agentOptions = agents
-    .map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`,
-    )
-    .join("\n          ");
-
-  const oauthSection = opts?.oauthUrl
-    ? `<div class="alert alert-success">
-        <strong>App created!</strong> Click the link below to authorize the Slack app.
-      </div>
-      <div class="oauth-url-box">${escapeHtml(opts.oauthUrl)}</div>
-      <a href="${escapeHtml(safeOauthUrl)}" class="btn btn-primary" rel="noopener noreferrer">
-        Authorize Slack App →
-      </a>
-      <p style="margin-top:16px;font-size:13px;color:#6b7280">
-        After authorizing, the app credentials have been saved for your agent.
-      </p>`
-    : `<form method="POST" action="/admin/provision/start">
-        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
-          <legend style="font-size:13px;font-weight:600;padding:0 8px">Agent</legend>
-          <div class="form-group" style="margin-bottom:12px">
-            <label style="font-size:13px;font-weight:500;margin-right:16px">
-              <input type="radio" name="agentMode" value="existing" checked
-                onchange="document.getElementById('existing-agent-fields').style.display='block';document.getElementById('new-agent-fields').style.display='none'"
-              /> Use existing agent
-            </label>
-            <label style="font-size:13px;font-weight:500">
-              <input type="radio" name="agentMode" value="new"
-                onchange="document.getElementById('existing-agent-fields').style.display='none';document.getElementById('new-agent-fields').style.display='block'"
-              /> Create new agent
-            </label>
-          </div>
-          <div id="existing-agent-fields">
-            <div class="form-group">
-              <label class="form-label" for="agentId">Agent</label>
-              <select id="agentId" name="agentId" class="form-input">
-                <option value="">— select an agent —</option>
-              ${agentOptions}
-              </select>
-            </div>
-          </div>
-          <div id="new-agent-fields" style="display:none">
-            <div class="form-group">
-              <label class="form-label" for="newAgentName">Agent name</label>
-              <input id="newAgentName" name="newAgentName" type="text" class="form-input" placeholder="my-agent" />
-            </div>
-            <div class="form-group">
-              <label class="form-label" for="newAgentRepos">Repos (optional, one per line)</label>
-              <textarea id="newAgentRepos" name="newAgentRepos" class="form-input" rows="4" placeholder="my-org/repo-one&#10;my-org/repo-two"></textarea>
-              <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
-          <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication</legend>
-          <div class="form-group" style="margin-bottom:12px">
-            <label style="font-size:13px;font-weight:500;margin-right:16px">
-              <input type="radio" name="ghAuthMode" value="pat" checked
-                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none'"
-              /> Personal Access Token
-            </label>
-            <label style="font-size:13px;font-weight:500">
-              <input type="radio" name="ghAuthMode" value="app"
-                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block'"
-              /> GitHub App
-            </label>
-          </div>
-          <div id="gh-pat-fields">
-            <div class="form-group">
-              <label class="form-label" for="ghPat">Personal Access Token</label>
-              <input id="ghPat" name="ghPat" type="password" class="form-input" placeholder="ghp_..." />
-            </div>
-          </div>
-          <div id="gh-app-fields" style="display:none">
-            <div class="form-group" style="margin-bottom:12px">
-              <label style="font-size:13px;font-weight:500;margin-right:16px">
-                <input type="radio" name="ghAppMode" value="manual" checked
-                  onchange="document.getElementById('gh-app-manual-fields').style.display='block';document.getElementById('gh-app-auto-fields').style.display='none'"
-                /> Paste manually
-              </label>
-              <label style="font-size:13px;font-weight:500">
-                <input type="radio" name="ghAppMode" value="auto"
-                  onchange="document.getElementById('gh-app-manual-fields').style.display='none';document.getElementById('gh-app-auto-fields').style.display='block'"
-                /> Auto-provision (recommended)
-              </label>
-            </div>
-            <div id="gh-app-manual-fields">
-              <div class="form-group">
-                <label class="form-label" for="ghAppId">App ID</label>
-                <input id="ghAppId" name="ghAppId" type="text" class="form-input" placeholder="123456" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="ghAppInstallationId">Installation ID</label>
-                <input id="ghAppInstallationId" name="ghAppInstallationId" type="text" class="form-input" placeholder="987654" />
-              </div>
-              <div class="form-group">
-                <label class="form-label" for="ghAppPrivateKey">Private Key (PEM)</label>
-                <textarea id="ghAppPrivateKey" name="ghAppPrivateKey" class="form-input" rows="6"
-                  placeholder="-----BEGIN RSA PRIVATE KEY-----&#10;...&#10;-----END RSA PRIVATE KEY-----"></textarea>
-              </div>
-            </div>
-            <div id="gh-app-auto-fields" style="display:none">
-              <div class="form-group">
-                <label class="form-label" for="githubOrg">GitHub org</label>
-                <input id="githubOrg" name="githubOrg" type="text" class="form-input" placeholder="my-org" required />
-                <p style="font-size:12px;color:#6b7280;margin-top:4px">
-                  You'll be redirected to GitHub to create the App under this organization from a manifest.
-                </p>
-              </div>
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px;margin-bottom:16px">
-          <legend style="font-size:13px;font-weight:600;padding:0 8px">AI Credentials (optional)</legend>
-          <div class="form-group">
-            <label class="form-label" for="anthropicApiKey">Anthropic API Key</label>
-            <input id="anthropicApiKey" name="anthropicApiKey" type="password" class="form-input" placeholder="sk-ant-..." />
-          </div>
-          <div class="form-group">
-            <label class="form-label" for="claudeCodeOauthToken">Claude Code OAuth Token</label>
-            <input id="claudeCodeOauthToken" name="claudeCodeOauthToken" type="password" class="form-input" />
-          </div>
-        </fieldset>
-
-        <div class="form-group">
-          <label class="form-label" for="xoxpToken">Slack App Configuration Token</label>
-          <input
-            id="xoxpToken"
-            name="xoxpToken"
-            type="password"
-            class="form-input"
-            placeholder="xoxe.xoxp-..."
-            required
-          />
-          <p style="font-size:12px;color:#6b7280;margin-top:6px">
-            This token is used once to create the Slack app manifest. It is not stored.
-          </p>
-        </div>
-        <button type="submit" class="btn btn-primary">Create Slack App →</button>
-      </form>`;
-
-  return renderAdminPage({
-    title: "Provision Agent — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, "/admin/provision")}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Provision Agent</h1>
-    </div>
-    <div class="provision-steps">
-      <span class="provision-step ${!opts?.oauthUrl ? "active" : ""}">1. Create Slack App</span>
-      <span class="provision-step ${opts?.oauthUrl ? "active" : ""}">2. Authorize</span>
-      <span class="provision-step">3. Complete</span>
-    </div>
-    <div class="card">
-      ${errorHtml}
-      ${oauthSection}
-    </div>
-  </div>`,
-  });
-}
-
 /**
  * Auto-submitting POST-redirect page for the GitHub "create a GitHub App
  * from a manifest" flow: https://docs.github.com/apps/creating-github-apps/setting-up-a-github-app/creating-a-github-app-from-a-manifest
@@ -1732,10 +1843,16 @@ export function renderGithubAppInstalledPage(
 // xapp-token page shown after OAuth callback completes — user pastes the Socket Mode app token.
 export function renderProvisionXappTokenPage(
   userName: string,
-  opts: { agentId: string; error?: string },
+  opts: { agentId: string; error?: string; warning?: string },
 ): string {
   const errorHtml = opts.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+  // Non-fatal warning (UAP-2.1) — e.g. a GitHub PAT that failed to store
+  // during the combined create+connect flow. Surfaced here so the operator
+  // isn't misled into believing GH_TOKEN was connected after finishing Slack.
+  const warningHtml = opts.warning
+    ? `<div class="alert alert-warning">${escapeHtml(opts.warning)}</div>`
     : "";
 
   return renderAdminPage({
@@ -1757,9 +1874,9 @@ export function renderProvisionXappTokenPage(
         and generate an <strong>App-Level Token</strong> with <code class="mono">connections:write</code> scope.
         Paste the <code class="mono">xapp-</code> token below.
       </p>
+      ${warningHtml}
       ${errorHtml}
-      <form method="POST" action="/admin/provision/xapp-token">
-        <input type="hidden" name="agentId" value="${escapeHtml(opts.agentId)}" />
+      <form method="POST" action="/admin/agents/${escapeHtml(opts.agentId)}/connect-slack/app-token">
         <div class="form-group">
           <label class="form-label" for="xappToken">App-Level Token (xapp-)</label>
           <input

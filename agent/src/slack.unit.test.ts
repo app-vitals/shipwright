@@ -196,8 +196,14 @@ function makeSay() {
 
 function setupGatingApp(overrides: {
   membershipRef: AgentSlackMembershipRef;
-  resolveUserEmailFn: (userId: string, client: unknown) => Promise<string | undefined>;
-  runner?: (message: string, sessionKey?: string) => Promise<{
+  resolveUserEmailFn: (
+    userId: string,
+    client: unknown,
+  ) => Promise<string | undefined>;
+  runner?: (
+    message: string,
+    sessionKey?: string,
+  ) => Promise<{
     result: string;
     sessionId?: string;
     streamIncomplete?: boolean;
@@ -368,6 +374,185 @@ describe("membership gating — app_mention handler", () => {
     const { runner, say } = await invokeMention(ref, async () => undefined);
     expect(runner).not.toHaveBeenCalled();
     expect(say).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Per-thread status refcounting (SSF-1.1) ───────────────────────────────
+// A burst of overlapping message-handler invocations on the same thread must
+// result in exactly one setStatus("processing") and one setStatus("active")
+// call, with "active" firing only after the LAST queued run completes — not
+// the first. This exercises the ThreadStatusTracker wired into createSlackApp
+// via the same MockApp/mock-client harness used by the membership-gating
+// suite above.
+
+// Flushes pending microtask hops (getSessionFn / shouldRejectSlackSender's
+// resolveUserEmailFn awaits, etc.) that run before a handler reaches
+// progress.start(), so assertions made right after firing a handler call
+// observe state as of "just before runner() is invoked" rather than mid-flight.
+function flushMicrotasks(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+describe("per-thread status refcounting — message handler burst", () => {
+  test("2 overlapping runs on the same thread: one processing, one active (after the last)", async () => {
+    // Deferred promises let the test control exactly when each runner()
+    // invocation resolves. Keyed by the prompt text (which embeds the
+    // message body) rather than call order — resolveUserFn's await means the
+    // two concurrent handler invocations can reach runner() in either order,
+    // so the mock must resolve the correct in-flight call regardless of
+    // which one actually invoked runner() first.
+    let resolveFirst!: (value: { result: string; sessionId?: string }) => void;
+    let resolveSecond!: (value: { result: string; sessionId?: string }) => void;
+    const firstDone = new Promise<{ result: string; sessionId?: string }>(
+      (resolve) => {
+        resolveFirst = resolve;
+      },
+    );
+    const secondDone = new Promise<{ result: string; sessionId?: string }>(
+      (resolve) => {
+        resolveSecond = resolve;
+      },
+    );
+
+    const runner = mock(async (msg: string, _key?: string) =>
+      msg.includes("second message") ? secondDone : firstDone,
+    );
+
+    const ref = createAgentSlackMembershipRef();
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+    });
+
+    const client = makeMockClient();
+    const say = makeSay();
+    // Same thread_ts on both messages — sessionKey is derived from
+    // (channel, thread_ts ?? ts), so a burst on one thread must share a
+    // thread_ts even though each individual message has its own ts.
+    const message = {
+      channel: "D123",
+      ts: "300.1",
+      thread_ts: "300.1",
+      text: "first message",
+      channel_type: "im",
+      user: "U-SENDER",
+    };
+
+    // Fire both handler invocations before either runner() call resolves —
+    // simulates a burst of 2 messages queued on the same thread while a run
+    // is in flight.
+    const firstHandlerCall = capturedMessageHandler?.({
+      message,
+      say,
+      client,
+    });
+    const secondHandlerCall = capturedMessageHandler?.({
+      message: { ...message, ts: "300.2", text: "second message" },
+      say,
+      client,
+    });
+
+    await flushMicrotasks();
+
+    // Only "processing" should have been set so far — the thread is now at
+    // refcount 2, so neither handler has reached its finally block yet.
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(1);
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "processing" }),
+    );
+
+    // Resolve the FIRST run — since a second run is still in flight, this
+    // must NOT flip status to "active" (the false "done" signal this fix
+    // prevents).
+    resolveFirst({ result: "first done", sessionId: "sess-1" });
+    await firstHandlerCall;
+
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(1);
+    expect(client.agents.sessions.setStatus).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "active" }),
+    );
+
+    // Resolve the SECOND (last) run — only now should "active" fire.
+    resolveSecond({ result: "second done", sessionId: "sess-1" });
+    await secondHandlerCall;
+
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(2);
+    const calls = client.agents.sessions.setStatus.mock.calls.map(
+      (c: unknown[]) => (c[0] as { status: string }).status,
+    );
+    expect(calls).toEqual(["processing", "active"]);
+  });
+
+  test("bursts on different threads do not interfere with each other's status", async () => {
+    let resolveA!: (value: { result: string; sessionId?: string }) => void;
+    let resolveB!: (value: { result: string; sessionId?: string }) => void;
+    const doneA = new Promise<{ result: string; sessionId?: string }>(
+      (resolve) => {
+        resolveA = resolve;
+      },
+    );
+    const doneB = new Promise<{ result: string; sessionId?: string }>(
+      (resolve) => {
+        resolveB = resolve;
+      },
+    );
+
+    const runner = mock(async (msg: string, _key?: string) =>
+      msg.includes("channel-a") ? doneA : doneB,
+    );
+
+    const ref = createAgentSlackMembershipRef();
+    setupGatingApp({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+      runner,
+    });
+
+    const client = makeMockClient();
+    const say = makeSay();
+
+    const callA = capturedMessageHandler?.({
+      message: {
+        channel: "D-A",
+        ts: "400.1",
+        text: "message on channel-a",
+        channel_type: "im",
+        user: "U-SENDER",
+      },
+      say,
+      client,
+    });
+    const callB = capturedMessageHandler?.({
+      message: {
+        channel: "D-B",
+        ts: "500.1",
+        text: "message on channel-b",
+        channel_type: "im",
+        user: "U-SENDER",
+      },
+      say,
+      client,
+    });
+
+    await flushMicrotasks();
+
+    // Two independent threads, both starting — two "processing" calls.
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(2);
+
+    resolveA({ result: "a done", sessionId: "sess-a" });
+    await callA;
+    resolveB({ result: "b done", sessionId: "sess-b" });
+    await callB;
+
+    // Each thread's single run completing should independently flip its own
+    // status to "active" — total 4 calls (2 processing + 2 active).
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(4);
+    const statuses = client.agents.sessions.setStatus.mock.calls.map(
+      (c: unknown[]) => (c[0] as { status: string }).status,
+    );
+    expect(statuses.filter((s) => s === "processing")).toHaveLength(2);
+    expect(statuses.filter((s) => s === "active")).toHaveLength(2);
   });
 });
 

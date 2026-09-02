@@ -1,6 +1,6 @@
 {
   "name": "@shipwright/agent",
-  "version": "1.215.1",
+  "version": "1.219.0",
   "private": true,
   "description": "Shipwright agent — autonomous task runner: pick → build → ship PR → forward metrics",
   "scripts": {
@@ -20,7 +20,9 @@
     "playwright": "1.61.1"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "bun-types": "^1.3.14",
-    "typescript": "*"
+    "typescript": "*",
+    "ws": "^8.21.3"
   }
 }

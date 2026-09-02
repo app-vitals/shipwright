@@ -127,6 +127,17 @@ export const CreateAgentBodySchema = z
 
 export const PatchAgentBodySchema = z
   .object({
+    /**
+     * Backfills agent.slackId for agents that completed Slack OAuth before
+     * UAP-1.3 shipped (it is otherwise resolved automatically via auth.test
+     * right after OAuth completes). Nullable so it can also be explicitly
+     * cleared.
+     */
+    slackId: z
+      .string()
+      .nullable()
+      .optional()
+      .openapi({ example: "U0AALR8M69X" }),
     selfHosted: z.boolean().optional().openapi({ example: false }),
     repos: z
       .array(

@@ -51,10 +51,10 @@ set for admins, or only agents the user is a member of otherwise:
 | Created | Creation date |
 | (actions) | **Manage**, **Cron Logs**, **Work Queue** buttons |
 
-Admins see two buttons above the table: **+ Provision agent** (→ `/admin/provision`) and
-**+ New local agent** (→ `/admin/agents/new`). After a successful agent deletion the list also shows
-a dismissible "Agent deleted." banner and, if any cleanup steps require manual follow-up (e.g.
-revoking a hand-pasted `GH_TOKEN`), a warning panel listing each manual step.
+Admins see a single **+ New agent** button above the table (→ `/admin/agents/new`), which handles
+agent creation and offers inline options to connect Slack/GitHub afterward. After a successful agent
+deletion the list also shows a dismissible "Agent deleted." banner and, if any cleanup steps require
+manual follow-up (e.g. revoking a hand-pasted `GH_TOKEN`), a warning panel listing each manual step.
 
 ### New local agent — `GET /admin/agents/new`, `POST /admin/agents`
 

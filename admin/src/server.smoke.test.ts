@@ -218,6 +218,7 @@ function buildComposedApp() {
       createAppManifest: notImplemented,
       updateAppManifest: notImplemented,
       exchangeOAuthCode: notImplemented,
+      authTest: notImplemented,
     },
     githubAppClient: {
       exchangeManifestCode: notImplemented,

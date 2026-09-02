@@ -41,7 +41,6 @@ import {
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
-  renderProvisionStartPage,
   renderProvisionXappTokenPage,
   renderPrsPage,
   renderSessionDetailPage,
@@ -253,10 +252,13 @@ describe("renderAgentsPage", () => {
     expect(html).toContain('href="/admin/agents/new"');
   });
 
-  test("admin: Slack wizard is offered only as a secondary action", () => {
+  test("admin: only one CTA (no secondary Slack button)", () => {
     const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
-    expect(html).toContain("Connect Slack app");
-    expect(html).toContain('href="/admin/provision"');
+    // Should NOT have the secondary Slack app button in the page header
+    expect(html).not.toContain("Connect Slack app");
+    // Should have exactly one btn-primary (the + New agent button)
+    const btnMatches = html.match(/class="btn btn-primary"/g);
+    expect(btnMatches).toHaveLength(1);
   });
 
   test("agent name appears as a link", () => {
@@ -826,14 +828,349 @@ describe("renderNewLocalAgentPage", () => {
     expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
   });
 
-  test("asks for no Slack credentials and points at the chat UI", () => {
+  test("points at the chat UI for agent conversation", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
       canProvision: true,
     });
-    expect(html).not.toContain("xoxp");
-    expect(html).not.toContain("xoxb");
-    expect(html).not.toMatch(/name="xoxpToken"/);
     expect(html).toContain("/admin/chat");
+  });
+
+  test("renders an optional ANTHROPIC_API_KEY input alongside the Claude token, matching the wizard's field", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="anthropicApiKey"[^>]*type="password"[^>]*>/,
+    );
+    expect(html).toContain('placeholder="sk-ant-..."');
+  });
+
+  test("renders a Connect Slack checkbox", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="connectSlack"[^>]*type="checkbox"[^>]*>/,
+    );
+  });
+
+  test("renders an xoxpToken field inside a slack-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="xoxpToken"[^>]*>/);
+    // The xoxpToken field lives inside a container hidden until the
+    // connectSlack checkbox is toggled on (progressive disclosure).
+    const slackBlock = html.match(
+      /<div id="slack-fields"[^>]*style="display:none[^>]*>[\s\S]*?xoxpToken/,
+    );
+    expect(slackBlock).not.toBeNull();
+  });
+
+  test("connectSlack checkbox onchange toggles the slack-fields block's display", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const checkbox = html.match(
+      /<input[^>]*name="connectSlack"[^>]*>/,
+    )?.[0] as string;
+    expect(checkbox).toContain("onchange");
+    expect(checkbox).toContain("slack-fields");
+  });
+
+  test("renders a GitHub auth radio group with skip/pat/app options", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*>/);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/);
+    // UAP-5.3: two ghAuthMode="app" radios now exist (Create GitHub App /
+    // Use existing GitHub App), disambiguated by a shared hidden ghAppMode
+    // field the radios' onchange handlers set to "auto"/"manual".
+    expect(html).toMatch(/id="ghAppMode"/);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/g,
+    );
+    expect(appRadios?.length).toBe(2);
+  });
+
+  // ── UAP-5.3: "Use existing GitHub App" as a 4th ghAuthMode option ─────────
+
+  test("renders a 4th 'Use existing GitHub App' radio revealing App ID, Installation ID, and a PEM file upload", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain("Use existing GitHub App");
+    const manualBlock = html.match(
+      /<div id="gh-app-manual-fields"[^>]*style="display:none"[\s\S]*?<\/div>\s*<\/div>/,
+    )?.[0] as string;
+    expect(manualBlock).toBeDefined();
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppId"[^>]*>/);
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppInstallationId"[^>]*>/);
+    expect(manualBlock).toMatch(
+      /<input[^>]*name="ghAppPrivateKeyFile"[^>]*type="file"[^>]*accept="\.pem"[^>]*>/,
+    );
+  });
+
+  test("the 'Use existing GitHub App' radio's onchange sets the hidden ghAppMode input to 'manual' and shows the manual fields block; 'Create GitHub App' sets it to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*\/>/g,
+    ) as string[];
+    expect(appRadios).toHaveLength(2);
+    const [autoRadio, manualRadio] = appRadios;
+    expect(autoRadio).toContain("ghAppMode').value='auto'");
+    expect(manualRadio).toContain("ghAppMode').value='manual'");
+    expect(manualRadio).toContain("gh-app-manual-fields");
+  });
+
+  test("the hidden ghAppMode input defaults to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const hidden = html.match(
+      /<input[^>]*type="hidden"[^>]*id="ghAppMode"[^>]*>/,
+    )?.[0] as string;
+    expect(hidden).toBeDefined();
+    expect(hidden).toContain('name="ghAppMode"');
+    expect(hidden).toContain('value="auto"');
+  });
+
+  test("the New Agent form gains enctype=multipart/form-data now that it contains a file input", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const formTag = html.match(
+      /<form method="POST" action="\/admin\/agents"[^>]*>/,
+    )?.[0] as string;
+    expect(formTag).toBeDefined();
+    expect(formTag).toContain('enctype="multipart/form-data"');
+  });
+
+  test("skip is the default checked GitHub auth mode", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const skipRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*\/>/,
+    )?.[0] as string;
+    expect(skipRadio).toContain("checked");
+  });
+
+  test("renders a ghPat field inside a gh-pat-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="ghPat"[^>]*type="password"[^>]*>/);
+    const patBlock = html.match(
+      /<div id="gh-pat-fields"[^>]*style="display:none"[\s\S]*?ghPat/,
+    );
+    expect(patBlock).not.toBeNull();
+  });
+
+  test("renders a githubOrg field inside a gh-app-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="githubOrg"[^>]*>/);
+    const appBlock = html.match(
+      /<div id="gh-app-fields"[^>]*style="display:none"[\s\S]*?githubOrg/,
+    );
+    expect(appBlock).not.toBeNull();
+  });
+
+  test("ghAuthMode radios toggle the pat/app field blocks via onchange", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const patRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/,
+    )?.[0] as string;
+    expect(patRadio).toContain("onchange");
+    expect(patRadio).toContain("gh-pat-fields");
+    const appRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/,
+    )?.[0] as string;
+    expect(appRadio).toContain("onchange");
+    expect(appRadio).toContain("gh-app-fields");
+  });
+
+  // ── UAP-5.1: gate Slack/GitHub sections behind runtime=in-cluster ─────────
+
+  test("canProvision: false (self-hosted preselected) hides the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: false,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("canProvision: true (in-cluster preselected) shows the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).not.toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).not.toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).not.toContain("display:none");
+  });
+
+  test("omitted canProvision defaults to hidden Slack/GitHub sections (self-hosted preselected)", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("both runtime radios carry an onchange handler that toggles the restrict-slack-group, slack-section, and github-section ids", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const inClusterRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inClusterRadio).toContain("onchange");
+    expect(inClusterRadio).toContain("restrict-slack-group");
+    expect(inClusterRadio).toContain("slack-section");
+    expect(inClusterRadio).toContain("github-section");
+
+    const selfHostedRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="self-hosted"[^>]*\/>/,
+    )?.[0] as string;
+    expect(selfHostedRadio).toContain("onchange");
+    expect(selfHostedRadio).toContain("restrict-slack-group");
+    expect(selfHostedRadio).toContain("slack-section");
+    expect(selfHostedRadio).toContain("github-section");
+  });
+
+  // ── UAP-5.2: inline member-email textarea for restrictSlackToMembers ──────
+
+  test("renders a memberEmails textarea inside a member-emails-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="memberEmails"[^>]*>/);
+    const memberEmailsBlock = html.match(
+      /<div id="member-emails-fields"[^>]*style="display:none[^>]*>[\s\S]*?memberEmails/,
+    );
+    expect(memberEmailsBlock).not.toBeNull();
+  });
+
+  test("restrictSlackToMembers checkbox onchange toggles the member-emails-fields block's display", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const checkbox = html.match(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*>/,
+    )?.[0] as string;
+    expect(checkbox).toContain("onchange");
+    expect(checkbox).toContain("member-emails-fields");
+  });
+});
+
+// ─── renderAgentDetailPage — connect-later actions (UAP-2.3 / UAP-5.4) ───────
+
+describe("renderAgentDetailPage — connect-later actions", () => {
+  function render(envVars: Record<string, string>): string {
+    return renderAgentDetailPage(
+      AGENT,
+      envVars,
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("Connect Slack action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    expect(html).toContain("Connect Slack");
+    const slackForm = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-slack"[\s\S]*?<\/form>/,
+    )?.[0] as string;
+    expect(slackForm).toBeDefined();
+    const inputCount = (slackForm.match(/<input\b/g) ?? []).length;
+    expect(inputCount).toBe(1);
+    expect(slackForm).toMatch(/name="xoxpToken"[^>]*type="password"/);
+  });
+
+  test("Connect Slack action is hidden once SLACK_APP_TOKEN is set", () => {
+    const html = render({ SLACK_APP_TOKEN: "xoxe.xoxp-abc" });
+    expect(html).not.toContain("Connect Slack<");
+  });
+
+  test("Set up GitHub App (auto) action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const autoForm = forms.find((f) => f.includes('value="auto"')) as string;
+    expect(autoForm).toBeDefined();
+    const inputCount = (autoForm.match(/<input\b/g) ?? []).length;
+    // 2 hidden fields (ghAuthMode, ghAppMode) + 1 visible githubOrg field.
+    expect(inputCount).toBe(3);
+    expect(autoForm).toMatch(/name="githubOrg"[^>]*type="text"/);
+  });
+
+  test("Add GitHub PAT action renders exactly one field (single-input backward compat)", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const patForm = forms.find((f) => f.includes('name="ghPat"')) as string;
+    expect(patForm).toBeDefined();
+    // 1 hidden field (ghAuthMode=pat) + 1 visible ghPat field.
+    const inputCount = (patForm.match(/<input\b/g) ?? []).length;
+    expect(inputCount).toBe(2);
+    expect(patForm).toMatch(/name="ghPat"[^>]*type="password"/);
+  });
+
+  test("Set up GitHub App and Add GitHub PAT are both hidden once GH_APP_ID/GH_TOKEN are set", () => {
+    const html = render({ GH_APP_ID: "12345", GH_TOKEN: "ghp_abc" });
+    expect(html).not.toContain("Set up GitHub App<");
+    expect(html).not.toContain("Add GitHub PAT<");
+  });
+
+  test("'Use existing GitHub App' action appears when GH_APP_ID is not set", () => {
+    const html = render({});
+    expect(html).toContain("Use existing GitHub App");
+  });
+
+  test("'Use existing GitHub App' action is hidden once GH_APP_ID is set (same gate as auto flow)", () => {
+    const html = render({ GH_APP_ID: "12345" });
+    expect(html).not.toContain("Use existing GitHub App");
+  });
+
+  test("'Use existing GitHub App' action posts to connect-github with hidden ghAuthMode=app/ghAppMode=manual", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const manualForm = forms.find(
+      (f) => f.includes('value="manual"') && f.includes("ghAppId"),
+    ) as string;
+    expect(manualForm).toBeDefined();
+    expect(manualForm).toMatch(
+      /<input[^>]*type="hidden"[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/,
+    );
+    expect(manualForm).toMatch(
+      /<input[^>]*type="hidden"[^>]*name="ghAppMode"[^>]*value="manual"[^>]*>/,
+    );
+  });
+
+  test("'Use existing GitHub App' action renders three fields: App ID text, Installation ID text, Private Key file", () => {
+    const html = render({});
+    const forms = html.match(
+      /action="\/admin\/agents\/agent-123\/connect-github"[\s\S]*?<\/form>/g,
+    ) as string[];
+    const manualForm = forms.find(
+      (f) => f.includes('value="manual"') && f.includes("ghAppId"),
+    ) as string;
+    expect(manualForm).toMatch(/name="ghAppId"[^>]*type="text"/);
+    expect(manualForm).toMatch(/name="ghAppInstallationId"[^>]*type="text"/);
+    expect(manualForm).toMatch(/name="ghAppPrivateKeyFile"[^>]*type="file"/);
+    // The <form> itself must allow file uploads.
+    expect(manualForm).toContain('enctype="multipart/form-data"');
   });
 });
 
@@ -1512,241 +1849,6 @@ describe("renderAgentDetailPage — plugins", () => {
         timeZone: "UTC",
       }),
     );
-  });
-});
-
-// ─── renderProvisionStartPage ────────────────────────────────────────────────
-
-const AGENTS_FIXTURE = [
-  { id: "agent-001", name: "Alpha Agent" },
-  { id: "agent-002", name: "Beta Agent" },
-];
-
-describe("renderProvisionStartPage", () => {
-  test("returns a valid HTML document", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-  });
-
-  test("includes 'Provision Agent' page title", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("Provision Agent");
-  });
-
-  test("without oauthUrl: shows xoxp token form", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("xoxpToken");
-  });
-
-  test("without oauthUrl: form action is /admin/provision/start", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('action="/admin/provision/start"');
-  });
-
-  test("with oauthUrl: shows authorize link", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    expect(html).toContain("Authorize Slack App");
-    expect(html).toContain(
-      "https://slack.com/oauth/v2/authorize?client_id=123",
-    );
-  });
-
-  test('authorize link does NOT open in new tab (no target="_blank")', () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    // Extract the authorize link line to check its attributes
-    const linkMatch = html.match(
-      /<a href="https:\/\/slack\.com\/oauth\/v2\/authorize\?client_id=123"[^>]*>/,
-    );
-    expect(linkMatch).toBeTruthy();
-    const linkTag = linkMatch?.[0] ?? "";
-    expect(linkTag).not.toContain('target="_blank"');
-  });
-
-  test("with oauthUrl: does NOT show xoxp form", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    expect(html).not.toContain('action="/admin/provision/start"');
-  });
-
-  test("no error div when no error", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).not.toContain('class="alert alert-error"');
-  });
-
-  test("error shown when opts.error set", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      error: "Invalid token",
-    });
-    expect(html).toContain('class="alert alert-error"');
-    expect(html).toContain("Invalid token");
-  });
-
-  test("XSS: error is escaped", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      error: "<script>xss()</script>",
-    });
-    expect(html).not.toContain("<script>xss()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("non-https oauthUrl: authorize href is empty (safe URL guard)", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "javascript:alert(1)",
-    });
-    // safeOauthUrl is empty string when URL doesn't start with https://
-    expect(html).toContain('href=""');
-  });
-
-  // ── new tests for agent selector + GitHub/Claude fields ──────────────────
-
-  test("renders agent selector element", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain("<select");
-  });
-
-  test("renders an option for each agent", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain("agent-001");
-    expect(html).toContain("Alpha Agent");
-    expect(html).toContain("agent-002");
-    expect(html).toContain("Beta Agent");
-  });
-
-  test("renders empty selector when agents=[]", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="agentId"');
-    // no option values from agents
-    expect(html).not.toContain('value="agent-001"');
-  });
-
-  test("XSS: agent name in select option is escaped", () => {
-    const xssAgents = [{ id: "a1", name: "<script>evil()</script>" }];
-    const html = renderProvisionStartPage(USER_NAME, xssAgents);
-    expect(html).not.toContain("<script>evil()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("renders ghAuthMode radio buttons (pat and app)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAuthMode"');
-    expect(html).toContain('value="pat"');
-    expect(html).toContain('value="app"');
-  });
-
-  test("renders GitHub PAT password input", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghPat"');
-  });
-
-  test("renders GitHub App fields (ghAppId, ghAppInstallationId, ghAppPrivateKey)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAppId"');
-    expect(html).toContain('name="ghAppInstallationId"');
-    expect(html).toContain('name="ghAppPrivateKey"');
-  });
-
-  test("renders AI creds section (anthropicApiKey, claudeCodeOauthToken)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="anthropicApiKey"');
-    expect(html).toContain('name="claudeCodeOauthToken"');
-  });
-
-  // ── new tests for agentMode toggle (existing vs. create-new agent) ───────
-
-  test("renders agentMode radio buttons (existing and new)", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentMode"');
-    expect(html).toContain('value="existing"');
-    expect(html).toContain('value="new"');
-  });
-
-  test("renders new-agent name input", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="newAgentName"');
-  });
-
-  test("renders new-agent repos textarea", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="newAgentRepos"');
-  });
-
-  test("existing agentId select still renders alongside the new-agent fields", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain("<select");
-    expect(html).toContain("agent-001");
-    expect(html).toContain("Alpha Agent");
-  });
-
-  test("agentId select is not marked required (conditionally hidden field)", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    const selectMatch = html.match(/<select id="agentId"[^>]*>/);
-    expect(selectMatch).toBeTruthy();
-    expect(selectMatch?.[0]).not.toContain("required");
-  });
-
-  // ── new tests for ghAppMode sub-toggle (manual paste vs. auto-provision) ─
-
-  test("renders ghAppMode radio buttons (manual and auto)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAppMode"');
-    expect(html).toContain('value="manual"');
-    expect(html).toContain('value="auto"');
-  });
-
-  test("ghAppMode=manual is checked by default (preserves current behavior)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const manualMatch = html.match(
-      /<input type="radio" name="ghAppMode" value="manual"[^>]*>/,
-    );
-    expect(manualMatch).toBeTruthy();
-    expect(manualMatch?.[0]).toContain("checked");
-  });
-
-  test("ghAppMode=auto is NOT checked by default", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const autoMatch = html.match(
-      /<input type="radio" name="ghAppMode" value="auto"[^>]*>/,
-    );
-    expect(autoMatch).toBeTruthy();
-    expect(autoMatch?.[0]).not.toContain("checked");
-  });
-
-  test("manual fields (ghAppId, ghAppInstallationId, ghAppPrivateKey) still render unchanged", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('id="ghAppId" name="ghAppId"');
-    expect(html).toContain(
-      'id="ghAppInstallationId" name="ghAppInstallationId"',
-    );
-    expect(html).toContain('id="ghAppPrivateKey" name="ghAppPrivateKey"');
-  });
-
-  test("renders a required githubOrg text field for auto-provision", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="githubOrg"');
-    const orgMatch = html.match(/<input id="githubOrg"[^>]*>/);
-    expect(orgMatch).toBeTruthy();
-    expect(orgMatch?.[0]).toContain("required");
-  });
-
-  test("gh-app-manual-fields container wraps the three manual fields", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('id="gh-app-manual-fields"');
-  });
-
-  test("gh-app-auto-fields container wraps the githubOrg field and is hidden by default", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const containerMatch = html.match(/<div id="gh-app-auto-fields"[^>]*>/);
-    expect(containerMatch).toBeTruthy();
-    expect(containerMatch?.[0]).toContain("display:none");
   });
 });
 
@@ -7487,7 +7589,7 @@ describe("renderWorkQueuePage", () => {
 //
 // Every render*Page-style function in this file builds its <!DOCTYPE html>
 // head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
-// calls each of the 22 render sites (21 functions — renderChatThreadPage has
+// calls each of the 21 render sites (20 functions — renderChatThreadPage has
 // two distinct DOCTYPE blocks: its degraded early-return and its main return)
 // with minimal valid fixtures and asserts each output has exactly one
 // DOCTYPE and exactly one viewport meta tag, guarding against any call site
@@ -7566,7 +7668,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
           timezone: "UTC",
         }),
     ],
-    ["renderProvisionStartPage", () => renderProvisionStartPage(USER_NAME, [])],
     [
       "renderGithubAppManifestRedirectPage",
       () =>
@@ -7668,8 +7769,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 22 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(22);
+  test("all 21 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(21);
   });
 
   for (const [name, render] of renderers) {

@@ -71,6 +71,7 @@ import {
   type WriteFn,
   realLogFileTeeTarget,
 } from "./hitl-log-file-tee-target.ts";
+import { computeMissingClones } from "./lib/clone-plan.ts";
 
 // ---------------------------------------------------------------------------
 // Allowed tools — FLOOR_TOOLS + web access, minus Bash/Agent (both can
@@ -414,26 +415,6 @@ export function computeProvisionPlan(
     needsClaudeMd: !exists(claudeMdPath),
     needsAgentPolicy: !exists(agentPolicyPath),
   };
-}
-
-/**
- * Pure planning step for the auto-clone preflight step: given the configured
- * "org/repo" list, the repos dir, and an injectable existence check, report
- * which repos still need cloning (and their destination path). Repos already
- * present under reposDir are left untouched. Kept side-effect free so it's
- * unit-testable without touching the filesystem or network.
- */
-export function computeMissingClones(
-  repos: string[],
-  reposDir: string,
-  exists: (path: string) => boolean,
-): { repo: string; dest: string }[] {
-  return repos
-    .map((repo) => ({
-      repo,
-      dest: join(reposDir, repo.slice(repo.lastIndexOf("/") + 1)),
-    }))
-    .filter(({ dest }) => !exists(dest));
 }
 
 // ---------------------------------------------------------------------------

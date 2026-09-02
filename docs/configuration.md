@@ -25,6 +25,8 @@ Configuration for the Shipwright Claude Code plugin (`plugins/shipwright/`). The
 | `SHIPWRIGHT_REPOS_DIR` | `string` | `<workspace>/repos` | Fallback repos directory for plugin scripts when workspace discovery finds no `repos/` dir. |
 | `SHIPWRIGHT_REPO_DIR` | `string` | `$HOME/src` | Where the plugin commands (`dev-task`, `patch`, `deploy`) look for repo clones. The provisioner injects `<AGENT_HOME>/workspace/repos` for managed agents so clones live on the PVC. |
 | `SHIPWRIGHT_WORKTREE_DIR` | `string` | `$HOME/worktrees` | Where the plugin commands create git worktrees. The provisioner injects `<AGENT_HOME>/workspace/worktrees` for managed agents — `$HOME` is ephemeral overlay storage in the agent container, and worktrees there can trigger pod eviction. |
+| `SHIPWRIGHT_ADMIN_API_KEY` | `string` | — | Bearer token `task agent-workspace-pull -- <id-or-name>` (`scripts/agent-workspace-pull.ts`) presents to the admin service to resolve the target agent via `GET /agents` and fetch its config bundle; must match an entry in the server's `SHIPWRIGHT_ADMIN_API_KEYS`. Used alongside `SHIPWRIGHT_API_URL` (see [Shipwright platform](#shipwright-platform)), set here by the operator's own shell rather than injected by the provisioner. Env-var-only (secret). |
+| `SHIPWRIGHT_WORKSPACE_PULL_ROOT` | `string` | `~/.shipwright-agents` | Root directory `task agent-workspace-pull -- <id-or-name>` scaffolds the mirrored workspace under, keyed by the resolved agent's name: `<root>/<name>`. |
 | `GH_CMD` | `string` | `gh` | Override the `gh` CLI executable. Useful in environments where `gh` is installed to a non-default path. |
 | `AGENT_HOME` | `string` | `/data/agent-home` | Persistent storage root for workspace files, mise caches, and `~/.claude`. Set in the agent container; also used by plugin scripts for workspace discovery. |
 | `WORKSPACE_PATH` | `string` | — | Direct workspace path override. Takes precedence over `AGENT_HOME`-based discovery when set. |
@@ -63,16 +65,17 @@ Unlike the env vars below, these fields live on the Agent database record, not t
 
 ### Slack
 
-All Slack vars are env-var-only (secrets). The agent does not function as a Slack bot without them.
+Most Slack vars are env-var-only (secrets); the agent does not function as a Slack bot without them. `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` is a plain feature flag, not a secret.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `SLACK_BOT_TOKEN` | `string` | required for Slack | Slack bot user OAuth token (`xoxb-...`). |
-| `SLACK_APP_TOKEN` | `string` | required for Slack | Slack app-level token for Socket Mode (`xapp-...`). |
+| `SLACK_APP_TOKEN` | `string` | required for Slack | Slack app-level token for Socket Mode (`xapp-...`). Settable via the admin UI agent detail page's "Connect Slack" action (UAP-2.3) or as an env var. |
 | `SLACK_SIGNING_SECRET` | `string` | required for Slack | Used to verify incoming Slack request signatures. |
 | `SLACK_ADMIN_TOKEN` | `string` | — | Optional admin-level token for privileged Slack operations. |
 | `SLACK_ALERT_CHANNEL` | `string` | — | Slack channel ID to post system alerts (e.g. startup errors). |
 | `SLACK_OWNER_USER` | `string` | — | Slack user ID of the agent owner, used for DM fallback. |
+| `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` | `boolean` | `false` | When `"true"`, `SlackProgress` drives a live Thinking Steps stream (`chat.startStream`/`chat.appendStream`/`chat.stopStream`, `task_display_mode: "timeline"`) INSTEAD OF the `agents.sessions.setStatus` calls (calling both would produce two overlapping "is working" indicators — `chat.startStream` already sets the session status itself). The stream is seeded with an immediate `in_progress` task-update card on open, gets one further update per distinct `ProgressPhase` transition, and closes with a `status: "complete"` card (STS2-1.1) — all reusing one stable card id per run. Off by default — zero `chat.startStream` calls when unset. |
 
 ### GitHub
 
@@ -80,10 +83,12 @@ Provide either the GitHub App vars (recommended) or `GH_TOKEN` (PAT). App auth i
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `GH_APP_ID` | `string` | required for App auth | GitHub App ID (integer as string). Env-var-only (secret). |
+| `GH_APP_ID` | `string` | required for App auth | GitHub App ID (integer as string). Settable via the admin UI agent detail page's "Set up GitHub App" action (UAP-2.3) or as an env var. Env-var-only (secret). |
 | `GH_APP_INSTALLATION_ID` | `string` | required for App auth | Installation ID for the target org/repo. Env-var-only (secret). |
 | `GH_APP_PRIVATE_KEY` | `string` | required for App auth | PEM private key for the GitHub App (newlines may be `\n`-escaped). Env-var-only (secret). |
-| `GH_TOKEN` | `string` | — | Personal Access Token. Used only when GitHub App vars are absent. Env-var-only (secret). |
+| `GH_APP_CLIENT_ID` | `string` | — | OAuth client ID for the GitHub App, persisted from the manifest-flow exchange so the App's OAuth settings can be reconfigured later without redoing the manifest flow. Env-var-only (not secret). |
+| `GH_APP_CLIENT_SECRET` | `string` | — | OAuth client secret for the GitHub App, persisted from the manifest-flow exchange. Env-var-only (secret). |
+| `GH_TOKEN` | `string` | — | Personal Access Token. Settable via the admin UI agent detail page's "Add GitHub PAT" action (UAP-2.3) or as an env var. Used only when GitHub App vars are absent. Env-var-only (secret). |
 
 ### Shipwright platform
 

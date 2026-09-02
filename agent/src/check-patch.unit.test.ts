@@ -988,6 +988,120 @@ describe("getPatchCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
+  // ─── task-store ledger findings wiring (PFL-5.3) ──────────────────────────
+
+  test("self-authored clean-APPROVE at current HEAD with no task-store record (empty ledger) is still not a candidate", async () => {
+    // Regression guard for the incident PR's exact shape: no ledger entry
+    // exists at all (queryPrRecord resolves null), so this only passes
+    // because of PFL-5.1's isSelfCleanApprove fallback — proving the two
+    // fixes compose correctly, not just that PFL-5.3's wiring alone works.
+    const pr = makeOwnPr({ number: 10, headRefOid: "current-head-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "the-agent" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Verdict: APPROVE — looks good, no changes needed.",
+          },
+        ],
+      },
+    });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: { 10: reviewData },
+      getCurrentUser: async () => "the-agent",
+    });
+    deps.queryPrRecord = async () => null;
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("a qualifying THIRD-PARTY review with a matching source:review/resolved ledger entry on the PR record is excluded (proves the wiring, not the PFL-5.1 fallback)", async () => {
+    // A third-party (non-self-authored) review is never touched by
+    // isSelfCleanApprove/isSupersededBySelfReview — only isResolvedByLedger
+    // can exclude it. If this passes, record.findings actually reached
+    // hasUnaddressedFindings via the PFL-5.3 wiring, not via the fallback.
+    const pr = makeOwnPr({ number: 10, headRefOid: "current-head-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Please fix the retry logic before merging.",
+          },
+        ],
+      },
+    });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: { 10: reviewData },
+      getCurrentUser: async () => "the-agent",
+    });
+    deps.queryPrRecord = async () => ({
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "current-head-sha@2026-05-26T10:00:00Z",
+          disposition: "resolved",
+          source: "review",
+          evidence: "Fixed in a follow-up commit reviewed separately.",
+          at: "2026-05-27T00:00:00Z",
+          createdAt: "2026-05-27T00:00:00Z",
+        },
+      ],
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toEqual([]);
+  });
+
+  test("does NOT exclude a qualifying review when the PR record's ledger entry has a non-matching ref (wiring reaches hasUnaddressedFindings but the entry doesn't apply)", async () => {
+    const pr = makeOwnPr({ number: 10, headRefOid: "current-head-sha" });
+    const reviewData = makePrReviewData({
+      headRefOid: "current-head-sha",
+      reviews: {
+        nodes: [
+          {
+            author: { login: "reviewer1" },
+            state: "COMMENTED",
+            submittedAt: "2026-05-26T10:00:00Z",
+            commit: { oid: "current-head-sha" },
+            body: "Please fix the retry logic before merging.",
+          },
+        ],
+      },
+    });
+    const deps = makeDeps({
+      ownPrs: [pr],
+      reviewDataByPr: { 10: reviewData },
+      getCurrentUser: async () => "the-agent",
+    });
+    deps.queryPrRecord = async () => ({
+      findings: [
+        {
+          id: "f1",
+          prRecordId: "pr1",
+          ref: "some-other-commit@2026-01-01T00:00:00Z",
+          disposition: "resolved",
+          source: "review",
+          evidence: "Unrelated finding.",
+          at: "2026-05-27T00:00:00Z",
+          createdAt: "2026-05-27T00:00:00Z",
+        },
+      ],
+    });
+    const result = await getPatchCandidates(deps);
+    expect(result).toHaveLength(1);
+  });
+
   // ─── agent-scope filtering (WL-4.3) ──────────────────────────────────────
 
   test("excludes a PR from a repo returned by the local-clone scan but absent from getScopedRepos()", async () => {

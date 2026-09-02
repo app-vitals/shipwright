@@ -78,5 +78,21 @@
   "deleteApp_slack_error": {
     "status": 200,
     "body": { "ok": false, "error": "app_not_found" }
+  },
+  "authTest_success": {
+    "status": 200,
+    "body": { "ok": true, "user_id": "U0AALR8M69X", "team_id": "T0123456789" }
+  },
+  "authTest_http_error": {
+    "status": 500,
+    "body": { "ok": false, "error": "internal_error" }
+  },
+  "authTest_slack_error": {
+    "status": 200,
+    "body": { "ok": false, "error": "invalid_auth" }
+  },
+  "authTest_missing_user_id": {
+    "status": 200,
+    "body": { "ok": true, "team_id": "T0123456789" }
   }
 }

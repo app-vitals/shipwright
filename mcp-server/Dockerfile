@@ -29,6 +29,7 @@ COPY metrics/package.json ./metrics/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
 COPY lib/package.json ./lib/
 COPY mcp-server/package.json ./mcp-server/
+COPY patches/ ./patches/
 
 RUN bun install --frozen-lockfile
 

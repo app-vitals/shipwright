@@ -38,4 +38,13 @@ describe("PROGRESS_LABELS", () => {
       expect(PROGRESS_LABELS[phase].length).toBeGreaterThan(0);
     }
   });
+
+  // STS2-1.1: every in-progress label must end in "…" for consistent
+  // Thinking Steps stream rendering (a bare, un-ellipsized label like
+  // "Reading files" reads as a completed action, not an in-progress one).
+  test("every label ends in an ellipsis (…), consistently", () => {
+    for (const phase of PROGRESS_PHASES) {
+      expect(PROGRESS_LABELS[phase].endsWith("…")).toBe(true);
+    }
+  });
 });
