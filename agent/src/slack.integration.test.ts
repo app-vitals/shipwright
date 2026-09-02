@@ -505,6 +505,250 @@ describe("message handler — DM routing", () => {
     expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
+  // ─── STS2-1.1 regression: queued-message burst ──────────────────────────
+  //
+  // Every message gets its own independent stream lifecycle regardless of
+  // ThreadStatusTracker's refcount (AC #5) — the refcount only informs the
+  // seed card's title: "Thinking…" for the first message on a thread,
+  // "Queued…" for every message that arrives while an earlier one on the
+  // same thread is still in flight. Without the fix, enter()/exit() GATED
+  // whether start()/finish() were even called — the second+ message in a
+  // burst never opened its own stream at all.
+  test("a burst of queued messages on the same thread each get their own stream + correct Queued/Thinking seed labels (STS2-1.1 AC #5)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+
+    // Two deferred runner calls so both messages are genuinely in flight at
+    // once — the second is dispatched before the first's runner() resolves.
+    let resolveFirst: (v: {
+      result: string;
+      sessionId?: string;
+    }) => void = () => {};
+    let resolveSecond: (v: {
+      result: string;
+      sessionId?: string;
+    }) => void = () => {};
+    mockRunClaude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockRunClaude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    const client = makeMockClient();
+    const say1 = makeSay("reply.ts.1");
+    const say2 = makeSay("reply.ts.2");
+    // Same thread_ts on both — the tracker keys on
+    // getThreadKey(channel, thread_ts ?? ts), so a shared thread_ts is what
+    // makes this a genuine same-thread burst (distinct top-level ts values
+    // alone would produce distinct, unrelated session keys).
+    const message = {
+      channel: "D-BURST",
+      ts: "1.1",
+      thread_ts: "1.0",
+      text: "first",
+      channel_type: "im",
+    };
+
+    // Fire both messages on the same thread without awaiting the first —
+    // start() for #2 runs while #1's runner() call is still pending.
+    const p1 = capturedMessageHandler?.({
+      message,
+      say: say1,
+      client,
+    });
+    const p2 = capturedMessageHandler?.({
+      message: { ...message, ts: "1.2", text: "second" },
+      say: say2,
+      client,
+    });
+
+    // Both handlers should have opened their own stream by now (start() is
+    // awaited synchronously before the runner() call inside each handler).
+    // A real setTimeout tick (not just queued microtasks) is needed — the
+    // handler crosses several real awaits (startStream, buildPromptWithFiles,
+    // etc.) before reaching the runner() call below.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(client.chat.startStream).toHaveBeenCalledTimes(2);
+
+    const appendCalls = client.chat.appendStream.mock.calls.map(
+      (c) => c[0] as { chunks: Array<Record<string, unknown>> },
+    );
+    const seedTitles = appendCalls
+      .map((c) => c.chunks.find((ch) => ch.type === "task_update")?.title)
+      .filter((t): t is string => typeof t === "string");
+
+    expect(seedTitles).toContain("Thinking…");
+    expect(seedTitles).toContain("Queued…");
+
+    resolveFirst({ result: "first done", sessionId: "s1" });
+    resolveSecond({ result: "second done", sessionId: "s2" });
+    await p1;
+    await p2;
+  });
+
+  // ─── STS2-1.1 regression: first-to-finish keeps session_status processing
+  //
+  // stopStream's session_status is per-thread, not per-message — the
+  // first-to-finish message of a burst must NOT dismiss the "Bodhi is
+  // working" indicator for the whole thread while a later message is still
+  // running (AC #5).
+  test("the first-to-finish message of a burst keeps session_status 'processing' while a later one is still in flight (STS2-1.1 AC #5)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+
+    let resolveFirst: (v: {
+      result: string;
+      sessionId?: string;
+    }) => void = () => {};
+    let resolveSecond: (v: {
+      result: string;
+      sessionId?: string;
+    }) => void = () => {};
+    mockRunClaude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve;
+        }),
+    );
+    mockRunClaude.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+
+    const client = makeMockClient();
+    const say1 = makeSay("reply.ts.1");
+    const say2 = makeSay("reply.ts.2");
+    // Same thread_ts on both — see the matching comment in the burst-seed
+    // test above.
+    const message = {
+      channel: "D-BURST2",
+      ts: "2.1",
+      thread_ts: "2.0",
+      text: "first",
+      channel_type: "im",
+    };
+
+    const p1 = capturedMessageHandler?.({
+      message,
+      say: say1,
+      client,
+    });
+    const p2 = capturedMessageHandler?.({
+      message: { ...message, ts: "2.2", text: "second" },
+      say: say2,
+      client,
+    });
+    // A real setTimeout tick — see the matching comment in the burst-seed
+    // test above.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    // First message finishes while the second is still running.
+    resolveFirst({ result: "first done", sessionId: "s1" });
+    await p1;
+
+    const stopCalls = client.chat.stopStream.mock.calls.map(
+      (c) => c[0] as { session_status?: string },
+    );
+    expect(stopCalls).toHaveLength(1);
+    expect(stopCalls[0]?.session_status).toBe("processing");
+
+    // Now the second (genuinely last) message finishes — closes "active".
+    resolveSecond({ result: "second done", sessionId: "s2" });
+    await p2;
+
+    const stopCallsAfter = client.chat.stopStream.mock.calls.map(
+      (c) => c[0] as { session_status?: string },
+    );
+    expect(stopCallsAfter).toHaveLength(2);
+    expect(stopCallsAfter[1]?.session_status).toBe("active");
+  });
+
+  // ─── STS2-1.1: chunk schema, setStatus skip, delivery ───────────────────
+
+  test("does not call agents.sessions.setStatus at all when streaming (STS2-1.1 AC #3)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+    expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
+  });
+
+  test("every task_update chunk uses the type/id/title/status shape, never the old {type, text} shape (STS2-1.1 AC #1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    expect(taskUpdateChunks.length).toBeGreaterThan(0);
+    for (const chunk of taskUpdateChunks) {
+      expect(chunk).not.toHaveProperty("text");
+      expect(chunk.id).toBeDefined();
+      expect(["in_progress", "complete", "error"]).toContain(
+        chunk.status as string,
+      );
+    }
+  });
+
+  test("reuses a single stable task_update id across the whole run (STS2-1.1 AC #1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+    const ids = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update")
+      .map((chunk) => chunk.id);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips say() (STS2-1.1 AC #2)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
+
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toContainEqual({
+      type: "markdown_text",
+      text: "Claude response text",
+    });
+    // Delivered via the stream — say() is not used for the real reply.
+    expect(say).not.toHaveBeenCalled();
+  });
+
+  test("falls back to say() when chat.appendStream rejects (delivery failure never drops the reply) (STS2-1.1 AC #2)", async () => {
+    const client = makeMockClient();
+    client.chat.appendStream.mockImplementation(async () => {
+      throw new Error("streaming_mode_mismatch");
+    });
+    const say = makeSay();
+    createSlackApp({ thinkingStepsEnabled: true });
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D-FALLBACK",
+        ts: "9.9",
+        text: "hi",
+        channel_type: "im",
+      },
+      say,
+      client,
+    });
+    expect(say).toHaveBeenCalledWith({
+      text: "[formatted] Claude response text",
+      thread_ts: "9.9",
+    });
+  });
+
   test("passes an onProgress function through to the runner as the third arg (AC #1)", async () => {
     await invokeDM({ text: "hi", channel: "D123", ts: "111.222" });
     const call = mockRunClaude.mock.calls.at(-1) as unknown[];

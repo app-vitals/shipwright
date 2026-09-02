@@ -143,9 +143,9 @@ test.describe("GET /admin/chat/:agentId/threads/:threadId — CFB-2.3 live progr
     await loadThread(page, context);
     await expect(page.locator("#live-status-bubble")).toBeVisible();
     await expect(page.locator("#live-status-elapsed")).toBeVisible();
-    // progressPhase "reading" → "Reading files" milestone.
+    // progressPhase "reading" → "Reading files…" milestone.
     await expect(page.locator("#live-status-milestone")).toHaveText(
-      "Reading files",
+      "Reading files…",
     );
   });
 

@@ -449,6 +449,44 @@ async function buildPromptWithFiles(
   return fileParts.length ? `${fileParts.join("\n")}\n${text}`.trim() : text;
 }
 
+/**
+ * Starts a run's progress tracking. enter()/exit() on ThreadStatusTracker
+ * are ALWAYS called by every handler (every enter() needs a matching
+ * exit(), or the refcount leaks upward forever) — but what the resulting
+ * boolean gates differs by mode (STS2-1.1 AC #5):
+ *   - Non-streaming: the refcount still gates whether setStatus's start()
+ *     actually fires — only the thread's first concurrent run should flip
+ *     agents.sessions.setStatus("processing").
+ *   - Streaming: every message gets its own independent stream lifecycle
+ *     regardless of refcount — the boolean only picks the seed card's
+ *     title ("Queued…" when another message on this thread is already in
+ *     flight, "Thinking…" otherwise).
+ */
+async function startProgress(
+  progress: SlackProgress,
+  thinkingStepsEnabled: boolean,
+  isFirstInThread: boolean,
+): Promise<void> {
+  if (thinkingStepsEnabled) {
+    await progress.start({ queued: !isFirstInThread });
+  } else if (isFirstInThread) {
+    await progress.start();
+  }
+}
+
+/** The finish()-side counterpart of startProgress() — see its doc comment. */
+async function finishProgress(
+  progress: SlackProgress,
+  thinkingStepsEnabled: boolean,
+  isLastInThread: boolean,
+): Promise<void> {
+  if (thinkingStepsEnabled) {
+    await progress.finish({ stillInFlight: !isLastInThread });
+  } else if (isLastInThread) {
+    await progress.finish();
+  }
+}
+
 export function createSlackApp(
   runner: ClaudeRunner,
   formatter: (text: string) => string = markdownToSlack,
@@ -533,7 +571,14 @@ export function createSlackApp(
       threadTs: replyTs,
       thinkingStepsEnabled,
     });
-    if (threadStatusTracker.enter(sessionKey)) await progress.start();
+    // enter()/exit() are ALWAYS called (every enter() needs a matching
+    // exit(), or the refcount leaks upward forever) — see startProgress()'s
+    // doc comment for what the boolean gates in each mode (AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -590,30 +635,33 @@ export function createSlackApp(
 
       let postedTs: string | undefined;
       if (!shouldSuppress && cleaned.trim().length > 0) {
-        const blocks = blocksConverter(cleaned);
-        let sayResult: unknown;
-        if (blocks) {
-          try {
+        const delivered = await progress.deliverContent(cleaned);
+        if (!delivered) {
+          const blocks = blocksConverter(cleaned);
+          let sayResult: unknown;
+          if (blocks) {
+            try {
+              sayResult = await say({
+                text: blocks.text,
+                blocks: blocks.blocks,
+                thread_ts: msg.thread_ts ?? msg.ts,
+              });
+            } catch (err: unknown) {
+              if (!isInvalidBlocksError(err)) throw err;
+              console.warn("[slack] invalid_blocks — retrying with plain text");
+              sayResult = await say({
+                text: blocks.text || formatter(cleaned),
+                thread_ts: msg.thread_ts ?? msg.ts,
+              });
+            }
+          } else {
             sayResult = await say({
-              text: blocks.text,
-              blocks: blocks.blocks,
-              thread_ts: msg.thread_ts ?? msg.ts,
-            });
-          } catch (err: unknown) {
-            if (!isInvalidBlocksError(err)) throw err;
-            console.warn("[slack] invalid_blocks — retrying with plain text");
-            sayResult = await say({
-              text: blocks.text || formatter(cleaned),
+              text: formatter(cleaned),
               thread_ts: msg.thread_ts ?? msg.ts,
             });
           }
-        } else {
-          sayResult = await say({
-            text: formatter(cleaned),
-            thread_ts: msg.thread_ts ?? msg.ts,
-          });
+          postedTs = (sayResult as { ts?: string } | undefined)?.ts;
         }
-        postedTs = (sayResult as { ts?: string } | undefined)?.ts;
       } else if (!shouldSuppress) {
         console.log("[slack] markers-only response — skipping text post");
       }
@@ -635,7 +683,13 @@ export function createSlackApp(
         thread_ts: msg.thread_ts ?? msg.ts,
       });
     } finally {
-      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
+      // exit() is ALWAYS called (matching the always-called enter() above)
+      // — see finishProgress()'s doc comment for what it gates in each mode.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
@@ -676,7 +730,13 @@ export function createSlackApp(
       threadTs: replyTs,
       thinkingStepsEnabled,
     });
-    if (threadStatusTracker.enter(sessionKey)) await progress.start();
+    // enter() is ALWAYS called — see startProgress()'s doc comment for
+    // what it gates in each mode (STS2-1.1 AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -751,30 +811,33 @@ export function createSlackApp(
 
       let postedMentionTs: string | undefined;
       if (!isSilent && cleaned.trim().length > 0) {
-        const blocks = blocksConverter(cleaned);
-        let sayResult: unknown;
-        if (blocks) {
-          try {
+        const delivered = await progress.deliverContent(cleaned);
+        if (!delivered) {
+          const blocks = blocksConverter(cleaned);
+          let sayResult: unknown;
+          if (blocks) {
+            try {
+              sayResult = await say({
+                text: blocks.text,
+                blocks: blocks.blocks,
+                thread_ts: replyTs,
+              });
+            } catch (err: unknown) {
+              if (!isInvalidBlocksError(err)) throw err;
+              console.warn("[slack] invalid_blocks — retrying with plain text");
+              sayResult = await say({
+                text: blocks.text || formatter(cleaned),
+                thread_ts: replyTs,
+              });
+            }
+          } else {
             sayResult = await say({
-              text: blocks.text,
-              blocks: blocks.blocks,
-              thread_ts: replyTs,
-            });
-          } catch (err: unknown) {
-            if (!isInvalidBlocksError(err)) throw err;
-            console.warn("[slack] invalid_blocks — retrying with plain text");
-            sayResult = await say({
-              text: blocks.text || formatter(cleaned),
+              text: formatter(cleaned),
               thread_ts: replyTs,
             });
           }
-        } else {
-          sayResult = await say({
-            text: formatter(cleaned),
-            thread_ts: replyTs,
-          });
+          postedMentionTs = (sayResult as { ts?: string } | undefined)?.ts;
         }
-        postedMentionTs = (sayResult as { ts?: string } | undefined)?.ts;
       } else if (!isSilent) {
         console.log("[slack] markers-only response — skipping text post");
       }
@@ -793,7 +856,12 @@ export function createSlackApp(
       sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
-      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
+      // See finishProgress()'s doc comment.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
@@ -831,7 +899,13 @@ export function createSlackApp(
       threadTs: ev.item.ts,
       thinkingStepsEnabled,
     });
-    if (threadStatusTracker.enter(sessionKey)) await progress.start();
+    // enter() is ALWAYS called — see startProgress()'s doc comment for
+    // what it gates in each mode (STS2-1.1 AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
@@ -860,41 +934,55 @@ export function createSlackApp(
 
       let postResult: unknown;
       if (cleaned.trim().length > 0) {
-        const blocks = blocksConverter(cleaned);
-        if (blocks) {
-          try {
-            postResult = await client.chat.postMessage({
-              channel: ev.item.channel,
-              text: blocks.text,
-              blocks: blocks.blocks,
-            });
-          } catch (err: unknown) {
-            if (isInvalidBlocksError(err)) {
-              console.warn("[slack] invalid_blocks — retrying with plain text");
-              postResult = await client.chat
-                .postMessage({
-                  channel: ev.item.channel,
-                  text: blocks.text || formatter(cleaned),
-                })
-                .catch((err2: unknown) => {
-                  console.warn(
-                    "[slack] reaction_added: postMessage failed:",
-                    err2,
-                  );
-                  return undefined;
-                });
-            } else {
-              console.warn("[slack] reaction_added: postMessage failed:", err);
-              postResult = undefined;
+        const delivered = await progress.deliverContent(cleaned);
+        if (!delivered) {
+          const blocks = blocksConverter(cleaned);
+          if (blocks) {
+            try {
+              postResult = await client.chat.postMessage({
+                channel: ev.item.channel,
+                text: blocks.text,
+                blocks: blocks.blocks,
+              });
+            } catch (err: unknown) {
+              if (isInvalidBlocksError(err)) {
+                console.warn(
+                  "[slack] invalid_blocks — retrying with plain text",
+                );
+                postResult = await client.chat
+                  .postMessage({
+                    channel: ev.item.channel,
+                    text: blocks.text || formatter(cleaned),
+                  })
+                  .catch((err2: unknown) => {
+                    console.warn(
+                      "[slack] reaction_added: postMessage failed:",
+                      err2,
+                    );
+                    return undefined;
+                  });
+              } else {
+                console.warn(
+                  "[slack] reaction_added: postMessage failed:",
+                  err,
+                );
+                postResult = undefined;
+              }
             }
+          } else {
+            postResult = await client.chat
+              .postMessage({
+                channel: ev.item.channel,
+                text: formatter(cleaned),
+              })
+              .catch((err: unknown) => {
+                console.warn(
+                  "[slack] reaction_added: postMessage failed:",
+                  err,
+                );
+                return undefined;
+              });
           }
-        } else {
-          postResult = await client.chat
-            .postMessage({ channel: ev.item.channel, text: formatter(cleaned) })
-            .catch((err: unknown) => {
-              console.warn("[slack] reaction_added: postMessage failed:", err);
-              return undefined;
-            });
         }
       }
 
@@ -911,7 +999,12 @@ export function createSlackApp(
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
     } finally {
-      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
+      // See finishProgress()'s doc comment.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
