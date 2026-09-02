@@ -127,6 +127,9 @@ function seedTitle(opts: SlackProgressStartOptions | undefined): string {
 /** Title for the terminal task_update card. Never ends in "…" (AC #4). */
 const COMPLETE_TITLE = "Done";
 
+/** Title for the terminal card on a thrown run (STS2-4.1 AC #1). */
+const ERROR_TITLE = "Error";
+
 /**
  * Drives the agents.sessions.setStatus lifecycle status (when
  * `thinkingStepsEnabled` is off), or the live Thinking Steps stream (when
@@ -309,6 +312,27 @@ export class SlackProgress {
       );
       return undefined;
     }
+  }
+
+  /**
+   * Call from the handler's catch block when the run throws, before
+   * `finish()` closes the stream (STS2-4.1 AC #1). Marks the run's card
+   * `status: "error"` so a thrown run doesn't leave the card stuck in
+   * whatever `in_progress` state it was last in. This is a UI-state signal
+   * only — the caller's existing `sentryClient.captureException(err)` call
+   * remains the single log point for the error; this method does not log.
+   *
+   * No-op (matching `deliverContent()`'s guard) when `thinkingStepsEnabled`
+   * is off or no stream is open — never throws, never calls
+   * `chat.appendStream` in that case. Sets the same `completed` flag
+   * `deliverContent()` sets, so `finish()`'s "only if !this.completed" guard
+   * doesn't send a redundant `status: "complete"` card after the error card.
+   */
+  reportError(): void {
+    if (!this.thinkingStepsEnabled) return;
+    if (!this.streamTs) return;
+    this.appendTaskUpdate(ERROR_TITLE, "error");
+    this.completed = true;
   }
 
   /**

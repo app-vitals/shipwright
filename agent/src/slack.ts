@@ -682,6 +682,10 @@ export function createSlackApp(
         text: formatRunErrorForSlack(err),
         thread_ts: msg.thread_ts ?? msg.ts,
       });
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) — a
+      // UI-state signal only; sentryClient.captureException(err) above
+      // remains the single log point for this error.
+      progress.reportError();
     } finally {
       // exit() is ALWAYS called (matching the always-called enter() above)
       // — see finishProgress()'s doc comment for what it gates in each mode.
@@ -855,6 +859,10 @@ export function createSlackApp(
       console.error("[slack] error:", err);
       sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) — a
+      // UI-state signal only; sentryClient.captureException(err) above
+      // remains the single log point for this error.
+      progress.reportError();
     } finally {
       // See finishProgress()'s doc comment.
       await finishProgress(
@@ -998,6 +1006,9 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) — a
+      // UI-state signal only, not a second log path.
+      progress.reportError();
     } finally {
       // See finishProgress()'s doc comment.
       await finishProgress(
