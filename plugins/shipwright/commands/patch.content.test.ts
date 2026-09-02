@@ -454,22 +454,23 @@ describe("patch.md — rebuttal comment for all-REJECT findings (RPF-1.1)", () =
   });
 });
 
-describe("patch.md — reset reviewState to pending after a no-push, rebuttal-confirmed patch cycle (RPF-1.2)", () => {
-  it("Step 5c always proceeds to Step 5c.5, carrying forward whether this was the no-push/rebuttal-confirmed case", () => {
+describe("patch.md — no manual reviewState reset; ledger write is the sole re-review trigger (PFL-4.1)", () => {
+  it("Step 5c always proceeds to Step 5c.5 for both the mixed-push and no-push cases", () => {
     const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
     const step5c5Idx = content.indexOf("### Step 5c.5:");
     const section = content.slice(step5cIdx, step5c5Idx);
 
     expect(section).toContain("DONE_WITH_CONCERNS");
     expect(section).toMatch(/proceed(s)? to Step 5c\.5/i);
-    // Both the mixed-push case and the no-push case (whether every finding was REJECTed or
-    // some ACCEPTED/MODIFIED findings resolved to a zero-diff no-op) now reach Step 5c.5.
     expect(section.toLowerCase()).toContain("mixed");
     expect(section).toContain("no-push");
     expect(section).not.toContain("ALL_REJECT_NO_PUSH_REBUTTAL_CONFIRMED");
+    // The manual reviewState reset's own gating variable is gone — PFL-4.1 removed it
+    // entirely, along with the reset it used to gate.
+    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
   });
 
-  it("Step 5c.5 conditionally PATCHes /prs/{id} with reviewState:pending, gated on the no-push/rebuttal-confirmed case", () => {
+  it("Step 5c.5 no longer PATCHes /prs/{id} with reviewState:pending — the manual reset is fully removed", () => {
     const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
     const step5dIdx = content.indexOf("### Step 5d:");
     expect(step5c5Idx).toBeGreaterThan(-1);
@@ -481,31 +482,21 @@ describe("patch.md — reset reviewState to pending after a no-push, rebuttal-co
     expect(section).toContain("/prs/$PR_RECORD_ID/patch");
     expect(section).toContain("commitSha");
 
-    // New conditional reviewState reset.
-    expect(section).toContain("-X PATCH");
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(section).toContain("reviewState");
-    expect(section).toContain("pending");
-    // It must be gated by a condition, not unconditional — expect an if-check near the
-    // reviewState reset referencing the no-push/rebuttal case.
-    const reviewStateIdx = section.indexOf("reviewState");
-    const before = section.slice(Math.max(0, reviewStateIdx - 600), reviewStateIdx);
-    expect(before).toMatch(/if\s*\[/);
-    expect(section).toContain("NO_PUSH_REBUTTAL_CONFIRMED");
+    // No manual reviewState reset anywhere in this step.
+    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
+    expect(section).not.toContain('"reviewState": "pending"');
+    expect(section).not.toContain("reviewState reset failed");
   });
 
-  it("Step 5c.5's reviewState reset is scoped to the no-push case, not the ACCEPT/MODIFY push case, and doesn't require every finding to be REJECTed", () => {
+  it("Step 5c.5 documents the ledger POST as the sole mechanism re-qualifying a no-push rebuttal cycle for review, citing PFL-3.1's hasFreshLedgerFinding", () => {
     const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
     const step5dIdx = content.indexOf("### Step 5d:");
     const section = content.slice(step5c5Idx, step5dIdx);
 
-    // The prose around the conditional must reference the no-push/rebuttal case, not fire
-    // for every patch cycle, and must not require literally every finding to be REJECTed
-    // (a mixed run whose ACCEPTED/MODIFIED findings all resolve to zero-diff no-ops also
-    // qualifies, since dedup keys off the commit SHA, not the finding classification).
-    expect(section.toLowerCase()).toContain("no-push");
-    const normalized = section.replace(/\s+/g, " ");
-    expect(normalized).toMatch(/does not require every finding.{0,40}REJECTed/i);
+    expect(section).toContain("hasFreshLedgerFinding");
+    expect(section).toContain("PFL-3.1");
+    expect(section.toLowerCase()).toContain("sole mechanism");
+    expect(section).toContain("PFL-4.1");
   });
 
   it("the ACCEPT/MODIFY push path text in Step 5b [D] is unchanged — still commits, pushes, and records commitSha", () => {
@@ -521,12 +512,12 @@ describe("patch.md — reset reviewState to pending after a no-push, rebuttal-co
     expect(dSection).toContain("git add {changed files}");
     expect(dSection).toContain("git push origin {branch}");
     // No reviewState reset language belongs in the subagent-dispatched commit instructions —
-    // that logic lives in Step 5c.5, driven by the orchestrator, not the subagent.
+    // there is no reviewState reset anywhere now (PFL-4.1).
     expect(dSection).not.toContain("reviewState");
   });
 });
 
-describe("patch.md — POST a rejected ledger entry on rebuttal, alongside the existing manual reviewState reset (PFL-2.2)", () => {
+describe("patch.md — POST a rejected ledger entry on rebuttal (PFL-2.2)", () => {
   it("Step 5c.5 POSTs a source:patch, disposition:rejected ledger entry to /prs/:id/findings for each REJECTed finding", () => {
     const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
     const step5dIdx = content.indexOf("### Step 5d:");
@@ -539,42 +530,24 @@ describe("patch.md — POST a rejected ledger entry on rebuttal, alongside the e
     expect(section).toContain('\\"disposition\\": \\"rejected\\"');
   });
 
-  it("the ledger POST runs alongside the existing rebuttal comment + thread resolution, not gated on the no-push reviewState-reset condition", () => {
+  it("the ledger POST runs alongside the existing rebuttal comment + thread resolution, unconditionally whenever findings were REJECTed", () => {
     const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
     const step5dIdx = content.indexOf("### Step 5d:");
     const section = content.slice(step5c5Idx, step5dIdx);
 
-    // The ledger POST must fire whenever findings were REJECTed this cycle, independent of
-    // NO_PUSH_REBUTTAL_CONFIRMED (which additionally requires no push happened) — it is not
-    // nested inside that gate.
     const findingsIdx = section.indexOf("/prs/$PR_RECORD_ID/findings");
     expect(findingsIdx).toBeGreaterThan(-1);
-    const reviewStateIdx = section.indexOf('"reviewState": "pending"');
-    expect(reviewStateIdx).toBeGreaterThan(-1);
-    expect(findingsIdx).not.toBe(reviewStateIdx);
-
-    const before = section.slice(Math.max(0, findingsIdx - 400), findingsIdx);
-    expect(before).not.toContain('if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]');
+    // No reviewState reset for it to be gated on or nested inside anymore.
+    expect(section).not.toContain('"reviewState": "pending"');
+    expect(section).not.toContain("NO_PUSH_REBUTTAL_CONFIRMED");
   });
 
-  it("Step 5c tracks REJECTed findings this cycle (ref + rejection reason) separately from NO_PUSH_REBUTTAL_CONFIRMED, for Step 5c.5 to loop over", () => {
+  it("Step 5c tracks REJECTed findings this cycle (ref + rejection reason), for Step 5c.5 to loop over", () => {
     const step5cIdx = content.indexOf("### Step 5c: Handle Subagent Status");
     const step5c5Idx = content.indexOf("### Step 5c.5:");
     const section = content.slice(step5cIdx, step5c5Idx);
 
     expect(section).toContain("REJECTED_FINDINGS_THIS_CYCLE");
-  });
-
-  it("does not modify the existing manual reviewState:pending PATCH — still present, still conditional on NO_PUSH_REBUTTAL_CONFIRMED", () => {
-    const step5c5Idx = content.indexOf("### Step 5c.5: Upsert PR Record");
-    const step5dIdx = content.indexOf("### Step 5d:");
-    const section = content.slice(step5c5Idx, step5dIdx);
-
-    expect(section).toContain('if [ "$NO_PUSH_REBUTTAL_CONFIRMED" = "true" ]');
-    expect(section).toContain("-X PATCH");
-    expect(section).toContain('"$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID"');
-    expect(section).toContain('-d \'{"reviewState": "pending"}\'');
-    expect(section).toContain("⚠ PATCH /prs/$PR_RECORD_ID reviewState reset failed — continuing");
   });
 
   it("the ledger POST call follows the same warn-and-continue error-handling idiom as the other Step 5c.5 task-store calls", () => {
