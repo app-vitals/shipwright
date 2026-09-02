@@ -474,14 +474,24 @@ async function startProgress(
   }
 }
 
-/** The finish()-side counterpart of startProgress() — see its doc comment. */
+/**
+ * The finish()-side counterpart of startProgress() — see its doc comment.
+ * `wasSuppressed` (STS2-3.1) signals the run's reply was suppressed (e.g. a
+ * [silent] marker) so finish() titles the stream's fallback completion card
+ * "Ack" instead of "Done" — see SlackProgressFinishOptions. Defaults to
+ * `false`, matching prior behavior for callers that don't compute silence.
+ */
 async function finishProgress(
   progress: SlackProgress,
   thinkingStepsEnabled: boolean,
   isLastInThread: boolean,
+  wasSuppressed = false,
 ): Promise<void> {
   if (thinkingStepsEnabled) {
-    await progress.finish({ stillInFlight: !isLastInThread });
+    await progress.finish({
+      stillInFlight: !isLastInThread,
+      silent: wasSuppressed,
+    });
   } else if (isLastInThread) {
     await progress.finish();
   }
@@ -601,6 +611,10 @@ export function createSlackApp(
       prompt = `[Thread message — respond normally, or use [silent] if no response is needed]\n${prompt}`;
     }
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -623,6 +637,7 @@ export function createSlackApp(
       const isSilent = markers.some((m) => m.type === "silent");
       const dmOverride = isSilent && isDM && cleaned.trim().length > 0;
       const shouldSuppress = isSilent && !dmOverride;
+      wasSuppressed = shouldSuppress;
 
       if (dmOverride) {
         console.log("[slack] ignoring [silent] marker in DM — posting reply");
@@ -689,6 +704,7 @@ export function createSlackApp(
         progress,
         thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
     }
   });
@@ -783,6 +799,10 @@ export function createSlackApp(
       }
     }
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -803,6 +823,7 @@ export function createSlackApp(
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
+      wasSuppressed = isSilent;
       if (isSilent) {
         console.log(
           `[slack] silent response — not posting (channel mention, cleaned: ${cleaned.length} chars)`,
@@ -861,6 +882,7 @@ export function createSlackApp(
         progress,
         thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
     }
   });
@@ -907,6 +929,10 @@ export function createSlackApp(
       threadStatusTracker.enter(sessionKey),
     );
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -927,6 +953,7 @@ export function createSlackApp(
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
+      wasSuppressed = isSilent;
       if (isSilent) {
         console.log("[slack] reaction_added: silent response — not posting");
         return;
@@ -1004,6 +1031,7 @@ export function createSlackApp(
         progress,
         thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
     }
   });
