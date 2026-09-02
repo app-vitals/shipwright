@@ -631,9 +631,10 @@ export function renderNewLocalAgentPage(
     ${errorHtml}
     <div class="card">
       <p style="font-size:14px;color:#6b7280;margin-bottom:20px">
-        Create an agent and choose where it runs. No Slack credentials are needed —
-        talk to the agent from the <a href="/admin/chat">Chat</a> tab. Slack can be
-        connected later from the <span class="mono">/admin/provision</span> wizard.
+        Create an agent and choose where it runs. Slack and GitHub connections
+        below are optional — you can always talk to the agent from the
+        <a href="/admin/chat">Chat</a> tab first and connect them later from
+        the agent detail page.
       </p>
       <form method="POST" action="/admin/agents" style="display:flex;flex-direction:column;gap:16px">
         <div class="form-group">
@@ -695,6 +696,19 @@ export function renderNewLocalAgentPage(
           </p>
         </div>
         <div class="form-group">
+          <label class="form-label" for="anthropicApiKey">Anthropic API Key (optional)</label>
+          <input
+            id="anthropicApiKey"
+            name="anthropicApiKey"
+            type="password"
+            class="form-input"
+            placeholder="sk-ant-..."
+          />
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">
+            Stored as the agent's <span class="mono">ANTHROPIC_API_KEY</span>.
+          </p>
+        </div>
+        <div class="form-group">
           <label class="form-label" for="repos">Repos (optional, one per line)</label>
           <textarea
             id="repos"
@@ -724,6 +738,73 @@ export function renderNewLocalAgentPage(
           When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
           members yet, enabling this will block all Slack senders.
         </p>
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">Slack (optional)</legend>
+          <div class="form-group" style="display:flex;align-items:center;gap:6px;margin-bottom:0">
+            <input
+              id="connectSlack"
+              name="connectSlack"
+              type="checkbox"
+              value="true"
+              onchange="document.getElementById('slack-fields').style.display=this.checked?'block':'none'"
+            />
+            <label class="form-label" for="connectSlack" style="margin-bottom:0">Connect Slack</label>
+          </div>
+          <div id="slack-fields" style="display:none;margin-top:12px">
+            <div class="form-group">
+              <label class="form-label" for="xoxpToken">Slack App Configuration Token</label>
+              <input
+                id="xoxpToken"
+                name="xoxpToken"
+                type="password"
+                class="form-input"
+                placeholder="xoxe.xoxp-..."
+              />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                This token is used once to create the Slack app manifest. It is not stored. After
+                creating the agent you'll be redirected to authorize the Slack app.
+              </p>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+          <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication (optional)</legend>
+          <div class="form-group" style="margin-bottom:12px">
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="skip" checked
+                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='none'"
+              /> Skip
+              <span style="font-weight:400;color:#6b7280">
+                — connect GitHub later from the agent detail page.
+              </span>
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
+              <input type="radio" name="ghAuthMode" value="pat"
+                onchange="document.getElementById('gh-pat-fields').style.display='block';document.getElementById('gh-app-fields').style.display='none'"
+              /> Personal Access Token
+            </label>
+            <label style="display:block;font-size:13px;font-weight:500">
+              <input type="radio" name="ghAuthMode" value="app"
+                onchange="document.getElementById('gh-pat-fields').style.display='none';document.getElementById('gh-app-fields').style.display='block'"
+              /> Create GitHub App
+            </label>
+          </div>
+          <div id="gh-pat-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="ghPat">Personal Access Token</label>
+              <input id="ghPat" name="ghPat" type="password" class="form-input" placeholder="ghp_..." />
+            </div>
+          </div>
+          <div id="gh-app-fields" style="display:none">
+            <div class="form-group">
+              <label class="form-label" for="githubOrg">GitHub org</label>
+              <input id="githubOrg" name="githubOrg" type="text" class="form-input" placeholder="my-org" />
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">
+                You'll be redirected to GitHub to create the App under this organization from a manifest.
+              </p>
+            </div>
+          </div>
+        </fieldset>
         <div>
           <button type="submit" class="btn btn-primary">Create agent →</button>
           <a href="/admin/agents" class="btn btn-secondary" style="margin-left:8px">Cancel</a>
@@ -1732,10 +1813,16 @@ export function renderGithubAppInstalledPage(
 // xapp-token page shown after OAuth callback completes — user pastes the Socket Mode app token.
 export function renderProvisionXappTokenPage(
   userName: string,
-  opts: { agentId: string; error?: string },
+  opts: { agentId: string; error?: string; warning?: string },
 ): string {
   const errorHtml = opts.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+  // Non-fatal warning (UAP-2.1) — e.g. a GitHub PAT that failed to store
+  // during the combined create+connect flow. Surfaced here so the operator
+  // isn't misled into believing GH_TOKEN was connected after finishing Slack.
+  const warningHtml = opts.warning
+    ? `<div class="alert alert-warning">${escapeHtml(opts.warning)}</div>`
     : "";
 
   return renderAdminPage({
@@ -1757,6 +1844,7 @@ export function renderProvisionXappTokenPage(
         and generate an <strong>App-Level Token</strong> with <code class="mono">connections:write</code> scope.
         Paste the <code class="mono">xapp-</code> token below.
       </p>
+      ${warningHtml}
       ${errorHtml}
       <form method="POST" action="/admin/provision/xapp-token">
         <input type="hidden" name="agentId" value="${escapeHtml(opts.agentId)}" />

@@ -269,6 +269,53 @@ describe("SlackProvisioningService.startConnect", () => {
     expect(slackClient.exchangeRedirectUris).toEqual([CONNECT_SLACK_CALLBACK]);
   });
 
+  it("a combined-flow ghConnectError (UAP-2.1) is folded into the signed state and handed back by completeConnect so the post-callback landing can surface it", async () => {
+    const service = makeService();
+    const result = await service.startConnect(
+      AGENT_ID,
+      "xoxe.xoxp-1-fake-token-for-testing",
+      CONNECT_SLACK_CALLBACK,
+      "GitHub Personal Access Token is required.",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+
+    // The GitHub PAT failure rode through the signed state cookie and comes
+    // back out on the success outcome — never silently swallowed.
+    const completeResult = await service.completeConnect(
+      result.provisionStateToken,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
+    expect(completeResult.outcome).toBe("needs_app_token");
+    if (completeResult.outcome !== "needs_app_token")
+      throw new Error("wrong outcome");
+    expect(completeResult.ghConnectError).toBe(
+      "GitHub Personal Access Token is required.",
+    );
+  });
+
+  it("no ghConnectError → completeConnect returns undefined (default flow unaffected)", async () => {
+    const service = makeService();
+    const result = await service.startConnect(
+      AGENT_ID,
+      "xoxe.xoxp-1-fake-token-for-testing",
+      CONNECT_SLACK_CALLBACK,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected ok result");
+
+    const completeResult = await service.completeConnect(
+      result.provisionStateToken,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
+    expect(completeResult.outcome).toBe("needs_app_token");
+    if (completeResult.outcome !== "needs_app_token")
+      throw new Error("wrong outcome");
+    expect(completeResult.ghConnectError).toBeUndefined();
+  });
+
   it("missing xoxpToken → ok: false with validation error, no Slack call", async () => {
     const service = makeService();
     const result = await service.startConnect(
