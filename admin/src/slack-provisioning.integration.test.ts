@@ -64,6 +64,10 @@ class RecordedSlackClient implements AdminUISlackClient {
   ): Promise<{ botToken: string }> {
     return { botToken: "xoxb-test-cassette-bot-token" };
   }
+
+  async authTest(_botToken: string): Promise<{ userId: string }> {
+    return { userId: "U0AALR8M69X" };
+  }
 }
 
 // ─── JWT helper ───────────────────────────────────────────────────────────────
@@ -243,9 +247,19 @@ function makeMockDeps(
         typeName: "coding",
         missingRequiredEnv: [],
       }),
-      updateFields: async () => {
-        throw new Error("not implemented");
-      },
+      updateFields: async (id: string) => ({
+        id,
+        name: "Test Agent",
+        slackId: "U0AALR8M69X",
+        selfHosted: false,
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        restrictSlackToMembers: false,
+        typeName: "coding",
+        missingRequiredEnv: [],
+      }),
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",

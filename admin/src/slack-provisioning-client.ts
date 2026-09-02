@@ -104,6 +104,12 @@ export interface SlackProvisioningClient {
     clientSecret: string,
     redirectUri: string,
   ): Promise<{ botToken: string }>;
+
+  /**
+   * Call auth.test with a bot token to resolve the bot's own Slack user id.
+   * Used right after exchangeOAuthCode() to persist `agent.slackId`.
+   */
+  authTest(botToken: string): Promise<{ userId: string }>;
 }
 
 // ─── Agent manifest ───────────────────────────────────────────────────────────
@@ -246,6 +252,38 @@ export class HttpSlackProvisioningClient implements SlackProvisioningClient {
     }
 
     return { botToken: data.access_token };
+  }
+
+  async authTest(botToken: string): Promise<{ userId: string }> {
+    const url = `${this.apiBase}/auth.test`;
+    const resp = await this.fetchFn(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${botToken}`,
+      },
+    });
+
+    if (!resp.ok) {
+      throw new Error(
+        `Slack auth.test HTTP error: ${resp.status} ${resp.statusText}`,
+      );
+    }
+
+    const data = (await resp.json()) as {
+      ok: boolean;
+      error?: string;
+      user_id?: string;
+    };
+
+    if (!data.ok) {
+      throw new Error(`Slack auth.test failed: ${data.error}`);
+    }
+
+    if (!data.user_id) {
+      throw new Error("Slack auth.test response missing user_id");
+    }
+
+    return { userId: data.user_id };
   }
 
   async updateAppManifest(

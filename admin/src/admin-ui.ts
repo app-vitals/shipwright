@@ -150,6 +150,7 @@ export interface AdminUISlackClient {
     clientSecret: string,
     redirectUri: string,
   ): Promise<{ botToken: string }>;
+  authTest(botToken: string): Promise<{ userId: string }>;
 }
 
 /**
@@ -701,6 +702,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     githubAppClient,
     agentService,
     agentEnvService,
+    agentCronJobService,
     sessionSecret,
     appBaseUrl,
     secretEnvVars: new Set(SECRET_ENV_VARS),

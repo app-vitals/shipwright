@@ -258,6 +258,43 @@ describe("HttpSlackProvisioningClient — createAppManifest", () => {
   });
 });
 
+// ─── authTest ────────────────────────────────────────────────────────────────
+
+describe("HttpSlackProvisioningClient — authTest", () => {
+  it("POSTs Bearer-auth to auth.test and returns the bot's own user id", async () => {
+    const { client, lastRequest } = makeClient("authTest_success");
+    const result = await client.authTest("xoxb-bot-token");
+
+    const req = lastRequest();
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe("https://slack.com/api/auth.test");
+    expect(req.headers.get("authorization")).toBe("Bearer xoxb-bot-token");
+
+    expect(result).toEqual({ userId: "U0AALR8M69X" });
+  });
+
+  it("throws on an HTTP error response", async () => {
+    const { client } = makeClient("authTest_http_error");
+    await expect(client.authTest("xoxb-bot-token")).rejects.toThrow(
+      /Slack auth\.test HTTP error: 500/,
+    );
+  });
+
+  it("throws when Slack returns ok: false", async () => {
+    const { client } = makeClient("authTest_slack_error");
+    await expect(client.authTest("xoxb-bot-token")).rejects.toThrow(
+      /Slack auth\.test failed: invalid_auth/,
+    );
+  });
+
+  it("throws when user_id is missing from an ok response", async () => {
+    const { client } = makeClient("authTest_missing_user_id");
+    await expect(client.authTest("xoxb-bot-token")).rejects.toThrow(
+      /response missing user_id/,
+    );
+  });
+});
+
 // ─── Default construction (no opts) ─────────────────────────────────────────
 
 describe("HttpSlackProvisioningClient — default construction", () => {

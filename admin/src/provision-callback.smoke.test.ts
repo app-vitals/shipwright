@@ -89,6 +89,7 @@ function makeMockSlackClient(opts?: {
     clientSecret: string,
     redirectUri: string,
   ) => Promise<{ botToken: string }>;
+  authTest?: (botToken: string) => Promise<{ userId: string }>;
 }): AdminUISlackClient {
   return {
     createAppManifest: async () => ({
@@ -102,6 +103,8 @@ function makeMockSlackClient(opts?: {
     exchangeOAuthCode:
       opts?.exchangeOAuthCode ??
       (async () => ({ botToken: "xoxb-mock-bot-token" })),
+    authTest:
+      opts?.authTest ?? (async () => ({ userId: "U0AALR8M69X" })),
   };
 }
 
@@ -282,9 +285,19 @@ function makeMockDeps(
       },
       delete: async () => {},
       getDetail: async () => null,
-      updateFields: async () => {
-        throw new Error("not implemented");
-      },
+      updateFields: async (id: string) => ({
+        id,
+        name: "Test Agent",
+        slackId: "U0AALR8M69X",
+        selfHosted: false,
+        repos: [],
+        authorAllowlist: [],
+        restrictSlackToMembers: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        missingRequiredEnv: [],
+      }),
     },
     sessionSecret: SESSION_SECRET,
     googleClientId: "test-google-client-id",

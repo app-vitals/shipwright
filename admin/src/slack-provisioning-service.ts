@@ -99,7 +99,7 @@ export interface SlackAppManifestResult {
 
 export interface SlackProvisioningServiceDeps {
   slackClient: AdminUISlackClient;
-  agentService: Pick<AgentService, "getDetail">;
+  agentService: Pick<AgentService, "getDetail" | "updateFields">;
   agentEnvService: Pick<AgentEnvService, "patch" | "getConfigBundle">;
   agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
   sessionSecret: string;
@@ -311,6 +311,7 @@ export class SlackProvisioningService {
     }
 
     let botToken: string;
+    let slackUserId: string;
     try {
       const result = await this.deps.slackClient.exchangeOAuthCode(
         code,
@@ -319,6 +320,15 @@ export class SlackProvisioningService {
         provisionState.redirectUri ?? fallbackRedirectUri,
       );
       botToken = result.botToken;
+
+      // Resolve the bot's own Slack user id so it can be persisted to
+      // agent.slackId (UAP-1.3) — required for the Sync Manifest button to
+      // appear. Folded into the same try/catch as the exchange: an auth.test
+      // failure right after a successful exchange is treated the same as an
+      // exchange failure so the flow doesn't half-complete with a bot token
+      // stored but no resolved slackId.
+      const authTestResult = await this.deps.slackClient.authTest(botToken);
+      slackUserId = authTestResult.userId;
     } catch (err) {
       const msg =
         err instanceof Error
@@ -338,6 +348,13 @@ export class SlackProvisioningService {
       { SLACK_BOT_TOKEN: botToken },
       this.deps.secretEnvVars,
     );
+
+    // Persist unconditionally on every successful completion (both
+    // "reinstalled" and "needs_app_token" outcomes) — a bot reinstall can
+    // also resolve a fresh/different user id.
+    await this.deps.agentService.updateFields(provisionState.agentId, {
+      slackId: slackUserId,
+    });
 
     if (existingBundle?.env.SLACK_APP_TOKEN) {
       return { outcome: "reinstalled", agentId: provisionState.agentId };

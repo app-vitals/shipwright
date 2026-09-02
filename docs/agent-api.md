@@ -81,7 +81,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `auth
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only). `typeName` is not updatable via this route. Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 

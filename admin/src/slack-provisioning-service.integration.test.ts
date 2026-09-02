@@ -37,6 +37,9 @@ interface ProvisionCassette {
     clientSecret: string;
     signingSecret: string;
   };
+  authTest: {
+    userId: string;
+  };
 }
 
 class RecordedSlackClient implements AdminUISlackClient {
@@ -45,6 +48,8 @@ class RecordedSlackClient implements AdminUISlackClient {
   readonly createdManifests: AppManifest[] = [];
   /** redirect_uri values passed to exchangeOAuthCode(), in call order. */
   readonly exchangeRedirectUris: string[] = [];
+  /** botToken values passed to authTest(), in call order. */
+  readonly authTestBotTokens: string[] = [];
 
   constructor(cassettePath: string) {
     this.cassette = JSON.parse(readFileSync(cassettePath, "utf-8"));
@@ -79,6 +84,11 @@ class RecordedSlackClient implements AdminUISlackClient {
     this.exchangeRedirectUris.push(redirectUri);
     return { botToken: "xoxb-test-cassette-bot-token" };
   }
+
+  async authTest(botToken: string): Promise<{ userId: string }> {
+    this.authTestBotTokens.push(botToken);
+    return this.cassette.authTest;
+  }
 }
 
 const CASSETTE_PATH = new URL(
@@ -94,10 +104,16 @@ interface PatchCall {
   secretKeys: string[];
 }
 
+interface UpdateFieldsCall {
+  id: string;
+  input: unknown;
+}
+
 function makeService(opts?: {
   slackClient?: AdminUISlackClient;
   patchCalls?: PatchCall[];
   reconcileCalls?: string[];
+  updateFieldsCalls?: UpdateFieldsCall[];
   getConfigBundle?: () => Promise<{
     env: Record<string, string>;
     agentId: string;
@@ -107,6 +123,7 @@ function makeService(opts?: {
 }): SlackProvisioningService {
   const patchCalls = opts?.patchCalls ?? [];
   const reconcileCalls = opts?.reconcileCalls ?? [];
+  const updateFieldsCalls = opts?.updateFieldsCalls ?? [];
   return new SlackProvisioningService({
     slackClient: opts?.slackClient ?? new RecordedSlackClient(CASSETTE_PATH),
     agentService: {
@@ -125,6 +142,22 @@ function makeService(opts?: {
           typeName: "coding",
           missingRequiredEnv: [],
         })),
+      updateFields: async (id: string, input: unknown) => {
+        updateFieldsCalls.push({ id, input });
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          missingRequiredEnv: [],
+        };
+      },
     },
     agentEnvService: {
       getConfigBundle: opts?.getConfigBundle ?? (async () => null),
@@ -276,7 +309,8 @@ describe("SlackProvisioningService.startConnect", () => {
 describe("SlackProvisioningService.completeConnect", () => {
   it("valid state token + code → exchanges OAuth code (cassette) and stores SLACK_BOT_TOKEN, returns needs_app_token", async () => {
     const patchCalls: PatchCall[] = [];
-    const service = makeService({ patchCalls });
+    const updateFieldsCalls: UpdateFieldsCall[] = [];
+    const service = makeService({ patchCalls, updateFieldsCalls });
     const token = await makeProvisionStateToken();
 
     const result = await service.completeConnect(
@@ -296,10 +330,37 @@ describe("SlackProvisioningService.completeConnect", () => {
     expect(patchCalls[0].secretKeys).toContain("SLACK_BOT_TOKEN");
   });
 
-  it("reinstall (SLACK_APP_TOKEN already set) → returns reinstalled outcome", async () => {
+  it("valid state token + code → resolves the bot's own user id via auth.test (cassette) and persists it via agentService.updateFields", async () => {
+    const slackClient = new RecordedSlackClient(CASSETTE_PATH);
+    const updateFieldsCalls: UpdateFieldsCall[] = [];
+    const service = makeService({ slackClient, updateFieldsCalls });
+    const token = await makeProvisionStateToken();
+
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
+
+    expect(result.outcome).toBe("needs_app_token");
+
+    // auth.test is called with the freshly-exchanged bot token.
+    expect(slackClient.authTestBotTokens).toEqual([
+      "xoxb-test-cassette-bot-token",
+    ]);
+
+    // The resolved user id (from the cassette) is persisted to agent.slackId.
+    expect(updateFieldsCalls.length).toBe(1);
+    expect(updateFieldsCalls[0].id).toBe(AGENT_ID);
+    expect(updateFieldsCalls[0].input).toEqual({ slackId: "U0AALR8M69X" });
+  });
+
+  it("reinstall (SLACK_APP_TOKEN already set) → returns reinstalled outcome, still resolves and persists slackId via auth.test", async () => {
     const patchCalls: PatchCall[] = [];
+    const updateFieldsCalls: UpdateFieldsCall[] = [];
     const service = makeService({
       patchCalls,
+      updateFieldsCalls,
       getConfigBundle: async () => ({
         env: {
           SLACK_BOT_TOKEN: "xoxb-old",
@@ -320,6 +381,10 @@ describe("SlackProvisioningService.completeConnect", () => {
     expect(result.outcome).toBe("reinstalled");
     if (result.outcome !== "reinstalled") throw new Error("wrong outcome");
     expect(result.agentId).toBe(AGENT_ID);
+
+    expect(updateFieldsCalls.length).toBe(1);
+    expect(updateFieldsCalls[0].id).toBe(AGENT_ID);
+    expect(updateFieldsCalls[0].input).toEqual({ slackId: "U0AALR8M69X" });
   });
 
   it("missing state cookie → invalid_state outcome, no Slack call, no env write", async () => {
@@ -412,6 +477,9 @@ describe("SlackProvisioningService.completeConnect", () => {
       exchangeOAuthCode: async () => {
         throw new Error("invalid_code");
       },
+      authTest: async () => {
+        throw new Error("unused in this test");
+      },
     };
     const service = makeService({
       slackClient: failingSlackClient,
@@ -429,6 +497,41 @@ describe("SlackProvisioningService.completeConnect", () => {
     if (result.outcome !== "exchange_failed") throw new Error("wrong outcome");
     expect(result.error).toContain("invalid_code");
     expect(patchCalls.length).toBe(0);
+  });
+
+  it("auth.test failure after a successful exchange → exchange_failed outcome, SLACK_BOT_TOKEN not persisted", async () => {
+    const patchCalls: PatchCall[] = [];
+    const updateFieldsCalls: UpdateFieldsCall[] = [];
+    const failingAuthTestClient: AdminUISlackClient = {
+      createAppManifest: async () => {
+        throw new Error("unused in this test");
+      },
+      updateAppManifest: async () => {},
+      exchangeOAuthCode: async () => ({
+        botToken: "xoxb-test-cassette-bot-token",
+      }),
+      authTest: async () => {
+        throw new Error("token_revoked");
+      },
+    };
+    const service = makeService({
+      slackClient: failingAuthTestClient,
+      patchCalls,
+      updateFieldsCalls,
+    });
+    const token = await makeProvisionStateToken();
+
+    const result = await service.completeConnect(
+      token,
+      "valid-oauth-code",
+      CONNECT_SLACK_CALLBACK,
+    );
+
+    expect(result.outcome).toBe("exchange_failed");
+    if (result.outcome !== "exchange_failed") throw new Error("wrong outcome");
+    expect(result.error).toContain("token_revoked");
+    expect(patchCalls.length).toBe(0);
+    expect(updateFieldsCalls.length).toBe(0);
   });
 });
 
