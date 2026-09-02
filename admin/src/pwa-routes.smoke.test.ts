@@ -181,6 +181,7 @@ function makeMinimalDeps(overrides?: Partial<AdminUIDeps>): AdminUIDeps {
       },
       updateAppManifest: async () => {},
       exchangeOAuthCode: async () => ({ botToken: "xoxb" }),
+      authTest: async () => ({ userId: "U0AALR8M69X" }),
     },
     githubAppClient: {
       exchangeManifestCode: async () => {

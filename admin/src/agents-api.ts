@@ -1119,6 +1119,7 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
         : {}),
+      ...(body.slackId !== undefined ? { slackId: body.slackId } : {}),
     });
     const warning = await computeRestrictSlackToMembersWarning(
       agentMemberService,
