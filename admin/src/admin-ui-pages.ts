@@ -558,13 +558,10 @@ export function renderAgentsPage(
           )
           .join("\n");
 
-  // Primary path is /admin/agents/new — it creates in-cluster or self-hosted
-  // agents and needs no Slack, so it never dead-ends. /admin/provision is the
-  // Slack-app bootstrap wizard (requires an xoxp token), offered as a secondary
-  // action for setups that use Slack.
+  // Single CTA to create an agent — the /admin/agents/new page handles agent
+  // creation and provides inline options to connect Slack/GitHub if desired.
   const createAgentButtons = isAdmin
-    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>
-      <a href="/admin/provision" class="btn btn-secondary" style="margin-left:8px">Connect Slack app</a>`
+    ? `<a href="/admin/agents/new" class="btn btn-primary">+ New agent</a>`
     : "";
 
   return renderAdminPage({

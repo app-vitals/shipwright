@@ -253,10 +253,13 @@ describe("renderAgentsPage", () => {
     expect(html).toContain('href="/admin/agents/new"');
   });
 
-  test("admin: Slack wizard is offered only as a secondary action", () => {
+  test("admin: only one CTA (no secondary Slack button)", () => {
     const html = renderAgentsPage([AGENT_LIST_ITEM], USER_NAME, true, "UTC");
-    expect(html).toContain("Connect Slack app");
-    expect(html).toContain('href="/admin/provision"');
+    // Should NOT have the secondary Slack app button in the page header
+    expect(html).not.toContain("Connect Slack app");
+    // Should have exactly one btn-primary (the + New agent button)
+    const btnMatches = html.match(/class="btn btn-primary"/g);
+    expect(btnMatches).toHaveLength(1);
   });
 
   test("agent name appears as a link", () => {
