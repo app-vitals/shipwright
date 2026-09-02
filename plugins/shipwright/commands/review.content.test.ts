@@ -1839,6 +1839,85 @@ describe("review.md — findings ledger persistence (PFL-2.1)", () => {
   });
 });
 
+describe("review.md — self-review ledger write at post time (PFL-5.2)", () => {
+  let step11Section: string;
+
+  beforeAll(() => {
+    const step11Idx = content.indexOf("## Step 11: Post or Stage");
+    const step11bIdx = content.indexOf("## Step 11b: Mark PullRequest Record Posted");
+    expect(step11Idx).toBeGreaterThan(-1);
+    expect(step11bIdx).toBeGreaterThan(step11Idx);
+    step11Section = content.slice(step11Idx, step11bIdx);
+  });
+
+  it("Step 11 has a self-review ledger write subsection tagged PFL-5.2", () => {
+    expect(step11Section).toContain("PFL-5.2");
+    expect(step11Section.toLowerCase()).toContain("self-review ledger write");
+  });
+
+  it("captures submitted_at from the post response alongside html_url", () => {
+    expect(step11Section).toContain(
+      "SUBMITTED_AT=$(jq -r '.submitted_at // empty' \"/tmp/pr_post_{pr}.json\")",
+    );
+  });
+
+  it("gates the ledger write on the same three Step 10 booleans that produce a self-clean-APPROVE verdict", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    const ledgerSection = step11Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain('[ "$SELF_REVIEW" = "true" ]');
+    expect(ledgerSection).toContain('[ "$UNADDRESSED_FINDINGS" = "false" ]');
+    expect(ledgerSection).toContain('[ "$CURRENT_PASS_HAS_BLOCKING_FINDINGS" = "false" ]');
+    expect(ledgerSection).toContain('[ -n "$SUBMITTED_AT" ]');
+  });
+
+  it("posts a resolved ledger entry with source: review, ref built from headRefOid + SUBMITTED_AT", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    const ledgerSection = step11Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain('\\"disposition\\": \\"resolved\\"');
+    expect(ledgerSection).toContain('\\"source\\": \\"review\\"');
+    expect(ledgerSection).toContain("/findings");
+    expect(ledgerSection).toContain("${headRefOid}@${SUBMITTED_AT}");
+  });
+
+  it("explains the gap it closes: Step 5.5/PFL-2.1 only ledgers a prior review at a subsequent pass", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    const ledgerSection = step11Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("PFL-2.1");
+    expect(ledgerSection.toLowerCase()).toContain("subsequent pass");
+    expect(ledgerSection.toLowerCase()).toContain("candidacy gate");
+  });
+
+  it("documents the ordering requirement relative to Step 11b, non-fatal on failure", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    const ledgerSection = step11Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("must complete before");
+    expect(ledgerSection).toContain("Step 11b");
+    expect(ledgerSection.toLowerCase()).toContain("non-fatal");
+  });
+
+  it("flags the review-staged scoping gap explicitly rather than silently", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    const ledgerSection = step11Section.slice(ledgerIdx);
+
+    expect(ledgerSection).toContain("review-staged");
+    expect(ledgerSection.toLowerCase()).toContain("no-op");
+  });
+
+  it("appears before Step 11b is run, per the renumbered step list", () => {
+    const ledgerIdx = step11Section.indexOf("PFL-5.2");
+    const runStep11bIdx = step11Section.indexOf(
+      "Run Step 11b to mark the PR record posted.",
+    );
+    expect(ledgerIdx).toBeGreaterThan(-1);
+    expect(runStep11bIdx).toBeGreaterThan(ledgerIdx);
+  });
+});
+
 describe("review.md — Step 7 dispatch is synchronous, no ScheduleWakeup/Monitor (RVS-1.1)", () => {
   it("explicitly states the Agent dispatch blocks and returns the subagent's JSON response directly", () => {
     const step7Section = extractStep7Section(content);
