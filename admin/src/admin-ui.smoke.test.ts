@@ -4723,6 +4723,119 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
     expect(patchCalls.some((c) => "SLACK_BOT_TOKEN" in c.env)).toBe(true);
   });
 
+  it("valid state cookie + code param → persists the resolved slackId through the full HTTP route, and the agent detail page then renders the Sync Manifest button (UAP-1.3 acceptance criterion 2)", async () => {
+    // Step 1: exercise the real connect-slack/callback HTTP route (not just
+    // the service layer) with an agent that has no slackId yet, and prove
+    // agentService.updateFields is invoked with the Slack-resolved user id.
+    const updateFieldsCalls: Array<{
+      agentId: string;
+      fields: { slackId?: string | null };
+    }> = [];
+    const initialAgent = {
+      id: AGENT_ID,
+      name: "Test Agent",
+      slackId: null,
+      selfHosted: false,
+      typeName: "coding",
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+      repos: [],
+      authorAllowlist: [],
+      restrictSlackToMembers: false,
+      missingRequiredEnv: [],
+    };
+
+    const callbackApp = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          listAll: async () => [],
+          listByIds: async () => [],
+          searchByName: async () => [],
+          listOptions: async () => [],
+          create: async () => {
+            throw new Error("not implemented");
+          },
+          delete: async () => {},
+          getDetail: async () => initialAgent,
+          updateFields: async (
+            agentId: string,
+            fields: { slackId?: string | null },
+          ) => {
+            updateFieldsCalls.push({ agentId, fields });
+            return { ...initialAgent, ...fields };
+          },
+        },
+        agentEnvService: {
+          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
+          upsert: async () => {},
+          patch: async () => {},
+          deleteKey: async () => {},
+          getConfigBundle: async () => null,
+        },
+      }),
+    );
+
+    // Sanity check: before the flow, the agent page does NOT show the
+    // Sync Manifest button (slackId is null).
+    const beforeRes = await callbackApp.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(beforeRes.status).toBe(200);
+    const beforeHtml = await beforeRes.text();
+    expect(beforeHtml).not.toContain("Sync Manifest");
+
+    const provisionState = await makeProvisionStateCookie();
+    const callbackRes = await callbackApp.request(
+      `/admin/agents/${AGENT_ID}/connect-slack/callback?code=valid-oauth-code`,
+      {
+        headers: {
+          Cookie: `admin_session=${adminCookie}; ${PROVISION_STATE_COOKIE}=${provisionState}`,
+        },
+      },
+    );
+    expect(callbackRes.status).toBe(200);
+
+    // The key assertion: updateFields was called through the real HTTP
+    // route with a non-null, non-empty slackId for the correct agent.
+    expect(updateFieldsCalls).toHaveLength(1);
+    expect(updateFieldsCalls[0]?.agentId).toBe(AGENT_ID);
+    expect(updateFieldsCalls[0]?.fields.slackId).toBeTruthy();
+
+    // Step 2: prove admin-ui-pages.ts's Sync Manifest gate renders once
+    // slackId is populated, by hitting the agent detail route again with
+    // a mock reflecting the post-flow (slackId-populated) state — mirroring
+    // what completeConnect() just persisted above.
+    const resolvedSlackId = updateFieldsCalls[0]?.fields.slackId as string;
+    const detailApp = createAdminUIApp(
+      makeMockDeps({
+        agentService: {
+          listAll: async () => [],
+          listByIds: async () => [],
+          searchByName: async () => [],
+          listOptions: async () => [],
+          create: async () => {
+            throw new Error("not implemented");
+          },
+          delete: async () => {},
+          getDetail: async () => ({
+            ...initialAgent,
+            slackId: resolvedSlackId,
+          }),
+          updateFields: async () => {
+            throw new Error("not implemented");
+          },
+        },
+      }),
+    );
+
+    const afterRes = await detailApp.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(afterRes.status).toBe(200);
+    const afterHtml = await afterRes.text();
+    expect(afterHtml).toContain("Sync Manifest");
+  });
+
   it("missing state cookie → renders an error page", async () => {
     const app = createAdminUIApp(makeMockDeps());
 

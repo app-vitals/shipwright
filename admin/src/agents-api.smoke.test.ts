@@ -2369,6 +2369,21 @@ describe("admin API — selfHosted field", () => {
     expect(body.slackId).toBe("U0AALR8M69X");
   });
 
+  it("PATCH /agents/:id with {slackId: null} clears the field and returns 200 with slackId: null (UAP-1.3)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ slackId: null }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.slackId).toBe(null);
+  });
+
   it("PATCH /agents/:id unknown id → 404", async () => {
     const app = createAdminApp(makeMockDeps());
     const res = await app.request("/agents/does-not-exist", {
