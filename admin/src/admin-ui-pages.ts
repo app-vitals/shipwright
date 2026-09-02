@@ -1764,8 +1764,7 @@ export function renderProvisionXappTokenPage(
       </p>
       ${warningHtml}
       ${errorHtml}
-      <form method="POST" action="/admin/provision/xapp-token">
-        <input type="hidden" name="agentId" value="${escapeHtml(opts.agentId)}" />
+      <form method="POST" action="/admin/agents/${escapeHtml(opts.agentId)}/connect-slack/app-token">
         <div class="form-group">
           <label class="form-label" for="xappToken">App-Level Token (xapp-)</label>
           <input
