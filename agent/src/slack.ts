@@ -450,21 +450,41 @@ async function buildPromptWithFiles(
 }
 
 /**
- * Tries to deliver the final reply text through the Thinking Steps stream
- * (SlackProgress.deliverContent — a markdown_text chunk + a status:"complete"
- * task_update) instead of a separate say()/blocksConverter post. Returns
- * `true` when delivery succeeded (the caller should skip say()), or
- * `undefined` whenever delivery fails or streaming is unavailable (the
- * caller MUST fall back to say()/blocksConverter — the reply must never be
- * silently dropped). See slack-progress.ts's SlackProgress.deliverContent for
- * why this bypasses markdownToSlack/blocksConverter on this path (STS2-1.1
- * AC #2/#7).
+ * Starts a run's progress tracking. enter()/exit() on ThreadStatusTracker
+ * are ALWAYS called by every handler (every enter() needs a matching
+ * exit(), or the refcount leaks upward forever) — but what the resulting
+ * boolean gates differs by mode (STS2-1.1 AC #5):
+ *   - Non-streaming: the refcount still gates whether setStatus's start()
+ *     actually fires — only the thread's first concurrent run should flip
+ *     agents.sessions.setStatus("processing").
+ *   - Streaming: every message gets its own independent stream lifecycle
+ *     regardless of refcount — the boolean only picks the seed card's
+ *     title ("Queued…" when another message on this thread is already in
+ *     flight, "Thinking…" otherwise).
  */
-export async function deliverContent(
+async function startProgress(
   progress: SlackProgress,
-  text: string,
-): Promise<true | undefined> {
-  return progress.deliverContent(text);
+  thinkingStepsEnabled: boolean,
+  isFirstInThread: boolean,
+): Promise<void> {
+  if (thinkingStepsEnabled) {
+    await progress.start({ queued: !isFirstInThread });
+  } else if (isFirstInThread) {
+    await progress.start();
+  }
+}
+
+/** The finish()-side counterpart of startProgress() — see its doc comment. */
+async function finishProgress(
+  progress: SlackProgress,
+  thinkingStepsEnabled: boolean,
+  isLastInThread: boolean,
+): Promise<void> {
+  if (thinkingStepsEnabled) {
+    await progress.finish({ stillInFlight: !isLastInThread });
+  } else if (isLastInThread) {
+    await progress.finish();
+  }
 }
 
 export function createSlackApp(
@@ -552,20 +572,13 @@ export function createSlackApp(
       thinkingStepsEnabled,
     });
     // enter()/exit() are ALWAYS called (every enter() needs a matching
-    // exit(), or the refcount leaks upward forever) — but what they gate
-    // differs by mode. Non-streaming: unchanged from before STS2-1.1 —
-    // the refcount still gates whether setStatus's start()/finish() get
-    // CALLED at all (only the thread's first/last concurrent run should
-    // flip agents.sessions.setStatus). Streaming: every message gets its
-    // own independent stream lifecycle regardless of refcount — the
-    // boolean only picks the seed text ("Queued…" when another message on
-    // this thread is already in flight, "Thinking…" otherwise) (AC #5).
-    const isFirstInThread = threadStatusTracker.enter(sessionKey);
-    if (thinkingStepsEnabled) {
-      await progress.start({ queued: !isFirstInThread });
-    } else if (isFirstInThread) {
-      await progress.start();
-    }
+    // exit(), or the refcount leaks upward forever) — see startProgress()'s
+    // doc comment for what the boolean gates in each mode (AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -622,7 +635,7 @@ export function createSlackApp(
 
       let postedTs: string | undefined;
       if (!shouldSuppress && cleaned.trim().length > 0) {
-        const delivered = await deliverContent(progress, cleaned);
+        const delivered = await progress.deliverContent(cleaned);
         if (!delivered) {
           const blocks = blocksConverter(cleaned);
           let sayResult: unknown;
@@ -671,13 +684,12 @@ export function createSlackApp(
       });
     } finally {
       // exit() is ALWAYS called (matching the always-called enter() above)
-      // — see the matching comment there for what it gates in each mode.
-      const isLastInThread = threadStatusTracker.exit(sessionKey);
-      if (thinkingStepsEnabled) {
-        await progress.finish({ stillInFlight: !isLastInThread });
-      } else if (isLastInThread) {
-        await progress.finish();
-      }
+      // — see finishProgress()'s doc comment for what it gates in each mode.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
@@ -718,14 +730,13 @@ export function createSlackApp(
       threadTs: replyTs,
       thinkingStepsEnabled,
     });
-    // enter() is ALWAYS called — see the matching comment in the message
-    // handler above for what it gates in each mode (STS2-1.1 AC #5).
-    const isFirstInThread = threadStatusTracker.enter(sessionKey);
-    if (thinkingStepsEnabled) {
-      await progress.start({ queued: !isFirstInThread });
-    } else if (isFirstInThread) {
-      await progress.start();
-    }
+    // enter() is ALWAYS called — see startProgress()'s doc comment for
+    // what it gates in each mode (STS2-1.1 AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -800,7 +811,7 @@ export function createSlackApp(
 
       let postedMentionTs: string | undefined;
       if (!isSilent && cleaned.trim().length > 0) {
-        const delivered = await deliverContent(progress, cleaned);
+        const delivered = await progress.deliverContent(cleaned);
         if (!delivered) {
           const blocks = blocksConverter(cleaned);
           let sayResult: unknown;
@@ -845,13 +856,12 @@ export function createSlackApp(
       sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
-      // See the matching comment in the message handler above.
-      const isLastInThread = threadStatusTracker.exit(sessionKey);
-      if (thinkingStepsEnabled) {
-        await progress.finish({ stillInFlight: !isLastInThread });
-      } else if (isLastInThread) {
-        await progress.finish();
-      }
+      // See finishProgress()'s doc comment.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
@@ -889,14 +899,13 @@ export function createSlackApp(
       threadTs: ev.item.ts,
       thinkingStepsEnabled,
     });
-    // enter() is ALWAYS called — see the matching comment in the message
-    // handler above for what it gates in each mode (STS2-1.1 AC #5).
-    const isFirstInThread = threadStatusTracker.enter(sessionKey);
-    if (thinkingStepsEnabled) {
-      await progress.start({ queued: !isFirstInThread });
-    } else if (isFirstInThread) {
-      await progress.start();
-    }
+    // enter() is ALWAYS called — see startProgress()'s doc comment for
+    // what it gates in each mode (STS2-1.1 AC #5).
+    await startProgress(
+      progress,
+      thinkingStepsEnabled,
+      threadStatusTracker.enter(sessionKey),
+    );
 
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
@@ -925,7 +934,7 @@ export function createSlackApp(
 
       let postResult: unknown;
       if (cleaned.trim().length > 0) {
-        const delivered = await deliverContent(progress, cleaned);
+        const delivered = await progress.deliverContent(cleaned);
         if (!delivered) {
           const blocks = blocksConverter(cleaned);
           if (blocks) {
@@ -990,13 +999,12 @@ export function createSlackApp(
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
     } finally {
-      // See the matching comment in the message handler above.
-      const isLastInThread = threadStatusTracker.exit(sessionKey);
-      if (thinkingStepsEnabled) {
-        await progress.finish({ stillInFlight: !isLastInThread });
-      } else if (isLastInThread) {
-        await progress.finish();
-      }
+      // See finishProgress()'s doc comment.
+      await finishProgress(
+        progress,
+        thinkingStepsEnabled,
+        threadStatusTracker.exit(sessionKey),
+      );
     }
   });
 
