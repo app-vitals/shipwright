@@ -98,6 +98,14 @@ export interface PrReviewData {
   reviews: { nodes: ReviewNode[] };
   reviewThreads: { nodes: ReviewThread[] };
   comments: { nodes: IssueCommentNode[] };
+  /**
+   * Task-store ledger findings (PFL-5.3), threaded in from the PR record
+   * already fetched via queryPrRecord — fetchPrReviews's GraphQL query has
+   * no ledger access of its own. Optional/undefined when no record exists
+   * yet or the query failed; hasUnaddressedFindings/hasMergeOnlyStaleFindings
+   * both default an absent value to `[]`.
+   */
+  findings?: PrFinding[];
 }
 
 export interface CiCheckStatus {
@@ -132,10 +140,37 @@ export interface MergeStatusInfo {
   isDirty: boolean;
 }
 
+/**
+ * Minimal local mirror of task-store's PrFinding shape
+ * (task-store/src/openapi-schemas.ts) — mirrors check-review.ts's identical
+ * local mirror type (PFL-3.1) rather than importing it, since agent/src has
+ * no dependency on the task-store package.
+ */
+export interface PrFinding {
+  id: string;
+  prRecordId: string;
+  ref: string;
+  disposition: "resolved" | "superseded" | "rejected";
+  source: "review" | "patch";
+  evidence: string;
+  at: string;
+  createdAt: string;
+}
+
 export interface PrRecord {
   readyForPatchAt?: string | null;
   claimedBy?: string | null;
   blocked?: boolean | null;
+  /**
+   * Ledger findings for this PR (PFL-1.2's POST /prs/:id/findings). Already
+   * present on the task-store /prs record returned by queryPrRecord below —
+   * only newly declared here (PFL-5.3) so this file's local PrRecord
+   * interface carries it through, mirroring check-review.ts's identical
+   * field. Without this, `isResolvedByLedger` (PFL-3.2) is dead code at this
+   * call site: hasUnaddressedFindings would never see any ledger entries
+   * regardless of what's actually in the task store.
+   */
+  findings?: PrFinding[];
 }
 
 export interface CheckPatchDeps {
@@ -369,6 +404,39 @@ export async function getPatchCandidates(
   for (const pr of prs) {
     const [org, repo] = splitOrgRepo(pr.repo);
 
+    // Fetch the task-store PR record FIRST (PFL-5.3), before deciding
+    // needsPatch — mirrors check-review.ts's own ordering. Needed early (not
+    // just for the claimedBy/blocked gate further down) so `record.findings`
+    // can be threaded into `reviewData` below: without this, isResolvedByLedger
+    // (PFL-3.2) is dead code in hasUnaddressedFindings/hasMergeOnlyStaleFindings
+    // at this call site, regardless of what's actually in the task-store ledger.
+    let record: PrRecord | null = null;
+    if (deps.queryPrRecord) {
+      try {
+        record = await deps.queryPrRecord(pr.repo, pr.number);
+      } catch {
+        // Query failed → fall back to PR createdAt below (fail open — a
+        // transient task-store error must not silently exclude an
+        // otherwise-qualifying PR from patch candidacy).
+      }
+      // A record with claimedBy set means another agent currently holds the
+      // claim on this PR — skip. A null record (no record was ever created,
+      // e.g. review skipped claim() for a self-authored PR under
+      // allow_self_review: false, or the query failed above) must NOT be
+      // treated as claimed — only an explicit claimedBy gates candidacy,
+      // mirroring check-review.ts.
+      if (record?.claimedBy != null) continue;
+
+      // Skip PRs whose task-store PR record is blocked:true — a human has
+      // already been escalated to at the PR-record level (independent of
+      // any linked task) and needs to act before patch tries again (PRB-2.2,
+      // PRB-3.1: patch.md Step 5a.7's second-round-disagreement escalation
+      // writes blocked:true directly on the PR record when there's no linked
+      // task to flag — via the shared isPrRecordBlockedForDispatch helper).
+      // Uses the same fetched `record` above — no new network call.
+      if (isPrRecordBlockedForDispatch(record)) continue;
+    }
+
     let needsPatch = false;
 
     // Only a real merge conflict (DIRTY) needs patch attention. A branch
@@ -380,7 +448,15 @@ export async function getPatchCandidates(
     }
 
     if (!needsPatch) {
-      const reviewData = await deps.fetchPrReviews(org, repo, pr.number);
+      const fetchedReviewData = await deps.fetchPrReviews(org, repo, pr.number);
+      // Thread the task-store ledger findings (PFL-5.3) into the reviewData
+      // passed to hasUnaddressedFindings/hasMergeOnlyStaleFindings, so
+      // isResolvedByLedger has real data to check against — fetchPrReviews's
+      // GraphQL query has no ledger access of its own.
+      const reviewData: PrReviewData = {
+        ...fetchedReviewData,
+        findings: record?.findings,
+      };
       if (hasUnaddressedFindings(reviewData, currentUser)) {
         needsPatch = true;
       } else if (
@@ -414,33 +490,6 @@ export async function getPatchCandidates(
     }
 
     if (!needsPatch) continue;
-
-    let record: PrRecord | null = null;
-    if (deps.queryPrRecord) {
-      try {
-        record = await deps.queryPrRecord(pr.repo, pr.number);
-      } catch {
-        // Query failed → fall back to PR createdAt below (fail open — a
-        // transient task-store error must not silently exclude an
-        // otherwise-qualifying PR from patch candidacy).
-      }
-      // A record with claimedBy set means another agent currently holds the
-      // claim on this PR — skip. A null record (no record was ever created,
-      // e.g. review skipped claim() for a self-authored PR under
-      // allow_self_review: false, or the query failed above) must NOT be
-      // treated as claimed — only an explicit claimedBy gates candidacy,
-      // mirroring check-review.ts.
-      if (record?.claimedBy != null) continue;
-
-      // Skip PRs whose task-store PR record is blocked:true — a human has
-      // already been escalated to at the PR-record level (independent of
-      // any linked task) and needs to act before patch tries again (PRB-2.2,
-      // PRB-3.1: patch.md Step 5a.7's second-round-disagreement escalation
-      // writes blocked:true directly on the PR record when there's no linked
-      // task to flag — via the shared isPrRecordBlockedForDispatch helper).
-      // Uses the same fetched `record` above — no new network call.
-      if (isPrRecordBlockedForDispatch(record)) continue;
-    }
 
     // Task-store task lookup, used to source the age field from the linked
     // task's createdAt (LPF-3.2) and to gate on hitl/blocked status
