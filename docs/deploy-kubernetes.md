@@ -395,7 +395,7 @@ service, so make one at `http://shipwright.local/admin/agents/new`:
 **No Slack credentials are required.** An agent with no Slack tokens boots in
 offline mode and is driven from the admin console's **Chat** tab
 (`http://shipwright.local/admin/chat`). Slack is optional and can be connected
-later from the `/admin/provision` wizard.
+later from the agent's detail page via the inline "Connect Slack" action.
 
 ### TLS and security
 
