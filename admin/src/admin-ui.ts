@@ -1223,6 +1223,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let memberEmailsRaw: string | undefined;
     let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
     let claudeCodeOauthToken: string | undefined;
@@ -1238,6 +1239,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      memberEmailsRaw = formData.get("memberEmails")?.toString()?.trim();
       restrictSlackToMembersRaw = formData
         .get("restrictSlackToMembers")
         ?.toString();
@@ -1316,6 +1318,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       }
       if (authorAllowlist.length > 0) {
         await agentService.updateFields(agent.id, { authorAllowlist });
+      }
+    }
+    // Attach member emails if provided — best-effort, mirrors the single-add
+    // POST /admin/agents/:id/members route: no format validation, and a
+    // failed/duplicate add is silently ignored rather than rolling back the
+    // agent. Runs before redirectWithMembersWarning below so freshly-added
+    // members are already visible to its zero-members check.
+    if (memberEmailsRaw) {
+      const memberEmails = [
+        ...new Set(
+          memberEmailsRaw
+            .split(/\r?\n/)
+            .map((l) => l.trim().toLowerCase())
+            .filter((l) => l.length > 0),
+        ),
+      ];
+      for (const email of memberEmails) {
+        try {
+          await agentMemberService.add(agent.id, email);
+        } catch {
+          // unique constraint violation — already a member, ignore
+        }
       }
     }
     // Store the Claude credentials before provisioning so the pod comes up

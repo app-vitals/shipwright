@@ -991,6 +991,26 @@ describe("renderNewLocalAgentPage", () => {
     expect(selfHostedRadio).toContain("slack-section");
     expect(selfHostedRadio).toContain("github-section");
   });
+
+  // ── UAP-5.2: inline member-email textarea for restrictSlackToMembers ──────
+
+  test("renders a memberEmails textarea inside a member-emails-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="memberEmails"[^>]*>/);
+    const memberEmailsBlock = html.match(
+      /<div id="member-emails-fields"[^>]*style="display:none[^>]*>[\s\S]*?memberEmails/,
+    );
+    expect(memberEmailsBlock).not.toBeNull();
+  });
+
+  test("restrictSlackToMembers checkbox onchange toggles the member-emails-fields block's display", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const checkbox = html.match(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*>/,
+    )?.[0] as string;
+    expect(checkbox).toContain("onchange");
+    expect(checkbox).toContain("member-emails-fields");
+  });
 });
 
 // ─── renderAgentDetailPage — connect-later actions (UAP-2.3 / UAP-5.4) ───────

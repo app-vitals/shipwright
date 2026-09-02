@@ -750,13 +750,32 @@ export function renderNewLocalAgentPage(
         </div>
         <div id="restrict-slack-group" style="display:${runtimeSectionsDisplay}">
           <div class="form-group" style="display:flex;align-items:center;gap:6px">
-            <input id="restrictSlackToMembers" name="restrictSlackToMembers" type="checkbox" value="true" />
+            <input
+              id="restrictSlackToMembers"
+              name="restrictSlackToMembers"
+              type="checkbox"
+              value="true"
+              onchange="document.getElementById('member-emails-fields').style.display=this.checked?'block':'none'"
+            />
             <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
           </div>
           <p style="font-size:12px;color:#6b7280;margin-top:-12px">
             When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
             members yet, enabling this will block all Slack senders.
           </p>
+          <div id="member-emails-fields" style="display:none;margin-top:12px">
+            <div class="form-group">
+              <label class="form-label" for="memberEmails">Member emails (optional, one per line)</label>
+              <textarea
+                id="memberEmails"
+                name="memberEmails"
+                class="form-input"
+                rows="4"
+                placeholder="alice@example.com&#10;bob@example.com"
+              ></textarea>
+              <p style="font-size:12px;color:#6b7280;margin-top:4px">Email address, one per line</p>
+            </div>
+          </div>
         </div>
         <fieldset id="slack-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">Slack (optional)</legend>

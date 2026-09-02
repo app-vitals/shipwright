@@ -480,6 +480,107 @@ describe("admin UI — new local agent create flow", () => {
     expect(updateArgs!.repos).toContain("my-org/repo-two");
   });
 
+  // ── UAP-5.2: inline member-email textarea for restrictSlackToMembers ──────
+
+  it("POST /admin/agents with restrictSlackToMembers=true and memberEmails — creates an AgentMember row for each email", async () => {
+    const addCalls: Array<{ agentId: string; email: string }> = [];
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        add: async (agentId: string, email: string) => {
+          addCalls.push({ agentId, email });
+          return { id: "m1", agentId, email, createdAt: new Date() };
+        },
+        listByAgentId: async () => addCalls.map((c) => ({
+          id: "m1",
+          agentId: c.agentId,
+          email: c.email,
+          createdAt: new Date(),
+        })),
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "a@example.com\nb@example.com",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(addCalls.map((c) => c.email)).toContain("a@example.com");
+    expect(addCalls.map((c) => c.email)).toContain("b@example.com");
+    expect(addCalls.length).toBe(2);
+    // Members were created before redirectWithMembersWarning ran, so no
+    // zero-members warning should be appended.
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+  });
+
+  it("POST /admin/agents with duplicate memberEmails (or agentMemberService.add throwing) does not 500 — still 302 redirects", async () => {
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        add: async () => {
+          throw new Error("unique constraint violation");
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "dup@example.com\ndup@example.com",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toStartWith(
+      `/admin/agents/${NEW_AGENT_ID}`,
+    );
+  });
+
+  it("POST /admin/agents with restrictSlackToMembers=true and an empty memberEmails textarea — still creates the agent, no regression to the zero-members warning", async () => {
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        listByAgentId: async () => [],
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${NEW_AGENT_ID}?warning=restrict_slack_no_members`,
+    );
+  });
+
   it("POST /admin/agents with missing name — returns non-200 or error response", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ name: "" });
