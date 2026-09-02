@@ -1066,4 +1066,46 @@ describe("admin UI — new local agent create flow", () => {
     const patch = calls.envPatches.find((p) => p.env.GH_TOKEN);
     expect(patch?.env.GH_TOKEN).toBe("ghp_bothflow");
   });
+
+  it("both Connect Slack and GitHub PAT requested — GitHub PAT storage fails while Slack succeeds: Slack redirect is preserved and the failure is carried through the signed provision-state cookie", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    // Omitting ghPat makes startPatConnect() return ok:false
+    // ("GitHub Personal Access Token is required.") — the same failure path a
+    // rejected PAT storage would take. connectSlack=true means the handler
+    // must NOT early-redirect on that failure; it continues into Slack's OAuth
+    // flow, but the GitHub failure must be surfaced rather than swallowed.
+    const res = await postAgent(deps, {
+      name: "slack-ok-gh-pat-fail",
+      type: "coding",
+      connectSlack: "true",
+      xoxpToken: "xoxe.xoxp-test-token",
+      ghAuthMode: "pat",
+      // no ghPat → startPatConnect fails
+    });
+
+    // Existing behavior preserved: still redirects into Slack's OAuth flow.
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain("slack.com/oauth/authorize");
+
+    // GH_TOKEN was never stored.
+    expect(calls.envPatches.find((p) => p.env.GH_TOKEN)).toBeUndefined();
+
+    // The failure is carried through Slack's OAuth round trip via the signed
+    // provision-state cookie so the post-callback landing can surface it —
+    // rather than being silently console.error'd and swallowed.
+    const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
+    expect(setCookieHeader).toContain("slack_provision_state=");
+    const match = setCookieHeader.match(/slack_provision_state=([^;]+)/);
+    expect(match).toBeTruthy();
+    const jwtToken = decodeURIComponent(match?.[1] ?? "");
+    const parts = jwtToken.split(".");
+    expect(parts).toHaveLength(3);
+    const payload = JSON.parse(
+      Buffer.from(parts[1] ?? "", "base64url").toString("utf-8"),
+    );
+    expect(payload.ghConnectError).toBe(
+      "GitHub Personal Access Token is required.",
+    );
+  });
 });

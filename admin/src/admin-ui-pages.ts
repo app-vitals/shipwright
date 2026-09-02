@@ -1813,10 +1813,16 @@ export function renderGithubAppInstalledPage(
 // xapp-token page shown after OAuth callback completes — user pastes the Socket Mode app token.
 export function renderProvisionXappTokenPage(
   userName: string,
-  opts: { agentId: string; error?: string },
+  opts: { agentId: string; error?: string; warning?: string },
 ): string {
   const errorHtml = opts.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
+    : "";
+  // Non-fatal warning (UAP-2.1) — e.g. a GitHub PAT that failed to store
+  // during the combined create+connect flow. Surfaced here so the operator
+  // isn't misled into believing GH_TOKEN was connected after finishing Slack.
+  const warningHtml = opts.warning
+    ? `<div class="alert alert-warning">${escapeHtml(opts.warning)}</div>`
     : "";
 
   return renderAdminPage({
@@ -1838,6 +1844,7 @@ export function renderProvisionXappTokenPage(
         and generate an <strong>App-Level Token</strong> with <code class="mono">connections:write</code> scope.
         Paste the <code class="mono">xapp-</code> token below.
       </p>
+      ${warningHtml}
       ${errorHtml}
       <form method="POST" action="/admin/provision/xapp-token">
         <input type="hidden" name="agentId" value="${escapeHtml(opts.agentId)}" />

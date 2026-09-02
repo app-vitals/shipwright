@@ -1404,10 +1404,18 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
     if (connectSlack) {
       const redirectUri = `${appBaseUrl}/admin/agents/${agent.id}/connect-slack/callback`;
+      // Carry a failed-PAT-storage warning (UAP-2.1) through Slack's OAuth
+      // round trip via the signed provision-state cookie so it resurfaces on
+      // the post-callback landing page. Without this, a GitHub PAT that failed
+      // to store above would be silently swallowed and the operator misled
+      // into believing GH_TOKEN was connected.
+      const ghConnectError =
+        ghPatResult && !ghPatResult.ok ? ghPatResult.error : undefined;
       const slackResult = await slackProvisioningService.startConnect(
         agent.id,
         xoxpToken,
         redirectUri,
+        ghConnectError,
       );
       if (!slackResult.ok) {
         return c.redirect(
@@ -1506,7 +1514,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const warning =
       warningParam === "restrict_slack_no_members"
         ? "This agent has no members — enabling restrictSlackToMembers will block all Slack senders."
-        : undefined;
+        : // Free-form warning text (e.g. UAP-2.1's combined-flow GitHub PAT
+          // failure carried through the Slack OAuth round trip). Passed through
+          // verbatim rather than mapped to a fixed key.
+          (warningParam ?? undefined);
 
     const [envResult, crons, tools, tokens, plugins, members] =
       await Promise.all([
@@ -2306,17 +2317,26 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         );
       }
 
+      // A non-fatal GitHub PAT storage failure from the combined create+connect
+      // flow (UAP-2.1) rode through Slack's OAuth round trip in the signed
+      // cookie — surface it now so the operator isn't misled into believing
+      // GH_TOKEN was stored.
+      const ghConnectWarning = result.ghConnectError
+        ? `GitHub was not connected — storing the PAT failed: ${result.ghConnectError}`
+        : undefined;
+
       if (result.outcome === "reinstalled") {
-        return c.redirect(
-          `/admin/agents/${result.agentId}?success=reinstalled`,
-          302,
-        );
+        const query = ghConnectWarning
+          ? `?success=reinstalled&warning=${encodeURIComponent(ghConnectWarning)}`
+          : "?success=reinstalled";
+        return c.redirect(`/admin/agents/${result.agentId}${query}`, 302);
       }
 
       // result.outcome === "needs_app_token"
       return html(
         renderProvisionXappTokenPage(userEmail, {
           agentId: result.agentId,
+          warning: ghConnectWarning,
         }),
       );
     },

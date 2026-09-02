@@ -78,11 +78,20 @@ export type CompleteConnectResult =
       /** Success, and this is a reinstall (SLACK_APP_TOKEN was already set) — redirect straight to the agent page. */
       outcome: "reinstalled";
       agentId: string;
+      /**
+       * Set only for the combined create+connect flow (UAP-2.1): a non-fatal
+       * GitHub PAT storage failure that happened before this Slack flow began.
+       * The caller surfaces it as a warning on the landing page so the operator
+       * isn't misled into believing GH_TOKEN was stored.
+       */
+      ghConnectError?: string;
     }
   | {
       /** Success, fresh provisioning — show the xapp-token page next. */
       outcome: "needs_app_token";
       agentId: string;
+      /** See `reinstalled.ghConnectError` — same non-fatal combined-flow warning. */
+      ghConnectError?: string;
     };
 
 export type SaveAppTokenResult =
@@ -190,11 +199,19 @@ export class SlackProvisioningService {
    * to `oauth.v2.access` — Slack rejects an exchange whose `redirect_uri`
    * doesn't match a registered one. The per-agent connect-slack route passes
    * its own `/admin/agents/:id/connect-slack/callback` here.
+   *
+   * `ghConnectError` (UAP-2.1) is an optional non-fatal GitHub PAT storage
+   * failure from the combined create+connect flow. When present it's folded
+   * into the signed provision-state cookie so it survives Slack's OAuth round
+   * trip and completeConnect() can hand it back to the caller to surface on the
+   * post-callback landing page — otherwise the failure would be silently
+   * swallowed and the operator misled into believing GH_TOKEN was stored.
    */
   async startConnect(
     agentId: string,
     xoxpToken: string | undefined,
     redirectUri: string,
+    ghConnectError?: string,
   ): Promise<StartConnectResult> {
     if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
       return {
@@ -226,13 +243,17 @@ export class SlackProvisioningService {
     const { appId, oauthRedirectUrl, clientId, clientSecret, signingSecret } =
       slackResult;
 
-    const provisionStateToken = await this.signProvisionState(agentId, {
-      clientId,
-      clientSecret,
-      signingSecret,
-      appId,
-      redirectUri,
-    });
+    const provisionStateToken = await this.signProvisionState(
+      agentId,
+      {
+        clientId,
+        clientSecret,
+        signingSecret,
+        appId,
+        redirectUri,
+      },
+      ghConnectError ? { ghConnectError } : undefined,
+    );
 
     return { ok: true, provisionStateToken, oauthRedirectUrl };
   }
@@ -268,6 +289,11 @@ export class SlackProvisioningService {
     }
 
     let provisionState: ProvisionStatePayload;
+    // Non-fatal combined-flow warning (UAP-2.1), threaded through the signed
+    // cookie so it survives Slack's OAuth round trip. Declared out here so it
+    // escapes the verify() try block; kept separate from the
+    // ProvisionStatePayload shape since it's flow-specific, not Slack state.
+    let ghConnectError: string | undefined;
     try {
       const payload = (await verify(
         rawStateCookie,
@@ -294,6 +320,10 @@ export class SlackProvisioningService {
             ? payload.redirectUri
             : undefined,
       };
+      ghConnectError =
+        typeof payload.ghConnectError === "string"
+          ? payload.ghConnectError
+          : undefined;
     } catch {
       return {
         outcome: "invalid_state",
@@ -340,10 +370,18 @@ export class SlackProvisioningService {
     );
 
     if (existingBundle?.env.SLACK_APP_TOKEN) {
-      return { outcome: "reinstalled", agentId: provisionState.agentId };
+      return {
+        outcome: "reinstalled",
+        agentId: provisionState.agentId,
+        ghConnectError,
+      };
     }
 
-    return { outcome: "needs_app_token", agentId: provisionState.agentId };
+    return {
+      outcome: "needs_app_token",
+      agentId: provisionState.agentId,
+      ghConnectError,
+    };
   }
 
   /**
