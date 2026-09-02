@@ -137,7 +137,7 @@ In the admin console, go to **Agents → New** (<http://localhost:3001/admin/age
 
 Leave the runtime on **Self-hosted** — `task stack` runs the agent's container for you in the agent pane. (The **Provisioned in-cluster** option is disabled here anyway: it needs `SHIPWRIGHT_K8S_PROVISIONING`, which only the Helm chart sets. See [deploy-kubernetes.md](./deploy-kubernetes.md) for that path.)
 
-No Slack credentials are needed — you'll talk to the agent from the Chat tab in Step 4.
+No Slack or GitHub credentials are needed — you'll talk to the agent from the Chat tab in Step 4. Both are optional inline fields on the New Agent form; you can connect either one later from the agent's detail page if you prefer.
 
 The agent pane's wait-loop polls the database and detects the new agent automatically — no stack restart needed. Once detected, it seeds the agent's chat token and starts the Docker container with that agent's id.
 
