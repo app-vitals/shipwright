@@ -149,6 +149,7 @@ COPY chat/prisma ./chat/prisma/
 COPY plugins/shipwright/package.json ./plugins/shipwright/
 COPY lib/package.json ./lib/
 COPY mcp-server/package.json ./mcp-server/
+COPY patches/ ./patches/
 
 # Install all dependencies (including devDependencies for typecheck)
 RUN bun install --frozen-lockfile
