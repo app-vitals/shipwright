@@ -3230,6 +3230,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     async (c) => {
       if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
 
+      const agentId = c.req.param("agentId");
       const threadId = c.req.param("threadId");
 
       if (!chatClient) {
@@ -3274,6 +3275,16 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           body ?? "",
           attachment,
         );
+        // Record that this user is watching the thread so the agent's reply
+        // can be targeted back to them via push (CFB-4.2). This is the route
+        // the live chat UI's send box actually posts to (see
+        // admin-ui-pages.ts's uploadUrl) — the form POST /messages and
+        // /messages.json routes above are alternate entry points with their
+        // own identical call; all three must stay in sync. Best-effort —
+        // never block the response.
+        if (pushEnabled) {
+          await watchThread(c.var.userEmail, agentId, threadId);
+        }
         return c.json({ message }, 201);
       } catch {
         return c.json({ error: "failed to create message" }, 500);
