@@ -468,6 +468,7 @@ export function createSlackApp(
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
   resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
   membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
+  thinkingStepsEnabled = false,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -530,6 +531,7 @@ export function createSlackApp(
       client,
       channel: msg.channel,
       threadTs: replyTs,
+      thinkingStepsEnabled,
     });
     if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
@@ -672,6 +674,7 @@ export function createSlackApp(
       client,
       channel: ev.channel,
       threadTs: replyTs,
+      thinkingStepsEnabled,
     });
     if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
@@ -826,6 +829,7 @@ export function createSlackApp(
       client,
       channel: ev.item.channel,
       threadTs: ev.item.ts,
+      thinkingStepsEnabled,
     });
     if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
