@@ -595,6 +595,18 @@ export function renderAgentsPage(
 
 // ─── New agent page ───────────────────────────────────────────────────────────
 
+// The three Slack/GitHub sections (restrict-slack-group, slack-section,
+// github-section) are meaningless for self-hosted agents — self-hosted uses
+// local git config for GitHub auth, not admin-managed provisioning — so they
+// are shown only when "Provisioned in-cluster" is selected. `display` is
+// either "" (visible) or "none" (hidden).
+function runtimeSectionsOnchange(display: "" | "none"): string {
+  const ids = ["restrict-slack-group", "slack-section", "github-section"];
+  return ids
+    .map((id) => `document.getElementById('${id}').style.display='${display}'`)
+    .join(";");
+}
+
 export function renderNewLocalAgentPage(
   userName: string,
   types: AgentTypeOption[],
@@ -606,6 +618,11 @@ export function renderNewLocalAgentPage(
   // "in-cluster" would silently produce an agent row with no pod, so the option
   // is rendered disabled and self-hosted is preselected.
   const canProvision = opts?.canProvision ?? false;
+  // Slack/GitHub sections are only relevant to in-cluster (admin-provisioned)
+  // agents — self-hosted agents use local git config for GitHub auth. Their
+  // initial visibility must match whichever runtime radio is preselected
+  // above (canProvision===true → in-cluster preselected → visible).
+  const runtimeSectionsDisplay: "" | "none" = canProvision ? "" : "none";
   const errorHtml = error
     ? `<div class="alert alert-error">${escapeHtml(error)}</div>`
     : "";
@@ -656,14 +673,18 @@ export function renderNewLocalAgentPage(
           <legend style="font-size:13px;font-weight:600;padding:0 8px">Runtime</legend>
           <div class="form-group" style="margin-bottom:0">
             <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">
-              <input type="radio" name="runtime" value="in-cluster" ${canProvision ? "checked" : "disabled"} />
+              <input type="radio" name="runtime" value="in-cluster" ${canProvision ? "checked" : "disabled"}
+                onchange="${runtimeSectionsOnchange("")}"
+              />
               Provisioned in-cluster
               <span style="font-weight:400;color:#6b7280">
                 — the admin service creates the Deployment, Secret, and PVC for you.
               </span>
             </label>
             <label style="display:block;font-size:13px;font-weight:500">
-              <input type="radio" name="runtime" value="self-hosted" ${canProvision ? "" : "checked"} />
+              <input type="radio" name="runtime" value="self-hosted" ${canProvision ? "" : "checked"}
+                onchange="${runtimeSectionsOnchange("none")}"
+              />
               Self-hosted
               <span style="font-weight:400;color:#6b7280">
                 — you run the container yourself (<span class="mono">task stack</span>, local Docker).
@@ -727,15 +748,17 @@ export function renderNewLocalAgentPage(
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
         </div>
-        <div class="form-group" style="display:flex;align-items:center;gap:6px">
-          <input id="restrictSlackToMembers" name="restrictSlackToMembers" type="checkbox" value="true" />
-          <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+        <div id="restrict-slack-group" style="display:${runtimeSectionsDisplay}">
+          <div class="form-group" style="display:flex;align-items:center;gap:6px">
+            <input id="restrictSlackToMembers" name="restrictSlackToMembers" type="checkbox" value="true" />
+            <label class="form-label" for="restrictSlackToMembers" style="margin-bottom:0">Restrict Slack to members</label>
+          </div>
+          <p style="font-size:12px;color:#6b7280;margin-top:-12px">
+            When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
+            members yet, enabling this will block all Slack senders.
+          </p>
         </div>
-        <p style="font-size:12px;color:#6b7280;margin-top:-12px">
-          When enabled, only AgentMember emails may message this agent over Slack. If the agent has no
-          members yet, enabling this will block all Slack senders.
-        </p>
-        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+        <fieldset id="slack-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">Slack (optional)</legend>
           <div class="form-group" style="display:flex;align-items:center;gap:6px;margin-bottom:0">
             <input
@@ -764,7 +787,7 @@ export function renderNewLocalAgentPage(
             </div>
           </div>
         </fieldset>
-        <fieldset style="border:1px solid #e8e8ee;border-radius:8px;padding:16px">
+        <fieldset id="github-section" style="display:${runtimeSectionsDisplay};border:1px solid #e8e8ee;border-radius:8px;padding:16px">
           <legend style="font-size:13px;font-weight:600;padding:0 8px">GitHub Authentication (optional)</legend>
           <div class="form-group" style="margin-bottom:12px">
             <label style="display:block;font-size:13px;font-weight:500;margin-bottom:8px">

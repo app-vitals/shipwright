@@ -920,6 +920,77 @@ describe("renderNewLocalAgentPage", () => {
     expect(appRadio).toContain("onchange");
     expect(appRadio).toContain("gh-app-fields");
   });
+
+  // ── UAP-5.1: gate Slack/GitHub sections behind runtime=in-cluster ─────────
+
+  test("canProvision: false (self-hosted preselected) hides the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: false,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("canProvision: true (in-cluster preselected) shows the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).not.toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).not.toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).not.toContain("display:none");
+  });
+
+  test("omitted canProvision defaults to hidden Slack/GitHub sections (self-hosted preselected)", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("both runtime radios carry an onchange handler that toggles the restrict-slack-group, slack-section, and github-section ids", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const inClusterRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inClusterRadio).toContain("onchange");
+    expect(inClusterRadio).toContain("restrict-slack-group");
+    expect(inClusterRadio).toContain("slack-section");
+    expect(inClusterRadio).toContain("github-section");
+
+    const selfHostedRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="self-hosted"[^>]*\/>/,
+    )?.[0] as string;
+    expect(selfHostedRadio).toContain("onchange");
+    expect(selfHostedRadio).toContain("restrict-slack-group");
+    expect(selfHostedRadio).toContain("slack-section");
+    expect(selfHostedRadio).toContain("github-section");
+  });
 });
 
 // ─── renderAgentDetailPage — env vars section ────────────────────────────────
