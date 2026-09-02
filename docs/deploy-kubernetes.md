@@ -392,10 +392,14 @@ service, so make one at `http://shipwright.local/admin/agents/new`:
   does not provision deployment-wide Claude credentials. You can also set
   `ANTHROPIC_API_KEY` from the agent's detail page afterwards.
 
-**No Slack credentials are required.** An agent with no Slack tokens boots in
-offline mode and is driven from the admin console's **Chat** tab
-(`http://shipwright.local/admin/chat`). Slack is optional and can be connected
-later from the agent's detail page via the inline "Connect Slack" action.
+**Slack and GitHub Authentication are optional and inline.** Both appear as optional
+fieldsets on the New Agent form: **Slack (optional)** reveals an inline Slack App
+Configuration Token field when checked, and **GitHub Authentication (optional)** offers
+three radio options (Skip, Personal Access Token, or Create GitHub App). You can
+connect either one at creation time, skip both and connect them later from the agent's
+detail page, or mix and match — it is your choice. An agent with no Slack or GitHub
+tokens boots in offline mode and is driven from the admin console's **Chat** tab
+(`http://shipwright.local/admin/chat`).
 
 ### TLS and security
 
