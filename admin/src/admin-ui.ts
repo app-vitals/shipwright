@@ -2787,7 +2787,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       slackResult = await slackProvisioningService.createAppManifest(
         agent.name,
         xoxpToken,
-        `${appBaseUrl}/admin/provision/complete`,
+        `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-slack/callback`,
       );
     } catch (err) {
       const msg =
@@ -2839,13 +2839,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         clientSecret,
         signingSecret,
         appId,
-        redirectUri: `${appBaseUrl}/admin/provision/complete`,
+        redirectUri: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-slack/callback`,
       },
       isGithubAppAutoProvision ? { githubOrg } : undefined,
     );
 
     // TODO(BP-2.2): this cookie is consumed by the OAuth exchange handler in
-    // provision/complete once the Slack OAuth redirect lands.
+    // the connect-slack/callback route once the Slack OAuth redirect lands.
     setCookie(c, PROVISION_STATE_COOKIE, provisionToken, {
       httpOnly: true,
       maxAge: PROVISION_STATE_TTL_SECONDS,
@@ -2882,8 +2882,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // startAppManualConnect() the new connect-github routes call — so the
     // storage logic lives in exactly one place. isGithubAppAutoProvision:
     // GH_APP_ID/GH_APP_PRIVATE_KEY/GH_APP_INSTALLATION_ID are written later
-    // by the github-app/complete and github-app/installed routes, once the
-    // manifest-flow code and installation_id are known.
+    // by the connect-github/callback and connect-github/installed routes, once
+    // the manifest-flow code and installation_id are known.
     if (ghAuthMode === "pat") {
       const result = await githubProvisioningService.startPatConnect(
         resolvedAgentId,
@@ -2907,8 +2907,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       // biome-ignore lint/style/noNonNullAssertion: validated above (ghAppMode === "auto" requires a GITHUB_ORG_PATTERN-valid githubOrg)
       const org = githubOrg!;
       const manifest = buildAgentAppManifest(agent.name, {
-        redirectUri: `${appBaseUrl}/admin/provision/github-app/complete`,
-        setupUrl: `${appBaseUrl}/admin/provision/github-app/installed`,
+        redirectUri: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-github/callback`,
+        setupUrl: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-github/installed`,
       });
       // Use c.html() so the Set-Cookie header from setCookie() is included
       return c.html(

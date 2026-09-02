@@ -2655,6 +2655,13 @@ describe("admin UI — provision start form", () => {
     );
     expect(payload.agentId).toBe(AGENT_ID);
     expect(payload.appId).toBe("A_HAPPY");
+    // The signed redirect_uri must target the per-agent connect-slack callback
+    // (UAP-3.3 removed the /admin/provision/complete alias) — the OAuth exchange
+    // handler validates the code against exactly this URL, so a stale value here
+    // 404s the whole flow after merge.
+    expect(payload.redirectUri).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-slack/callback`,
+    );
 
     // Verify patch was called with correct env vars
     expect(patchedAgentId as string | null).toBe(AGENT_ID);
@@ -3257,6 +3264,22 @@ describe("admin UI — GitHub App auto-provision (POST /admin/provision/start)",
       'action="https://github.com/organizations/my-org/settings/apps/new"',
     );
     expect(html).toContain('name="manifest"');
+
+    // The manifest's redirect_url/setup_url must target the per-agent
+    // connect-github routes (UAP-3.3 removed the /admin/provision/github-app/*
+    // aliases) — GitHub redirects the operator back to exactly these URLs after
+    // the App is created/installed, so stale values 404 the auto-provision flow.
+    const manifestMatch = html.match(/name="manifest"\s+value="([^"]*)"/);
+    expect(manifestMatch).toBeTruthy();
+    const manifestJson = JSON.parse(
+      (manifestMatch?.[1] ?? "").replace(/&quot;/g, '"').replace(/&amp;/g, "&"),
+    );
+    expect(manifestJson.redirect_url).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-github/callback`,
+    );
+    expect(manifestJson.setup_url).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-github/installed`,
+    );
 
     const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
     expect(setCookieHeader).toContain("slack_provision_state=");
