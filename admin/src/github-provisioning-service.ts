@@ -131,16 +131,20 @@ export interface GithubProvisioningServiceDeps {
 
 // ─── Validation helpers ─────────────────────────────────────────────────────
 
+function isNumericId(value: string | undefined): value is string {
+  return Boolean(value) && /^\d+$/.test(value as string);
+}
+
 /** Validates a pasted GitHub App ID (numeric string). */
 export function isValidGithubAppId(value: string | undefined): value is string {
-  return Boolean(value) && /^\d+$/.test(value as string);
+  return isNumericId(value);
 }
 
 /** Validates a pasted GitHub App Installation ID (numeric string). */
 export function isValidGithubAppInstallationId(
   value: string | undefined,
 ): value is string {
-  return Boolean(value) && /^\d+$/.test(value as string);
+  return isNumericId(value);
 }
 
 /** Validates a pasted GitHub App private key (PEM-encoded). */
@@ -454,7 +458,7 @@ export class GithubProvisioningService {
       };
     }
 
-    if (!installationId || !/^\d+$/.test(installationId)) {
+    if (!isNumericId(installationId)) {
       return {
         outcome: "invalid_installation_id",
         error:
