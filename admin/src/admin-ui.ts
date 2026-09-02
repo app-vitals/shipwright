@@ -1380,19 +1380,29 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // either, so it's skipped when Slack is also requested) so GH_TOKEN is
     // already in place by the time the user lands back from Slack's OAuth
     // callback — then Slack's redirect is returned last.
-    if (connectSlack) {
-      if (ghAuthMode === "pat") {
-        const patResult = await githubProvisioningService.startPatConnect(
-          agent.id,
-          ghPat,
+    let ghPatResult: Awaited<
+      ReturnType<typeof githubProvisioningService.startPatConnect>
+    > | undefined;
+    if (ghAuthMode === "pat") {
+      ghPatResult = await githubProvisioningService.startPatConnect(
+        agent.id,
+        ghPat,
+      );
+      if (!ghPatResult.ok && !connectSlack) {
+        return c.redirect(
+          `/admin/agents/${agent.id}?error=${encodeURIComponent(ghPatResult.error)}`,
+          302,
         );
-        if (!patResult.ok) {
-          console.error(
-            "[admin-ui] GitHub PAT storage failed during combined Slack+GitHub connect:",
-            patResult.error,
-          );
-        }
       }
+      if (!ghPatResult.ok) {
+        console.error(
+          "[admin-ui] GitHub PAT storage failed during combined Slack+GitHub connect:",
+          ghPatResult.error,
+        );
+      }
+    }
+
+    if (connectSlack) {
       const redirectUri = `${appBaseUrl}/admin/agents/${agent.id}/connect-slack/callback`;
       const slackResult = await slackProvisioningService.startConnect(
         agent.id,
@@ -1447,25 +1457,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
           githubOrg: appResult.githubOrg,
           manifest: appResult.manifest,
         }),
-      );
-    }
-
-    if (ghAuthMode === "pat") {
-      const patResult = await githubProvisioningService.startPatConnect(
-        agent.id,
-        ghPat,
-      );
-      if (!patResult.ok) {
-        return c.redirect(
-          `/admin/agents/${agent.id}?error=${encodeURIComponent(patResult.error)}`,
-          302,
-        );
-      }
-      return redirectWithMembersWarning(
-        c,
-        agentMemberService,
-        agent.id,
-        restrictSlackToMembers,
       );
     }
 
