@@ -875,10 +875,61 @@ describe("renderNewLocalAgentPage", () => {
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*>/);
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/);
     expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/);
-    // Explicitly no "paste manually" App mode — only pat + auto-app per the
-    // unified page's 3-way radio (that mode stays exclusive to the legacy
-    // /admin/provision wizard).
-    expect(html).not.toMatch(/name="ghAppMode"/);
+    // UAP-5.3: two ghAuthMode="app" radios now exist (Create GitHub App /
+    // Use existing GitHub App), disambiguated by a shared hidden ghAppMode
+    // field the radios' onchange handlers set to "auto"/"manual".
+    expect(html).toMatch(/id="ghAppMode"/);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/g,
+    );
+    expect(appRadios?.length).toBe(2);
+  });
+
+  // ── UAP-5.3: "Use existing GitHub App" as a 4th ghAuthMode option ─────────
+
+  test("renders a 4th 'Use existing GitHub App' radio revealing App ID, Installation ID, and a PEM file upload", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain("Use existing GitHub App");
+    const manualBlock = html.match(
+      /<div id="gh-app-manual-fields"[^>]*style="display:none"[\s\S]*?<\/div>\s*<\/div>/,
+    )?.[0] as string;
+    expect(manualBlock).toBeDefined();
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppId"[^>]*>/);
+    expect(manualBlock).toMatch(/<input[^>]*name="ghAppInstallationId"[^>]*>/);
+    expect(manualBlock).toMatch(
+      /<input[^>]*name="ghAppPrivateKeyFile"[^>]*type="file"[^>]*accept="\.pem"[^>]*>/,
+    );
+  });
+
+  test("the 'Use existing GitHub App' radio's onchange sets the hidden ghAppMode input to 'manual' and shows the manual fields block; 'Create GitHub App' sets it to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const appRadios = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*\/>/g,
+    ) as string[];
+    expect(appRadios).toHaveLength(2);
+    const [autoRadio, manualRadio] = appRadios;
+    expect(autoRadio).toContain("ghAppMode').value='auto'");
+    expect(manualRadio).toContain("ghAppMode').value='manual'");
+    expect(manualRadio).toContain("gh-app-manual-fields");
+  });
+
+  test("the hidden ghAppMode input defaults to 'auto'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const hidden = html.match(
+      /<input[^>]*type="hidden"[^>]*id="ghAppMode"[^>]*>/,
+    )?.[0] as string;
+    expect(hidden).toBeDefined();
+    expect(hidden).toContain('name="ghAppMode"');
+    expect(hidden).toContain('value="auto"');
+  });
+
+  test("the New Agent form gains enctype=multipart/form-data now that it contains a file input", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const formTag = html.match(
+      /<form method="POST" action="\/admin\/agents"[^>]*>/,
+    )?.[0] as string;
+    expect(formTag).toBeDefined();
+    expect(formTag).toContain('enctype="multipart/form-data"');
   });
 
   test("skip is the default checked GitHub auth mode", () => {
@@ -919,6 +970,97 @@ describe("renderNewLocalAgentPage", () => {
     )?.[0] as string;
     expect(appRadio).toContain("onchange");
     expect(appRadio).toContain("gh-app-fields");
+  });
+
+  // ── UAP-5.1: gate Slack/GitHub sections behind runtime=in-cluster ─────────
+
+  test("canProvision: false (self-hosted preselected) hides the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: false,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("canProvision: true (in-cluster preselected) shows the restrictSlackToMembers group, Slack fieldset, and GitHub Authentication fieldset", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const restrictGroup = html.match(
+      /<div id="restrict-slack-group"[^>]*>/,
+    )?.[0] as string;
+    expect(restrictGroup).not.toContain("display:none");
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).not.toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).not.toContain("display:none");
+  });
+
+  test("omitted canProvision defaults to hidden Slack/GitHub sections (self-hosted preselected)", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const slackSection = html.match(
+      /<fieldset id="slack-section"[^>]*>/,
+    )?.[0] as string;
+    expect(slackSection).toContain("display:none");
+    const githubSection = html.match(
+      /<fieldset id="github-section"[^>]*>/,
+    )?.[0] as string;
+    expect(githubSection).toContain("display:none");
+  });
+
+  test("both runtime radios carry an onchange handler that toggles the restrict-slack-group, slack-section, and github-section ids", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
+      canProvision: true,
+    });
+    const inClusterRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="in-cluster"[^>]*\/>/,
+    )?.[0] as string;
+    expect(inClusterRadio).toContain("onchange");
+    expect(inClusterRadio).toContain("restrict-slack-group");
+    expect(inClusterRadio).toContain("slack-section");
+    expect(inClusterRadio).toContain("github-section");
+
+    const selfHostedRadio = html.match(
+      /<input[^>]*name="runtime"[^>]*value="self-hosted"[^>]*\/>/,
+    )?.[0] as string;
+    expect(selfHostedRadio).toContain("onchange");
+    expect(selfHostedRadio).toContain("restrict-slack-group");
+    expect(selfHostedRadio).toContain("slack-section");
+    expect(selfHostedRadio).toContain("github-section");
+  });
+
+  // ── UAP-5.2: inline member-email textarea for restrictSlackToMembers ──────
+
+  test("renders a memberEmails textarea inside a member-emails-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="memberEmails"[^>]*>/);
+    const memberEmailsBlock = html.match(
+      /<div id="member-emails-fields"[^>]*style="display:none[^>]*>[\s\S]*?memberEmails/,
+    );
+    expect(memberEmailsBlock).not.toBeNull();
+  });
+
+  test("restrictSlackToMembers checkbox onchange toggles the member-emails-fields block's display", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const checkbox = html.match(
+      /<input[^>]*name="restrictSlackToMembers"[^>]*>/,
+    )?.[0] as string;
+    expect(checkbox).toContain("onchange");
+    expect(checkbox).toContain("member-emails-fields");
   });
 });
 

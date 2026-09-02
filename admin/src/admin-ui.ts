@@ -1223,6 +1223,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let memberEmailsRaw: string | undefined;
     let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
     let claudeCodeOauthToken: string | undefined;
@@ -1232,12 +1233,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let ghAuthMode: string | undefined;
     let ghPat: string | undefined;
     let githubOrg: string | undefined;
+    let ghAppMode: string | undefined;
+    let ghAppId: string | undefined;
+    let ghAppInstallationId: string | undefined;
+    let ghAppPrivateKey: string | undefined;
     try {
       const formData = await c.req.formData();
       name = formData.get("name")?.toString()?.trim();
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      memberEmailsRaw = formData.get("memberEmails")?.toString()?.trim();
       restrictSlackToMembersRaw = formData
         .get("restrictSlackToMembers")
         ?.toString();
@@ -1252,6 +1258,17 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       ghAuthMode = formData.get("ghAuthMode")?.toString()?.trim();
       ghPat = formData.get("ghPat")?.toString();
       githubOrg = formData.get("githubOrg")?.toString()?.trim();
+      ghAppMode = formData.get("ghAppMode")?.toString()?.trim();
+      ghAppId = formData.get("ghAppId")?.toString();
+      ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
+      // UAP-5.3: the "Use existing GitHub App" option submits the private
+      // key as a file upload rather than pasted text — read its contents
+      // server-side, mirroring the per-agent connect-github route.
+      const ghAppPrivateKeyFile = formData.get("ghAppPrivateKeyFile");
+      ghAppPrivateKey =
+        ghAppPrivateKeyFile instanceof File
+          ? await ghAppPrivateKeyFile.text()
+          : undefined;
     } catch {
       return c.redirect("/admin/agents/new", 302);
     }
@@ -1318,6 +1335,28 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         await agentService.updateFields(agent.id, { authorAllowlist });
       }
     }
+    // Attach member emails if provided — best-effort, mirrors the single-add
+    // POST /admin/agents/:id/members route: no format validation, and a
+    // failed/duplicate add is silently ignored rather than rolling back the
+    // agent. Runs before redirectWithMembersWarning below so freshly-added
+    // members are already visible to its zero-members check.
+    if (memberEmailsRaw) {
+      const memberEmails = [
+        ...new Set(
+          memberEmailsRaw
+            .split(/\r?\n/)
+            .map((l) => l.trim().toLowerCase())
+            .filter((l) => l.length > 0),
+        ),
+      ];
+      for (const email of memberEmails) {
+        try {
+          await agentMemberService.add(agent.id, email);
+        } catch {
+          // unique constraint violation — already a member, ignore
+        }
+      }
+    }
     // Store the Claude credentials before provisioning so the pod comes up
     // with them already in its env bundle rather than failing its first
     // turn. Both fields (if supplied) go through a single patch call, mirroring
@@ -1374,92 +1413,119 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     // either, so it's skipped when Slack is also requested) so GH_TOKEN is
     // already in place by the time the user lands back from Slack's OAuth
     // callback — then Slack's redirect is returned last.
-    let ghPatResult:
-      | Awaited<ReturnType<typeof githubProvisioningService.startPatConnect>>
-      | undefined;
-    if (ghAuthMode === "pat") {
-      ghPatResult = await githubProvisioningService.startPatConnect(
-        agent.id,
-        ghPat,
-      );
-      if (!ghPatResult.ok && !connectSlack) {
-        return c.redirect(
-          `/admin/agents/${agent.id}?error=${encodeURIComponent(ghPatResult.error)}`,
-          302,
+    //
+    // UAP-5.1: this whole block only applies to in-cluster agents. Self-hosted
+    // agents use local git config for GitHub auth, not admin-managed
+    // provisioning, so Slack/GitHub connect must never run for them — even if
+    // connectSlack/ghAuthMode were submitted via a raw POST bypassing the UI
+    // (the New Agent form hides these sections for self-hosted, but that's
+    // client-side only).
+    if (inCluster) {
+      let ghPatResult:
+        | Awaited<ReturnType<typeof githubProvisioningService.startPatConnect>>
+        | undefined;
+      if (ghAuthMode === "pat") {
+        ghPatResult = await githubProvisioningService.startPatConnect(
+          agent.id,
+          ghPat,
         );
+        if (!ghPatResult.ok && !connectSlack) {
+          return c.redirect(
+            `/admin/agents/${agent.id}?error=${encodeURIComponent(ghPatResult.error)}`,
+            302,
+          );
+        }
+        if (!ghPatResult.ok) {
+          console.error(
+            "[admin-ui] GitHub PAT storage failed during combined Slack+GitHub connect:",
+            ghPatResult.error,
+          );
+        }
       }
-      if (!ghPatResult.ok) {
-        console.error(
-          "[admin-ui] GitHub PAT storage failed during combined Slack+GitHub connect:",
-          ghPatResult.error,
-        );
-      }
-    }
 
-    if (connectSlack) {
-      const redirectUri = `${appBaseUrl}/admin/agents/${agent.id}/connect-slack/callback`;
-      // Carry a failed-PAT-storage warning (UAP-2.1) through Slack's OAuth
-      // round trip via the signed provision-state cookie so it resurfaces on
-      // the post-callback landing page. Without this, a GitHub PAT that failed
-      // to store above would be silently swallowed and the operator misled
-      // into believing GH_TOKEN was connected.
-      const ghConnectError =
-        ghPatResult && !ghPatResult.ok ? ghPatResult.error : undefined;
-      const slackResult = await slackProvisioningService.startConnect(
-        agent.id,
-        xoxpToken,
-        redirectUri,
-        ghConnectError,
-      );
-      if (!slackResult.ok) {
-        return c.redirect(
-          `/admin/agents/${agent.id}?error=${encodeURIComponent(slackResult.error)}`,
-          302,
+      if (connectSlack) {
+        const redirectUri = `${appBaseUrl}/admin/agents/${agent.id}/connect-slack/callback`;
+        // Carry a failed-PAT-storage warning (UAP-2.1) through Slack's OAuth
+        // round trip via the signed provision-state cookie so it resurfaces on
+        // the post-callback landing page. Without this, a GitHub PAT that failed
+        // to store above would be silently swallowed and the operator misled
+        // into believing GH_TOKEN was connected.
+        const ghConnectError =
+          ghPatResult && !ghPatResult.ok ? ghPatResult.error : undefined;
+        const slackResult = await slackProvisioningService.startConnect(
+          agent.id,
+          xoxpToken,
+          redirectUri,
+          ghConnectError,
         );
-      }
-      setCookie(c, PROVISION_STATE_COOKIE, slackResult.provisionStateToken, {
-        httpOnly: true,
-        maxAge: PROVISION_STATE_TTL_SECONDS,
-        sameSite: "Lax",
-        path: "/",
-        secure: appBaseUrl.startsWith("https://"),
-      });
-      return c.redirect(slackResult.oauthRedirectUrl, 302);
-    }
-
-    if (ghAuthMode === "app") {
-      const appResult = await githubProvisioningService.startAppAutoConnect(
-        agent.id,
-        githubOrg,
-        {
-          redirectUri: `${appBaseUrl}/admin/agents/${agent.id}/connect-github/callback`,
-          setupUrl: `${appBaseUrl}/admin/agents/${agent.id}/connect-github/installed`,
-        },
-      );
-      if (!appResult.ok) {
-        return c.redirect(
-          `/admin/agents/${agent.id}?error=${encodeURIComponent(appResult.error)}`,
-          302,
-        );
-      }
-      setCookie(
-        c,
-        GITHUB_PROVISION_STATE_COOKIE,
-        appResult.provisionStateToken,
-        {
+        if (!slackResult.ok) {
+          return c.redirect(
+            `/admin/agents/${agent.id}?error=${encodeURIComponent(slackResult.error)}`,
+            302,
+          );
+        }
+        setCookie(c, PROVISION_STATE_COOKIE, slackResult.provisionStateToken, {
           httpOnly: true,
-          maxAge: GITHUB_PROVISION_STATE_TTL_SECONDS,
+          maxAge: PROVISION_STATE_TTL_SECONDS,
           sameSite: "Lax",
           path: "/",
           secure: appBaseUrl.startsWith("https://"),
-        },
-      );
-      return c.html(
-        renderGithubAppManifestRedirectPage(c.var.userEmail, {
-          githubOrg: appResult.githubOrg,
-          manifest: appResult.manifest,
-        }),
-      );
+        });
+        return c.redirect(slackResult.oauthRedirectUrl, 302);
+      }
+
+      if (ghAuthMode === "app" && ghAppMode === "manual") {
+        // UAP-5.3: "Use existing GitHub App" — validates and persists
+        // GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY directly, no
+        // GitHub API call. On success falls through to the shared
+        // redirectWithMembersWarning below, matching the ghAuthMode=pat
+        // branch's success path.
+        const manualResult =
+          await githubProvisioningService.startAppManualConnect(agent.id, {
+            ghAppId,
+            ghAppInstallationId,
+            ghAppPrivateKey,
+          });
+        if (!manualResult.ok) {
+          return c.redirect(
+            `/admin/agents/${agent.id}?error=${encodeURIComponent(manualResult.error)}`,
+            302,
+          );
+        }
+      } else if (ghAuthMode === "app") {
+        const appResult = await githubProvisioningService.startAppAutoConnect(
+          agent.id,
+          githubOrg,
+          {
+            redirectUri: `${appBaseUrl}/admin/agents/${agent.id}/connect-github/callback`,
+            setupUrl: `${appBaseUrl}/admin/agents/${agent.id}/connect-github/installed`,
+          },
+        );
+        if (!appResult.ok) {
+          return c.redirect(
+            `/admin/agents/${agent.id}?error=${encodeURIComponent(appResult.error)}`,
+            302,
+          );
+        }
+        setCookie(
+          c,
+          GITHUB_PROVISION_STATE_COOKIE,
+          appResult.provisionStateToken,
+          {
+            httpOnly: true,
+            maxAge: GITHUB_PROVISION_STATE_TTL_SECONDS,
+            sameSite: "Lax",
+            path: "/",
+            secure: appBaseUrl.startsWith("https://"),
+          },
+        );
+        return c.html(
+          renderGithubAppManifestRedirectPage(c.var.userEmail, {
+            githubOrg: appResult.githubOrg,
+            manifest: appResult.manifest,
+          }),
+        );
+      }
     }
 
     return redirectWithMembersWarning(

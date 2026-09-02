@@ -480,6 +480,107 @@ describe("admin UI — new local agent create flow", () => {
     expect(updateArgs!.repos).toContain("my-org/repo-two");
   });
 
+  // ── UAP-5.2: inline member-email textarea for restrictSlackToMembers ──────
+
+  it("POST /admin/agents with restrictSlackToMembers=true and memberEmails — creates an AgentMember row for each email", async () => {
+    const addCalls: Array<{ agentId: string; email: string }> = [];
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        add: async (agentId: string, email: string) => {
+          addCalls.push({ agentId, email });
+          return { id: "m1", agentId, email, createdAt: new Date() };
+        },
+        listByAgentId: async () => addCalls.map((c) => ({
+          id: "m1",
+          agentId: c.agentId,
+          email: c.email,
+          createdAt: new Date(),
+        })),
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "a@example.com\nb@example.com",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(addCalls.map((c) => c.email)).toContain("a@example.com");
+    expect(addCalls.map((c) => c.email)).toContain("b@example.com");
+    expect(addCalls.length).toBe(2);
+    // Members were created before redirectWithMembersWarning ran, so no
+    // zero-members warning should be appended.
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+  });
+
+  it("POST /admin/agents with duplicate memberEmails (or agentMemberService.add throwing) does not 500 — still 302 redirects", async () => {
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        add: async () => {
+          throw new Error("unique constraint violation");
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "dup@example.com\ndup@example.com",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toStartWith(
+      `/admin/agents/${NEW_AGENT_ID}`,
+    );
+  });
+
+  it("POST /admin/agents with restrictSlackToMembers=true and an empty memberEmails textarea — still creates the agent, no regression to the zero-members warning", async () => {
+    const deps = makeMockDeps({
+      agentMemberService: {
+        ...makeMockDeps().agentMemberService,
+        listByAgentId: async () => [],
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "My Local Agent",
+      type: "coding",
+      restrictSlackToMembers: "true",
+      memberEmails: "",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${adminCookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${NEW_AGENT_ID}?warning=restrict_slack_no_members`,
+    );
+  });
+
   it("POST /admin/agents with missing name — returns non-200 or error response", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ name: "" });
@@ -951,10 +1052,12 @@ describe("admin UI — new local agent create flow", () => {
           missingRequiredEnv: [],
         }),
       },
+      provisioner: { ...base.provisioner, canProvision: true },
     });
     const res = await postAgent(deps, {
       name: "slack-agent",
       type: "coding",
+      runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
     });
@@ -968,10 +1071,14 @@ describe("admin UI — new local agent create flow", () => {
   });
 
   it("Connect Slack with a bad/missing token redirects to the agent detail page with an error, not the New Agent form", async () => {
-    const deps = makeMockDeps();
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      provisioner: { ...base.provisioner, canProvision: true },
+    });
     const res = await postAgent(deps, {
       name: "slack-bad-token",
       type: "coding",
+      runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "not-a-valid-token",
     });
@@ -981,10 +1088,14 @@ describe("admin UI — new local agent create flow", () => {
   });
 
   it("GitHub App requested renders the manifest auto-submit redirect flow for the newly created agent", async () => {
-    const deps = makeMockDeps();
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      provisioner: { ...base.provisioner, canProvision: true },
+    });
     const res = await postAgent(deps, {
       name: "gh-app-agent",
       type: "coding",
+      runtime: "in-cluster",
       ghAuthMode: "app",
       githubOrg: "my-org",
     });
@@ -1001,6 +1112,7 @@ describe("admin UI — new local agent create flow", () => {
     const res = await postAgent(deps, {
       name: "gh-app-bad-org",
       type: "coding",
+      runtime: "in-cluster",
       ghAuthMode: "app",
       githubOrg: "not a valid org!!",
     });
@@ -1015,6 +1127,7 @@ describe("admin UI — new local agent create flow", () => {
     const res = await postAgent(deps, {
       name: "gh-pat-agent",
       type: "coding",
+      runtime: "in-cluster",
       ghAuthMode: "pat",
       ghPat: "ghp_exampletoken",
     });
@@ -1031,6 +1144,7 @@ describe("admin UI — new local agent create flow", () => {
     const res = await postAgent(deps, {
       name: "gh-pat-missing",
       type: "coding",
+      runtime: "in-cluster",
       ghAuthMode: "pat",
     });
     expect(res.status).toBe(302);
@@ -1039,11 +1153,100 @@ describe("admin UI — new local agent create flow", () => {
     expect(calls.deleted).toEqual([]);
   });
 
+  // ── UAP-5.3: ghAuthMode=app + ghAppMode=manual ("Use existing GitHub App") ──
+
+  it("ghAuthMode=app&ghAppMode=manual with a valid App ID/Installation ID/uploaded PEM file persists GH_APP_ID/GH_APP_INSTALLATION_ID/GH_APP_PRIVATE_KEY and redirects to the agent detail page", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const pemContents =
+      "-----BEGIN RSA PRIVATE KEY-----\nfaketestkeydata\n-----END RSA PRIVATE KEY-----";
+    const form = new FormData();
+    form.append("name", "gh-app-manual-agent");
+    form.append("type", "coding");
+    form.append("runtime", "in-cluster");
+    form.append("ghAuthMode", "app");
+    form.append("ghAppMode", "manual");
+    form.append("ghAppId", "12345");
+    form.append("ghAppInstallationId", "67890");
+    form.append(
+      "ghAppPrivateKeyFile",
+      new File([pemContents], "private-key.pem", {
+        type: "application/x-pem-file",
+      }),
+    );
+
+    const res = await createAdminUIApp(deps).request("/admin/agents", {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    const ghAppIdPatch = calls.envPatches.find((p) => p.env.GH_APP_ID);
+    expect(ghAppIdPatch?.env.GH_APP_ID).toBe("12345");
+    const ghAppInstallationIdPatch = calls.envPatches.find(
+      (p) => p.env.GH_APP_INSTALLATION_ID,
+    );
+    expect(ghAppInstallationIdPatch?.env.GH_APP_INSTALLATION_ID).toBe("67890");
+    const ghAppPrivateKeyPatch = calls.envPatches.find(
+      (p) => p.env.GH_APP_PRIVATE_KEY,
+    );
+    expect(ghAppPrivateKeyPatch?.env.GH_APP_PRIVATE_KEY).toBe(pemContents);
+  });
+
+  it("ghAuthMode=app&ghAppMode=manual with a missing/invalid App ID redirects to the detail page with an error — agent is NOT rolled back", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const form = new FormData();
+    form.append("name", "gh-app-manual-bad-id");
+    form.append("type", "coding");
+    form.append("runtime", "in-cluster");
+    form.append("ghAuthMode", "app");
+    form.append("ghAppMode", "manual");
+    form.append("ghAppInstallationId", "67890");
+    form.append(
+      "ghAppPrivateKeyFile",
+      new File(
+        ["-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----"],
+        "private-key.pem",
+      ),
+    );
+
+    const res = await createAdminUIApp(deps).request("/admin/agents", {
+      method: "POST",
+      body: form,
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toStartWith(`/admin/agents/${NEW_AGENT_ID}?error=`);
+    expect(calls.deleted).toEqual([]);
+    expect(calls.envPatches.find((p) => p.env.GH_APP_ID)).toBeUndefined();
+  });
+
+  it("ghAuthMode=app with ghAppMode omitted still runs the auto/manifest flow — no regression to the default", async () => {
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      provisioner: { ...base.provisioner, canProvision: true },
+    });
+    const res = await postAgent(deps, {
+      name: "gh-app-default-auto",
+      type: "coding",
+      runtime: "in-cluster",
+      ghAuthMode: "app",
+      githubOrg: "my-org",
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("github.com/organizations/my-org/settings/apps/new");
+  });
+
   it("ghAuthMode=skip (or omitted) with connectSlack unchecked behaves exactly like today — plain redirect to detail page", async () => {
     const { deps, calls } = makeProvisioningDeps();
     const res = await postAgent(deps, {
       name: "gh-skip-agent",
       type: "coding",
+      runtime: "in-cluster",
       ghAuthMode: "skip",
     });
     expect(res.status).toBe(302);
@@ -1056,6 +1259,7 @@ describe("admin UI — new local agent create flow", () => {
     const res = await postAgent(deps, {
       name: "slack-and-gh-pat",
       type: "coding",
+      runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
       ghAuthMode: "pat",
@@ -1078,6 +1282,7 @@ describe("admin UI — new local agent create flow", () => {
     const res = await postAgent(deps, {
       name: "slack-ok-gh-pat-fail",
       type: "coding",
+      runtime: "in-cluster",
       connectSlack: "true",
       xoxpToken: "xoxe.xoxp-test-token",
       ghAuthMode: "pat",
@@ -1108,5 +1313,85 @@ describe("admin UI — new local agent create flow", () => {
     expect(payload.ghConnectError).toBe(
       "GitHub Personal Access Token is required.",
     );
+  });
+
+  // ── UAP-5.1: runtime=self-hosted must never trigger Slack/GitHub provisioning ──
+
+  it("runtime=self-hosted with connectSlack=true performs no Slack provisioning — plain redirect, no OAuth redirect, no env writes", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "self-hosted-slack",
+      type: "coding",
+      runtime: "self-hosted",
+      connectSlack: "true",
+      xoxpToken: "xoxe.xoxp-test-token",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).not.toContain("slack.com/oauth/authorize");
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
+      "slack_provision_state=",
+    );
+    expect(calls.envPatches).toEqual([]);
+    expect(calls.provisioned).toEqual([]);
+  });
+
+  it("runtime=self-hosted with ghAuthMode=app performs no GitHub App provisioning — plain redirect, no manifest page, no cookie", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "self-hosted-gh-app",
+      type: "coding",
+      runtime: "self-hosted",
+      ghAuthMode: "app",
+      githubOrg: "my-org",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
+      "github_provision_state=",
+    );
+    expect(calls.envPatches).toEqual([]);
+  });
+
+  it("runtime=self-hosted with ghAuthMode=pat performs no GH_TOKEN write", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "self-hosted-gh-pat",
+      type: "coding",
+      runtime: "self-hosted",
+      ghAuthMode: "pat",
+      ghPat: "ghp_shouldnotbestored",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(calls.envPatches.find((p) => p.env.GH_TOKEN)).toBeUndefined();
+    expect(calls.envPatches).toEqual([]);
+  });
+
+  it("runtime=self-hosted with both connectSlack=true and ghAuthMode=app set (raw POST bypassing the UI) performs no provisioning of either kind", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "self-hosted-both",
+      type: "coding",
+      runtime: "self-hosted",
+      connectSlack: "true",
+      xoxpToken: "xoxe.xoxp-test-token",
+      ghAuthMode: "app",
+      githubOrg: "my-org",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).not.toContain("slack.com/oauth/authorize");
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
+      "slack_provision_state=",
+    );
+    expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
+      "github_provision_state=",
+    );
+    expect(calls.envPatches).toEqual([]);
+    expect(calls.created?.selfHosted).toBe(true);
+    expect(calls.provisioned).toEqual([]);
   });
 });
