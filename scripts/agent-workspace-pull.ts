@@ -239,7 +239,12 @@ export async function pullAgentWorkspace(
   const { agent } = resolved;
 
   const workspaceRoot = buildWorkspaceRoot(pullRoot, agent.name);
-  const reposDir = join(workspaceRoot, "repos");
+  // Clone into <workspaceRoot>/workspace/repos to match ensureAgentHome()'s
+  // scaffolding (agent/src/setup.ts) and the documented
+  // <AGENT_HOME>/workspace/repos convention (docs/configuration.md) — so the
+  // clones and the scaffolded state/identity files live in one coherent
+  // mirrored tree, not disconnected siblings.
+  const reposDir = join(workspaceRoot, "workspace", "repos");
 
   const bundle = await deps.fetchConfigBundle(agent.id);
 
@@ -329,8 +334,8 @@ if (import.meta.main) {
       warn: (line) => console.warn(`[agent-workspace-pull] warning: ${line}`),
     });
 
-    const reposDir = join(result.workspaceRoot, "repos");
-    const worktreesDir = join(result.workspaceRoot, "worktrees");
+    const reposDir = join(result.workspaceRoot, "workspace", "repos");
+    const worktreesDir = join(result.workspaceRoot, "workspace", "worktrees");
 
     console.log("");
     console.log(`workspace ready: ${result.workspaceRoot}`);

@@ -176,7 +176,7 @@ describe("pullAgentWorkspace", () => {
 
     expect(result.workspaceRoot).toBe("/home/dev/.shipwright-agents/hitl");
     expect(cloned).toEqual([
-      "app-vitals/shipwright->/home/dev/.shipwright-agents/hitl/repos/shipwright",
+      "app-vitals/shipwright->/home/dev/.shipwright-agents/hitl/workspace/repos/shipwright",
     ]);
     expect(scaffolded).toEqual(["/home/dev/.shipwright-agents/hitl"]);
     expect(installedPlugins).toEqual([
@@ -211,7 +211,7 @@ describe("pullAgentWorkspace", () => {
 
   test("skips cloning a repo that already exists at its destination (idempotent)", async () => {
     const { deps, cloned } = makeDeps({
-      exists: (path: string) => path.endsWith("/repos/shipwright"),
+      exists: (path: string) => path.endsWith("/workspace/repos/shipwright"),
     });
 
     await pullAgentWorkspace("agent-1", "/home/dev/.shipwright-agents", deps);
