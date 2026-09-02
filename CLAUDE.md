@@ -61,6 +61,7 @@ task ui         # same as task api (API and UI are one process)
 task dev        # dev supervisor: starts metrics + Ctrl-C kills all children
 task stack      # full dev stack in a tmux session (6 panes) — requires tmux + Docker + state/dev-agent.env
 task hitl       # human-in-the-loop runner: boots task-store (:3002) + admin (:3001), then loops — pulls the next ready task and launches Claude Code with the right command
+task agent-workspace-pull -- <id-or-name>  # mirror a real, already-deployed agent's workspace locally (clones its repos, installs its plugins) — no dispatch loop. Requires SHIPWRIGHT_API_URL + SHIPWRIGHT_ADMIN_API_KEY; optional SHIPWRIGHT_WORKSPACE_PULL_ROOT
 ```
 
 **`task stack` needs `state/dev-agent.env`** — if it's missing, the first `task stack` run auto-creates it from `state/dev-agent.env.example` and exits; fill in `CLAUDE_CODE_OAUTH_TOKEN` (or `ANTHROPIC_API_KEY`) in the newly-created file, then re-run `task stack`. See `docs/quickstart.md` for the full flow.

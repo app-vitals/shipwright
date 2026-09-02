@@ -82,6 +82,11 @@ tasks:
     cmds:
       - bun scripts/hitl.ts
 
+  agent-workspace-pull:
+    desc: "Mirror a real, already-deployed agent's workspace locally by id or name (task agent-workspace-pull -- <id-or-name>) — clones its repos, installs its plugins, no dispatch loop. Requires SHIPWRIGHT_API_URL + SHIPWRIGHT_ADMIN_API_KEY; optional SHIPWRIGHT_WORKSPACE_PULL_ROOT (default ~/.shipwright-agents)."
+    cmds:
+      - bun scripts/agent-workspace-pull.ts {{.CLI_ARGS}}
+
   demo:serve:
     desc: Serve demo/slides/*.html for local sizzle-reel recording → http://localhost:4321/slides/
     cmds:
