@@ -154,6 +154,7 @@ function createSlackApp(
       client: unknown,
     ) => Promise<string | undefined>;
     membershipRef?: AgentSlackMembershipRef;
+    thinkingStepsEnabled?: boolean;
   } = {},
 ) {
   capturedErrors = [];
@@ -183,6 +184,7 @@ function createSlackApp(
     // depend on bun test's file execution order (see CLAUDE.md's test
     // isolation hard rule).
     overrides.membershipRef ?? createAgentSlackMembershipRef(),
+    overrides.thinkingStepsEnabled ?? false,
   );
 }
 
@@ -210,6 +212,9 @@ function makeMockClient() {
       getPermalink: mock(async (_args: unknown) => ({
         permalink: "https://slack.com/archives/C1/p1234",
       })),
+      startStream: mock(async (_args: unknown) => ({ ts: "stream.ts.1" })),
+      appendStream: mock(async (_args: unknown) => {}),
+      stopStream: mock(async (_args: unknown) => {}),
     },
     users: {
       info: mock(async (_args: unknown) => ({
@@ -478,6 +483,26 @@ describe("message handler — DM routing", () => {
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
     expect(say).toHaveBeenCalledTimes(1);
     expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls (STS-1.1)", async () => {
+    // No override — createSlackApp() defaults thinkingStepsEnabled to false,
+    // mirroring the real createSlackApp's off-by-default trailing param.
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+    expect(client.chat.startStream).not.toHaveBeenCalled();
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
+  });
+
+  test("thinkingStepsEnabled: true threads through to the message handler's SlackProgress (STS-1.1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+    expect(client.chat.startStream).toHaveBeenCalledWith({
+      channel: "D123",
+      thread_ts: "111.222",
+      task_display_mode: "timeline",
+    });
+    expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
   test("passes an onProgress function through to the runner as the third arg (AC #1)", async () => {
@@ -998,6 +1023,24 @@ describe("app_mention handler", () => {
     });
     expect(say).toHaveBeenCalledTimes(1);
     expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+
+  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls on mention (STS-1.1)", async () => {
+    const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
+    expect(client.chat.startStream).not.toHaveBeenCalled();
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
+  });
+
+  test("thinkingStepsEnabled: true threads through to the mention handler's SlackProgress (STS-1.1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
+    expect(client.chat.startStream).toHaveBeenCalledWith({
+      channel: "C999",
+      thread_ts: "222.333",
+      task_display_mode: "timeline",
+    });
+    expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
   test("passes an onProgress function through to the runner as the third arg on mention (AC #1)", async () => {
@@ -2076,6 +2119,33 @@ describe("reaction_added handler", () => {
     });
     const { client } = await invokeReactionAdded();
     expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls on reaction_added (STS-1.1)", async () => {
+    const { client } = await invokeReactionAdded();
+    expect(client.chat.startStream).not.toHaveBeenCalled();
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
+  });
+
+  test("thinkingStepsEnabled: true threads through to the reaction_added handler's SlackProgress (STS-1.1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    const client = makeMockClient();
+    await capturedReactionAddedHandler?.({
+      event: {
+        reaction: "thumbsup",
+        item: { type: "message", channel: "D1", ts: "100.1" },
+        item_user: "UBOT123",
+        user: "U-DAN",
+      },
+      client,
+    });
+    expect(client.chat.startStream).toHaveBeenCalledWith({
+      channel: "D1",
+      thread_ts: "100.1",
+      task_display_mode: "timeline",
+    });
+    expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
   test("builds prompt containing emoji name and display name", async () => {

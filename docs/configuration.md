@@ -63,7 +63,7 @@ Unlike the env vars below, these fields live on the Agent database record, not t
 
 ### Slack
 
-All Slack vars are env-var-only (secrets). The agent does not function as a Slack bot without them.
+Most Slack vars are env-var-only (secrets); the agent does not function as a Slack bot without them. `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` is a plain feature flag, not a secret.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
@@ -73,6 +73,7 @@ All Slack vars are env-var-only (secrets). The agent does not function as a Slac
 | `SLACK_ADMIN_TOKEN` | `string` | — | Optional admin-level token for privileged Slack operations. |
 | `SLACK_ALERT_CHANNEL` | `string` | — | Slack channel ID to post system alerts (e.g. startup errors). |
 | `SLACK_OWNER_USER` | `string` | — | Slack user ID of the agent owner, used for DM fallback. |
+| `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` | `boolean` | `false` | When `"true"`, `SlackProgress` drives a live Thinking Steps stream (`chat.startStream`/`chat.appendStream`/`chat.stopStream`, `task_display_mode: "timeline"`) alongside the existing `agents.sessions.setStatus` calls, posting one task-update chunk per distinct `ProgressPhase` transition. Off by default — zero `chat.startStream` calls when unset. |
 
 ### GitHub
 
