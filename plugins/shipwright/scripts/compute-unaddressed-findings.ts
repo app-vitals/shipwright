@@ -403,14 +403,21 @@ export function isResolvedByLedger(
  * - At least one COMMENTED or CHANGES_REQUESTED review posted at the current HEAD
  * - AND (has a non-empty review body OR has at least one unresolved inline thread)
  *
- * A review's non-empty body is excluded when there are no unresolved threads
- * AND the PR author has replied after the review (see isAddressedByAuthorReply,
- * CPF-2.3) — the only way to mark a third-party review's finding as addressed,
- * since only the review's own author can edit its body. The PR author's
- * identity for this check is `data.prAuthor`, defaulting to `currentUser` when
- * absent (RAS-1.1) — preserving check-patch.ts's own-PR behavior exactly,
- * while letting review.md's Step 9.5 pass the PR's real author for
- * third-party PRs the bot reviews.
+ * A self-authored review is excluded when it is a clean APPROVE verdict (see
+ * isSelfCleanApprove) or when it is superseded by a later, genuinely clean
+ * self-review from the same identity (see isSupersededBySelfReview, DRO-1.2)
+ * — a self-review with a real (non-APPROVE) verdict that is not later
+ * superseded still counts as an unaddressed finding, same as any other
+ * reviewer's.
+ *
+ * A review's non-empty body is also excluded when there are no unresolved
+ * threads AND the PR author has replied after the review (see
+ * isAddressedByAuthorReply, CPF-2.3) — the only way to mark a third-party
+ * review's finding as addressed, since only the review's own author can edit
+ * its body. The PR author's identity for this check is `data.prAuthor`,
+ * defaulting to `currentUser` when absent (RAS-1.1) — preserving
+ * check-patch.ts's own-PR behavior exactly, while letting review.md's
+ * Step 9.5 pass the PR's real author for third-party PRs the bot reviews.
  *
  * ANY qualifying review (self-authored or third-party) is also excluded when
  * a durable task-store ledger entry marks its ref resolved or superseded (see
@@ -426,18 +433,19 @@ export function isResolvedByLedger(
  * is available in the current GraphQL schema: a thread can only be judged
  * against its own timestamps, not the review that (may have) raised it.
  *
- * PFL-4.1 removed three inference-based exclusions this gate used to also
- * apply — a self-authored clean-APPROVE review (isSelfCleanApprove, CPF-2.1),
- * an earlier self-review superseded by a later clean self-review
- * (isSupersededBySelfReview, DRO-1.2), and a prior self-authored review
- * attested resolved by the current pass's priorFindingsStatus[]
- * (isResolvedByPriorFindingsStatus, PVD-1.3) — once production ledger data
- * confirmed isResolvedByLedger covers every case those three caught. A
- * self-authored clean-APPROVE or superseded review is now excluded via the
- * same isResolvedByLedger path: review.md's Step 5.5 (PFL-2.1) durably
- * records those same judgments to the ledger (calling isSelfCleanApprove/
- * isSupersededBySelfReview directly, not through this function) before this
- * gate ever runs.
+ * PFL-4.1 removed `isSelfCleanApprove`/`isSupersededBySelfReview` as
+ * exclusions here, on the premise that `isResolvedByLedger` alone covers
+ * every case they caught once review.md's Step 5.5 durably records those same
+ * judgments to the ledger. That premise breaks for a PR whose only review
+ * ever posted is a clean self-approve: Step 5.5 only writes a ledger entry
+ * for a *prior* review, evaluated at the start of a *subsequent* review pass
+ * — and a PR with nothing new to review (headRefOid unchanged, reviewState
+ * already posted) never gets a subsequent pass from check-review.ts's own
+ * candidacy gate. No subsequent pass means Step 5.5 never runs, so no ledger
+ * entry is ever written, and `isResolvedByLedger` stays false for that review
+ * forever (PFL-5.1). Restored here as fallback exclusions alongside
+ * `isResolvedByLedger`, not instead of it — a PR that does get re-reviewed
+ * and does have a matching ledger entry is unaffected either way.
  */
 export function hasUnaddressedFindings(
   data: PrReviewData,
@@ -448,12 +456,15 @@ export function hasUnaddressedFindings(
   const prAuthor = data.prAuthor ?? currentUser;
 
   // Find qualifying reviews: state COMMENTED or CHANGES_REQUESTED at current
-  // HEAD, excluding reviews resolved/superseded per the task-store ledger
-  // (PFL-3.2).
+  // HEAD, excluding self-authored clean-APPROVE reviews (CPF-2.1), self-reviews
+  // superseded by a later clean self-review (DRO-1.2), and reviews
+  // resolved/superseded per the task-store ledger (PFL-3.2).
   const qualifyingReviews = reviews.nodes.filter(
     (r) =>
       (r.state === "COMMENTED" || r.state === "CHANGES_REQUESTED") &&
       r.commit.oid === headRefOid &&
+      !isSelfCleanApprove(r, currentUser) &&
+      !isSupersededBySelfReview(r, reviews.nodes, currentUser) &&
       !isResolvedByLedger(reviewRef(r), findings),
   );
 
