@@ -2655,6 +2655,13 @@ describe("admin UI — provision start form", () => {
     );
     expect(payload.agentId).toBe(AGENT_ID);
     expect(payload.appId).toBe("A_HAPPY");
+    // The signed redirect_uri must target the per-agent connect-slack callback
+    // (UAP-3.3 removed the /admin/provision/complete alias) — the OAuth exchange
+    // handler validates the code against exactly this URL, so a stale value here
+    // 404s the whole flow after merge.
+    expect(payload.redirectUri).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-slack/callback`,
+    );
 
     // Verify patch was called with correct env vars
     expect(patchedAgentId as string | null).toBe(AGENT_ID);
@@ -3258,6 +3265,22 @@ describe("admin UI — GitHub App auto-provision (POST /admin/provision/start)",
     );
     expect(html).toContain('name="manifest"');
 
+    // The manifest's redirect_url/setup_url must target the per-agent
+    // connect-github routes (UAP-3.3 removed the /admin/provision/github-app/*
+    // aliases) — GitHub redirects the operator back to exactly these URLs after
+    // the App is created/installed, so stale values 404 the auto-provision flow.
+    const manifestMatch = html.match(/name="manifest"\s+value="([^"]*)"/);
+    expect(manifestMatch).toBeTruthy();
+    const manifestJson = JSON.parse(
+      (manifestMatch?.[1] ?? "").replace(/&quot;/g, '"').replace(/&amp;/g, "&"),
+    );
+    expect(manifestJson.redirect_url).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-github/callback`,
+    );
+    expect(manifestJson.setup_url).toBe(
+      `https://example.com/admin/agents/${AGENT_ID}/connect-github/installed`,
+    );
+
     const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
     expect(setCookieHeader).toContain("slack_provision_state=");
     const match = setCookieHeader.match(/slack_provision_state=([^;]+)/);
@@ -3296,302 +3319,6 @@ describe("admin UI — GitHub App auto-provision (POST /admin/provision/start)",
     const html = await res.text();
     expect(html).not.toContain("github.com/organizations/");
     expect(html).toContain("Authorize Slack App");
-  });
-});
-
-describe("admin UI — GET /admin/provision/github-app/complete", () => {
-  let cookie: string;
-
-  beforeAll(async () => {
-    cookie = await makeSessionCookie();
-  });
-
-  async function makeValidStateCookie(
-    overrides?: Record<string, unknown>,
-  ): Promise<string> {
-    const now = Math.floor(Date.now() / 1000);
-    return sign(
-      {
-        agentId: AGENT_ID,
-        clientId: "cid",
-        clientSecret: "csec",
-        signingSecret: "ssec",
-        appId: "A123",
-        githubOrg: "my-org",
-        iat: now,
-        exp: now + 300,
-        ...overrides,
-      },
-      SESSION_SECRET,
-      "HS256",
-    );
-  }
-
-  it("happy path: exchanges code, writes GH_APP_ID + GH_APP_PRIVATE_KEY, renders installations/new link", async () => {
-    let patchArgs: [string, Record<string, string>, Set<string>?] | null = null;
-    const stateCookie = await makeValidStateCookie();
-    const deps = makeMockDeps({
-      githubAppClient: {
-        exchangeManifestCode: async (code: string) => {
-          expect(code).toBe("valid-code-123");
-          return {
-            appId: "999111",
-            slug: "my-shipwright-agent",
-            pem: "-----BEGIN RSA PRIVATE KEY-----\nmock\n-----END RSA PRIVATE KEY-----",
-            clientId: "gh-client-id",
-            clientSecret: "gh-client-secret",
-          };
-        },
-      },
-      agentEnvService: {
-        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
-        upsert: async () => {},
-        patch: async (
-          agentId: string,
-          envVars: Record<string, string>,
-          secretKeys?: Set<string>,
-        ) => {
-          patchArgs = [agentId, envVars, secretKeys];
-        },
-        deleteKey: async () => {},
-        getConfigBundle: async () => null,
-      },
-    });
-    const app = createAdminUIApp(deps);
-    const res = await app.request(
-      "/admin/provision/github-app/complete?code=valid-code-123",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain(
-      "https://github.com/apps/my-shipwright-agent/installations/new",
-    );
-
-    expect(patchArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(patchArgs).not.toBeNull() above
-    const [patchedAgentId, envVars, secretKeys] = patchArgs!;
-    expect(patchedAgentId).toBe(AGENT_ID);
-    expect(envVars.GH_APP_ID).toBe("999111");
-    expect(envVars.GH_APP_PRIVATE_KEY).toContain("BEGIN RSA PRIVATE KEY");
-    expect(secretKeys?.has("GH_APP_PRIVATE_KEY")).toBe(true);
-  });
-
-  it("missing state cookie renders an error page rather than throwing", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      "/admin/provision/github-app/complete?code=some-code",
-      {
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("invalid/tampered state cookie renders an error page rather than throwing", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      "/admin/provision/github-app/complete?code=some-code",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=not-a-real-jwt`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("state cookie missing githubOrg renders an error page (not a GitHub-App-flow session)", async () => {
-    const stateCookie = await makeValidStateCookie({ githubOrg: undefined });
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      "/admin/provision/github-app/complete?code=some-code",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("missing code query param renders an error page", async () => {
-    const stateCookie = await makeValidStateCookie();
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request("/admin/provision/github-app/complete", {
-      headers: {
-        Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-      },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("exchangeManifestCode rejecting renders an error page rather than throwing", async () => {
-    const stateCookie = await makeValidStateCookie();
-    const deps = makeMockDeps({
-      githubAppClient: {
-        exchangeManifestCode: async () => {
-          throw new Error("GitHub conversion failed");
-        },
-      },
-    });
-    const app = createAdminUIApp(deps);
-    const res = await app.request(
-      "/admin/provision/github-app/complete?code=bad-code",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-});
-
-describe("admin UI — GET /admin/provision/github-app/installed", () => {
-  let cookie: string;
-
-  beforeAll(async () => {
-    cookie = await makeSessionCookie();
-  });
-
-  async function makeValidStateCookie(
-    overrides?: Record<string, unknown>,
-  ): Promise<string> {
-    const now = Math.floor(Date.now() / 1000);
-    return sign(
-      {
-        agentId: AGENT_ID,
-        clientId: "cid",
-        clientSecret: "csec",
-        signingSecret: "ssec",
-        appId: "A123",
-        githubOrg: "my-org",
-        iat: now,
-        exp: now + 300,
-        ...overrides,
-      },
-      SESSION_SECRET,
-      "HS256",
-    );
-  }
-
-  it("happy path: writes GH_APP_INSTALLATION_ID, renders success", async () => {
-    let patchArgs: [string, Record<string, string>] | null = null;
-    const stateCookie = await makeValidStateCookie();
-    const deps = makeMockDeps({
-      agentEnvService: {
-        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
-        upsert: async () => {},
-        patch: async (agentId: string, envVars: Record<string, string>) => {
-          patchArgs = [agentId, envVars];
-        },
-        deleteKey: async () => {},
-        getConfigBundle: async () => null,
-      },
-    });
-    const app = createAdminUIApp(deps);
-    const res = await app.request(
-      "/admin/provision/github-app/installed?installation_id=778899",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-success");
-
-    expect(patchArgs).not.toBeNull();
-    // biome-ignore lint/style/noNonNullAssertion: guarded by expect(patchArgs).not.toBeNull() above
-    const [patchedAgentId, envVars] = patchArgs!;
-    expect(patchedAgentId).toBe(AGENT_ID);
-    expect(envVars.GH_APP_INSTALLATION_ID).toBe("778899");
-  });
-
-  it("non-numeric installation_id renders an error page and does not patch env", async () => {
-    let patchCalled = false;
-    const stateCookie = await makeValidStateCookie();
-    const deps = makeMockDeps({
-      agentEnvService: {
-        getByAgentId: async () => ({ env: {}, secretKeys: [] }),
-        upsert: async () => {},
-        patch: async () => {
-          patchCalled = true;
-        },
-        deleteKey: async () => {},
-        getConfigBundle: async () => null,
-      },
-    });
-    const app = createAdminUIApp(deps);
-    const res = await app.request(
-      "/admin/provision/github-app/installed?installation_id=not-a-number",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-    expect(patchCalled).toBe(false);
-  });
-
-  it("missing state cookie renders an error page rather than throwing", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      "/admin/provision/github-app/installed?installation_id=123",
-      {
-        headers: { Cookie: `admin_session=${cookie}` },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("invalid/tampered state cookie renders an error page rather than throwing", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(
-      "/admin/provision/github-app/installed?installation_id=123",
-      {
-        headers: {
-          Cookie: `admin_session=${cookie}; slack_provision_state=garbage`,
-        },
-      },
-    );
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
-  });
-
-  it("missing installation_id query param renders an error page", async () => {
-    const stateCookie = await makeValidStateCookie();
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request("/admin/provision/github-app/installed", {
-      headers: {
-        Cookie: `admin_session=${cookie}; slack_provision_state=${stateCookie}`,
-      },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    expect(html).toContain("alert-error");
   });
 });
 
@@ -4755,6 +4482,11 @@ describe("admin UI — manifest sync route", () => {
     const location = res.headers.get("location") ?? "";
     expect(location).toContain("slack.com/oauth/v2/authorize");
     expect(location).toContain("client_id=my-client-id");
+    // redirect_uri must point at the per-agent connect-slack callback, not
+    // the removed /admin/provision/complete alias (UAP-3.3)
+    expect(decodeURIComponent(location)).toContain(
+      `redirect_uri=https://example.com/admin/agents/${AGENT_ID}/connect-slack/callback`,
+    );
     // Provision state cookie should be set
     const setCookieHeader = res.headers.get("Set-Cookie") ?? "";
     expect(setCookieHeader).toContain("slack_provision_state=");
@@ -4805,57 +4537,6 @@ describe("admin UI — manifest sync route", () => {
     expect(res.headers.get("Set-Cookie") ?? "").not.toContain(
       "slack_provision_state=",
     );
-  });
-});
-
-describe("admin UI — xapp-token route", () => {
-  let adminCookie: string;
-
-  beforeAll(async () => {
-    adminCookie = await makeSessionCookie();
-  });
-
-  it("never mints SHIPWRIGHT_AGENT_API_KEY — K8s-managed agents already have it from provisioner.provision(), self-hosted agents mint their own from the agent detail page", async () => {
-    let createCalled = false;
-    const app = createAdminUIApp(
-      makeMockDeps({
-        agentEnvService: {
-          getByAgentId: async () => ({ env: {}, secretKeys: [] }),
-          upsert: async () => {},
-          patch: async () => {},
-          deleteKey: async () => {},
-          getConfigBundle: async () => ({
-            env: { SLACK_BOT_TOKEN: "xoxb-existing" },
-            agentId: AGENT_ID,
-            allowedTools: [],
-          }),
-        },
-        agentTokenService: {
-          listForAgent: async () => [MOCK_TOKEN],
-          create: async () => {
-            createCalled = true;
-            return { token: MOCK_TOKEN, rawToken: "sw_raw123456" };
-          },
-          revoke: async () => MOCK_TOKEN,
-        },
-      }),
-    );
-    const body = new URLSearchParams({
-      agentId: AGENT_ID,
-      xappToken: "xapp-1-valid-token",
-    });
-    const res = await app.request("/admin/provision/xapp-token", {
-      method: "POST",
-      body: body.toString(),
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: `admin_session=${adminCookie}`,
-      },
-    });
-    expect(res.status).toBe(200);
-    expect(createCalled).toBe(false);
-    const text = await res.text();
-    expect(text).not.toContain("sw_raw123456");
   });
 });
 
@@ -5015,6 +4696,12 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
     const html = await res.text();
     expect(html.toLowerCase()).toContain("xapp");
     expect(patchCalls.some((c) => "SLACK_BOT_TOKEN" in c.env)).toBe(true);
+    // The rendered xapp-token form must submit to the per-agent connect-slack
+    // route, not the removed /admin/provision/xapp-token alias (UAP-3.3).
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT_ID}/connect-slack/app-token"`,
+    );
+    expect(html).not.toContain('action="/admin/provision/xapp-token"');
   });
 
   it("valid state cookie + code param → persists the resolved slackId through the full HTTP route, and the agent detail page then renders the Sync Manifest button (UAP-1.3 acceptance criterion 2)", async () => {
