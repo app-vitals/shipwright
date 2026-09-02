@@ -41,7 +41,6 @@ import {
   renderPrDetailPage,
   renderProvisionCompletePage,
   renderProvisionPasteForm,
-  renderProvisionStartPage,
   renderProvisionXappTokenPage,
   renderPrsPage,
   renderSessionDetailPage,
@@ -1598,241 +1597,6 @@ describe("renderAgentDetailPage — plugins", () => {
         timeZone: "UTC",
       }),
     );
-  });
-});
-
-// ─── renderProvisionStartPage ────────────────────────────────────────────────
-
-const AGENTS_FIXTURE = [
-  { id: "agent-001", name: "Alpha Agent" },
-  { id: "agent-002", name: "Beta Agent" },
-];
-
-describe("renderProvisionStartPage", () => {
-  test("returns a valid HTML document", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-  });
-
-  test("includes 'Provision Agent' page title", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("Provision Agent");
-  });
-
-  test("without oauthUrl: shows xoxp token form", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain("xoxpToken");
-  });
-
-  test("without oauthUrl: form action is /admin/provision/start", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('action="/admin/provision/start"');
-  });
-
-  test("with oauthUrl: shows authorize link", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    expect(html).toContain("Authorize Slack App");
-    expect(html).toContain(
-      "https://slack.com/oauth/v2/authorize?client_id=123",
-    );
-  });
-
-  test('authorize link does NOT open in new tab (no target="_blank")', () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    // Extract the authorize link line to check its attributes
-    const linkMatch = html.match(
-      /<a href="https:\/\/slack\.com\/oauth\/v2\/authorize\?client_id=123"[^>]*>/,
-    );
-    expect(linkMatch).toBeTruthy();
-    const linkTag = linkMatch?.[0] ?? "";
-    expect(linkTag).not.toContain('target="_blank"');
-  });
-
-  test("with oauthUrl: does NOT show xoxp form", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "https://slack.com/oauth/v2/authorize?client_id=123",
-    });
-    expect(html).not.toContain('action="/admin/provision/start"');
-  });
-
-  test("no error div when no error", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).not.toContain('class="alert alert-error"');
-  });
-
-  test("error shown when opts.error set", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      error: "Invalid token",
-    });
-    expect(html).toContain('class="alert alert-error"');
-    expect(html).toContain("Invalid token");
-  });
-
-  test("XSS: error is escaped", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      error: "<script>xss()</script>",
-    });
-    expect(html).not.toContain("<script>xss()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("non-https oauthUrl: authorize href is empty (safe URL guard)", () => {
-    const html = renderProvisionStartPage(USER_NAME, [], {
-      oauthUrl: "javascript:alert(1)",
-    });
-    // safeOauthUrl is empty string when URL doesn't start with https://
-    expect(html).toContain('href=""');
-  });
-
-  // ── new tests for agent selector + GitHub/Claude fields ──────────────────
-
-  test("renders agent selector element", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain("<select");
-  });
-
-  test("renders an option for each agent", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain("agent-001");
-    expect(html).toContain("Alpha Agent");
-    expect(html).toContain("agent-002");
-    expect(html).toContain("Beta Agent");
-  });
-
-  test("renders empty selector when agents=[]", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="agentId"');
-    // no option values from agents
-    expect(html).not.toContain('value="agent-001"');
-  });
-
-  test("XSS: agent name in select option is escaped", () => {
-    const xssAgents = [{ id: "a1", name: "<script>evil()</script>" }];
-    const html = renderProvisionStartPage(USER_NAME, xssAgents);
-    expect(html).not.toContain("<script>evil()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("renders ghAuthMode radio buttons (pat and app)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAuthMode"');
-    expect(html).toContain('value="pat"');
-    expect(html).toContain('value="app"');
-  });
-
-  test("renders GitHub PAT password input", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghPat"');
-  });
-
-  test("renders GitHub App fields (ghAppId, ghAppInstallationId, ghAppPrivateKey)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAppId"');
-    expect(html).toContain('name="ghAppInstallationId"');
-    expect(html).toContain('name="ghAppPrivateKey"');
-  });
-
-  test("renders AI creds section (anthropicApiKey, claudeCodeOauthToken)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="anthropicApiKey"');
-    expect(html).toContain('name="claudeCodeOauthToken"');
-  });
-
-  // ── new tests for agentMode toggle (existing vs. create-new agent) ───────
-
-  test("renders agentMode radio buttons (existing and new)", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentMode"');
-    expect(html).toContain('value="existing"');
-    expect(html).toContain('value="new"');
-  });
-
-  test("renders new-agent name input", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="newAgentName"');
-  });
-
-  test("renders new-agent repos textarea", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="newAgentRepos"');
-  });
-
-  test("existing agentId select still renders alongside the new-agent fields", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain("<select");
-    expect(html).toContain("agent-001");
-    expect(html).toContain("Alpha Agent");
-  });
-
-  test("agentId select is not marked required (conditionally hidden field)", () => {
-    const html = renderProvisionStartPage(USER_NAME, AGENTS_FIXTURE);
-    const selectMatch = html.match(/<select id="agentId"[^>]*>/);
-    expect(selectMatch).toBeTruthy();
-    expect(selectMatch?.[0]).not.toContain("required");
-  });
-
-  // ── new tests for ghAppMode sub-toggle (manual paste vs. auto-provision) ─
-
-  test("renders ghAppMode radio buttons (manual and auto)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="ghAppMode"');
-    expect(html).toContain('value="manual"');
-    expect(html).toContain('value="auto"');
-  });
-
-  test("ghAppMode=manual is checked by default (preserves current behavior)", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const manualMatch = html.match(
-      /<input type="radio" name="ghAppMode" value="manual"[^>]*>/,
-    );
-    expect(manualMatch).toBeTruthy();
-    expect(manualMatch?.[0]).toContain("checked");
-  });
-
-  test("ghAppMode=auto is NOT checked by default", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const autoMatch = html.match(
-      /<input type="radio" name="ghAppMode" value="auto"[^>]*>/,
-    );
-    expect(autoMatch).toBeTruthy();
-    expect(autoMatch?.[0]).not.toContain("checked");
-  });
-
-  test("manual fields (ghAppId, ghAppInstallationId, ghAppPrivateKey) still render unchanged", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('id="ghAppId" name="ghAppId"');
-    expect(html).toContain(
-      'id="ghAppInstallationId" name="ghAppInstallationId"',
-    );
-    expect(html).toContain('id="ghAppPrivateKey" name="ghAppPrivateKey"');
-  });
-
-  test("renders a required githubOrg text field for auto-provision", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('name="githubOrg"');
-    const orgMatch = html.match(/<input id="githubOrg"[^>]*>/);
-    expect(orgMatch).toBeTruthy();
-    expect(orgMatch?.[0]).toContain("required");
-  });
-
-  test("gh-app-manual-fields container wraps the three manual fields", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    expect(html).toContain('id="gh-app-manual-fields"');
-  });
-
-  test("gh-app-auto-fields container wraps the githubOrg field and is hidden by default", () => {
-    const html = renderProvisionStartPage(USER_NAME, []);
-    const containerMatch = html.match(/<div id="gh-app-auto-fields"[^>]*>/);
-    expect(containerMatch).toBeTruthy();
-    expect(containerMatch?.[0]).toContain("display:none");
   });
 });
 
@@ -7573,7 +7337,7 @@ describe("renderWorkQueuePage", () => {
 //
 // Every render*Page-style function in this file builds its <!DOCTYPE html>
 // head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
-// calls each of the 22 render sites (21 functions — renderChatThreadPage has
+// calls each of the 21 render sites (20 functions — renderChatThreadPage has
 // two distinct DOCTYPE blocks: its degraded early-return and its main return)
 // with minimal valid fixtures and asserts each output has exactly one
 // DOCTYPE and exactly one viewport meta tag, guarding against any call site
@@ -7652,7 +7416,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
           timezone: "UTC",
         }),
     ],
-    ["renderProvisionStartPage", () => renderProvisionStartPage(USER_NAME, [])],
     [
       "renderGithubAppManifestRedirectPage",
       () =>
@@ -7754,8 +7517,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 22 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(22);
+  test("all 21 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(21);
   });
 
   for (const [name, render] of renderers) {

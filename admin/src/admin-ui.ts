@@ -13,8 +13,7 @@
  *   GET  /admin/agents/:id            — agent detail (auth required)
  *   POST /admin/agents/:id/envs       — add/update env var (auth required)
  *   POST /admin/agents/:id/envs/delete — delete env var (auth required)
- *   GET  /admin/provision             — provision start page (auth required)
- *   POST /admin/provision/start       — submit xoxp- token → create Slack app
+ *   GET  /admin/provision             — 302 redirect to /admin/agents/new (legacy entry point)
  *
  * Auth: httpOnly JWT cookie named "admin_session".
  * Login is OAuth (Google or Okta) — no password, no DB user lookup. Both
@@ -51,7 +50,6 @@ import {
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
-  renderProvisionStartPage,
   renderProvisionXappTokenPage,
   renderPrsPage,
   renderSessionDetailPage,
@@ -80,15 +78,10 @@ import type { AgentService } from "./agents.ts";
 import { publicNoAuthMiddleware } from "./api-auth.ts";
 import { validateAttachment } from "./attachment-validation.ts";
 import { ForbiddenError, UnprocessableEntityError } from "./errors.ts";
-import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
 import {
-  GITHUB_ORG_PATTERN,
   GITHUB_PROVISION_STATE_COOKIE,
   GITHUB_PROVISION_STATE_TTL_SECONDS,
   GithubProvisioningService,
-  isValidGithubAppId,
-  isValidGithubAppInstallationId,
-  isValidGithubAppPrivateKey,
 } from "./github-provisioning-service.ts";
 import type { GoogleAuthClient } from "./google-auth-client.ts";
 import {
@@ -1345,7 +1338,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     }
     if (inCluster) {
       // Roll the row back on failure so a retry with the same name doesn't
-      // collide with a half-created agent — mirrors POST /admin/provision/start.
+      // collide with a half-created agent.
       try {
         await provisioner.provision(agent.id, { slug: agent.name });
       } catch (err) {
@@ -2623,309 +2616,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   // ─── Provisioning flow ────────────────────────────────────────────────────
 
-  app.get("/admin/provision", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    const agentOptions = await agentService.listOptions();
-    return html(renderProvisionStartPage(c.var.userEmail, agentOptions));
-  });
-
-  app.post("/admin/provision/start", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    // Load agents for form re-render on error
-    const agentOptions = await agentService.listOptions().catch(() => []);
-
-    const formError = (msg: string): Response =>
-      html(
-        renderProvisionStartPage(c.var.userEmail, agentOptions, { error: msg }),
-      );
-
-    let agentMode: string | undefined;
-    let agentId: string | undefined;
-    let newAgentName: string | undefined;
-    let newAgentRepos: string | undefined;
-    let xoxpToken: string | undefined;
-    let ghAuthMode: string | undefined;
-    let ghPat: string | undefined;
-    let ghAppMode: string | undefined;
-    let ghAppId: string | undefined;
-    let ghAppInstallationId: string | undefined;
-    let ghAppPrivateKey: string | undefined;
-    let githubOrg: string | undefined;
-    let anthropicApiKey: string | undefined;
-    let claudeCodeOauthToken: string | undefined;
-
-    try {
-      const formData = await c.req.formData();
-      agentMode = formData.get("agentMode")?.toString() ?? "existing";
-      agentId = formData.get("agentId")?.toString();
-      newAgentName = formData.get("newAgentName")?.toString()?.trim();
-      newAgentRepos = formData.get("newAgentRepos")?.toString()?.trim();
-      xoxpToken = formData.get("xoxpToken")?.toString();
-      ghAuthMode = formData.get("ghAuthMode")?.toString() ?? "pat";
-      ghPat = formData.get("ghPat")?.toString();
-      ghAppMode = formData.get("ghAppMode")?.toString() ?? "manual";
-      ghAppId = formData.get("ghAppId")?.toString();
-      ghAppInstallationId = formData.get("ghAppInstallationId")?.toString();
-      ghAppPrivateKey = formData.get("ghAppPrivateKey")?.toString();
-      githubOrg = formData.get("githubOrg")?.toString()?.trim();
-      anthropicApiKey = formData.get("anthropicApiKey")?.toString();
-      claudeCodeOauthToken = formData.get("claudeCodeOauthToken")?.toString();
-    } catch {
-      return formError("Invalid form submission.");
-    }
-
-    // ── Validate before any Slack call ────────────────────────────────────
-
-    if (agentMode === "new") {
-      if (!newAgentName) {
-        return formError("Agent name is required.");
-      }
-    } else if (!agentId) {
-      return formError("Agent is required.");
-    }
-
-    if (!xoxpToken || !xoxpToken.startsWith("xoxe.xoxp-")) {
-      return formError(
-        "Slack app configuration token must start with xoxe.xoxp-",
-      );
-    }
-
-    if (ghAuthMode === "pat") {
-      if (!ghPat) {
-        return formError("GitHub Personal Access Token is required.");
-      }
-    } else if (ghAuthMode === "app") {
-      if (ghAppMode === "auto") {
-        if (!githubOrg || !GITHUB_ORG_PATTERN.test(githubOrg)) {
-          return formError(
-            "GitHub org must be a valid GitHub organization name.",
-          );
-        }
-      } else {
-        if (!isValidGithubAppId(ghAppId)) {
-          return formError("GitHub App ID must be a numeric value.");
-        }
-        if (!isValidGithubAppInstallationId(ghAppInstallationId)) {
-          return formError(
-            "GitHub App Installation ID must be a numeric value.",
-          );
-        }
-        if (!isValidGithubAppPrivateKey(ghAppPrivateKey)) {
-          return formError(
-            "GitHub App Private Key must be a valid PEM-encoded key.",
-          );
-        }
-      }
-    } else {
-      return formError("Invalid GitHub auth mode.");
-    }
-
-    // ── Create new agent + provision (with rollback) ──────────────────────
-    // Mirrors POST /agents in agents-api.ts: create the row, optionally
-    // attach repos, then provision — rolling the row back if provisioning
-    // throws so we never leave a half-created agent with no workload.
-
-    if (agentMode === "new") {
-      // biome-ignore lint/style/noNonNullAssertion: validated above (agentMode === "new" requires newAgentName)
-      const name = newAgentName!;
-      const repos = (newAgentRepos ?? "")
-        .split(/\r?\n/)
-        .map((r) => r.trim())
-        .filter((r) => r.length > 0);
-      const invalid = repos.filter((r) => !isOrgRepo(r));
-      if (invalid.length > 0) {
-        return formError(
-          `Invalid repo format: ${invalid.join(", ")}. Expected org/repo.`,
-        );
-      }
-
-      let newAgent = await agentService.create({ name, selfHosted: false });
-      if (repos.length > 0) {
-        newAgent = await agentService.updateFields(newAgent.id, { repos });
-      }
-      agentId = newAgent.id;
-
-      try {
-        await provisioner.provision(newAgent.id, { slug: newAgent.name });
-      } catch (err) {
-        await agentService.delete(newAgent.id).catch((cleanupErr) => {
-          console.error(
-            "[admin-ui] failed to roll back agent after provision error:",
-            cleanupErr,
-          );
-        });
-        const msg =
-          err instanceof Error ? err.message : "Unknown provisioning error.";
-        return formError(`Agent created but provisioning failed: ${msg}`);
-      }
-    }
-
-    // ── Fetch agent name for manifest ─────────────────────────────────────
-
-    // agentId is guaranteed to be a non-empty string here: either validated
-    // directly above (existing mode) or set to the newly-created agent's id
-    // (new mode).
-    // biome-ignore lint/style/noNonNullAssertion: see comment above
-    const resolvedAgentId = agentId!;
-    const agent = await agentService.getDetail(resolvedAgentId);
-    if (!agent) {
-      return formError("Agent not found.");
-    }
-
-    // ── Call Slack — first external action ────────────────────────────────
-    // Delegates to SlackProvisioningService.createAppManifest() (UAP-1.1) —
-    // the same apps.manifest.create call the new connect-slack routes use.
-
-    let slackResult: {
-      appId: string;
-      oauthRedirectUrl: string;
-      clientId: string;
-      clientSecret: string;
-      signingSecret: string;
-    };
-    try {
-      slackResult = await slackProvisioningService.createAppManifest(
-        agent.name,
-        xoxpToken,
-        `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-slack/callback`,
-      );
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Unknown error creating Slack app.";
-      // In "new agent" mode, the agent row + K8s workload were already
-      // created above. A downstream Slack failure here must roll those
-      // back too, or a retry with the same name creates a second orphan
-      // (this flow isn't idempotent on newAgentName).
-      if (agentMode === "new") {
-        await provisioner
-          .deprovision(resolvedAgentId, { slug: agent.name })
-          .catch((cleanupErr) => {
-            console.error(
-              "[admin-ui] failed to deprovision agent after Slack manifest error:",
-              cleanupErr,
-            );
-          });
-        await agentService.delete(resolvedAgentId).catch((cleanupErr) => {
-          console.error(
-            "[admin-ui] failed to roll back agent after Slack manifest error:",
-            cleanupErr,
-          );
-        });
-        return formError(`Agent created but Slack setup failed: ${msg}`);
-      }
-      return formError(msg);
-    }
-
-    const { appId, oauthRedirectUrl, clientId, clientSecret, signingSecret } =
-      slackResult;
-
-    // GitHub App auto-provision (ghAuthMode=app, ghAppMode=auto): the manifest
-    // flow's own state (githubOrg) rides along in the same signed cookie used
-    // for the Slack OAuth exchange — this flow is strictly additive and never
-    // touches the PAT or manual-App-paste behavior below.
-    const isGithubAppAutoProvision =
-      ghAuthMode === "app" && ghAppMode === "auto";
-
-    // ── Sign provision-state cookie ───────────────────────────────────────
-    // Delegates to SlackProvisioningService.signProvisionState() (UAP-1.1),
-    // folding in the wizard-only githubOrg field via `extra`.
-
-    const provisionToken = await slackProvisioningService.signProvisionState(
-      resolvedAgentId,
-      {
-        clientId,
-        clientSecret,
-        signingSecret,
-        appId,
-        redirectUri: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-slack/callback`,
-      },
-      isGithubAppAutoProvision ? { githubOrg } : undefined,
-    );
-
-    // TODO(BP-2.2): this cookie is consumed by the OAuth exchange handler in
-    // the connect-slack/callback route once the Slack OAuth redirect lands.
-    setCookie(c, PROVISION_STATE_COOKIE, provisionToken, {
-      httpOnly: true,
-      maxAge: PROVISION_STATE_TTL_SECONDS,
-      sameSite: "Lax",
-      path: "/",
-      secure: appBaseUrl.startsWith("https://"),
-    });
-
-    // ── Write agent env ───────────────────────────────────────────────────
-
-    // Use patch() to merge new keys without overwriting existing unrelated keys
-    const newEnv: Record<string, string> = {
-      SLACK_APP_ID: appId,
-      SLACK_SIGNING_SECRET: signingSecret,
-      SLACK_CLIENT_ID: clientId,
-      SLACK_CLIENT_SECRET: clientSecret,
-    };
-
-    if (anthropicApiKey) {
-      newEnv.ANTHROPIC_API_KEY = anthropicApiKey;
-    }
-    if (claudeCodeOauthToken) {
-      newEnv.CLAUDE_CODE_OAUTH_TOKEN = claudeCodeOauthToken;
-    }
-
-    await agentEnvService.patch(
-      resolvedAgentId,
-      newEnv,
-      new Set(SECRET_ENV_VARS),
-    );
-
-    // GitHub PAT / manual-App-paste env vars are written via
-    // GithubProvisioningService — the same startPatConnect()/
-    // startAppManualConnect() the new connect-github routes call — so the
-    // storage logic lives in exactly one place. isGithubAppAutoProvision:
-    // GH_APP_ID/GH_APP_PRIVATE_KEY/GH_APP_INSTALLATION_ID are written later
-    // by the connect-github/callback and connect-github/installed routes, once
-    // the manifest-flow code and installation_id are known.
-    if (ghAuthMode === "pat") {
-      const result = await githubProvisioningService.startPatConnect(
-        resolvedAgentId,
-        ghPat,
-      );
-      if (!result.ok) {
-        return formError(result.error);
-      }
-    } else if (!isGithubAppAutoProvision) {
-      // Manual GitHub App paste — unchanged from prior behavior.
-      const result = await githubProvisioningService.startAppManualConnect(
-        resolvedAgentId,
-        { ghAppId, ghAppInstallationId, ghAppPrivateKey },
-      );
-      if (!result.ok) {
-        return formError(result.error);
-      }
-    }
-
-    if (isGithubAppAutoProvision) {
-      // biome-ignore lint/style/noNonNullAssertion: validated above (ghAppMode === "auto" requires a GITHUB_ORG_PATTERN-valid githubOrg)
-      const org = githubOrg!;
-      const manifest = buildAgentAppManifest(agent.name, {
-        redirectUri: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-github/callback`,
-        setupUrl: `${appBaseUrl}/admin/agents/${resolvedAgentId}/connect-github/installed`,
-      });
-      // Use c.html() so the Set-Cookie header from setCookie() is included
-      return c.html(
-        renderGithubAppManifestRedirectPage(c.var.userEmail, {
-          githubOrg: org,
-          manifest,
-        }),
-      );
-    }
-
-    // Use c.html() so the Set-Cookie header from setCookie() is included
-    return c.html(
-      renderProvisionStartPage(c.var.userEmail, agentOptions, {
-        oauthUrl: oauthRedirectUrl,
-      }),
-    );
-  });
+  app.get("/admin/provision", (c) => c.redirect("/admin/agents/new", 302));
 
   // ─── Member management (admin only) ──────────────────────────────────────
 
