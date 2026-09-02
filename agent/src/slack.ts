@@ -36,6 +36,7 @@ import {
 import { type Marker, parseMarkers } from "./markers.ts";
 import { threadKey as defaultThreadKey } from "./sessions.ts";
 import { SlackProgress } from "./slack-progress.ts";
+import { ThreadStatusTracker } from "./slack-thread-status-tracker.ts";
 import type { VoiceConfig } from "./voice.ts";
 import { synthesizeSpeech, transcribeAudio } from "./voice.ts";
 
@@ -475,6 +476,12 @@ export function createSlackApp(
     signingSecret: slackConfig.signingSecret,
   });
 
+  // Per-thread refcount gating SlackProgress.start()/finish() — see
+  // slack-thread-status-tracker.ts for why this exists. Closure-scoped (one
+  // instance per createSlackApp() call), never module-level, so multiple app
+  // instances (e.g. in tests) stay isolated from each other's refcount state.
+  const threadStatusTracker = new ThreadStatusTracker();
+
   // DMs: respond to every message.
   // Channels: respond only if bot has already replied in this thread.
   // biome-ignore lint/suspicious/noExplicitAny: Bolt callback params
@@ -524,7 +531,7 @@ export function createSlackApp(
       channel: msg.channel,
       threadTs: replyTs,
     });
-    await progress.start();
+    if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -626,7 +633,7 @@ export function createSlackApp(
         thread_ts: msg.thread_ts ?? msg.ts,
       });
     } finally {
-      await progress.finish();
+      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
     }
   });
 
@@ -666,7 +673,7 @@ export function createSlackApp(
       channel: ev.channel,
       threadTs: replyTs,
     });
-    await progress.start();
+    if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -783,7 +790,7 @@ export function createSlackApp(
       sentryClient.captureException(err);
       await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
     } finally {
-      await progress.finish();
+      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
     }
   });
 
@@ -820,7 +827,7 @@ export function createSlackApp(
       channel: ev.item.channel,
       threadTs: ev.item.ts,
     });
-    await progress.start();
+    if (threadStatusTracker.enter(sessionKey)) await progress.start();
 
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
@@ -900,7 +907,7 @@ export function createSlackApp(
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
     } finally {
-      await progress.finish();
+      if (threadStatusTracker.exit(sessionKey)) await progress.finish();
     }
   });
 
