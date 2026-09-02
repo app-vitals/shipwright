@@ -25,6 +25,7 @@ import type {
   ChatThread,
   ThreadStats,
 } from "./http-chat-client.ts";
+import type { PushService } from "./push-service.ts";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1152,6 +1153,163 @@ describe("POST /admin/chat/:agentId/threads/:threadId/messages.json", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { message: null };
     expect(body.message).toBeNull();
+  });
+});
+
+// ─── Upload API: POST messages/upload ─────────────────────────────────────────
+// This is the route the live chat UI's send box actually posts to
+// (admin-ui-pages.ts's uploadUrl) — distinct from the form POST /messages and
+// JSON POST /messages.json routes above. It was missing the watchThread()
+// call the other two have (CFB-4.4 follow-up bug: real push subscriptions
+// existed but ChatThreadWatch stayed empty, so notifyThreadReply always found
+// zero recipients).
+
+function makeFakePushService(
+  notifyThreadReply: (thread: {
+    threadId: string;
+    agentId: string;
+    title: string | null;
+    preview: string | null;
+  }) => Promise<{ delivered: number; pruned: number }> = async () => ({
+    delivered: 0,
+    pruned: 0,
+  }),
+): PushService {
+  return { notifyThreadReply } as unknown as PushService;
+}
+
+describe("POST /admin/chat/:agentId/threads/:threadId/messages/upload", () => {
+  let sessionCookie: string;
+
+  beforeAll(async () => {
+    sessionCookie = await makeSessionCookie();
+  });
+
+  it("returns 302 to login without session cookie", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "body=test+message",
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toContain("/admin/login");
+  });
+
+  it("returns 201 JSON with message when chatClient present", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "body=Hello%2C+agent!",
+      },
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { message: ChatMessage };
+    expect(body.message.id).toBe(MOCK_MESSAGE.id);
+  });
+
+  it("returns 400 when neither body nor file is present", async () => {
+    const chatClient = makeMockChatClient();
+    const app = createAdminUIApp(makeBaseDeps({ chatClient }));
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "",
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("registers a ChatThreadWatch row when push is enabled (CFB-4.4 regression)", async () => {
+    const chatClient = makeMockChatClient();
+    const base = makeBaseDeps();
+    const watchUpserts: Array<{
+      where: { userEmail_threadId: { userEmail: string; threadId: string } };
+      create: { userEmail: string; threadId: string; agentId: string };
+      update: { agentId: string };
+    }> = [];
+    const app = createAdminUIApp({
+      ...base,
+      chatClient,
+      pushService: makeFakePushService(),
+      vapidPublicKey: "test-vapid-public-key",
+      prisma: {
+        ...base.prisma,
+        chatThreadWatch: {
+          upsert: async (args) => {
+            watchUpserts.push(args);
+            return { id: "watch-1" };
+          },
+        },
+      },
+    });
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "body=testing+notifications",
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(watchUpserts).toHaveLength(1);
+    expect(watchUpserts[0]?.create).toEqual({
+      userEmail: "admin@example.com",
+      threadId: THREAD_ID,
+      agentId: AGENT_ID,
+    });
+  });
+
+  it("does not touch ChatThreadWatch when push is disabled", async () => {
+    const chatClient = makeMockChatClient();
+    const base = makeBaseDeps();
+    const watchUpserts: unknown[] = [];
+    const app = createAdminUIApp({
+      ...base,
+      chatClient,
+      // No pushService/vapidPublicKey — pushEnabled stays false.
+      prisma: {
+        ...base.prisma,
+        chatThreadWatch: {
+          upsert: async (args) => {
+            watchUpserts.push(args);
+            return { id: "watch-1" };
+          },
+        },
+      },
+    });
+    const res = await app.request(
+      `/admin/chat/${AGENT_ID}/threads/${THREAD_ID}/messages/upload`,
+      {
+        method: "POST",
+        headers: {
+          Cookie: `admin_session=${sessionCookie}`,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: "body=push+disabled+case",
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(watchUpserts).toHaveLength(0);
   });
 });
 
