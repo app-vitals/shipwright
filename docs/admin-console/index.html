@@ -72,10 +72,10 @@ set for admins, or only agents the user is a member of otherwise:</p>
 </tr>
 </tbody>
 </table>
-<p>Admins see two buttons above the table: <strong>+ Provision agent</strong> (→ <code>/admin/provision</code>) and
-<strong>+ New local agent</strong> (→ <code>/admin/agents/new</code>). After a successful agent deletion the list also shows
-a dismissible “Agent deleted.” banner and, if any cleanup steps require manual follow-up (e.g.
-revoking a hand-pasted <code>GH_TOKEN</code>), a warning panel listing each manual step.</p>
+<p>Admins see a single <strong>+ New agent</strong> button above the table (→ <code>/admin/agents/new</code>), which handles
+agent creation and offers inline options to connect Slack/GitHub afterward. After a successful agent
+deletion the list also shows a dismissible “Agent deleted.” banner and, if any cleanup steps require
+manual follow-up (e.g. revoking a hand-pasted <code>GH_TOKEN</code>), a warning panel listing each manual step.</p>
 <h3 id="new-local-agent--get-adminagentsnew-post-adminagents">New local agent — <code>GET /admin/agents/new</code>, <code>POST /admin/agents</code></h3>
 <p>Admin-only. A short form for creating a self-hosted agent (one that runs on your own infrastructure
 rather than via managed Slack provisioning): an <strong>Agent name</strong> field (required) and an optional
