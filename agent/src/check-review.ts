@@ -267,26 +267,40 @@ export function traceReviewCandidacyDecision(args: {
     isBundleComplete,
   } = args;
 
-  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings, including
-  // PFL-2.2's rebuttal writes) newer than the last review pass is a bypass
-  // of BOTH exclusion checks below — the live-GitHub review dedup
-  // immediately following this block, and the terminal-skip check further
-  // down — alongside hasFreshAuthorReply. Hoisted to the very top of the
-  // function, ahead of the live-review dedup's early return, because that
-  // return fires (and `continue`s the caller's loop) before a lower
-  // placement would ever be reached in the exact scenario PFL-3.1 targets:
-  // a review already live at the PR's current head commit, no fresh author
-  // reply, but a fresh ledger finding recorded since. Computed against
-  // `record` via optional chaining since this now runs before the `!record`
-  // null check below. Mirrors the `new Date(record?.reviewedAt ?? 0)`
-  // epoch-0 fallback pattern used for reviewedAtMs elsewhere in this file,
-  // and uses the same strict `>` inequality as hasFreshAuthorReply's own
-  // freshness check (a finding stamped exactly at reviewedAt does not
-  // count).
+  // PFL-3.1: a ledger finding (PFL-1.2's POST /prs/:id/findings) newer than
+  // the last review pass is a bypass of BOTH exclusion checks below — the
+  // live-GitHub review dedup immediately following this block, and the
+  // terminal-skip check further down — alongside hasFreshAuthorReply.
+  // Hoisted to the very top of the function, ahead of the live-review
+  // dedup's early return, because that return fires (and `continue`s the
+  // caller's loop) before a lower placement would ever be reached in the
+  // exact scenario PFL-3.1 targets: a review already live at the PR's
+  // current head commit, no fresh author reply, but a fresh ledger finding
+  // recorded since. Computed against `record` via optional chaining since
+  // this now runs before the `!record` null check below. Mirrors the
+  // `new Date(record?.reviewedAt ?? 0)` epoch-0 fallback pattern used for
+  // reviewedAtMs elsewhere in this file, and uses the same strict `>`
+  // inequality as hasFreshAuthorReply's own freshness check (a finding
+  // stamped exactly at reviewedAt does not count).
+  //
+  // PFL-3.3: scoped to source: "patch" findings only — source: "review"
+  // findings are excluded from the freshness comparison entirely, even when
+  // their `at` postdates reviewedAt. Every source: "review" ledger write
+  // (review.md's PFL-2.1 self-review judgments and prior-findings
+  // attestations) is a retrospective disposition about an OLDER review,
+  // computed and POSTed within the same pass that stamps reviewedAt; by
+  // review.md's own ordering rule that POST must complete before that same
+  // pass's Step 11b. So a source: "review" finding ever postdating
+  // reviewedAt can only reflect an ordering violation within that pass —
+  // never genuine new information (the PR #89/#107 race, documented in
+  // review.md). Only source: "patch" (PFL-2.2's rejected-finding writes from
+  // a later patch/rebuttal cycle) represents information genuinely new since
+  // the last review.
   const reviewedAtMs = new Date(record?.reviewedAt ?? 0).getTime();
   const hasFreshLedgerFinding =
-    record?.findings?.some((f) => new Date(f.at).getTime() > reviewedAtMs) ??
-    false;
+    record?.findings?.some(
+      (f) => f.source === "patch" && new Date(f.at).getTime() > reviewedAtMs,
+    ) ?? false;
 
   // Live-GitHub review dedup (RVD-1.1, widened by RVD-2.1) —
   // identity-agnostic: ANY review at the PR's current head commit excludes
