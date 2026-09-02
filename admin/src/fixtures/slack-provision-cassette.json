@@ -5,5 +5,8 @@
     "clientId": "1234567890.9876543210",
     "clientSecret": "test-client-secret-value",
     "signingSecret": "test-signing-secret-value"
+  },
+  "authTest": {
+    "userId": "U0AALR8M69X"
   }
 }

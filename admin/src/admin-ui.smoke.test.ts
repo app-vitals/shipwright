@@ -183,6 +183,7 @@ const BASE_SLACK_CLIENT: AdminUISlackClient = {
   }),
   updateAppManifest: async () => {},
   exchangeOAuthCode: async () => ({ botToken: "xoxb-mock-bot-token" }),
+  authTest: async () => ({ userId: "U0AALR8M69X" }),
 };
 
 const BASE_GITHUB_APP_CLIENT: AdminUIGithubAppClient = {

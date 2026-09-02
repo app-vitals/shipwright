@@ -150,6 +150,7 @@ export interface AdminUISlackClient {
     clientSecret: string,
     redirectUri: string,
   ): Promise<{ botToken: string }>;
+  authTest(botToken: string): Promise<{ userId: string }>;
 }
 
 /**
