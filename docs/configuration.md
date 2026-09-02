@@ -75,7 +75,7 @@ Most Slack vars are env-var-only (secrets); the agent does not function as a Sla
 | `SLACK_ADMIN_TOKEN` | `string` | — | Optional admin-level token for privileged Slack operations. |
 | `SLACK_ALERT_CHANNEL` | `string` | — | Slack channel ID to post system alerts (e.g. startup errors). |
 | `SLACK_OWNER_USER` | `string` | — | Slack user ID of the agent owner, used for DM fallback. |
-| `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` | `boolean` | `false` | When `"true"`, `SlackProgress` drives a live Thinking Steps stream (`chat.startStream`/`chat.appendStream`/`chat.stopStream`, `task_display_mode: "timeline"`) alongside the existing `agents.sessions.setStatus` calls, posting one task-update chunk per distinct `ProgressPhase` transition. Off by default — zero `chat.startStream` calls when unset. |
+| `SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED` | `boolean` | `false` | When `"true"`, `SlackProgress` drives a live Thinking Steps stream (`chat.startStream`/`chat.appendStream`/`chat.stopStream`, `task_display_mode: "timeline"`) INSTEAD OF the `agents.sessions.setStatus` calls (calling both would produce two overlapping "is working" indicators — `chat.startStream` already sets the session status itself). The stream is seeded with an immediate `in_progress` task-update card on open, gets one further update per distinct `ProgressPhase` transition, and closes with a `status: "complete"` card (STS2-1.1) — all reusing one stable card id per run. Off by default — zero `chat.startStream` calls when unset. |
 
 ### GitHub
 

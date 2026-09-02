@@ -37,17 +37,22 @@ export const PROGRESS_PHASES: readonly ProgressPhase[] = [
   "writing",
 ];
 
-/** Short human-readable label per phase, for eventual UI use. */
+/**
+ * Short human-readable label per phase, for eventual UI use. Every label
+ * ends in an ellipsis ("…") — they describe an *in-progress* action (e.g.
+ * a Slack Thinking Steps card mid-run), and a bare label like "Reading
+ * files" reads as already-completed rather than ongoing.
+ */
 export const PROGRESS_LABELS: Record<ProgressPhase, string> = {
-  starting: "Starting up",
-  thinking: "Thinking",
-  reading: "Reading files",
-  searching: "Searching the codebase",
-  web: "Searching the web",
-  editing: "Editing files",
-  running: "Running commands",
-  delegating: "Delegating to a subagent",
-  planning: "Planning",
-  tool: "Using a tool",
-  writing: "Writing a response",
+  starting: "Starting up…",
+  thinking: "Thinking…",
+  reading: "Reading files…",
+  searching: "Searching the codebase…",
+  web: "Searching the web…",
+  editing: "Editing files…",
+  running: "Running commands…",
+  delegating: "Delegating to a subagent…",
+  planning: "Planning…",
+  tool: "Using a tool…",
+  writing: "Writing a response…",
 };
