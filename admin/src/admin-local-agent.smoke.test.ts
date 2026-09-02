@@ -888,4 +888,182 @@ describe("admin UI — new local agent create flow", () => {
     });
     expect(calls.envPatches).toEqual([]);
   });
+
+  // ── UAP-2.1: unified create page — Anthropic key, Connect Slack, GitHub auth ──
+
+  it("a supplied Anthropic API key is stored as a secret env var alongside the Claude token in a single patch", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    await postAgent(deps, {
+      name: "with-anthropic-key",
+      type: "coding",
+      claudeCodeOauthToken: "sk-ant-oat01-example",
+      anthropicApiKey: "sk-ant-api03-example",
+    });
+    expect(calls.envPatches).toHaveLength(1);
+    const patch = calls.envPatches[0];
+    expect(patch?.agentId).toBe(NEW_AGENT_ID);
+    expect(patch?.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("sk-ant-oat01-example");
+    expect(patch?.env.ANTHROPIC_API_KEY).toBe("sk-ant-api03-example");
+    expect(patch?.secretKeys?.has("ANTHROPIC_API_KEY")).toBe(true);
+  });
+
+  it("an Anthropic API key alone (no Claude token) is still patched", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    await postAgent(deps, {
+      name: "anthropic-only",
+      type: "coding",
+      anthropicApiKey: "sk-ant-api03-only",
+    });
+    expect(calls.envPatches).toHaveLength(1);
+    expect(calls.envPatches[0]?.env.ANTHROPIC_API_KEY).toBe(
+      "sk-ant-api03-only",
+    );
+  });
+
+  it("all-skipped baseline — no Slack/GitHub/Anthropic fields — redirects to detail page exactly as before (regression guard)", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "plain-agent",
+      type: "coding",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(calls.envPatches).toEqual([]);
+  });
+
+  it("Connect Slack checked redirects into the Slack OAuth URL for the newly created agent", async () => {
+    const base = makeMockDeps();
+    const deps = makeMockDeps({
+      agentService: {
+        ...base.agentService,
+        create: async (input: { name: string; selfHosted?: boolean }) => ({
+          id: NEW_AGENT_ID,
+          name: input.name,
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    });
+    const res = await postAgent(deps, {
+      name: "slack-agent",
+      type: "coding",
+      connectSlack: "true",
+      xoxpToken: "xoxe.xoxp-test-token",
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain("slack.com/oauth/authorize");
+    // Cookie carrying provision state must be set for the OAuth callback.
+    expect(res.headers.get("Set-Cookie") ?? "").toContain(
+      "slack_provision_state=",
+    );
+  });
+
+  it("Connect Slack with a bad/missing token redirects to the agent detail page with an error, not the New Agent form", async () => {
+    const deps = makeMockDeps();
+    const res = await postAgent(deps, {
+      name: "slack-bad-token",
+      type: "coding",
+      connectSlack: "true",
+      xoxpToken: "not-a-valid-token",
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toStartWith(`/admin/agents/${NEW_AGENT_ID}?error=`);
+  });
+
+  it("GitHub App requested renders the manifest auto-submit redirect flow for the newly created agent", async () => {
+    const deps = makeMockDeps();
+    const res = await postAgent(deps, {
+      name: "gh-app-agent",
+      type: "coding",
+      ghAuthMode: "app",
+      githubOrg: "my-org",
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("github.com/organizations/my-org/settings/apps/new");
+    expect(res.headers.get("Set-Cookie") ?? "").toContain(
+      "github_provision_state=",
+    );
+  });
+
+  it("GitHub App with an invalid org name redirects to the agent detail page with an error — agent is NOT rolled back", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "gh-app-bad-org",
+      type: "coding",
+      ghAuthMode: "app",
+      githubOrg: "not a valid org!!",
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toStartWith(`/admin/agents/${NEW_AGENT_ID}?error=`);
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("GitHub PAT provided stores GH_TOKEN directly and continues to the detail page", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "gh-pat-agent",
+      type: "coding",
+      ghAuthMode: "pat",
+      ghPat: "ghp_exampletoken",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    const patch = calls.envPatches.find((p) => p.env.GH_TOKEN);
+    expect(patch).toBeDefined();
+    expect(patch?.env.GH_TOKEN).toBe("ghp_exampletoken");
+    expect(patch?.secretKeys?.has("GH_TOKEN")).toBe(true);
+  });
+
+  it("GitHub PAT mode with no token supplied redirects to the detail page with an error — agent is NOT rolled back", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "gh-pat-missing",
+      type: "coding",
+      ghAuthMode: "pat",
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toStartWith(`/admin/agents/${NEW_AGENT_ID}?error=`);
+    expect(calls.deleted).toEqual([]);
+  });
+
+  it("ghAuthMode=skip (or omitted) with connectSlack unchecked behaves exactly like today — plain redirect to detail page", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "gh-skip-agent",
+      type: "coding",
+      ghAuthMode: "skip",
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${NEW_AGENT_ID}`);
+    expect(calls.envPatches).toEqual([]);
+  });
+
+  it("both Connect Slack and GitHub PAT requested — GitHub PAT is stored first, then Slack's OAuth redirect is returned", async () => {
+    const { deps, calls } = makeProvisioningDeps();
+    const res = await postAgent(deps, {
+      name: "slack-and-gh-pat",
+      type: "coding",
+      connectSlack: "true",
+      xoxpToken: "xoxe.xoxp-test-token",
+      ghAuthMode: "pat",
+      ghPat: "ghp_bothflow",
+    });
+    expect(res.status).toBe(302);
+    const location = res.headers.get("Location") ?? "";
+    expect(location).toContain("slack.com/oauth/authorize");
+    const patch = calls.envPatches.find((p) => p.env.GH_TOKEN);
+    expect(patch?.env.GH_TOKEN).toBe("ghp_bothflow");
+  });
 });

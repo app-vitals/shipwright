@@ -826,14 +826,97 @@ describe("renderNewLocalAgentPage", () => {
     expect(html).toContain("CLAUDE_CODE_OAUTH_TOKEN");
   });
 
-  test("asks for no Slack credentials and points at the chat UI", () => {
+  test("points at the chat UI for agent conversation", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE], {
       canProvision: true,
     });
-    expect(html).not.toContain("xoxp");
-    expect(html).not.toContain("xoxb");
-    expect(html).not.toMatch(/name="xoxpToken"/);
     expect(html).toContain("/admin/chat");
+  });
+
+  test("renders an optional ANTHROPIC_API_KEY input alongside the Claude token, matching the wizard's field", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="anthropicApiKey"[^>]*type="password"[^>]*>/,
+    );
+    expect(html).toContain('placeholder="sk-ant-..."');
+  });
+
+  test("renders a Connect Slack checkbox", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(
+      /<input[^>]*name="connectSlack"[^>]*type="checkbox"[^>]*>/,
+    );
+  });
+
+  test("renders an xoxpToken field inside a slack-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="xoxpToken"[^>]*>/);
+    // The xoxpToken field lives inside a container hidden until the
+    // connectSlack checkbox is toggled on (progressive disclosure).
+    const slackBlock = html.match(
+      /<div id="slack-fields"[^>]*style="display:none[^>]*>[\s\S]*?xoxpToken/,
+    );
+    expect(slackBlock).not.toBeNull();
+  });
+
+  test("connectSlack checkbox onchange toggles the slack-fields block's display", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const checkbox = html.match(
+      /<input[^>]*name="connectSlack"[^>]*>/,
+    )?.[0] as string;
+    expect(checkbox).toContain("onchange");
+    expect(checkbox).toContain("slack-fields");
+  });
+
+  test("renders a GitHub auth radio group with skip/pat/app options", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*>/);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/);
+    expect(html).toMatch(/<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/);
+    // Explicitly no "paste manually" App mode — only pat + auto-app per the
+    // unified page's 3-way radio (that mode stays exclusive to the legacy
+    // /admin/provision wizard).
+    expect(html).not.toMatch(/name="ghAppMode"/);
+  });
+
+  test("skip is the default checked GitHub auth mode", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const skipRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="skip"[^>]*\/>/,
+    )?.[0] as string;
+    expect(skipRadio).toContain("checked");
+  });
+
+  test("renders a ghPat field inside a gh-pat-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="ghPat"[^>]*type="password"[^>]*>/);
+    const patBlock = html.match(
+      /<div id="gh-pat-fields"[^>]*style="display:none"[\s\S]*?ghPat/,
+    );
+    expect(patBlock).not.toBeNull();
+  });
+
+  test("renders a githubOrg field inside a gh-app-fields block hidden by default", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<input[^>]*name="githubOrg"[^>]*>/);
+    const appBlock = html.match(
+      /<div id="gh-app-fields"[^>]*style="display:none"[\s\S]*?githubOrg/,
+    );
+    expect(appBlock).not.toBeNull();
+  });
+
+  test("ghAuthMode radios toggle the pat/app field blocks via onchange", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    const patRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="pat"[^>]*>/,
+    )?.[0] as string;
+    expect(patRadio).toContain("onchange");
+    expect(patRadio).toContain("gh-pat-fields");
+    const appRadio = html.match(
+      /<input[^>]*name="ghAuthMode"[^>]*value="app"[^>]*>/,
+    )?.[0] as string;
+    expect(appRadio).toContain("onchange");
+    expect(appRadio).toContain("gh-app-fields");
   });
 });
 
