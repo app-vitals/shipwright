@@ -345,7 +345,7 @@ describe("admin UI — provisioning flow", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/provision/start with xoxe.xoxp- token calls apps.manifest.create and returns OAuth URL", async () => {
+  it("POST /admin/provision/start returns 404 (route removed in UAP-3.1)", async () => {
     const upsertCalls: UpsertCall[] = [];
     const slackClient = new RecordedSlackClient(CASSETTE_PATH);
     const app = createAdminUIApp(makeMockDeps(slackClient, upsertCalls));
@@ -364,10 +364,7 @@ describe("admin UI — provisioning flow", () => {
         Cookie: `admin_session=${cookie}`,
       },
     });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    // Should contain the OAuth redirect URL from the cassette
-    expect(html).toContain("https://slack.com/oauth/authorize");
+    expect(res.status).toBe(404);
   });
 
   it("POST /admin/provision/complete returns 404 (route removed in BP-2.2)", async () => {
