@@ -24,6 +24,7 @@
 
 import { sign, verify } from "hono/jwt";
 import type { AdminUIGithubAppClient } from "./admin-ui.ts";
+import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentEnvService } from "./agent-envs.ts";
 import type { AgentService } from "./agents.ts";
 import { buildAgentAppManifest } from "./github-app-provisioning-client.ts";
@@ -123,6 +124,7 @@ export interface GithubProvisioningServiceDeps {
   githubAppClient: AdminUIGithubAppClient;
   agentService: Pick<AgentService, "getDetail">;
   agentEnvService: Pick<AgentEnvService, "patch">;
+  agentCronJobService: Pick<AgentCronJobService, "reconcileSystemCrons">;
   sessionSecret: string;
   appBaseUrl: string;
   /** Env var keys that must be stored as secrets — mirrors SECRET_ENV_VARS. */
@@ -424,6 +426,8 @@ export class GithubProvisioningService {
       {
         GH_APP_ID: exchangeResult.appId,
         GH_APP_PRIVATE_KEY: exchangeResult.pem,
+        GH_APP_CLIENT_ID: exchangeResult.clientId,
+        GH_APP_CLIENT_SECRET: exchangeResult.clientSecret,
       },
       this.deps.secretEnvVars,
     );
@@ -436,9 +440,12 @@ export class GithubProvisioningService {
   }
 
   /**
-   * Verifies the provision-state token and stores GH_APP_INSTALLATION_ID.
-   * Mirrors the legacy GET /admin/provision/github-app/installed handler
-   * exactly. `expectedAgentId` behaves as in completeConnect() above.
+   * Verifies the provision-state token, stores GH_APP_INSTALLATION_ID, and
+   * reconciles system crons (best-effort, non-fatal — mirrors
+   * SlackProvisioningService.saveAppToken()'s parity call). Mirrors the
+   * legacy GET /admin/provision/github-app/installed handler's env write
+   * exactly, with the cron reconcile added on top (UAP-1.4).
+   * `expectedAgentId` behaves as in completeConnect() above.
    */
   async completeInstalled(
     rawStateCookie: string | undefined,
@@ -469,6 +476,20 @@ export class GithubProvisioningService {
     await this.deps.agentEnvService.patch(state.agentId, {
       GH_APP_INSTALLATION_ID: installationId,
     });
+
+    // Best-effort, mirroring the same call at agent boot (agent/src/index.ts)
+    // and SlackProvisioningService.saveAppToken()'s parity call.
+    // reconcileSystemCrons is a full three-pass reconcile, so a second run is
+    // a no-op — and failing here would strand the operator next to a live
+    // agent whose GitHub App install otherwise succeeded.
+    try {
+      await this.deps.agentCronJobService.reconcileSystemCrons(state.agentId);
+    } catch (err) {
+      console.error(
+        "[github-provisioning-service] failed to reconcile system crons (non-fatal):",
+        err,
+      );
+    }
 
     return { outcome: "success", agentId: state.agentId };
   }

@@ -701,6 +701,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     githubAppClient,
     agentService,
     agentEnvService,
+    agentCronJobService,
     sessionSecret,
     appBaseUrl,
     secretEnvVars: new Set(SECRET_ENV_VARS),
