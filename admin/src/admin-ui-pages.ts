@@ -1541,9 +1541,9 @@ export function renderAgentDetailPage(
           </thead>
           <tbody>
             ${
-              agent.patchAuthorAllowlist.length === 0
+              (agent.patchAuthorAllowlist ?? []).length === 0
                 ? `<tr><td colspan="2" class="empty-state">No patch author allowlist entries configured.</td></tr>`
-                : agent.patchAuthorAllowlist
+                : (agent.patchAuthorAllowlist ?? [])
                     .map(
                       (login) => `<tr>
             <td class="mono">${escapeHtml(login)}</td>
