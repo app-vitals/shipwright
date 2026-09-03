@@ -3169,7 +3169,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    return html(renderPrDetailPage(pr, c.var.userEmail, agentNames, timezone));
+    // Resolve the linked task(s) via a live GET /tasks?repo=&pr= lookup,
+    // mirroring the list page's per-row lookup (PTL-2.1). Falls back to an
+    // empty task list if the fetcher is absent or the lookup throws.
+    let linkedTasks: TaskItem[] = [];
+    if (fetchTaskStoreTasks) {
+      try {
+        const result = await fetchTaskStoreTasks(
+          new URLSearchParams({ repo: pr.repo, pr: String(pr.prNumber) }),
+        );
+        linkedTasks = result.tasks;
+      } catch {
+        linkedTasks = [];
+      }
+    }
+
+    return html(
+      renderPrDetailPage(
+        pr,
+        c.var.userEmail,
+        agentNames,
+        timezone,
+        linkedTasks,
+      ),
+    );
   });
 
   // ─── Chat routes ─────────────────────────────────────────────────────────
