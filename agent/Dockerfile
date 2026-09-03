@@ -119,7 +119,7 @@ COPY --from=node-source /usr/local/bin/node /usr/local/bin/node
 COPY --from=node-source /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
-    && npm install -g @anthropic-ai/claude-code@2.1.170
+    && npm install -g @anthropic-ai/claude-code@2.1.236
 
 # ─── Build stage ──────────────────────────────────────────────────────────────
 
