@@ -259,7 +259,6 @@ Agent behavior is controlled by `state/agent-policy.md`. This is a Markdown file
 | `max_findings` | `number` | `5` | Maximum number of findings to include in a single review. |
 | `cleanup_merged_worktrees` | `bool` | `true` | Read by the agent's background worktree reconciler to decide whether merged-PR worktrees are automatically removed (`agent/src/pr-state-reconciler.ts`'s `reconcileRecord()`). Not read by `/shipwright:review`. |
 | `cleanup_after_days` | `number` | `14` | Age threshold (days) before a worktree is eligible for automatic cleanup via `reconcileStaleWorktrees()` (`agent/src/worktree-reaper.ts`, run on the same background interval as `agent/src/pr-state-reconciler.ts`). Not read by `/shipwright:review`. |
-| `auto_post_dependency_bot_triage` | `bool` | `true` | Post dependency-bot (Dependabot/Renovate) triage comments to GitHub automatically without manual approval. Set to `false` to stage triage comments to `state/dependency-bot-reviews/` for owner approval instead. |
 
 ### Example
 
@@ -272,7 +271,6 @@ min_confidence: 75
 max_findings: 5
 cleanup_merged_worktrees: true
 cleanup_after_days: 14
-auto_post_dependency_bot_triage: true
 ---
 ```
 

@@ -288,7 +288,7 @@ Not declared in CLAUDE.md but observed since 2026-08-06: `.github/workflows/test
 | `plugins/shipwright/scripts/check-deploy.ts`, `check-review.ts`, `check-patch.ts`, `check-dev-task.ts` (cron prechecks) | 2. Service-boundary code | integration | critical | n/a |
 | `plugins/shipwright/scripts/check-helpers.ts` (`isCleanApproveBody`, GitHub wrappers) | 1. Pure business logic (parsing) + 2. service-boundary (`ghJson`) | unit (pure parts) / integration (I/O parts) | critical | n/a |
 | `plugins/shipwright/scripts/check-banned-strings.ts` (`scanForBannedStrings`) | 1. Pure business logic | unit | high | n/a |
-| `plugins/shipwright/scripts/check-docs-freshness.ts`, `check-dependency-bot-triage.ts` (renamed from `check-dependabot-triage.ts` + generalized to also cover Renovate, DBT-1.1), `check-error-patrol.ts`, `check-learn-dream.ts`, `check-review-patch.ts`, `check-test-readiness.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
+| `plugins/shipwright/scripts/check-docs-freshness.ts`, `check-error-patrol.ts`, `check-learn-dream.ts`, `check-review-patch.ts`, `check-test-readiness.ts` (cron prechecks, multi-repo) | 2. Service-boundary code | integration | high | n/a |
 | `plugins/shipwright/scripts/check-consolidation-patrol.ts` (ledger-driven cron precheck) | 2. Service-boundary code | integration | medium | n/a |
 | `plugins/shipwright/scripts/classify_test_layer.ts` (`classifyPath`) | 1. Pure business logic | unit | high | n/a |
 | `plugins/shipwright/scripts/compute-review-verdict.ts` (`computeVerdict`/`validateReviewVerdict` — mechanizes review.md Step 10's verdict truth table, DRO-1.1) | 1. Pure business logic | unit | high | n/a |

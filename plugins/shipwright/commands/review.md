@@ -480,10 +480,11 @@ Respond `[silent]`, and stop.
 ## Step 5.8: Dependency Manifest Detection (DBR-3.2)
 
 Regardless of `PR_AUTHOR` — this step runs the same for any PR, human-authored or
-bot-authored; it is not gated on `PR_AUTHOR`/`author.login` at all, unlike the
-Dependabot/Renovate-specific `triage-dependency-bot-pr` skill. A human-authored PR that
-happens to touch a dependency manifest (e.g. hand-editing `package.json` to pin a version)
-gets the exact same dependency-risk analysis as a bot-authored one.
+bot-authored; it is not gated on `PR_AUTHOR`/`author.login` at all, unlike the retired,
+Dependabot/Renovate-specific standalone triage skill it superseded (DBR-3.4). A
+human-authored PR that happens to touch a dependency manifest (e.g. hand-editing
+`package.json` to pin a version) gets the exact same dependency-risk analysis as a
+bot-authored one.
 
 1. **Build the repo's watched-path set.** cwd is already the worktree root at this point in
    the procedure (per Step 4's "All subsequent steps run from

@@ -95,18 +95,7 @@ gh pr view {prNumber} --repo {org}/{repo} \
 When a PR is skipped for any reason, leave its task store record untouched
 (`staged: true` stays set). CHANGES_REQUESTED state is re-derived from GitHub on every run.
 
-### 3c. Dependency-bot cross-check
-
-If `author.login == "dependabot[bot]"`, `author.login == "app/dependabot"`, or
-`author.login == "app/renovate"` (or the entry has `author: "app/dependabot"` /
-`author: "app/renovate"`):
-
-Read `state/dependency-bot-reviews.json`. If an entry exists for this PR, capture
-`{bot, status, recommendation}` and surface it in the presentation block (Step 3d) as
-a `*{Dependabot|Renovate}:*` line, with the label derived from `entry.bot`
-(`"dependabot"` → `"Dependabot"`, `"renovate"` → `"Renovate"`).
-
-### 3d. Present the PR
+### 3c. Present the PR
 
 Read `state/reviews/PR_REVIEW_{pr}.md` and extract:
 
@@ -138,7 +127,6 @@ Print this block (and only this block — no extra commentary):
 - Arch:       {value or "none"}
 
 *CI:* {one-line summary — e.g. "all green" / "lint failing" / "1 failure: build"}
-{if dependency-bot entry: "*{Dependabot|Renovate}:* tracked in dependency-bot-review ({status}, recommendation: {recommendation})" — label derived from entry.bot: "dependabot" → "Dependabot", "renovate" → "Renovate"}
 
 *Concerns ({count})*
 - {Critical/Important findings, each on one line with file:line}

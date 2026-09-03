@@ -31,12 +31,6 @@ const components = [
   {
     type: "Maintenance",
     typeClass: "maint",
-    name: "dependency-bot-triage",
-    desc: "Reviews open Dependabot/Renovate PRs. Approves safe patches, flags breaking changes, adds release-notes context. Reduces the review queue without requiring human attention on routine updates.",
-  },
-  {
-    type: "Maintenance",
-    typeClass: "maint",
     name: "migrations",
     desc: "Large migrations broken into daily increments. Deprecate an endpoint, write a skill for the pattern, then let the loop chip away — one usage at a time until the codebase is clean. Each change is small, easy to review, and easy to roll back.",
   },
@@ -128,10 +122,6 @@ const components = [
           <div class="chip">
             <div class="chip-name">Test Audit</div>
             <div class="chip-sub">coverage + debt</div>
-          </div>
-          <div class="chip">
-            <div class="chip-name">Dependabot</div>
-            <div class="chip-sub">dep triage</div>
           </div>
           <div class="chip">
             <div class="chip-name">Migrations</div>
