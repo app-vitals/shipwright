@@ -347,7 +347,7 @@ describe("dev-task.md 0b — docs-first toolchain discovery + per-repo cache (TD
     expect(stepIdx).toBeGreaterThan(-1);
     const section = content.slice(stepIdx, stepIdx + 2000);
     expect(section).toMatch(/\*\*Check the cache\.\*\*/i);
-    expect(section).toContain("state/toolchain-cache/{repo}.json");
+    expect(section).toContain("state/toolchain-cache/{repo-slug}.json");
   });
 
   it("reads CLAUDE.md and docs/ai-docs before falling back to config-file scanning", () => {
@@ -513,7 +513,7 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
   it("incomplete/stale path closes the PR (if any) and deletes the branch (remote + local) before falling through to fresh worktree creation", () => {
     const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
     expect(realityCheckIdx).toBeGreaterThan(-1);
-    const section = content.slice(realityCheckIdx, realityCheckIdx + 5500);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 6000);
     expect(section).toMatch(/incomplete|stale/i);
     expect(section).toContain("gh pr close");
     expect(section).toContain("git push origin --delete {branch}");
@@ -525,7 +525,7 @@ describe("Step 4 — unconditional branch/PR reality check (DOH-1.1)", () => {
     // can leave `{branch}` checked out in a worktree, so the worktree must be removed first.
     const realityCheckIdx = content.indexOf("### Branch/PR Reality Check");
     expect(realityCheckIdx).toBeGreaterThan(-1);
-    const section = content.slice(realityCheckIdx, realityCheckIdx + 5500);
+    const section = content.slice(realityCheckIdx, realityCheckIdx + 6000);
     const staleSectionIdx = section.search(/\*\*Incomplete, stale/i);
     expect(staleSectionIdx).toBeGreaterThan(-1);
     const staleSection = section.slice(staleSectionIdx);
@@ -645,5 +645,42 @@ describe("dev-task.md — ScheduleWakeup/backgrounding prohibition guardrail (SW
     const section = getStep9b2Section();
     expect(section).toContain("30 seconds");
     expect(section).toContain("10 minutes");
+  });
+});
+
+describe("dev-task.md Step 1 — repo-slug derivation for local paths (PRF-1.4)", () => {
+  it("derives {repo-slug} in Step 1, immediately after the task fetch and before the Same-Branch Sibling Check", () => {
+    const fetchIdx = content.indexOf('"$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}"');
+    expect(fetchIdx).toBeGreaterThan(-1);
+    const siblingCheckIdx = content.indexOf("### Same-Branch Sibling Check");
+    expect(siblingCheckIdx).toBeGreaterThan(fetchIdx);
+
+    const section = content.slice(fetchIdx, siblingCheckIdx);
+    expect(section).toContain("{repo-slug}");
+    expect(section).toMatch(/last path segment/i);
+  });
+
+  it("no longer uses raw {repo} for ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} style local paths", () => {
+    // This exact substring would NOT match {repo-slug} (which has extra chars before the
+    // closing brace), so it robustly distinguishes "still raw {repo}" from "now {repo-slug}".
+    expect(content.match(/\$\{SHIPWRIGHT_REPO_DIR:-\$HOME\/src\}\/\{repo\}/)).toBeNull();
+  });
+
+  it("keeps the Same-Branch Sibling Check's task-store API call scoped by the full {repo} (org/repo) value, unchanged", () => {
+    expect(content).toContain(
+      '"$SHIPWRIGHT_TASK_STORE_URL/tasks?branch={branch}&status=in_progress&repo={repo}"',
+    );
+  });
+
+  it("derives GH_REPO from the local checkout using {repo-slug}, not {repo}", () => {
+    expect(content).toContain(
+      "git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} remote get-url origin",
+    );
+  });
+
+  it("constructs worktree paths using {repo-slug}-{branch-slug}", () => {
+    expect(content).toContain(
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}",
+    );
   });
 });
