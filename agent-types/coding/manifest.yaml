@@ -104,11 +104,6 @@ crons:
     prompt: /shipwright:learn-dream --since 1d --review
     silent: true
     enabled: false
-  - name: dependency-bot-triage
-    schedule: "0 8 * * *"
-    prompt: /shipwright:triage-dependency-bot-prs
-    silent: true
-    enabled: false
   - name: entropy-patrol-maintenance
     schedule: "0 4 * * 1"
     prompt: |-
