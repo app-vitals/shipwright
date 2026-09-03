@@ -264,7 +264,8 @@ Two independent, optional scoping controls narrow an agent's exposure further:
 | Control | Default | Effect |
 |---|---|---|
 | `restrictSlackToMembers` | `false` | When `true`, only Slack users registered as that agent's members can DM or mention it; when `false`, any user in the Slack workspace can |
-| `reviewAuthorAllowlist` | empty (anyone) | A list of GitHub logins whose pull requests the agent will act on. An empty allowlist means any authenticated GitHub user's PRs are eligible |
+| `reviewAuthorAllowlist` | empty (anyone) | A list of GitHub logins whose pull requests the agent will review. An empty allowlist means any authenticated GitHub user's PRs are eligible for review |
+| `patchAuthorAllowlist` | empty (self-authored only) | A list of GitHub logins naming additional authors whose PRs this agent will treat as patch candidates. Patch work normally only touches the agent's own PRs; this allowlist adds other authors to the candidate pool. An empty allowlist means only self-authored PRs are eligible for patching |
 
 ## Admins vs. agent members
 
