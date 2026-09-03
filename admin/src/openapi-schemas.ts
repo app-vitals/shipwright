@@ -113,6 +113,19 @@ export const CreateAgentBodySchema = z
       .optional()
       .openapi({ example: ["octocat"] }),
     /**
+     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
+     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * PatchAgentBodySchema's patchAuthorAllowlist shape.
+     */
+    patchAuthorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
+    /**
      * Initial restrictSlackToMembers flag — when true, only AgentMember
      * emails may message this agent over Slack. Optional, defaults to the
      * column default (false). Mirrors PatchAgentBodySchema's
@@ -160,6 +173,19 @@ export const PatchAgentBodySchema = z
      * canonical source of truth, written to both columns.
      */
     reviewAuthorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
+    /**
+     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
+     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * CreateAgentBodySchema's patchAuthorAllowlist shape.
+     */
+    patchAuthorAllowlist: z
       .array(
         z.string().refine(isGithubLogin, {
           message: "each entry must be a valid GitHub login",
@@ -904,6 +930,7 @@ export const AgentConfigResponseSchema = z
     reviewAuthorAllowlist: z
       .array(z.string())
       .openapi({ example: ["octocat"] }),
+    patchAuthorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
     restrictSlackToMembers: z.boolean().openapi({ example: false }),
     memberEmails: z.array(z.string()).openapi({ example: ["dev@example.com"] }),
   })

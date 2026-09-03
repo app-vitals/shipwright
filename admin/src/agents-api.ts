@@ -245,6 +245,7 @@ const GetAgentResultSchema = z
      * as an identical array during the dual-read transitional phase.
      */
     reviewAuthorAllowlist: z.array(z.string()),
+    patchAuthorAllowlist: z.array(z.string()),
     restrictSlackToMembers: z.boolean(),
     typeName: z.string(),
     createdAt: z.string().datetime(),
@@ -1004,6 +1005,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.authorAllowlist !== undefined
         ? { authorAllowlist: body.authorAllowlist }
         : {}),
+      ...(body.patchAuthorAllowlist !== undefined
+        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
+        : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
         : {}),
@@ -1128,6 +1132,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
         : {}),
       ...(body.reviewAuthorAllowlist !== undefined
         ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
+        : {}),
+      ...(body.patchAuthorAllowlist !== undefined
+        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
         : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
@@ -1771,6 +1778,7 @@ function serializeAgent(
     authorAllowlist?: string[];
     /** DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read below. */
     reviewAuthorAllowlist?: string[];
+    patchAuthorAllowlist?: string[];
     restrictSlackToMembers?: boolean;
     typeName: string;
     createdAt: Date;
@@ -1793,6 +1801,7 @@ function serializeAgent(
     repos: agent.repos ?? [],
     authorAllowlist,
     reviewAuthorAllowlist,
+    patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
     restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),

@@ -25,6 +25,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   repos: [],
   authorAllowlist: [],
   reviewAuthorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   memberEmails: [],
 };

@@ -49,6 +49,7 @@ export interface AgentConfigResponse {
    * an identical array during the dual-read transitional phase.
    */
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -81,6 +82,7 @@ interface AgentServiceLike {
     authorAllowlist: string[];
     /** DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read below. */
     reviewAuthorAllowlist?: string[];
+    patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
   } | null>;
@@ -223,6 +225,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       // response fields never diverge.
       reviewAuthorAllowlist:
         agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
       memberEmails: agent.memberEmails ?? [],
     };

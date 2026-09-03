@@ -63,6 +63,7 @@ const AGENT: AgentDetail = {
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
   authorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   typeName: "coding",
   missingRequiredEnv: [],

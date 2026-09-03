@@ -30,6 +30,8 @@ export interface CreateAgentInput {
    * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
    */
   reviewAuthorAllowlist?: string[];
+  /** Initial patchAuthorAllowlist[]. Independent of authorAllowlist. */
+  patchAuthorAllowlist?: string[];
   /** Initial restrictSlackToMembers flag. Omitted means the column default (false) applies. */
   restrictSlackToMembers?: boolean;
 }
@@ -66,6 +68,7 @@ export interface AgentDetail {
    * to authorAllowlist when this is absent (see serializeAgent/api.ts).
    */
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
@@ -95,6 +98,7 @@ export interface UpdateSelfHostedInput {
    * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
    */
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   /**
    * Backfills agent.slackId (UAP-1.3) — nullable so it can also be
@@ -112,6 +116,7 @@ interface AgentIdAndRepos {
    * Optional (see AgentDetail.reviewAuthorAllowlist for why).
    */
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -130,6 +135,7 @@ export interface UpdateAgentFieldsInput {
    * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
    */
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   selfHosted?: boolean;
   slackId?: string | null;
@@ -152,6 +158,7 @@ const DETAIL_SELECT = {
   repos: true,
   authorAllowlist: true,
   reviewAuthorAllowlist: true,
+  patchAuthorAllowlist: true,
   restrictSlackToMembers: true,
   typeName: true,
   createdAt: true,
@@ -204,6 +211,9 @@ export class AgentService {
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
         ...(allowlist !== undefined
           ? { authorAllowlist: allowlist, reviewAuthorAllowlist: allowlist }
+          : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
           : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
@@ -321,6 +331,9 @@ export class AgentService {
         ...(allowlist !== undefined
           ? { authorAllowlist: allowlist, reviewAuthorAllowlist: allowlist }
           : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
+          : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
           : {}),
@@ -337,8 +350,9 @@ export class AgentService {
 
   /**
    * Get {id, repos, authorAllowlist, reviewAuthorAllowlist,
-   * restrictSlackToMembers, memberEmails} for a single agent — used by the
-   * runtime config/crons routes. Returns null if not found.
+   * patchAuthorAllowlist, restrictSlackToMembers, memberEmails} for a single
+   * agent — used by the runtime config/crons routes. Returns null if not
+   * found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     const row = await this.prisma.agent.findUnique({
@@ -348,6 +362,7 @@ export class AgentService {
         repos: true,
         authorAllowlist: true,
         reviewAuthorAllowlist: true,
+        patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
       },
     });
@@ -402,8 +417,9 @@ export class AgentService {
   /**
    * Generic partial-field update for an agent's
    * name/repos/authorAllowlist(+reviewAuthorAllowlist dual-write, DBR-2.1)/
-   * restrictSlackToMembers/selfHosted/slackId. Only fields present in the
-   * input are touched. Returns the full updated detail record.
+   * patchAuthorAllowlist/restrictSlackToMembers/selfHosted/slackId. Only
+   * fields present in the input are touched. Returns the full updated
+   * detail record.
    */
   async updateFields(
     id: string,
@@ -418,6 +434,9 @@ export class AgentService {
         ...(allowlist !== undefined && {
           authorAllowlist: allowlist,
           reviewAuthorAllowlist: allowlist,
+        }),
+        ...(input.patchAuthorAllowlist !== undefined && {
+          patchAuthorAllowlist: input.patchAuthorAllowlist,
         }),
         ...(input.restrictSlackToMembers !== undefined && {
           restrictSlackToMembers: input.restrictSlackToMembers,
