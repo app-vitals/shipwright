@@ -62,7 +62,6 @@ describeOrSkip("PullRequest model (integration)", () => {
     expect(read.reviewState).toBe("pending");
     expect(read.patchCycles).toBe(0);
     expect(read.staged).toBe(false);
-    expect(read.taskId).toBeNull();
     expect(read.commitSha).toBeNull();
     expect(read.reviewedCommitSha).toBeNull();
     expect(read.agentId).toBeNull();
@@ -359,7 +358,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-b",
-      undefined,
       "patch",
     );
     expect(result.record.reviewState).toBe("posted");
@@ -394,7 +392,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
         prNumber,
         commitSha,
         "agent-b",
-        undefined,
         "patch",
       );
       expect(result.record.reviewState).toBe(priorReviewState);
@@ -424,7 +421,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-c",
-      undefined,
       "deploy",
     );
     expect(result.record.phase).toBe("deploy");
@@ -442,7 +438,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-a",
-      undefined,
       "review",
     );
     expect(result.status).toBe(201);
@@ -464,7 +459,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-a",
-      undefined,
       "review",
     );
     expect(result.status).toBe(201);
@@ -481,7 +475,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-a",
-      undefined,
       "patch",
     );
     expect(result.status).toBe(201);
@@ -515,7 +508,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
         prNumber,
         commitSha,
         "agent-y",
-        undefined,
         "patch",
       );
     } catch (err) {
@@ -554,7 +546,6 @@ describeOrSkip("PullRequestService.claim() phase support (integration)", () => {
       prNumber,
       commitSha,
       "agent-b",
-      undefined,
       "review",
     );
     expect(result.status).toBe(200);
@@ -595,7 +586,6 @@ describeOrSkip(
         prNumber,
         "sha-1",
         "agent-a",
-        undefined,
         "review",
         prCreatedAt,
       );
@@ -625,7 +615,6 @@ describeOrSkip(
         prNumber,
         "sha-1",
         "agent-a",
-        undefined,
         "review",
         originalPrCreatedAt,
       );
@@ -644,7 +633,6 @@ describeOrSkip(
         prNumber,
         "sha-2",
         "agent-b",
-        undefined,
         "review",
         "2026-12-31T00:00:00.000Z",
       );
@@ -722,7 +710,6 @@ describeOrSkip(
         802,
         "sha-approve-2",
         "agent-a",
-        undefined,
         "deploy",
       );
       expect(created.readyForDeployAt).toBe(now.toISOString());
@@ -1018,12 +1005,11 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     expect(result.prs).toHaveLength(2);
   });
 
-  it("list() filters by repo, prNumber, taskId, state, reviewState, and staged", async () => {
+  it("list() filters by repo, prNumber, state, reviewState, and staged", async () => {
     await prisma.pullRequest.create({
       data: {
         repo: "app-vitals/shipwright",
         prNumber: 1010,
-        taskId: "task-abc",
         state: "open",
         reviewState: "pending",
         staged: true,
@@ -1033,7 +1019,6 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
       data: {
         repo: "app-vitals/other-repo",
         prNumber: 1011,
-        taskId: "task-def",
         state: "closed",
         reviewState: "approved",
         staged: false,
@@ -1047,10 +1032,6 @@ describeOrSkip("PullRequestService.list() and get() (integration)", () => {
     const byPrNumber = await service.list({ prNumber: 1011 });
     expect(byPrNumber.total).toBe(1);
     expect(byPrNumber.prs[0].repo).toBe("app-vitals/other-repo");
-
-    const byTaskId = await service.list({ taskId: "task-abc" });
-    expect(byTaskId.total).toBe(1);
-    expect(byTaskId.prs[0].prNumber).toBe(1010);
 
     const byState = await service.list({ state: "closed" });
     expect(byState.total).toBe(1);
@@ -1370,17 +1351,18 @@ describeOrSkip(
     });
 
     it("returns a PR with no own blocked but a linked task with status:'blocked'", async () => {
-      const linkedTask = await prisma.task.create({
+      await prisma.task.create({
         data: {
           title: "blocked-via-task-status",
           status: "blocked",
+          repo: "app-vitals/shipwright",
+          pr: 2002,
         },
       });
       const pr = await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2002,
-          taskId: linkedTask.id,
           blocked: false,
           reviewState: "pending",
         },
@@ -1392,19 +1374,73 @@ describeOrSkip(
       expect(result.total).toBe(1);
     });
 
+    it("returns a bundle PR when any one of the several tasks sharing it is blocked (PTL-3.1)", async () => {
+      await prisma.task.createMany({
+        data: [
+          {
+            title: "bundle-mate-open",
+            status: "pr_open",
+            repo: "app-vitals/shipwright",
+            pr: 2020,
+          },
+          {
+            title: "bundle-mate-blocked",
+            status: "blocked",
+            repo: "app-vitals/shipwright",
+            pr: 2020,
+          },
+        ],
+      });
+      const pr = await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2020,
+          blocked: false,
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs.map((p) => p.id)).toEqual([pr.id]);
+    });
+
+    it("does not match a blocked task carrying the same PR number in a different repo (PTL-3.1)", async () => {
+      await prisma.task.create({
+        data: {
+          title: "blocked-elsewhere",
+          status: "blocked",
+          repo: "other-org/other-repo",
+          pr: 2021,
+        },
+      });
+      await prisma.pullRequest.create({
+        data: {
+          repo: "app-vitals/shipwright",
+          prNumber: 2021,
+          blocked: false,
+        },
+      });
+
+      const result = await service.list({ blocked: true });
+
+      expect(result.prs).toHaveLength(0);
+      expect(result.total).toBe(0);
+    });
+
     it("excludes a PR whose linked task has hitl:true but status is not 'blocked' (task.hitl branch removed)", async () => {
-      const linkedTask = await prisma.task.create({
+      await prisma.task.create({
         data: {
           title: "hitl-only-not-blocked",
           status: "in_progress",
           hitl: true,
+          repo: "app-vitals/shipwright",
+          pr: 2003,
         },
       });
       await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2003,
-          taskId: linkedTask.id,
           blocked: false,
           reviewState: "posted",
         },
@@ -1417,17 +1453,18 @@ describeOrSkip(
     });
 
     it("excludes a PR with neither its own blocked nor a blocked linked task", async () => {
-      const linkedTask = await prisma.task.create({
+      await prisma.task.create({
         data: {
           title: "not-blocked",
           status: "pr_open",
+          repo: "app-vitals/shipwright",
+          pr: 2004,
         },
       });
       await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2004,
-          taskId: linkedTask.id,
           blocked: false,
           reviewState: "approved",
         },
@@ -1439,12 +1476,11 @@ describeOrSkip(
       expect(result.total).toBe(0);
     });
 
-    it("evaluates a PR with no taskId on pr.blocked alone (no crash/false-positive)", async () => {
+    it("evaluates a PR with no linked task on pr.blocked alone (no crash/false-positive)", async () => {
       await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2005,
-          taskId: null,
           blocked: false,
         },
       });
@@ -1452,7 +1488,6 @@ describeOrSkip(
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2006,
-          taskId: null,
           blocked: true,
         },
       });
@@ -1463,14 +1498,26 @@ describeOrSkip(
     });
 
     it("combines with state=open, only returning blocked PRs that are also open", async () => {
-      const blockedTask = await prisma.task.create({
-        data: { title: "blocked-task", status: "blocked" },
+      await prisma.task.createMany({
+        data: [
+          {
+            title: "blocked-task",
+            status: "blocked",
+            repo: "app-vitals/shipwright",
+            pr: 2007,
+          },
+          {
+            title: "blocked-task-closed-pr",
+            status: "blocked",
+            repo: "app-vitals/shipwright",
+            pr: 2008,
+          },
+        ],
       });
       const blockedOpen = await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2007,
-          taskId: blockedTask.id,
           state: "open",
         },
       });
@@ -1478,7 +1525,6 @@ describeOrSkip(
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2008,
-          taskId: blockedTask.id,
           state: "closed",
         },
       });
@@ -1498,14 +1544,18 @@ describeOrSkip(
     });
 
     it("list() without blocked param is unaffected by blocked/blocked-status task data (fully additive)", async () => {
-      const blockedTask = await prisma.task.create({
-        data: { title: "blocked-task-2", status: "blocked" },
+      await prisma.task.create({
+        data: {
+          title: "blocked-task-2",
+          status: "blocked",
+          repo: "app-vitals/shipwright",
+          pr: 2010,
+        },
       });
       await prisma.pullRequest.create({
         data: {
           repo: "app-vitals/shipwright",
           prNumber: 2010,
-          taskId: blockedTask.id,
         },
       });
       await prisma.pullRequest.create({
@@ -1898,7 +1948,6 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
       prNumber,
       commitSha,
       "agent-a",
-      undefined,
       "review",
     );
     expect(claimed.status).toBe(200);
@@ -1986,7 +2035,6 @@ describeOrSkip("PullRequestService.getEvents() (integration)", () => {
       prNumber,
       commitSha,
       "agent-a",
-      undefined,
       "review",
     );
 

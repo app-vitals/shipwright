@@ -4,6 +4,42 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `PullRequest.taskId` field removed _(PTL-3.1)_
+
+**Version**: next (PTL-3.1)
+
+The `PullRequest.taskId` column has been removed from the task-store schema, the API, and
+the generated OpenAPI/MCP artifacts. It was never a reliable link: only ~10% of PR records
+carried a value (0% in several repos), and being a single string it could not represent a
+PR covering several tasks (the bundle case, ~7% of PR-linked task groups).
+
+**What changed**:
+- The column is dropped from `task-store/prisma/schema.prisma` (along with its
+  `@@index([taskId])`) by migration `20260903110340_drop_pull_request_task_id`.
+- `POST /prs/claim` no longer accepts a `taskId` body field.
+- `GET /prs` no longer accepts a `?taskId=` filter.
+- `PATCH /prs/:id` no longer lists `taskId` as a writable field.
+- `taskId` is gone from the `PullRequest` response schema and from the `PullRequestEvent`
+  audit-field allowlist.
+- `GET /prs?blocked=true` still returns PRs whose linked task is blocked, but the link is
+  now resolved live by `(Task.repo, Task.pr)` — so bundles work: any one blocked task
+  blocks the PR.
+- `agent/src/pr-state-reconciler.ts` no longer opportunistically backfills the field after
+  confirming a merge.
+
+**Migration**:
+- **For existing records**: No action required. The historical values are dropped with the
+  column; nothing read them.
+- **For API consumers**: Resolve a PR's task(s) with `GET /tasks?repo={org}/{repo}&pr={n}`
+  instead. Sending `?taskId=` to `GET /prs` is a harmless no-op (an unrecognized query
+  param is ignored, not rejected), and sending `taskId` in a claim body or `PATCH /prs/:id`
+  is silently ignored — same rolling-deploy-safe behavior as the `requiresHumanApproval`
+  removal below.
+- **Deploy order**: this is the *remove* step of an add-migrate-remove sequence. Deploy it
+  only after PTL-1.1 → PTL-2.2 (the consumer migrations to the live lookup) are live.
+
+---
+
 ## New: `AgentProvisioner.canProvision`
 
 **Version**: next

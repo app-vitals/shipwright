@@ -72,12 +72,18 @@ interface LinkedTaskBlockedInfo {
   status: string;
 }
 
+/** Map key for the repo+prNumber task join — mirrors GET /tasks?repo=&pr=. */
+function prKey(repo: string, prNumber: number): string {
+  return `${repo}#${prNumber}`;
+}
+
 /**
  * True when a PR should be surfaced by `list({ blocked: true })`:
- * `pr.blocked === true` OR (a linked task exists AND `task.status ===
- * "blocked"`). `task` is `undefined` for PRs with no taskId (or whose taskId
- * didn't resolve to a Task row) — in that case only `pr.blocked` is
- * consulted, so a missing join never crashes or false-positives.
+ * `pr.blocked === true` OR at least one linked task has `status ===
+ * "blocked"`. `tasks` is empty for PRs no task points at — in that case only
+ * `pr.blocked` is consulted, so a missing join never crashes or
+ * false-positives. A PR can legitimately have several linked tasks (the
+ * bundle case), and any one of them being blocked blocks the PR.
  *
  * Task.hitl is deliberately not consulted here: post-redesign, Type A tasks
  * (the only ones that keep hitl:true) never have a linked PR, so that branch
@@ -90,11 +96,9 @@ interface LinkedTaskBlockedInfo {
  */
 function isPrBlocked(
   pr: Pick<PullRequest, "blocked">,
-  task: LinkedTaskBlockedInfo | undefined,
+  tasks: readonly LinkedTaskBlockedInfo[],
 ): boolean {
-  return (
-    pr.blocked === true || (task !== undefined && task.status === "blocked")
-  );
+  return pr.blocked === true || tasks.some((t) => t.status === "blocked");
 }
 
 /**
@@ -131,7 +135,6 @@ export interface PullRequestListFilters {
    */
   org?: string | string[];
   prNumber?: number;
-  taskId?: string;
   state?: string;
   reviewState?: string;
   staged?: boolean;
@@ -155,12 +158,14 @@ export interface PullRequestListFilters {
    * dispatch-gating signal agent/src/check-helpers.ts uses (
    * isTaskBlockedForDispatch(linkedTask) || isPrRecordBlockedForDispatch(pr)),
    * reimplemented natively here since task-store must not import from the
-   * agent package. A PR is blocked when pr.blocked===true OR its linked task
-   * (joined by PullRequest.taskId, a plain String — not a Prisma relation)
-   * has status==='blocked'. PRs with no taskId are evaluated on pr.blocked
-   * alone. Task.hitl is deliberately not consulted: post-redesign, Type A
-   * tasks (the only ones that keep hitl:true) never have a linked PR, so
-   * that branch would be dead code.
+   * agent package. A PR is blocked when pr.blocked===true OR any task
+   * linked to it has status==='blocked'. The link is resolved live by
+   * (Task.repo, Task.pr) — the same repo+pr lookup GET /tasks?repo=&pr=
+   * exposes — since the stored PullRequest.taskId column was dropped in
+   * PTL-3.1. PRs no task points at are evaluated on pr.blocked alone.
+   * Task.hitl is deliberately not consulted: post-redesign, Type A tasks
+   * (the only ones that keep hitl:true) never have a linked PR, so that
+   * branch would be dead code.
    */
   blocked?: boolean;
   /**
@@ -216,7 +221,6 @@ export interface PullRequestServiceLike {
     prNumber: number,
     commitSha: string,
     claimedBy: string,
-    taskId?: string,
     phase?: PrPhase,
     prCreatedAt?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }>;
@@ -267,7 +271,6 @@ export class PullRequestService implements PullRequestServiceLike {
       );
     }
     if (filters.prNumber !== undefined) where.prNumber = filters.prNumber;
-    if (filters.taskId) where.taskId = filters.taskId;
     if (filters.state) where.state = filters.state as PullRequest["state"];
     if (filters.reviewState)
       where.reviewState = filters.reviewState as PullRequest["reviewState"];
@@ -282,36 +285,43 @@ export class PullRequestService implements PullRequestServiceLike {
     const orderBy = { createdAt: filters.sort ?? ("asc" as const) };
 
     if (filters.blocked) {
-      // The blocked predicate depends on a joined Task row (taskId is a plain
-      // String column, not a Prisma relation — see schema.prisma), so it
-      // can't be expressed in the Prisma `where` above. Fetch every
-      // where-matching candidate (unpaginated), compute the blocked signal
-      // in JS via a single batched Task lookup, then paginate the filtered
-      // set — total must reflect the post-filter count, not the raw
-      // Prisma count, or pagination would be wrong.
+      // The blocked predicate depends on linked Task rows, which are joined
+      // by (Task.repo, Task.pr) — there is no relation and no stored
+      // PullRequest→Task column (PTL-3.1 dropped taskId) — so it can't be
+      // expressed in the Prisma `where` above. Fetch every where-matching
+      // candidate (unpaginated), compute the blocked signal in JS via a
+      // single batched Task lookup, then paginate the filtered set — total
+      // must reflect the post-filter count, not the raw Prisma count, or
+      // pagination would be wrong.
       const candidates = await this.prisma.pullRequest.findMany({
         where,
         orderBy,
         include: { findings: true, events: true },
       });
 
-      const taskIds = [
-        ...new Set(
-          candidates
-            .map((pr) => pr.taskId)
-            .filter((id): id is string => id !== null),
-        ),
-      ];
-      const tasks = taskIds.length
+      // Over-fetch on repo × prNumber (a cheap cross-product pre-filter,
+      // since Prisma can't express "any of these (repo, pr) pairs" without
+      // an OR-per-candidate query), then match exact pairs in JS below.
+      const repos = [...new Set(candidates.map((pr) => pr.repo))];
+      const prNumbers = [...new Set(candidates.map((pr) => pr.prNumber))];
+      const tasks = candidates.length
         ? await this.prisma.task.findMany({
-            where: { id: { in: taskIds } },
-            select: { id: true, status: true },
+            where: { repo: { in: repos }, pr: { in: prNumbers } },
+            select: { repo: true, pr: true, status: true },
           })
         : [];
-      const taskById = new Map(tasks.map((task) => [task.id, task]));
+
+      const tasksByPr = new Map<string, LinkedTaskBlockedInfo[]>();
+      for (const task of tasks) {
+        if (task.repo === null || task.pr === null) continue;
+        const key = prKey(task.repo, task.pr);
+        const bucket = tasksByPr.get(key);
+        if (bucket) bucket.push(task);
+        else tasksByPr.set(key, [task]);
+      }
 
       const blockedPrs = candidates.filter((pr) =>
-        isPrBlocked(pr, pr.taskId ? taskById.get(pr.taskId) : undefined),
+        isPrBlocked(pr, tasksByPr.get(prKey(pr.repo, pr.prNumber)) ?? []),
       );
 
       return {
@@ -432,7 +442,6 @@ export class PullRequestService implements PullRequestServiceLike {
     prNumber: number,
     commitSha: string,
     claimedBy: string,
-    taskId?: string,
     phase: PrPhase = "review",
     prCreatedAt?: string,
   ): Promise<{ status: 200 | 201; record: PullRequest }> {
@@ -451,7 +460,6 @@ export class PullRequestService implements PullRequestServiceLike {
           claimedAt: now,
           heartbeatAt: now,
           phase,
-          ...(taskId !== undefined ? { taskId } : {}),
         };
 
         if (phase === "review") {
@@ -549,7 +557,6 @@ export class PullRequestService implements PullRequestServiceLike {
           claimedAt: now,
           heartbeatAt: now,
           phase,
-          ...(taskId !== undefined ? { taskId } : {}),
           // prCreatedAt is only ever set here, at record creation — it is
           // immutable thereafter (never touched by the update branch above),
           // matching the "read-only via the API" contract in docs/task-store.md.

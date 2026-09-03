@@ -180,7 +180,6 @@ describe("HttpTaskStoreClient listPrs", () => {
     const expected: PrRecord[] = [
       {
         id: "pr-101",
-        taskId: "T-001",
         reviewState: "approved",
         createdAt: "2026-06-01T04:30:00.000Z",
         mergedAt: "2026-06-01T05:00:00.000Z",
@@ -190,7 +189,6 @@ describe("HttpTaskStoreClient listPrs", () => {
       },
       {
         id: "pr-102",
-        taskId: "T-002",
         reviewState: "pending",
         createdAt: "2026-06-02T01:00:00.000Z",
         mergedAt: null,

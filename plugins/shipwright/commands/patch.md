@@ -95,9 +95,9 @@ resolves the target PR — this is independent of claim state (reading the linke
 model doesn't require holding a claim), and the computed value is reused as-is at Step 4b,
 Step 5b, Step 6c, and Step 5a.7. None of those four sites re-fetches it.
 
-`PullRequest.taskId` is populated only a fraction of the time (most PRs have no reliable
-task linkage via that field) — query the task store directly by PR number instead of
-trusting it:
+`PullRequest.taskId` no longer exists (removed in PTL-3.1 — it was populated only a
+fraction of the time, and most PRs had no reliable task linkage through it). Query the
+task store directly by PR number:
 
 ```bash
 MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
@@ -1314,9 +1314,8 @@ already has an unresolved HITL escalation.
      "$SHIPWRIGHT_TASK_STORE_URL/prs/$PR_RECORD_ID")
    PR_BLOCKED=$(echo "$PR_RECORD" | jq -r '.blocked // false')
    ```
-2. Query the task store directly by PR number instead of reading `PR_RECORD.taskId` — that
-   field is populated only a fraction of the time, so a direct query finds every task linked
-   to this PR rather than relying on it:
+2. Query the task store directly by PR number — `PR_RECORD.taskId` no longer exists
+   (PTL-3.1), and a direct query finds every task linked to this PR, including bundles:
    ```bash
    MATCHED_TASKS=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
      "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}")

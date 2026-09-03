@@ -27,7 +27,6 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     id: "pr-1",
     repo: "org/repo",
     prNumber: 42,
-    taskId: null,
     staged: false,
     state: "open",
     reviewState: "pending",
@@ -90,7 +89,6 @@ function fakePrService(
       prNumber: number,
       commitSha: string,
       claimedBy: string,
-      taskId?: string,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
       if (opts.claimResult !== undefined) {
         if (opts.claimResult instanceof Error) throw opts.claimResult;

@@ -10,7 +10,7 @@
  * Admin tokens (agentId null) have no restrictions.
  *
  * Routes:
- *   GET    /prs               list (?repo, ?org, ?prNumber, ?taskId, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
+ *   GET    /prs               list (?repo, ?org, ?prNumber, ?state, ?reviewState, ?staged, ?ready, ?blocked, ?sort)
  *                              — ?repo and ?org accept repeated query params (e.g. ?repo=a&repo=b)
  *   POST   /prs/claim         atomic claim (201 new, 200 update, 409 conflict)
  *   POST   /prs/claim-next    atomic find-and-claim oldest eligible PR (200+{pr,phase} or 204)
@@ -398,7 +398,6 @@ export function createPrsRoutes(
         prNumberRaw !== undefined
           ? Number.parseInt(prNumberRaw, 10)
           : undefined,
-      taskId: c.req.query("taskId"),
       state: c.req.query("state"),
       reviewState: c.req.query("reviewState"),
       staged,
@@ -425,8 +424,7 @@ export function createPrsRoutes(
     const repos = c.get("repos");
     const body = await readJson(c);
 
-    const { repo, prNumber, commitSha, claimedBy, taskId, phase, prCreatedAt } =
-      body;
+    const { repo, prNumber, commitSha, claimedBy, phase, prCreatedAt } = body;
 
     // Validate required fields
     if (typeof repo !== "string" || !repo) {
@@ -457,9 +455,6 @@ export function createPrsRoutes(
       resolvedClaimedBy = claimedBy;
     }
 
-    const resolvedTaskId =
-      typeof taskId === "string" && taskId ? taskId : undefined;
-
     // Only pass an explicit phase when the caller supplied one — leaving it
     // undefined lets the service's own `= "review"` default parameter apply,
     // matching callers (like review.md) that don't send phase at all.
@@ -478,7 +473,6 @@ export function createPrsRoutes(
       prNumber,
       commitSha,
       resolvedClaimedBy,
-      resolvedTaskId,
       resolvedPhase,
       resolvedPrCreatedAt,
     );
@@ -553,7 +547,6 @@ export function createPrsRoutes(
     "staged",
     "commitSha",
     "reviewedCommitSha",
-    "taskId",
     "agentId",
     "state",
     "mergedAt",
