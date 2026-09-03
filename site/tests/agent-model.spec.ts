@@ -41,7 +41,7 @@ test("agent-model diagram shows all 5 sections", async ({ page }) => {
   expect(text).toContain("memory");
 });
 
-test("component reference lists all 12 components", async ({ page }) => {
+test("component reference lists all 11 components", async ({ page }) => {
   await page.goto("/agent-model");
   const text = (await page.locator("main").textContent())?.toLowerCase() ?? "";
   for (const component of [
@@ -49,7 +49,6 @@ test("component reference lists all 12 components", async ({ page }) => {
     "entropy-patrol",
     "docs-refresh",
     "test-audit",
-    "dependency-bot-triage",
     "migrations",
     "task-store",
     "dev-task",
