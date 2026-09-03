@@ -240,6 +240,11 @@ const GetAgentResultSchema = z
     selfHosted: z.boolean(),
     repos: z.array(z.string()),
     authorAllowlist: z.array(z.string()),
+    /**
+     * DBR-2.1: rename-in-progress twin of authorAllowlist — always returned
+     * as an identical array during the dual-read transitional phase.
+     */
+    reviewAuthorAllowlist: z.array(z.string()),
     restrictSlackToMembers: z.boolean(),
     typeName: z.string(),
     createdAt: z.string().datetime(),
@@ -1110,11 +1115,25 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
+    // DBR-2.1 dual-write precedence: authorAllowlist and reviewAuthorAllowlist
+    // are the same logical field mid-rename. When the PATCH body supplies
+    // both with different values, reviewAuthorAllowlist wins — it's the new
+    // canonical name — and that single resolved value is written to both
+    // columns. Resolved here (not left to AgentService) so the exact value
+    // sent downstream is unambiguous and independently verifiable.
+    const resolvedAllowlist =
+      body.reviewAuthorAllowlist !== undefined
+        ? body.reviewAuthorAllowlist
+        : body.authorAllowlist;
+
     const agent = await agentService.updateSelfHosted(agentId, {
       selfHosted: body.selfHosted,
       ...(body.repos !== undefined ? { repos: body.repos } : {}),
-      ...(body.authorAllowlist !== undefined
-        ? { authorAllowlist: body.authorAllowlist }
+      ...(resolvedAllowlist !== undefined
+        ? {
+            authorAllowlist: resolvedAllowlist,
+            reviewAuthorAllowlist: resolvedAllowlist,
+          }
         : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
@@ -1756,6 +1775,8 @@ function serializeAgent(
     selfHosted: boolean;
     repos?: string[];
     authorAllowlist?: string[];
+    /** DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read below. */
+    reviewAuthorAllowlist?: string[];
     restrictSlackToMembers?: boolean;
     typeName: string;
     createdAt: Date;
@@ -1764,13 +1785,20 @@ function serializeAgent(
   },
   warning?: string,
 ): z.infer<typeof GetAgentResultSchema> {
+  // DBR-2.1 dual-read: fall back to the sibling field when either is absent
+  // (e.g. an older service-layer mock that only sets one of the two) so the
+  // two response fields never diverge.
+  const authorAllowlist =
+    agent.authorAllowlist ?? agent.reviewAuthorAllowlist ?? [];
+  const reviewAuthorAllowlist = agent.reviewAuthorAllowlist ?? authorAllowlist;
   return {
     id: agent.id,
     name: agent.name,
     slackId: agent.slackId,
     selfHosted: agent.selfHosted,
     repos: agent.repos ?? [],
-    authorAllowlist: agent.authorAllowlist ?? [],
+    authorAllowlist,
+    reviewAuthorAllowlist,
     restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),
