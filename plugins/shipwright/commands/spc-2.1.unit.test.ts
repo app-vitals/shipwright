@@ -32,16 +32,19 @@ function bashBlocks(content: string): string {
 }
 
 describe("dev-task.md — SHIPWRIGHT_REPO_DIR", () => {
-  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} in bash blocks", () => {
+  it("replaces ~/src/{repo} with ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} in bash blocks", () => {
+    // Local filesystem paths use {repo-slug} (PRF-1.4) — SHIPWRIGHT_REPO_DIR clones live
+    // flat as repos/<bare-name>, not repos/<org>/<repo>. {repo} (org/repo) remains reserved
+    // for task-store API calls.
     const blocks = bashBlocks(devTask);
     expect(blocks).not.toContain("~/src/{repo}");
-    expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}");
+    expect(blocks).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
   });
 
-  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo} in bash blocks", () => {
+  it("replaces ~/worktrees/{repo} with ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug} in bash blocks", () => {
     const blocks = bashBlocks(devTask);
     expect(blocks).toContain(
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}",
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}",
     );
   });
 
@@ -99,7 +102,7 @@ describe("dev-task.md — subagent prompt templates", () => {
 
   it("uses env var form for prose line (line ~176)", () => {
     expect(devTask).toContain(
-      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/",
+      "${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/",
     );
   });
 });
