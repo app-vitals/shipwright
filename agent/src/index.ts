@@ -597,7 +597,6 @@ if (hasSlackCredentials(slackAppConfig)) {
     chatTokenReporter,
     (userId, client) => resolveUserEmail(userId, client),
     agentSlackMembershipRef,
-    config.slack.thinkingStepsEnabled,
   );
 
   await app.start();
