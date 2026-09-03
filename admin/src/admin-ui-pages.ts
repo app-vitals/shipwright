@@ -3313,6 +3313,7 @@ export function renderPrDetailPage(
   userName: string,
   agentNames: Record<string, string> = {},
   timezone = "America/Los_Angeles",
+  linkedTasks: TaskItem[] = [],
 ): string {
   function field(
     label: string,
@@ -3371,10 +3372,10 @@ export function renderPrDetailPage(
     field("ID", pr.id, true),
     field("Repo", pr.repo),
     linkField("PR Number", githubPrUrl, `#${pr.prNumber}`),
-    pr.taskId
+    linkedTasks.length > 0
       ? `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
-      <td style="padding:8px 12px;font-size:13px">${taskLink(pr.taskId)}</td>
+      <td style="padding:8px 12px;font-size:13px">${linkedTasks.map((t) => taskLink(t.id)).join(", ")}</td>
     </tr>`
       : "",
     field("State", pr.state),
