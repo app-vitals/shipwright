@@ -827,6 +827,73 @@ describe("message handler — DM routing", () => {
     expect((capturedErrors[0] as Error).message).toBe("boom");
   });
 
+  test("marks the Thinking Steps card status:'error' when runClaude throws (STS2-4.1 AC #1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    mockRunClaude.mockRejectedValueOnce(new Error("boom"));
+    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
+
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    const errorChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "error",
+    );
+    expect(errorChunks.length).toBeGreaterThan(0);
+    expect(errorChunks[0]?.id).toBeDefined();
+
+    // finish() still closes the stream, and does not send a redundant
+    // status:"complete" card after the error card.
+    expect(client.chat.stopStream).toHaveBeenCalled();
+    const completeChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "complete",
+    );
+    expect(completeChunks.length).toBe(0);
+  });
+
+  test("marks the card status:'error' even when the catch block's say() itself throws (STS2-4.1 AC #1 — #3064 review)", async () => {
+    // Both the run AND the error-notification say() fail. reportError() must
+    // still fire (it runs before say() in the catch block), so finish() sees
+    // completed=true and never sends a "Done" card for a run that both errored
+    // and failed to notify the user.
+    const client = makeMockClient();
+    const say = mock(async (_args: unknown) => {
+      throw new Error("invalid_auth");
+    });
+    createSlackApp({ thinkingStepsEnabled: true });
+    mockRunClaude.mockRejectedValueOnce(new Error("boom"));
+
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D123",
+        ts: "111.222",
+        text: "Hello bot",
+        channel_type: "im",
+      },
+      say,
+      client,
+    });
+
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    const errorChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "error",
+    );
+    expect(errorChunks.length).toBeGreaterThan(0);
+
+    // No "Done" card despite the failed notification, and the stream still
+    // closes.
+    const completeChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "complete",
+    );
+    expect(completeChunks.length).toBe(0);
+    expect(client.chat.stopStream).toHaveBeenCalled();
+  });
+
   test("streamIncomplete:true is treated as an error, not a silent empty success (CSU-1.1 regression)", async () => {
     mockRunClaude.mockResolvedValueOnce({
       result: "",
@@ -1405,6 +1472,62 @@ describe("app_mention handler", () => {
     await invokeMention({ channel: "C1", ts: "2.2" });
     expect(capturedErrors.length).toBe(1);
     expect((capturedErrors[0] as Error).message).toBe("oops");
+  });
+
+  test("marks the Thinking Steps card status:'error' when mention handler throws (STS2-4.1 AC #1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    mockRunClaude.mockRejectedValueOnce(new Error("oops"));
+    const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
+
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    const errorChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "error",
+    );
+    expect(errorChunks.length).toBeGreaterThan(0);
+
+    expect(client.chat.stopStream).toHaveBeenCalled();
+    const completeChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "complete",
+    );
+    expect(completeChunks.length).toBe(0);
+  });
+
+  test("marks the card status:'error' even when the catch block's say() itself throws on mention (STS2-4.1 AC #1 — #3064 review)", async () => {
+    // Both the run AND the error-notification say() fail. reportError() must
+    // still fire (it runs before say() in the catch block), so finish() never
+    // sends a "Done" card for a run that both errored and failed to notify.
+    const client = makeMockClient();
+    const say = mock(async (_args: unknown) => {
+      throw new Error("invalid_auth");
+    });
+    createSlackApp({ thinkingStepsEnabled: true });
+    mockRunClaude.mockRejectedValueOnce(new Error("oops"));
+
+    await capturedMentionHandler?.({
+      event: { text: "<@UBOT> do something", channel: "C999", ts: "222.333" },
+      say,
+      client,
+    });
+
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    const errorChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "error",
+    );
+    expect(errorChunks.length).toBeGreaterThan(0);
+
+    const completeChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "complete",
+    );
+    expect(completeChunks.length).toBe(0);
+    expect(client.chat.stopStream).toHaveBeenCalled();
   });
 
   test("streamIncomplete:true on mention is treated as an error, not a silent empty success (CSU-1.1 regression)", async () => {
@@ -2504,6 +2627,37 @@ describe("reaction_added handler", () => {
       channel: "D1",
       text: "[formatted] Claude response text",
     });
+  });
+
+  test("marks the Thinking Steps card status:'error' when runClaude throws (STS2-4.1 AC #1)", async () => {
+    createSlackApp({ thinkingStepsEnabled: true });
+    mockRunClaude.mockRejectedValueOnce(new Error("boom"));
+    const client = makeMockClient();
+    await capturedReactionAddedHandler?.({
+      event: {
+        reaction: "thumbsup",
+        item: { type: "message", channel: "D1", ts: "100.1" },
+        item_user: "UBOT123",
+        user: "U-DAN",
+      },
+      client,
+    });
+
+    const taskUpdateChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "task_update");
+    const errorChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "error",
+    );
+    expect(errorChunks.length).toBeGreaterThan(0);
+
+    expect(client.chat.stopStream).toHaveBeenCalled();
+    const completeChunks = taskUpdateChunks.filter(
+      (chunk) => chunk.status === "complete",
+    );
+    expect(completeChunks.length).toBe(0);
   });
 
   test("builds prompt containing emoji name and display name", async () => {
