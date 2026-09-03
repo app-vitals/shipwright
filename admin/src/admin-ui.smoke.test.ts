@@ -6352,6 +6352,284 @@ describe("admin UI — author allowlist mutation routes", () => {
   });
 });
 
+describe("admin UI — patch author allowlist mutation routes", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add returns 403 for non-admin non-member", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${outsiderCookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add with invalid login format redirects with error=invalid_author_allowlist_format", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "not a valid login!" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}?error=invalid_author_allowlist_format`,
+    );
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add returns 404 when agent not found", async () => {
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => null,
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add with valid login redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add deduplicates — does not add the same login twice", async () => {
+    let capturedAllowlist: string[] | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        patchAuthorAllowlist: ["octocat"],
+        restrictSlackToMembers: false,
+        missingRequiredEnv: [],
+      }),
+      updateFields: async (
+        id: string,
+        input: { patchAuthorAllowlist?: string[] },
+      ) => {
+        capturedAllowlist = input.patchAuthorAllowlist;
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: [],
+          patchAuthorAllowlist: capturedAllowlist ?? [],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    // update should not have been called — no-op deduplication returns existing list
+    // If update was called, allowlist should still be exactly ["octocat"]
+    if (capturedAllowlist !== undefined) {
+      expect(capturedAllowlist).toEqual(["octocat"]);
+    }
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/add writes to patchAuthorAllowlist", async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        patchAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        missingRequiredEnv: [],
+      }),
+      updateFields: async (id: string, input: Record<string, unknown>) => {
+        capturedInput = input;
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: [],
+          patchAuthorAllowlist: ["octocat"],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(capturedInput).toEqual({ patchAuthorAllowlist: ["octocat"] });
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/delete with valid login redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/delete`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("POST /admin/agents/:id/patch-author-allowlist/delete removes the login from patchAuthorAllowlist", async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        patchAuthorAllowlist: ["octocat", "other-user"],
+        restrictSlackToMembers: false,
+        missingRequiredEnv: [],
+      }),
+      updateFields: async (id: string, input: Record<string, unknown>) => {
+        capturedInput = input;
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: [],
+          patchAuthorAllowlist: ["other-user"],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/patch-author-allowlist/delete`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(capturedInput).toEqual({ patchAuthorAllowlist: ["other-user"] });
+  });
+});
+
 // Pre-DBR-2.1 agents were written before the reviewAuthorAllowlist column
 // existed, so getDetail returns it as undefined while the legacy
 // authorAllowlist still holds the real logins. Every read site in admin-ui.ts
