@@ -27,6 +27,11 @@
  * to pr.createdAt rather than disqualifying the PR.
  */
 
+import {
+  hasUnaddressedFindings,
+  isAddressedByAuthorReply,
+  isSelfCleanApprove,
+} from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
@@ -43,10 +48,9 @@ import {
   splitOrgRepo,
 } from "./check-helpers.ts";
 import {
-  hasUnaddressedFindings,
-  isAddressedByAuthorReply,
-  isSelfCleanApprove,
-} from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
+  type PatchAuthorAllowlistRef,
+  patchAuthorAllowlistRef,
+} from "./patch-author-allowlist-ref.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -175,6 +179,20 @@ export interface PrRecord {
 
 export interface CheckPatchDeps {
   listOwnOpenPrs: (repo: string) => Promise<OwnPr[]>;
+  /**
+   * Open PRs authored by any login in patchAuthorAllowlistRef (DBR-1.4).
+   * Contrast with check-review.ts's isAuthorAllowed: review's allowlist is a
+   * FILTER applied to an already-broad candidate pool (fail-open — empty
+   * allowlist means unfiltered). Patch's allowlist is instead an ADDITIVE
+   * SOURCE — it contributes MORE candidates on top of the existing
+   * self-authored-only list from listOwnOpenPrs, merged and deduplicated by
+   * (repo, PR number) in getPatchCandidates below. Optional, and expected to
+   * return [] (or simply not be called) when the allowlist is empty, so
+   * pre-DBR-1.4 self-authored-only behavior is preserved exactly by default —
+   * unlike review, there is no fail-open here: an empty patch allowlist means
+   * self-authored-only, not "allow everyone."
+   */
+  listAllowlistedOpenPrs?: (repo: string) => Promise<OwnPr[]>;
   fetchPrReviews: (
     org: string,
     repo: string,
@@ -394,9 +412,24 @@ export async function getPatchCandidates(
   const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
   const allOwnPrs = await deps.listOwnOpenPrs("default");
+  // Additive allowlisted-author source (DBR-1.4) — merged with allOwnPrs and
+  // deduplicated by (repo, PR number) via candidateId before scope-filtering.
+  // deps.listAllowlistedOpenPrs is optional (undefined for callers/fixtures
+  // that predate DBR-1.4) and, per its own contract, returns [] when the
+  // allowlist itself is empty — either way this defaults to [], preserving
+  // exact self-authored-only behavior when no allowlist is configured.
+  const allowlistedPrs = (await deps.listAllowlistedOpenPrs?.("default")) ?? [];
+  const seen = new Set<string>();
+  const mergedPrs: OwnPr[] = [];
+  for (const pr of [...allOwnPrs, ...allowlistedPrs]) {
+    const id = candidateId(pr.repo, pr.number);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    mergedPrs.push(pr);
+  }
   const prs = scopeSynced
-    ? allOwnPrs.filter((pr) => scopedRepos.has(pr.repo))
-    : allOwnPrs;
+    ? mergedPrs.filter((pr) => scopedRepos.has(pr.repo))
+    : mergedPrs;
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -565,10 +598,21 @@ export async function buildProductionDeps(opts: {
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  /**
+   * Optional override for which PatchAuthorAllowlistRef instance
+   * listAllowlistedOpenPrs reads from (DBR-1.4). Defaults to the
+   * process-wide patchAuthorAllowlistRef singleton so config-sync changes
+   * take effect on the next call without rebuilding deps — mirrors
+   * check-review.ts's authorAllowlistRef override, kept here mainly so tests
+   * can inject a fresh, independent ref rather than mutating the shared
+   * singleton.
+   */
+  patchAuthorAllowlistRef?: PatchAuthorAllowlistRef;
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
+  const allowlistRef = opts.patchAuthorAllowlistRef ?? patchAuthorAllowlistRef;
 
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
@@ -589,6 +633,33 @@ export async function buildProductionDeps(opts: {
           "number,title,headRefName,headRefOid,createdAt",
         ]);
         return items.map((item) => ({ ...item, repo }));
+      });
+    },
+    // DBR-1.4: additive source, not a filter (see CheckPatchDeps's field
+    // doc). Skipped entirely — no gh calls at all — when the allowlist is
+    // empty, so an unconfigured allowlist has zero effect (no fail-open,
+    // unlike review's isAuthorAllowed).
+    listAllowlistedOpenPrs: async (_repo: string) => {
+      const logins = allowlistRef.get();
+      if (logins.length === 0) return [];
+      return mapReposTolerant(allRepos, "check-patch", async (repo) => {
+        const results: OwnPr[] = [];
+        for (const login of logins) {
+          const items = await ghJson<GhPrListItem[]>([
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--repo",
+            repo,
+            "--author",
+            login,
+            "--json",
+            "number,title,headRefName,headRefOid,createdAt",
+          ]);
+          results.push(...items.map((item) => ({ ...item, repo })));
+        }
+        return results;
       });
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {

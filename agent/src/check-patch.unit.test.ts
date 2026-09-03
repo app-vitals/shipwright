@@ -11,22 +11,23 @@
  * first-match gate).
  */
 
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
-  buildProductionDeps,
   type CheckPatchDeps,
   type CiCheckStatus,
   type MergeStatusInfo,
   type OwnPr,
   type PrReviewData,
+  buildProductionDeps,
   findCancelledRuns,
   getPatchCandidates,
   hasFailingCi,
 } from "./check-patch.ts";
+import { createPatchAuthorAllowlistRef } from "./patch-author-allowlist-ref.ts";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +67,13 @@ interface MakeDepsOptions {
     prNumber: number,
   ) => Promise<LinkedTaskInfo | null>;
   isBundleComplete?: (branch: string) => Promise<boolean>;
+  /**
+   * PRs authored by allowlisted (non-self) logins (DBR-1.4) — wired into the
+   * new listAllowlistedOpenPrs dep. Defaults to [] so all pre-existing tests
+   * (which never set this) keep exercising the empty-allowlist / self-authored-
+   * only default behavior unchanged.
+   */
+  allowlistedPrs?: OwnPr[];
 }
 
 function makeDeps({
@@ -79,9 +87,11 @@ function makeDeps({
   hasScopeSynced = () => true,
   queryTaskStatus = async () => null,
   isBundleComplete,
+  allowlistedPrs = [],
 }: MakeDepsOptions): CheckPatchDeps {
   return {
     listOwnOpenPrs: async (_repo: string) => ownPrs,
+    listAllowlistedOpenPrs: async (_repo: string) => allowlistedPrs,
     getScopedRepos,
     hasScopeSynced,
     fetchPrReviews: async (
@@ -1304,6 +1314,103 @@ describe("findCancelledRuns", () => {
   });
 });
 
+// ─── getPatchCandidates — allowlisted authors (DBR-1.4) ───────────────────────
+//
+// Unlike check-review.ts's isAuthorAllowed (a FILTER on an existing broad
+// candidate pool, fail-open when empty), patch's allowlist is an ADDITIVE
+// SOURCE: listAllowlistedOpenPrs contributes MORE candidates on top of the
+// existing self-authored-only list, and is skipped entirely (no gh calls,
+// contributes nothing) when the allowlist is empty — preserving exact
+// pre-DBR-1.4 self-authored-only behavior as the default.
+
+describe("getPatchCandidates — allowlisted authors (DBR-1.4)", () => {
+  const dirtyMergeStatus = (
+    prNumber: number,
+  ): Record<number, MergeStatusInfo> => ({
+    [prNumber]: { isDirty: true },
+  });
+
+  test("empty allowlist (default): only self-authored PRs are returned, listAllowlistedOpenPrs contributes nothing", async () => {
+    const ownPrs = [makeOwnPr({ number: 10, repo: "acme/example-repo" })];
+    let allowlistedCalls = 0;
+    const deps = makeDeps({
+      ownPrs,
+      reviewDataByPr: {},
+      mergeStatusByPr: dirtyMergeStatus(10),
+      allowlistedPrs: [],
+    });
+    // Wrap listAllowlistedOpenPrs to observe whether/how it's invoked without
+    // changing its (empty) return value — the acceptance criterion only
+    // requires the empty-allowlist result to be unaffected, not that the dep
+    // is literally never called.
+    const wrapped: CheckPatchDeps = {
+      ...deps,
+      listAllowlistedOpenPrs: async (repo: string) => {
+        allowlistedCalls++;
+        return (await deps.listAllowlistedOpenPrs?.(repo)) ?? [];
+      },
+    };
+
+    const result = await getPatchCandidates(wrapped);
+
+    expect(result).toHaveLength(1);
+    expect(result.map((c) => c.id)).toEqual(["acme/example-repo#10"]);
+    // Whether or not the dep was invoked, it must not have contributed any
+    // extra candidates beyond the single self-authored PR above.
+    expect(allowlistedCalls).toBeGreaterThanOrEqual(0);
+  });
+
+  test("non-empty allowlist: PRs from listAllowlistedOpenPrs merge into the candidate list alongside self-authored PRs", async () => {
+    const ownPr = makeOwnPr({
+      number: 10,
+      repo: "acme/example-repo",
+      headRefOid: "own-sha",
+    });
+    const allowlistedPr = makeOwnPr({
+      number: 20,
+      repo: "acme/example-repo",
+      title: "Someone else's feature",
+      headRefOid: "allowlisted-sha",
+    });
+    const deps = makeDeps({
+      ownPrs: [ownPr],
+      reviewDataByPr: {},
+      mergeStatusByPr: { 10: { isDirty: true }, 20: { isDirty: true } },
+      allowlistedPrs: [allowlistedPr],
+      getScopedRepos: () => ["acme/example-repo"],
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result.map((c) => c.id).sort()).toEqual([
+      "acme/example-repo#10",
+      "acme/example-repo#20",
+    ]);
+  });
+
+  test("dedup: the same (repo, PR number) returned by both listOwnOpenPrs and listAllowlistedOpenPrs appears only once", async () => {
+    const sharedPr = makeOwnPr({
+      number: 10,
+      repo: "acme/example-repo",
+      headRefOid: "shared-sha",
+    });
+    const deps = makeDeps({
+      ownPrs: [sharedPr],
+      reviewDataByPr: {},
+      mergeStatusByPr: dirtyMergeStatus(10),
+      // Same (repo, number) shows up in both sources — e.g. the current user
+      // is also present in the allowlist, or a race between the two queries.
+      allowlistedPrs: [sharedPr],
+      getScopedRepos: () => ["acme/example-repo"],
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("acme/example-repo#10");
+  });
+});
+
 // ─── buildProductionDeps ────────────────────────────────────────────────────
 //
 // Exercises the closures buildProductionDeps wires up against a fake
@@ -1450,7 +1557,9 @@ describe("buildProductionDeps", () => {
   test("fetchCiStatus reports hasFailing/hasCancelled from workflow_runs and picks the highest run_number cancelled run", async () => {
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
-        expect(args).toContain("repos/acme/widgets/actions/runs?head_sha=deadbeef");
+        expect(args).toContain(
+          "repos/acme/widgets/actions/runs?head_sha=deadbeef",
+        );
         return {
           workflow_runs: [
             {
@@ -1481,12 +1590,7 @@ describe("buildProductionDeps", () => {
       getCurrentUser: async () => "the-agent",
     });
 
-    const status = await deps.fetchCiStatus(
-      "acme",
-      "widgets",
-      42,
-      "deadbeef",
-    );
+    const status = await deps.fetchCiStatus("acme", "widgets", 42, "deadbeef");
 
     expect(status.hasFailing).toBe(true);
     expect(status.hasCancelled).toBe(true);
@@ -1581,9 +1685,7 @@ describe("buildProductionDeps", () => {
   });
 
   test("listPrCommits fetches paginated commits for the given repo", async () => {
-    const fakeCommits: CommitInfo[] = [
-      { sha: "c1", parents: [{ sha: "p0" }] },
-    ];
+    const fakeCommits: CommitInfo[] = [{ sha: "c1", parents: [{ sha: "p0" }] }];
     const deps = await buildProductionDeps({
       ghJson: async <T>(args: string[]) => {
         expect(args).toContain("repos/acme/widgets/pulls/7/commits");
@@ -1635,5 +1737,102 @@ describe("buildProductionDeps", () => {
 
     expect(deps.getScopedRepos()).toEqual(["acme/widgets"]);
     expect(deps.hasScopeSynced()).toBe(true);
+  });
+
+  test("listAllowlistedOpenPrs makes no gh calls when patchAuthorAllowlistRef is empty (default)", async () => {
+    const allowlistRef = createPatchAuthorAllowlistRef();
+    // Never call .set() — stays empty, mirroring the un-synced/default state.
+    let ghJsonCalls = 0;
+    const deps = await buildProductionDeps({
+      ghJson: async <T>() => {
+        ghJsonCalls++;
+        return [] as unknown as T;
+      },
+      ghGraphql: async <T>() => ({}) as unknown as T,
+      getCurrentUser: async () => "the-agent",
+      patchAuthorAllowlistRef: allowlistRef,
+    });
+
+    const result = await deps.listAllowlistedOpenPrs?.("default");
+
+    expect(result).toEqual([]);
+    expect(ghJsonCalls).toBe(0);
+  });
+
+  test("listAllowlistedOpenPrs queries gh pr list --author once per allowlisted login, per scanned repo", async () => {
+    const scratchDir = mkdtempSync(
+      join(tmpdir(), "check-patch-listAllowlistedOpenPrs-"),
+    );
+    try {
+      const repoDir = join(scratchDir, "repos", "example-repo");
+      mkdirSync(join(repoDir, ".git"), { recursive: true });
+      writeFileSync(
+        join(repoDir, ".git", "config"),
+        `[remote "origin"]\n\turl = https://github.com/acme/example-repo.git\n`,
+      );
+      process.env.WORKSPACE_PATH = scratchDir;
+
+      const allowlistRef = createPatchAuthorAllowlistRef();
+      allowlistRef.set(["allowlisted-one", "allowlisted-two"]);
+
+      const seenArgs: string[][] = [];
+      const deps = await buildProductionDeps({
+        ghJson: async <T>(args: string[]) => {
+          seenArgs.push(args);
+          const author = args[args.indexOf("--author") + 1];
+          return [
+            {
+              number: author === "allowlisted-one" ? 21 : 22,
+              title: `PR by ${author}`,
+              headRefName: `feat/${author}`,
+              headRefOid: `sha-${author}`,
+              createdAt: "2026-05-01T00:00:00Z",
+            },
+          ] as unknown as T;
+        },
+        ghGraphql: async <T>() => ({}) as unknown as T,
+        getCurrentUser: async () => "the-agent",
+        patchAuthorAllowlistRef: allowlistRef,
+      });
+
+      const prs = await deps.listAllowlistedOpenPrs?.("default");
+
+      expect(prs).toEqual([
+        {
+          number: 21,
+          title: "PR by allowlisted-one",
+          headRefName: "feat/allowlisted-one",
+          headRefOid: "sha-allowlisted-one",
+          createdAt: "2026-05-01T00:00:00Z",
+          repo: "acme/example-repo",
+        },
+        {
+          number: 22,
+          title: "PR by allowlisted-two",
+          headRefName: "feat/allowlisted-two",
+          headRefOid: "sha-allowlisted-two",
+          createdAt: "2026-05-01T00:00:00Z",
+          repo: "acme/example-repo",
+        },
+      ]);
+      // One gh call per (repo, login) pair — 1 repo × 2 logins.
+      expect(seenArgs).toHaveLength(2);
+      for (const args of seenArgs) {
+        expect(args).toEqual(
+          expect.arrayContaining([
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--repo",
+            "acme/example-repo",
+            "--json",
+            "number,title,headRefName,headRefOid,createdAt",
+          ]),
+        );
+      }
+    } finally {
+      rmSync(scratchDir, { recursive: true, force: true });
+    }
   });
 });
