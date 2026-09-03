@@ -850,7 +850,6 @@ describe("agent_session_stopped handler", () => {
       undefined,
       async () => undefined,
       ref,
-      true,
     );
     const client = makeStreamingClient();
     const say = makeSay();
