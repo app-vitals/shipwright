@@ -218,6 +218,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: [],
         reviewAuthorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -257,6 +258,7 @@ function makeMockDeps(): AdminDeps {
               selfHosted: false,
               repos: [],
               reviewAuthorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               typeName: "coding",
               createdAt: new Date("2024-01-01"),
@@ -280,6 +282,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: input.repos ?? [],
         reviewAuthorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -1447,6 +1450,7 @@ describe("admin API — create agent", () => {
           selfHosted: false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -1650,6 +1654,7 @@ describe("admin API — create agent", () => {
             selfHosted: false,
             repos: [],
             reviewAuthorAllowlist: [],
+            patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
@@ -1768,6 +1773,7 @@ describe("admin API — delete agent", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2250,6 +2256,7 @@ describe("admin API — selfHosted field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2488,6 +2495,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2565,6 +2573,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2613,6 +2622,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2794,6 +2804,7 @@ describe("admin API — missingRequiredEnv field", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2841,6 +2852,7 @@ describe("admin API — missingRequiredEnv field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2903,6 +2915,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2920,6 +2933,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2957,6 +2971,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: ["my-org/my-repo"],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2974,6 +2989,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3055,6 +3071,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3110,6 +3127,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -3131,6 +3149,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3168,6 +3187,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: ["octocat"],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -3189,6 +3209,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3249,6 +3270,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -3266,6 +3288,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3301,6 +3324,7 @@ describe("admin API — reviewAuthorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3323,6 +3347,162 @@ describe("admin API — reviewAuthorAllowlist field", () => {
     expect(body).not.toHaveProperty("authorAllowlist");
   });
 });
+
+// ─── patchAuthorAllowlist field smoke tests (DBR-1.1) ─────────────────────────
+// patchAuthorAllowlist is independent of reviewAuthorAllowlist. Every case
+// below sends a *valid* reviewAuthorAllowlist alongside it, so a 400 can
+// only have come from patchAuthorAllowlist's own isGithubLogin refine — drop
+// that refine on either schema and these fail.
+
+describe("admin API — patchAuthorAllowlist field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents with patchAuthorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "New Agent",
+        reviewAuthorAllowlist: ["octocat"],
+        patchAuthorAllowlist: ["not valid"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("POST /agents with patchAuthorAllowlist: ['octocat'] returns 201 and includes it", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          patchAuthorAllowlist?: string[];
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "New Agent",
+        patchAuthorAllowlist: ["octocat"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.patchAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with patchAuthorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        reviewAuthorAllowlist: ["octocat"],
+        patchAuthorAllowlist: ["not valid"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("PATCH /agents/:id with patchAuthorAllowlist: ['octocat'] returns 200", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            repos?: string[];
+            patchAuthorAllowlist?: string[];
+          },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ patchAuthorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.patchAuthorAllowlist).toEqual(["octocat"]);
+  });
+});
+
 
 // ─── Cron runs smoke tests ────────────────────────────────────────────────────
 

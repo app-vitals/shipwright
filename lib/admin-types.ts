@@ -1626,6 +1626,12 @@ export interface components {
              *     ]
              */
             reviewAuthorAllowlist?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
         };
@@ -1655,6 +1661,7 @@ export interface components {
             selfHosted: boolean;
             repos: string[];
             reviewAuthorAllowlist: string[];
+            patchAuthorAllowlist: string[];
             restrictSlackToMembers: boolean;
             typeName: string;
             /** Format: date-time */
@@ -1681,6 +1688,12 @@ export interface components {
              *     ]
              */
             reviewAuthorAllowlist?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
         };
@@ -2312,6 +2325,12 @@ export interface components {
              *     ]
              */
             reviewAuthorAllowlist: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist: string[];
             /** @example false */
             restrictSlackToMembers: boolean;
             /**

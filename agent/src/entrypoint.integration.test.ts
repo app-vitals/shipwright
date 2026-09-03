@@ -26,6 +26,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   plugins: [{ marketplace: "my-market", plugin: "my-plugin" }],
   repos: [],
   reviewAuthorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   memberEmails: [],
 };
@@ -253,6 +254,7 @@ describe("runEntrypoint — config with empty env", () => {
       plugins: [],
       repos: [],
       reviewAuthorAllowlist: [],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
     };

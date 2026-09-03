@@ -240,6 +240,7 @@ const GetAgentResultSchema = z
     selfHosted: z.boolean(),
     repos: z.array(z.string()),
     reviewAuthorAllowlist: z.array(z.string()),
+    patchAuthorAllowlist: z.array(z.string()),
     restrictSlackToMembers: z.boolean(),
     typeName: z.string(),
     createdAt: z.string().datetime(),
@@ -999,6 +1000,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.reviewAuthorAllowlist !== undefined
         ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
         : {}),
+      ...(body.patchAuthorAllowlist !== undefined
+        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
+        : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
         : {}),
@@ -1115,6 +1119,9 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
       ...(body.repos !== undefined ? { repos: body.repos } : {}),
       ...(body.reviewAuthorAllowlist !== undefined
         ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
+        : {}),
+      ...(body.patchAuthorAllowlist !== undefined
+        ? { patchAuthorAllowlist: body.patchAuthorAllowlist }
         : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
@@ -1756,6 +1763,7 @@ function serializeAgent(
     selfHosted: boolean;
     repos?: string[];
     reviewAuthorAllowlist?: string[];
+    patchAuthorAllowlist?: string[];
     restrictSlackToMembers?: boolean;
     typeName: string;
     createdAt: Date;
@@ -1771,6 +1779,7 @@ function serializeAgent(
     selfHosted: agent.selfHosted,
     repos: agent.repos ?? [],
     reviewAuthorAllowlist: agent.reviewAuthorAllowlist ?? [],
+    patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
     restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
     typeName: agent.typeName,
     createdAt: agent.createdAt.toISOString(),

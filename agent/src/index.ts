@@ -18,6 +18,10 @@ import { initSentry } from "@shipwright/lib/sentry";
 import { WebClient } from "@slack/web-api";
 import nodeCron from "node-cron";
 import {
+  patchAuthorAllowlistRef,
+  resolvePatchAuthorAllowlist,
+} from "./patch-author-allowlist-ref.ts";
+import {
   resolveReviewAuthorAllowlist,
   reviewAuthorAllowlistRef,
 } from "./review-author-allowlist-ref.ts";
@@ -341,6 +345,11 @@ if (runtimeClient && agentId) {
       // Sync the agent's review-author-allowlist live ref
       reviewAuthorAllowlistRef.set(
         resolveReviewAuthorAllowlist(bundle.reviewAuthorAllowlist),
+      );
+
+      // Sync the agent's patch-author-allowlist live ref
+      patchAuthorAllowlistRef.set(
+        resolvePatchAuthorAllowlist(bundle.patchAuthorAllowlist),
       );
 
       // Sync the agent's Slack-membership-restriction live ref

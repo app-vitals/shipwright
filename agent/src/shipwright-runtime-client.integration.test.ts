@@ -24,6 +24,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   plugins: [{ marketplace: "shipwright", plugin: "my-plugin" }],
   repos: [],
   reviewAuthorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   memberEmails: [],
 };

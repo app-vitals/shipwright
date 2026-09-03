@@ -25,6 +25,8 @@ export interface CreateAgentInput {
   repos?: string[];
   /** Initial reviewAuthorAllowlist[]. */
   reviewAuthorAllowlist?: string[];
+  /** Initial patchAuthorAllowlist[]. Independent of reviewAuthorAllowlist. */
+  patchAuthorAllowlist?: string[];
   /** Initial restrictSlackToMembers flag. Omitted means the column default (false) applies. */
   restrictSlackToMembers?: boolean;
 }
@@ -53,6 +55,7 @@ export interface AgentDetail {
   selfHosted: boolean;
   repos: string[];
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
@@ -77,6 +80,7 @@ export interface UpdateSelfHostedInput {
   selfHosted?: boolean;
   repos?: string[];
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   /**
    * Backfills agent.slackId (UAP-1.3) — nullable so it can also be
@@ -89,6 +93,7 @@ interface AgentIdAndRepos {
   id: string;
   repos: string[];
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -102,6 +107,7 @@ export interface UpdateAgentFieldsInput {
   name?: string;
   repos?: string[];
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   selfHosted?: boolean;
   slackId?: string | null;
@@ -123,6 +129,7 @@ const DETAIL_SELECT = {
   selfHosted: true,
   repos: true,
   reviewAuthorAllowlist: true,
+  patchAuthorAllowlist: true,
   restrictSlackToMembers: true,
   typeName: true,
   createdAt: true,
@@ -156,6 +163,9 @@ export class AgentService {
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
         ...(input.reviewAuthorAllowlist !== undefined
           ? { reviewAuthorAllowlist: input.reviewAuthorAllowlist }
+          : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
           : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
@@ -272,6 +282,9 @@ export class AgentService {
         ...(input.reviewAuthorAllowlist !== undefined
           ? { reviewAuthorAllowlist: input.reviewAuthorAllowlist }
           : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
+          : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
           : {}),
@@ -287,9 +300,9 @@ export class AgentService {
   }
 
   /**
-   * Get {id, repos, reviewAuthorAllowlist, restrictSlackToMembers,
-   * memberEmails} for a single agent — used by the runtime config/crons
-   * routes. Returns null if not found.
+   * Get {id, repos, reviewAuthorAllowlist, patchAuthorAllowlist,
+   * restrictSlackToMembers, memberEmails} for a single agent — used by the
+   * runtime config/crons routes. Returns null if not found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     const row = await this.prisma.agent.findUnique({
@@ -298,6 +311,7 @@ export class AgentService {
         id: true,
         repos: true,
         reviewAuthorAllowlist: true,
+        patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
       },
     });
@@ -351,9 +365,9 @@ export class AgentService {
 
   /**
    * Generic partial-field update for an agent's
-   * name/repos/reviewAuthorAllowlist/restrictSlackToMembers/selfHosted/
-   * slackId. Only fields present in the input are touched. Returns the full
-   * updated detail record.
+   * name/repos/reviewAuthorAllowlist/patchAuthorAllowlist/
+   * restrictSlackToMembers/selfHosted/slackId. Only fields present in the
+   * input are touched. Returns the full updated detail record.
    */
   async updateFields(
     id: string,
@@ -366,6 +380,9 @@ export class AgentService {
         ...(input.repos !== undefined && { repos: input.repos }),
         ...(input.reviewAuthorAllowlist !== undefined && {
           reviewAuthorAllowlist: input.reviewAuthorAllowlist,
+        }),
+        ...(input.patchAuthorAllowlist !== undefined && {
+          patchAuthorAllowlist: input.patchAuthorAllowlist,
         }),
         ...(input.restrictSlackToMembers !== undefined && {
           restrictSlackToMembers: input.restrictSlackToMembers,

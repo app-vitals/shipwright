@@ -42,6 +42,7 @@ function makeConfig(env: Record<string, string>): AgentConfigResponse {
     plugins: [],
     repos: [],
     reviewAuthorAllowlist: [],
+    patchAuthorAllowlist: [],
     restrictSlackToMembers: false,
     memberEmails: [],
   };

@@ -49,9 +49,10 @@ Body:
 | `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
 | `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
 | `reviewAuthorAllowlist` | no | Array of GitHub login strings — authors permitted to trigger this agent's review/dev-task work (default empty array = all authenticated users). |
+| `patchAuthorAllowlist` | no | Array of GitHub login strings — the authors intended to be permitted to trigger patch operations on this agent (default empty array). **Stored and synced only, not yet enforced**; `check-patch.ts` does no allowlist filtering, so its contents currently have no effect on who can trigger a patch run. Settable at creation and editable afterward via `PATCH /agents/:id`. |
 | `restrictSlackToMembers` | no | `true` to restrict Slack message access to agents with `AgentMember` rows (default `false` = unrestricted). When true and no members are configured, a non-blocking warning is returned. |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, reviewAuthorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, reviewAuthorAllowlist, patchAuthorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
 
 ### List agents
 
@@ -67,9 +68,11 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
 
 `reviewAuthorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to trigger this agent's review/dev-task work. When empty, all authenticated users are allowed.
+
+`patchAuthorAllowlist` is an array of GitHub login strings — the authors intended to be permitted to trigger patch operations against this agent. **DBR-1.3 note:** the value is now synced live via `agent/src/patch-author-allowlist-ref.ts`, but it is not an access-control boundary yet — `agent/src/check-patch.ts` still performs no allowlist filtering, so patch runs remain unfiltered regardless of what this field holds. Enforcement is tracked as separate follow-up work.
 
 `restrictSlackToMembers` is a boolean flag that, when `true`, restricts Slack message access to only users listed in the agent's `AgentMember` rows. Defaults to `false` (unrestricted). An optional `warning` field is included in the response when this flag is `true` but no members are configured, alerting the operator that all Slack senders are currently blocked.
 
@@ -81,7 +84,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `revi
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `reviewAuthorAllowlist` (array of GitHub login strings — usernames of authors permitted to trigger this agent's review/dev-task work), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `reviewAuthorAllowlist` (array of GitHub login strings — usernames of authors permitted to trigger this agent's review/dev-task work), `patchAuthorAllowlist` (array of GitHub login strings — the authors intended to be permitted to trigger patch operations on this agent; stored and returned only, with no runtime enforcement yet), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
@@ -533,6 +536,7 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `plugins` — installed plugins with derived marketplace URLs
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
 - `reviewAuthorAllowlist` — array of GitHub login strings (authors permitted to trigger this agent's review/dev-task work; empty array = all authenticated users allowed). Used by the runtime for review filtering.
+- `patchAuthorAllowlist` — array of GitHub login strings (the authors intended to be permitted to trigger patch operations on this agent). Synced live via `agent/src/patch-author-allowlist-ref.ts`, but `check-patch.ts` does no allowlist filtering yet — the value is informational until enforcement lands.
 - `restrictSlackToMembers` — boolean flag controlling Slack message access. When `true`, only users in the agent's `AgentMember` rows can send messages. Defaults to `false` (unrestricted). Used by runtime to enforce membership-based access control.
 - `memberEmails` — array of member email addresses (derived from agent's `AgentMember` rows). Empty when `restrictSlackToMembers` is `false` or no members are configured.
 

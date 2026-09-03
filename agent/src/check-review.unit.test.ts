@@ -360,7 +360,7 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  // ─── draft / dependabot exclusions ───────────────────────────────────────────
+  // ─── draft exclusion ──────────────────────────────────────────────────────
 
   test("returns empty array when all open PRs are drafts", async () => {
     const prs = [
@@ -371,44 +371,44 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when all open PRs are authored by app/dependabot", async () => {
-    const prs = [
-      makePr({ number: 1, author: { login: "app/dependabot" } }),
-      makePr({ number: 2, author: { login: "app/dependabot" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+  // ─── bot-author allowlist gating (DBR-3.3) ───────────────────────────────
+  //
+  // dependabot/renovate-authored PRs are no longer unconditionally
+  // excluded — they now fall through to the same isAuthorAllowed gate as any
+  // other author. These two cases mirror the "isAuthorAllowed filters out /
+  // passes through" pattern above, just with a bot-authored PR standing in
+  // for a human-authored one, to prove there's no bot-specific special-casing
+  // left anywhere in the candidacy path.
+  test("a dependabot-authored PR is included when isAuthorAllowed is unset (fail-open, same as any other author)", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toHaveLength(1);
+  });
+
+  test("a renovate-authored PR is included when isAuthorAllowed is unset (fail-open, same as any other author)", async () => {
+    const pr = makePr({ author: { login: "app/renovate" } });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed excludes a non-allowlisted dependabot-authored PR via the not-allowlisted check, identically to a human author", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
     expect(result).toEqual([]);
   });
 
-  test("returns the one eligible non-draft non-dependabot PR from a mixed set (all matches collected)", async () => {
-    const prs = [
-      makePr({ number: 1, isDraft: true }),
-      makePr({ number: 2, author: { login: "app/dependabot" } }),
-      makePr({ number: 3, author: { login: "danmcaulay" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+  test("isAuthorAllowed includes an allowlisted dependabot-authored PR, identically to a human author", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "app/dependabot",
+    };
+    const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
-    expect(result[0].id).toContain("#3");
-  });
-
-  test("returns empty array when all open PRs are authored by app/renovate", async () => {
-    const prs = [
-      makePr({ number: 1, author: { login: "app/renovate" } }),
-      makePr({ number: 2, author: { login: "app/renovate" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
-    expect(result).toEqual([]);
-  });
-
-  test("returns the one eligible non-draft non-renovate PR from a mixed set (all matches collected)", async () => {
-    const prs = [
-      makePr({ number: 1, isDraft: true }),
-      makePr({ number: 2, author: { login: "app/renovate" } }),
-      makePr({ number: 3, author: { login: "danmcaulay" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toContain("#3");
   });
 
   // ─── automated label exclusion ────────────────────────────────────────────
@@ -966,22 +966,23 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("requested-reviewer status does not override the unconditional dependabot exclusion", async () => {
+  // DBR-3.3: there is no longer an unconditional bot-author exclusion for the
+  // requested-reviewer bypass to fail to override — a dependabot-authored PR
+  // now goes through the same isAuthorAllowed + requested-reviewer bypass
+  // path as an allowlist-excluded human author (mirrors the RRA-1.1 case
+  // above), so an allowlist-excluded bot author is still includable via the
+  // requested-reviewer bypass, identically to a human.
+  test("an allowlist-excluded dependabot-authored PR is included when currentUser is a requested reviewer, identically to a human author", async () => {
     const pr = makePr({
       author: { login: "app/dependabot" },
       reviewRequests: [{ login: "bodhi-agent" }],
     });
-    const result = await getReviewCandidates(makeDeps([pr], async () => null));
-    expect(result).toEqual([]);
-  });
-
-  test("requested-reviewer status does not override the unconditional renovate exclusion", async () => {
-    const pr = makePr({
-      author: { login: "app/renovate" },
-      reviewRequests: [{ login: "bodhi-agent" }],
-    });
-    const result = await getReviewCandidates(makeDeps([pr], async () => null));
-    expect(result).toEqual([]);
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
   });
 
   test("requested-reviewer status does not override the unconditional hitl-blocked exclusion", async () => {
@@ -1948,7 +1949,7 @@ describe("getReviewCandidates", () => {
 // Covers the "later" exclusion checks — the ones that depend on already-
 // fetched live state (task-store record, live GitHub review data, linked
 // task, bundle-completeness) — as a single reusable, exported pure
-// function. The earlier cheap checks (draft/dependabot/automated-label/
+// function. The earlier cheap checks (draft/automated-label/
 // self-review/not-allowlisted) are simple enough that getReviewCandidates
 // traces them inline rather than through a shared function; their
 // candidate-list behavior is already covered by the existing

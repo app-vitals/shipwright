@@ -44,6 +44,7 @@ export interface AgentConfigResponse {
   plugins: AgentPlugin[];
   repos: string[];
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -74,6 +75,7 @@ interface AgentServiceLike {
     id: string;
     repos: string[];
     reviewAuthorAllowlist: string[];
+    patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
   } | null>;
@@ -211,6 +213,7 @@ export function createAgentRuntimeApp(deps: AgentRuntimeDeps): OpenAPIHono {
       }),
       repos: agent.repos,
       reviewAuthorAllowlist: agent.reviewAuthorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers ?? false,
       memberEmails: agent.memberEmails ?? [],
     };

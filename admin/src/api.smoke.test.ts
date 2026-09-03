@@ -36,6 +36,7 @@ interface MockAgent {
   name: string;
   repos: string[];
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -77,23 +78,21 @@ function makeMockAgentCronJobService(crons: Map<string, AgentCronJob[]>): {
 }
 
 function makeMockAgentService(agents: Map<string, MockAgent>): {
-  getById: (
-    agentId: string,
-  ) => Promise<{
+  getById: (agentId: string) => Promise<{
     id: string;
     repos: string[];
     reviewAuthorAllowlist: string[];
+    patchAuthorAllowlist: string[];
     restrictSlackToMembers: boolean;
     memberEmails: string[];
   } | null>;
 } {
   return {
-    async getById(
-      agentId: string,
-    ): Promise<{
+    async getById(agentId: string): Promise<{
       id: string;
       repos: string[];
       reviewAuthorAllowlist: string[];
+      patchAuthorAllowlist: string[];
       restrictSlackToMembers: boolean;
       memberEmails: string[];
     } | null> {
@@ -103,6 +102,7 @@ function makeMockAgentService(agents: Map<string, MockAgent>): {
             id: agent.id,
             repos: agent.repos,
             reviewAuthorAllowlist: agent.reviewAuthorAllowlist,
+            patchAuthorAllowlist: agent.patchAuthorAllowlist,
             restrictSlackToMembers: agent.restrictSlackToMembers,
             memberEmails: agent.memberEmails,
           }
@@ -172,6 +172,7 @@ function buildApp(opts?: {
   crons?: AgentCronJob[];
   repos?: string[];
   reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   memberEmails?: string[];
 }) {
@@ -190,6 +191,7 @@ function buildApp(opts?: {
   const crons = opts?.crons ?? [makeCron(KNOWN_AGENT_ID, "cron-1")];
   const repos = opts?.repos ?? ["org/repo1", "org/repo2"];
   const reviewAuthorAllowlist = opts?.reviewAuthorAllowlist ?? [];
+  const patchAuthorAllowlist = opts?.patchAuthorAllowlist ?? [];
   const restrictSlackToMembers = opts?.restrictSlackToMembers ?? false;
   const memberEmails = opts?.memberEmails ?? [];
 
@@ -204,6 +206,7 @@ function buildApp(opts?: {
       name: "Test Agent",
       repos,
       reviewAuthorAllowlist,
+      patchAuthorAllowlist,
       restrictSlackToMembers,
       memberEmails,
     });
@@ -491,6 +494,7 @@ function buildCombinedApp() {
           id: COMBINED_AGENT_ID,
           repos: [],
           reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           memberEmails: [],
         };
@@ -515,6 +519,7 @@ function buildCombinedApp() {
         selfHosted: false,
         repos: [],
         reviewAuthorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),
@@ -533,6 +538,7 @@ function buildCombinedApp() {
         selfHosted: false,
         repos: [],
         reviewAuthorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date(),

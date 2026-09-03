@@ -20,6 +20,7 @@ interface FakeAgentRow {
   selfHosted: boolean;
   repos: string[];
   reviewAuthorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
@@ -65,6 +66,7 @@ function makeFakePrisma(
         selfHosted: boolean;
         repos?: string[];
         reviewAuthorAllowlist?: string[];
+        patchAuthorAllowlist?: string[];
         restrictSlackToMembers?: boolean;
       };
     }): Promise<FakeAgentRow> {
@@ -75,6 +77,7 @@ function makeFakePrisma(
         selfHosted: data.selfHosted,
         repos: data.repos ?? [],
         reviewAuthorAllowlist: data.reviewAuthorAllowlist ?? [],
+        patchAuthorAllowlist: data.patchAuthorAllowlist ?? [],
         restrictSlackToMembers: data.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -150,6 +153,7 @@ function makeFakePrisma(
         selfHosted?: boolean;
         repos?: string[];
         reviewAuthorAllowlist?: string[];
+        patchAuthorAllowlist?: string[];
         restrictSlackToMembers?: boolean;
       };
       select?: Partial<Record<keyof FakeAgentRow, boolean>>;
@@ -164,6 +168,9 @@ function makeFakePrisma(
         ...(data.repos !== undefined && { repos: data.repos }),
         ...(data.reviewAuthorAllowlist !== undefined && {
           reviewAuthorAllowlist: data.reviewAuthorAllowlist,
+        }),
+        ...(data.patchAuthorAllowlist !== undefined && {
+          patchAuthorAllowlist: data.patchAuthorAllowlist,
         }),
         ...(data.restrictSlackToMembers !== undefined && {
           restrictSlackToMembers: data.restrictSlackToMembers,
@@ -192,7 +199,9 @@ function makeFakePrisma(
       where,
     }: {
       where: { agentId: string };
-    }): Promise<{ id: string; agentId: string; email: string; createdAt: Date }[]> {
+    }): Promise<
+      { id: string; agentId: string; email: string; createdAt: Date }[]
+    > {
       return memberSeed[where.agentId] ?? [];
     },
   };
@@ -242,6 +251,7 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     selfHosted: false,
     repos: [],
     reviewAuthorAllowlist: [],
+    patchAuthorAllowlist: [],
     restrictSlackToMembers: false,
     typeName: "coding",
     createdAt: new Date("2024-01-01"),
@@ -416,6 +426,7 @@ describe("AgentService.getDetail", () => {
       selfHosted: false,
       repos: ["org/repo"],
       reviewAuthorAllowlist: ["octocat"],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       typeName: "coding",
       createdAt: row.createdAt,
@@ -459,10 +470,9 @@ describe("AgentService.getDetail", () => {
 
   it("clears a required key from missingRequiredEnv once its AgentEnv row is seeded", async () => {
     const row = seedRow({ id: "a1", typeName: "coding" });
-    const prisma = makeFakePrisma(
-      [row],
-      { a1: ["CLAUDE_CODE_OAUTH_TOKEN"] },
-    ) as unknown as FakePrisma;
+    const prisma = makeFakePrisma([row], {
+      a1: ["CLAUDE_CODE_OAUTH_TOKEN"],
+    }) as unknown as FakePrisma;
     const service = new AgentService(
       prisma as never,
       fakeRegistry({ coding: ["CLAUDE_CODE_OAUTH_TOKEN"] }),
@@ -603,6 +613,7 @@ describe("AgentService.getById", () => {
       id: "a1",
       repos: ["org/repo1", "org/repo2"],
       reviewAuthorAllowlist: [],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
     });
@@ -628,6 +639,7 @@ describe("AgentService.getById", () => {
       id: "a1",
       repos: ["org/repo1"],
       reviewAuthorAllowlist: ["octocat", "hubot"],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
     });
@@ -664,7 +676,10 @@ describe("AgentService.getById", () => {
 
     const result = await service.getById("a1");
 
-    expect(result?.memberEmails).toEqual(["dev@example.com", "ops@example.com"]);
+    expect(result?.memberEmails).toEqual([
+      "dev@example.com",
+      "ops@example.com",
+    ]);
   });
 
   it("returns restrictSlackToMembers: true when set on the seeded row", async () => {
@@ -870,7 +885,10 @@ describe("AgentService.updateFields", () => {
       reviewAuthorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({ coding: [] }));
+    const service = new AgentService(
+      prisma as never,
+      fakeRegistry({ coding: [] }),
+    );
 
     const updated = await service.updateFields("a1", {});
 
@@ -881,6 +899,7 @@ describe("AgentService.updateFields", () => {
       selfHosted: true,
       repos: ["org/keep"],
       reviewAuthorAllowlist: ["octocat"],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       typeName: "coding",
       createdAt: row.createdAt,

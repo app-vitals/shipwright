@@ -32,6 +32,7 @@ model Agent {
   // runtime read path onto this field exclusively; DBR-2.4 dropped the old
   // authorAllowlist column now that nothing reads or writes it.
   reviewAuthorAllowlist  String[] @default([])
+  patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
   typeName               String   @default("coding")
   createdAt              DateTime @default(now())
