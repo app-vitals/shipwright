@@ -54,8 +54,6 @@ function buildConfig(agentHome: string) {
       appToken: optional("SLACK_APP_TOKEN"),
       signingSecret: optional("SLACK_SIGNING_SECRET"),
       adminToken: optional("SLACK_ADMIN_TOKEN"),
-      thinkingStepsEnabled:
-        optional("SHIPWRIGHT_SLACK_THINKING_STEPS_ENABLED") === "true",
     },
     alerts: {
       channel: optional("SLACK_ALERT_CHANNEL"),

@@ -241,7 +241,6 @@ function buildSlackApp() {
     chatTokenReporter,
     (userId, client) => resolveUserEmail(userId, client),
     agentSlackMembershipRef,
-    config.slack.thinkingStepsEnabled,
   );
 }
 

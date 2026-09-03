@@ -450,28 +450,18 @@ async function buildPromptWithFiles(
 }
 
 /**
- * Starts a run's progress tracking. enter()/exit() on ThreadStatusTracker
- * are ALWAYS called by every handler (every enter() needs a matching
- * exit(), or the refcount leaks upward forever) — but what the resulting
- * boolean gates differs by mode (STS2-1.1 AC #5):
- *   - Non-streaming: the refcount still gates whether setStatus's start()
- *     actually fires — only the thread's first concurrent run should flip
- *     agents.sessions.setStatus("processing").
- *   - Streaming: every message gets its own independent stream lifecycle
- *     regardless of refcount — the boolean only picks the seed card's
- *     title ("Queued…" when another message on this thread is already in
- *     flight, "Thinking…" otherwise).
+ * Starts a run's progress tracking. enter() on ThreadStatusTracker is
+ * ALWAYS called by every handler (every enter() needs a matching exit(), or
+ * the refcount leaks upward forever) — every message gets its own
+ * independent stream lifecycle regardless of the refcount; the boolean only
+ * picks the seed card's title ("Queued…" when another message on this
+ * thread is already in flight, "Thinking…" otherwise).
  */
 async function startProgress(
   progress: SlackProgress,
-  thinkingStepsEnabled: boolean,
   isFirstInThread: boolean,
 ): Promise<void> {
-  if (thinkingStepsEnabled) {
-    await progress.start({ queued: !isFirstInThread });
-  } else if (isFirstInThread) {
-    await progress.start();
-  }
+  await progress.start({ queued: !isFirstInThread });
 }
 
 /**
@@ -483,18 +473,13 @@ async function startProgress(
  */
 async function finishProgress(
   progress: SlackProgress,
-  thinkingStepsEnabled: boolean,
   isLastInThread: boolean,
   wasSuppressed = false,
 ): Promise<void> {
-  if (thinkingStepsEnabled) {
-    await progress.finish({
-      stillInFlight: !isLastInThread,
-      silent: wasSuppressed,
-    });
-  } else if (isLastInThread) {
-    await progress.finish();
-  }
+  await progress.finish({
+    stillInFlight: !isLastInThread,
+    silent: wasSuppressed,
+  });
 }
 
 export function createSlackApp(
@@ -516,7 +501,6 @@ export function createSlackApp(
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
   resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
   membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
-  thinkingStepsEnabled = false,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -579,16 +563,11 @@ export function createSlackApp(
       client,
       channel: msg.channel,
       threadTs: replyTs,
-      thinkingStepsEnabled,
     });
     // enter()/exit() are ALWAYS called (every enter() needs a matching
     // exit(), or the refcount leaks upward forever) — see startProgress()'s
-    // doc comment for what the boolean gates in each mode (AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // doc comment for what the boolean gates (AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -713,10 +692,9 @@ export function createSlackApp(
       }
     } finally {
       // exit() is ALWAYS called (matching the always-called enter() above)
-      // — see finishProgress()'s doc comment for what it gates in each mode.
+      // — see finishProgress()'s doc comment for what it gates.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );
@@ -758,15 +736,10 @@ export function createSlackApp(
       client,
       channel: ev.channel,
       threadTs: replyTs,
-      thinkingStepsEnabled,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
-    // what it gates in each mode (STS2-1.1 AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // what it gates (STS2-1.1 AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -908,7 +881,6 @@ export function createSlackApp(
       // See finishProgress()'s doc comment.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );
@@ -947,15 +919,10 @@ export function createSlackApp(
       client,
       channel: ev.item.channel,
       threadTs: ev.item.ts,
-      thinkingStepsEnabled,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
-    // what it gates in each mode (STS2-1.1 AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // what it gates (STS2-1.1 AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
 
     // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
     // in the finally block can title the stream's completion card "Ack"
@@ -1060,7 +1027,6 @@ export function createSlackApp(
       // See finishProgress()'s doc comment.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );

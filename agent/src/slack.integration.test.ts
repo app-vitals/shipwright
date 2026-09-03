@@ -154,7 +154,6 @@ function createSlackApp(
       client: unknown,
     ) => Promise<string | undefined>;
     membershipRef?: AgentSlackMembershipRef;
-    thinkingStepsEnabled?: boolean;
   } = {},
 ) {
   capturedErrors = [];
@@ -184,7 +183,6 @@ function createSlackApp(
     // depend on bun test's file execution order (see CLAUDE.md's test
     // isolation hard rule).
     overrides.membershipRef ?? createAgentSlackMembershipRef(),
-    overrides.thinkingStepsEnabled ?? false,
   );
 }
 
@@ -334,13 +332,13 @@ describe("message handler — DM routing", () => {
       url_private: "https://files.slack.com/test.txt",
     };
     createSlackApp({ fileDownloaderFn: async () => "/tmp/test.txt" });
-    const { say } = await invokeDM({
+    const { client } = await invokeDM({
       subtype: "file_share",
       text: "",
       files: [file],
     });
     expect(mockRunClaude).toHaveBeenCalled();
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("returns early when message has no text and no files", async () => {
@@ -350,7 +348,7 @@ describe("message handler — DM routing", () => {
   });
 
   test("does not return early when message has empty text but rich_text blocks", async () => {
-    const { say } = await invokeDM({
+    const { client } = await invokeDM({
       text: "",
       blocks: [
         {
@@ -365,7 +363,7 @@ describe("message handler — DM routing", () => {
       ],
     });
     expect(mockRunClaude).toHaveBeenCalled();
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("converts rich_text blocks to markdown and passes to runClaude when text is absent", async () => {
@@ -416,15 +414,6 @@ describe("message handler — DM routing", () => {
     );
   });
 
-  test("sets thinking status on receipt", async () => {
-    const { client } = await invokeDM();
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
-      channel_id: "D123",
-      thread_ts: "111.222",
-      status: "processing",
-    });
-  });
-
   test("calls runClaude with message text and thread sessionKey", async () => {
     await invokeDM({
       text: "Do the thing",
@@ -447,55 +436,44 @@ describe("message handler — DM routing", () => {
     );
   });
 
-  test("formats result with markdownToSlack before posting", async () => {
-    await invokeDM({ text: "hi" });
+  test("formats result with markdownToSlack before posting via the say() fallback", async () => {
+    // The streaming path delivers `cleaned` unformatted via markdown_text —
+    // formatter(cleaned) is only used on the say()/blocksConverter fallback,
+    // so force that path by failing the stream delivery.
+    const client = makeMockClient();
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
+    const say = makeSay();
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D123",
+        ts: "111.222",
+        text: "hi",
+        channel_type: "im",
+      },
+      say,
+      client,
+    });
     expect(mockMarkdownToSlack).toHaveBeenCalledWith("Claude response text");
   });
 
-  test("posts formatted response in thread", async () => {
-    const { say } = await invokeDM({ ts: "111.222" });
-    expect(say).toHaveBeenCalledWith({
-      text: "[formatted] Claude response text",
-      thread_ts: "111.222",
-    });
+  test("opens the Thinking Steps stream using thread_ts when available", async () => {
+    const { client } = await invokeDM({ ts: "1.1", thread_ts: "0.9" });
+    expect(client.chat.startStream).toHaveBeenCalledWith(
+      expect.objectContaining({ thread_ts: "0.9" }),
+    );
   });
 
-  test("posts response using thread_ts when available", async () => {
-    const { say } = await invokeDM({ ts: "1.1", thread_ts: "0.9" });
-    expect(say).toHaveBeenCalledWith({
-      text: "[formatted] Claude response text",
-      thread_ts: "0.9",
-    });
-  });
-
-  test("clears status after successful response", async () => {
-    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "D123",
-      thread_ts: "111.222",
-      status: "active",
-    });
-  });
-
-  test("a reply posts no chat message from SlackProgress — only the real reply via say()", async () => {
-    // SlackProgress is status-only (agents.sessions.setStatus); it never
-    // calls chat.postMessage. The real reply goes out via say().
+  test("a reply never posts via client.chat.postMessage — only the Thinking Steps stream or say()", async () => {
+    // SlackProgress never calls chat.postMessage. By default (mock client
+    // has a working chat namespace) the real reply is delivered via the
+    // stream's markdown_text chunk and say() is not used.
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
-    expect(say).toHaveBeenCalledTimes(1);
+    expect(say).not.toHaveBeenCalled();
     expect(client.chat.postMessage).not.toHaveBeenCalled();
   });
 
-  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls (STS-1.1)", async () => {
-    // No override — createSlackApp() defaults thinkingStepsEnabled to false,
-    // mirroring the real createSlackApp's off-by-default trailing param.
-    const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
-    expect(client.chat.startStream).not.toHaveBeenCalled();
-    expect(client.chat.appendStream).not.toHaveBeenCalled();
-    expect(client.chat.stopStream).not.toHaveBeenCalled();
-  });
-
-  test("thinkingStepsEnabled: true threads through to the message handler's SlackProgress (STS-1.1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+  test("the message handler's SlackProgress opens a Thinking Steps stream (STS-1.1)", async () => {
+    createSlackApp();
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
     expect(client.chat.startStream).toHaveBeenCalledWith({
       channel: "D123",
@@ -515,7 +493,7 @@ describe("message handler — DM routing", () => {
   // whether start()/finish() were even called — the second+ message in a
   // burst never opened its own stream at all.
   test("a burst of queued messages on the same thread each get their own stream + correct Queued/Thinking seed labels (STS2-1.1 AC #5)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
 
     // Two deferred runner calls so both messages are genuinely in flight at
     // once — the second is dispatched before the first's runner() resolves.
@@ -600,7 +578,7 @@ describe("message handler — DM routing", () => {
   // working" indicator for the whole thread while a later message is still
   // running (AC #5).
   test("the first-to-finish message of a burst keeps session_status 'processing' while a later one is still in flight (STS2-1.1 AC #5)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
 
     let resolveFirst: (v: {
       result: string;
@@ -674,13 +652,13 @@ describe("message handler — DM routing", () => {
   // ─── STS2-1.1: chunk schema, setStatus skip, delivery ───────────────────
 
   test("does not call agents.sessions.setStatus at all when streaming (STS2-1.1 AC #3)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
     expect(client.agents.sessions.setStatus).not.toHaveBeenCalled();
   });
 
   test("every task_update chunk uses the type/id/title/status shape, never the old {type, text} shape (STS2-1.1 AC #1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
     const taskUpdateChunks = client.chat.appendStream.mock.calls
       .flatMap(
@@ -698,7 +676,7 @@ describe("message handler — DM routing", () => {
   });
 
   test("reuses a single stable task_update id across the whole run (STS2-1.1 AC #1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
     const ids = client.chat.appendStream.mock.calls
       .flatMap(
@@ -710,7 +688,7 @@ describe("message handler — DM routing", () => {
   });
 
   test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips say() (STS2-1.1 AC #2)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
 
     const markdownChunks = client.chat.appendStream.mock.calls
@@ -734,7 +712,7 @@ describe("message handler — DM routing", () => {
       result: "[silent]",
       sessionId: "sess-silent",
     });
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
 
     expect(say).not.toHaveBeenCalled();
@@ -757,7 +735,7 @@ describe("message handler — DM routing", () => {
       throw new Error("streaming_mode_mismatch");
     });
     const say = makeSay();
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     await capturedMessageHandler?.({
       message: {
         channel: "D-FALLBACK",
@@ -789,22 +767,18 @@ describe("message handler — DM routing", () => {
     });
   });
 
-  test("clears status even when runClaude throws", async () => {
+  test("closes the Thinking Steps stream even when runClaude throws", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("spawn failed"));
     const { client } = await invokeDM({ channel: "D123", ts: "1.1" });
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "D123",
-      thread_ts: "1.1",
-      status: "active",
-    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "active" }),
+    );
   });
 
-  test("does not throw when setStatus fails", async () => {
+  test("does not throw when chat.stopStream fails", async () => {
     const client = makeMockClient();
     const say = makeSay();
-    client.agents.sessions.setStatus.mockRejectedValueOnce(
-      new Error("api error"),
-    );
+    client.chat.stopStream.mockRejectedValueOnce(new Error("api error"));
 
     await expect(
       capturedMessageHandler?.({
@@ -828,7 +802,7 @@ describe("message handler — DM routing", () => {
   });
 
   test("marks the Thinking Steps card status:'error' when runClaude throws (STS2-4.1 AC #1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("boom"));
     const { client } = await invokeDM({ channel: "D123", ts: "111.222" });
 
@@ -861,7 +835,7 @@ describe("message handler — DM routing", () => {
     const say = mock(async (_args: unknown) => {
       throw new Error("invalid_auth");
     });
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("boom"));
 
     await capturedMessageHandler?.({
@@ -971,7 +945,7 @@ describe("message handler — channel thread routing", () => {
       "C123:1.0",
       expect.any(Function),
     );
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("routes when session exists (session-based routing)", async () => {
@@ -994,7 +968,7 @@ describe("message handler — channel thread routing", () => {
       "C123:1.0",
       expect.any(Function),
     );
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("routes cron-started thread on first human reply (session exists, no @mention)", async () => {
@@ -1016,7 +990,7 @@ describe("message handler — channel thread routing", () => {
       "C-CRON:200.0",
       expect.any(Function),
     );
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("does NOT prepend thread hint for DMs", async () => {
@@ -1308,15 +1282,6 @@ describe("app_mention handler", () => {
     return { client, say };
   }
 
-  test("sets thinking status on mention", async () => {
-    const { client } = await invokeMention();
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
-      channel_id: "C999",
-      thread_ts: "222.333",
-      status: "processing",
-    });
-  });
-
   test("calls runClaude with event text and thread sessionKey", async () => {
     await invokeMention({ channel: "C999", ts: "222.333" });
     expect(mockRunClaude).toHaveBeenCalledWith(
@@ -1335,41 +1300,24 @@ describe("app_mention handler", () => {
     );
   });
 
-  test("posts formatted response in thread", async () => {
-    const { say } = await invokeMention({ ts: "222.333" });
-    expect(say).toHaveBeenCalledWith({
-      text: "[formatted] Claude response text",
-      thread_ts: "222.333",
-    });
-  });
-
-  test("clears status after successful mention response", async () => {
+  test("closes the Thinking Steps stream after a successful mention response", async () => {
     const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "C999",
-      thread_ts: "222.333",
-      status: "active",
-    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "active" }),
+    );
   });
 
-  test("a mention reply posts no chat message from SlackProgress — only the real reply via say()", async () => {
+  test("a mention reply never posts via client.chat.postMessage — only the Thinking Steps stream or say()", async () => {
     const { client, say } = await invokeMention({
       channel: "C999",
       ts: "222.333",
     });
-    expect(say).toHaveBeenCalledTimes(1);
+    expect(say).not.toHaveBeenCalled();
     expect(client.chat.postMessage).not.toHaveBeenCalled();
   });
 
-  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls on mention (STS-1.1)", async () => {
-    const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
-    expect(client.chat.startStream).not.toHaveBeenCalled();
-    expect(client.chat.appendStream).not.toHaveBeenCalled();
-    expect(client.chat.stopStream).not.toHaveBeenCalled();
-  });
-
-  test("thinkingStepsEnabled: true threads through to the mention handler's SlackProgress (STS-1.1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+  test("the mention handler's SlackProgress opens a Thinking Steps stream (STS-1.1)", async () => {
+    createSlackApp();
     const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
     expect(client.chat.startStream).toHaveBeenCalledWith({
       channel: "C999",
@@ -1380,7 +1328,7 @@ describe("app_mention handler", () => {
   });
 
   test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips say() (STS2-2.1 AC #4)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const { client, say } = await invokeMention({
       channel: "C999",
       ts: "222.333",
@@ -1405,7 +1353,7 @@ describe("app_mention handler", () => {
       throw new Error("streaming_mode_mismatch");
     });
     const say = makeSay();
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     await capturedMentionHandler?.({
       event: {
         text: "<@UBOT> do something",
@@ -1436,22 +1384,18 @@ describe("app_mention handler", () => {
     });
   });
 
-  test("clears status after mention handler error", async () => {
+  test("closes the Thinking Steps stream after mention handler error", async () => {
     mockRunClaude.mockRejectedValueOnce(new Error("timeout"));
     const { client } = await invokeMention({ channel: "C999", ts: "2.2" });
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "C999",
-      thread_ts: "2.2",
-      status: "active",
-    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "active" }),
+    );
   });
 
-  test("does not throw when setStatus fails on mention", async () => {
+  test("does not throw when chat.stopStream fails on mention", async () => {
     const client = makeMockClient();
     const say = makeSay();
-    client.agents.sessions.setStatus.mockRejectedValueOnce(
-      new Error("api error"),
-    );
+    client.chat.stopStream.mockRejectedValueOnce(new Error("api error"));
 
     await expect(
       capturedMentionHandler?.({
@@ -1475,7 +1419,7 @@ describe("app_mention handler", () => {
   });
 
   test("marks the Thinking Steps card status:'error' when mention handler throws (STS2-4.1 AC #1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("oops"));
     const { client } = await invokeMention({ channel: "C999", ts: "222.333" });
 
@@ -1504,7 +1448,7 @@ describe("app_mention handler", () => {
     const say = mock(async (_args: unknown) => {
       throw new Error("invalid_auth");
     });
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("oops"));
 
     await capturedMentionHandler?.({
@@ -1756,22 +1700,28 @@ describe("marker dispatch — DM message handler", () => {
     return { client, say };
   }
 
-  test("[silent] — skips say() and clears status", async () => {
+  test("[silent] — skips say() and closes the Thinking Steps stream", async () => {
     const { say, client } = await invokeDMWithResult("[silent]");
     expect(say).not.toHaveBeenCalled();
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "D1",
-      thread_ts: "1.1",
-      status: "active",
-    });
+    expect(client.chat.stopStream).toHaveBeenCalledWith(
+      expect.objectContaining({ session_status: "active" }),
+    );
   });
 
   test("[silent] with content — DM ignores silent and posts anyway", async () => {
-    const { say } = await invokeDMWithResult("Here is your answer.\n[silent]");
-    expect(say).toHaveBeenCalledTimes(1);
-    const call = say.mock.calls[0][0] as { text: string };
-    expect(call.text).toContain("Here is your answer.");
-    expect(call.text).not.toContain("[silent]");
+    const { say, client } = await invokeDMWithResult(
+      "Here is your answer.\n[silent]",
+    );
+    expect(say).not.toHaveBeenCalled();
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toHaveLength(1);
+    const text = markdownChunks[0]?.text as string;
+    expect(text).toContain("Here is your answer.");
+    expect(text).not.toContain("[silent]");
   });
 
   test("[upload:/path] — uploads file to Slack", async () => {
@@ -2382,6 +2332,11 @@ describe("marker dispatch — [react:emoji] in DM message handler", () => {
   async function invokeDMWithResult(result: string, msgTs = "1.1") {
     mockRunClaude.mockResolvedValueOnce({ result, sessionId: "sess-1" });
     const client = makeMockClient();
+    // [react:] only fires against a real posted message ts (postedTs) — the
+    // streaming delivery path never produces one (deliverContent() doesn't
+    // post a separate reactable message), so force the say() fallback to
+    // exercise the marker.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     // makeSay defaults replyTs to "reply.ts.1" — distinct from msgTs
     const say = makeSay();
     await capturedMessageHandler?.({
@@ -2449,6 +2404,10 @@ describe("marker dispatch — [react:emoji] in app_mention handler", () => {
   async function invokeMentionWithResult(result: string) {
     mockRunClaude.mockResolvedValueOnce({ result, sessionId: "sess-1" });
     const client = makeMockClient();
+    // [react:] only fires against a real posted message ts (postedTs) — the
+    // streaming delivery path never produces one, so force the say()
+    // fallback to exercise the marker.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = makeSay(); // returns "reply.ts.1"
     await capturedMentionHandler?.({
       event: { text: "@bot help", channel: "C1", ts: "1.1" },
@@ -2497,6 +2456,7 @@ describe("reaction_added handler", () => {
       item?: { type: string; channel: string; ts: string };
       item_user?: string;
       user?: string;
+      client?: ReturnType<typeof makeMockClient>;
     } = {},
   ) {
     const {
@@ -2507,12 +2467,21 @@ describe("reaction_added handler", () => {
     } = overrides;
 
     createSlackApp();
-    const client = makeMockClient();
+    const client = overrides.client ?? makeMockClient();
     await capturedReactionAddedHandler?.({
       event: { reaction, item, item_user, user },
       client,
     });
     return { client };
+  }
+
+  /** A client with delivery forced to fail, so client.chat.postMessage's
+   * say()-equivalent fallback path (and its postedTs) gets exercised —
+   * the streaming path never produces a reactable message ts. */
+  function makeFallbackForcedClient() {
+    const client = makeMockClient();
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
+    return client;
   }
 
   test("registers a reaction_added event handler", () => {
@@ -2532,38 +2501,26 @@ describe("reaction_added handler", () => {
     expect(mockRunClaude.mock.calls[0][2]).toBeTypeOf("function");
   });
 
-  test("sets and clears the AI-app status around the run — SlackProgress owns setStatus here too (AC #1)", async () => {
-    const { client } = await invokeReactionAdded();
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith({
-      channel_id: "D1",
-      thread_ts: "100.1",
-      status: "processing",
-    });
-    expect(client.agents.sessions.setStatus).toHaveBeenLastCalledWith({
-      channel_id: "D1",
-      thread_ts: "100.1",
-      status: "active",
-    });
-  });
-
-  test("a reaction reply posts exactly one chat message — the real reply, not a SlackProgress message", async () => {
+  test("delivers the reaction reply via the Thinking Steps stream, not client.chat.postMessage", async () => {
     mockRunClaude.mockResolvedValueOnce({
       result: "Logged your walk!",
       sessionId: "sess-progress-1",
     });
     const { client } = await invokeReactionAdded();
-    expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+    expect(client.chat.postMessage).not.toHaveBeenCalled();
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toContainEqual({
+      type: "markdown_text",
+      text: "Logged your walk!",
+    });
   });
 
-  test("thinkingStepsEnabled omitted (default off) — zero chat.startStream calls on reaction_added (STS-1.1)", async () => {
-    const { client } = await invokeReactionAdded();
-    expect(client.chat.startStream).not.toHaveBeenCalled();
-    expect(client.chat.appendStream).not.toHaveBeenCalled();
-    expect(client.chat.stopStream).not.toHaveBeenCalled();
-  });
-
-  test("thinkingStepsEnabled: true threads through to the reaction_added handler's SlackProgress (STS-1.1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+  test("the reaction_added handler's SlackProgress opens a Thinking Steps stream (STS-1.1)", async () => {
+    createSlackApp();
     const client = makeMockClient();
     await capturedReactionAddedHandler?.({
       event: {
@@ -2583,7 +2540,7 @@ describe("reaction_added handler", () => {
   });
 
   test("delivers the final reply as a markdown_text chunk via chat.appendStream, and skips client.chat.postMessage() (STS2-2.1 AC #4)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const client = makeMockClient();
     await capturedReactionAddedHandler?.({
       event: {
@@ -2609,7 +2566,7 @@ describe("reaction_added handler", () => {
   });
 
   test("falls back to client.chat.postMessage() when chat.appendStream rejects (delivery failure never drops the reply) (STS2-2.1 AC #4)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     const client = makeMockClient();
     client.chat.appendStream.mockImplementation(async () => {
       throw new Error("streaming_mode_mismatch");
@@ -2630,7 +2587,7 @@ describe("reaction_added handler", () => {
   });
 
   test("marks the Thinking Steps card status:'error' when runClaude throws (STS2-4.1 AC #1)", async () => {
-    createSlackApp({ thinkingStepsEnabled: true });
+    createSlackApp();
     mockRunClaude.mockRejectedValueOnce(new Error("boom"));
     const client = makeMockClient();
     await capturedReactionAddedHandler?.({
@@ -2687,12 +2644,14 @@ describe("reaction_added handler", () => {
     expect(mockRunClaude).not.toHaveBeenCalled();
   });
 
-  test("posts Claude response to DM when not silent", async () => {
+  test("posts Claude response to DM via client.chat.postMessage when the stream is unavailable", async () => {
     mockRunClaude.mockResolvedValueOnce({
       result: "Logged your walk!",
       sessionId: "sess-2",
     });
-    const { client } = await invokeReactionAdded({});
+    const { client } = await invokeReactionAdded({
+      client: makeFallbackForcedClient(),
+    });
     expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
     const callArg = (
       client.chat.postMessage.mock.calls[0] as [Record<string, unknown>]
@@ -2739,7 +2698,9 @@ describe("reaction_added handler", () => {
       result: "Logged! [react:tada]",
       sessionId: "sess-4",
     });
-    const { client } = await invokeReactionAdded({});
+    const { client } = await invokeReactionAdded({
+      client: makeFallbackForcedClient(),
+    });
     expect(client.reactions.add).toHaveBeenCalledTimes(1);
     expect(client.reactions.add).toHaveBeenCalledWith({
       channel: "D1",
@@ -2755,7 +2716,10 @@ describe("reaction_added handler", () => {
     });
     createSlackApp();
     const client = makeMockClient();
-    // Simulate postMessage failure — returns no ts
+    // Force the stream delivery to fail so the client.chat.postMessage
+    // fallback path is genuinely exercised, then simulate that fallback
+    // itself failing too (returns no ts).
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
       new Error("post failed"),
     );
@@ -2800,6 +2764,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp();
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = mock(async (_args: unknown) => ({ ts: "r.1" }));
     say.mockRejectedValueOnce(makeInvalidBlocksError());
 
@@ -2834,6 +2801,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp();
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = mock(async (_args: unknown) => ({ ts: "r.2" }));
     say.mockRejectedValueOnce(makeInvalidBlocksError());
 
@@ -2861,6 +2831,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp();
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = mock(async (_args: unknown) => ({ ts: "r.3" }));
     say.mockRejectedValueOnce(makeInvalidBlocksError());
 
@@ -2888,6 +2861,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     });
     createSlackApp();
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     // First postMessage throws invalid_blocks; second succeeds
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
       makeInvalidBlocksError(),
@@ -2911,6 +2887,63 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
     expect(retryArgs.channel).toBe("D1");
   });
 
+  test("reaction_added handler — does not throw when the invalid_blocks retry itself fails", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: TABLE_RESPONSE,
+      sessionId: "sess-ib-4b",
+    });
+    createSlackApp();
+    const client = makeMockClient();
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
+    // First postMessage throws invalid_blocks; the plain-text retry also fails.
+    (client.chat.postMessage as ReturnType<typeof mock>)
+      .mockRejectedValueOnce(makeInvalidBlocksError())
+      .mockRejectedValueOnce(new Error("retry also failed"));
+
+    await expect(
+      capturedReactionAddedHandler?.({
+        event: {
+          reaction: "thumbsup",
+          item: { type: "message", channel: "D1", ts: "100.1" },
+          item_user: "UBOT123",
+          user: "U-DAN",
+        },
+        client,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(2);
+  });
+
+  test("reaction_added handler — does not retry on a non-invalid_blocks postMessage failure", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: TABLE_RESPONSE,
+      sessionId: "sess-ib-4c",
+    });
+    createSlackApp();
+    const client = makeMockClient();
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
+    // A genuine (non-invalid_blocks) postMessage failure on the blocks path
+    // must NOT trigger the plain-text retry — only a single call.
+    (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
+      new Error("rate limited"),
+    );
+
+    await expect(
+      capturedReactionAddedHandler?.({
+        event: {
+          reaction: "thumbsup",
+          item: { type: "message", channel: "D1", ts: "100.1" },
+          item_user: "UBOT123",
+          user: "U-DAN",
+        },
+        client,
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(client.chat.postMessage).toHaveBeenCalledTimes(1);
+  });
+
   // ─── DI-based tests: blocks.text === '' → fallback to formatter(cleaned) ──
 
   test("DM handler — uses formatter(cleaned) on retry when blocks.text is empty (DI)", async () => {
@@ -2926,6 +2959,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.1" }));
     say.mockRejectedValueOnce(makeInvalidBlocksError());
 
@@ -2959,6 +2995,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     const say = mock(async (_args: unknown) => ({ ts: "r.empty.2" }));
     say.mockRejectedValueOnce(makeInvalidBlocksError());
 
@@ -2990,6 +3029,9 @@ describe("invalid_blocks retry — falls back to formatter(cleaned) when blocks.
         ({ text: "", blocks: [{ type: "section" }] }) as any,
     });
     const client = makeMockClient();
+    // deliverContent() must fail so the handler falls back to say()/postMessage() —
+    // this describe block specifically exercises that fallback path.
+    client.chat.appendStream.mockRejectedValue(new Error("stream unavailable"));
     (client.chat.postMessage as ReturnType<typeof mock>).mockRejectedValueOnce(
       makeInvalidBlocksError(),
     );
@@ -3763,10 +3805,17 @@ describe("thread resume after timeout — real createRunClaude wired as runner",
     const rIdx = secondCmd.indexOf("-r");
     expect(rIdx).toBeGreaterThan(-1);
     expect(secondCmd[rIdx + 1]).toBe("sess-first-msg");
-    expect(secondSay).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: expect.stringContaining("Resumed reply"),
-      }),
-    );
+    // Delivered via the Thinking Steps stream (client has a working chat
+    // namespace) — say() is not used for the real reply.
+    expect(secondSay).not.toHaveBeenCalled();
+    const markdownChunks = client.chat.appendStream.mock.calls
+      .flatMap(
+        (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+      )
+      .filter((chunk) => chunk.type === "markdown_text");
+    expect(markdownChunks).toContainEqual({
+      type: "markdown_text",
+      text: "Resumed reply",
+    });
   });
 });
