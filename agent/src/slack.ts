@@ -1089,8 +1089,11 @@ export function createSlackApp(
     // duplicate delivery of the same event) is a safe no-op — never throws.
     // Also recovers the run's actual thread_ts (distinct from the stream's
     // own streaming_message_ts) for the direct status reset below, when a
-    // match was found.
-    let threadTs = ev.streaming_message_ts;
+    // match was found. On a registry miss threadTs stays undefined — we
+    // deliberately do NOT fall back to ev.streaming_message_ts, which is the
+    // stream's own message ts, a distinct value the Agent Sessions API does
+    // not accept as a thread identifier (see SlackProgress.getThreadTs()).
+    let threadTs: string | undefined;
     if (ev.channel && ev.streaming_message_ts) {
       const key = `${ev.channel}:${ev.streaming_message_ts}`;
       const progress = liveStreams.get(key);
@@ -1108,12 +1111,17 @@ export function createSlackApp(
     // handler comment: "Recover stale processing if the turn's earlier
     // active write failed. An unauthorized Stop may clear the indicator
     // cosmetically until the still-running turn ends.").
+    //
+    // On a registry miss (duplicate/late event for an already-cleared run) we
+    // still fire the reset so the "is working" indicator can't stick, but omit
+    // thread_ts entirely rather than send the wrong (streaming_message_ts)
+    // value.
     if (ev.channel) {
       try {
         await client.agents.sessions.setStatus({
           channel_id: ev.channel,
-          thread_ts: threadTs,
           status: "active",
+          ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
         });
       } catch (err) {
         console.warn(

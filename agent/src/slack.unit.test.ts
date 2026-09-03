@@ -800,8 +800,17 @@ describe("agent_session_stopped handler", () => {
     // The direct status reset still fires regardless of registry lookup
     // outcome — AC #5 says it's independent of the stream's own close path.
     expect(client.agents.sessions.setStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "active" }),
+      expect.objectContaining({ channel_id: "D999", status: "active" }),
     );
+
+    // On a registry miss the run's real thread_ts is unknown, so the handler
+    // must OMIT thread_ts entirely rather than fall back to the event's own
+    // streaming_message_ts ("no.such.stream") — that's the stream's message ts,
+    // a distinct value the Agent Sessions API doesn't accept as a thread id
+    // (see SlackProgress.getThreadTs()). Sending it would target the wrong
+    // conversation.
+    const setStatusArgs = client.agents.sessions.setStatus.mock.calls[0]?.[0];
+    expect(setStatusArgs).not.toHaveProperty("thread_ts");
   });
 
   test("agents.sessions.setStatus failure does not crash the handler", async () => {
