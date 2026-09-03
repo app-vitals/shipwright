@@ -3430,10 +3430,10 @@ describe("admin API — reviewAuthorAllowlist dual-write/dual-read", () => {
     const body = await res.json();
     expect(body.authorAllowlist).toEqual(["octocat"]);
     expect(body.reviewAuthorAllowlist).toEqual(["octocat"]);
-    // The route handler must resolve the conflict itself (reviewAuthorAllowlist
-    // wins) and pass a single consistent value to the service — not forward
-    // both raw, differing arrays.
-    expect(capturedInput?.authorAllowlist).toEqual(["octocat"]);
+    // The route handler forwards both raw fields as supplied — AgentService's
+    // resolveAllowlistSync (unit-tested separately) applies the precedence
+    // rule (reviewAuthorAllowlist wins) and resolves the conflict.
+    expect(capturedInput?.authorAllowlist).toEqual(["stale-value"]);
     expect(capturedInput?.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 

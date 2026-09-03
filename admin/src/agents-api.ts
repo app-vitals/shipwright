@@ -1115,25 +1115,19 @@ export function createAdminApp(deps: AdminDeps): OpenAPIHono<AdminAuthEnv> {
     if (!existing) {
       throw new NotFoundError(`agent ${agentId} not found`);
     }
-    // DBR-2.1 dual-write precedence: authorAllowlist and reviewAuthorAllowlist
-    // are the same logical field mid-rename. When the PATCH body supplies
-    // both with different values, reviewAuthorAllowlist wins — it's the new
-    // canonical name — and that single resolved value is written to both
-    // columns. Resolved here (not left to AgentService) so the exact value
-    // sent downstream is unambiguous and independently verifiable.
-    const resolvedAllowlist =
-      body.reviewAuthorAllowlist !== undefined
-        ? body.reviewAuthorAllowlist
-        : body.authorAllowlist;
-
+    // DBR-2.1 dual-write: authorAllowlist and reviewAuthorAllowlist are the
+    // same logical field mid-rename. Pass both through as supplied —
+    // AgentService's resolveAllowlistSync applies the precedence rule
+    // (reviewAuthorAllowlist wins when both differ) and writes the resolved
+    // value to both columns.
     const agent = await agentService.updateSelfHosted(agentId, {
       selfHosted: body.selfHosted,
       ...(body.repos !== undefined ? { repos: body.repos } : {}),
-      ...(resolvedAllowlist !== undefined
-        ? {
-            authorAllowlist: resolvedAllowlist,
-            reviewAuthorAllowlist: resolvedAllowlist,
-          }
+      ...(body.authorAllowlist !== undefined
+        ? { authorAllowlist: body.authorAllowlist }
+        : {}),
+      ...(body.reviewAuthorAllowlist !== undefined
+        ? { reviewAuthorAllowlist: body.reviewAuthorAllowlist }
         : {}),
       ...(body.restrictSlackToMembers !== undefined
         ? { restrictSlackToMembers: body.restrictSlackToMembers }
