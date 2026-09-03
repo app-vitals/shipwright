@@ -1,0 +1,14 @@
+-- Migration: drop the legacy Agent.authorAllowlist column.
+--
+-- DBR-2.4 — the final "remove" step of the add-migrate-remove sequence that
+-- renamed this column to reviewAuthorAllowlist:
+--   DBR-2.1 added reviewAuthorAllowlist alongside authorAllowlist, backfilled
+--     it from the existing column, and dual-wrote/dual-read both columns.
+--   DBR-2.2 migrated the admin UI to write only reviewAuthorAllowlist.
+--   DBR-2.3 migrated the agent's runtime config-sync read path onto
+--     reviewAuthorAllowlist, falling back to authorAllowlist only if absent.
+-- Both DBR-2.2 (PR #3094) and DBR-2.3 (PR #3115) are confirmed deployed and
+-- live on main, so every reader/writer now uses reviewAuthorAllowlist
+-- exclusively — the old column is dead weight. Data was already preserved in
+-- reviewAuthorAllowlist by DBR-2.1's backfill; nothing further to migrate.
+ALTER TABLE "Agent" DROP COLUMN "authorAllowlist";

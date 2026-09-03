@@ -7,9 +7,9 @@
  * syncConfig() tick. Kept pure and zero-I/O so it's unit-testable in
  * isolation — mirrors review-author-allowlist-ref.ts's style.
  *
- * Unlike reviewAuthorAllowlistRef (which dual-reads a legacy authorAllowlist
- * column during DBR-2.1's rename-in-progress phase), patchAuthorAllowlist
- * (DBR-1.1) is a brand-new column with no legacy predecessor to fall back to.
+ * Unlike reviewAuthorAllowlist (renamed from the legacy authorAllowlist
+ * column, which DBR-2.4 dropped), patchAuthorAllowlist (DBR-1.1) is a
+ * brand-new column with no legacy predecessor.
  */
 
 export interface PatchAuthorAllowlistRef {

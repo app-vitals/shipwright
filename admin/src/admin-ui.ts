@@ -1581,8 +1581,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
-      authorAllowlist: agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
-      patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
+      authorAllowlist: agent.reviewAuthorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
@@ -1838,8 +1838,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (!agent) {
         return new Response("Agent not found", { status: 404 });
       }
-      const existing =
-        agent.reviewAuthorAllowlist ?? agent.authorAllowlist ?? [];
+      const existing = agent.reviewAuthorAllowlist ?? [];
       const deduped = existing.includes(login)
         ? existing
         : [...existing, login];
@@ -1870,11 +1869,9 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         if (!agent) {
           return new Response("Agent not found", { status: 404 });
         }
-        const updated = (
-          agent.reviewAuthorAllowlist ??
-          agent.authorAllowlist ??
-          []
-        ).filter((l) => l !== login);
+        const updated = (agent.reviewAuthorAllowlist ?? []).filter(
+          (l) => l !== login,
+        );
         await agentService.updateFields(agentId, {
           reviewAuthorAllowlist: updated,
         });
@@ -2236,8 +2233,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
-      authorAllowlist: agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
-      patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
+      authorAllowlist: agent.reviewAuthorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist,
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,

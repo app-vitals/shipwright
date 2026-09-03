@@ -368,7 +368,7 @@ function makeMockDeps(
         slackId: "U123456",
         selfHosted: false,
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
@@ -386,7 +386,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -400,7 +400,7 @@ function makeMockDeps(
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -1719,7 +1719,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1818,7 +1818,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1848,7 +1848,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1889,7 +1889,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1948,7 +1948,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -1993,7 +1993,7 @@ describe("admin UI — authenticated pages", () => {
               createdAt: new Date("2024-01-01"),
               updatedAt: new Date("2024-01-01"),
               repos: [],
-              authorAllowlist: [],
+              reviewAuthorAllowlist: [],
               patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
@@ -3793,7 +3793,7 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
       createdAt: new Date("2024-01-01"),
       updatedAt: new Date("2024-01-01"),
       repos: [],
-      authorAllowlist: [],
+      reviewAuthorAllowlist: [],
       patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       missingRequiredEnv: [],
@@ -5882,7 +5882,6 @@ describe("admin UI — create agent with author allowlist", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: capturedAllowlist ?? [],
           reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6118,7 +6117,7 @@ describe("admin UI — repos mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6134,7 +6133,7 @@ describe("admin UI — repos mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6279,7 +6278,6 @@ describe("admin UI — author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: ["octocat"],
         reviewAuthorAllowlist: ["octocat"],
         patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
@@ -6299,7 +6297,6 @@ describe("admin UI — author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: capturedAllowlist ?? [],
           reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6342,7 +6339,6 @@ describe("admin UI — author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
         reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
@@ -6359,7 +6355,6 @@ describe("admin UI — author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: ["octocat"],
           reviewAuthorAllowlist: ["octocat"],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
@@ -6541,7 +6536,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6560,7 +6555,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: capturedAllowlist ?? [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6602,7 +6597,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6618,7 +6613,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: ["octocat"],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6674,7 +6669,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: ["octocat", "other-user"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
@@ -6690,7 +6685,7 @@ describe("admin UI — patch author allowlist mutation routes", () => {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           patchAuthorAllowlist: ["other-user"],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6712,152 +6707,6 @@ describe("admin UI — patch author allowlist mutation routes", () => {
     );
     expect(res.status).toBe(302);
     expect(capturedInput).toEqual({ patchAuthorAllowlist: ["other-user"] });
-  });
-});
-
-// Pre-DBR-2.1 agents were written before the reviewAuthorAllowlist column
-// existed, so getDetail returns it as undefined while the legacy
-// authorAllowlist still holds the real logins. Every read site in admin-ui.ts
-// uses `reviewAuthorAllowlist ?? authorAllowlist` to keep those agents working
-// until the rename completes — these tests pin that fallback.
-describe("admin UI — review author allowlist legacy fallback (pre-DBR-2.1 agents)", () => {
-  let cookie: string;
-
-  beforeAll(async () => {
-    cookie = await makeSessionCookie();
-  });
-
-  /** getDetail for an agent that predates the reviewAuthorAllowlist column. */
-  function makeLegacyDeps(
-    authorAllowlist: string[],
-    onUpdate?: (input: { reviewAuthorAllowlist?: string[] }) => void,
-  ): AdminUIDeps {
-    const deps = makeMockDeps();
-    deps.agentService = {
-      ...deps.agentService,
-      getDetail: async () => ({
-        id: AGENT_ID,
-        name: "Test Agent",
-        slackId: "U123456",
-        selfHosted: false,
-        typeName: "coding",
-        createdAt: new Date("2024-01-01"),
-        updatedAt: new Date("2024-01-01"),
-        repos: [],
-        authorAllowlist,
-        // reviewAuthorAllowlist intentionally absent — the legacy shape.
-        reviewAuthorAllowlist: undefined,
-        patchAuthorAllowlist: [],
-        restrictSlackToMembers: false,
-        missingRequiredEnv: [],
-      }),
-      updateFields: async (
-        id: string,
-        input: { reviewAuthorAllowlist?: string[] },
-      ) => {
-        onUpdate?.(input);
-        return {
-          id,
-          name: "Test Agent",
-          slackId: "U123456",
-          selfHosted: false,
-          typeName: "coding",
-          createdAt: new Date("2024-01-01"),
-          updatedAt: new Date("2024-01-01"),
-          repos: [],
-          authorAllowlist: input.reviewAuthorAllowlist ?? [],
-          reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
-          patchAuthorAllowlist: [],
-          restrictSlackToMembers: false,
-          missingRequiredEnv: [],
-        };
-      },
-    };
-    return deps;
-  }
-
-  it("GET /admin/agents/:id renders legacy authorAllowlist logins when reviewAuthorAllowlist is undefined", async () => {
-    const app = createAdminUIApp(makeLegacyDeps(["octocat", "hubot"]));
-    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    // Assert on the per-row delete form rather than the bare login — "octocat"
-    // also appears as the add-form placeholder, so it would match either way.
-    expect(html).toContain('<input type="hidden" name="login" value="octocat"');
-    expect(html).toContain('<input type="hidden" name="login" value="hubot"');
-    expect(html).not.toContain("No author allowlist entries configured.");
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/add appends to the legacy list when reviewAuthorAllowlist is undefined", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "hubot" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    // Legacy entry must be preserved, not clobbered by an empty new-column list.
-    expect(capturedAllowlist).toEqual(["octocat", "hubot"]);
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/add deduplicates against the legacy list", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "octocat" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    expect(capturedAllowlist).toEqual(["octocat"]);
-  });
-
-  it("POST /admin/agents/:id/review-author-allowlist/delete removes from the legacy list", async () => {
-    let capturedAllowlist: string[] | undefined;
-    const app = createAdminUIApp(
-      makeLegacyDeps(["octocat", "hubot"], (input) => {
-        capturedAllowlist = input.reviewAuthorAllowlist;
-      }),
-    );
-    const body = new URLSearchParams({ login: "octocat" });
-    const res = await app.request(
-      `/admin/agents/${AGENT_ID}/review-author-allowlist/delete`,
-      {
-        method: "POST",
-        body: body.toString(),
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          Cookie: `admin_session=${cookie}`,
-        },
-      },
-    );
-    expect(res.status).toBe(302);
-    expect(capturedAllowlist).toEqual(["hubot"]);
   });
 });
 
@@ -6930,7 +6779,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],
@@ -6972,7 +6821,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         createdAt: new Date("2024-01-01"),
         updatedAt: new Date("2024-01-01"),
         repos: [],
-        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
         patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],

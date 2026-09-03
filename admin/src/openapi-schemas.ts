@@ -101,10 +101,11 @@ export const CreateAgentBodySchema = z
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
     /**
-     * Initial authorAllowlist[] — GitHub logins permitted to trigger this
-     * agent. Mirrors PatchAgentBodySchema's authorAllowlist shape.
+     * Initial reviewAuthorAllowlist[] — GitHub logins permitted to trigger
+     * this agent's review/dev-task work. Mirrors PatchAgentBodySchema's
+     * reviewAuthorAllowlist shape.
      */
-    authorAllowlist: z
+    reviewAuthorAllowlist: z
       .array(
         z.string().refine(isGithubLogin, {
           message: "each entry must be a valid GitHub login",
@@ -114,7 +115,7 @@ export const CreateAgentBodySchema = z
       .openapi({ example: ["octocat"] }),
     /**
      * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
-     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * patch runs for this agent. Independent of reviewAuthorAllowlist. Mirrors
      * PatchAgentBodySchema's patchAuthorAllowlist shape.
      */
     patchAuthorAllowlist: z
@@ -157,20 +158,8 @@ export const PatchAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["my-org/my-repo"] }),
-    authorAllowlist: z
-      .array(
-        z.string().refine(isGithubLogin, {
-          message: "each entry must be a valid GitHub login",
-        }),
-      )
-      .optional()
-      .openapi({ example: ["octocat"] }),
     /**
-     * DBR-2.1: rename-in-progress twin of authorAllowlist — same shape,
-     * validated the same way. A PATCH supplying either key keeps both
-     * authorAllowlist and reviewAuthorAllowlist columns in sync (dual-write);
-     * supplying both with different values prefers this field's value as the
-     * canonical source of truth, written to both columns.
+     * GitHub logins permitted to trigger this agent's review/dev-task work.
      */
     reviewAuthorAllowlist: z
       .array(
@@ -182,7 +171,7 @@ export const PatchAgentBodySchema = z
       .openapi({ example: ["octocat"] }),
     /**
      * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
-     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * patch runs for this agent. Independent of reviewAuthorAllowlist. Mirrors
      * CreateAgentBodySchema's patchAuthorAllowlist shape.
      */
     patchAuthorAllowlist: z
@@ -922,11 +911,6 @@ export const AgentConfigResponseSchema = z
     allowedTools: z.array(z.string()).openapi({ example: ["Read", "Write"] }),
     plugins: z.array(AgentConfigPluginSchema),
     repos: z.array(z.string()).openapi({ example: ["org/repo1", "org/repo2"] }),
-    authorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
-    /**
-     * DBR-2.1: rename-in-progress twin of authorAllowlist — always returned
-     * as an identical array during the dual-read transitional phase.
-     */
     reviewAuthorAllowlist: z
       .array(z.string())
       .openapi({ example: ["octocat"] }),
