@@ -1200,7 +1200,7 @@ async function runLoop(): Promise<void> {
         "claude",
         command,
         "--permission-mode",
-        "acceptEdits",
+        "auto",
         "--allowedTools",
         ...HITL_ALLOWED_TOOLS,
       ],
