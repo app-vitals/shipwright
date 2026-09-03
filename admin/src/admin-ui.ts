@@ -1223,6 +1223,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let patchAuthorAllowlistRaw: string | undefined;
     let memberEmailsRaw: string | undefined;
     let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
@@ -1243,6 +1244,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      patchAuthorAllowlistRaw = formData
+        .get("patchAuthorAllowlist")
+        ?.toString()
+        ?.trim();
       memberEmailsRaw = formData.get("memberEmails")?.toString()?.trim();
       restrictSlackToMembersRaw = formData
         .get("restrictSlackToMembers")
@@ -1334,6 +1339,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       if (authorAllowlist.length > 0) {
         await agentService.updateFields(agent.id, {
           reviewAuthorAllowlist: authorAllowlist,
+        });
+      }
+    }
+    // Attach patchAuthorAllowlist if provided
+    if (patchAuthorAllowlistRaw) {
+      const patchAuthorAllowlist = [
+        ...new Set(
+          patchAuthorAllowlistRaw
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0),
+        ),
+      ];
+      const invalid = patchAuthorAllowlist.filter((l) => !isGithubLogin(l));
+      if (invalid.length > 0) {
+        await agentService.delete(agent.id);
+        return c.redirect(
+          "/admin/agents/new?error=invalid_author_allowlist_format",
+          302,
+        );
+      }
+      if (patchAuthorAllowlist.length > 0) {
+        await agentService.updateFields(agent.id, {
+          patchAuthorAllowlist,
         });
       }
     }
@@ -1845,6 +1874,75 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         );
         await agentService.updateFields(agentId, {
           reviewAuthorAllowlist: updated,
+        });
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
+  // ─── Author allowlist (patch) mutations ────────────────────────────────────
+
+  app.post(
+    "/admin/agents/:id/patch-author-allowlist/add",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (!login || !isGithubLogin(login)) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=invalid_author_allowlist_format`,
+          302,
+        );
+      }
+      const agent = await agentService.getDetail(agentId);
+      if (!agent) {
+        return new Response("Agent not found", { status: 404 });
+      }
+      const existing = agent.patchAuthorAllowlist ?? [];
+      const deduped = existing.includes(login)
+        ? existing
+        : [...existing, login];
+      await agentService.updateFields(agentId, {
+        patchAuthorAllowlist: deduped,
+      });
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
+  app.post(
+    "/admin/agents/:id/patch-author-allowlist/delete",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (login) {
+        const agent = await agentService.getDetail(agentId);
+        if (!agent) {
+          return new Response("Agent not found", { status: 404 });
+        }
+        const updated = (agent.patchAuthorAllowlist ?? []).filter(
+          (l) => l !== login,
+        );
+        await agentService.updateFields(agentId, {
+          patchAuthorAllowlist: updated,
         });
       }
       return c.redirect(`/admin/agents/${agentId}`, 302);
