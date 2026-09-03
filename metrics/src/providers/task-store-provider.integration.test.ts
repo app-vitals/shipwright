@@ -125,15 +125,14 @@ const TASKS: TaskRecord[] = [
   },
 ];
 
-// `taskId` is deliberately left null on both — mirrors production, where the
-// field is populated only ~10% of the time. featuresReviews() groups from
-// `tasks` (via task.id-derived prefix + task.pr matched against `prNumber`),
-// not from `pr.taskId`; see the "featuresReviews groups by feature prefix"
-// test below.
+// Neither fixture carries a stored task link — PullRequest.taskId was
+// dropped in PTL-3.1 after proving unreliable (~10% populated).
+// featuresReviews() groups from `tasks` (via task.id-derived prefix +
+// task.pr matched against `prNumber`); see the "featuresReviews groups by
+// feature prefix" test below.
 const PRS: PrRecord[] = [
   {
     id: "pr-1",
-    taskId: null,
     prNumber: 1,
     reviewState: "approved",
     createdAt: "2026-06-02T11:00:00.000Z",
@@ -143,7 +142,6 @@ const PRS: PrRecord[] = [
   },
   {
     id: "pr-2",
-    taskId: null,
     prNumber: 2,
     reviewState: "posted",
     createdAt: "2026-06-03T14:00:00.000Z",
@@ -498,8 +496,8 @@ describe("TaskStoreProvider (integration)", () => {
     expect(row[colIndex(t, "avg_review_findings")]).toBeNull();
   });
 
-  test("featuresReviews groups PRs by feature prefix via task.pr, not pr.taskId", async () => {
-    // Both PRS fixtures have taskId: null (the common production case) but a
+  test("featuresReviews groups PRs by feature prefix via task.pr", async () => {
+    // Neither PRS fixture carries a stored task link, but each has a
     // matching TASKS[i].pr → prNumber. Grouping must originate from tasks.
     const provider = buildProvider();
     const t = await provider.query({ kind: "featuresReviews", range: RANGE });
@@ -827,14 +825,12 @@ describe("TaskStoreProvider (integration)", () => {
     const repoPrs: PrRecord[] = [
       {
         id: "pr-a",
-        taskId: "RA-1.1",
         reviewState: "approved",
         mergedAt: "2026-06-02T12:00:00.000Z",
         repo: "org/alpha",
       },
       {
         id: "pr-b",
-        taskId: "RB-1.1",
         reviewState: "approved",
         mergedAt: "2026-06-03T12:00:00.000Z",
         repo: "org/beta",

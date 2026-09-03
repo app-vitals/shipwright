@@ -109,7 +109,6 @@ export interface PrListItem {
   id: string;
   repo: string;
   prNumber: number;
-  taskId?: string | null;
   staged: boolean;
   state: string;
   reviewState: string;

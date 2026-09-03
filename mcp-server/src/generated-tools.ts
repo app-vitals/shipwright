@@ -500,6 +500,37 @@ export const generatedTools: GeneratedTool[] = [
     hasBody: false,
   },
   {
+    name: "tasks_events",
+    description:
+      "Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx1234567890",
+        },
+        limit: {
+          type: "string",
+          description: "Max records to return",
+          example: "50",
+        },
+        offset: {
+          type: "string",
+          description: "Pagination offset",
+          example: "0",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "GET",
+    pathTemplate: "/tasks/{id}/events",
+    queryParams: ["limit", "offset"],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
     name: "tokens_list",
     description: "List all tokens",
     inputSchema: {
@@ -629,10 +660,6 @@ export const generatedTools: GeneratedTool[] = [
           description: "PR number (parsed as integer)",
           example: "42",
         },
-        taskId: {
-          type: "string",
-          example: "clx1234567890",
-        },
         state: {
           type: "string",
           enum: ["open", "merged", "closed"],
@@ -696,7 +723,6 @@ export const generatedTools: GeneratedTool[] = [
       "repo",
       "org",
       "prNumber",
-      "taskId",
       "state",
       "reviewState",
       "staged",
@@ -735,11 +761,6 @@ export const generatedTools: GeneratedTool[] = [
           type: "string",
           description: "Agent claiming this PR (admin tokens only)",
           example: "agent-id-123",
-        },
-        taskId: {
-          type: "string",
-          description: "Associated task ID",
-          example: "clx1234567890",
         },
         phase: {
           type: "string",
@@ -947,7 +968,8 @@ export const generatedTools: GeneratedTool[] = [
   },
   {
     name: "prs_reset",
-    description: "Reset skip tracking — skipCount back to 0",
+    description:
+      "Reset skip tracking — skipCount back to 0; also clears blocked/blockedReason if the PR was blocked by the skip mechanism",
     inputSchema: {
       type: "object",
       properties: {
@@ -962,6 +984,91 @@ export const generatedTools: GeneratedTool[] = [
     method: "POST",
     pathTemplate: "/prs/{id}/skip/reset",
     queryParams: [],
+    pathParams: ["id"],
+    hasBody: false,
+  },
+  {
+    name: "prs_findings",
+    description:
+      "Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected'",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx0987654321",
+        },
+        ref: {
+          type: "string",
+          description: "Identifier for the finding (e.g. file:line or a slug).",
+          example: "src/foo.ts:42",
+        },
+        disposition: {
+          type: "string",
+          enum: ["resolved", "superseded", "rejected"],
+          description:
+            "Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.",
+          example: "resolved",
+        },
+        source: {
+          type: "string",
+          enum: ["review", "patch"],
+          description: "Which pipeline phase is recording this finding.",
+          example: "review",
+        },
+        evidence: {
+          type: "string",
+          example: "Fixed the null check in the follow-up commit.",
+        },
+        at: {
+          type: "string",
+          description:
+            "ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.",
+          example: "2026-08-17T12:00:00.000Z",
+        },
+        agentId: {
+          type: "string",
+          description: "Agent instance that triaged this finding.",
+          example: "agent-abc123",
+        },
+      },
+      required: ["id", "ref", "disposition", "source", "evidence"],
+      additionalProperties: false,
+    },
+    method: "POST",
+    pathTemplate: "/prs/{id}/findings",
+    queryParams: [],
+    pathParams: ["id"],
+    hasBody: true,
+  },
+  {
+    name: "prs_events",
+    description:
+      "Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          example: "clx0987654321",
+        },
+        limit: {
+          type: "string",
+          description: "Max records to return",
+          example: "50",
+        },
+        offset: {
+          type: "string",
+          description: "Pagination offset",
+          example: "0",
+        },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    method: "GET",
+    pathTemplate: "/prs/{id}/events",
+    queryParams: ["limit", "offset"],
     pathParams: ["id"],
     hasBody: false,
   },

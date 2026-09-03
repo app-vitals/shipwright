@@ -12,9 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  agentAuthorAllowlistRef,
-  createAgentAuthorAllowlistRef,
-} from "./agent-author-allowlist-ref.ts";
+  createReviewAuthorAllowlistRef,
+  reviewAuthorAllowlistRef,
+} from "./review-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { PrReviewData, ReviewNode } from "./check-patch.ts";
 import {
@@ -3005,11 +3005,11 @@ describe("traceReviewCandidacyDecision", () => {
 
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   beforeEach(() => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 
   afterEach(() => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
@@ -3022,7 +3022,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   const stubWorkspacePath = "/tmp/aal-2.2-stub-workspace";
 
   test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3032,7 +3032,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
-    agentAuthorAllowlistRef.set(["allowed-user"]);
+    reviewAuthorAllowlistRef.set(["allowed-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3042,7 +3042,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   test("an explicit opts.isAuthorAllowed overrides the ref-backed default", async () => {
-    agentAuthorAllowlistRef.set(["ref-user"]);
+    reviewAuthorAllowlistRef.set(["ref-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3054,12 +3054,12 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
 });
 
 describe("buildProductionDeps isAuthorAllowed default — never-synced equivalence (T-078)", () => {
-  // Deliberately NOT using the shared agentAuthorAllowlistRef singleton or its
+  // Deliberately NOT using the shared reviewAuthorAllowlistRef singleton or its
   // beforeEach(() => ref.set([])) reset (see the AAL-2.2 block above) — that
   // reset stamps hasSynced() === true before every test in that block, which
   // makes it structurally impossible to exercise the true "never synced"
   // (hasSynced() === false) state from in there. Each test below builds its
-  // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
+  // own fresh, independent ref via createReviewAuthorAllowlistRef() instead.
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
   // See stubWorkspacePath comment in the AAL-2.2 describe block above — same
@@ -3067,7 +3067,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   const stubWorkspacePath = "/tmp/t-078-stub-workspace";
 
   test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
     expect(neverSyncedRef.hasSynced()).toBe(false);
     expect(neverSyncedRef.get()).toEqual([]);
 
@@ -3083,7 +3083,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   });
 
   test("a ref synced-to-empty (hasSynced() === true, .set([]) called) behaves identically: also fails open / unfiltered", async () => {
-    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    const syncedEmptyRef = createReviewAuthorAllowlistRef();
     syncedEmptyRef.set([]);
     expect(syncedEmptyRef.hasSynced()).toBe(true);
     expect(syncedEmptyRef.get()).toEqual([]);
@@ -3100,8 +3100,8 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   });
 
   test("never-synced and synced-to-empty are intentionally, not accidentally, equivalent: same input, same output", async () => {
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
-    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
+    const syncedEmptyRef = createReviewAuthorAllowlistRef();
     syncedEmptyRef.set([]);
 
     const neverSyncedDeps = await buildProductionDeps({
@@ -3126,8 +3126,8 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   test("a never-synced ref does not affect the singleton-backed default in the other describe block", async () => {
     // Sanity guard: using an injected fresh ref must not accidentally reach
     // into / mutate the process-wide singleton.
-    agentAuthorAllowlistRef.set(["some-user"]);
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    reviewAuthorAllowlistRef.set(["some-user"]);
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
@@ -3137,9 +3137,9 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     expect(deps.isAuthorAllowed?.("some-user")).toBe(true);
     expect(deps.isAuthorAllowed?.("unrelated-user")).toBe(true);
-    expect(agentAuthorAllowlistRef.get()).toEqual(["some-user"]);
+    expect(reviewAuthorAllowlistRef.get()).toEqual(["some-user"]);
 
     // cleanup so this doesn't leak into other describe blocks in the file
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 });

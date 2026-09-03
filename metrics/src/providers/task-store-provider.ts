@@ -514,9 +514,9 @@ export class TaskStoreProvider implements MetricsProvider {
 
   /**
    * Groups PR records by feature prefix, originating from `tasks` rather than
-   * `pr.taskId` — that field is populated only ~10% of the time (0% in
-   * several repos), so grouping from it silently dropped the large majority
-   * of PRs. Each task supplies its own id-derived prefix and its `.pr`
+   * the since-removed stored `PullRequest.taskId` column — that field was
+   * populated only ~10% of the time (0% in several repos), so grouping from
+   * it silently dropped the large majority of PRs. Each task supplies its own id-derived prefix and its `.pr`
    * field is matched against the fetched PR list by (repo, prNumber) to find
    * the PR record to attach. Because the loop is per-task, a PR shared by
    * multiple tasks (the bundle case) is attached under each of those tasks'

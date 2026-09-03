@@ -36,8 +36,8 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
-import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
-import type { AgentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import { reviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
+import type { ReviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
@@ -444,7 +444,7 @@ export interface CheckReviewDeps {
    * Optional author allowlist hook. When set, getReviewCandidates() skips any
    * PR whose pr.author.login this returns false for. buildProductionDeps()
    * defaults this to a closure backed by the agent's synced authorAllowlist
-   * config field (via agentAuthorAllowlistRef) — an empty allowlist means
+   * config field (via reviewAuthorAllowlistRef) — an empty allowlist means
    * unfiltered. Callers can still pass an explicit override (e.g.
    * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
    * ref-backed default entirely.
@@ -609,7 +609,7 @@ export async function getReviewCandidates(
         check: "not-allowlisted",
         author: pr.author.login,
         isRequestedReviewer,
-        authorAllowlistRef: agentAuthorAllowlistRef.get(),
+        authorAllowlistRef: reviewAuthorAllowlistRef.get(),
       });
       continue;
     }
@@ -756,22 +756,22 @@ export async function buildProductionDeps(opts: {
   /**
    * Optional explicit override for the ref-backed author-allowlist default
    * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
-   * When omitted, defaults to a closure reading agentAuthorAllowlistRef live,
+   * When omitted, defaults to a closure reading reviewAuthorAllowlistRef live,
    * so allowlist changes from config-sync take effect on the next call
    * without rebuilding deps.
    */
   isAuthorAllowed?: (login: string) => boolean;
   /**
-   * Optional override for which AgentAuthorAllowlistRef instance the default
+   * Optional override for which ReviewAuthorAllowlistRef instance the default
    * isAuthorAllowed closure reads from. Defaults to the process-wide
-   * agentAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
-   * independent ref (e.g. via createAgentAuthorAllowlistRef()) to exercise
+   * reviewAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
+   * independent ref (e.g. via createReviewAuthorAllowlistRef()) to exercise
    * the true "never synced" (hasSynced() === false) state, which the
    * singleton — shared across the whole test file — cannot represent once
    * any other test has called .set() on it. Mirrors the fetchFn injection
    * pattern used elsewhere in this file (e.g. createPrRecordQuery).
    */
-  authorAllowlistRef?: AgentAuthorAllowlistRef;
+  authorAllowlistRef?: ReviewAuthorAllowlistRef;
   /**
    * Optional override for the resolved workspace root, normally derived from
    * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests that
@@ -791,7 +791,7 @@ export async function buildProductionDeps(opts: {
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;
-  const authorAllowlistRef = opts.authorAllowlistRef ?? agentAuthorAllowlistRef;
+  const authorAllowlistRef = opts.authorAllowlistRef ?? reviewAuthorAllowlistRef;
 
   return {
     getCurrentUser,

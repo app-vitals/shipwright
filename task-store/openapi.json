@@ -1366,15 +1366,6 @@
           {
             "schema": {
               "type": "string",
-              "example": "clx1234567890"
-            },
-            "required": false,
-            "name": "taskId",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
               "enum": [
                 "open",
                 "merged",
@@ -3004,13 +2995,6 @@
             "type": "integer",
             "example": 42
           },
-          "taskId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "example": "clx1234567890"
-          },
           "staged": {
             "type": "boolean",
             "default": false,
@@ -3276,11 +3260,6 @@
             "type": "string",
             "description": "Agent claiming this PR (admin tokens only)",
             "example": "agent-id-123"
-          },
-          "taskId": {
-            "type": "string",
-            "description": "Associated task ID",
-            "example": "clx1234567890"
           },
           "phase": {
             "type": "string",

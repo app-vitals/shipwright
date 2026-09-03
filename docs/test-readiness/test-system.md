@@ -250,7 +250,7 @@
     fixture directory or tooling required.
   - **Slack-membership restriction (`agent/src/agent-slack-membership-ref.ts`)** — a
     pure, zero-I/O mutable-box ref, structurally identical to the already-designed
-    `agent-repos-ref.ts`/`agent-author-allowlist-ref.ts` pattern (unit-tested directly,
+    `agent-repos-ref.ts`/`review-author-allowlist-ref.ts` pattern (unit-tested directly,
     no fixture or local substitute needed since it holds no external dependency).
   - **PR audit-trail events (`task-store/src/pr-transition-diff.ts`, PSA-1.2)** — a
     pure diff function over an explicit field allowlist, unit-tested directly; the
@@ -779,7 +779,7 @@ explicitly.
   suites exist — flagged as a candidate consolidation for Phase 3/4, not a blocker.
   Unchanged this cycle.
 - **Ref-seeding helper for mutable-box config refs** — `agent/src/agent-repos-ref.ts` /
-  `loop-jobs-ref.ts` / `agent-author-allowlist-ref.ts` share one shape (a settable box +
+  `loop-jobs-ref.ts` / `review-author-allowlist-ref.ts` share one shape (a settable box +
   a `hasSynced()`-style fail-open guard). Consider a small shared test helper (e.g. a
   generic `makeTestRef<T>()` in `agent/src/test-helpers/` if one doesn't already exist)
   so each new config ref doesn't hand-roll its own test double — flagged as a candidate

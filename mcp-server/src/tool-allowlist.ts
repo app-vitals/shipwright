@@ -21,6 +21,16 @@ import type { GeneratedTool } from "./generated-tools.ts";
  * - Token-management routes: tokens_list, tokens_create, tokens_update, tokens_delete
  * - PR lifecycle ops: prs_claim, prs_claim_next, prs_heartbeat, prs_complete,
  *   prs_patch, prs_release, prs_skip, prs_reset
+ * - Audit-trail / finding routes: tasks_events, prs_events, prs_findings
+ *
+ * Note this is a deny-list: a newly generated tool is exposed unless it is
+ * named here. `tasks_events`, `prs_events` and `prs_findings` were surfaced
+ * when PTL-3.1 regenerated generated-tools.ts (the committed file had drifted
+ * behind openapi.json), and are excluded to keep the public surface at the
+ * agreed 9 tools — `prs_findings` is a write op in the same
+ * pipeline-internal category as the lifecycle routes above, and the two
+ * `*_events` routes are audit-trail internals. Widening the public MCP
+ * surface is a deliberate decision, not a side effect of regeneration.
  */
 export const EXCLUDED_TOOLS: readonly string[] = [
   // tasks: pipeline-internal lifecycle
@@ -47,6 +57,10 @@ export const EXCLUDED_TOOLS: readonly string[] = [
   "prs_release",
   "prs_skip",
   "prs_reset",
+  // audit-trail reads + the findings write op
+  "tasks_events",
+  "prs_events",
+  "prs_findings",
 ] as const;
 
 /**

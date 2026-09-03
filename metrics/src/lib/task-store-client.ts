@@ -84,7 +84,7 @@ type PrOptionalOverrides = Pick<
  * "ship it" equivalent). The store records no per-PR findings count, so
  * `avg_review_findings` is emitted as null by this provider.
  */
-export type PrRecord = Pick<PullRequestSchema, "taskId" | "mergedAt"> &
+export type PrRecord = Pick<PullRequestSchema, "mergedAt"> &
   Partial<PrOptionalOverrides>;
 
 // ─── Error type ───────────────────────────────────────────────────────────────

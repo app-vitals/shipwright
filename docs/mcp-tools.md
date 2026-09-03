@@ -25,7 +25,7 @@ List pull requests
 - **Method:** GET
 - **Path:** `/prs`
 - **Has body:** No
-- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `taskId` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query)
+- **Parameters:** `repo` (query), `org` (query), `prNumber` (query), `state` (query), `reviewState` (query), `staged` (query), `limit` (query), `offset` (query), `ready` (query), `blocked` (query), `sort` (query), `updatedSince` (query)
 
 ## `prs_update`
 

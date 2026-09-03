@@ -15,7 +15,6 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     id: "pr-1",
     repo: "app-vitals/shipwright",
     prNumber: 1,
-    taskId: null,
     staged: false,
     state: "open",
     reviewState: "pending",

@@ -78,8 +78,6 @@ interface MakeDepsOptions {
   prOpenTasks?: PrOpenTaskRecord[];
   /** "repo#branch" -> merged-PR-list result, or an Error to throw, for the branch-fallback path. */
   branchResults?: Record<string, Array<{ number: number }> | Error>;
-  /** "repo#prNumber" -> existing task-store PullRequest record, for the taskId backfill lookup. */
-  prRecords?: Record<string, PrStateRecord>;
   now?: () => string;
   /** Defaults to `() => repos` so every existing test keeps passing unchanged. */
   getScopedRepos?: () => string[];
@@ -128,7 +126,6 @@ function makeDeps({
   pageLimit = 50,
   prOpenTasks = [],
   branchResults = {},
-  prRecords = {},
   now = () => FAKE_NOW,
   getScopedRepos = () => repos,
   tasksForBranch = {},
@@ -191,10 +188,6 @@ function makeDeps({
       const result = branchResults[key];
       if (result instanceof Error) throw result;
       return result ?? [];
-    },
-    findPrRecordByRepoAndPrNumber: async (repo: string, prNumber: number) => {
-      const key = `${repo}#${prNumber}`;
-      return prRecords[key] ?? null;
     },
     now,
     listAllTasksForBranch: async (repo: string, branch: string) => {
@@ -2188,7 +2181,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
 
   // ─── bundle-mate guard (BBR-1.1) ─────────────────────────────────────────
 
-  test("BBR-1.1: a pending sibling on a 2-task bundle branch is skipped in the branch-fallback merged path despite a real merged PR on the branch — no status PATCH, no taskId backfill, skip logged", async () => {
+  test("BBR-1.1: a pending sibling on a 2-task bundle branch is skipped in the branch-fallback merged path despite a real merged PR on the branch — no status PATCH, no PR-record PATCH, skip logged", async () => {
     const sibling: PrOpenTaskRecord = {
       id: "task-bundle-sibling-merged",
       repo: "acme/example-repo",
@@ -2203,15 +2196,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
         prOpenTasks: [sibling],
         branchResults: {
           "acme/example-repo#feat/asa-slack-oauth-ui": [{ number: 501 }],
-        },
-        prRecords: {
-          "acme/example-repo#501": {
-            id: "pr-record-501",
-            repo: "acme/example-repo",
-            prNumber: 501,
-            state: "open",
-            taskId: null,
-          },
         },
         tasksForBranch: {
           "acme/example-repo#feat/asa-slack-oauth-ui": [
@@ -2238,7 +2222,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     );
     // No status:"merged" PATCH on the sibling task.
     expect(taskPatchCalls).toHaveLength(0);
-    // No taskId backfill onto the PR record either — guarded before both effects.
+    // No PR-record PATCH either — guarded before both effects.
     expect(patchCalls).toHaveLength(0);
     expect(
       errorSpy.some((args) =>
@@ -2329,15 +2313,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
         branchResults: {
           "acme/example-repo#feat/asa-slack-oauth-ui": [{ number: 501 }],
         },
-        prRecords: {
-          "acme/example-repo#501": {
-            id: "pr-record-501",
-            repo: "acme/example-repo",
-            prNumber: 501,
-            state: "open",
-            taskId: null,
-          },
-        },
         tasksForBranch: {
           "acme/example-repo#feat/asa-slack-oauth-ui": SCOPE_DEGRADED,
         },
@@ -2358,7 +2333,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(listAllTasksForBranchCalls).toContain(
       "acme/example-repo#feat/asa-slack-oauth-ui",
     );
-    // No status:"merged" PATCH and no taskId backfill — same effective
+    // No status:"merged" PATCH and no PR-record PATCH — same effective
     // outcome as the >1-sibling case above.
     expect(taskPatchCalls).toHaveLength(0);
     expect(patchCalls).toHaveLength(0);
@@ -2399,15 +2374,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
           { number: 502 },
         ],
       },
-      prRecords: {
-        "acme/example-repo#502": {
-          id: "pr-record-502",
-          repo: "acme/example-repo",
-          prNumber: 502,
-          state: "open",
-          taskId: null,
-        },
-      },
       // Only the sibling itself is returned — a real, non-degraded single-task
       // branch (as if the first call had been degraded and a retry recovered
       // to reveal the true count) — the heal must proceed exactly as the
@@ -2423,16 +2389,14 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls[0].id).toBe("task-recovered-branch-fallback");
     expect(taskPatchCalls[0].fields.status).toBe("merged");
     expect(taskPatchCalls[0].fields.pr).toBe(502);
-    expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].id).toBe("pr-record-502");
-    expect(patchCalls[0].fields).toEqual({
-      taskId: "task-recovered-branch-fallback",
-    });
+    // PTL-3.1: the pr_open merge pass no longer PATCHes the PullRequest
+    // record at all (the taskId backfill is gone with the column).
+    expect(patchCalls).toHaveLength(0);
   });
 
   // ─── RDG-1.1: bundle-mate + startedAt guard on the DIRECT path ───────────
 
-  test("RDG-1.1: a task.pr-set task on a 2-task bundle branch with startedAt null is skipped in the direct path despite GitHub confirming MERGED — no status PATCH, no taskId backfill, skip logged", async () => {
+  test("RDG-1.1: a task.pr-set task on a 2-task bundle branch with startedAt null is skipped in the direct path despite GitHub confirming MERGED — no status PATCH, no PR-record PATCH, skip logged", async () => {
     const sibling: PrOpenTaskRecord = {
       id: "task-direct-bundle-sibling",
       repo: "acme/example-repo",
@@ -2447,15 +2411,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
           "acme/example-repo#601": {
             state: "MERGED",
             mergedAt: "2026-07-10T00:00:00.000Z",
-          },
-        },
-        prRecords: {
-          "acme/example-repo#601": {
-            id: "pr-record-601",
-            repo: "acme/example-repo",
-            prNumber: 601,
-            state: "open",
-            taskId: null,
           },
         },
         tasksForBranch: {
@@ -2483,7 +2438,7 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     );
     // No status:"merged" PATCH on the sibling task.
     expect(taskPatchCalls).toHaveLength(0);
-    // No taskId backfill onto the PR record either — guarded before both effects.
+    // No PR-record PATCH either — guarded before both effects.
     expect(patchCalls).toHaveLength(0);
     expect(
       errorSpy.some((args) =>
@@ -2511,15 +2466,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
           mergedAt: "2026-07-10T00:00:00.000Z",
         },
       },
-      prRecords: {
-        "acme/example-repo#602": {
-          id: "pr-record-602",
-          repo: "acme/example-repo",
-          prNumber: 602,
-          state: "open",
-          taskId: null,
-        },
-      },
       tasksForBranch: {
         "acme/example-repo#feat/rdg-bundle-branch-started": [
           { id: "task-direct-bundle-real-work-2", repo: "acme/example-repo" },
@@ -2534,11 +2480,9 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls[0].id).toBe("task-direct-bundle-started");
     expect(taskPatchCalls[0].fields.status).toBe("merged");
     expect(taskPatchCalls[0].fields.mergedAt).toBe("2026-07-10T00:00:00.000Z");
-    expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].id).toBe("pr-record-602");
-    expect(patchCalls[0].fields).toEqual({
-      taskId: "task-direct-bundle-started",
-    });
+    // PTL-3.1: the pr_open merge pass no longer PATCHes the PullRequest
+    // record at all (the taskId backfill is gone with the column).
+    expect(patchCalls).toHaveLength(0);
   });
 
   test("RDG-1.1 regression guard: a solo-branch task.pr-set task with startedAt null still advances to merged (direct path unchanged for the common case)", async () => {
@@ -2560,15 +2504,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
           mergedAt: "2026-07-10T00:00:00.000Z",
         },
       },
-      prRecords: {
-        "acme/example-repo#603": {
-          id: "pr-record-603",
-          repo: "acme/example-repo",
-          prNumber: 603,
-          state: "open",
-          taskId: null,
-        },
-      },
     });
 
     await reconcilePrState(deps);
@@ -2576,11 +2511,9 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls).toHaveLength(1);
     expect(taskPatchCalls[0].id).toBe("task-direct-solo-not-started");
     expect(taskPatchCalls[0].fields.status).toBe("merged");
-    expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].id).toBe("pr-record-603");
-    expect(patchCalls[0].fields).toEqual({
-      taskId: "task-direct-solo-not-started",
-    });
+    // PTL-3.1: the pr_open merge pass no longer PATCHes the PullRequest
+    // record at all (the taskId backfill is gone with the column).
+    expect(patchCalls).toHaveLength(0);
   });
 
   test("RDG-1.1 regression guard: a task.pr-set task with no branch set still advances to merged regardless of startedAt (direct path unchanged)", async () => {
@@ -2599,15 +2532,6 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
             mergedAt: "2026-07-10T00:00:00.000Z",
           },
         },
-        prRecords: {
-          "acme/example-repo#604": {
-            id: "pr-record-604",
-            repo: "acme/example-repo",
-            prNumber: 604,
-            state: "open",
-            taskId: null,
-          },
-        },
       });
 
     await reconcilePrState(deps);
@@ -2617,8 +2541,9 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls).toHaveLength(1);
     expect(taskPatchCalls[0].id).toBe("task-direct-no-branch");
     expect(taskPatchCalls[0].fields.status).toBe("merged");
-    expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].id).toBe("pr-record-604");
+    // PTL-3.1: the pr_open merge pass no longer PATCHes the PullRequest
+    // record at all (the taskId backfill is gone with the column).
+    expect(patchCalls).toHaveLength(0);
   });
 
   test("task with no pr AND no branch is skipped — no PATCH, no throw", async () => {
@@ -2630,13 +2555,13 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
     expect(taskPatchCalls).toHaveLength(0);
   });
 
-  test("taskId is backfilled on the matching PR record when it is currently null", async () => {
+  test("PTL-3.1: a confirmed merge advances the task but never PATCHes the PullRequest record (backfill removed)", async () => {
     const task: PrOpenTaskRecord = {
       id: "task-6",
       repo: "acme/example-repo",
       pr: 60,
     };
-    const { deps, patchCalls } = makeDeps({
+    const { deps, taskPatchCalls, patchCalls } = makeDeps({
       prOpenTasks: [task],
       ghResults: {
         "acme/example-repo#60": {
@@ -2644,51 +2569,13 @@ describe("reconcilePrState — pr_open task reconciliation pass", () => {
           mergedAt: "2026-07-10T00:00:00.000Z",
         },
       },
-      prRecords: {
-        "acme/example-repo#60": {
-          id: "pr-record-60",
-          repo: "acme/example-repo",
-          prNumber: 60,
-          state: "open",
-          taskId: null,
-        },
-      },
     });
 
     await reconcilePrState(deps);
 
-    expect(patchCalls).toHaveLength(1);
-    expect(patchCalls[0].id).toBe("pr-record-60");
-    expect(patchCalls[0].fields).toEqual({ taskId: "task-6" });
-  });
-
-  test("taskId is left untouched when the PR record already has one set", async () => {
-    const task: PrOpenTaskRecord = {
-      id: "task-7",
-      repo: "acme/example-repo",
-      pr: 61,
-    };
-    const { deps, patchCalls } = makeDeps({
-      prOpenTasks: [task],
-      ghResults: {
-        "acme/example-repo#61": {
-          state: "MERGED",
-          mergedAt: "2026-07-10T00:00:00.000Z",
-        },
-      },
-      prRecords: {
-        "acme/example-repo#61": {
-          id: "pr-record-61",
-          repo: "acme/example-repo",
-          prNumber: 61,
-          state: "open",
-          taskId: "some-other-task",
-        },
-      },
-    });
-
-    await reconcilePrState(deps);
-
+    expect(taskPatchCalls).toHaveLength(1);
+    expect(taskPatchCalls[0].id).toBe("task-6");
+    expect(taskPatchCalls[0].fields.status).toBe("merged");
     expect(patchCalls).toHaveLength(0);
   });
 

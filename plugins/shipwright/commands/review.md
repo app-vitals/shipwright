@@ -133,7 +133,7 @@ PR_CLAIM=$(curl -s -o /tmp/pr_claim.json -w '%{http_code}' -X POST \
   -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   -H "Content-Type: application/json" \
   "$SHIPWRIGHT_TASK_STORE_URL/prs/claim" \
-  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"$([ -n \"{taskId}\" ] && echo \", \\\"taskId\\\": \\\"{taskId}\\\"\" || true)}")
+  -d "{\"repo\": \"{org}/{repo}\", \"prNumber\": {pr}, \"commitSha\": \"{headRefOid}\"}")
 ```
 - `201` (new) or `200` (update): claimed. Capture `.id` from `/tmp/pr_claim.json` as
   `PR_RECORD_ID`; the claim sets `reviewState: "in_progress"`.
