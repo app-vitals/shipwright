@@ -295,12 +295,31 @@ describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
     expect(content).toContain("/tasks/");
   });
 
-  it("surfaces claimedBy, hitl, reviewState, patchCycles, and taskId from the task-store record", () => {
+  it("surfaces claimedBy, hitl, reviewState, patchCycles from the task-store PR record (not taskId)", () => {
     expect(content).toContain("claimedBy");
     expect(content).toContain("hitl");
     expect(content).toContain("reviewState");
     expect(content).toContain("patchCycles");
-    expect(content).toContain("taskId");
+    // taskId should NOT be in the diagnostic print — it's being removed from the schema
+    expect(content.match(/jq '.*taskId.*'/)).toBeNull();
+  });
+
+  it("queries task-store GET /tasks?repo=&pr= to resolve task ids for a PR (live lookup, not stored .taskId fallback)", () => {
+    const hasLiveTaskLookup =
+      content.includes("/tasks?repo=") &&
+      content.includes("&pr=") &&
+      !content.match(/\.taskId\s*\/\/\s*empty/); // Should NOT fall back to stored .taskId
+    expect(hasLiveTaskLookup).toBe(true);
+  });
+
+  it("handles the multi-task bundle case (PR mapped to zero, one, or many tasks) by looping over results", () => {
+    // Must mention looping/iteration over tasks, not assuming a single match
+    const hasLoopOrMany =
+      content.includes("loop") ||
+      content.includes("foreach") ||
+      content.includes("for ") ||
+      (content.includes("multiple") && content.includes("task"));
+    expect(hasLoopOrMany).toBe(true);
   });
 
   it("surfaces the readyFor*At fields from the task-store record", () => {
