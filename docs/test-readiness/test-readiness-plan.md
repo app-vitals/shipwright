@@ -387,7 +387,7 @@ status movement**, see Open risks below for the escalation.
   automated sweep — the pattern set still can't catch a recurrence of this leak class on
   its own. Recommend a future cycle add a fourth signal scanning for direct
   `.set(`/`.reset(`/mutation calls on this repo's known singleton-ref exports
-  (`agentReposRef`, `agentAuthorAllowlistRef`, `agentSlackMembershipRef`, `loopJobsRef`,
+  (`agentReposRef`, `reviewAuthorAllowlistRef`, `agentSlackMembershipRef`, `loopJobsRef`,
   and future `agent-*-ref.ts` additions) with no paired `afterEach`/`afterAll` in the same
   file — this is a Phase 3 process improvement, not itself a task against the codebase.
   Carried forward unchanged, no new instance found this cycle.

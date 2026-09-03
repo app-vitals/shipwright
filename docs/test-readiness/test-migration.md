@@ -381,7 +381,7 @@ directly against current repo state — exactly 2 substantive commits since `ea8
    automated sweep — it remains a manual read-through finding, carried forward as a
    process-improvement recommendation, not yet a script. No new instances found this
    cycle among the repo's other singleton refs (`agentReposRef`,
-   `agentAuthorAllowlistRef`, `loopJobsRef`).
+   `reviewAuthorAllowlistRef`, `loopJobsRef`).
 4. Pulled a fresh live Tier 1 speed + Step 4c coverage measurement from CI (`gh run view
    --log` against the latest green `lint / typecheck / test` run at this cycle's HEAD,
    `be5bfa59`) — see Speed measurement below.
@@ -462,7 +462,7 @@ state:
    test doesn't match any of those literal greps (it mutates an exported ref object, not
    a JS global), so the sweep's existing pattern set doesn't catch this class of leak.
    Recommend widening the sweep in a future cycle to also flag direct `.set()`/mutation
-   calls on any singleton-named export (`agentAuthorAllowlistRef`, `agentRposRef`,
+   calls on any singleton-named export (`reviewAuthorAllowlistRef`, `agentRposRef`,
    `agentSlackMembershipRef`, etc.) with no paired `afterEach` in the same file — see
    Risk callouts.
 4. Pulled a fresh live Tier 1 speed + Step 4c coverage measurement from CI (`gh run view
