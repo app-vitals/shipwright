@@ -1332,32 +1332,17 @@ describe("getPatchCandidates — allowlisted authors (DBR-1.4)", () => {
 
   test("empty allowlist (default): only self-authored PRs are returned, listAllowlistedOpenPrs contributes nothing", async () => {
     const ownPrs = [makeOwnPr({ number: 10, repo: "acme/example-repo" })];
-    let allowlistedCalls = 0;
     const deps = makeDeps({
       ownPrs,
       reviewDataByPr: {},
       mergeStatusByPr: dirtyMergeStatus(10),
       allowlistedPrs: [],
     });
-    // Wrap listAllowlistedOpenPrs to observe whether/how it's invoked without
-    // changing its (empty) return value — the acceptance criterion only
-    // requires the empty-allowlist result to be unaffected, not that the dep
-    // is literally never called.
-    const wrapped: CheckPatchDeps = {
-      ...deps,
-      listAllowlistedOpenPrs: async (repo: string) => {
-        allowlistedCalls++;
-        return (await deps.listAllowlistedOpenPrs?.(repo)) ?? [];
-      },
-    };
 
-    const result = await getPatchCandidates(wrapped);
+    const result = await getPatchCandidates(deps);
 
     expect(result).toHaveLength(1);
     expect(result.map((c) => c.id)).toEqual(["acme/example-repo#10"]);
-    // Whether or not the dep was invoked, it must not have contributed any
-    // extra candidates beyond the single self-authored PR above.
-    expect(allowlistedCalls).toBeGreaterThanOrEqual(0);
   });
 
   test("non-empty allowlist: PRs from listAllowlistedOpenPrs merge into the candidate list alongside self-authored PRs", async () => {
