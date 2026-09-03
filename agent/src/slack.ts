@@ -619,7 +619,10 @@ export function createSlackApp(
     // rather than the generic "Done" when the reply was suppressed.
     let wasSuppressed = false;
     try {
-      const runResult = await runner(prompt, sessionKey, progress.onProgress);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress, {
+        SLACK_CHANNEL_ID: msg.channel,
+        SLACK_THREAD_TS: replyTs,
+      });
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -822,7 +825,10 @@ export function createSlackApp(
     // rather than the generic "Done" when the reply was suppressed.
     let wasSuppressed = false;
     try {
-      const runResult = await runner(prompt, sessionKey, progress.onProgress);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress, {
+        SLACK_CHANNEL_ID: ev.channel,
+        SLACK_THREAD_TS: replyTs,
+      });
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
@@ -964,7 +970,10 @@ export function createSlackApp(
     // rather than the generic "Done" when the reply was suppressed.
     let wasSuppressed = false;
     try {
-      const runResult = await runner(prompt, sessionKey, progress.onProgress);
+      const runResult = await runner(prompt, sessionKey, progress.onProgress, {
+        SLACK_CHANNEL_ID: ev.item.channel,
+        SLACK_THREAD_TS: ev.item.ts,
+      });
       if (runResult.streamIncomplete) {
         // Clean process exit, but the stream never emitted a terminal
         // `result` event — treat this the same as a genuine failure rather
