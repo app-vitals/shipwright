@@ -183,6 +183,13 @@ export class SlackProgress {
   // via deliverContent() or finish()'s own fallback — prevents finish()
   // from sending a redundant second "complete" update.
   private completed = false;
+  // Set by markExternallyStopped() when Slack's agent_session_stopped event
+  // fires for this run's stream (AGS-1.1). Once true, every further
+  // appendStream/stopStream call becomes a no-op instead of an API call —
+  // Slack has already discarded the stream server-side, so any further
+  // write would just fail with message_not_in_streaming_state. Mirrors
+  // openclaw's applySlackStreamStop pattern.
+  private externallyStopped = false;
 
   constructor(opts: SlackProgressOptions) {
     this.client = opts.client;
@@ -206,6 +213,44 @@ export class SlackProgress {
     } else {
       await this.setStatus("processing");
     }
+  }
+
+  /**
+   * The `channel:streaming_message_ts` key identifying this run's live
+   * Thinking Steps stream, matching the shape Slack's agent_session_stopped
+   * event carries (event.channel + event.streaming_message_ts) — used by
+   * createSlackApp()'s closure-scoped registry (AGS-1.1) to look up the
+   * SlackProgress instance a stopped-stream event refers to. Returns
+   * undefined before the stream has opened (flag off, start() not yet
+   * called, or startStream() failed to obtain a `ts`).
+   */
+  streamKey(): string | undefined {
+    if (!this.streamTs) return undefined;
+    return `${this.channel}:${this.streamTs}`;
+  }
+
+  /**
+   * This run's actual thread ts (as opposed to the stream's own message ts
+   * returned by streamKey()) — the value agents.sessions.setStatus expects
+   * for `thread_ts`. Used by createSlackApp()'s agent_session_stopped
+   * handler (AGS-1.1) to reset the correct thread's status once the
+   * matching SlackProgress instance has been found via streamKey().
+   */
+  getThreadTs(): string {
+    return this.threadTs;
+  }
+
+  /**
+   * Marks this run's stream as externally stopped by Slack (AGS-1.1) — call
+   * when the agent_session_stopped event fires for this instance's
+   * streamKey(). From this point on, appendTaskUpdate/deliverContent/
+   * reportError/stopStream are all no-ops: Slack has already discarded the
+   * stream server-side, so any further write would only fail with
+   * message_not_in_streaming_state. Idempotent and safe to call more than
+   * once.
+   */
+  markExternallyStopped(): void {
+    this.externallyStopped = true;
   }
 
   private async startStream(): Promise<void> {
@@ -277,6 +322,7 @@ export class SlackProgress {
     title: string,
     status: "in_progress" | "complete" | "error",
   ): void {
+    if (this.externallyStopped) return;
     const label = `appendStream(${title})`;
     try {
       this.client.chat
@@ -317,6 +363,7 @@ export class SlackProgress {
   async deliverContent(text: string): Promise<true | undefined> {
     if (!this.thinkingStepsEnabled) return undefined;
     if (!this.streamTs) return undefined;
+    if (this.externallyStopped) return undefined;
     try {
       await this.client.chat.appendStream({
         channel: this.channel,
@@ -360,6 +407,7 @@ export class SlackProgress {
   reportError(): void {
     if (!this.thinkingStepsEnabled) return;
     if (!this.streamTs) return;
+    if (this.externallyStopped) return;
     this.appendTaskUpdate(ERROR_TITLE, "error");
     this.completed = true;
   }
@@ -397,6 +445,7 @@ export class SlackProgress {
   private async stopStream(
     sessionStatus: "active" | "processing",
   ): Promise<void> {
+    if (this.externallyStopped) return;
     try {
       await this.client.chat.stopStream({
         channel: this.channel,

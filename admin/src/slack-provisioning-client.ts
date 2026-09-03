@@ -180,6 +180,7 @@ export function buildAgentManifest(
       socket_mode_enabled: true,
       event_subscriptions: {
         bot_events: [
+          "agent_session_stopped",
           "app_mention",
           "message.channels",
           "message.groups",

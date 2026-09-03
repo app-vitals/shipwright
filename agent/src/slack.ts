@@ -531,6 +531,25 @@ export function createSlackApp(
   // instances (e.g. in tests) stay isolated from each other's refcount state.
   const threadStatusTracker = new ThreadStatusTracker();
 
+  // Registry of live streams: SlackProgress.streamKey() ("channel:ts") ->
+  // the instance itself (AGS-1.1). Populated when startStream() succeeds
+  // (i.e. progress.streamKey() first becomes defined, right after start())
+  // and cleared unconditionally when the stream closes, success or failure
+  // (right after finish()) — so it never leaks entries for completed runs.
+  // Closure-scoped (one instance per createSlackApp() call), same lifecycle
+  // as threadStatusTracker above — never module-level.
+  const liveStreams = new Map<string, SlackProgress>();
+
+  function registerStream(progress: SlackProgress): void {
+    const key = progress.streamKey();
+    if (key) liveStreams.set(key, progress);
+  }
+
+  function unregisterStream(progress: SlackProgress): void {
+    const key = progress.streamKey();
+    if (key) liveStreams.delete(key);
+  }
+
   // DMs: respond to every message.
   // Channels: respond only if bot has already replied in this thread.
   // biome-ignore lint/suspicious/noExplicitAny: Bolt callback params
@@ -589,6 +608,10 @@ export function createSlackApp(
       thinkingStepsEnabled,
       threadStatusTracker.enter(sessionKey),
     );
+    // Registers the stream (no-op when thinkingStepsEnabled is off, or when
+    // startStream() failed to open one — streamKey() is undefined either
+    // way) so agent_session_stopped can look this instance up (AGS-1.1).
+    registerStream(progress);
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -720,6 +743,10 @@ export function createSlackApp(
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );
+      // Clears the registry entry unconditionally — success or failure —
+      // so it never leaks a stale instance for a run that's already done
+      // (AGS-1.1).
+      unregisterStream(progress);
     }
   });
 
@@ -767,6 +794,9 @@ export function createSlackApp(
       thinkingStepsEnabled,
       threadStatusTracker.enter(sessionKey),
     );
+    // Registers the stream so agent_session_stopped can look this instance
+    // up (AGS-1.1) — see the app.message handler's identical comment above.
+    registerStream(progress);
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -912,6 +942,7 @@ export function createSlackApp(
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );
+      unregisterStream(progress);
     }
   });
 
@@ -956,6 +987,9 @@ export function createSlackApp(
       thinkingStepsEnabled,
       threadStatusTracker.enter(sessionKey),
     );
+    // Registers the stream so agent_session_stopped can look this instance
+    // up (AGS-1.1) — see the app.message handler's identical comment above.
+    registerStream(progress);
 
     // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
     // in the finally block can title the stream's completion card "Ack"
@@ -1064,6 +1098,63 @@ export function createSlackApp(
         threadStatusTracker.exit(sessionKey),
         wasSuppressed,
       );
+      unregisterStream(progress);
+    }
+  });
+
+  // Slack's native Stop/session-cancellation event for the Agent Sessions
+  // API (AGS-1.1). Without subscribing to this, the agent has no way to know
+  // when Slack has externally halted a stream, so it keeps trying to
+  // append/finalize into a stream Slack already discarded server-side
+  // (message_not_in_streaming_state) — which cascades into a permanently
+  // stuck "is working" status, since finish()'s stopStream() call fails with
+  // no fallback to reset it. Mirrors openclaw's applySlackStreamStop /
+  // markSlackStreamsStopped pattern (extensions/slack/src/streaming.ts,
+  // monitor/events/agent.ts).
+  //
+  // biome-ignore lint/suspicious/noExplicitAny: Bolt callback params
+  app.event("agent_session_stopped", async ({ event, client }: any) => {
+    const ev = event as { channel?: string; streaming_message_ts?: string };
+
+    // Look up the matching live stream and mark it externally-stopped —
+    // any further appendStream/stopStream call against it becomes a no-op
+    // instead of a failed API call. An unknown/already-cleared channel:ts
+    // (stream already closed via its own success/failure path, or a
+    // duplicate delivery of the same event) is a safe no-op — never throws.
+    // Also recovers the run's actual thread_ts (distinct from the stream's
+    // own streaming_message_ts) for the direct status reset below, when a
+    // match was found.
+    let threadTs = ev.streaming_message_ts;
+    if (ev.channel && ev.streaming_message_ts) {
+      const key = `${ev.channel}:${ev.streaming_message_ts}`;
+      const progress = liveStreams.get(key);
+      if (progress) {
+        threadTs = progress.getThreadTs();
+        progress.markExternallyStopped();
+        liveStreams.delete(key);
+      }
+    }
+
+    // Independent of the stream's own close path: a direct status reset,
+    // since it's a separate API call from the stream itself and should
+    // succeed even when the stream is already dead server-side (the actual
+    // fix for the stuck "is working" status — matches openclaw's own
+    // handler comment: "Recover stale processing if the turn's earlier
+    // active write failed. An unauthorized Stop may clear the indicator
+    // cosmetically until the still-running turn ends.").
+    if (ev.channel) {
+      try {
+        await client.agents.sessions.setStatus({
+          channel_id: ev.channel,
+          thread_ts: threadTs,
+          status: "active",
+        });
+      } catch (err) {
+        console.warn(
+          "[slack] agent_session_stopped: setStatus(active) failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
   });
 

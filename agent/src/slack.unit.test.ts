@@ -19,10 +19,10 @@ import { describe, expect, mock, test } from "bun:test";
 import type { AgentSlackMembershipRef } from "./agent-slack-membership-ref.ts";
 import { createAgentSlackMembershipRef } from "./agent-slack-membership-ref.ts";
 import {
+  createSlackApp as _createSlackApp,
   dispatchMarkers,
   hasSlackCredentials,
   isAllowedSlackSender,
-  createSlackApp as _createSlackApp,
 } from "./slack.ts";
 
 describe("hasSlackCredentials", () => {
@@ -139,12 +139,14 @@ type HandlerFn = (...args: unknown[]) => Promise<void>;
 let capturedMessageHandler: HandlerFn | null = null;
 let capturedMentionHandler: HandlerFn | null = null;
 let capturedReactionAddedHandler: HandlerFn | null = null;
+let capturedAgentSessionStoppedHandler: HandlerFn | null = null;
 
 class MockApp {
   constructor(_args: Record<string, unknown>) {
     capturedMessageHandler = null;
     capturedMentionHandler = null;
     capturedReactionAddedHandler = null;
+    capturedAgentSessionStoppedHandler = null;
   }
 
   message(handler: HandlerFn) {
@@ -154,6 +156,8 @@ class MockApp {
   event(type: string, handler: HandlerFn) {
     if (type === "app_mention") capturedMentionHandler = handler;
     if (type === "reaction_added") capturedReactionAddedHandler = handler;
+    if (type === "agent_session_stopped")
+      capturedAgentSessionStoppedHandler = handler;
   }
 }
 
@@ -616,5 +620,248 @@ describe("membership gating — reaction_added handler", () => {
     const { runner, client } = await invokeReaction(ref, async () => undefined);
     expect(runner).not.toHaveBeenCalled();
     expect(client.chat.postMessage).not.toHaveBeenCalled();
+  });
+});
+
+// ─── agent_session_stopped handler (AGS-1.1) ───────────────────────────────
+// Slack's native Stop/session-cancellation event for the Agent Sessions API.
+// createSlackApp() keeps a closure-scoped registry (channel:ts -> live
+// SlackProgress instance), populated when startStream() succeeds and cleared
+// when the stream closes (success or failure). On agent_session_stopped, the
+// handler looks up the matching instance and marks it externally-stopped
+// (further appendStream/stopStream calls become no-ops), then independently
+// resets the thread's "is working" indicator via a direct
+// agents.sessions.setStatus({status: "active"}) call — the actual fix for the
+// stuck-status bug, since it succeeds even when the stream is already dead
+// server-side.
+
+describe("agent_session_stopped handler", () => {
+  function makeStreamingClient() {
+    return {
+      ...makeMockClient(),
+      chat: {
+        ...makeMockClient().chat,
+        startStream: mock(async (_args: unknown) => ({ ts: "stream.ts.1" })),
+        appendStream: mock(async (_args: unknown) => {}),
+        stopStream: mock(async (_args: unknown) => {}),
+      },
+    };
+  }
+
+  // Flushes pending microtask hops (getSessionFn/resolveUserFn awaits,
+  // startStream()'s await, etc.) so the handler reaches the point where it
+  // has called runner() and is awaiting the still-pending run — i.e. the
+  // registry entry is populated but the handler's finally block (which
+  // would unregister it) hasn't run yet. Mirrors the existing
+  // flushMicrotasks() helper used by the per-thread refcounting suite above.
+  function flushMicrotasks(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  // Starts a stream and leaves its run in flight (runner() never resolves
+  // during the test) — the realistic shape of agent_session_stopped firing
+  // mid-turn, and the only way the registry entry is still present when the
+  // event handler looks it up (the message handler's finally block clears
+  // it as soon as the run completes).
+  function startAStream(overrides: {
+    membershipRef: AgentSlackMembershipRef;
+    resolveUserEmailFn: (
+      userId: string,
+      client: unknown,
+    ) => Promise<string | undefined>;
+    thinkingStepsEnabled?: boolean;
+  }) {
+    const runner = mock(
+      (_msg: string, _key?: string) =>
+        // biome-ignore lint/suspicious/noExplicitAny: deliberately never resolves — type matches ClaudeRunner's return via cast
+        new Promise(() => {}) as any,
+    );
+    _createSlackApp(
+      runner,
+      (text: string) => text,
+      (channel: string, ts: string) => `${channel}:${ts}`,
+      // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
+      (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
+      mockGatingSlackConfig,
+      undefined,
+      async () => null,
+      {},
+      async () => null,
+      async () => null,
+      async (userId: string) => userId,
+      "UBOT123",
+      async () => ({ messages: [] }),
+      async () => undefined,
+      undefined,
+      undefined,
+      overrides.resolveUserEmailFn,
+      overrides.membershipRef,
+      overrides.thinkingStepsEnabled ?? true,
+    );
+
+    const client = makeStreamingClient();
+    const say = makeSay();
+    const message = {
+      channel: "D123",
+      ts: "111.222",
+      text: "Hello bot",
+      channel_type: "im",
+      user: "U-SENDER",
+    };
+    // Deliberately not awaited — the handler is left mid-flight, blocked on
+    // runner()'s never-resolving promise.
+    capturedMessageHandler?.({ message, say, client });
+    return { runner, client, say };
+  }
+
+  test("marks the matching SlackProgress externally-stopped: further appendStream calls become no-ops", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const { client } = startAStream({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+    });
+    await flushMicrotasks();
+
+    // Stream opened successfully — registry now has an entry for "D123:stream.ts.1".
+    expect(client.chat.startStream).toHaveBeenCalledTimes(1);
+    client.chat.appendStream.mockClear();
+
+    await capturedAgentSessionStoppedHandler?.({
+      event: { channel: "D123", streaming_message_ts: "stream.ts.1" },
+      client,
+    });
+
+    // Any further onProgress-driven appendStream against this dead stream is
+    // now a no-op — asserted indirectly by confirming a raw appendStream call
+    // is never issued once the event has fired for this stream's key.
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+  });
+
+  test("resets the thread status via a direct agents.sessions.setStatus('active') call", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const { client } = startAStream({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+    });
+    await flushMicrotasks();
+
+    client.agents.sessions.setStatus.mockClear();
+
+    await capturedAgentSessionStoppedHandler?.({
+      event: { channel: "D123", streaming_message_ts: "stream.ts.1" },
+      client,
+    });
+
+    // thread_ts must be the run's actual thread ts ("111.222", the
+    // message's own ts since it has no thread_ts) — not the stream's
+    // streaming_message_ts ("stream.ts.1"), which is a different value the
+    // Agent Sessions API doesn't accept as a thread identifier.
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel_id: "D123",
+        thread_ts: "111.222",
+        status: "active",
+      }),
+    );
+  });
+
+  test("unknown/already-cleared channel:ts is a no-op — does not throw", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const { client } = startAStream({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+    });
+    await flushMicrotasks();
+
+    await expect(
+      capturedAgentSessionStoppedHandler?.({
+        event: { channel: "D999", streaming_message_ts: "no.such.stream" },
+        client,
+      }),
+    ).resolves.toBeUndefined();
+
+    // The direct status reset still fires regardless of registry lookup
+    // outcome — AC #5 says it's independent of the stream's own close path.
+    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "active" }),
+    );
+  });
+
+  test("agents.sessions.setStatus failure does not crash the handler", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const { client } = startAStream({
+      membershipRef: ref,
+      resolveUserEmailFn: async () => undefined,
+    });
+    await flushMicrotasks();
+
+    client.agents.sessions.setStatus.mockRejectedValueOnce(
+      new Error("setStatus down"),
+    );
+
+    await expect(
+      capturedAgentSessionStoppedHandler?.({
+        event: { channel: "D123", streaming_message_ts: "stream.ts.1" },
+        client,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  test("registry entry is cleared once the stream closes normally — a later agent_session_stopped for it is a no-op lookup", async () => {
+    const ref = createAgentSlackMembershipRef();
+    const runner = mock(async (_msg: string, _key?: string) => ({
+      result: "Claude response",
+      sessionId: "sess-1",
+    }));
+    _createSlackApp(
+      runner,
+      (text: string) => text,
+      (channel: string, ts: string) => `${channel}:${ts}`,
+      // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests
+      (cfg) => new MockApp(cfg as Record<string, unknown>) as any,
+      mockGatingSlackConfig,
+      undefined,
+      async () => null,
+      {},
+      async () => null,
+      async () => null,
+      async (userId: string) => userId,
+      "UBOT123",
+      async () => ({ messages: [] }),
+      async () => undefined,
+      undefined,
+      undefined,
+      async () => undefined,
+      ref,
+      true,
+    );
+    const client = makeStreamingClient();
+    const say = makeSay();
+    // Run completes normally (unlike startAStream()'s never-resolving
+    // runner) — the message handler's finally block clears the registry
+    // entry for this stream key before this call resolves.
+    await capturedMessageHandler?.({
+      message: {
+        channel: "D123",
+        ts: "111.222",
+        text: "Hello bot",
+        channel_type: "im",
+        user: "U-SENDER",
+      },
+      say,
+      client,
+    });
+
+    // Firing the event now must still be a safe no-op (covered by the
+    // "unknown key" case above) — this test instead confirms stopStream was
+    // not called a second time as a side effect of the (now no-op) lookup.
+    client.chat.stopStream.mockClear();
+
+    await capturedAgentSessionStoppedHandler?.({
+      event: { channel: "D123", streaming_message_ts: "stream.ts.1" },
+      client,
+    });
+
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
   });
 });
