@@ -218,6 +218,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -257,6 +258,7 @@ function makeMockDeps(): AdminDeps {
               selfHosted: false,
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               typeName: "coding",
               createdAt: new Date("2024-01-01"),
@@ -280,6 +282,7 @@ function makeMockDeps(): AdminDeps {
         selfHosted: input.selfHosted ?? false,
         repos: input.repos ?? [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -1447,6 +1450,7 @@ describe("admin API — create agent", () => {
           selfHosted: false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -1650,6 +1654,7 @@ describe("admin API — create agent", () => {
             selfHosted: false,
             repos: [],
             authorAllowlist: [],
+            patchAuthorAllowlist: [],
             restrictSlackToMembers: false,
             typeName: "coding",
             createdAt: new Date("2024-01-01"),
@@ -1768,6 +1773,7 @@ describe("admin API — delete agent", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2250,6 +2256,7 @@ describe("admin API — selfHosted field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2488,6 +2495,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2565,6 +2573,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2613,6 +2622,7 @@ describe("admin API — restrictSlackToMembers field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: input.restrictSlackToMembers ?? false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2794,6 +2804,7 @@ describe("admin API — missingRequiredEnv field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2841,6 +2852,7 @@ describe("admin API — missingRequiredEnv field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2903,6 +2915,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2920,6 +2933,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -2957,6 +2971,7 @@ describe("admin API — repos field", () => {
                 selfHosted: false,
                 repos: ["my-org/my-repo"],
                 authorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -2974,6 +2989,7 @@ describe("admin API — repos field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3053,6 +3069,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: [],
           authorAllowlist: input.authorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3105,6 +3122,7 @@ describe("admin API — authorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: [],
+                patchAuthorAllowlist: [],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -3126,6 +3144,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: input.authorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3163,6 +3182,7 @@ describe("admin API — authorAllowlist field", () => {
                 selfHosted: false,
                 repos: [],
                 authorAllowlist: ["octocat"],
+                patchAuthorAllowlist: ["octocat"],
                 restrictSlackToMembers: false,
                 typeName: "coding",
                 createdAt: new Date("2024-01-01"),
@@ -3184,6 +3204,7 @@ describe("admin API — authorAllowlist field", () => {
           selfHosted: input.selfHosted ?? false,
           repos: input.repos ?? [],
           authorAllowlist: input.authorAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           createdAt: new Date("2024-01-01"),
@@ -3215,6 +3236,488 @@ describe("admin API — authorAllowlist field", () => {
     const body = await res.json();
     expect(Array.isArray(body.authorAllowlist)).toBe(true);
     expect(body.authorAllowlist).toEqual([]);
+  });
+});
+
+// ─── patchAuthorAllowlist field smoke tests (DBR-1.1) ─────────────────────────
+// patchAuthorAllowlist is independent of authorAllowlist/reviewAuthorAllowlist.
+// Every case below sends a *valid* authorAllowlist alongside it, so a 400 can
+// only have come from patchAuthorAllowlist's own isGithubLogin refine — drop
+// that refine on either schema and these fail.
+
+describe("admin API — patchAuthorAllowlist field", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /agents with patchAuthorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "New Agent",
+        authorAllowlist: ["octocat"],
+        patchAuthorAllowlist: ["not valid"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("POST /agents with patchAuthorAllowlist: ['octocat'] returns 201 and includes it", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        create: async (input: {
+          name: string;
+          slackId?: string | null;
+          selfHosted?: boolean;
+          patchAuthorAllowlist?: string[];
+        }) => ({
+          id: "agent-new-id",
+          name: input.name,
+          slackId: input.slackId ?? null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          authorAllowlist: [],
+          patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request("/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "New Agent",
+        patchAuthorAllowlist: ["octocat"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.patchAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with patchAuthorAllowlist: ['not valid'] returns 400 (invalid login)", async () => {
+    const app = createAdminApp(makeMockDeps());
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        authorAllowlist: ["octocat"],
+        patchAuthorAllowlist: ["not valid"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/github login/i);
+  });
+
+  it("PATCH /agents/:id with patchAuthorAllowlist: ['octocat'] returns 200", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            repos?: string[];
+            patchAuthorAllowlist?: string[];
+          },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: input.repos ?? [],
+          authorAllowlist: [],
+          patchAuthorAllowlist: input.patchAuthorAllowlist ?? [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ patchAuthorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.patchAuthorAllowlist).toEqual(["octocat"]);
+  });
+});
+
+// ─── reviewAuthorAllowlist dual-write/dual-read smoke tests (DBR-2.1) ─────────
+// reviewAuthorAllowlist is a rename-in-progress twin of authorAllowlist:
+// PATCH via either key keeps both columns in sync, and GET/PATCH responses
+// always return both fields as identical arrays.
+
+describe("admin API — reviewAuthorAllowlist dual-write/dual-read", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("PATCH /agents/:id with authorAllowlist also syncs reviewAuthorAllowlist in the response", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            authorAllowlist?: string[];
+            reviewAuthorAllowlist?: string[];
+          },
+        ) => {
+          // Mirrors the real AgentService.updateSelfHosted dual-write: a
+          // single provided field's value flows to both columns.
+          const resolved =
+            input.reviewAuthorAllowlist ?? input.authorAllowlist ?? [];
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: resolved,
+            reviewAuthorAllowlist: resolved,
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ authorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with reviewAuthorAllowlist also syncs authorAllowlist in the response", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            authorAllowlist?: string[];
+            reviewAuthorAllowlist?: string[];
+          },
+        ) => {
+          const resolved =
+            input.reviewAuthorAllowlist ?? input.authorAllowlist ?? [];
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: resolved,
+            reviewAuthorAllowlist: resolved,
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ reviewAuthorAllowlist: ["octocat"] }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with both fields supplied and different values prefers reviewAuthorAllowlist as the source of truth for both columns", async () => {
+    const base = makeMockDeps();
+    let capturedInput: { authorAllowlist?: string[]; reviewAuthorAllowlist?: string[] } | undefined;
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: [],
+                reviewAuthorAllowlist: [],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            authorAllowlist?: string[];
+            reviewAuthorAllowlist?: string[];
+          },
+        ) => {
+          capturedInput = input;
+          const resolved =
+            input.reviewAuthorAllowlist ?? input.authorAllowlist ?? [];
+          return {
+            id,
+            name: "Existing Agent",
+            slackId: null,
+            selfHosted: input.selfHosted ?? false,
+            repos: [],
+            authorAllowlist: resolved,
+            reviewAuthorAllowlist: resolved,
+            patchAuthorAllowlist: [],
+            restrictSlackToMembers: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+            missingRequiredEnv: [],
+          };
+        },
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        authorAllowlist: ["stale-value"],
+        reviewAuthorAllowlist: ["octocat"],
+      }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat"]);
+    // The route handler forwards both raw fields as supplied — AgentService's
+    // resolveAllowlistSync (unit-tested separately) applies the precedence
+    // rule (reviewAuthorAllowlist wins) and resolves the conflict.
+    expect(capturedInput?.authorAllowlist).toEqual(["stale-value"]);
+    expect(capturedInput?.reviewAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("PATCH /agents/:id with neither field supplied leaves both columns unchanged", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: ["octocat"],
+                reviewAuthorAllowlist: ["octocat"],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+        updateSelfHosted: async (
+          id: string,
+          input: {
+            selfHosted?: boolean;
+            authorAllowlist?: string[];
+            reviewAuthorAllowlist?: string[];
+          },
+        ) => ({
+          id,
+          name: "Existing Agent",
+          slackId: null,
+          selfHosted: input.selfHosted ?? false,
+          repos: [],
+          // Neither field supplied — the service leaves both untouched, so
+          // the mock reflects the pre-existing seeded values.
+          authorAllowlist: input.authorAllowlist ?? ["octocat"],
+          reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? ["octocat"],
+          patchAuthorAllowlist: [],
+          restrictSlackToMembers: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          missingRequiredEnv: [],
+        }),
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      method: "PATCH",
+      body: JSON.stringify({ selfHosted: true }),
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.authorAllowlist).toEqual(["octocat"]);
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat"]);
+  });
+
+  it("GET /agents/:id returns reviewAuthorAllowlist identical to authorAllowlist", async () => {
+    const base = makeMockDeps();
+    const deps: AdminDeps = {
+      ...base,
+      agentService: {
+        ...base.agentService,
+        getDetail: async (id: string) =>
+          id === AGENT_ID
+            ? {
+                id: AGENT_ID,
+                name: "Existing Agent",
+                slackId: null,
+                selfHosted: false,
+                repos: [],
+                authorAllowlist: ["octocat", "hubot"],
+                reviewAuthorAllowlist: ["octocat", "hubot"],
+                patchAuthorAllowlist: [],
+                restrictSlackToMembers: false,
+                typeName: "coding",
+                createdAt: new Date("2024-01-01"),
+                updatedAt: new Date("2024-01-01"),
+                missingRequiredEnv: [],
+              }
+            : null,
+      },
+    };
+    const app = createAdminApp(deps);
+    const res = await app.request(`/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reviewAuthorAllowlist).toEqual(body.authorAllowlist);
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat", "hubot"]);
   });
 });
 

@@ -109,7 +109,6 @@ export interface PrListItem {
   id: string;
   repo: string;
   prNumber: number;
-  taskId?: string | null;
   staged: boolean;
   state: string;
   reviewState: string;
@@ -148,6 +147,7 @@ export interface AgentDetail {
   updatedAt: Date;
   repos: string[];
   authorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   /**
    * When true, only AgentMember emails may message this agent over Slack.
    * Rendered as a checkbox on both the create and edit forms.
@@ -738,10 +738,21 @@ export function renderNewLocalAgentPage(
           <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
         </div>
         <div class="form-group">
-          <label class="form-label" for="authorAllowlist">Author allowlist (optional, one GitHub login per line)</label>
+          <label class="form-label" for="authorAllowlist">Author allowlist (review) (optional, one GitHub login per line)</label>
           <textarea
             id="authorAllowlist"
             name="authorAllowlist"
+            class="form-input"
+            rows="4"
+            placeholder="octocat&#10;another-user"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="patchAuthorAllowlist">Patch author allowlist (optional, one GitHub login per line)</label>
+          <textarea
+            id="patchAuthorAllowlist"
+            name="patchAuthorAllowlist"
             class="form-input"
             rows="4"
             placeholder="octocat&#10;another-user"
@@ -1470,8 +1481,8 @@ export function renderAgentDetailPage(
     </div>
 
     <div class="card">
-      <div class="card-title">Author allowlist</div>
-      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/add" style="margin-bottom:16px">
+      <div class="card-title">Author allowlist (review)</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/add" style="margin-bottom:16px">
         <div class="form-row">
           <div class="form-group" style="flex:1">
             <input name="login" type="text" class="form-input" placeholder="octocat" required />
@@ -1496,7 +1507,48 @@ export function renderAgentDetailPage(
                       (login) => `<tr>
             <td class="mono">${escapeHtml(login)}</td>
             <td>
-              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/delete" style="display:inline">
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/delete" style="display:inline">
+                <input type="hidden" name="login" value="${escapeHtml(login)}" />
+                <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+              </form>
+            </td>
+          </tr>`,
+                    )
+                    .join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Author allowlist (patch)</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/patch-author-allowlist/add" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="login" type="text" class="form-input" placeholder="octocat" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>GitHub login</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              (agent.patchAuthorAllowlist ?? []).length === 0
+                ? `<tr><td colspan="2" class="empty-state">No patch author allowlist entries configured.</td></tr>`
+                : (agent.patchAuthorAllowlist ?? [])
+                    .map(
+                      (login) => `<tr>
+            <td class="mono">${escapeHtml(login)}</td>
+            <td>
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/patch-author-allowlist/delete" style="display:inline">
                 <input type="hidden" name="login" value="${escapeHtml(login)}" />
                 <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
               </form>
@@ -3313,6 +3365,7 @@ export function renderPrDetailPage(
   userName: string,
   agentNames: Record<string, string> = {},
   timezone = "America/Los_Angeles",
+  linkedTasks: TaskItem[] = [],
 ): string {
   function field(
     label: string,
@@ -3371,10 +3424,10 @@ export function renderPrDetailPage(
     field("ID", pr.id, true),
     field("Repo", pr.repo),
     linkField("PR Number", githubPrUrl, `#${pr.prNumber}`),
-    pr.taskId
+    linkedTasks.length > 0
       ? `<tr>
       <td style="width:170px;padding:8px 12px;color:#6b7280;font-size:12px;font-weight:500;vertical-align:top;white-space:nowrap">Task</td>
-      <td style="padding:8px 12px;font-size:13px">${taskLink(pr.taskId)}</td>
+      <td style="padding:8px 12px;font-size:13px">${linkedTasks.map((t) => taskLink(t.id)).join(", ")}</td>
     </tr>`
       : "",
     field("State", pr.state),
@@ -4893,6 +4946,13 @@ export function renderChatThreadPage(
             + '</div>';
           container.appendChild(errBubble);
           enableSend();
+        });
+      } else {
+        // Success: parse response and seed renderedIds to prevent duplicate rendering
+        return r.json().then(function(data) {
+          if (data && data.message && data.message.id) {
+            renderedIds[data.message.id] = true;
+          }
         });
       }
     }).catch(function() {

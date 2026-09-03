@@ -1223,6 +1223,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     let typeName: string | undefined;
     let reposRaw: string | undefined;
     let authorAllowlistRaw: string | undefined;
+    let patchAuthorAllowlistRaw: string | undefined;
     let memberEmailsRaw: string | undefined;
     let restrictSlackToMembersRaw: string | undefined;
     let runtime: string | undefined;
@@ -1243,6 +1244,10 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       typeName = formData.get("type")?.toString()?.trim();
       reposRaw = formData.get("repos")?.toString()?.trim();
       authorAllowlistRaw = formData.get("authorAllowlist")?.toString()?.trim();
+      patchAuthorAllowlistRaw = formData
+        .get("patchAuthorAllowlist")
+        ?.toString()
+        ?.trim();
       memberEmailsRaw = formData.get("memberEmails")?.toString()?.trim();
       restrictSlackToMembersRaw = formData
         .get("restrictSlackToMembers")
@@ -1332,7 +1337,33 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         );
       }
       if (authorAllowlist.length > 0) {
-        await agentService.updateFields(agent.id, { authorAllowlist });
+        await agentService.updateFields(agent.id, {
+          reviewAuthorAllowlist: authorAllowlist,
+        });
+      }
+    }
+    // Attach patchAuthorAllowlist if provided
+    if (patchAuthorAllowlistRaw) {
+      const patchAuthorAllowlist = [
+        ...new Set(
+          patchAuthorAllowlistRaw
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0),
+        ),
+      ];
+      const invalid = patchAuthorAllowlist.filter((l) => !isGithubLogin(l));
+      if (invalid.length > 0) {
+        await agentService.delete(agent.id);
+        return c.redirect(
+          "/admin/agents/new?error=invalid_author_allowlist_format",
+          302,
+        );
+      }
+      if (patchAuthorAllowlist.length > 0) {
+        await agentService.updateFields(agent.id, {
+          patchAuthorAllowlist,
+        });
       }
     }
     // Attach member emails if provided — best-effort, mirrors the single-add
@@ -1550,7 +1581,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
-      authorAllowlist: agent.authorAllowlist,
+      authorAllowlist: agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
@@ -1779,38 +1811,47 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     return c.redirect(`/admin/agents/${agentId}`, 302);
   });
 
-  // ─── Author allowlist mutations ────────────────────────────────────────────
-
-  app.post("/admin/agents/:id/author-allowlist/add", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-      return new Response("Forbidden", { status: 403 });
-    }
-    let login: string | undefined;
-    try {
-      const formData = await c.req.formData();
-      login = formData.get("login")?.toString()?.trim();
-    } catch {
-      return c.redirect(`/admin/agents/${agentId}`, 302);
-    }
-    if (!login || !isGithubLogin(login)) {
-      return c.redirect(
-        `/admin/agents/${agentId}?error=invalid_author_allowlist_format`,
-        302,
-      );
-    }
-    const agent = await agentService.getDetail(agentId);
-    if (!agent) {
-      return new Response("Agent not found", { status: 404 });
-    }
-    const existing = agent.authorAllowlist ?? [];
-    const deduped = existing.includes(login) ? existing : [...existing, login];
-    await agentService.updateFields(agentId, { authorAllowlist: deduped });
-    return c.redirect(`/admin/agents/${agentId}`, 302);
-  });
+  // ─── Author allowlist (review) mutations ───────────────────────────────────
 
   app.post(
-    "/admin/agents/:id/author-allowlist/delete",
+    "/admin/agents/:id/review-author-allowlist/add",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (!login || !isGithubLogin(login)) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=invalid_author_allowlist_format`,
+          302,
+        );
+      }
+      const agent = await agentService.getDetail(agentId);
+      if (!agent) {
+        return new Response("Agent not found", { status: 404 });
+      }
+      const existing =
+        agent.reviewAuthorAllowlist ?? agent.authorAllowlist ?? [];
+      const deduped = existing.includes(login)
+        ? existing
+        : [...existing, login];
+      await agentService.updateFields(agentId, {
+        reviewAuthorAllowlist: deduped,
+      });
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
+  app.post(
+    "/admin/agents/:id/review-author-allowlist/delete",
     requireAuth,
     async (c) => {
       const agentId = c.req.param("id");
@@ -1829,10 +1870,83 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         if (!agent) {
           return new Response("Agent not found", { status: 404 });
         }
-        const updated = (agent.authorAllowlist ?? []).filter(
+        const updated = (
+          agent.reviewAuthorAllowlist ??
+          agent.authorAllowlist ??
+          []
+        ).filter((l) => l !== login);
+        await agentService.updateFields(agentId, {
+          reviewAuthorAllowlist: updated,
+        });
+      }
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
+  // ─── Author allowlist (patch) mutations ────────────────────────────────────
+
+  app.post(
+    "/admin/agents/:id/patch-author-allowlist/add",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (!login || !isGithubLogin(login)) {
+        return c.redirect(
+          `/admin/agents/${agentId}?error=invalid_author_allowlist_format`,
+          302,
+        );
+      }
+      const agent = await agentService.getDetail(agentId);
+      if (!agent) {
+        return new Response("Agent not found", { status: 404 });
+      }
+      const existing = agent.patchAuthorAllowlist ?? [];
+      const deduped = existing.includes(login)
+        ? existing
+        : [...existing, login];
+      await agentService.updateFields(agentId, {
+        patchAuthorAllowlist: deduped,
+      });
+      return c.redirect(`/admin/agents/${agentId}`, 302);
+    },
+  );
+
+  app.post(
+    "/admin/agents/:id/patch-author-allowlist/delete",
+    requireAuth,
+    async (c) => {
+      const agentId = c.req.param("id");
+      if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      let login: string | undefined;
+      try {
+        const formData = await c.req.formData();
+        login = formData.get("login")?.toString()?.trim();
+      } catch {
+        return c.redirect(`/admin/agents/${agentId}`, 302);
+      }
+      if (login) {
+        const agent = await agentService.getDetail(agentId);
+        if (!agent) {
+          return new Response("Agent not found", { status: 404 });
+        }
+        const updated = (agent.patchAuthorAllowlist ?? []).filter(
           (l) => l !== login,
         );
-        await agentService.updateFields(agentId, { authorAllowlist: updated });
+        await agentService.updateFields(agentId, {
+          patchAuthorAllowlist: updated,
+        });
       }
       return c.redirect(`/admin/agents/${agentId}`, 302);
     },
@@ -2122,7 +2236,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       createdAt: agent.createdAt,
       updatedAt: agent.updatedAt,
       repos: agent.repos,
-      authorAllowlist: agent.authorAllowlist,
+      authorAllowlist: agent.reviewAuthorAllowlist ?? agent.authorAllowlist,
+      patchAuthorAllowlist: agent.patchAuthorAllowlist ?? [],
       restrictSlackToMembers: agent.restrictSlackToMembers,
       typeName: agent.typeName,
       missingRequiredEnv: agent.missingRequiredEnv,
@@ -3169,7 +3284,30 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
-    return html(renderPrDetailPage(pr, c.var.userEmail, agentNames, timezone));
+    // Resolve the linked task(s) via a live GET /tasks?repo=&pr= lookup,
+    // mirroring the list page's per-row lookup (PTL-2.1). Falls back to an
+    // empty task list if the fetcher is absent or the lookup throws.
+    let linkedTasks: TaskItem[] = [];
+    if (fetchTaskStoreTasks) {
+      try {
+        const result = await fetchTaskStoreTasks(
+          new URLSearchParams({ repo: pr.repo, pr: String(pr.prNumber) }),
+        );
+        linkedTasks = result.tasks;
+      } catch {
+        linkedTasks = [];
+      }
+    }
+
+    return html(
+      renderPrDetailPage(
+        pr,
+        c.var.userEmail,
+        agentNames,
+        timezone,
+        linkedTasks,
+      ),
+    );
   });
 
   // ─── Chat routes ─────────────────────────────────────────────────────────

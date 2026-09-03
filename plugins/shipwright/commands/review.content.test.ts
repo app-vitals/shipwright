@@ -1954,3 +1954,186 @@ describe("review.md — testReadinessContext fallback checks principles.md overr
     expect(lower).toMatch(/check.*project|project.*override|override.*check/);
   });
 });
+
+// ─── DBR-3.2: dependency-manifest detection + risk analysis ─────────────────
+//
+// review.md's new Step 5.8 sits between Step 5 (Gather Context) and Step 6
+// (Classify Changes by Domain). It builds a per-repo watched-path set from
+// that repo's renovate.json/.github/dependabot.yml (falling back to a
+// universal manifest-file list when neither is present), compares it against
+// the PR's changed files (regardless of PR_AUTHOR), and — when triggered —
+// folds `references/dependency-risk-analysis.md`'s heuristics into the
+// review's findings, distinguishable from ordinary code-review findings.
+
+function extractStep58Section(md: string): string {
+  const step58Idx = md.indexOf("## Step 5.8: Dependency Manifest Detection");
+  const step6Idx = md.indexOf("## Step 6: Classify Changes by Domain");
+  expect(step58Idx).toBeGreaterThan(-1);
+  expect(step6Idx).toBeGreaterThan(step58Idx);
+  return md.slice(step58Idx, step6Idx);
+}
+
+describe("review.md — Step 5.8 exists between Step 5 and Step 6 (DBR-3.2)", () => {
+  it("has a '## Step 5.8: Dependency Manifest Detection' heading positioned after Step 5 and before Step 6", () => {
+    const step5Idx = content.indexOf("## Step 5: Gather Context");
+    const step58Idx = content.indexOf("## Step 5.8: Dependency Manifest Detection");
+    const step6Idx = content.indexOf("## Step 6: Classify Changes by Domain");
+
+    expect(step5Idx).toBeGreaterThan(-1);
+    expect(step58Idx).toBeGreaterThan(step5Idx);
+    expect(step6Idx).toBeGreaterThan(step58Idx);
+  });
+});
+
+describe("review.md — Step 5.8 reads renovate.json and dependabot.yml (DBR-3.2)", () => {
+  it("documents reading renovate.json from the target repo", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("renovate.json");
+  });
+
+  it("documents reading .github/dependabot.yml from the target repo", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain(".github/dependabot.yml");
+  });
+
+  it("invokes the resolve-dependency-watched-paths script", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("resolve-dependency-watched-paths.ts");
+  });
+
+  it("notes the watched-path set is built per-repo, not a hardcoded global list", () => {
+    const section = extractStep58Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/per-repo|repo-specific/);
+  });
+});
+
+describe("review.md — Step 5.8 documents the universal fallback list (DBR-3.2)", () => {
+  it("documents falling back to the universal manifest-file list when neither config file is present", () => {
+    const section = extractStep58Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("fallback");
+    expect(lower).toMatch(/neither.*present|neither.*found|absent/);
+  });
+
+  it("lists package.json in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("package.json");
+  });
+
+  it("lists at least one common lockfile in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(
+      ["package-lock.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb"].some((f) =>
+        section.includes(f),
+      ),
+    ).toBe(true);
+  });
+
+  it("lists go.mod in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("go.mod");
+  });
+
+  it("lists Gemfile in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("Gemfile");
+  });
+
+  it("lists requirements.txt in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("requirements.txt");
+  });
+
+  it("lists Cargo.toml in the fallback list", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("Cargo.toml");
+  });
+});
+
+describe("review.md — Step 5.8 detection is not gated on PR author (DBR-3.2)", () => {
+  it("explicitly states detection triggers regardless of PR_AUTHOR / author.login", () => {
+    const section = extractStep58Section(content);
+    expect(section).toMatch(/PR_AUTHOR|author\.login/);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/regardless of|not gated on|independent of/);
+  });
+
+  it("does not scope detection to a bot-authored PR (e.g. dependabot/renovate login check)", () => {
+    const section = extractStep58Section(content);
+    // The section may *mention* dependabot/renovate logins as context for the
+    // downstream risk-analysis reference, but must not condition triggering
+    // the detection itself on author login — assert the explicit disclaimer
+    // exists rather than the absence of the substrings (which legitimately
+    // appear when explaining the reference's own author-branching).
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/any pr|any author|human-authored/);
+  });
+});
+
+describe("review.md — Step 5.8 invokes the DBR-3.1 risk-analysis reference (DBR-3.2)", () => {
+  it("references dependency-risk-analysis.md by path", () => {
+    const section = extractStep58Section(content);
+    expect(section).toContain("references/dependency-risk-analysis.md");
+  });
+
+  it("documents applying the reference's heuristics against this PR's diff/body/author", () => {
+    const section = extractStep58Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("diff");
+    expect(lower).toContain("body");
+    expect(section).toMatch(/recommendation|flags|reasoning/);
+  });
+
+  it("documents matching changed files against the watched-path set, including basename matching for nested files", () => {
+    const section = extractStep58Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toContain("basename");
+  });
+
+  it("documents that this step is a no-op when detection does not trigger", () => {
+    const section = extractStep58Section(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/no-op|not triggered|does not trigger/);
+  });
+});
+
+describe("review.md — Step 9's template includes a Dependency Risk Analysis section (DBR-3.2)", () => {
+  it("Step 9's markdown template contains a '## Dependency Risk Analysis' section, distinct from Critical/Important/Suggestions", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const step95Idx = content.indexOf(
+      "## Step 9.5: Unaddressed-Findings Hard Gate",
+    );
+    expect(step9Idx).toBeGreaterThan(-1);
+    expect(step95Idx).toBeGreaterThan(step9Idx);
+    const step9Section = content.slice(step9Idx, step95Idx);
+
+    expect(step9Section).toContain("## Dependency Risk Analysis");
+  });
+
+  it("Step 9 documents that the Dependency Risk Analysis section is omitted when Step 5.8 did not trigger", () => {
+    const step9Idx = content.indexOf("## Step 9: Write Review File");
+    const step95Idx = content.indexOf(
+      "## Step 9.5: Unaddressed-Findings Hard Gate",
+    );
+    const step9Section = content.slice(step9Idx, step95Idx);
+
+    const lower = step9Section.toLowerCase();
+    expect(lower).toMatch(/omit|only.*present|only.*included/);
+  });
+});
+
+describe("review.md — Step 10's JSON-building prose references the dependency-analysis output (DBR-3.2)", () => {
+  it("Step 10 mentions folding the dependency risk analysis into the review body when present", () => {
+    const step10Idx = content.indexOf("## Step 10: Build Review JSON");
+    const step105Idx = content.indexOf(
+      "### Step 10.5: Hard-Gate Validation",
+    );
+    expect(step10Idx).toBeGreaterThan(-1);
+    expect(step105Idx).toBeGreaterThan(step10Idx);
+    const step10Section = content.slice(step10Idx, step105Idx);
+
+    const lower = step10Section.toLowerCase();
+    expect(lower).toContain("dependency");
+  });
+});

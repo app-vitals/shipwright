@@ -25,6 +25,13 @@ export interface CreateAgentInput {
   repos?: string[];
   /** Initial authorAllowlist[]. */
   authorAllowlist?: string[];
+  /**
+   * DBR-2.1: rename-in-progress twin of authorAllowlist. Callers should pass
+   * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
+   */
+  reviewAuthorAllowlist?: string[];
+  /** Initial patchAuthorAllowlist[]. Independent of authorAllowlist. */
+  patchAuthorAllowlist?: string[];
   /** Initial restrictSlackToMembers flag. Omitted means the column default (false) applies. */
   restrictSlackToMembers?: boolean;
 }
@@ -53,6 +60,15 @@ export interface AgentDetail {
   selfHosted: boolean;
   repos: string[];
   authorAllowlist: string[];
+  /**
+   * DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read here.
+   * Optional on this interface (rather than required, matching
+   * authorAllowlist) so existing mocks/test doubles across the codebase that
+   * predate this field keep type-checking — every real code path falls back
+   * to authorAllowlist when this is absent (see serializeAgent/api.ts).
+   */
+  reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
   createdAt: Date;
@@ -77,6 +93,12 @@ export interface UpdateSelfHostedInput {
   selfHosted?: boolean;
   repos?: string[];
   authorAllowlist?: string[];
+  /**
+   * DBR-2.1: rename-in-progress twin of authorAllowlist. Callers should pass
+   * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
+   */
+  reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   /**
    * Backfills agent.slackId (UAP-1.3) — nullable so it can also be
@@ -89,6 +111,12 @@ interface AgentIdAndRepos {
   id: string;
   repos: string[];
   authorAllowlist: string[];
+  /**
+   * DBR-2.1: rename-in-progress twin of authorAllowlist, dual-read here.
+   * Optional (see AgentDetail.reviewAuthorAllowlist for why).
+   */
+  reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   memberEmails: string[];
 }
@@ -102,6 +130,12 @@ export interface UpdateAgentFieldsInput {
   name?: string;
   repos?: string[];
   authorAllowlist?: string[];
+  /**
+   * DBR-2.1: rename-in-progress twin of authorAllowlist. Callers should pass
+   * a value resolved to match authorAllowlist (dual-write) — see agents-api.ts.
+   */
+  reviewAuthorAllowlist?: string[];
+  patchAuthorAllowlist?: string[];
   restrictSlackToMembers?: boolean;
   selfHosted?: boolean;
   slackId?: string | null;
@@ -123,11 +157,31 @@ const DETAIL_SELECT = {
   selfHosted: true,
   repos: true,
   authorAllowlist: true,
+  reviewAuthorAllowlist: true,
+  patchAuthorAllowlist: true,
   restrictSlackToMembers: true,
   typeName: true,
   createdAt: true,
   updatedAt: true,
 } as const;
+
+/**
+ * DBR-2.1 dual-write resolution: authorAllowlist and reviewAuthorAllowlist
+ * are the same logical field mid-rename — a write to either must land on
+ * both columns. When both are supplied with different values,
+ * reviewAuthorAllowlist wins (it's the new canonical name) and that value is
+ * written to both columns. Returns undefined when neither field is
+ * supplied, meaning "leave both columns untouched".
+ */
+function resolveAllowlistSync(input: {
+  authorAllowlist?: string[];
+  reviewAuthorAllowlist?: string[];
+}): string[] | undefined {
+  if (input.reviewAuthorAllowlist !== undefined) {
+    return input.reviewAuthorAllowlist;
+  }
+  return input.authorAllowlist;
+}
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
@@ -147,6 +201,7 @@ export class AgentService {
    * yet, so this always reflects the full set of the type's required keys.
    */
   async create(input: CreateAgentInput): Promise<AgentDetail> {
+    const allowlist = resolveAllowlistSync(input);
     const row = await this.prisma.agent.create({
       data: {
         name: input.name,
@@ -154,8 +209,11 @@ export class AgentService {
         selfHosted: input.selfHosted ?? false,
         ...(input.typeName !== undefined ? { typeName: input.typeName } : {}),
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
-        ...(input.authorAllowlist !== undefined
-          ? { authorAllowlist: input.authorAllowlist }
+        ...(allowlist !== undefined
+          ? { authorAllowlist: allowlist, reviewAuthorAllowlist: allowlist }
+          : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
           : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
@@ -264,13 +322,17 @@ export class AgentService {
     id: string,
     input: UpdateSelfHostedInput,
   ): Promise<AgentDetail> {
+    const allowlist = resolveAllowlistSync(input);
     const row = await this.prisma.agent.update({
       where: { id },
       data: {
         selfHosted: input.selfHosted,
         ...(input.repos !== undefined ? { repos: input.repos } : {}),
-        ...(input.authorAllowlist !== undefined
-          ? { authorAllowlist: input.authorAllowlist }
+        ...(allowlist !== undefined
+          ? { authorAllowlist: allowlist, reviewAuthorAllowlist: allowlist }
+          : {}),
+        ...(input.patchAuthorAllowlist !== undefined
+          ? { patchAuthorAllowlist: input.patchAuthorAllowlist }
           : {}),
         ...(input.restrictSlackToMembers !== undefined
           ? { restrictSlackToMembers: input.restrictSlackToMembers }
@@ -287,9 +349,10 @@ export class AgentService {
   }
 
   /**
-   * Get {id, repos, authorAllowlist, restrictSlackToMembers, memberEmails}
-   * for a single agent — used by the runtime config/crons routes. Returns
-   * null if not found.
+   * Get {id, repos, authorAllowlist, reviewAuthorAllowlist,
+   * patchAuthorAllowlist, restrictSlackToMembers, memberEmails} for a single
+   * agent — used by the runtime config/crons routes. Returns null if not
+   * found.
    */
   async getById(id: string): Promise<AgentIdAndRepos | null> {
     const row = await this.prisma.agent.findUnique({
@@ -298,6 +361,8 @@ export class AgentService {
         id: true,
         repos: true,
         authorAllowlist: true,
+        reviewAuthorAllowlist: true,
+        patchAuthorAllowlist: true,
         restrictSlackToMembers: true,
       },
     });
@@ -351,21 +416,27 @@ export class AgentService {
 
   /**
    * Generic partial-field update for an agent's
-   * name/repos/authorAllowlist/restrictSlackToMembers/selfHosted/slackId.
-   * Only fields present in the input are touched. Returns the full updated
+   * name/repos/authorAllowlist(+reviewAuthorAllowlist dual-write, DBR-2.1)/
+   * patchAuthorAllowlist/restrictSlackToMembers/selfHosted/slackId. Only
+   * fields present in the input are touched. Returns the full updated
    * detail record.
    */
   async updateFields(
     id: string,
     input: UpdateAgentFieldsInput,
   ): Promise<AgentDetail> {
+    const allowlist = resolveAllowlistSync(input);
     const row = await this.prisma.agent.update({
       where: { id },
       data: {
         ...(input.name !== undefined && { name: input.name }),
         ...(input.repos !== undefined && { repos: input.repos }),
-        ...(input.authorAllowlist !== undefined && {
-          authorAllowlist: input.authorAllowlist,
+        ...(allowlist !== undefined && {
+          authorAllowlist: allowlist,
+          reviewAuthorAllowlist: allowlist,
+        }),
+        ...(input.patchAuthorAllowlist !== undefined && {
+          patchAuthorAllowlist: input.patchAuthorAllowlist,
         }),
         ...(input.restrictSlackToMembers !== undefined && {
           restrictSlackToMembers: input.restrictSlackToMembers,

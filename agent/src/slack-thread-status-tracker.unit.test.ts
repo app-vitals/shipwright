@@ -1,11 +1,11 @@
 /**
  * agent/src/slack-thread-status-tracker.unit.test.ts
  *
- * Unit tests for ThreadStatusTracker — the per-thread reference counter that
- * gates SlackProgress.start()/finish() calls so a burst of overlapping
- * messages on the same Slack thread only flips agents.sessions.setStatus
- * once each way (0->1 on the first enter, 1->0 on the last exit), instead of
- * flapping "active" as soon as the first of several queued runs finishes.
+ * Unit tests for ThreadStatusTracker — the per-thread reference counter used
+ * around SlackProgress.start()/finish() calls so a burst of overlapping
+ * messages on the same Slack thread reports the 0->1 transition (first
+ * enter) and the 1->0 transition (last exit) accurately, instead of
+ * flapping as soon as the first of several queued runs finishes.
  *
  * Pure logic, no I/O — the tracker itself never touches a Slack client.
  */

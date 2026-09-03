@@ -10,11 +10,149 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
-## [1.19.58] - 2026-09-02
+## [1.19.81] - 2026-09-03
 
 ### Fixed
 
 - Raise admin readinessProbe successThreshold to 2 to prevent premature Ready flip during pod initialization. Single successful DB-aware probes no longer allow still-stabilizing pods to enter Ready state, preventing traffic routing before Cloud SQL proxy sidecar connection stabilizes (prevents transient 500s bursts observed via Sentry during admin restarts).
+
+## [1.19.80] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.80 triggered by release tag(s): `admin-v1.130.0`
+
+## [1.19.79] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.79 triggered by release tag(s): `agent-v1.233.0`
+
+## [1.19.78] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.78 triggered by release tag(s): `admin-v1.129.0`, `agent-v1.232.0`, `chat-v1.73.0`, `metrics-v1.75.0`, `task-store-v1.99.0`
+
+## [1.19.77] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.77 triggered by release tag(s): `admin-v1.128.0`, `agent-v1.231.0`, `chat-v1.72.0`, `metrics-v1.74.0`, `task-store-v1.98.0`
+
+## [1.19.76] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.76 triggered by release tag(s): `agent-v1.230.0`
+
+## [1.19.75] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.75 triggered by release tag(s): `admin-v1.127.0`, `agent-v1.229.0`, `chat-v1.71.0`, `metrics-v1.73.0`, `task-store-v1.97.0`
+
+## [1.19.74] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.74 triggered by release tag(s): `agent-v1.228.2`
+
+## [1.19.73] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.73 triggered by release tag(s): `agent-v1.228.1`
+
+## [1.19.72] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.72 triggered by release tag(s): `admin-v1.126.0`, `agent-v1.228.0`, `chat-v1.70.0`, `metrics-v1.72.0`, `task-store-v1.96.0`
+
+## [1.19.71] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.71 triggered by release tag(s): `agent-v1.227.2`
+
+## [1.19.70] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.70 triggered by release tag(s): `agent-v1.227.1`
+
+## [1.19.69] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.69 triggered by release tag(s): `agent-v1.227.0`
+
+## [1.19.68] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.68 triggered by release tag(s): `agent-v1.226.0`
+
+## [1.19.67] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.67 triggered by release tag(s): `agent-v1.225.0`
+
+## [1.19.66] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.66 triggered by release tag(s): `admin-v1.124.0`, `agent-v1.224.0`, `chat-v1.69.0`, `metrics-v1.71.0`, `task-store-v1.95.0`
+
+## [1.19.65] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.65 triggered by release tag(s): `agent-v1.223.0`
+
+## [1.19.64] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.64 triggered by release tag(s): `agent-v1.222.1`
+
+## [1.19.63] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.63 triggered by release tag(s): `agent-v1.222.0`
+
+## [1.19.62] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.62 triggered by release tag(s): `admin-v1.123.0`
+
+## [1.19.61] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.61 triggered by release tag(s): `admin-v1.122.0`
+
+## [1.19.60] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.60 triggered by release tag(s): `admin-v1.121.0`, `agent-v1.221.0`, `chat-v1.68.0`, `metrics-v1.70.0`, `task-store-v1.94.0`
+
+## [1.19.59] - 2026-09-03
+
+### Changed
+
+- auto-bump to chart v1.19.59 triggered by release tag(s): `agent-v1.220.1`
+
+## [1.19.58] - 2026-09-02
+
+### Changed
+
+- auto-bump to chart v1.19.58 triggered by release tag(s): `agent-v1.220.0`
 
 ## [1.19.57] - 2026-09-02
 

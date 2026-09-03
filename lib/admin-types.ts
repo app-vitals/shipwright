@@ -1626,6 +1626,12 @@ export interface components {
              *     ]
              */
             authorAllowlist?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
         };
@@ -1655,6 +1661,8 @@ export interface components {
             selfHosted: boolean;
             repos: string[];
             authorAllowlist: string[];
+            reviewAuthorAllowlist: string[];
+            patchAuthorAllowlist: string[];
             restrictSlackToMembers: boolean;
             typeName: string;
             /** Format: date-time */
@@ -1665,6 +1673,8 @@ export interface components {
             warning?: string;
         };
         PatchAgentBody: {
+            /** @example U0AALR8M69X */
+            slackId?: string | null;
             /** @example false */
             selfHosted?: boolean;
             /**
@@ -1679,6 +1689,18 @@ export interface components {
              *     ]
              */
             authorAllowlist?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            reviewAuthorAllowlist?: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist?: string[];
             /** @example false */
             restrictSlackToMembers?: boolean;
         };
@@ -2310,6 +2332,18 @@ export interface components {
              *     ]
              */
             authorAllowlist: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            reviewAuthorAllowlist: string[];
+            /**
+             * @example [
+             *       "octocat"
+             *     ]
+             */
+            patchAuthorAllowlist: string[];
             /** @example false */
             restrictSlackToMembers: boolean;
             /**

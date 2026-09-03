@@ -42,6 +42,14 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "$SHIPWRIGHT_TASK_STORE_URL/tasks/{task-id}" | jq '.'
 ```
 
+Once the task is fetched, derive `{repo-slug}` from its `repo` field: the last path segment,
+lowercased — e.g. `app-vitals/shipwright` → `shipwright`. `{repo-slug}` is used for all local
+filesystem paths for the rest of this command (Step 0b's toolchain cache/repo dir, Step 4's
+worktree paths, Step 8.5's docs-refresher prompt), since `SHIPWRIGHT_REPO_DIR` clones live
+flat as `repos/<bare-name>` (e.g. `repos/shipwright`), not `repos/<org>/<repo>`. The full
+`{repo}` value (the fetched `org/repo` string, unchanged) continues to be used for task-store
+API calls — e.g. the Same-Branch Sibling Check's `?repo=` filter below.
+
 - **404**: the task doesn't exist. Print `⚠ Task {task-id} not found.` and stop.
 - **Found, `status == "in_progress"`**: a prior session left this task in progress (or a
   human is manually re-running dev-task against it) — the task is already claimed, so skip
@@ -168,13 +176,13 @@ Deps:    {dependencies or "none"}
 
 Record `task_started_at` (current ISO timestamp) for metrics, if not already recorded above.
 
-Now detect the project toolchain for `{repo}` (used throughout):
+Now detect the project toolchain for `{repo-slug}` (used throughout):
 
 ### 0b. Detect Project Toolchain
 
 Auto-detect the project toolchain (run once, reuse throughout), checking the cross-run cache before any fresh detection:
 
-1. **Check the cache.** Compute the fingerprint against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo}` and read `state/toolchain-cache/{repo}.json` — see `references/toolchain-patterns.md`'s "Caching Across Runs" section for the exact fingerprint command and cache format. If the file exists and its fingerprint matches, reuse the cached commands and skip to Step 4.
+1. **Check the cache.** Compute the fingerprint against `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}` and read `state/toolchain-cache/{repo-slug}.json` — see `references/toolchain-patterns.md`'s "Caching Across Runs" section for the exact fingerprint command and cache format. If the file exists and its fingerprint matches, reuse the cached commands and skip to Step 4.
 
 2. **Docs-first discovery** (cache miss only). Read `CLAUDE.md` and any `docs/*.md` / `ai-docs/*.md` for explicit build/test/lint/typecheck commands — many projects wrap the raw tool invocations (custom scripts, task runners, mise-managed runtimes) that config-file scanning alone won't catch. See `references/toolchain-patterns.md`'s "Docs-First Discovery" section. Treat anything found here as authoritative.
 
@@ -198,7 +206,7 @@ Auto-detect the project toolchain (run once, reuse throughout), checking the cro
    - **typecheck**: Type check command if applicable (e.g., `pnpm -r check`, `tsc --noEmit`)
    - **build**: Build command (e.g., `pnpm build`, `cargo build`, `go build ./...`)
 
-   On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo}.json` with the new fingerprint + commands.
+   On a cache miss (step 2/3 ran), overwrite `state/toolchain-cache/{repo-slug}.json` with the new fingerprint + commands.
 
 Refer to `references/toolchain-patterns.md` for the full detection lookup table and the caching protocol.
 
@@ -279,15 +287,15 @@ Reuse the exact `--repo` derivation already used later in this step for the stal
 branch check, since CWD is the workspace, not the target repo:
 
 ```bash
-GH_REPO=$(git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
+GH_REPO=$(git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
 ```
 
 Check all three signals:
 
 ```bash
 # Local branch (pull first so remote-tracking state is current)
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} pull
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch --list {branch}
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} pull
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} branch --list {branch}
 
 # Remote branch
 git ls-remote --heads origin {branch}
@@ -303,9 +311,9 @@ recover — proceed to the standard branch-existence check below.
 **If any of the three exist**, assess whether the existing work is complete and correct
 against the task's acceptance criteria before deciding how to proceed:
 
-1. Inspect the existing work: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} log {branch} --oneline -20`
-   and `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} diff main...{branch}` (fetch first if
-   the branch is remote-only: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} fetch origin {branch}`).
+1. Inspect the existing work: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} log {branch} --oneline -20`
+   and `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} diff main...{branch}` (fetch first if
+   the branch is remote-only: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} fetch origin {branch}`).
 2. Compare the diff/log against the task's `acceptanceCriteria` (same MET/PARTIAL/NOT MET
    evaluation used in Step 7) — every criterion should show clear evidence in the diff.
 3. **If a PR exists**, additionally check its CI status before treating it as complete —
@@ -349,9 +357,9 @@ from a crashed session — clean up before starting fresh.
    refuses to force-delete a branch checked out in any worktree, so this must happen before
    step 4's `branch -D`.
    ```bash
-   git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+   git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug} --force
    ```
-4. If a local branch exists, delete it: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} branch -D {branch}`
+4. If a local branch exists, delete it: `git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} branch -D {branch}`
 5. Print:
    ```
    ⚠ {branch} had incomplete/stale prior work — cleaned up (PR closed, branch deleted). Starting fresh.
@@ -370,7 +378,7 @@ never existed, it was routed through the "complete and correct" local-only short
 was deleted during the incomplete/stale cleanup — so a local branch is guaranteed absent
 here. Standard flow:
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/main -b {branch}
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug} origin/main -b {branch}
 ```
 
 **If the branch DOES exist on remote** (bundled task — joining an existing branch/PR):
@@ -378,7 +386,7 @@ git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTR
 First, check whether the remote branch belongs to a merged PR. The check runs before the worktree exists, so derive the repo from the git remote explicitly:
 
 ```bash
-GH_REPO=$(git -C ${SHIPWRIGHT_REPO_DIR:-repos}/{repo} remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
+GH_REPO=$(git -C ${SHIPWRIGHT_REPO_DIR:-repos}/{repo-slug} remote get-url origin | sed 's|.*github.com[:/]||;s|\.git$||')
 gh pr list --head {branch} --state merged --limit 1 --json number,title --repo "$GH_REPO"
 ```
 
@@ -396,22 +404,22 @@ git push origin --delete {branch}
 
 Fall through to the standard fresh-start flow (same as branch-absent path):
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-repos}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-worktrees}/{repo}-{branch-slug} origin/main -b {branch}
+git -C ${SHIPWRIGHT_REPO_DIR:-repos}/{repo-slug} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-worktrees}/{repo-slug}-{branch-slug} origin/main -b {branch}
 ```
 
 **If no merged PR** (open PR or no PR — genuine bundled task, joining an existing branch/PR):
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} fetch origin
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} origin/{branch} --track -b {branch}
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} fetch origin
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} worktree add ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug} origin/{branch} --track -b {branch}
 ```
 
 If the worktree already exists (interrupted prior run), remove it first regardless of branch status:
 ```bash
-git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug} --force
+git -C ${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug} worktree remove ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug} --force
 # then run the appropriate add command above
 ```
 
-All subsequent file operations and commands run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo}-{branch-slug}/`.
+All subsequent file operations and commands run from `${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}/`.
 
 Print:
 ```
@@ -752,7 +760,7 @@ You are refreshing docs for the current branch.
 
 Branch:    {branch}
 Base ref:  main
-Worktree:  ~/worktrees/{repo}-{branch-slug}
+Worktree:  ~/worktrees/{repo-slug}-{branch-slug}
 
 Follow your agent instructions exactly. Pre-filter docs by diff overlap, run the
 staleness recipe on candidates, edit only stale sections, commit as

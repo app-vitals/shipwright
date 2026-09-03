@@ -205,7 +205,7 @@ curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 ```
 
 **PRs** — `GET /prs` supports `repo=`, `prNumber=` (pair with `repo` for one record),
-`taskId=`, `state=` (`open`/`merged`/`closed`), `reviewState=`
+`state=` (`open`/`merged`/`closed`), `reviewState=`
 (`pending`/`in_progress`/`posted`/`approved`), `staged=` (true → only staged/unposted
 reviews), plus `limit=`/`offset=`.
 

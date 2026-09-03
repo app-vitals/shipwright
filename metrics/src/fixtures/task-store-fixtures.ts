@@ -140,14 +140,12 @@ export function createFixtureTaskStoreProvider(): MetricsProvider {
   const PRS: PrRecord[] = [
     {
       id: "pr-1",
-      taskId: "QS-1.1",
       reviewState: "approved",
       createdAt: d(2, 1),
       mergedAt: d(2),
     },
     {
       id: "pr-2",
-      taskId: "QS-1.2",
       reviewState: "posted",
       createdAt: d(1, 2),
       mergedAt: d(1, 1),

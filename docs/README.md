@@ -4,6 +4,8 @@ Shipwright Harness is the open-source autonomous delivery system in your own env
 
 > 🚧 **Early development.** These docs grow as the toolchain becomes runnable. Start with the [README](../README.md) for the overview and install command.
 
+As you read on, you'll run into two categorically different systems. The **delivery lifecycle** is the five-beat story any engineer already recognizes — plan → task → PR → review/patch → deploy — covered in [Quickstart](./quickstart.md) and the Plugin section of [Architecture](./architecture.md). The **fleet-operations layer** is the machinery that runs that lifecycle unattended across many autonomous agents — crons, the `shipwright-loop`, agent config/provisioning, and the task/PR queues — covered in [Shipwright agent](./agent.md) and [Agent API](./agent-api.md). The docs list below spans both, so know which kind of concept you're clicking into.
+
 ## Contents
 
 - **[Quickstart](./quickstart.md)** — prerequisites, step-by-step setup (clone → quickstart.sh → plugin install → task dev), and the copy-paste session prompt.

@@ -303,7 +303,7 @@ The `/prs` surface tracks GitHub PRs through the review → patch → deploy pip
 GET /prs
 ```
 
-Query params: `repo`, `org`, `prNumber`, `taskId`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
+Query params: `repo`, `org`, `prNumber`, `state`, `reviewState`, `staged`, `limit`, `offset`, `ready`, `blocked`, `sort`, `updatedSince`.
 
 `repo` — repeatable query param (`?repo=a&repo=b`). Matches PRs whose `repo` field equals any of the provided repos (string exact-match, OR logic). Omit to search across all repos in scope.
 
@@ -311,7 +311,7 @@ Query params: `repo`, `org`, `prNumber`, `taskId`, `state`, `reviewState`, `stag
 
 `ready=true` returns only unclaimed PRs (`claimedBy IS NULL`) — mirrors `/tasks?ready=true`'s semantics for tasks. It composes with the other filters (e.g. `?ready=true&repo=org/repo`) rather than hardcoding `claim-next`'s `state=open AND reviewState IN (pending, posted, approved)` eligibility rules; claim staleness itself is handled entirely by the `StaleClaimReaper` background job, not by this filter.
 
-`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.blocked===true` OR its linked task (joined by `PullRequest.taskId`) has `status==='blocked'`. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
+`blocked=true` returns only PRs considered "blocked" — a PR is blocked when `pr.blocked===true` OR any task linked to it has `status==='blocked'`. The task link is resolved live by `(Task.repo, Task.pr)` — the same pairing `GET /tasks?repo=&pr=` exposes — since the stored `PullRequest.taskId` column was removed (PTL-3.1); a PR shared by several tasks (the bundle case) is blocked when any one of them is. The `blocked` filter composes with other filters (e.g. `?blocked=true&state=open`).
 
 `sort` orders results by `createdAt`: `asc` (default, oldest first — current behavior for every existing caller) or `desc` (newest first). Unrelated to `claim-next`'s own deterministic ordering, which is a separate, non-configurable `ORDER BY` used for phase-ready claiming.
 
@@ -333,7 +333,6 @@ Body:
 | `prNumber` | yes | GitHub PR number (integer) |
 | `commitSha` | yes | Current head commit SHA |
 | `claimedBy` | admin only | Agent ID (agent tokens pin to their own ID) |
-| `taskId` | no | Associated task ID |
 | `phase` | no | Pipeline phase (`review`, `patch`, or `deploy`; default: `review`). When set, the phase is updated and reviewState is preserved. Phase-specific behavior on record creation: `review` sets `readyForReviewAt=now`; `deploy` sets `readyForDeployAt=now`; `patch` does not set a ready timestamp. |
 | `prCreatedAt` | no | ISO timestamp of the GitHub PR's actual creation time. Only applied when the claim creates a new record (`201`); ignored on subsequent claims (`200`) of an existing record since the field is immutable once set. |
 
@@ -343,8 +342,6 @@ Claim semantics (atomic via Postgres row locking):
   - Same `commitSha`, same `phase`, and already claimed by another agent → no rows affected → `409` (phase already locked)
   - Already claimed (claimedBy !== null) AND same `commitSha` AND `reviewState !== pending` (review phase only) → no rows affected → `409` (already reviewed at this commit)
 - Not claimed, OR different `commitSha`, OR `reviewState === pending` → row affected → updates and returns `200` (new cycle). Records field-level transitions as `PullRequestEvent` rows (one per changed field that is not `heartbeatAt`).
-
-The `taskId` field is optional and does not trigger any side effects on the Task table — it is stored as metadata on the PR record only for reference.
 
 The `phase` field is optional (defaults to `review`). When provided, it sets the PR's phase directly. Unlike the review phase, the patch and deploy phases do not alter the PR's reviewState — they preserve it as-is, allowing a PR in `posted` review state to transition to `patch` for patching while maintaining its review history.
 
@@ -404,7 +401,7 @@ Returns `404` if the PR doesn't exist.
 PATCH /prs/:id
 ```
 
-Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `taskId`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
+Writable fields: `staged`, `commitSha`, `reviewedCommitSha`, `agentId`, `state`, `mergedAt`, `reviewState`, `reviewedAt`, `phase`, `readyForReviewAt`, `readyForPatchAt`, `readyForDeployAt`, `blocked`, `blockedReason`. All other fields are managed by lifecycle endpoints. Returns `400` if no writable fields are provided.
 
 **Note:** PATCH does not record an audit event; only the lifecycle endpoints (`POST /prs/:id/claim`, `POST /prs/:id/complete`, `POST /prs/:id/patch`, `POST /prs/:id/release`, `POST /prs/:id/skip`, `POST /prs/:id/skip/reset`) record field-level transitions as `PullRequestEvent` rows. PATCH is designed for late-stage corrections (e.g., force-setting `state=merged` after GitHub confirms it) where the transactional guarantees and field-diff auditing of a lifecycle endpoint are not needed.
 

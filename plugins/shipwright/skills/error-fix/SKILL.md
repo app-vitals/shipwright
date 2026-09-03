@@ -280,7 +280,7 @@ For each issue with a primary fix task to queue:
   "id": "error-{sentry-issue-id}-{slug}",
   "title": "Error fix: {issue title}",
   "source": "error-fix",
-  "repo": "<repo dir name from error-report.md's Service → Repo Mapping table, or re-derived from state/error-patrol-ledger.json's serviceRepoMap if the report is stale>",
+  "repo": "<org/repo derived from the matched repo dir name — see Repo Derivation below>",
   "branch": "fix/error-{sentry-issue-id}-{slug}",
   "layer": "Background",
   "status": "pending",
@@ -306,12 +306,25 @@ For each companion observability-fix task to queue:
 }
 ```
 
-Repo derivation: read the repo dir name from `error-report.md`'s `## Service → Repo Mapping`
-table (matched by the issue's service tag) — this is the primary source since it reflects
-this run's data. Only fall back to re-deriving from `state/error-patrol-ledger.json`'s
-`serviceRepoMap` if the report's mapping for that service is missing/stale (e.g. the report
-predates the ledger's most recent scan). Never queue a task for a service that's `unmapped`
-in either source — that issue should already have been filtered out in Step 2.
+Repo derivation: first, read the repo **dir name** from `error-report.md`'s `## Service →
+Repo Mapping` table (matched by the issue's service tag) — this is the primary source since
+it reflects this run's data. Only fall back to re-deriving from
+`state/error-patrol-ledger.json`'s `serviceRepoMap` if the report's mapping for that service
+is missing/stale (e.g. the report predates the ledger's most recent scan). Never queue a task
+for a service that's `unmapped` in either source — that issue should already have been
+filtered out in Step 2.
+
+That dir name (e.g. `shipwright`) is a bare local directory name — `error-scan/SKILL.md`
+Step 3 derives it purely for local grep-based service-to-repo matching, with no org prefix.
+task-store's `validateRepo()` rejects a bare dir name posted as a task's `repo` field, so
+before building the task JSON, derive the `org/repo` value the same way
+`entropy-fix/SKILL.md`'s Step 6q.1 (and test-fix/consolidation-fix/security-fix) do: run
+`git -C "$SHIPWRIGHT_REPO_DIR/<dir-name>" remote get-url origin` and strip the
+`https://github.com/` (or `git@github.com:`, stripping the `.git` suffix) prefix to get
+`org/repo` — e.g. `app-vitals/shipwright`. Use that `org/repo` value for the task JSON's
+`repo` field on both the primary and companion task. Continue to use the bare dir name
+everywhere else (e.g. the `description` template's `Repo: {repo}` line below, matching
+`error-report.md`'s own format) — only the task JSON's `repo` field is affected.
 
 `slug`: lowercase, hyphens, max 5 words, derived from the issue title.
 

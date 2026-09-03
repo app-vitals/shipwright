@@ -12,9 +12,9 @@
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  agentAuthorAllowlistRef,
-  createAgentAuthorAllowlistRef,
-} from "./agent-author-allowlist-ref.ts";
+  createReviewAuthorAllowlistRef,
+  reviewAuthorAllowlistRef,
+} from "./review-author-allowlist-ref.ts";
 import type { LinkedTaskInfo } from "./check-helpers.ts";
 import type { PrReviewData, ReviewNode } from "./check-patch.ts";
 import {
@@ -360,7 +360,7 @@ describe("getReviewCandidates", () => {
     expect(result).toHaveLength(1);
   });
 
-  // ─── draft / dependabot exclusions ───────────────────────────────────────────
+  // ─── draft exclusion ──────────────────────────────────────────────────────
 
   test("returns empty array when all open PRs are drafts", async () => {
     const prs = [
@@ -371,44 +371,44 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("returns empty array when all open PRs are authored by app/dependabot", async () => {
-    const prs = [
-      makePr({ number: 1, author: { login: "app/dependabot" } }),
-      makePr({ number: 2, author: { login: "app/dependabot" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+  // ─── bot-author allowlist gating (DBR-3.3) ───────────────────────────────
+  //
+  // dependabot/renovate-authored PRs are no longer unconditionally
+  // excluded — they now fall through to the same isAuthorAllowed gate as any
+  // other author. These two cases mirror the "isAuthorAllowed filters out /
+  // passes through" pattern above, just with a bot-authored PR standing in
+  // for a human-authored one, to prove there's no bot-specific special-casing
+  // left anywhere in the candidacy path.
+  test("a dependabot-authored PR is included when isAuthorAllowed is unset (fail-open, same as any other author)", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toHaveLength(1);
+  });
+
+  test("a renovate-authored PR is included when isAuthorAllowed is unset (fail-open, same as any other author)", async () => {
+    const pr = makePr({ author: { login: "app/renovate" } });
+    const result = await getReviewCandidates(makeDeps([pr], async () => null));
+    expect(result).toHaveLength(1);
+  });
+
+  test("isAuthorAllowed excludes a non-allowlisted dependabot-authored PR via the not-allowlisted check, identically to a human author", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
     expect(result).toEqual([]);
   });
 
-  test("returns the one eligible non-draft non-dependabot PR from a mixed set (all matches collected)", async () => {
-    const prs = [
-      makePr({ number: 1, isDraft: true }),
-      makePr({ number: 2, author: { login: "app/dependabot" } }),
-      makePr({ number: 3, author: { login: "danmcaulay" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
+  test("isAuthorAllowed includes an allowlisted dependabot-authored PR, identically to a human author", async () => {
+    const pr = makePr({ author: { login: "app/dependabot" } });
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "app/dependabot",
+    };
+    const result = await getReviewCandidates(deps);
     expect(result).toHaveLength(1);
-    expect(result[0].id).toContain("#3");
-  });
-
-  test("returns empty array when all open PRs are authored by app/renovate", async () => {
-    const prs = [
-      makePr({ number: 1, author: { login: "app/renovate" } }),
-      makePr({ number: 2, author: { login: "app/renovate" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
-    expect(result).toEqual([]);
-  });
-
-  test("returns the one eligible non-draft non-renovate PR from a mixed set (all matches collected)", async () => {
-    const prs = [
-      makePr({ number: 1, isDraft: true }),
-      makePr({ number: 2, author: { login: "app/renovate" } }),
-      makePr({ number: 3, author: { login: "danmcaulay" } }),
-    ];
-    const result = await getReviewCandidates(makeDeps(prs, async () => null));
-    expect(result).toHaveLength(1);
-    expect(result[0].id).toContain("#3");
   });
 
   // ─── automated label exclusion ────────────────────────────────────────────
@@ -966,22 +966,23 @@ describe("getReviewCandidates", () => {
     expect(result).toEqual([]);
   });
 
-  test("requested-reviewer status does not override the unconditional dependabot exclusion", async () => {
+  // DBR-3.3: there is no longer an unconditional bot-author exclusion for the
+  // requested-reviewer bypass to fail to override — a dependabot-authored PR
+  // now goes through the same isAuthorAllowed + requested-reviewer bypass
+  // path as an allowlist-excluded human author (mirrors the RRA-1.1 case
+  // above), so an allowlist-excluded bot author is still includable via the
+  // requested-reviewer bypass, identically to a human.
+  test("an allowlist-excluded dependabot-authored PR is included when currentUser is a requested reviewer, identically to a human author", async () => {
     const pr = makePr({
       author: { login: "app/dependabot" },
       reviewRequests: [{ login: "bodhi-agent" }],
     });
-    const result = await getReviewCandidates(makeDeps([pr], async () => null));
-    expect(result).toEqual([]);
-  });
-
-  test("requested-reviewer status does not override the unconditional renovate exclusion", async () => {
-    const pr = makePr({
-      author: { login: "app/renovate" },
-      reviewRequests: [{ login: "bodhi-agent" }],
-    });
-    const result = await getReviewCandidates(makeDeps([pr], async () => null));
-    expect(result).toEqual([]);
+    const deps: CheckReviewDeps = {
+      ...makeDeps([pr], async () => null),
+      isAuthorAllowed: (login) => login === "someone-else",
+    };
+    const result = await getReviewCandidates(deps);
+    expect(result).toHaveLength(1);
   });
 
   test("requested-reviewer status does not override the unconditional hitl-blocked exclusion", async () => {
@@ -1948,7 +1949,7 @@ describe("getReviewCandidates", () => {
 // Covers the "later" exclusion checks — the ones that depend on already-
 // fetched live state (task-store record, live GitHub review data, linked
 // task, bundle-completeness) — as a single reusable, exported pure
-// function. The earlier cheap checks (draft/dependabot/automated-label/
+// function. The earlier cheap checks (draft/automated-label/
 // self-review/not-allowlisted) are simple enough that getReviewCandidates
 // traces them inline rather than through a shared function; their
 // candidate-list behavior is already covered by the existing
@@ -3005,11 +3006,11 @@ describe("traceReviewCandidacyDecision", () => {
 
 describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   beforeEach(() => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 
   afterEach(() => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
@@ -3022,7 +3023,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   const stubWorkspacePath = "/tmp/aal-2.2-stub-workspace";
 
   test("defaults to unfiltered (fail-open) when the ref's allowlist is empty", async () => {
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3032,7 +3033,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   test("defaults to filtering by the ref's allowlist when it is non-empty", async () => {
-    agentAuthorAllowlistRef.set(["allowed-user"]);
+    reviewAuthorAllowlistRef.set(["allowed-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3042,7 +3043,7 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
   });
 
   test("an explicit opts.isAuthorAllowed overrides the ref-backed default", async () => {
-    agentAuthorAllowlistRef.set(["ref-user"]);
+    reviewAuthorAllowlistRef.set(["ref-user"]);
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
       workspacePath: stubWorkspacePath,
@@ -3054,12 +3055,12 @@ describe("buildProductionDeps isAuthorAllowed default (AAL-2.2)", () => {
 });
 
 describe("buildProductionDeps isAuthorAllowed default — never-synced equivalence (T-078)", () => {
-  // Deliberately NOT using the shared agentAuthorAllowlistRef singleton or its
+  // Deliberately NOT using the shared reviewAuthorAllowlistRef singleton or its
   // beforeEach(() => ref.set([])) reset (see the AAL-2.2 block above) — that
   // reset stamps hasSynced() === true before every test in that block, which
   // makes it structurally impossible to exercise the true "never synced"
   // (hasSynced() === false) state from in there. Each test below builds its
-  // own fresh, independent ref via createAgentAuthorAllowlistRef() instead.
+  // own fresh, independent ref via createReviewAuthorAllowlistRef() instead.
 
   const noopGhJson = async <T>(): Promise<T> => [] as unknown as T;
   // See stubWorkspacePath comment in the AAL-2.2 describe block above — same
@@ -3067,7 +3068,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   const stubWorkspacePath = "/tmp/t-078-stub-workspace";
 
   test("a never-synced ref (hasSynced() === false, .set() never called) fails open / unfiltered", async () => {
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
     expect(neverSyncedRef.hasSynced()).toBe(false);
     expect(neverSyncedRef.get()).toEqual([]);
 
@@ -3083,7 +3084,7 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   });
 
   test("a ref synced-to-empty (hasSynced() === true, .set([]) called) behaves identically: also fails open / unfiltered", async () => {
-    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    const syncedEmptyRef = createReviewAuthorAllowlistRef();
     syncedEmptyRef.set([]);
     expect(syncedEmptyRef.hasSynced()).toBe(true);
     expect(syncedEmptyRef.get()).toEqual([]);
@@ -3100,8 +3101,8 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   });
 
   test("never-synced and synced-to-empty are intentionally, not accidentally, equivalent: same input, same output", async () => {
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
-    const syncedEmptyRef = createAgentAuthorAllowlistRef();
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
+    const syncedEmptyRef = createReviewAuthorAllowlistRef();
     syncedEmptyRef.set([]);
 
     const neverSyncedDeps = await buildProductionDeps({
@@ -3126,8 +3127,8 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
   test("a never-synced ref does not affect the singleton-backed default in the other describe block", async () => {
     // Sanity guard: using an injected fresh ref must not accidentally reach
     // into / mutate the process-wide singleton.
-    agentAuthorAllowlistRef.set(["some-user"]);
-    const neverSyncedRef = createAgentAuthorAllowlistRef();
+    reviewAuthorAllowlistRef.set(["some-user"]);
+    const neverSyncedRef = createReviewAuthorAllowlistRef();
 
     const deps = await buildProductionDeps({
       ghJson: noopGhJson,
@@ -3137,9 +3138,9 @@ describe("buildProductionDeps isAuthorAllowed default — never-synced equivalen
 
     expect(deps.isAuthorAllowed?.("some-user")).toBe(true);
     expect(deps.isAuthorAllowed?.("unrelated-user")).toBe(true);
-    expect(agentAuthorAllowlistRef.get()).toEqual(["some-user"]);
+    expect(reviewAuthorAllowlistRef.get()).toEqual(["some-user"]);
 
     // cleanup so this doesn't leak into other describe blocks in the file
-    agentAuthorAllowlistRef.set([]);
+    reviewAuthorAllowlistRef.set([]);
   });
 });

@@ -40,7 +40,6 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   "id": "clp1234abcd",
   "repo": "app-vitals/shipwright",
   "prNumber": 123,
-  "taskId": "TS-1.1",
   "staged": true,
   "state": "open",
   "reviewState": "posted",
@@ -85,7 +84,6 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
 | `id` | string | Unique record ID (CUID) |
 | `repo` | string | Repository in `org/repo` format |
 | `prNumber` | number | GitHub PR number |
-| `taskId` | string \| null | Shipwright task ID (if from a task store task) |
 | `staged` | boolean | `true` = review written, not yet posted; `false` = not staged or already posted |
 | `state` | enum | Terminal PR state: `open`, `merged`, or `closed` |
 | `reviewState` | enum | Workflow phase: `pending`, `in_progress`, `posted`, or `approved` |
@@ -128,8 +126,10 @@ curl -X POST -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
   cleanup). `state` is independent of `reviewState` — a record can have `state: merged` while
   `reviewState: posted` (the review was posted before merge).
 
-- `taskId` is nullable — a PR not opened by a shipwright task (e.g. opened by hand) still
-  gets reviewed when explicitly targeted; it just has no linked task record.
+- **PR records store no task link.** `PullRequest.taskId` was removed (PTL-3.1) — it was
+  populated only ~10% of the time and could not represent a PR covering several tasks.
+  Resolve a PR's task(s) live via `GET /tasks?repo={org}/{repo}&pr={number}`; an empty
+  result just means the PR was opened by hand, which is still reviewable when targeted.
 
 - **Multi-agent coordination**: the atomic claim + heartbeat mechanism allows multiple agents
   to review different PRs in parallel without coordination overhead.

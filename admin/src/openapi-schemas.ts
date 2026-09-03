@@ -113,15 +113,25 @@ export const CreateAgentBodySchema = z
       .optional()
       .openapi({ example: ["octocat"] }),
     /**
+     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
+     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * PatchAgentBodySchema's patchAuthorAllowlist shape.
+     */
+    patchAuthorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
+    /**
      * Initial restrictSlackToMembers flag — when true, only AgentMember
      * emails may message this agent over Slack. Optional, defaults to the
      * column default (false). Mirrors PatchAgentBodySchema's
      * restrictSlackToMembers shape.
      */
-    restrictSlackToMembers: z
-      .boolean()
-      .optional()
-      .openapi({ example: false }),
+    restrictSlackToMembers: z.boolean().optional().openapi({ example: false }),
   })
   .openapi("CreateAgentBody");
 
@@ -155,10 +165,35 @@ export const PatchAgentBodySchema = z
       )
       .optional()
       .openapi({ example: ["octocat"] }),
-    restrictSlackToMembers: z
-      .boolean()
+    /**
+     * DBR-2.1: rename-in-progress twin of authorAllowlist — same shape,
+     * validated the same way. A PATCH supplying either key keeps both
+     * authorAllowlist and reviewAuthorAllowlist columns in sync (dual-write);
+     * supplying both with different values prefers this field's value as the
+     * canonical source of truth, written to both columns.
+     */
+    reviewAuthorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
       .optional()
-      .openapi({ example: false }),
+      .openapi({ example: ["octocat"] }),
+    /**
+     * Initial patchAuthorAllowlist[] — GitHub logins permitted to trigger
+     * patch runs for this agent. Independent of authorAllowlist. Mirrors
+     * CreateAgentBodySchema's patchAuthorAllowlist shape.
+     */
+    patchAuthorAllowlist: z
+      .array(
+        z.string().refine(isGithubLogin, {
+          message: "each entry must be a valid GitHub login",
+        }),
+      )
+      .optional()
+      .openapi({ example: ["octocat"] }),
+    restrictSlackToMembers: z.boolean().optional().openapi({ example: false }),
   })
   .openapi("PatchAgentBody");
 
@@ -888,6 +923,14 @@ export const AgentConfigResponseSchema = z
     plugins: z.array(AgentConfigPluginSchema),
     repos: z.array(z.string()).openapi({ example: ["org/repo1", "org/repo2"] }),
     authorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
+    /**
+     * DBR-2.1: rename-in-progress twin of authorAllowlist — always returned
+     * as an identical array during the dual-read transitional phase.
+     */
+    reviewAuthorAllowlist: z
+      .array(z.string())
+      .openapi({ example: ["octocat"] }),
+    patchAuthorAllowlist: z.array(z.string()).openapi({ example: ["octocat"] }),
     restrictSlackToMembers: z.boolean().openapi({ example: false }),
     memberEmails: z.array(z.string()).openapi({ example: ["dev@example.com"] }),
   })

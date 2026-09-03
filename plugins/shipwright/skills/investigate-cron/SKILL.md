@@ -293,18 +293,37 @@ PR_RECORD_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN
 if [ -z "$PR_RECORD_JSON" ]; then
   echo "No task-store PR record for {org}/{repo}#{pr} — not yet tracked, or never a PR. Skip this signal."
 else
-  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForDeployAt, taskId, patchCycles, commitSha}'
+  echo "$PR_RECORD_JSON" | jq '{claimedBy, hitl, reviewState, readyForReviewAt, readyForPatchAt, readyForDeployAt, patchCycles, commitSha}'
 fi
 
-# Task record (when the item is a bare taskId, or the PR record above has a taskId):
-TASK_ID_TO_FETCH="${ITEM_ARG:-$(echo "$PR_RECORD_JSON" | jq -r '.taskId // empty')}"
-if [ -n "$TASK_ID_TO_FETCH" ]; then
+# Task record(s) — live lookup via GET /tasks?repo=&pr= for a PR, or /tasks/{id} for a bare task id:
+if [[ "$ITEM_ARG" =~ ^[A-Z]+-[0-9]+\.[0-9]+$ ]]; then
+  # ITEM_ARG is a bare task id (e.g., "IC-1.1")
   TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
-    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$TASK_ID_TO_FETCH" 2>/dev/null)
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks/$ITEM_ARG" 2>/dev/null)
   if [ -z "$TASK_JSON" ]; then
-    echo "No task-store task record for $TASK_ID_TO_FETCH — skip this signal."
+    echo "No task-store task record for $ITEM_ARG — skip this signal."
   else
     echo "$TASK_JSON" | jq '{id, status, hitl, dependencies}'
+  fi
+else
+  # ITEM_ARG is a PR reference — fetch associated tasks via live lookup.
+  # Gated on ITEM_ARG's shape, not on PR_RECORD_JSON being non-empty: a
+  # freshly-opened PR not yet claimed by review/patch/deploy has no
+  # PullRequest record yet, but real Task records (Task.repo/Task.pr) can
+  # already exist — the live lookup below must still run for it.
+  TASKS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+    "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}" 2>/dev/null)
+  if [ -z "$TASKS_JSON" ]; then
+    echo "No tasks found for {org}/{repo}#{pr} — skip this signal."
+  else
+    # Loop over zero, one, or many tasks (the bundle case)
+    TASK_COUNT=$(echo "$TASKS_JSON" | jq '.tasks | length')
+    if [ "$TASK_COUNT" -eq 0 ]; then
+      echo "No tasks found for {org}/{repo}#{pr} — skip this signal."
+    else
+      echo "$TASKS_JSON" | jq '.tasks[] | {id, status, hitl, dependencies}'
+    fi
   fi
 fi
 ```
@@ -312,7 +331,9 @@ fi
 `hitl=true`, a `reviewState` that clearly blocks progress (e.g. stuck at
 `pending` with no recent activity), or an unmet `dependencies` entry on the
 task record are all direct, no-transcript-needed explanations for "why didn't
-this proceed."
+this proceed." Note: a PR can map to zero, one, or multiple tasks (the bundle
+case, where several tasks share the same PR) — the live lookup loops over all
+results to surface blocking conditions on any of them.
 
 ### 2c. Live GitHub state, diffed against the cached task-store view
 

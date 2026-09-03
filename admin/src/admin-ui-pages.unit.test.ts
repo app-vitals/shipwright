@@ -63,6 +63,7 @@ const AGENT: AgentDetail = {
   updatedAt: new Date("2024-01-02T00:00:00Z"),
   repos: [],
   authorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   typeName: "coding",
   missingRequiredEnv: [],
@@ -760,6 +761,25 @@ describe("renderNewLocalAgentPage", () => {
   test("renders an authorAllowlist textarea", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
+  });
+
+  test("author allowlist label reads 'Author allowlist (review)'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain(
+      '<label class="form-label" for="authorAllowlist">Author allowlist (review) (optional, one GitHub login per line)</label>',
+    );
+  });
+
+  test("renders a patchAuthorAllowlist textarea", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="patchAuthorAllowlist"[^>]*>/);
+  });
+
+  test("patch author allowlist label reads 'Patch author allowlist'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain(
+      '<label class="form-label" for="patchAuthorAllowlist">Patch author allowlist (optional, one GitHub login per line)</label>',
+    );
   });
 
   test("renders a restrictSlackToMembers checkbox", () => {
@@ -2377,10 +2397,17 @@ describe("renderAgentDetailPage — author allowlist", () => {
     expect(html).toContain("octocat");
   });
 
+  test("card title reads 'Author allowlist (review)'", () => {
+    const html = render([]);
+    expect(html).toContain(
+      '<div class="card-title">Author allowlist (review)</div>',
+    );
+  });
+
   test("author allowlist section has add form", () => {
     const html = render([]);
     expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/author-allowlist/add"`,
+      `action="/admin/agents/${AGENT.id}/review-author-allowlist/add"`,
     );
     expect(html).toContain('name="login"');
   });
@@ -2388,12 +2415,72 @@ describe("renderAgentDetailPage — author allowlist", () => {
   test("author allowlist section has remove button for existing login", () => {
     const html = render(["octocat"]);
     expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/author-allowlist/delete"`,
+      `action="/admin/agents/${AGENT.id}/review-author-allowlist/delete"`,
     );
     expect(html).toContain('value="octocat"');
   });
 
   test("Author allowlist table is wrapped in .data-table-wrapper", () => {
+    const html = render(["octocat"]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
+    );
+  });
+});
+
+// ─── renderAgentDetailPage — patch author allowlist section ──────────────────
+
+describe("renderAgentDetailPage — patch author allowlist", () => {
+  function render(patchAuthorAllowlist: string[]): string {
+    const agent: AgentDetail = { ...AGENT, patchAuthorAllowlist };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("renders empty patch author allowlist state", () => {
+    const html = render([]);
+    expect(html).toContain("No patch author allowlist entries configured.");
+  });
+
+  test("renders patch author allowlist list", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain("octocat");
+  });
+
+  test("card title reads 'Author allowlist (patch)'", () => {
+    const html = render([]);
+    expect(html).toContain(
+      '<div class="card-title">Author allowlist (patch)</div>',
+    );
+  });
+
+  test("patch author allowlist section has add form", () => {
+    const html = render([]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/patch-author-allowlist/add"`,
+    );
+    expect(html).toContain('name="login"');
+  });
+
+  test("patch author allowlist section has remove button for existing login", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/patch-author-allowlist/delete"`,
+    );
+    expect(html).toContain('value="octocat"');
+  });
+
+  test("patch author allowlist table is wrapped in .data-table-wrapper", () => {
     const html = render(["octocat"]);
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
@@ -4001,7 +4088,6 @@ const PR_LIST_ITEM_1: PrListItem = {
   id: "pr-001",
   repo: "org/repo-a",
   prNumber: 10,
-  taskId: "TASK-1",
   staged: false,
   state: "open",
   reviewState: "pending",
@@ -4023,7 +4109,6 @@ const PR_LIST_ITEM_2: PrListItem = {
   id: "pr-002",
   repo: "org/repo-b",
   prNumber: 20,
-  taskId: null,
   staged: true,
   state: "closed",
   reviewState: "in_review",
@@ -4632,7 +4717,6 @@ const PR_DETAIL: PrListItem = {
   id: "pr-detail-001",
   repo: "org/detail-repo",
   prNumber: 99,
-  taskId: "TASK-99",
   staged: false,
   state: "open",
   reviewState: "in_review",
@@ -4651,8 +4735,17 @@ const PR_DETAIL: PrListItem = {
 };
 
 describe("renderPrDetailPage", () => {
-  function render(pr: PrListItem = PR_DETAIL): string {
-    return renderPrDetailPage(pr, USER_NAME, { "agent-x": "Xray Agent" });
+  function render(
+    pr: PrListItem = PR_DETAIL,
+    linkedTasks: TaskItem[] = [],
+  ): string {
+    return renderPrDetailPage(
+      pr,
+      USER_NAME,
+      { "agent-x": "Xray Agent" },
+      "America/Los_Angeles",
+      linkedTasks,
+    );
   }
 
   test("returns a valid HTML document", () => {
@@ -4694,19 +4787,32 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("3");
   });
 
-  test("renders taskId field when present", () => {
-    const html = render();
+  test("renders a linked task id when linkedTasks is non-empty", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-99", title: "T", status: "done" },
+    ]);
     expect(html).toContain("TASK-99");
   });
 
-  test("taskId links to the task's detail page", () => {
-    const html = render();
+  test("linked task links to the task's detail page", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-99", title: "T", status: "done" },
+    ]);
     expect(html).toContain('<a href="/admin/tasks/TASK-99"');
   });
 
-  test("no Task row when taskId is absent", () => {
-    const html = render({ ...PR_DETAIL, taskId: null });
+  test("no Task row when linkedTasks is empty", () => {
+    const html = render(PR_DETAIL, []);
     expect(html).not.toContain("/admin/tasks/");
+  });
+
+  test("renders both links when a PR has 2 linked tasks", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-A", title: "A", status: "done" },
+      { id: "TASK-B", title: "B", status: "done" },
+    ]);
+    expect(html).toContain('<a href="/admin/tasks/TASK-A"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-B"');
   });
 
   test("PR number links out to the GitHub PR", () => {
@@ -6588,6 +6694,13 @@ describe("renderChatThreadPage — CFB-2.3 live progress inline JS + status bubb
     expect(html).toContain("data-message-id");
   });
 
+  test("inline JS seeds renderedIds from the upload response", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    // The success branch of the fetch handler should parse JSON and seed renderedIds
+    // from data.message.id to prevent duplicate rendering.
+    expect(html).toContain("renderedIds[data.message.id]");
+  });
+
   test("inline JS renders every new server message, not just the last", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
     // renderServerBubble is called in a loop over all msgs (the old code took
@@ -7610,7 +7723,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     id: "pr-loop-1",
     repo: "org/repo",
     prNumber: 1,
-    taskId: null,
     staged: false,
     state: "open",
     reviewState: "pending",

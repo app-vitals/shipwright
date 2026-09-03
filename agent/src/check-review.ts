@@ -36,8 +36,8 @@
  * pr.createdAt rather than disqualifying the PR.
  */
 
-import { agentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
-import type { AgentAuthorAllowlistRef } from "./agent-author-allowlist-ref.ts";
+import { reviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
+import type { ReviewAuthorAllowlistRef } from "./review-author-allowlist-ref.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import {
   candidateId,
@@ -196,7 +196,6 @@ export function hasFreshNonAgentComment(
 export type ReviewCandidacyTrace =
   | { check: "eligible" }
   | { check: "draft" }
-  | { check: "excluded-bot-author"; author: string }
   | { check: "automated-label" }
   | { check: "self-review"; currentUser: string; isRequestedReviewer: boolean }
   | {
@@ -237,7 +236,7 @@ export type ReviewCandidacyTrace =
  * bundle-completeness) — into a single ReviewCandidacyTrace (RCO-1.3).
  *
  * Deliberately does NOT cover the earlier, cheap in-memory checks (draft,
- * dependabot, automated-label, self-review, not-allowlisted) — those don't
+ * automated-label, self-review, not-allowlisted) — those don't
  * need any I/O-derived state and getReviewCandidates traces them inline at
  * their own `continue` points instead. This function exists specifically
  * for the checks a standalone diagnostic script (RCO-1.4) would otherwise
@@ -444,7 +443,7 @@ export interface CheckReviewDeps {
    * Optional author allowlist hook. When set, getReviewCandidates() skips any
    * PR whose pr.author.login this returns false for. buildProductionDeps()
    * defaults this to a closure backed by the agent's synced authorAllowlist
-   * config field (via agentAuthorAllowlistRef) — an empty allowlist means
+   * config field (via reviewAuthorAllowlistRef) — an empty allowlist means
    * unfiltered. Callers can still pass an explicit override (e.g.
    * scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var) to bypass the
    * ref-backed default entirely.
@@ -476,16 +475,6 @@ export interface CheckReviewDeps {
 // ─── Core logic ───────────────────────────────────────────────────────────────
 
 /**
- * Bot-authored PRs unconditionally excluded from review candidacy —
- * dependency-bump bots that open PRs against the repo but are never
- * eligible reviewees (RNV-1.1 added app/renovate alongside the original
- * app/dependabot exclusion). Kept as a small list rather than a single
- * hardcoded string so a future bot author is a one-line addition here
- * instead of a second one-off comparison.
- */
-const EXCLUDED_BOT_AUTHORS = ["app/dependabot", "app/renovate"];
-
-/**
  * Collect all open PRs with unreviewed commits, across all repos returned by
  * listOpenPrs, as WorkPrCandidate[] tagged phase: "review".
  */
@@ -510,13 +499,6 @@ export async function getReviewCandidates(
       logSkippedCandidacy(pr, { check: "draft" });
       continue;
     }
-    if (EXCLUDED_BOT_AUTHORS.includes(pr.author.login)) {
-      logSkippedCandidacy(pr, {
-        check: "excluded-bot-author",
-        author: pr.author.login,
-      });
-      continue;
-    }
     if (pr.labels?.some((l) => l.name === "automated")) {
       logSkippedCandidacy(pr, { check: "automated-label" });
       continue;
@@ -537,9 +519,12 @@ export async function getReviewCandidates(
     // This is a known, accepted access-boundary loosening (confirmed with
     // the team), not an oversight — the same write access already required
     // to open a PR is sufficient to request the agent as a reviewer on it.
-    // All other exclusions (draft, dependabot, automated label above; live-
-    // review dedup, task-store dedup, hitl/blocked, bundle-incomplete below)
-    // still apply unconditionally regardless of requested-reviewer status.
+    // All other exclusions (draft, automated label above; live-review dedup,
+    // task-store dedup, hitl/blocked, bundle-incomplete below) still apply
+    // unconditionally regardless of requested-reviewer status. Bot-authored
+    // PRs (Dependabot, Renovate) are no longer unconditionally excluded here
+    // either — DBR-3.3 removed that pre-filter, so they now fall through to
+    // the isAuthorAllowed gate below like any other author.
     const isRequestedReviewer =
       pr.reviewRequests?.some((r) => r.login === currentUser) ?? false;
 
@@ -609,7 +594,7 @@ export async function getReviewCandidates(
         check: "not-allowlisted",
         author: pr.author.login,
         isRequestedReviewer,
-        authorAllowlistRef: agentAuthorAllowlistRef.get(),
+        authorAllowlistRef: reviewAuthorAllowlistRef.get(),
       });
       continue;
     }
@@ -756,22 +741,22 @@ export async function buildProductionDeps(opts: {
   /**
    * Optional explicit override for the ref-backed author-allowlist default
    * (used by scripts/hitl.ts's SHIPWRIGHT_HITL_AUTHORS env var, and AAL-3.1).
-   * When omitted, defaults to a closure reading agentAuthorAllowlistRef live,
+   * When omitted, defaults to a closure reading reviewAuthorAllowlistRef live,
    * so allowlist changes from config-sync take effect on the next call
    * without rebuilding deps.
    */
   isAuthorAllowed?: (login: string) => boolean;
   /**
-   * Optional override for which AgentAuthorAllowlistRef instance the default
+   * Optional override for which ReviewAuthorAllowlistRef instance the default
    * isAuthorAllowed closure reads from. Defaults to the process-wide
-   * agentAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
-   * independent ref (e.g. via createAgentAuthorAllowlistRef()) to exercise
+   * reviewAuthorAllowlistRef singleton. Exists so tests can inject a fresh,
+   * independent ref (e.g. via createReviewAuthorAllowlistRef()) to exercise
    * the true "never synced" (hasSynced() === false) state, which the
    * singleton — shared across the whole test file — cannot represent once
    * any other test has called .set() on it. Mirrors the fetchFn injection
    * pattern used elsewhere in this file (e.g. createPrRecordQuery).
    */
-  authorAllowlistRef?: AgentAuthorAllowlistRef;
+  authorAllowlistRef?: ReviewAuthorAllowlistRef;
   /**
    * Optional override for the resolved workspace root, normally derived from
    * WORKSPACE_PATH/AGENT_HOME via resolveWorkspacePath(). Exists so tests that
@@ -791,7 +776,7 @@ export async function buildProductionDeps(opts: {
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson: ghJsonFn } = opts;
   const ghGraphqlFn = opts.ghGraphql ?? ghGraphqlDefault;
-  const authorAllowlistRef = opts.authorAllowlistRef ?? agentAuthorAllowlistRef;
+  const authorAllowlistRef = opts.authorAllowlistRef ?? reviewAuthorAllowlistRef;
 
   return {
     getCurrentUser,

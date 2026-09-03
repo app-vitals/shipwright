@@ -866,6 +866,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/tasks/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch a task's TaskEvent audit trail, ordered by `at` ascending (oldest first) */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: string;
+                    offset?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Task's event history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["TaskEventsResponse"];
+                    };
+                };
+                /** @description Unauthorized */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tokens": {
         parameters: {
             query?: never;
@@ -1067,7 +1135,6 @@ export interface paths {
                     repo?: string | string[];
                     org?: string | string[];
                     prNumber?: string;
-                    taskId?: string;
                     state?: "open" | "merged" | "closed";
                     reviewState?: "pending" | "in_progress" | "posted" | "approved";
                     staged?: "true" | "false";
@@ -1594,6 +1661,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/prs/{id}/findings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Append a review/patch finding to a PR — source:'patch' may only submit disposition:'rejected' */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateFindingBody"];
+                };
+            };
+            responses: {
+                /** @description Finding recorded */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PrFinding"];
+                    };
+                };
+                /** @description Bad request — including the authority violation of source:'patch' submitting a disposition other than 'rejected' */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/prs/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Fetch a PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first) */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: string;
+                    offset?: string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description PR's event history */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PrEventsResponse"];
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1833,6 +2010,39 @@ export interface components {
             /** @example build failed */
             reason?: string;
         };
+        TaskEvent: {
+            /** @example clxevent123456 */
+            id: string;
+            /** @example clx0987654321 */
+            taskId: string;
+            /** @example status */
+            field: string;
+            /** @example pending */
+            oldValue: string | null;
+            /** @example in_progress */
+            newValue: string | null;
+            /** @example agent-abc123 */
+            actor: string | null;
+            /** @example claim */
+            method: string;
+            /** @example 2026-08-17T12:00:00.000Z */
+            at: string;
+            /**
+             * Format: date-time
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            createdAt: string;
+        };
+        TaskEventsResponse: {
+            /** @description This task's TaskEvent audit trail, ordered by `at` ascending (oldest first). */
+            events: components["schemas"]["TaskEvent"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+        };
         TaskToken: {
             /** @example clxtoken123456 */
             id: string;
@@ -1861,6 +2071,61 @@ export interface components {
             /** @example agent-id-123 */
             agentId?: string;
         };
+        PrFinding: {
+            /** @example clxfinding123456 */
+            id: string;
+            /** @example clx0987654321 */
+            prRecordId: string;
+            /** @example src/foo.ts:42 */
+            ref: string;
+            /**
+             * @example resolved
+             * @enum {string}
+             */
+            disposition: "resolved" | "superseded" | "rejected";
+            /**
+             * @example review
+             * @enum {string}
+             */
+            source: "review" | "patch";
+            /** @example Fixed the null check in the follow-up commit. */
+            evidence: string;
+            /** @example 2026-08-17T12:00:00.000Z */
+            at: string;
+            /**
+             * @description Agent instance that triaged this finding, if any.
+             * @example agent-abc123
+             */
+            agentId: string | null;
+            /**
+             * Format: date-time
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            createdAt: string;
+        };
+        PullRequestEvent: {
+            /** @example clxevent123456 */
+            id: string;
+            /** @example clx0987654321 */
+            prRecordId: string;
+            /** @example reviewState */
+            field: string;
+            /** @example pending */
+            oldValue: string | null;
+            /** @example in_progress */
+            newValue: string | null;
+            /** @example agent-abc123 */
+            actor: string | null;
+            /** @example claim */
+            method: string;
+            /** @example 2026-08-17T12:00:00.000Z */
+            at: string;
+            /**
+             * Format: date-time
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            createdAt: string;
+        };
         PullRequest: {
             /** @example clx0987654321 */
             id: string;
@@ -1868,8 +2133,6 @@ export interface components {
             repo: string;
             /** @example 42 */
             prNumber: number;
-            /** @example clx1234567890 */
-            taskId?: string | null;
             /**
              * @default false
              * @example false
@@ -1970,6 +2233,10 @@ export interface components {
              * @example 2026-01-06T12:00:00.000Z
              */
             updatedAt: string;
+            /** @description Review/patch findings recorded against this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
+            findings?: components["schemas"]["PrFinding"][];
+            /** @description Field-level state transition audit trail for this PR, if the caller's query included them (GET /prs/:id and list responses always include this array). */
+            events?: components["schemas"]["PullRequestEvent"][];
         };
         PrListResponse: {
             /** @description Array of pull requests */
@@ -2002,11 +2269,6 @@ export interface components {
              * @example agent-id-123
              */
             claimedBy?: string;
-            /**
-             * @description Associated task ID
-             * @example clx1234567890
-             */
-            taskId?: string;
             /**
              * @description Pipeline phase this claim is for (defaults to 'review' when omitted)
              * @example patch
@@ -2053,6 +2315,47 @@ export interface components {
              * @example npm-test-failed-foo.unit.test.ts
              */
             ciFailureSignature?: string;
+        };
+        CreateFindingBody: {
+            /**
+             * @description Identifier for the finding (e.g. file:line or a slug).
+             * @example src/foo.ts:42
+             */
+            ref: string;
+            /**
+             * @description Triage outcome. source:'patch' may only submit 'rejected' — server-enforced (400 otherwise); source:'review' may submit any value.
+             * @example resolved
+             * @enum {string}
+             */
+            disposition: "resolved" | "superseded" | "rejected";
+            /**
+             * @description Which pipeline phase is recording this finding.
+             * @example review
+             * @enum {string}
+             */
+            source: "review" | "patch";
+            /** @example Fixed the null check in the follow-up commit. */
+            evidence: string;
+            /**
+             * @description ISO timestamp of when the finding was triaged. Defaults to the current time when omitted.
+             * @example 2026-08-17T12:00:00.000Z
+             */
+            at?: string;
+            /**
+             * @description Agent instance that triaged this finding.
+             * @example agent-abc123
+             */
+            agentId?: string;
+        };
+        PrEventsResponse: {
+            /** @description This PR's PullRequestEvent audit trail, ordered by `at` ascending (oldest first). */
+            events: components["schemas"]["PullRequestEvent"][];
+            /** @example 1 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
         };
     };
     responses: never;

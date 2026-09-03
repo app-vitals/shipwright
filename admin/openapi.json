@@ -113,6 +113,15 @@
               "octocat"
             ]
           },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
@@ -236,6 +245,18 @@
               "type": "string"
             }
           },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "restrictSlackToMembers": {
             "type": "boolean"
           },
@@ -266,6 +287,8 @@
           "selfHosted",
           "repos",
           "authorAllowlist",
+          "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "typeName",
           "createdAt",
@@ -276,6 +299,13 @@
       "PatchAgentBody": {
         "type": "object",
         "properties": {
+          "slackId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "example": "U0AALR8M69X"
+          },
           "selfHosted": {
             "type": "boolean",
             "example": false
@@ -290,6 +320,24 @@
             ]
           },
           "authorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "patchAuthorAllowlist": {
             "type": "array",
             "items": {
               "type": "string"
@@ -1919,6 +1967,24 @@
               "octocat"
             ]
           },
+          "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
@@ -1939,6 +2005,8 @@
           "plugins",
           "repos",
           "authorAllowlist",
+          "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "memberEmails"
         ]

@@ -450,41 +450,36 @@ async function buildPromptWithFiles(
 }
 
 /**
- * Starts a run's progress tracking. enter()/exit() on ThreadStatusTracker
- * are ALWAYS called by every handler (every enter() needs a matching
- * exit(), or the refcount leaks upward forever) — but what the resulting
- * boolean gates differs by mode (STS2-1.1 AC #5):
- *   - Non-streaming: the refcount still gates whether setStatus's start()
- *     actually fires — only the thread's first concurrent run should flip
- *     agents.sessions.setStatus("processing").
- *   - Streaming: every message gets its own independent stream lifecycle
- *     regardless of refcount — the boolean only picks the seed card's
- *     title ("Queued…" when another message on this thread is already in
- *     flight, "Thinking…" otherwise).
+ * Starts a run's progress tracking. enter() on ThreadStatusTracker is
+ * ALWAYS called by every handler (every enter() needs a matching exit(), or
+ * the refcount leaks upward forever) — every message gets its own
+ * independent stream lifecycle regardless of the refcount; the boolean only
+ * picks the seed card's title ("Queued…" when another message on this
+ * thread is already in flight, "Thinking…" otherwise).
  */
 async function startProgress(
   progress: SlackProgress,
-  thinkingStepsEnabled: boolean,
   isFirstInThread: boolean,
 ): Promise<void> {
-  if (thinkingStepsEnabled) {
-    await progress.start({ queued: !isFirstInThread });
-  } else if (isFirstInThread) {
-    await progress.start();
-  }
+  await progress.start({ queued: !isFirstInThread });
 }
 
-/** The finish()-side counterpart of startProgress() — see its doc comment. */
+/**
+ * The finish()-side counterpart of startProgress() — see its doc comment.
+ * `wasSuppressed` (STS2-3.1) signals the run's reply was suppressed (e.g. a
+ * [silent] marker) so finish() titles the stream's fallback completion card
+ * "Ack" instead of "Done" — see SlackProgressFinishOptions. Defaults to
+ * `false`, matching prior behavior for callers that don't compute silence.
+ */
 async function finishProgress(
   progress: SlackProgress,
-  thinkingStepsEnabled: boolean,
   isLastInThread: boolean,
+  wasSuppressed = false,
 ): Promise<void> {
-  if (thinkingStepsEnabled) {
-    await progress.finish({ stillInFlight: !isLastInThread });
-  } else if (isLastInThread) {
-    await progress.finish();
-  }
+  await progress.finish({
+    stillInFlight: !isLastInThread,
+    silent: wasSuppressed,
+  });
 }
 
 export function createSlackApp(
@@ -506,7 +501,6 @@ export function createSlackApp(
   chatTokenReporter: ChatTokenReporter = new NoopChatTokenReporter(),
   resolveUserEmailFn: ResolveUserEmailFn = async () => undefined,
   membershipRef: AgentSlackMembershipRef = agentSlackMembershipRef,
-  thinkingStepsEnabled = false,
 ): App {
   const app = appFactory({
     token: slackConfig.botToken,
@@ -520,6 +514,25 @@ export function createSlackApp(
   // instance per createSlackApp() call), never module-level, so multiple app
   // instances (e.g. in tests) stay isolated from each other's refcount state.
   const threadStatusTracker = new ThreadStatusTracker();
+
+  // Registry of live streams: SlackProgress.streamKey() ("channel:ts") ->
+  // the instance itself (AGS-1.1). Populated when startStream() succeeds
+  // (i.e. progress.streamKey() first becomes defined, right after start())
+  // and cleared unconditionally when the stream closes, success or failure
+  // (right after finish()) — so it never leaks entries for completed runs.
+  // Closure-scoped (one instance per createSlackApp() call), same lifecycle
+  // as threadStatusTracker above — never module-level.
+  const liveStreams = new Map<string, SlackProgress>();
+
+  function registerStream(progress: SlackProgress): void {
+    const key = progress.streamKey();
+    if (key) liveStreams.set(key, progress);
+  }
+
+  function unregisterStream(progress: SlackProgress): void {
+    const key = progress.streamKey();
+    if (key) liveStreams.delete(key);
+  }
 
   // DMs: respond to every message.
   // Channels: respond only if bot has already replied in this thread.
@@ -569,16 +582,15 @@ export function createSlackApp(
       client,
       channel: msg.channel,
       threadTs: replyTs,
-      thinkingStepsEnabled,
     });
     // enter()/exit() are ALWAYS called (every enter() needs a matching
     // exit(), or the refcount leaks upward forever) — see startProgress()'s
-    // doc comment for what the boolean gates in each mode (AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // doc comment for what the boolean gates (AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
+    // Registers the stream (no-op when startStream() failed to open one —
+    // streamKey() is undefined either way) so agent_session_stopped can look
+    // this instance up (AGS-1.1).
+    registerStream(progress);
 
     const rawText =
       msg.text || (hasRichText ? richTextToMarkdown(msg.blocks ?? []) : "");
@@ -601,6 +613,10 @@ export function createSlackApp(
       prompt = `[Thread message — respond normally, or use [silent] if no response is needed]\n${prompt}`;
     }
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -623,6 +639,7 @@ export function createSlackApp(
       const isSilent = markers.some((m) => m.type === "silent");
       const dmOverride = isSilent && isDM && cleaned.trim().length > 0;
       const shouldSuppress = isSilent && !dmOverride;
+      wasSuppressed = shouldSuppress;
 
       if (dmOverride) {
         console.log("[slack] ignoring [silent] marker in DM — posting reply");
@@ -678,18 +695,36 @@ export function createSlackApp(
     } catch (err) {
       console.error("[slack] error:", err);
       sentryClient.captureException(err);
-      await say({
-        text: formatRunErrorForSlack(err),
-        thread_ts: msg.thread_ts ?? msg.ts,
-      });
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
+      // say() below — a UI-state signal only; sentryClient.captureException(err)
+      // above remains the single log point for this error. Ordering matters: if
+      // say() throws (rate limit, invalid_auth, channel_not_found), this must
+      // still run so finishProgress() doesn't send a "Done" card for a run that
+      // both errored and failed to notify the user (matches reaction_added).
+      progress.reportError();
+      // Wrap the error notification in its own try/catch: a failed say()
+      // (rate limit, invalid_auth, channel_not_found) must not escape the
+      // handler and skip the finally block's finishProgress().
+      try {
+        await say({
+          text: formatRunErrorForSlack(err),
+          thread_ts: msg.thread_ts ?? msg.ts,
+        });
+      } catch (sayErr) {
+        console.error("[slack] failed to post error notification:", sayErr);
+      }
     } finally {
       // exit() is ALWAYS called (matching the always-called enter() above)
-      // — see finishProgress()'s doc comment for what it gates in each mode.
+      // — see finishProgress()'s doc comment for what it gates.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
+      // Clears the registry entry unconditionally — success or failure —
+      // so it never leaks a stale instance for a run that's already done
+      // (AGS-1.1).
+      unregisterStream(progress);
     }
   });
 
@@ -728,15 +763,13 @@ export function createSlackApp(
       client,
       channel: ev.channel,
       threadTs: replyTs,
-      thinkingStepsEnabled,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
-    // what it gates in each mode (STS2-1.1 AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // what it gates (STS2-1.1 AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
+    // Registers the stream so agent_session_stopped can look this instance
+    // up (AGS-1.1) — see the app.message handler's identical comment above.
+    registerStream(progress);
 
     let prompt = await buildPromptWithFiles(
       ev.text,
@@ -783,6 +816,10 @@ export function createSlackApp(
       }
     }
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -803,6 +840,7 @@ export function createSlackApp(
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
+      wasSuppressed = isSilent;
       if (isSilent) {
         console.log(
           `[slack] silent response — not posting (channel mention, cleaned: ${cleaned.length} chars)`,
@@ -854,14 +892,29 @@ export function createSlackApp(
     } catch (err) {
       console.error("[slack] error:", err);
       sentryClient.captureException(err);
-      await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) BEFORE the
+      // say() below — a UI-state signal only; sentryClient.captureException(err)
+      // above remains the single log point for this error. Ordering matters: if
+      // say() throws (rate limit, invalid_auth, channel_not_found), this must
+      // still run so finishProgress() doesn't send a "Done" card for a run that
+      // both errored and failed to notify the user (matches reaction_added).
+      progress.reportError();
+      // Wrap the error notification in its own try/catch: a failed say()
+      // (rate limit, invalid_auth, channel_not_found) must not escape the
+      // handler and skip the finally block's finishProgress().
+      try {
+        await say({ text: formatRunErrorForSlack(err), thread_ts: replyTs });
+      } catch (sayErr) {
+        console.error("[slack] failed to post error notification:", sayErr);
+      }
     } finally {
       // See finishProgress()'s doc comment.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
+      unregisterStream(progress);
     }
   });
 
@@ -897,16 +950,18 @@ export function createSlackApp(
       client,
       channel: ev.item.channel,
       threadTs: ev.item.ts,
-      thinkingStepsEnabled,
     });
     // enter() is ALWAYS called — see startProgress()'s doc comment for
-    // what it gates in each mode (STS2-1.1 AC #5).
-    await startProgress(
-      progress,
-      thinkingStepsEnabled,
-      threadStatusTracker.enter(sessionKey),
-    );
+    // what it gates (STS2-1.1 AC #5).
+    await startProgress(progress, threadStatusTracker.enter(sessionKey));
+    // Registers the stream so agent_session_stopped can look this instance
+    // up (AGS-1.1) — see the app.message handler's identical comment above.
+    registerStream(progress);
 
+    // Set inside the try block below (STS2-3.1) — hoisted so finishProgress()
+    // in the finally block can title the stream's completion card "Ack"
+    // rather than the generic "Done" when the reply was suppressed.
+    let wasSuppressed = false;
     try {
       const runResult = await runner(prompt, sessionKey, progress.onProgress);
       if (runResult.streamIncomplete) {
@@ -927,6 +982,7 @@ export function createSlackApp(
       const { cleaned, markers } = parseMarkers(result);
 
       const isSilent = markers.some((m) => m.type === "silent");
+      wasSuppressed = isSilent;
       if (isSilent) {
         console.log("[slack] reaction_added: silent response — not posting");
         return;
@@ -998,13 +1054,81 @@ export function createSlackApp(
       });
     } catch (err) {
       console.error("[slack] reaction_added error:", err);
+      // Mark the Thinking Steps card status:"error" (STS2-4.1 AC #1) — a
+      // UI-state signal only, not a second log path.
+      progress.reportError();
     } finally {
       // See finishProgress()'s doc comment.
       await finishProgress(
         progress,
-        thinkingStepsEnabled,
         threadStatusTracker.exit(sessionKey),
+        wasSuppressed,
       );
+      unregisterStream(progress);
+    }
+  });
+
+  // Slack's native Stop/session-cancellation event for the Agent Sessions
+  // API (AGS-1.1). Without subscribing to this, the agent has no way to know
+  // when Slack has externally halted a stream, so it keeps trying to
+  // append/finalize into a stream Slack already discarded server-side
+  // (message_not_in_streaming_state) — which cascades into a permanently
+  // stuck "is working" status, since finish()'s stopStream() call fails with
+  // no fallback to reset it. Mirrors openclaw's applySlackStreamStop /
+  // markSlackStreamsStopped pattern (extensions/slack/src/streaming.ts,
+  // monitor/events/agent.ts).
+  //
+  // biome-ignore lint/suspicious/noExplicitAny: Bolt callback params
+  app.event("agent_session_stopped", async ({ event, client }: any) => {
+    const ev = event as { channel?: string; streaming_message_ts?: string };
+
+    // Look up the matching live stream and mark it externally-stopped —
+    // any further appendStream/stopStream call against it becomes a no-op
+    // instead of a failed API call. An unknown/already-cleared channel:ts
+    // (stream already closed via its own success/failure path, or a
+    // duplicate delivery of the same event) is a safe no-op — never throws.
+    // Also recovers the run's actual thread_ts (distinct from the stream's
+    // own streaming_message_ts) for the direct status reset below, when a
+    // match was found. On a registry miss threadTs stays undefined — we
+    // deliberately do NOT fall back to ev.streaming_message_ts, which is the
+    // stream's own message ts, a distinct value the Agent Sessions API does
+    // not accept as a thread identifier (see SlackProgress.getThreadTs()).
+    let threadTs: string | undefined;
+    if (ev.channel && ev.streaming_message_ts) {
+      const key = `${ev.channel}:${ev.streaming_message_ts}`;
+      const progress = liveStreams.get(key);
+      if (progress) {
+        threadTs = progress.getThreadTs();
+        progress.markExternallyStopped();
+        liveStreams.delete(key);
+      }
+    }
+
+    // Independent of the stream's own close path: a direct status reset,
+    // since it's a separate API call from the stream itself and should
+    // succeed even when the stream is already dead server-side (the actual
+    // fix for the stuck "is working" status — matches openclaw's own
+    // handler comment: "Recover stale processing if the turn's earlier
+    // active write failed. An unauthorized Stop may clear the indicator
+    // cosmetically until the still-running turn ends.").
+    //
+    // On a registry miss (duplicate/late event for an already-cleared run) we
+    // still fire the reset so the "is working" indicator can't stick, but omit
+    // thread_ts entirely rather than send the wrong (streaming_message_ts)
+    // value.
+    if (ev.channel) {
+      try {
+        await client.agents.sessions.setStatus({
+          channel_id: ev.channel,
+          status: "active",
+          ...(threadTs !== undefined ? { thread_ts: threadTs } : {}),
+        });
+      } catch (err) {
+        console.warn(
+          "[slack] agent_session_stopped: setStatus(active) failed:",
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     }
   });
 

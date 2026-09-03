@@ -48,10 +48,12 @@ Body:
 | `selfHosted` | no | `true` if the agent runs outside Kubernetes (default `false`) |
 | `type` | no | Agent Type name (default `"coding"`). Unknown type → `400`, zero rows created |
 | `repos` | no | Array of `org/repo` strings, merged with the resolved type's manifest `repos[]` |
-| `authorAllowlist` | no | Array of GitHub login strings — authors permitted to file pull requests scoped to this agent (default empty array = all authenticated users) |
+| `authorAllowlist` | no | Array of GitHub login strings — authors permitted to file pull requests scoped to this agent (default empty array = all authenticated users). **DBR-2.1:** when supplied, synced to both `authorAllowlist` and `reviewAuthorAllowlist` columns. |
+| `reviewAuthorAllowlist` | no | Array of GitHub login strings — the rename-in-progress twin of `authorAllowlist` (DBR-2.1). When supplied, takes precedence: both `authorAllowlist` and `reviewAuthorAllowlist` columns are written with this value. Omit to let the creation use the `authorAllowlist` value or the manifest default. |
+| `patchAuthorAllowlist` | no | Array of GitHub login strings — the authors intended to be permitted to trigger patch operations on this agent (default empty array). **Stored only, not yet enforced** (DBR-1.1 is schema + API); no runtime code reads it, so its contents currently have no effect on who can trigger a patch run. Settable at creation and editable afterward via `PATCH /agents/:id`. |
 | `restrictSlackToMembers` | no | `true` to restrict Slack message access to agents with `AgentMember` rows (default `false` = unrestricted). When true and no members are configured, a non-blocking warning is returned. |
 
-Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
+Returns `201` with `{ id, name, slackId, selfHosted, repos, authorAllowlist, reviewAuthorAllowlist, patchAuthorAllowlist, restrictSlackToMembers, typeName, createdAt, updatedAt, missingRequiredEnv, warning? }`. Returns `400` for an unknown `type`. The optional `warning` field is present when `restrictSlackToMembers` is true but no members are configured.
 
 ### List agents
 
@@ -67,9 +69,13 @@ Admin-only. Returns all agents with `id`, `name`, `selfHosted`, and `typeName` f
 GET /agents/:id
 ```
 
-Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
+Admin-only. Returns the full agent record including `selfHosted`, `repos`, `authorAllowlist`, `reviewAuthorAllowlist`, `patchAuthorAllowlist`, `restrictSlackToMembers`, `typeName`, and `missingRequiredEnv`.
 
-`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty, all authenticated users are allowed.
+`authorAllowlist` is an array of GitHub login strings — authors whose pull requests are permitted to target this agent. When empty, all authenticated users are allowed. **DBR-2.1 transitional note:** `reviewAuthorAllowlist` is the rename-in-progress twin of this field; during the dual-write/dual-read phase, both fields are always returned as identical arrays and both reflect the same logical allowlist. The new name `reviewAuthorAllowlist` is canonical and will replace `authorAllowlist` after the migration completes.
+
+`reviewAuthorAllowlist` is an array of GitHub login strings — the same value as `authorAllowlist` during the DBR-2.1 migration. Intended to be the canonical field name once the rename completes.
+
+`patchAuthorAllowlist` is an array of GitHub login strings — the authors intended to be permitted to trigger patch operations against this agent. **DBR-1.3 note:** the value is now synced live via `agent/src/patch-author-allowlist-ref.ts`, but it is not an access-control boundary yet — `agent/src/check-patch.ts` still performs no allowlist filtering, so patch runs remain unfiltered regardless of what this field holds. Enforcement is tracked as separate follow-up work.
 
 `restrictSlackToMembers` is a boolean flag that, when `true`, restricts Slack message access to only users listed in the agent's `AgentMember` rows. Defaults to `false` (unrestricted). An optional `warning` field is included in the response when this flag is `true` but no members are configured, alerting the operator that all Slack senders are currently blocked.
 
@@ -81,7 +87,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `auth
 PATCH /agents/:id
 ```
 
-Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
+Admin-only. Updatable fields: `selfHosted` (boolean), `repos` (array of `org/repo` strings — each entry is validated for format), `authorAllowlist` (array of GitHub login strings — usernames of authors permitted to file pull requests scoped to this agent), `reviewAuthorAllowlist` (array of GitHub login strings — the rename-in-progress twin of `authorAllowlist`, dual-written during DBR-2.1; when both fields are supplied with different values, `reviewAuthorAllowlist` wins and both columns are written with that value), `patchAuthorAllowlist` (array of GitHub login strings — the authors intended to be permitted to trigger patch operations on this agent; stored and returned only, with no runtime enforcement yet), `restrictSlackToMembers` (boolean — when `true`, restricts Slack access to configured members only), `slackId` (nullable string — Slack user ID for the agent's bot account; normally resolved and persisted automatically via `auth.test` right after Slack OAuth completes, this field exists to backfill it for agents that connected Slack before that fix shipped). `typeName` is not updatable via this route. Returns the updated agent.
 
 ### Delete agent
 
@@ -532,7 +538,9 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `allowedTools` — array of tool patterns
 - `plugins` — installed plugins with derived marketplace URLs
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
-- `authorAllowlist` — array of GitHub login strings (authors permitted to file pull requests scoped to this agent; empty array = all authenticated users allowed)
+- `authorAllowlist` — array of GitHub login strings (authors permitted to file pull requests scoped to this agent; empty array = all authenticated users allowed). **DBR-2.1:** dual-read with `reviewAuthorAllowlist`; both always return the same value.
+- `reviewAuthorAllowlist` — array of GitHub login strings (the rename-in-progress twin of `authorAllowlist`, always returned as the same value during DBR-2.1). Used by the runtime for review filtering; `authorAllowlist` is kept in sync during the migration.
+- `patchAuthorAllowlist` — array of GitHub login strings (the authors intended to be permitted to trigger patch operations on this agent). **DBR-1.3:** now synced live via `agent/src/patch-author-allowlist-ref.ts`, but `check-patch.ts` does no allowlist filtering yet — the value is informational until enforcement lands.
 - `restrictSlackToMembers` — boolean flag controlling Slack message access. When `true`, only users in the agent's `AgentMember` rows can send messages. Defaults to `false` (unrestricted). Used by runtime to enforce membership-based access control.
 - `memberEmails` — array of member email addresses (derived from agent's `AgentMember` rows). Empty when `restrictSlackToMembers` is `false` or no members are configured.
 

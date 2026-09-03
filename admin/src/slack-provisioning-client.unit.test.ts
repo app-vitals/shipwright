@@ -24,13 +24,16 @@ describe("buildAgentManifest", () => {
       expect(events).toContain("message.groups");
       expect(events).toContain("app_mention");
       expect(events).toContain("reaction_added");
+      // AGS-1.1: Slack's native Stop/session-cancellation event for the
+      // Agent Sessions API — without this subscription the agent has no way
+      // to know when Slack has externally halted a stream (confirmed via
+      // repeated missing_agent_session_stopped_event_subscription log lines).
+      expect(events).toContain("agent_session_stopped");
     });
 
     it("includes agent_view", () => {
       expect(manifest.features?.agent_view).toBeDefined();
-      expect(manifest.features?.agent_view?.agent_description).toContain(
-        NAME,
-      );
+      expect(manifest.features?.agent_view?.agent_description).toContain(NAME);
     });
 
     it("sets always_online: true", () => {
