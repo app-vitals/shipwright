@@ -19,11 +19,6 @@ interface FakeAgentRow {
   slackId: string | null;
   selfHosted: boolean;
   repos: string[];
-  authorAllowlist: string[];
-  /**
-   * DBR-2.1: rename-in-progress twin of authorAllowlist — dual-written and
-   * dual-read during the transitional phase (see agents.ts).
-   */
   reviewAuthorAllowlist: string[];
   restrictSlackToMembers: boolean;
   typeName: string;
@@ -69,7 +64,6 @@ function makeFakePrisma(
         slackId: string | null;
         selfHosted: boolean;
         repos?: string[];
-        authorAllowlist?: string[];
         reviewAuthorAllowlist?: string[];
         restrictSlackToMembers?: boolean;
       };
@@ -80,7 +74,6 @@ function makeFakePrisma(
         slackId: data.slackId,
         selfHosted: data.selfHosted,
         repos: data.repos ?? [],
-        authorAllowlist: data.authorAllowlist ?? [],
         reviewAuthorAllowlist: data.reviewAuthorAllowlist ?? [],
         restrictSlackToMembers: data.restrictSlackToMembers ?? false,
         typeName: "coding",
@@ -156,7 +149,6 @@ function makeFakePrisma(
         slackId?: string | null;
         selfHosted?: boolean;
         repos?: string[];
-        authorAllowlist?: string[];
         reviewAuthorAllowlist?: string[];
         restrictSlackToMembers?: boolean;
       };
@@ -170,9 +162,6 @@ function makeFakePrisma(
         ...(data.slackId !== undefined && { slackId: data.slackId }),
         ...(data.selfHosted !== undefined && { selfHosted: data.selfHosted }),
         ...(data.repos !== undefined && { repos: data.repos }),
-        ...(data.authorAllowlist !== undefined && {
-          authorAllowlist: data.authorAllowlist,
-        }),
         ...(data.reviewAuthorAllowlist !== undefined && {
           reviewAuthorAllowlist: data.reviewAuthorAllowlist,
         }),
@@ -252,7 +241,6 @@ function seedRow(overrides: Partial<FakeAgentRow> = {}): FakeAgentRow {
     slackId: null,
     selfHosted: false,
     repos: [],
-    authorAllowlist: [],
     reviewAuthorAllowlist: [],
     restrictSlackToMembers: false,
     typeName: "coding",
@@ -291,34 +279,13 @@ describe("AgentService.create", () => {
     expect(agent.selfHosted).toBe(false);
   });
 
-  it("creates an agent with the given authorAllowlist", async () => {
+  it("creates an agent with the given reviewAuthorAllowlist", async () => {
     const prisma = makeFakePrisma() as unknown as FakePrisma;
     const service = new AgentService(prisma as never);
 
     const agent = await service.create({
       name: "New Agent",
-      authorAllowlist: ["octocat", "hubot"],
-    });
-
-    expect(agent.authorAllowlist).toEqual(["octocat", "hubot"]);
-  });
-
-  it("defaults authorAllowlist to an empty array when omitted", async () => {
-    const prisma = makeFakePrisma() as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
-
-    const agent = await service.create({ name: "Plain Agent" });
-
-    expect(agent.authorAllowlist).toEqual([]);
-  });
-
-  it("dual-writes reviewAuthorAllowlist to match authorAllowlist on create", async () => {
-    const prisma = makeFakePrisma() as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
-
-    const agent = await service.create({
-      name: "New Agent",
-      authorAllowlist: ["octocat", "hubot"],
+      reviewAuthorAllowlist: ["octocat", "hubot"],
     });
 
     expect(agent.reviewAuthorAllowlist).toEqual(["octocat", "hubot"]);
@@ -432,7 +399,6 @@ describe("AgentService.getDetail", () => {
       name: "Existing",
       slackId: "U999",
       repos: ["org/repo"],
-      authorAllowlist: ["octocat"],
       reviewAuthorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
@@ -449,7 +415,6 @@ describe("AgentService.getDetail", () => {
       slackId: "U999",
       selfHosted: false,
       repos: ["org/repo"],
-      authorAllowlist: ["octocat"],
       reviewAuthorAllowlist: ["octocat"],
       restrictSlackToMembers: false,
       typeName: "coding",
@@ -602,53 +567,8 @@ describe("AgentService.updateSelfHosted", () => {
     expect(updated.repos).toEqual(["org/existing"]);
   });
 
-  it("updates authorAllowlist when provided", async () => {
-    const row = seedRow({ id: "a1", authorAllowlist: [] });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({}));
-
-    const updated = await service.updateSelfHosted("a1", {
-      selfHosted: false,
-      authorAllowlist: ["octocat"],
-    });
-
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
-  });
-
-  it("leaves authorAllowlist untouched when not provided", async () => {
-    const row = seedRow({ id: "a1", authorAllowlist: ["octocat"] });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({}));
-
-    const updated = await service.updateSelfHosted("a1", { selfHosted: true });
-
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
-  });
-
-  it("dual-writes reviewAuthorAllowlist when only authorAllowlist is provided", async () => {
-    const row = seedRow({
-      id: "a1",
-      authorAllowlist: [],
-      reviewAuthorAllowlist: [],
-    });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({}));
-
-    const updated = await service.updateSelfHosted("a1", {
-      selfHosted: false,
-      authorAllowlist: ["octocat"],
-    });
-
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
-    expect(updated.reviewAuthorAllowlist).toEqual(["octocat"]);
-  });
-
-  it("dual-writes authorAllowlist when only reviewAuthorAllowlist is provided", async () => {
-    const row = seedRow({
-      id: "a1",
-      authorAllowlist: [],
-      reviewAuthorAllowlist: [],
-    });
+  it("updates reviewAuthorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", reviewAuthorAllowlist: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never, fakeRegistry({}));
 
@@ -657,16 +577,11 @@ describe("AgentService.updateSelfHosted", () => {
       reviewAuthorAllowlist: ["octocat"],
     });
 
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
     expect(updated.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 
-  it("leaves reviewAuthorAllowlist untouched when neither field is provided", async () => {
-    const row = seedRow({
-      id: "a1",
-      authorAllowlist: ["octocat"],
-      reviewAuthorAllowlist: ["octocat"],
-    });
+  it("leaves reviewAuthorAllowlist untouched when not provided", async () => {
+    const row = seedRow({ id: "a1", reviewAuthorAllowlist: ["octocat"] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never, fakeRegistry({}));
 
@@ -687,7 +602,6 @@ describe("AgentService.getById", () => {
     expect(await service.getById("a1")).toEqual({
       id: "a1",
       repos: ["org/repo1", "org/repo2"],
-      authorAllowlist: [],
       reviewAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
@@ -701,11 +615,10 @@ describe("AgentService.getById", () => {
     expect(await service.getById("missing")).toBeNull();
   });
 
-  it("includes authorAllowlist for the runtime config lookup", async () => {
+  it("includes reviewAuthorAllowlist for the runtime config lookup", async () => {
     const row = seedRow({
       id: "a1",
       repos: ["org/repo1"],
-      authorAllowlist: ["octocat", "hubot"],
       reviewAuthorAllowlist: ["octocat", "hubot"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
@@ -714,27 +627,10 @@ describe("AgentService.getById", () => {
     expect(await service.getById("a1")).toEqual({
       id: "a1",
       repos: ["org/repo1"],
-      authorAllowlist: ["octocat", "hubot"],
       reviewAuthorAllowlist: ["octocat", "hubot"],
       restrictSlackToMembers: false,
       memberEmails: [],
     });
-  });
-
-  it("includes reviewAuthorAllowlist for the runtime config lookup, returned as an identical array to authorAllowlist", async () => {
-    const row = seedRow({
-      id: "a1",
-      repos: ["org/repo1"],
-      authorAllowlist: ["octocat"],
-      reviewAuthorAllowlist: ["octocat"],
-    });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never);
-
-    const result = await service.getById("a1");
-
-    expect(result?.reviewAuthorAllowlist).toEqual(result?.authorAllowlist);
-    expect(result?.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 
   it("includes memberEmails scoped to the agent, excluding other agents' members", async () => {
@@ -932,16 +828,16 @@ describe("AgentService.updateFields", () => {
     expect(updated.repos).toEqual(["org/new-repo"]);
   });
 
-  it("updates authorAllowlist when provided", async () => {
-    const row = seedRow({ id: "a1", authorAllowlist: [] });
+  it("updates reviewAuthorAllowlist when provided", async () => {
+    const row = seedRow({ id: "a1", reviewAuthorAllowlist: [] });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
     const service = new AgentService(prisma as never, fakeRegistry({}));
 
     const updated = await service.updateFields("a1", {
-      authorAllowlist: ["octocat"],
+      reviewAuthorAllowlist: ["octocat"],
     });
 
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
+    expect(updated.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 
   it("updates selfHosted when provided", async () => {
@@ -971,7 +867,6 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
-      authorAllowlist: ["octocat"],
       reviewAuthorAllowlist: ["octocat"],
     });
     const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
@@ -985,7 +880,6 @@ describe("AgentService.updateFields", () => {
       slackId: "U999",
       selfHosted: true,
       repos: ["org/keep"],
-      authorAllowlist: ["octocat"],
       reviewAuthorAllowlist: ["octocat"],
       restrictSlackToMembers: false,
       typeName: "coding",
@@ -993,39 +887,5 @@ describe("AgentService.updateFields", () => {
       updatedAt: new Date("2024-01-02"),
       missingRequiredEnv: [],
     });
-  });
-
-  it("dual-writes reviewAuthorAllowlist when only authorAllowlist is provided", async () => {
-    const row = seedRow({
-      id: "a1",
-      authorAllowlist: [],
-      reviewAuthorAllowlist: [],
-    });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({}));
-
-    const updated = await service.updateFields("a1", {
-      authorAllowlist: ["octocat"],
-    });
-
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
-    expect(updated.reviewAuthorAllowlist).toEqual(["octocat"]);
-  });
-
-  it("dual-writes authorAllowlist when only reviewAuthorAllowlist is provided", async () => {
-    const row = seedRow({
-      id: "a1",
-      authorAllowlist: [],
-      reviewAuthorAllowlist: [],
-    });
-    const prisma = makeFakePrisma([row]) as unknown as FakePrisma;
-    const service = new AgentService(prisma as never, fakeRegistry({}));
-
-    const updated = await service.updateFields("a1", {
-      reviewAuthorAllowlist: ["octocat"],
-    });
-
-    expect(updated.authorAllowlist).toEqual(["octocat"]);
-    expect(updated.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 });

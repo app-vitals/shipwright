@@ -340,10 +340,7 @@ if (runtimeClient && agentId) {
 
       // Sync the agent's review-author-allowlist live ref
       reviewAuthorAllowlistRef.set(
-        resolveReviewAuthorAllowlist(
-          bundle.reviewAuthorAllowlist,
-          bundle.authorAllowlist,
-        ),
+        resolveReviewAuthorAllowlist(bundle.reviewAuthorAllowlist),
       );
 
       // Sync the agent's Slack-membership-restriction live ref

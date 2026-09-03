@@ -13,7 +13,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { sign } from "hono/jwt";
 import type { AdminUISlackClient } from "./admin-ui.ts";
-import type { AgentDetail } from "./admin-ui-pages.ts";
+import type { AgentDetail } from "./agents.ts";
 import { SlackProvisioningService } from "./slack-provisioning-service.ts";
 import type { AppManifest } from "./slack-provisioning-client.ts";
 
@@ -137,7 +137,7 @@ function makeService(opts?: {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           missingRequiredEnv: [],
@@ -152,7 +152,7 @@ function makeService(opts?: {
           createdAt: new Date("2024-01-01"),
           updatedAt: new Date("2024-01-01"),
           repos: [],
-          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           missingRequiredEnv: [],
