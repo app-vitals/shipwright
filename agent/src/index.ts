@@ -32,8 +32,11 @@ import {
   buildProductionDeps as buildClaimInvariantReconcilerDeps,
   reconcileClaimInvariant,
 } from "./claim-invariant-reconciler.ts";
-import { createRunClaude, setLiveClaudeConfig } from "./claude.ts";
-import type { ProgressCallback } from "./claude.ts";
+import {
+  createRunClaude,
+  type ProgressCallback,
+  setLiveClaudeConfig,
+} from "./claude.ts";
 import { SystemClock } from "./clock.ts";
 import { createConfig } from "./config.ts";
 import { reportCronFailure } from "./cron-failure-reporter.ts";
