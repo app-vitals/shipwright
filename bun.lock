@@ -46,7 +46,7 @@
     },
     "agent": {
       "name": "@shipwright/agent",
-      "version": "1.223.0",
+      "version": "1.228.0",
       "dependencies": {
         "@octokit/auth-app": "^8.2.0",
         "@sentry/bun": "^10.63.0",
@@ -102,7 +102,7 @@
     },
     "metrics": {
       "name": "@shipwright/metrics",
-      "version": "1.223.0",
+      "version": "1.228.0",
       "dependencies": {
         "@hono/zod-openapi": "^0.18.3",
         "@sentry/bun": "^10.63.0",
@@ -120,8 +120,12 @@
     },
     "plugins/shipwright": {
       "name": "@shipwright/plugin",
-      "version": "1.223.0",
+      "version": "1.228.0",
+      "dependencies": {
+        "js-yaml": "^4.3.1",
+      },
       "devDependencies": {
+        "@types/js-yaml": "^4.0.9",
         "bun-types": "*",
         "typescript": "*",
       },
@@ -370,6 +374,8 @@
     "@types/express-serve-static-core": ["@types/express-serve-static-core@5.1.2", "", { "dependencies": { "@types/node": "*", "@types/qs": "*", "@types/range-parser": "*", "@types/send": "*" } }, "sha512-d3KvEXBSo/lOAMc2u6fkyDHBvetBHeqD7wm/AcXfLpSOQwlmG9D/aQ0SFswVjv05p7ullQS7Mjohj6/VdbZuTg=="],
 
     "@types/http-errors": ["@types/http-errors@2.0.5", "", {}, "sha512-r8Tayk8HJnX0FztbZN7oVqGccWgw98T/0neJphO91KkmOzug1KkofZURD4UaD5uH8AqcFLfdPErnBod0u71/qg=="],
+
+    "@types/js-yaml": ["@types/js-yaml@4.0.9", "", {}, "sha512-k4MGaQl5TGo/iipqb2UDG2UwjXziSWkh0uysQelTlJpX1qGlpUZYm8PnO4DxG1qBomtJUdYJ6qR6xdIah10JLg=="],
 
     "@types/jsonwebtoken": ["@types/jsonwebtoken@9.0.10", "", { "dependencies": { "@types/ms": "*", "@types/node": "*" } }, "sha512-asx5hIG9Qmf/1oStypjanR7iKTv0gXQ1Ov/jfrX6kS/EO0OFni8orbmGCn0672NHR3kXHwpAwR+B368ZGN/2rA=="],
 

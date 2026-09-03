@@ -477,6 +477,91 @@ Respond `[silent]`, and stop.
 
 ---
 
+## Step 5.8: Dependency Manifest Detection (DBR-3.2)
+
+Regardless of `PR_AUTHOR` — this step runs the same for any PR, human-authored or
+bot-authored; it is not gated on `PR_AUTHOR`/`author.login` at all, unlike the
+Dependabot/Renovate-specific `triage-dependency-bot-pr` skill. A human-authored PR that
+happens to touch a dependency manifest (e.g. hand-editing `package.json` to pin a version)
+gets the exact same dependency-risk analysis as a bot-authored one.
+
+1. **Build the repo's watched-path set.** cwd is already the worktree root at this point in
+   the procedure (per Step 4's "All subsequent steps run from
+   `.../{repo}-{branch-slug}/`" transition), so read the two config files relative to cwd
+   if present:
+   ```bash
+   RENOVATE_JSON=$(cat renovate.json 2>/dev/null || echo "")
+   DEPENDABOT_YML=$(cat .github/dependabot.yml 2>/dev/null || echo "")
+   ```
+   Then resolve the watched-path set — repo-specific, not a hardcoded global list — via
+   `resolve-dependency-watched-paths.ts` (mirroring `compute-review-verdict.ts`'s CLI
+   pattern):
+   ```bash
+   WATCHED_PATHS_RESULT=$(bun run "${CLAUDE_PLUGIN_ROOT}/scripts/resolve-dependency-watched-paths.ts" \
+     "$(jq -n --arg renovateJson "$RENOVATE_JSON" --arg dependabotYml "$DEPENDABOT_YML" \
+       '{renovateJson: (if $renovateJson == "" then null else $renovateJson end),
+         dependabotYml: (if $dependabotYml == "" then null else $dependabotYml end)}')")
+   # -> {"paths":["package.json","go.mod",...],"source":"renovate"|"dependabot"|"both"|"fallback"}
+   ```
+   The script reads `renovate.json`'s configured `managers` array (when present) to narrow
+   scope to only the ecosystems it names; when `managers` is absent, Renovate's own default
+   is "detect all supported manifests", so the script treats that as the full universal
+   list rather than narrowing it. It reads `.github/dependabot.yml`'s `updates[]` array —
+   each entry's `package-ecosystem` (e.g. `npm`, `bundler`, `pip`, `gomod`, `cargo`) maps to
+   that ecosystem's manifest filename(s), joined with the entry's `directory` prefix (e.g.
+   `directory: "/backend"` + `npm` -> `backend/package.json`). A dependabot.yml that yields
+   zero recognized ecosystems — an empty `updates: []`, or entries whose `package-ecosystem`
+   values this script doesn't map — resolves to an **empty** watched-path set, not the
+   universal list: an explicit dependabot.yml is authoritative about what the repo watches,
+   so this step simply no-ops for that repo rather than widening back out. (A dependabot.yml
+   that can't be parsed at all — invalid YAML, or a missing `updates` key — is a different
+   case and still degrades to the universal list.) When both config files are
+   present, the two watched-path sets are unioned, not one picked over the other — a repo
+   can run both tools at once. **When neither config file is present in the repo, this falls
+   back to the universal manifest-file list**: `package.json` and common lockfiles
+   (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`), `go.mod`
+   (and `go.sum`), `Gemfile` (and `Gemfile.lock`), `requirements.txt` (and `Pipfile`,
+   `Pipfile.lock`, `pyproject.toml`), and `Cargo.toml` (and `Cargo.lock`).
+
+2. **Compare against the changed files.** Using Step 5.3's already-extracted changed-files
+   list and the `paths` array from the script's output above, a changed file matches the
+   watched-path set when ANY of the following three rules apply:
+   - **exact match**: the changed file is an exact, case-sensitive match to a watched path
+     (e.g. changed file `package.json` matches watched path `package.json`), or
+   - **basename match**: the changed file's **basename** matches a watched path that is
+     itself a bare filename with no directory component (e.g. changed file
+     `packages/foo/package.json` matches watched path `package.json` by basename, even
+     though the watched-path set didn't anticipate that nested location) — this basename
+     fallback only applies when the watched-path entry has no `/` in it; a watched path
+     with a directory prefix (e.g. `backend/package.json`, from a dependabot.yml
+     `directory` entry) requires the exact full-path match, since that prefix was an
+     explicit scoping choice, not something a bare basename match should widen back out,
+     or
+   - **directory-prefix match**: the changed file's path starts with a watched path that
+     itself ends with `/` (e.g. watched path `.github/workflows/` — as emitted for the
+     `github-actions` ecosystem — matches changed file `.github/workflows/ci.yml`). This
+     is distinct from the basename case above: a trailing `/` marks the entry as a
+     directory-prefix convention rather than a bare filename, so no glob syntax is ever
+     needed in the watched-path set.
+
+3. **When triggered** (at least one changed file matches, by either rule above): apply
+   `references/dependency-risk-analysis.md`'s heuristics — using this PR's `diff` (Step
+   5.2), `body` and `author.login` (Step 5.1's PR metadata), and `labels` if available — to
+   produce `recommendation` (`merge`/`review`/`hold`), `flags` (`breakingChange`,
+   `securityRelevant`, `productionImpact`), and `reasoning`. Follow that reference's
+   Dependabot path, Renovate path, or author-mismatch fallback exactly as documented there —
+   this step does not restate those heuristics, only invokes them. Carry the resulting
+   `{recommendation, flags, reasoning}` forward as `DEPENDENCY_RISK_ANALYSIS` for Step 9 (the
+   review file's dedicated "Dependency Risk Analysis" section) and Step 10 (folded into the
+   JSON body's reasoning) — kept distinguishable there from the ordinary code-review
+   Critical/Important/Suggestions findings, never merged into that list.
+
+4. **When not triggered** (no changed file matches): this step is a no-op — do not add a
+   "Dependency Risk Analysis" section anywhere downstream; `DEPENDENCY_RISK_ANALYSIS` stays
+   unset/absent for Steps 9 and 10.
+
+---
+
 ## Step 6: Classify Changes by Domain
 
 Before reading individual files, build a structural picture of what kind of work this PR does. Work from the PR body, commit messages, and file list:
@@ -656,6 +741,21 @@ Write `$WORKSPACE_ROOT/state/reviews/PR_REVIEW_{pr}.md`:
 ## CI Status
 
 {Current status of checks}
+
+## Dependency Risk Analysis
+
+{Only present when Step 5.8 triggered — omit this entire section (heading included) when
+Step 5.8 found no changed file matching the repo's watched-path set. When present, this
+section is populated from `DEPENDENCY_RISK_ANALYSIS` (Step 5.8's application of
+`references/dependency-risk-analysis.md`'s heuristics) and is kept visually and
+structurally distinguishable from the ordinary code-review findings below — it is never
+folded into Critical Issues/Important Issues/Suggestions, since it reflects a different
+analysis (dependency-bump risk, not general code review) even on a PR that also has
+ordinary findings.}
+
+**Recommendation**: {merge|review|hold}
+**Flags**: {breakingChange, securityRelevant, productionImpact — whichever apply, or "none"}
+**Reasoning**: {DEPENDENCY_RISK_ANALYSIS.reasoning}
 
 ## Critical Issues ({count})
 
@@ -977,6 +1077,16 @@ Write `$WORKSPACE_ROOT/state/reviews/pr_review_{pr}.json`:
 
 For a COMMENT verdict, the `body` follows the same convention, e.g.
 `"body": "Verdict: COMMENT — {one-line summary of the most important finding}"`.
+
+**Folding in the dependency risk analysis (DBR-3.2).** When Step 5.8 triggered and
+`DEPENDENCY_RISK_ANALYSIS` is set, append a short, clearly-labeled dependency-risk clause to
+the `body` after the `Verdict: ...` lead-in, e.g. `"Verdict: COMMENT — {code-review summary};
+dependency risk: {DEPENDENCY_RISK_ANALYSIS.recommendation} — {DEPENDENCY_RISK_ANALYSIS.reasoning}"`.
+This is additive to the verdict computed above, not a replacement for it — the
+`compute-review-verdict.ts` truth table still solely determines `event`/`verdictLabel`; the
+dependency-risk `recommendation` (`merge`/`review`/`hold`) does not feed into that
+computation. When Step 5.8 did not trigger, omit this clause entirely — the body reads
+exactly as it would without this feature.
 
 **Diff-line mapping**: for each finding with a `file:line` reference, check if the
 line is in the diff (`git diff origin/{base}...HEAD -- {file}`). Only lines within diff

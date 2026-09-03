@@ -7,7 +7,11 @@
     "test": "NODE_ENV=test bun test",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "js-yaml": "^4.3.1"
+  },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "bun-types": "*",
     "typescript": "*"
   }
