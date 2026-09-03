@@ -1394,6 +1394,198 @@ describe("getPatchCandidates — allowlisted authors (DBR-1.4)", () => {
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("acme/example-repo#10");
   });
+
+  // ─── prAuthor threading (RAS-1.1 × DBR-1.4) ───────────────────────────────
+  //
+  // Every test above short-circuits on mergeStatus.isDirty, so none of them
+  // reach the review-findings path. These do (isDirty: false), and they are
+  // what actually pins the OwnPr.author → reviewData.prAuthor threading:
+  // without it, `prAuthor` silently defaults to `currentUser` (the agent),
+  // and an allowlisted PR's author-reply exclusions compare against the
+  // WRONG identity in both directions — a genuine author reply is never
+  // recognized (PR stuck as a permanent patch candidate) and the agent's own
+  // comment is misread as an author reply (real finding wrongly suppressed).
+
+  const reviewWithBody = (login: string, submittedAt: string, oid: string) => ({
+    author: { login },
+    state: "COMMENTED",
+    submittedAt,
+    commit: { oid },
+    body: "Please rename this variable",
+  });
+
+  test("allowlisted PR: a reply from the REAL author after a review addresses the finding (no patch needed)", async () => {
+    const allowlistedPr = makeOwnPr({
+      number: 20,
+      repo: "acme/example-repo",
+      title: "Someone else's feature",
+      headRefOid: "allowlisted-sha",
+      author: "allowlisted-one",
+    });
+    const deps = makeDeps({
+      ownPrs: [],
+      allowlistedPrs: [allowlistedPr],
+      getScopedRepos: () => ["acme/example-repo"],
+      // Reaches the review-findings path instead of short-circuiting.
+      mergeStatusByPr: { 20: { isDirty: false } },
+      reviewDataByPr: {
+        20: makePrReviewData({
+          headRefOid: "allowlisted-sha",
+          reviews: {
+            nodes: [
+              reviewWithBody(
+                "reviewer1",
+                "2026-05-26T10:00:00Z",
+                "allowlisted-sha",
+              ),
+            ],
+          },
+          comments: {
+            nodes: [
+              {
+                author: { login: "allowlisted-one" },
+                body: "Renamed, thanks.",
+                createdAt: "2026-05-26T11:00:00Z",
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result).toEqual([]);
+  });
+
+  test("allowlisted PR: a comment from the AGENT (not the PR author) does not address the finding", async () => {
+    const allowlistedPr = makeOwnPr({
+      number: 20,
+      repo: "acme/example-repo",
+      headRefOid: "allowlisted-sha",
+      author: "allowlisted-one",
+    });
+    const deps = makeDeps({
+      ownPrs: [],
+      allowlistedPrs: [allowlistedPr],
+      getScopedRepos: () => ["acme/example-repo"],
+      mergeStatusByPr: { 20: { isDirty: false } },
+      reviewDataByPr: {
+        20: makePrReviewData({
+          headRefOid: "allowlisted-sha",
+          reviews: {
+            nodes: [
+              reviewWithBody(
+                "reviewer1",
+                "2026-05-26T10:00:00Z",
+                "allowlisted-sha",
+              ),
+            ],
+          },
+          comments: {
+            nodes: [
+              {
+                // The agent itself commented — NOT the PR author, so this
+                // must not suppress a real finding.
+                author: { login: "the-agent" },
+                body: "Taking a look.",
+                createdAt: "2026-05-26T11:00:00Z",
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result.map((c) => c.id)).toEqual(["acme/example-repo#20"]);
+  });
+
+  test("allowlisted PR: hasMergeOnlyStaleFindings also uses the real author for the reply exclusion", async () => {
+    const allowlistedPr = makeOwnPr({
+      number: 20,
+      repo: "acme/example-repo",
+      headRefOid: "head-sha",
+      author: "allowlisted-one",
+    });
+    const deps = makeDeps({
+      ownPrs: [],
+      allowlistedPrs: [allowlistedPr],
+      getScopedRepos: () => ["acme/example-repo"],
+      mergeStatusByPr: { 20: { isDirty: false } },
+      reviewDataByPr: {
+        20: makePrReviewData({
+          headRefOid: "head-sha",
+          reviews: {
+            nodes: [
+              // Stale review (commit oid !== headRefOid) with no unresolved
+              // threads — only the body can carry the finding, so the
+              // author-reply exclusion is the sole thing gating candidacy.
+              reviewWithBody(
+                "reviewer1",
+                "2026-05-26T10:00:00Z",
+                "stale-sha",
+              ),
+            ],
+          },
+          comments: {
+            nodes: [
+              {
+                author: { login: "allowlisted-one" },
+                body: "Renamed, thanks.",
+                createdAt: "2026-05-26T11:00:00Z",
+              },
+            ],
+          },
+        }),
+      },
+      // Merge-only update since the stale review — so if the reply exclusion
+      // were evaluated against the wrong identity, this PR WOULD qualify.
+      listPrCommits: async () => [
+        { sha: "stale-sha", parents: [{ sha: "p1" }] },
+        { sha: "head-sha", parents: [{ sha: "p1" }, { sha: "p2" }] },
+      ],
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result).toEqual([]);
+  });
+
+  test("self-authored PR: prAuthor still defaults to currentUser (unchanged pre-DBR-1.4 behavior)", async () => {
+    // No `author` field — listOwnOpenPrs never sets one, so the agent's own
+    // reply must keep addressing the finding exactly as before.
+    const ownPr = makeOwnPr({ number: 10, headRefOid: "own-sha" });
+    const deps = makeDeps({
+      ownPrs: [ownPr],
+      getScopedRepos: () => ["acme/example-repo"],
+      mergeStatusByPr: { 10: { isDirty: false } },
+      reviewDataByPr: {
+        10: makePrReviewData({
+          headRefOid: "own-sha",
+          reviews: {
+            nodes: [
+              reviewWithBody("reviewer1", "2026-05-26T10:00:00Z", "own-sha"),
+            ],
+          },
+          comments: {
+            nodes: [
+              {
+                author: { login: "the-agent" },
+                body: "Renamed, thanks.",
+                createdAt: "2026-05-26T11:00:00Z",
+              },
+            ],
+          },
+        }),
+      },
+    });
+
+    const result = await getPatchCandidates(deps);
+
+    expect(result).toEqual([]);
+  });
 });
 
 // ─── buildProductionDeps ────────────────────────────────────────────────────
@@ -1790,6 +1982,9 @@ describe("buildProductionDeps", () => {
           headRefOid: "sha-allowlisted-one",
           createdAt: "2026-05-01T00:00:00Z",
           repo: "acme/example-repo",
+          // The queried login is attached as the PR's author so
+          // getPatchCandidates can thread a real prAuthor downstream.
+          author: "allowlisted-one",
         },
         {
           number: 22,
@@ -1798,6 +1993,7 @@ describe("buildProductionDeps", () => {
           headRefOid: "sha-allowlisted-two",
           createdAt: "2026-05-01T00:00:00Z",
           repo: "acme/example-repo",
+          author: "allowlisted-two",
         },
       ]);
       // One gh call per (repo, login) pair — 1 repo × 2 logins.

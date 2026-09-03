@@ -62,6 +62,19 @@ export interface OwnPr {
   headRefOid: string;
   repo: string;
   createdAt?: string;
+  /**
+   * The PR's actual author login (DBR-1.4). Populated by
+   * `listAllowlistedOpenPrs` from the allowlisted `login` it queried with;
+   * deliberately left undefined by `listOwnOpenPrs`, whose PRs are by
+   * definition authored by the authenticated user, so `currentUser` is already
+   * the correct author there. Consumed by `getPatchCandidates` to thread a
+   * real `prAuthor` into the review-findings checks — without it,
+   * `isAddressedByAuthorReply`/`isThreadAddressedByAuthorReply` would compare
+   * an allowlisted PR's replies against the agent's own login (RAS-1.1's
+   * `prAuthor ?? currentUser` default), never recognizing a genuine author
+   * reply and never releasing the PR from patch candidacy.
+   */
+  author?: string;
 }
 
 export interface ReviewNode {
@@ -110,6 +123,17 @@ export interface PrReviewData {
    * both default an absent value to `[]`.
    */
   findings?: PrFinding[];
+  /**
+   * The PR's actual author login (RAS-1.1), mirroring the identical optional
+   * field on compute-unaddressed-findings.ts's own PrReviewData. Absent for
+   * self-authored PRs, where `currentUser` IS the author — both
+   * `hasUnaddressedFindings` and `hasMergeOnlyStaleFindings` resolve it as
+   * `data.prAuthor ?? currentUser`. Populated by `getPatchCandidates` from
+   * `OwnPr.author` for allowlisted (non-self) PRs (DBR-1.4), which broke the
+   * "patch only ever acts on the authenticated user's own open PRs"
+   * precondition that default relied on.
+   */
+  prAuthor?: string;
 }
 
 export interface CiCheckStatus {
@@ -354,7 +378,12 @@ export function findCancelledRuns<
  *
  * A stale review's non-empty body is also excluded when there are no
  * unresolved threads AND the PR author has replied after the review (see
- * isAddressedByAuthorReply, CPF-2.3).
+ * isAddressedByAuthorReply, CPF-2.3). The PR author's identity for that check
+ * is `data.prAuthor`, defaulting to `currentUser` when absent — mirroring
+ * hasUnaddressedFindings's identical `data.prAuthor ?? currentUser`
+ * resolution (RAS-1.1) so the two gates never disagree about who the author
+ * is. Note this is deliberately NOT applied to isSelfCleanApprove below,
+ * which asks whether the AGENT authored the review, not who authored the PR.
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
@@ -364,6 +393,7 @@ async function hasMergeOnlyStaleFindings(
   currentUser: string,
 ): Promise<boolean> {
   const { headRefOid, reviews, reviewThreads, comments } = data;
+  const prAuthor = data.prAuthor ?? currentUser;
 
   const staleReviews = reviews.nodes.filter(
     (r) =>
@@ -380,7 +410,7 @@ async function hasMergeOnlyStaleFindings(
     staleReviews.some(
       (r) =>
         r.body.trim().length > 0 &&
-        !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+        !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
     );
 
   if (!hasFindings) return false;
@@ -486,9 +516,18 @@ export async function getPatchCandidates(
       // passed to hasUnaddressedFindings/hasMergeOnlyStaleFindings, so
       // isResolvedByLedger has real data to check against — fetchPrReviews's
       // GraphQL query has no ledger access of its own.
+      // Also thread the PR's real author (DBR-1.4). `pr.author` is only set
+      // for allowlisted (non-self) PRs; for self-authored PRs it's undefined
+      // and this resolves to `currentUser`, exactly the pre-DBR-1.4 behavior.
+      // Without it, RAS-1.1's `prAuthor ?? currentUser` default silently
+      // compares an allowlisted PR's replies against the AGENT's login —
+      // never recognizing a real author reply (PR stuck as a permanent patch
+      // candidate) and misreading the agent's own comments as author replies
+      // (genuine findings wrongly suppressed).
       const reviewData: PrReviewData = {
         ...fetchedReviewData,
         findings: record?.findings,
+        prAuthor: pr.author ?? currentUser,
       };
       if (hasUnaddressedFindings(reviewData, currentUser)) {
         needsPatch = true;
@@ -657,7 +696,13 @@ export async function buildProductionDeps(opts: {
             "--json",
             "number,title,headRefName,headRefOid,createdAt",
           ]);
-          results.push(...items.map((item) => ({ ...item, repo })));
+          // Attach the login we queried with as the PR's author — the `gh pr
+          // list --author {login}` filter guarantees it, and
+          // getPatchCandidates needs it to thread a real `prAuthor` into the
+          // review-findings checks (see OwnPr.author).
+          results.push(
+            ...items.map((item) => ({ ...item, repo, author: login })),
+          );
         }
         return results;
       });
