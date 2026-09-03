@@ -278,6 +278,29 @@ describe("GET /:id/config (mounted as GET /agents/:id/config from root)", () => 
     expect(body.authorAllowlist).toEqual([]);
   });
 
+  test("200 returns reviewAuthorAllowlist as an identical array to authorAllowlist (DBR-2.1 dual-read)", async () => {
+    const app = buildApp({ authorAllowlist: ["octocat", "hubot"] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reviewAuthorAllowlist).toEqual(["octocat", "hubot"]);
+    expect(body.reviewAuthorAllowlist).toEqual(body.authorAllowlist);
+  });
+
+  test("200 returns reviewAuthorAllowlist as an empty array when the agent has none", async () => {
+    const app = buildApp({ authorAllowlist: [] });
+    const res = await app.request(`/${KNOWN_AGENT_ID}/config`, {
+      headers: { Authorization: `Bearer ${VALID_ADMIN_KEY}` },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.reviewAuthorAllowlist).toEqual([]);
+  });
+
   test("200 returns restrictSlackToMembers and memberEmails exactly as stored on the agent", async () => {
     const app = buildApp({
       restrictSlackToMembers: true,

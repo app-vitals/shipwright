@@ -27,6 +27,11 @@ model Agent {
   selfHosted             Boolean  @default(false)
   repos                  String[] @default([])
   authorAllowlist        String[] @default([])
+  // DBR-2.1: rename-in-progress twin of authorAllowlist. Dual-written and
+  // dual-read during the transitional phase — see admin/src/agents.ts and
+  // admin/src/agents-api.ts for the sync logic. Backfilled from
+  // authorAllowlist in the same migration that adds this column.
+  reviewAuthorAllowlist  String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
   typeName               String   @default("coding")
   createdAt              DateTime @default(now())
