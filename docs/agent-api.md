@@ -75,7 +75,7 @@ Admin-only. Returns the full agent record including `selfHosted`, `repos`, `auth
 
 `reviewAuthorAllowlist` is an array of GitHub login strings — the same value as `authorAllowlist` during the DBR-2.1 migration. Intended to be the canonical field name once the rename completes.
 
-`patchAuthorAllowlist` is an array of GitHub login strings — the authors intended to be permitted to trigger patch operations against this agent. **DBR-1.1 note:** this field is stored and returned only; it is not an access-control boundary yet. Unlike `reviewAuthorAllowlist` — which is synced live via `agent/src/review-author-allowlist-ref.ts` and enforced in `check-review.ts` — there is no equivalent ref-sync module for patch, and `agent/src/check-patch.ts` performs no allowlist filtering. Patch runs are therefore unfiltered regardless of what this field holds; enforcement is tracked as separate follow-up work.
+`patchAuthorAllowlist` is an array of GitHub login strings — the authors intended to be permitted to trigger patch operations against this agent. **DBR-1.3 note:** the value is now synced live via `agent/src/patch-author-allowlist-ref.ts`, but it is not an access-control boundary yet — `agent/src/check-patch.ts` still performs no allowlist filtering, so patch runs remain unfiltered regardless of what this field holds. Enforcement is tracked as separate follow-up work.
 
 `restrictSlackToMembers` is a boolean flag that, when `true`, restricts Slack message access to only users listed in the agent's `AgentMember` rows. Defaults to `false` (unrestricted). An optional `warning` field is included in the response when this flag is `true` but no members are configured, alerting the operator that all Slack senders are currently blocked.
 
@@ -540,7 +540,7 @@ Used by the agent harness on startup and during the config sync loop. Returns th
 - `repos` — array of `org/repo` strings (scoped repositories this agent may access)
 - `authorAllowlist` — array of GitHub login strings (authors permitted to file pull requests scoped to this agent; empty array = all authenticated users allowed). **DBR-2.1:** dual-read with `reviewAuthorAllowlist`; both always return the same value.
 - `reviewAuthorAllowlist` — array of GitHub login strings (the rename-in-progress twin of `authorAllowlist`, always returned as the same value during DBR-2.1). Used by the runtime for review filtering; `authorAllowlist` is kept in sync during the migration.
-- `patchAuthorAllowlist` — array of GitHub login strings (the authors intended to be permitted to trigger patch operations on this agent). **Not consumed by the runtime yet** (DBR-1.1 is schema + API only): the value is returned in the config payload, but no ref-sync module reads it and `check-patch.ts` does no allowlist filtering, so it is informational until enforcement lands.
+- `patchAuthorAllowlist` — array of GitHub login strings (the authors intended to be permitted to trigger patch operations on this agent). **DBR-1.3:** now synced live via `agent/src/patch-author-allowlist-ref.ts`, but `check-patch.ts` does no allowlist filtering yet — the value is informational until enforcement lands.
 - `restrictSlackToMembers` — boolean flag controlling Slack message access. When `true`, only users in the agent's `AgentMember` rows can send messages. Defaults to `false` (unrestricted). Used by runtime to enforce membership-based access control.
 - `memberEmails` — array of member email addresses (derived from agent's `AgentMember` rows). Empty when `restrictSlackToMembers` is `false` or no members are configured.
 
