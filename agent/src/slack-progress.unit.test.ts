@@ -354,6 +354,37 @@ describe("SlackProgress — Thinking Steps stream (flag on)", () => {
     expect(taskUpdateChunk(call)?.status).toBe("complete");
   });
 
+  // STS2-3.1: a silent/suppressed response still needs its dangling
+  // in_progress card closed, but "Done" would misleadingly imply a real
+  // reply was posted — finish({ silent: true }) uses "Ack" instead.
+  test("finish({ silent: true }) sends a status:complete task_update titled 'Ack' (STS2-3.1)", async () => {
+    const { progress, client } = makeProgress({ thinkingStepsEnabled: true });
+    await progress.start();
+    client.chat.appendStream.mockClear();
+    await progress.finish({ silent: true });
+    expect(client.chat.appendStream).toHaveBeenCalledTimes(1);
+    const call = client.chat.appendStream.mock.calls[0]?.[0] as {
+      chunks: Array<Record<string, unknown>>;
+    };
+    const chunk = taskUpdateChunk(call);
+    expect(chunk?.title).toBe("Ack");
+    expect(chunk?.status).toBe("complete");
+  });
+
+  test("finish() and finish({ silent: false }) still send the 'Done' title (regression)", async () => {
+    for (const opts of [undefined, { silent: false }] as const) {
+      const { progress, client } = makeProgress({ thinkingStepsEnabled: true });
+      await progress.start();
+      client.chat.appendStream.mockClear();
+      await progress.finish(opts);
+      const call = client.chat.appendStream.mock.calls[0]?.[0] as {
+        chunks: Array<Record<string, unknown>>;
+      };
+      const chunk = taskUpdateChunk(call);
+      expect(chunk?.title).toBe("Done");
+    }
+  });
+
   test("finish() does not send a duplicate status:complete update when deliverContent() already closed the card", async () => {
     const { progress, client } = makeProgress({ thinkingStepsEnabled: true });
     await progress.start();
