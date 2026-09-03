@@ -27,6 +27,7 @@ const SAMPLE_CONFIG: AgentConfigResponse = {
   repos: [],
   authorAllowlist: [],
   reviewAuthorAllowlist: [],
+  patchAuthorAllowlist: [],
   restrictSlackToMembers: false,
   memberEmails: [],
 };
@@ -255,6 +256,7 @@ describe("runEntrypoint — config with empty env", () => {
       repos: [],
       authorAllowlist: [],
       reviewAuthorAllowlist: [],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       memberEmails: [],
     };

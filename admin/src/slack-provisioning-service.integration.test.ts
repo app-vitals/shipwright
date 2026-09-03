@@ -138,6 +138,7 @@ function makeService(opts?: {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           missingRequiredEnv: [],
@@ -153,6 +154,7 @@ function makeService(opts?: {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           typeName: "coding",
           missingRequiredEnv: [],
@@ -252,9 +254,9 @@ describe("SlackProvisioningService.startConnect", () => {
     // The manifest registered with Slack must carry the per-agent callback,
     // NOT the legacy /admin/provision/complete route.
     expect(slackClient.createdManifests.length).toBe(1);
-    expect(
-      slackClient.createdManifests[0].oauth_config?.redirect_urls,
-    ).toEqual([CONNECT_SLACK_CALLBACK]);
+    expect(slackClient.createdManifests[0].oauth_config?.redirect_urls).toEqual(
+      [CONNECT_SLACK_CALLBACK],
+    );
 
     // And the OAuth exchange must use the identical URL, recovered from the
     // signed state cookie — Slack rejects a mismatch. Prove it by completing

@@ -369,6 +369,7 @@ function makeMockDeps(
         selfHosted: false,
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         typeName: "coding",
         createdAt: new Date("2024-01-01"),
@@ -386,6 +387,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
@@ -399,6 +401,7 @@ function makeMockDeps(
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
@@ -1717,6 +1720,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -1815,6 +1819,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -1844,6 +1849,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -1884,6 +1890,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -1942,6 +1949,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -1986,6 +1994,7 @@ describe("admin UI — authenticated pages", () => {
               updatedAt: new Date("2024-01-01"),
               repos: [],
               authorAllowlist: [],
+              patchAuthorAllowlist: [],
               restrictSlackToMembers: false,
               missingRequiredEnv: [],
             }),
@@ -3785,6 +3794,7 @@ describe("admin UI — GET /admin/agents/:id/connect-slack/callback", () => {
       updatedAt: new Date("2024-01-01"),
       repos: [],
       authorAllowlist: [],
+      patchAuthorAllowlist: [],
       restrictSlackToMembers: false,
       missingRequiredEnv: [],
     };
@@ -5873,6 +5883,7 @@ describe("admin UI — create agent with author allowlist", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
@@ -6022,6 +6033,7 @@ describe("admin UI — repos mutation routes", () => {
         updatedAt: new Date("2024-01-01"),
         repos: ["my-org/my-repo"],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
@@ -6037,6 +6049,7 @@ describe("admin UI — repos mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: capturedRepos ?? [],
           authorAllowlist: [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
@@ -6181,6 +6194,7 @@ describe("admin UI — author allowlist mutation routes", () => {
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: ["octocat"],
+        patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
@@ -6199,6 +6213,7 @@ describe("admin UI — author allowlist mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
         };
@@ -6314,6 +6329,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],
       }),
@@ -6355,6 +6371,7 @@ describe("admin UI — Slack access settings route (restrictSlackToMembers)", ()
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: [],
+        patchAuthorAllowlist: [],
         restrictSlackToMembers: input.restrictSlackToMembers ?? false,
         missingRequiredEnv: [],
       }),
@@ -6971,9 +6988,7 @@ describe("admin UI — PRs page", () => {
     expect((capturedParams as unknown as URLSearchParams).get("repo")).toBe(
       "app-vitals/shipwright",
     );
-    expect((capturedParams as unknown as URLSearchParams).get("pr")).toBe(
-      "42",
-    );
+    expect((capturedParams as unknown as URLSearchParams).get("pr")).toBe("42");
   });
 
   it("GET /admin/prs/:id renders no Task row when fetchTaskStoreTasks is not injected", async () => {

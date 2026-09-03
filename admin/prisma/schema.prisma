@@ -32,6 +32,7 @@ model Agent {
   // admin/src/agents-api.ts for the sync logic. Backfilled from
   // authorAllowlist in the same migration that adds this column.
   reviewAuthorAllowlist  String[] @default([])
+  patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)
   typeName               String   @default("coding")
   createdAt              DateTime @default(now())

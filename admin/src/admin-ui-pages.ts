@@ -148,6 +148,7 @@ export interface AgentDetail {
   updatedAt: Date;
   repos: string[];
   authorAllowlist: string[];
+  patchAuthorAllowlist: string[];
   /**
    * When true, only AgentMember emails may message this agent over Slack.
    * Rendered as a checkbox on both the create and edit forms.

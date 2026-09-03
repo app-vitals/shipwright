@@ -113,6 +113,15 @@
               "octocat"
             ]
           },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
@@ -242,6 +251,12 @@
               "type": "string"
             }
           },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "restrictSlackToMembers": {
             "type": "boolean"
           },
@@ -273,6 +288,7 @@
           "repos",
           "authorAllowlist",
           "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "typeName",
           "createdAt",
@@ -313,6 +329,15 @@
             ]
           },
           "reviewAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
+          "patchAuthorAllowlist": {
             "type": "array",
             "items": {
               "type": "string"
@@ -1951,6 +1976,15 @@
               "octocat"
             ]
           },
+          "patchAuthorAllowlist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "octocat"
+            ]
+          },
           "restrictSlackToMembers": {
             "type": "boolean",
             "example": false
@@ -1972,6 +2006,7 @@
           "repos",
           "authorAllowlist",
           "reviewAuthorAllowlist",
+          "patchAuthorAllowlist",
           "restrictSlackToMembers",
           "memberEmails"
         ]
