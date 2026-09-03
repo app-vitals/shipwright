@@ -763,6 +763,13 @@ describe("renderNewLocalAgentPage", () => {
     expect(html).toMatch(/<textarea[^>]*name="authorAllowlist"[^>]*>/);
   });
 
+  test("author allowlist label reads 'Author allowlist (review)'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain(
+      '<label class="form-label" for="authorAllowlist">Author allowlist (review) (optional, one GitHub login per line)</label>',
+    );
+  });
+
   test("renders a restrictSlackToMembers checkbox", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(
@@ -2378,10 +2385,17 @@ describe("renderAgentDetailPage — author allowlist", () => {
     expect(html).toContain("octocat");
   });
 
+  test("card title reads 'Author allowlist (review)'", () => {
+    const html = render([]);
+    expect(html).toContain(
+      '<div class="card-title">Author allowlist (review)</div>',
+    );
+  });
+
   test("author allowlist section has add form", () => {
     const html = render([]);
     expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/author-allowlist/add"`,
+      `action="/admin/agents/${AGENT.id}/review-author-allowlist/add"`,
     );
     expect(html).toContain('name="login"');
   });
@@ -2389,7 +2403,7 @@ describe("renderAgentDetailPage — author allowlist", () => {
   test("author allowlist section has remove button for existing login", () => {
     const html = render(["octocat"]);
     expect(html).toContain(
-      `action="/admin/agents/${AGENT.id}/author-allowlist/delete"`,
+      `action="/admin/agents/${AGENT.id}/review-author-allowlist/delete"`,
     );
     expect(html).toContain('value="octocat"');
   });

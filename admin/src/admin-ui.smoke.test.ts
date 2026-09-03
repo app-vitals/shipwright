@@ -5870,9 +5870,9 @@ describe("admin UI — create agent with author allowlist", () => {
       ...deps.agentService,
       updateFields: async (
         id: string,
-        input: { authorAllowlist?: string[] },
+        input: { reviewAuthorAllowlist?: string[] },
       ) => {
-        capturedAllowlist = input.authorAllowlist;
+        capturedAllowlist = input.reviewAuthorAllowlist;
         return {
           id,
           name: "Test Agent",
@@ -5883,6 +5883,7 @@ describe("admin UI — create agent with author allowlist", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6096,7 +6097,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     cookie = await makeSessionCookie();
   });
 
-  it("POST /admin/agents/:id/author-allowlist/add returns 403 for non-admin non-member", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add returns 403 for non-admin non-member", async () => {
     const outsiderCookie = await makeSessionCookie(
       SESSION_SECRET,
       "google-sub-outsider",
@@ -6106,7 +6107,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ login: "octocat" });
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
       {
         method: "POST",
         body: body.toString(),
@@ -6119,11 +6120,11 @@ describe("admin UI — author allowlist mutation routes", () => {
     expect(res.status).toBe(403);
   });
 
-  it("POST /admin/agents/:id/author-allowlist/add with invalid login format redirects with error=invalid_author_allowlist_format", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add with invalid login format redirects with error=invalid_author_allowlist_format", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ login: "not a valid login!" });
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
       {
         method: "POST",
         body: body.toString(),
@@ -6139,7 +6140,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     );
   });
 
-  it("POST /admin/agents/:id/author-allowlist/add returns 404 when agent not found", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add returns 404 when agent not found", async () => {
     const deps = makeMockDeps();
     deps.agentService = {
       ...deps.agentService,
@@ -6148,7 +6149,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({ login: "octocat" });
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
       {
         method: "POST",
         body: body.toString(),
@@ -6161,11 +6162,11 @@ describe("admin UI — author allowlist mutation routes", () => {
     expect(res.status).toBe(404);
   });
 
-  it("POST /admin/agents/:id/author-allowlist/add with valid login redirects to agent detail", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add with valid login redirects to agent detail", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ login: "octocat" });
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
       {
         method: "POST",
         body: body.toString(),
@@ -6179,7 +6180,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
   });
 
-  it("POST /admin/agents/:id/author-allowlist/add deduplicates — does not add the same login twice", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add deduplicates — does not add the same login twice", async () => {
     let capturedAllowlist: string[] | undefined;
     const deps = makeMockDeps();
     deps.agentService = {
@@ -6194,15 +6195,16 @@ describe("admin UI — author allowlist mutation routes", () => {
         updatedAt: new Date("2024-01-01"),
         repos: [],
         authorAllowlist: ["octocat"],
+        reviewAuthorAllowlist: ["octocat"],
         patchAuthorAllowlist: ["octocat"],
         restrictSlackToMembers: false,
         missingRequiredEnv: [],
       }),
       updateFields: async (
         id: string,
-        input: { authorAllowlist?: string[] },
+        input: { reviewAuthorAllowlist?: string[] },
       ) => {
-        capturedAllowlist = input.authorAllowlist;
+        capturedAllowlist = input.reviewAuthorAllowlist;
         return {
           id,
           name: "Test Agent",
@@ -6213,6 +6215,7 @@ describe("admin UI — author allowlist mutation routes", () => {
           updatedAt: new Date("2024-01-01"),
           repos: [],
           authorAllowlist: capturedAllowlist ?? [],
+          reviewAuthorAllowlist: capturedAllowlist ?? [],
           patchAuthorAllowlist: [],
           restrictSlackToMembers: false,
           missingRequiredEnv: [],
@@ -6222,7 +6225,7 @@ describe("admin UI — author allowlist mutation routes", () => {
     const app = createAdminUIApp(deps);
     const body = new URLSearchParams({ login: "octocat" });
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
       {
         method: "POST",
         body: body.toString(),
@@ -6240,7 +6243,98 @@ describe("admin UI — author allowlist mutation routes", () => {
     }
   });
 
-  it("POST /admin/agents/:id/author-allowlist/delete with valid login redirects to agent detail", async () => {
+  it("POST /admin/agents/:id/review-author-allowlist/add writes to reviewAuthorAllowlist", async () => {
+    let capturedInput: Record<string, unknown> | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist: [],
+        reviewAuthorAllowlist: [],
+        patchAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        missingRequiredEnv: [],
+      }),
+      updateFields: async (id: string, input: Record<string, unknown>) => {
+        capturedInput = input;
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: ["octocat"],
+          reviewAuthorAllowlist: ["octocat"],
+          patchAuthorAllowlist: [],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(capturedInput).toEqual({ reviewAuthorAllowlist: ["octocat"] });
+  });
+
+  it("POST /admin/agents/:id/review-author-allowlist/delete with valid login redirects to agent detail", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/delete`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+  });
+
+  it("old route path /admin/agents/:id/author-allowlist/add no longer exists", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("old route path /admin/agents/:id/author-allowlist/delete no longer exists", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const body = new URLSearchParams({ login: "octocat" });
     const res = await app.request(
@@ -6254,8 +6348,153 @@ describe("admin UI — author allowlist mutation routes", () => {
         },
       },
     );
+    expect(res.status).toBe(404);
+  });
+});
+
+// Pre-DBR-2.1 agents were written before the reviewAuthorAllowlist column
+// existed, so getDetail returns it as undefined while the legacy
+// authorAllowlist still holds the real logins. Every read site in admin-ui.ts
+// uses `reviewAuthorAllowlist ?? authorAllowlist` to keep those agents working
+// until the rename completes — these tests pin that fallback.
+describe("admin UI — review author allowlist legacy fallback (pre-DBR-2.1 agents)", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  /** getDetail for an agent that predates the reviewAuthorAllowlist column. */
+  function makeLegacyDeps(
+    authorAllowlist: string[],
+    onUpdate?: (input: { reviewAuthorAllowlist?: string[] }) => void,
+  ): AdminUIDeps {
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      getDetail: async () => ({
+        id: AGENT_ID,
+        name: "Test Agent",
+        slackId: "U123456",
+        selfHosted: false,
+        typeName: "coding",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+        repos: [],
+        authorAllowlist,
+        // reviewAuthorAllowlist intentionally absent — the legacy shape.
+        reviewAuthorAllowlist: undefined,
+        patchAuthorAllowlist: [],
+        restrictSlackToMembers: false,
+        missingRequiredEnv: [],
+      }),
+      updateFields: async (
+        id: string,
+        input: { reviewAuthorAllowlist?: string[] },
+      ) => {
+        onUpdate?.(input);
+        return {
+          id,
+          name: "Test Agent",
+          slackId: "U123456",
+          selfHosted: false,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: input.reviewAuthorAllowlist ?? [],
+          reviewAuthorAllowlist: input.reviewAuthorAllowlist ?? [],
+          patchAuthorAllowlist: [],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    return deps;
+  }
+
+  it("GET /admin/agents/:id renders legacy authorAllowlist logins when reviewAuthorAllowlist is undefined", async () => {
+    const app = createAdminUIApp(makeLegacyDeps(["octocat", "hubot"]));
+    const res = await app.request(`/admin/agents/${AGENT_ID}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    // Assert on the per-row delete form rather than the bare login — "octocat"
+    // also appears as the add-form placeholder, so it would match either way.
+    expect(html).toContain('<input type="hidden" name="login" value="octocat"');
+    expect(html).toContain('<input type="hidden" name="login" value="hubot"');
+    expect(html).not.toContain("No author allowlist entries configured.");
+  });
+
+  it("POST /admin/agents/:id/review-author-allowlist/add appends to the legacy list when reviewAuthorAllowlist is undefined", async () => {
+    let capturedAllowlist: string[] | undefined;
+    const app = createAdminUIApp(
+      makeLegacyDeps(["octocat"], (input) => {
+        capturedAllowlist = input.reviewAuthorAllowlist;
+      }),
+    );
+    const body = new URLSearchParams({ login: "hubot" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
     expect(res.status).toBe(302);
-    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    // Legacy entry must be preserved, not clobbered by an empty new-column list.
+    expect(capturedAllowlist).toEqual(["octocat", "hubot"]);
+  });
+
+  it("POST /admin/agents/:id/review-author-allowlist/add deduplicates against the legacy list", async () => {
+    let capturedAllowlist: string[] | undefined;
+    const app = createAdminUIApp(
+      makeLegacyDeps(["octocat"], (input) => {
+        capturedAllowlist = input.reviewAuthorAllowlist;
+      }),
+    );
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/add`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(capturedAllowlist).toEqual(["octocat"]);
+  });
+
+  it("POST /admin/agents/:id/review-author-allowlist/delete removes from the legacy list", async () => {
+    let capturedAllowlist: string[] | undefined;
+    const app = createAdminUIApp(
+      makeLegacyDeps(["octocat", "hubot"], (input) => {
+        capturedAllowlist = input.reviewAuthorAllowlist;
+      }),
+    );
+    const body = new URLSearchParams({ login: "octocat" });
+    const res = await app.request(
+      `/admin/agents/${AGENT_ID}/review-author-allowlist/delete`,
+      {
+        method: "POST",
+        body: body.toString(),
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: `admin_session=${cookie}`,
+        },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(capturedAllowlist).toEqual(["hubot"]);
   });
 });
 

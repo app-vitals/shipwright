@@ -739,7 +739,7 @@ export function renderNewLocalAgentPage(
           <p style="font-size:12px;color:#6b7280;margin-top:4px">Format: <span class="mono">org/repo</span></p>
         </div>
         <div class="form-group">
-          <label class="form-label" for="authorAllowlist">Author allowlist (optional, one GitHub login per line)</label>
+          <label class="form-label" for="authorAllowlist">Author allowlist (review) (optional, one GitHub login per line)</label>
           <textarea
             id="authorAllowlist"
             name="authorAllowlist"
@@ -1471,8 +1471,8 @@ export function renderAgentDetailPage(
     </div>
 
     <div class="card">
-      <div class="card-title">Author allowlist</div>
-      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/add" style="margin-bottom:16px">
+      <div class="card-title">Author allowlist (review)</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/add" style="margin-bottom:16px">
         <div class="form-row">
           <div class="form-group" style="flex:1">
             <input name="login" type="text" class="form-input" placeholder="octocat" required />
@@ -1497,7 +1497,7 @@ export function renderAgentDetailPage(
                       (login) => `<tr>
             <td class="mono">${escapeHtml(login)}</td>
             <td>
-              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/author-allowlist/delete" style="display:inline">
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/delete" style="display:inline">
                 <input type="hidden" name="login" value="${escapeHtml(login)}" />
                 <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
               </form>

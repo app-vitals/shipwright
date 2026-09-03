@@ -33,6 +33,27 @@ describe("error-fix — SKILL.md exists", () => {
   });
 });
 
+describe("error-fix — Step 8 task JSON derives org/repo, not the bare dir name", () => {
+  it("documents deriving org/repo via git remote get-url origin", () => {
+    const skill = readSkill();
+    expect(skill).toContain("remote get-url origin");
+    expect(skill.toLowerCase()).toContain("org/repo");
+  });
+
+  it("references entropy-fix's derivation pattern for consistency", () => {
+    expect(readSkill()).toContain("entropy-fix");
+  });
+
+  it("the task JSON template's repo field is not documented as the bare dir name", () => {
+    const skill = readSkill();
+    const repoFieldLine = skill
+      .split("\n")
+      .find((line) => line.includes('"repo":') && line.includes("<"));
+    expect(repoFieldLine).toBeDefined();
+    expect(repoFieldLine).not.toContain("repo dir name from error-report.md");
+  });
+});
+
 describe("error-fix — Step 5 dedup query is pagination-safe", () => {
   it("raises the dedup query limit well above the API's default page size", () => {
     expect(readSkill()).toContain("limit=1000");
