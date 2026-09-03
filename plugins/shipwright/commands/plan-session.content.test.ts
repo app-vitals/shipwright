@@ -109,6 +109,57 @@ describe("plan-session.md — Step 6b template omits requiresHumanApproval (RHA-
   });
 });
 
+describe("plan-session.md — repo auto-detect preserves org/repo format (PRF-1.1)", () => {
+  function extractArgsAndAutoDetectSection(md: string): string {
+    const match = md.match(/^---[\s\S]*?Wait for user confirmation before continuing to Step 1\./);
+    expect(match).not.toBeNull();
+    return match?.[0] ?? "";
+  }
+
+  it("the repo arg description example is org/repo format, not a bare repo name", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    const argDescMatch = section.match(/- name: repo\n\s*description: (.+)/);
+    expect(argDescMatch).not.toBeNull();
+    const argDesc = argDescMatch?.[1] ?? "";
+    expect(argDesc).toMatch(/e\.g\.,\s*[\w.-]+\/[\w.-]+/);
+    expect(argDesc).not.toMatch(/e\.g\.,\s*shipwright\)/);
+  });
+
+  it("does not instruct stripping to the bare repo name in auto-detect", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    expect(section.toLowerCase()).not.toContain("bare repo name");
+  });
+
+  it("documents preserving the full owner/repo value from git remote parsing", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    const lower = section.toLowerCase();
+    expect(lower).toMatch(/preserve|do not strip|full owner\/repo/);
+  });
+
+  it("derives a repo-slug value for local path use", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    expect(section).toContain("repo-slug");
+  });
+
+  it("uses {repo-slug} for local filesystem paths, not {repo}", () => {
+    const section = extractArgsAndAutoDetectSection(content);
+    expect(section).toContain("~/src/{repo-slug}");
+    expect(section).not.toContain("~/src/{repo}/");
+  });
+
+  it("Step 1's CLAUDE.md fallback read path uses {repo-slug}", () => {
+    expect(content).toContain("otherwise read from `~/src/{repo-slug}/`");
+  });
+
+  it("Step 6b task JSON template still writes the full org/repo value into repo", () => {
+    const section = extractStep6bSection(content);
+    const codeBlockMatch = section.match(/```json[\s\S]*?```/);
+    expect(codeBlockMatch).not.toBeNull();
+    const codeBlock = codeBlockMatch?.[0] ?? "";
+    expect(codeBlock).toContain('"repo": "{repo}"');
+  });
+});
+
 describe("plan-session.md — Step 5 principles override check + security domain (PCO-1.1)", () => {
   function extractStep5Section(md: string): string {
     const match = md.match(/## Step 5: Task Breakdown[\s\S]*?(?=\n### Complexity and Model Scoring)/);

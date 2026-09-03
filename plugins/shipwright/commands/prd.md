@@ -26,12 +26,12 @@ Follow all phases in order. Proceed automatically between phases. The only pause
    - `Gemfile` → Ruby
    - `Makefile` → Generic Make
 
-2b. **Detect repo name** from git metadata (used in the handoff to `/plan-session` and written to every task in the task store):
-   - `git remote get-url origin` → parse the `owner/repo` segment, strip any trailing `.git`. Use the bare `{repo}` portion.
+2b. **Detect repo name** from git metadata (the full `org/repo` value is what gets handed off to `/plan-session` and written to every task in the task store):
+   - `git remote get-url origin` → parse the `owner/repo` segment, strip any trailing `.git`. Use the full `owner/repo` value as `{repo}` — do not strip to the bare repo name.
    - Fallback if no remote: `basename $(git rev-parse --show-toplevel)`
    - Last resort if not in a git repo: `basename $(pwd)` and print a warning.
 
-   Print `Detected repo: {repo}` in the Phase 0 summary so the user can catch a misdetection before investing time in the session.
+   Print `Detected repo: {repo}` (full `owner/repo` value) in the Phase 0 summary so the user can catch a misdetection before investing time in the session.
 
 3. **Read project documentation** (lightweight scan — highlights only, no deep code dive):
    - `CLAUDE.md` — conventions, architecture decisions, and constraints
