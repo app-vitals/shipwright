@@ -6588,6 +6588,13 @@ describe("renderChatThreadPage — CFB-2.3 live progress inline JS + status bubb
     expect(html).toContain("data-message-id");
   });
 
+  test("inline JS seeds renderedIds from the upload response", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    // The success branch of the fetch handler should parse JSON and seed renderedIds
+    // from data.message.id to prevent duplicate rendering.
+    expect(html).toContain("renderedIds[data.message.id]");
+  });
+
   test("inline JS renders every new server message, not just the last", () => {
     const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
     // renderServerBubble is called in a loop over all msgs (the old code took

@@ -4894,6 +4894,13 @@ export function renderChatThreadPage(
           container.appendChild(errBubble);
           enableSend();
         });
+      } else {
+        // Success: parse response and seed renderedIds to prevent duplicate rendering
+        return r.json().then(function(data) {
+          if (data && data.message && data.message.id) {
+            renderedIds[data.message.id] = true;
+          }
+        });
       }
     }).catch(function() {
       // POST failed — Layer 1 ticker keeps going; poll loop still starts.
