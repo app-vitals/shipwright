@@ -525,17 +525,24 @@ gets the exact same dependency-risk analysis as a bot-authored one.
 
 2. **Compare against the changed files.** Using Step 5.3's already-extracted changed-files
    list and the `paths` array from the script's output above, a changed file matches the
-   watched-path set when EITHER:
-   - it is an exact, case-sensitive match to a watched path (e.g. changed file
-     `package.json` matches watched path `package.json`), or
-   - its **basename** matches a watched path that is itself a bare filename with no
-     directory component (e.g. changed file `packages/foo/package.json` matches watched
-     path `package.json` by basename, even though the watched-path set didn't anticipate
-     that nested location) — this basename fallback only applies when the watched-path
-     entry has no `/` in it; a watched path with a directory prefix (e.g.
-     `backend/package.json`, from a dependabot.yml `directory` entry) requires the exact
-     full-path match, since that prefix was an explicit scoping choice, not something a
-     bare basename match should widen back out.
+   watched-path set when ANY of the following three rules apply:
+   - **exact match**: the changed file is an exact, case-sensitive match to a watched path
+     (e.g. changed file `package.json` matches watched path `package.json`), or
+   - **basename match**: the changed file's **basename** matches a watched path that is
+     itself a bare filename with no directory component (e.g. changed file
+     `packages/foo/package.json` matches watched path `package.json` by basename, even
+     though the watched-path set didn't anticipate that nested location) — this basename
+     fallback only applies when the watched-path entry has no `/` in it; a watched path
+     with a directory prefix (e.g. `backend/package.json`, from a dependabot.yml
+     `directory` entry) requires the exact full-path match, since that prefix was an
+     explicit scoping choice, not something a bare basename match should widen back out,
+     or
+   - **directory-prefix match**: the changed file's path starts with a watched path that
+     itself ends with `/` (e.g. watched path `.github/workflows/` — as emitted for the
+     `github-actions` ecosystem — matches changed file `.github/workflows/ci.yml`). This
+     is distinct from the basename case above: a trailing `/` marks the entry as a
+     directory-prefix convention rather than a bare filename, so no glob syntax is ever
+     needed in the watched-path set.
 
 3. **When triggered** (at least one changed file matches, by either rule above): apply
    `references/dependency-risk-analysis.md`'s heuristics — using this PR's `diff` (Step

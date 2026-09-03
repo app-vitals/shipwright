@@ -124,9 +124,17 @@ const ECOSYSTEMS: EcosystemEntry[] = [
   {
     renovateManagers: ["github-actions"],
     dependabotEcosystems: ["github-actions"],
-    // Directory join below is skipped for this ecosystem's glob entries —
-    // see dependabotUpdatesToPaths.
-    manifestFiles: [".github/workflows/*.yml", ".github/workflows/*.yaml"],
+    // A directory-prefix entry (trailing `/`, no glob characters), not a
+    // bare filename — review.md's Step 5.8 comparison rule matches this
+    // against any changed file whose path starts with the prefix (e.g.
+    // `.github/workflows/ci.yml`). Glob-style entries like
+    // `.github/workflows/*.yml` were tried here previously, but Step 5.8's
+    // matcher only understands exact-path and bare-basename matches — a
+    // path containing both `/` and `*` could never match either rule, so
+    // github-actions detection was silently dead. Directory join below is
+    // still skipped for this ecosystem's `.github/`-rooted entry — see
+    // resolveFromDependabotYml.
+    manifestFiles: [".github/workflows/"],
   },
 ];
 
@@ -231,8 +239,8 @@ function resolveFromDependabotYml(dependabotYml: string): string[] {
     const prefix = normalizeDirectoryPrefix(directory);
 
     for (const file of entry.manifestFiles) {
-      // github-actions' glob-style entries are already repo-root-anchored
-      // (.github/workflows/...) regardless of `directory` — Dependabot
+      // github-actions' directory-prefix entry is already repo-root-anchored
+      // (.github/workflows/) regardless of `directory` — Dependabot
       // itself does not relocate the workflows directory per-entry.
       if (file.startsWith(".github/")) {
         paths.add(file);

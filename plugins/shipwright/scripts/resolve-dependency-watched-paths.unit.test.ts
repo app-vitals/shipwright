@@ -82,6 +82,24 @@ describe("resolveDependencyWatchedPaths — renovate.json only", () => {
     expect(result.paths).not.toContain("Gemfile");
   });
 
+  it("with `managers: [\"github-actions\"]`, narrows to a directory-prefix watched path — not a glob", () => {
+    const renovateJson = JSON.stringify({
+      managers: ["github-actions"],
+    });
+    const result = resolveDependencyWatchedPaths({
+      renovateJson,
+      dependabotYml: undefined,
+    });
+    // The watched path must be a plain directory-prefix (trailing `/`, no
+    // `*`) — review.md's Step 5.8 matcher only understands exact,
+    // basename, and directory-prefix matches, none of which can ever match
+    // a glob like `.github/workflows/*.yml` (see DBR-3.2 follow-up finding
+    // on PR #3112: glob entries were silently unmatchable).
+    expect(result.paths).toContain(".github/workflows/");
+    expect(result.paths.some((p) => p.includes("*"))).toBe(false);
+    expect(result.paths).not.toContain("package.json");
+  });
+
   it("malformed renovate.json (invalid JSON) falls back to the full universal list rather than throwing", () => {
     const result = resolveDependencyWatchedPaths({
       renovateJson: "{ this is not valid json",
@@ -136,6 +154,21 @@ updates:
       dependabotYml,
     });
     expect(result.paths).toContain("backend/package.json");
+  });
+
+  it("parses a github-actions update entry and maps it to a directory-prefix watched path, ignoring `directory`", () => {
+    const dependabotYml = `
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+`;
+    const result = resolveDependencyWatchedPaths({
+      renovateJson: undefined,
+      dependabotYml,
+    });
+    expect(result.paths).toContain(".github/workflows/");
+    expect(result.paths.some((p) => p.includes("*"))).toBe(false);
   });
 
   it("handles multiple updates entries across different ecosystems", () => {
