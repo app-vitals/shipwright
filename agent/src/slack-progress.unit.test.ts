@@ -482,3 +482,104 @@ describe("SlackProgress — errors swallowed", () => {
     ]);
   });
 });
+
+// ─── streamKey() / markExternallyStopped() (AGS-1.1) ──────────────────────────
+// Slack's agent_session_stopped event carries a channel + streaming_message_ts
+// pair identifying the dead stream. streamKey() exposes the same "channel:ts"
+// shape once startStream() has resolved, so slack.ts's closure-scoped registry
+// can key a live SlackProgress instance by it. markExternallyStopped() then
+// makes every further stream call (appendStream/deliverContent/reportError/
+// stopStream) a no-op instead of an API call — mirroring openclaw's
+// applySlackStreamStop pattern — since Slack has already discarded the stream
+// server-side and any further write would fail with message_not_in_streaming_state.
+
+describe("SlackProgress.streamKey()", () => {
+  test("undefined before start() (stream not yet opened)", () => {
+    const { progress } = makeProgress();
+    expect(progress.streamKey()).toBeUndefined();
+  });
+
+  test("returns `channel:streamTs` once the stream has opened", async () => {
+    const { progress } = makeProgress();
+    await progress.start();
+    expect(progress.streamKey()).toBe(`${CHANNEL}:stream.ts.1`);
+  });
+
+  test("undefined when startStream failed to open (no streamTs)", async () => {
+    const client = makeMockClient();
+    client.chat.startStream.mockRejectedValueOnce(new Error("stream down"));
+    const { progress } = makeProgress({ client });
+    await progress.start();
+    expect(progress.streamKey()).toBeUndefined();
+  });
+});
+
+describe("SlackProgress.getThreadTs()", () => {
+  test("returns the bound thread_ts, distinct from streamKey()'s stream ts", async () => {
+    const { progress } = makeProgress();
+    await progress.start();
+    expect(progress.getThreadTs()).toBe(THREAD_TS);
+    expect(progress.streamKey()).toBe(`${CHANNEL}:stream.ts.1`);
+  });
+});
+
+describe("SlackProgress.markExternallyStopped()", () => {
+  test("appendStream (via onProgress) becomes a no-op after the mark", async () => {
+    const client = makeMockClient();
+    const { progress } = makeProgress({ client });
+    await progress.start();
+    client.chat.appendStream.mockClear();
+
+    progress.markExternallyStopped();
+    progress.onProgress({}, "reading");
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+  });
+
+  test("deliverContent() becomes a no-op (returns undefined, no API call) after the mark", async () => {
+    const client = makeMockClient();
+    const { progress } = makeProgress({ client });
+    await progress.start();
+    client.chat.appendStream.mockClear();
+
+    progress.markExternallyStopped();
+    const result = await progress.deliverContent("final answer");
+
+    expect(result).toBeUndefined();
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+  });
+
+  test("reportError() becomes a no-op after the mark", async () => {
+    const client = makeMockClient();
+    const { progress } = makeProgress({ client });
+    await progress.start();
+    client.chat.appendStream.mockClear();
+
+    progress.markExternallyStopped();
+    progress.reportError();
+
+    expect(client.chat.appendStream).not.toHaveBeenCalled();
+  });
+
+  test("finish()'s stopStream call becomes a no-op after the mark", async () => {
+    const client = makeMockClient();
+    const { progress } = makeProgress({ client });
+    await progress.start();
+
+    progress.markExternallyStopped();
+    await progress.finish();
+
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
+  });
+
+  test("finish() still resolves cleanly (no throw) after the mark", async () => {
+    const client = makeMockClient();
+    const { progress } = makeProgress({ client });
+    await progress.start();
+
+    progress.markExternallyStopped();
+    await expect(progress.finish()).resolves.toBeUndefined();
+  });
+});
