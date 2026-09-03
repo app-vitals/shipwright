@@ -726,6 +726,31 @@ describe("message handler — DM routing", () => {
     expect(say).not.toHaveBeenCalled();
   });
 
+  // STS2-3.1: a [silent] response must still close the stream's dangling
+  // in_progress card — with a distinct "Ack" title (not "Done", which would
+  // imply a real reply went out) and no markdown_text content.
+  test("closes the stream with an 'Ack' completion card and posts no content when Claude returns [silent] (STS2-3.1)", async () => {
+    mockRunClaude.mockResolvedValueOnce({
+      result: "[silent]",
+      sessionId: "sess-silent",
+    });
+    createSlackApp({ thinkingStepsEnabled: true });
+    const { client, say } = await invokeDM({ channel: "D123", ts: "111.222" });
+
+    expect(say).not.toHaveBeenCalled();
+
+    const chunks = client.chat.appendStream.mock.calls.flatMap(
+      (c) => (c[0] as { chunks: Array<Record<string, unknown>> }).chunks,
+    );
+    const markdownChunks = chunks.filter((c) => c.type === "markdown_text");
+    expect(markdownChunks).toHaveLength(0);
+
+    const completeChunk = chunks.find(
+      (c) => c.type === "task_update" && c.status === "complete",
+    );
+    expect(completeChunk?.title).toBe("Ack");
+  });
+
   test("falls back to say() when chat.appendStream rejects (delivery failure never drops the reply) (STS2-1.1 AC #2)", async () => {
     const client = makeMockClient();
     client.chat.appendStream.mockImplementation(async () => {

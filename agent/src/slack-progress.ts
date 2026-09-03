@@ -55,6 +55,16 @@
  *     per-message, so without this the first-to-finish message of a burst
  *     would prematurely dismiss the "is working" indicator for the whole
  *     thread).
+ *   - `finish()` always closes any still-open card before stopping the
+ *     stream, even when the run's reply was suppressed (e.g. a [silent]
+ *     marker resolved the response and deliverContent() was never called) —
+ *     otherwise the seed card's `in_progress` state is left dangling in the
+ *     channel forever (STS2-3.1). The fallback title is "Done", unless the
+ *     caller passes `finish({ silent: true })`, in which case it's "Ack" —
+ *     a distinct, deliberately terse label so the card doesn't imply a real
+ *     reply was posted, while still giving a visual signal that Bodhi
+ *     processed the message and chose not to reply, rather than something
+ *     having silently broken.
  *
  * This is entirely additive and off by default: when the flag is
  * unset/false, none of chat.startStream/appendStream/stopStream are ever
@@ -117,6 +127,16 @@ export interface SlackProgressFinishOptions {
    * finish()/stream-close call regardless of this flag.
    */
   stillInFlight?: boolean;
+  /**
+   * True when the caller suppressed the reply (e.g. a [silent] marker
+   * resolved the run with nothing to post). When `thinkingStepsEnabled` and
+   * the run's card hasn't already been closed by deliverContent(), finish()
+   * still must close the stream's dangling in_progress card (STS2-3.1) —
+   * but titles it "Ack" instead of the generic "Done", since "Done" implies
+   * a real reply went out. Has no effect once deliverContent() has already
+   * closed the card, or when `thinkingStepsEnabled` is off.
+   */
+  silent?: boolean;
 }
 
 /** Text used for the seed task_update card's title. Always ends in "…". */
@@ -129,6 +149,15 @@ const COMPLETE_TITLE = "Done";
 
 /** Title for the terminal card on a thrown run (STS2-4.1 AC #1). */
 const ERROR_TITLE = "Error";
+
+/**
+ * Title for the terminal task_update card when finish() closes it for a
+ * suppressed (e.g. [silent]-marker) response — see SlackProgressFinishOptions
+ * (STS2-3.1). Distinct from COMPLETE_TITLE so the card doesn't imply a real
+ * reply was posted, while still giving a visual signal the run completed
+ * rather than having silently broken.
+ */
+const SILENT_COMPLETE_TITLE = "Ack";
 
 /**
  * Drives the agents.sessions.setStatus lifecycle status (when
@@ -346,13 +375,18 @@ export class SlackProgress {
    * through to stopStream — stopStream's session_status defaults to
    * "active" and is per-thread, not per-message, so the caller must pass
    * `stillInFlight: true` for every message except the genuine last one to
-   * finish in a burst (AC #5).
+   * finish in a burst (AC #5). The fallback card is titled "Done", unless
+   * `opts.silent` signals the reply was suppressed (e.g. a [silent] marker),
+   * in which case it's titled "Ack" instead (STS2-3.1) — closing the
+   * dangling in_progress card either way so no in-progress indicator is
+   * left visible in the channel forever.
    */
   async finish(opts?: SlackProgressFinishOptions): Promise<void> {
     const sessionStatus = opts?.stillInFlight ? "processing" : "active";
     if (this.thinkingStepsEnabled) {
       if (!this.completed) {
-        this.appendTaskUpdate(COMPLETE_TITLE, "complete");
+        const title = opts?.silent ? SILENT_COMPLETE_TITLE : COMPLETE_TITLE;
+        this.appendTaskUpdate(title, "complete");
       }
       await this.stopStream(sessionStatus);
     } else {
