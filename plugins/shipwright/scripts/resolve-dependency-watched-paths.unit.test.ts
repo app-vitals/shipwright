@@ -166,6 +166,64 @@ updates:
     expect(result.source).toBe("dependabot");
     expect(result.paths.sort()).toEqual([...UNIVERSAL_FALLBACK_PATHS].sort());
   });
+
+  it("an empty `updates: []` array watches nothing — no universal-fallback widening", () => {
+    const result = resolveDependencyWatchedPaths({
+      renovateJson: undefined,
+      dependabotYml: `
+version: 2
+updates: []
+`,
+    });
+    expect(result.source).toBe("dependabot");
+    expect(result.paths).toEqual([]);
+  });
+
+  it("updates entries naming only unrecognized ecosystems watch nothing rather than the universal list", () => {
+    const result = resolveDependencyWatchedPaths({
+      renovateJson: undefined,
+      dependabotYml: `
+version: 2
+updates:
+  - package-ecosystem: "docker"
+    directory: "/"
+  - package-ecosystem: "terraform"
+    directory: "/infra"
+`,
+    });
+    expect(result.source).toBe("dependabot");
+    expect(result.paths).toEqual([]);
+    // Specifically must NOT spuriously watch manifests for ecosystems this
+    // repo's dependabot.yml never names.
+    expect(result.paths).not.toContain("go.mod");
+    expect(result.paths).not.toContain("package.json");
+  });
+
+  it("keeps only the recognized ecosystems when entries are a mix of recognized and unrecognized", () => {
+    const result = resolveDependencyWatchedPaths({
+      renovateJson: undefined,
+      dependabotYml: `
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+  - package-ecosystem: "docker"
+    directory: "/"
+`,
+    });
+    expect(result.paths).toContain("package.json");
+    expect(result.paths).not.toContain("go.mod");
+    expect(result.paths).not.toContain("Cargo.toml");
+  });
+
+  it("a dependabot.yml with no `updates` key at all is unparseable-intent and still falls back to the universal list", () => {
+    const result = resolveDependencyWatchedPaths({
+      renovateJson: undefined,
+      dependabotYml: "version: 2\n",
+    });
+    expect(result.source).toBe("dependabot");
+    expect(result.paths.sort()).toEqual([...UNIVERSAL_FALLBACK_PATHS].sort());
+  });
 });
 
 describe("resolveDependencyWatchedPaths — both present (union)", () => {
@@ -200,5 +258,21 @@ updates:
     });
     const packageJsonCount = result.paths.filter((p) => p === "package.json").length;
     expect(packageJsonCount).toBe(1);
+  });
+
+  it("a watches-nothing dependabot.yml does not widen a narrowed renovate.json back to the universal list", () => {
+    const renovateJson = JSON.stringify({ managers: ["npm"] });
+    const dependabotYml = `
+version: 2
+updates: []
+`;
+    const result = resolveDependencyWatchedPaths({
+      renovateJson,
+      dependabotYml,
+    });
+    expect(result.source).toBe("both");
+    expect(result.paths).toContain("package.json");
+    expect(result.paths).not.toContain("go.mod");
+    expect(result.paths).not.toContain("Cargo.toml");
   });
 });

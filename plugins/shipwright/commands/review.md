@@ -509,7 +509,13 @@ gets the exact same dependency-risk analysis as a bot-authored one.
    list rather than narrowing it. It reads `.github/dependabot.yml`'s `updates[]` array —
    each entry's `package-ecosystem` (e.g. `npm`, `bundler`, `pip`, `gomod`, `cargo`) maps to
    that ecosystem's manifest filename(s), joined with the entry's `directory` prefix (e.g.
-   `directory: "/backend"` + `npm` -> `backend/package.json`). When both config files are
+   `directory: "/backend"` + `npm` -> `backend/package.json`). A dependabot.yml that yields
+   zero recognized ecosystems — an empty `updates: []`, or entries whose `package-ecosystem`
+   values this script doesn't map — resolves to an **empty** watched-path set, not the
+   universal list: an explicit dependabot.yml is authoritative about what the repo watches,
+   so this step simply no-ops for that repo rather than widening back out. (A dependabot.yml
+   that can't be parsed at all — invalid YAML, or a missing `updates` key — is a different
+   case and still degrades to the universal list.) When both config files are
    present, the two watched-path sets are unioned, not one picked over the other — a repo
    can run both tools at once. **When neither config file is present in the repo, this falls
    back to the universal manifest-file list**: `package.json` and common lockfiles

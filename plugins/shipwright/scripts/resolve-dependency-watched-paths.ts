@@ -187,7 +187,15 @@ function resolveFromRenovateJson(renovateJson: string): string[] {
 // into the fallback list) since an explicit dependabot.yml is itself
 // authoritative about which ecosystems this repo watches — unlike
 // renovate.json's un-narrowed case, a dependabot.yml with `updates: []` (or
-// entries this parser doesn't recognize) legitimately watches nothing.
+// entries this parser doesn't recognize) legitimately watches nothing, and
+// this function returns an empty path set for it rather than degrading to the
+// universal fallback list (which would spuriously trigger review.md's Step 5.8
+// dependency-risk analysis on manifests the repo demonstrably does not watch).
+//
+// The universal fallback is reserved for the cases where the config could not
+// be *understood* at all — unparseable YAML, a non-object document, or a
+// missing/non-array `updates` key. Those are "we don't know what this repo
+// watches", which is materially different from "this repo watches nothing".
 function resolveFromDependabotYml(dependabotYml: string): string[] {
   let parsed: unknown;
   try {
@@ -234,7 +242,10 @@ function resolveFromDependabotYml(dependabotYml: string): string[] {
     }
   }
 
-  return paths.size > 0 ? [...paths] : [...UNIVERSAL_FALLBACK_PATHS];
+  // No universal-fallback degradation here: an `updates: []` array, or one
+  // whose every entry names an ecosystem this parser doesn't recognize, is an
+  // authoritative "watches nothing" — see the comment above this function.
+  return [...paths];
 }
 
 function normalizeDirectoryPrefix(directory: string): string {
