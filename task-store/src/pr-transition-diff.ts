@@ -44,7 +44,6 @@ export interface PrTransitionChange {
 export const AUDITED_FIELDS: ReadonlyArray<keyof PullRequest> = [
   "repo",
   "prNumber",
-  "taskId",
   "staged",
   "state",
   "reviewState",

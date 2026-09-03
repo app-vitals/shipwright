@@ -548,15 +548,26 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
   const NOW = new Date("2026-07-10T12:00:00.000Z");
   const clock = FixedClock(NOW);
 
+  /** Shape of a joined Task row the blocked filter selects (PTL-3.1). */
+  type BlockedJoinTask = {
+    repo: string | null;
+    pr: number | null;
+    status: string;
+  };
+
   /**
    * Prisma double for the blocked-filter branch of list(): captures the
    * candidates findMany() result and the joined task.findMany() lookup,
    * mirroring the non-transactional shape list({ blocked: true }) actually
    * issues (see pull-request-service.ts's `if (filters.blocked)` branch).
+   *
+   * PTL-3.1: the join is now by (repo, prNumber) — the stored
+   * PullRequest.taskId column is gone — so the task rows carry repo/pr
+   * rather than an id to match against.
    */
   function makeBlockedListPrismaDouble(
     candidates: Partial<PullRequest>[],
-    tasks: Array<{ id: string; status: string }> = [],
+    tasks: BlockedJoinTask[] = [],
   ) {
     const prisma = {
       pullRequest: {
@@ -573,15 +584,20 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
 
     return prisma as unknown as {
       pullRequest: { findMany: () => Promise<Partial<PullRequest>[]> };
-      task: {
-        findMany: () => Promise<Array<{ id: string; status: string }>>;
-      };
+      task: { findMany: () => Promise<BlockedJoinTask[]> };
     };
   }
 
+  const REPO = "app-vitals/shipwright";
+
   test("list({ blocked: true }) returns a PR with pr.blocked === true", async () => {
     const prisma = makeBlockedListPrismaDouble([
-      { id: "pr-1", taskId: null, blocked: true } as Partial<PullRequest>,
+      {
+        id: "pr-1",
+        repo: REPO,
+        prNumber: 1,
+        blocked: true,
+      } as Partial<PullRequest>,
     ]);
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -591,16 +607,17 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
     expect(result.total).toBe(1);
   });
 
-  test("list({ blocked: true }) returns a PR whose linked task has status === 'blocked'", async () => {
+  test("list({ blocked: true }) returns a PR whose linked task (matched live by repo+prNumber) has status === 'blocked'", async () => {
     const prisma = makeBlockedListPrismaDouble(
       [
         {
           id: "pr-1",
-          taskId: "task-1",
+          repo: REPO,
+          prNumber: 1,
           blocked: false,
         } as Partial<PullRequest>,
       ],
-      [{ id: "task-1", status: "blocked" }],
+      [{ repo: REPO, pr: 1, status: "blocked" }],
     );
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -610,11 +627,54 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
     expect(result.total).toBe(1);
   });
 
+  test("list({ blocked: true }) returns a bundle PR when any one of the several tasks sharing it is blocked", async () => {
+    const prisma = makeBlockedListPrismaDouble(
+      [
+        {
+          id: "pr-1",
+          repo: REPO,
+          prNumber: 7,
+          blocked: false,
+        } as Partial<PullRequest>,
+      ],
+      [
+        { repo: REPO, pr: 7, status: "pr_open" },
+        { repo: REPO, pr: 7, status: "blocked" },
+      ],
+    );
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs.map((p) => p.id)).toEqual(["pr-1"]);
+  });
+
+  test("list({ blocked: true }) does not match a same-numbered task in a different repo", async () => {
+    const prisma = makeBlockedListPrismaDouble(
+      [
+        {
+          id: "pr-1",
+          repo: REPO,
+          prNumber: 1,
+          blocked: false,
+        } as Partial<PullRequest>,
+      ],
+      [{ repo: "other-org/other-repo", pr: 1, status: "blocked" }],
+    );
+    const svc = new PullRequestService(prisma as never, clock);
+
+    const result = await svc.list({ blocked: true });
+
+    expect(result.prs).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
   test("list({ blocked: true }) excludes a PR whose linked task has hitl:true but status not 'blocked' (task.hitl branch removed)", async () => {
     // Task double intentionally includes a legacy `hitl` field to prove
     // isPrBlocked no longer reads it.
-    const taskWithHitl: { id: string; status: string; hitl: boolean } = {
-      id: "task-1",
+    const taskWithHitl = {
+      repo: REPO,
+      pr: 1,
       status: "in_progress",
       hitl: true,
     };
@@ -622,7 +682,8 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
       [
         {
           id: "pr-1",
-          taskId: "task-1",
+          repo: REPO,
+          prNumber: 1,
           blocked: false,
         } as Partial<PullRequest>,
       ],
@@ -641,11 +702,12 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
       [
         {
           id: "pr-1",
-          taskId: "task-1",
+          repo: REPO,
+          prNumber: 1,
           blocked: false,
         } as Partial<PullRequest>,
       ],
-      [{ id: "task-1", status: "pr_open" }],
+      [{ repo: REPO, pr: 1, status: "pr_open" }],
     );
     const svc = new PullRequestService(prisma as never, clock);
 
@@ -655,10 +717,20 @@ describe("PullRequestService.list({ blocked: true }) / isPrBlocked()", () => {
     expect(result.total).toBe(0);
   });
 
-  test("list({ blocked: true }) evaluates a PR with no taskId on pr.blocked alone (no crash/false-positive)", async () => {
+  test("list({ blocked: true }) evaluates a PR with no linked task on pr.blocked alone (no crash/false-positive)", async () => {
     const prisma = makeBlockedListPrismaDouble([
-      { id: "pr-1", taskId: null, blocked: false } as Partial<PullRequest>,
-      { id: "pr-2", taskId: null, blocked: true } as Partial<PullRequest>,
+      {
+        id: "pr-1",
+        repo: REPO,
+        prNumber: 1,
+        blocked: false,
+      } as Partial<PullRequest>,
+      {
+        id: "pr-2",
+        repo: REPO,
+        prNumber: 2,
+        blocked: true,
+      } as Partial<PullRequest>,
     ]);
     const svc = new PullRequestService(prisma as never, clock);
 

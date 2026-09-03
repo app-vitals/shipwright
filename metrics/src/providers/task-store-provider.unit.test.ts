@@ -4,9 +4,10 @@
  * task-originated groupPrsByPrefix() replacement exercised via the
  * featuresReviews() query kind.
  *
- * PTL-2.2: the grouping mechanism moved from reading `pr.taskId` (populated
- * ~10% of the time, 0% in several repos — silently dropping most PRs from
- * the dashboard's feature/session groupings) to originating from `task`
+ * PTL-2.2: the grouping mechanism moved off the since-removed stored
+ * `PullRequest.taskId` column (populated ~10% of the time, 0% in several
+ * repos — silently dropping most PRs from the dashboard's feature/session
+ * groupings; dropped outright in PTL-3.1) to originating from `task`
  * records (task.id-derived prefix + task.pr), then attaching each task's PR
  * by matching (repo, pr) against the fetched PR list. This also naturally
  * handles the bundle case: multiple tasks pointing at the same PR each
@@ -62,7 +63,7 @@ function buildProvider(tasks: TaskRecord[], prs: PrRecord[]) {
 }
 
 describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping", () => {
-  test("a PR with taskId null but a matching task.pr groups correctly", async () => {
+  test("a PR with no stored task link but a matching task.pr groups correctly", async () => {
     const tasks: TaskRecord[] = [
       {
         id: "QS-1.1",
@@ -77,7 +78,6 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     ];
     const prs: PrRecord[] = [
       {
-        taskId: null,
         prNumber: 42,
         repo: "org/repo",
         reviewState: "approved",
@@ -121,7 +121,6 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     ];
     const prs: PrRecord[] = [
       {
-        taskId: null,
         prNumber: 99,
         repo: "org/repo",
         reviewState: "approved",
@@ -161,7 +160,6 @@ describe("TaskStoreProvider.featuresReviews (unit) — task-originated grouping"
     ];
     const prs: PrRecord[] = [
       {
-        taskId: null,
         prNumber: 55,
         repo: "org/repo",
         reviewState: "approved",

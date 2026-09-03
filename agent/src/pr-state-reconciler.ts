@@ -117,7 +117,6 @@ import { join } from "node:path";
 import { DEFAULT_CLAIM_TTL_MS } from "@shipwright/lib/claim-ttl";
 import {
   classifyReviewState,
-  createPrRecordQuery,
   hasAnyReviewAtHead,
   readCleanupAfterDays,
   readCleanupMergedWorktrees,
@@ -137,8 +136,6 @@ export interface PrStateRecord {
   repo: string;
   prNumber: number;
   state: string;
-  /** Present when this record was fetched for the taskId-backfill lookup; absent/undefined elsewhere. */
-  taskId?: string | null;
   /** Merge commit SHA. */
   commitSha?: string | null;
 }
@@ -268,11 +265,6 @@ export interface PrStateReconcilerDeps {
     repo: string,
     branch: string,
   ) => Promise<PrOpenTaskRecord[] | typeof SCOPE_DEGRADED>;
-  /** Look up a task-store PullRequest record by repo+prNumber, for the taskId backfill (DSR-1.1). */
-  findPrRecordByRepoAndPrNumber: (
-    repo: string,
-    prNumber: number,
-  ) => Promise<PrStateRecord | null>;
   /** Injected clock — mergedAt fallback when GitHub doesn't report one (DSR-1.1). */
   now: () => string;
   /**
@@ -739,9 +731,6 @@ function logStartedAtSkip(task: PrOpenTaskRecord, taskRepo: string): void {
  * <branch> --state merged` only returns the PR number, never a mergedAt, so
  * this path always uses the injected clock — matching the legacy script.
  *
- * Either path, once a merge is confirmed, also backfills the task-store
- * PullRequest record's taskId when that record exists and its taskId is
- * still null — closing the gap where only review.md ever wrote it.
  */
 async function reconcilePrOpenTask(
   deps: PrStateReconcilerDeps,
@@ -750,7 +739,6 @@ async function reconcilePrOpenTask(
   const taskRepo = resolveTaskRepo(deps, task);
   if (!taskRepo) return; // no repo to resolve against — skip defensively
 
-  let prNumber: number;
   let mergedAt: string;
   let backfillPr: number | undefined; // only set on the branch path, matching the legacy PATCH shape
 
@@ -787,7 +775,6 @@ async function reconcilePrOpenTask(
       }
     }
 
-    prNumber = task.pr;
     mergedAt = ghState.mergedAt ?? deps.now();
   } else if (task.branch) {
     // RCP-1.1: checked before the GitHub call — a task that was never
@@ -804,8 +791,8 @@ async function reconcilePrOpenTask(
 
     // BBR-1.1: a branch-only PR match can't tell which sibling's work a
     // shared branch's PR actually contains — on a bundle (>1 task sharing
-    // this branch), skip the auto-heal entirely (both the status PATCH below
-    // and the taskId backfill) rather than guessing. Single-task branches
+    // this branch), skip the auto-heal entirely rather than guessing.
+    // Single-task branches
     // (the original DSR-1.1 crash-recovery case) are unaffected.
     //
     // RSG-1.2: `listAllTasksForBranch` may resolve to `SCOPE_DEGRADED`
@@ -828,7 +815,6 @@ async function reconcilePrOpenTask(
       return;
     }
 
-    prNumber = first.number;
     backfillPr = first.number;
     mergedAt = deps.now();
   } else {
@@ -840,11 +826,6 @@ async function reconcilePrOpenTask(
     ...(backfillPr !== undefined ? { pr: backfillPr } : {}),
     mergedAt,
   });
-
-  const prRecord = await deps.findPrRecordByRepoAndPrNumber(taskRepo, prNumber);
-  if (prRecord && !prRecord.taskId) {
-    await deps.patchPrRecord(prRecord.id, { taskId: task.id });
-  }
 }
 
 /**
@@ -1553,14 +1534,6 @@ export function buildProductionDeps(opts: {
       ]);
     },
     listAllTasksForBranch: listAllTasksForBranchImpl,
-    // createPrRecordQuery (check-helpers.ts) already implements exactly this
-    // repo+prNumber lookup and, unlike this file's own listOpenPrRecords/
-    // patchPrRecord, never throws — it resolves to null on missing config or
-    // any fetch error, which matches the "a PR record may simply not exist
-    // yet" semantics the taskId backfill needs.
-    findPrRecordByRepoAndPrNumber: createPrRecordQuery<PrStateRecord>({
-      fetchFn: opts.fetchFn,
-    }),
     now: () => new Date().toISOString(),
     delay: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
     isCleanupMergedWorktreesEnabled: () =>

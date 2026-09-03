@@ -325,11 +325,6 @@ export const PullRequestSchema = z
     id: z.string().openapi({ example: "clx0987654321" }),
     repo: z.string().openapi({ example: "org/repo" }),
     prNumber: z.number().int().openapi({ example: 42 }),
-    taskId: z
-      .string()
-      .nullable()
-      .optional()
-      .openapi({ example: "clx1234567890" }),
     staged: z.boolean().default(false).openapi({ example: false }),
     state: z
       .enum(["open", "merged", "closed"])
@@ -661,7 +656,6 @@ export const PrListQuerySchema = z
       .string()
       .optional()
       .openapi({ example: "42", description: "PR number (parsed as integer)" }),
-    taskId: z.string().optional().openapi({ example: "clx1234567890" }),
     state: z
       .enum(["open", "merged", "closed"])
       .optional()
@@ -788,10 +782,6 @@ export const ClaimPrBodySchema = z
       example: "agent-id-123",
       description: "Agent claiming this PR (admin tokens only)",
     }),
-    taskId: z
-      .string()
-      .optional()
-      .openapi({ example: "clx1234567890", description: "Associated task ID" }),
     phase: z.enum(["review", "patch", "deploy"]).optional().openapi({
       example: "patch",
       description:

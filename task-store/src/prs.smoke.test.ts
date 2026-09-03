@@ -11,7 +11,8 @@
  *   - POST /prs/:id/complete → reviewState=posted, reviewedAt set
  *   - POST /prs/:id/patch → patchCycles incremented, reviewState=pending
  *   - Agent token scope rejection → 400 on claim with out-of-scope repo
- *   - GET /prs?taskId=X and GET /prs?reviewState=posted filters
+ *   - GET /prs?reviewState=posted filter
+ *   - GET /prs?taskId=X is an ignored unknown query param, not a 400 (PTL-3.1)
  *   - PATCH /prs/:id → update fields
  *   - GET /prs/:id → 404 when missing
  *   - POST /prs/:id/heartbeat → updates heartbeatAt
@@ -51,7 +52,6 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     id: "pr-1",
     repo: ADMIN_REPO,
     prNumber: 42,
-    taskId: null,
     staged: false,
     state: "open",
     reviewState: "pending",
@@ -187,7 +187,6 @@ interface CapturedClaimCall {
   prNumber: number;
   commitSha: string;
   claimedBy: string;
-  taskId?: string;
   phase?: "review" | "patch" | "deploy";
   prCreatedAt?: string;
 }
@@ -232,7 +231,6 @@ function fakePrService(
     ): Promise<PullRequestListResult> {
       let prs = Array.from(store.values());
       if (opts.listResult !== undefined) prs = opts.listResult;
-      if (filters?.taskId) prs = prs.filter((p) => p.taskId === filters.taskId);
       if (filters?.reviewState)
         prs = prs.filter((p) => p.reviewState === filters.reviewState);
       // Mirrors pull-request-service.ts's list()/buildRepoOrgWhere semantics:
@@ -282,7 +280,6 @@ function fakePrService(
       prNumber: number,
       commitSha: string,
       claimedBy: string,
-      taskId?: string,
       phase?: "review" | "patch" | "deploy",
       prCreatedAt?: string,
     ): Promise<{ status: 200 | 201; record: PullRequest }> {
@@ -291,7 +288,6 @@ function fakePrService(
         prNumber,
         commitSha,
         claimedBy,
-        taskId,
         phase,
         prCreatedAt,
       });
@@ -306,7 +302,6 @@ function fakePrService(
         prNumber,
         commitSha,
         claimedBy,
-        taskId: taskId ?? null,
         phase: phase ?? "review",
         reviewState: "in_progress",
         claimedAt: new Date().toISOString(),
@@ -904,10 +899,13 @@ describe("/prs routes (smoke)", () => {
 
   // ─── GET /prs (list filters) ──────────────────────────────────────────────
 
-  it("GET /prs?taskId=X returns linked records", async () => {
+  it("GET /prs?taskId=X ignores the removed filter rather than 400ing (PTL-3.1)", async () => {
+    // The stored PullRequest.taskId column and its ?taskId= list filter are
+    // gone; a stale caller that still sends the param must get the same
+    // unfiltered 200 it would get without it, not a validation error.
     const store = new Map<string, PullRequest>();
-    store.set("pr-1", makePr({ id: "pr-1", taskId: "task-42" }));
-    store.set("pr-2", makePr({ id: "pr-2", taskId: "task-99" }));
+    store.set("pr-1", makePr({ id: "pr-1", prNumber: 1 }));
+    store.set("pr-2", makePr({ id: "pr-2", prNumber: 2 }));
     const app = makeApp({ prService: fakePrService({ store }) });
 
     const res = await app.request("/prs?taskId=task-42", {
@@ -915,8 +913,7 @@ describe("/prs routes (smoke)", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as PullRequestListResult;
-    expect(body.prs).toHaveLength(1);
-    expect(body.prs[0].taskId).toBe("task-42");
+    expect(body.prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
   });
 
   it("GET /prs?repo=... (single) returns records matching that repo only", async () => {

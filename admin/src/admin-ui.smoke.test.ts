@@ -6682,7 +6682,6 @@ describe("admin UI — PRs page", () => {
     id: "pr-smoke-1",
     repo: "app-vitals/shipwright",
     prNumber: 42,
-    taskId: "task-abc",
     staged: false,
     state: "open",
     reviewState: "in_review",

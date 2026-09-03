@@ -82,7 +82,6 @@ const validPullRequest = {
   id: "clx0987654321",
   repo: "org/repo",
   prNumber: 42,
-  taskId: "clx1234567890",
   staged: false,
   state: "open",
   reviewState: "pending",
@@ -301,7 +300,6 @@ describe("PullRequestSchema", () => {
   test("parses pull request with nullable fields", () => {
     const withNulls = {
       ...validPullRequest,
-      taskId: null,
       commitSha: null,
       mergedAt: null,
     };

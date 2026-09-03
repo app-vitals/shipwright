@@ -82,11 +82,12 @@ task whose `task.status === 'blocked'`. That means a PR with a linked blocked ta
 appear in **both** this list and the blocked-tasks list from Step 2 — dedupe on the
 task/PR pairing.
 
-**Do not dedupe on `PullRequest.taskId`.** It is populated only ~10% of the time — most
-task↔PR links exist solely in the `Task.pr` direction — so a taskId-based dedup treats most
-blocked PRs with a real linked task as PR-only records, and a bundle PR (multiple tasks on
-one branch) only ever dedupes against whichever single task happened to be stamped into
-`taskId`. Instead, for every blocked PR, query the task store live for its linked task(s):
+**Do not dedupe on `PullRequest.taskId`.** The column no longer exists (PTL-3.1 removed
+it): it was populated only ~10% of the time — most task↔PR links exist solely in the
+`Task.pr` direction — so a taskId-based dedup treated most blocked PRs with a real linked
+task as PR-only records, and a bundle PR (multiple tasks on one branch) only ever deduped
+against whichever single task happened to be stamped into it. Instead, for every blocked
+PR, query the task store live for its linked task(s):
 
 ```bash
 while IFS= read -r pr; do
