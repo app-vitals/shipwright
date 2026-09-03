@@ -3740,7 +3740,8 @@ describe("thread resume after timeout — real createRunClaude wired as runner",
 
     capturedErrors = [];
     const app = _createSlackApp(
-      realRunClaude,
+      (message: string, sessionKey?: string, onProgress?: ProgressCallback) =>
+        realRunClaude(message, sessionKey, onProgress),
       mockMarkdownToSlack,
       threadKey,
       // biome-ignore lint/suspicious/noExplicitAny: mock factory for tests

@@ -70,6 +70,7 @@ export function buildTokenPayload(
 type ClaudeRunner = (
   message: string,
   onProgress?: ProgressCallback,
+  extraEnv?: Record<string, string>,
 ) => Promise<ClaudeRunResult>;
 
 /**

@@ -149,6 +149,7 @@ export type ClaudeRunner = (
   message: string,
   sessionKey?: string,
   onProgress?: ProgressCallback,
+  extraEnv?: Record<string, string>,
 ) => Promise<ClaudeRunResult>;
 
 export type ResolveUserFn = (
