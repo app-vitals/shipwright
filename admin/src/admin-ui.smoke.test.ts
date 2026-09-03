@@ -6905,6 +6905,12 @@ describe("admin UI — PRs page", () => {
       makeMockDeps({
         fetchTaskStorePrById: async (id: string) =>
           id === "pr-smoke-1" ? MOCK_PR : null,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
       }),
     );
     const res = await app.request("/admin/prs/pr-smoke-1", {
@@ -6921,6 +6927,12 @@ describe("admin UI — PRs page", () => {
       makeMockDeps({
         fetchTaskStorePrById: async (id: string) =>
           id === "pr-smoke-1" ? { ...MOCK_PR, blocked: true } : null,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
       }),
     );
     const res = await app.request("/admin/prs/pr-smoke-1", {
@@ -6930,6 +6942,72 @@ describe("admin UI — PRs page", () => {
     const html = await res.text();
     expect(html).toContain("Blocked");
     expect(html).not.toContain("HITL");
+  });
+
+  it("GET /admin/prs/:id renders linked task(s) via a live GET /tasks?repo=&pr= lookup instead of pr.taskId", async () => {
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+        fetchTaskStoreTasks: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return {
+            tasks: [{ id: "TASK-LIVE", title: "Live", status: "done" }],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<a href="/admin/tasks/TASK-LIVE"');
+    expect(capturedParams).not.toBeNull();
+    expect((capturedParams as unknown as URLSearchParams).get("repo")).toBe(
+      "app-vitals/shipwright",
+    );
+    expect((capturedParams as unknown as URLSearchParams).get("pr")).toBe(
+      "42",
+    );
+  });
+
+  it("GET /admin/prs/:id renders no Task row when fetchTaskStoreTasks is not injected", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+        // fetchTaskStoreTasks intentionally absent
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("/admin/tasks/");
+  });
+
+  it("GET /admin/prs/:id renders no Task row when fetchTaskStoreTasks throws", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStorePrById: async (id: string) =>
+          id === "pr-smoke-1" ? MOCK_PR : null,
+        fetchTaskStoreTasks: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/prs/pr-smoke-1", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("/admin/tasks/");
   });
 
   it("GET /admin/prs resolves claimedBy agent id to its name via AgentService", async () => {
@@ -6956,6 +7034,12 @@ describe("admin UI — PRs page", () => {
       makeMockDeps({
         fetchTaskStorePrById: async (id: string) =>
           id === "pr-smoke-1" ? { ...MOCK_PR, claimedBy: AGENT_ID } : null,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
       }),
     );
     const res = await app.request("/admin/prs/pr-smoke-1", {

@@ -70,6 +70,11 @@ import { createFileSessionStore, threadKey } from "./sessions.ts";
 import { ensureAgentHome, installPlugins, runMiseStartup } from "./setup.ts";
 import { HttpShipwrightRuntimeClient } from "./shipwright-runtime-client.ts";
 import { createSlackApp, hasSlackCredentials } from "./slack.ts";
+import {
+  slackClientRef,
+  startSlackIfPossible,
+  type StartableSlackApp,
+} from "./slack-startup.ts";
 import { sendBackOnlineDm } from "./startup-dm.ts";
 import { resolveDisplayName, resolveUserEmail } from "./users.ts";
 import { synthesizeSpeech } from "./voice.ts";
@@ -126,18 +131,23 @@ console.log(`[agent] agent home initialized: ${config.paths.home}`);
 const slackClock = SystemClock();
 const sessions = createFileSessionStore(config.paths.sessions);
 
-// Slack is optional (see Step 7). Building a WebClient around an empty token
-// would make every downstream call fail with `invalid_auth` instead of being
-// skipped, so a chat-only agent gets no client at all and callers branch on
-// `undefined`.
-const slackAppConfig = {
-  botToken: config.slack.botToken ?? "",
-  appToken: config.slack.appToken ?? "",
-  signingSecret: config.slack.signingSecret ?? "",
-};
-const slack = hasSlackCredentials(slackAppConfig)
-  ? new WebClient(slackAppConfig.botToken)
-  : undefined;
+// Slack is optional (see Step 7 + startSlackIfPossible in slack-startup.ts).
+// Building a WebClient around an empty token would make every downstream
+// call fail with `invalid_auth` instead of being skipped, so a chat-only
+// agent gets no client at all and callers branch on `undefined`.
+//
+// buildSlackAppConfig() reads live process.env rather than the static
+// `config` snapshot taken above at module-load time — SLK-1.1: credentials
+// saved to the admin DB after boot only reach this process via syncConfig()'s
+// `Object.assign(process.env, bundle.env)`, so re-reading `config.slack.*`
+// here would keep seeing the boot-time (absent) values forever.
+function buildSlackAppConfig() {
+  return {
+    botToken: process.env.SLACK_BOT_TOKEN ?? "",
+    appToken: process.env.SLACK_APP_TOKEN ?? "",
+    signingSecret: process.env.SLACK_SIGNING_SECRET ?? "",
+  };
+}
 const runner = createRunClaude(
   Bun.spawn,
   sessions,
@@ -185,7 +195,13 @@ const workQueueReporter =
     : new NoopWorkQueueReporter();
 
 const cronDeps: CronHandlerDeps = {
-  slack,
+  // SLK-1.1: a getter, not a plain field — Slack may start after boot (see
+  // slack-startup.ts's startSlackIfPossible()), so cron dispatch must read
+  // the live slackClientRef on every fire rather than closing over a
+  // boot-time `undefined` forever.
+  get slack() {
+    return slackClientRef.get();
+  },
   runner: (message, onProgress) => runner(message, undefined, onProgress),
   formatter: markdownToSlack,
   onSession: async (channel: string, ts: string, sessionId: string) => {
@@ -197,6 +213,50 @@ const cronDeps: CronHandlerDeps = {
   alertsChannel: config.alerts.channel,
   cronRunReporter,
   agentId: config.shipwright.agentId,
+};
+
+// SLK-1.1: shared Slack-start deps, built once so both the Step 4
+// (config-sync) and Step 7 (boot) call sites of startSlackIfPossible()
+// operate on the same module-scope `app`/client-ref state — a start from
+// either call site is visible to the other via isAppStarted()/slackClientRef.
+let app: ReturnType<typeof createSlackApp> | undefined;
+
+function buildSlackApp() {
+  return createSlackApp(
+    runner,
+    markdownToSlack,
+    threadKey,
+    undefined, // appFactory — default Bolt App
+    buildSlackAppConfig(),
+    process.env.SENTRY_DSN ? Sentry : undefined,
+    undefined, // fileDownloaderFn — default
+    config.voice,
+    undefined, // transcribeAudioFn — default
+    synthesizeSpeech,
+    (userId, client) => resolveDisplayName(userId, client),
+    undefined, // botUserId — resolved by Bolt
+    undefined, // conversationsRepliesFn — default
+    (key) => sessions.get(key),
+    undefined, // blocksConverter — default
+    chatTokenReporter,
+    (userId, client) => resolveUserEmail(userId, client),
+    agentSlackMembershipRef,
+  );
+}
+
+const slackStartDeps = {
+  buildSlackConfig: buildSlackAppConfig,
+  hasSlackCredentials,
+  isAppStarted: () => app !== undefined,
+  createSlackApp: buildSlackApp,
+  setApp: (started: StartableSlackApp) => {
+    app = started as ReturnType<typeof createSlackApp>;
+  },
+  createSlackClient: () => new WebClient(buildSlackAppConfig().botToken),
+  setSlackClient: slackClientRef.set,
+  markSlackConnected,
+  sendBackOnlineDm: (client: WebClient) =>
+    sendBackOnlineDm(client, config.owner.user),
 };
 
 const healthPort = Number(
@@ -279,11 +339,16 @@ if (runtimeClient && agentId) {
       agentReposRef.set(bundle.repos);
 
       // Sync the agent's author-allowlist live ref
-      agentAuthorAllowlistRef.set(resolveAuthorAllowlist(bundle.authorAllowlist));
+      agentAuthorAllowlistRef.set(
+        resolveAuthorAllowlist(bundle.authorAllowlist),
+      );
 
       // Sync the agent's Slack-membership-restriction live ref
       agentSlackMembershipRef.set(
-        resolveSlackMembership(bundle.restrictSlackToMembers, bundle.memberEmails),
+        resolveSlackMembership(
+          bundle.restrictSlackToMembers,
+          bundle.memberEmails,
+        ),
       );
     } catch (err) {
       if (
@@ -296,6 +361,26 @@ if (runtimeClient && agentId) {
       }
       console.error(
         "[config-sync] failed to fetch config bundle:",
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+
+    // SLK-1.1: retry Slack startup on every successful tick — a no-op unless
+    // credentials are newly complete against live process.env AND Bolt
+    // hasn't already started (see startSlackIfPossible's own guards). Kept
+    // in its own try/catch, separate from the fetch/env-sync try above, so a
+    // Bolt start failure (e.g. a bad token that fails Socket Mode auth) is
+    // logged distinctly rather than being misreported as a config-bundle
+    // fetch failure — and so it can never mask an already-successful env
+    // sync that happened earlier in this same tick.
+    try {
+      if (await startSlackIfPossible(slackStartDeps)) {
+        console.log("[config-sync] Slack app started — running");
+      }
+    } catch (err) {
+      console.error(
+        "[config-sync] Slack startup failed:",
         err instanceof Error ? err.message : String(err),
       );
     }
@@ -362,7 +447,9 @@ if (runtimeClient && agentId) {
   let reviewStateReconcilerDeps:
     | ReturnType<typeof buildReviewStateReconcilerDeps>
     | undefined;
-  let worktreeReaperDeps: ReturnType<typeof buildWorktreeReaperDeps> | undefined;
+  let worktreeReaperDeps:
+    | ReturnType<typeof buildWorktreeReaperDeps>
+    | undefined;
   let claimInvariantReconcilerDeps:
     | ReturnType<typeof buildClaimInvariantReconcilerDeps>
     | undefined;
@@ -574,40 +661,24 @@ if (config.chat.serviceUrl && config.chat.serviceToken) {
 // Bolt's Socket Mode throws "Must provide an App-Level Token" if constructed
 // without an appToken, so the agent runs Slack ONLY when both tokens are present.
 // Absent creds → offline mode: skip Slack, keep health green, interact via the chat UI.
+//
+// SLK-1.1: startSlackIfPossible() (slack-startup.ts) is the single shared
+// start path — attempted here AND again from inside syncConfig()'s success
+// branch (Step 4, above — slackStartDeps is built earlier in this file so
+// both call sites can share it). In the common case where credentials are
+// already present at boot, Step 4's `await syncConfig()` (which runs before
+// this point) already starts Slack, making this call a no-op; this call site
+// exists so a config-bundle fetch that 404s or errors on the very first tick
+// doesn't prevent Slack from starting when creds are already in the process
+// env at boot. Every later syncConfig() tick is what retries the start for
+// credentials that arrive after boot (the SLK-1.1 fix). Its own
+// start-in-flight guard makes overlapping call sites racing safe; its own
+// isAppStarted() check makes an already-successful start here a permanent
+// no-op for every later attempt.
 
-let app: ReturnType<typeof createSlackApp> | undefined;
-
-if (hasSlackCredentials(slackAppConfig)) {
-  app = createSlackApp(
-    runner,
-    markdownToSlack,
-    threadKey,
-    undefined, // appFactory — default Bolt App
-    slackAppConfig,
-    process.env.SENTRY_DSN ? Sentry : undefined,
-    undefined, // fileDownloaderFn — default
-    config.voice,
-    undefined, // transcribeAudioFn — default
-    synthesizeSpeech,
-    (userId, client) => resolveDisplayName(userId, client),
-    undefined, // botUserId — resolved by Bolt
-    undefined, // conversationsRepliesFn — default
-    (key) => sessions.get(key),
-    undefined, // blocksConverter — default
-    chatTokenReporter,
-    (userId, client) => resolveUserEmail(userId, client),
-    agentSlackMembershipRef,
-    config.slack.thinkingStepsEnabled,
-  );
-
-  await app.start();
-  markSlackConnected();
+if (await startSlackIfPossible(slackStartDeps)) {
   console.log("[agent] Slack app started — running");
-
-  // `slack` is non-undefined whenever hasSlackCredentials() held, but TypeScript
-  // cannot narrow it across this distance.
-  if (slack) await sendBackOnlineDm(slack, config.owner.user);
-} else {
+} else if (!hasSlackCredentials(buildSlackAppConfig())) {
   console.warn(
     "[agent] Slack credentials absent (need SLACK_BOT_TOKEN + SLACK_APP_TOKEN) — " +
       "skipping Slack startup. Offline mode: use the admin chat UI (/admin/chat) to interact.",

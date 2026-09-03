@@ -4651,8 +4651,17 @@ const PR_DETAIL: PrListItem = {
 };
 
 describe("renderPrDetailPage", () => {
-  function render(pr: PrListItem = PR_DETAIL): string {
-    return renderPrDetailPage(pr, USER_NAME, { "agent-x": "Xray Agent" });
+  function render(
+    pr: PrListItem = PR_DETAIL,
+    linkedTasks: TaskItem[] = [],
+  ): string {
+    return renderPrDetailPage(
+      pr,
+      USER_NAME,
+      { "agent-x": "Xray Agent" },
+      "America/Los_Angeles",
+      linkedTasks,
+    );
   }
 
   test("returns a valid HTML document", () => {
@@ -4694,19 +4703,32 @@ describe("renderPrDetailPage", () => {
     expect(html).toContain("3");
   });
 
-  test("renders taskId field when present", () => {
-    const html = render();
+  test("renders a linked task id when linkedTasks is non-empty", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-99", title: "T", status: "done" },
+    ]);
     expect(html).toContain("TASK-99");
   });
 
-  test("taskId links to the task's detail page", () => {
-    const html = render();
+  test("linked task links to the task's detail page", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-99", title: "T", status: "done" },
+    ]);
     expect(html).toContain('<a href="/admin/tasks/TASK-99"');
   });
 
-  test("no Task row when taskId is absent", () => {
-    const html = render({ ...PR_DETAIL, taskId: null });
+  test("no Task row when linkedTasks is empty", () => {
+    const html = render(PR_DETAIL, []);
     expect(html).not.toContain("/admin/tasks/");
+  });
+
+  test("renders both links when a PR has 2 linked tasks", () => {
+    const html = render(PR_DETAIL, [
+      { id: "TASK-A", title: "A", status: "done" },
+      { id: "TASK-B", title: "B", status: "done" },
+    ]);
+    expect(html).toContain('<a href="/admin/tasks/TASK-A"');
+    expect(html).toContain('<a href="/admin/tasks/TASK-B"');
   });
 
   test("PR number links out to the GitHub PR", () => {
@@ -6586,6 +6608,13 @@ describe("renderChatThreadPage — CFB-2.3 live progress inline JS + status bubb
     const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
     expect(html).toContain("renderedIds");
     expect(html).toContain("data-message-id");
+  });
+
+  test("inline JS seeds renderedIds from the upload response", () => {
+    const html = renderChatThreadPage("agent-xyz", THREAD, [REPLIED_MSG], "u");
+    // The success branch of the fetch handler should parse JSON and seed renderedIds
+    // from data.message.id to prevent duplicate rendering.
+    expect(html).toContain("renderedIds[data.message.id]");
   });
 
   test("inline JS renders every new server message, not just the last", () => {

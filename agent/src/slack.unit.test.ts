@@ -182,6 +182,9 @@ function makeMockClient() {
     },
     chat: {
       postMessage: mock(async (_args: unknown) => ({ ts: "resp.ts.1" })),
+      startStream: mock(async (_args: unknown) => ({ ts: "stream.ts.1" })),
+      appendStream: mock(async (_args: unknown) => {}),
+      stopStream: mock(async (_args: unknown) => {}),
     },
     users: {
       info: mock(async (_args: unknown) => ({
@@ -270,28 +273,28 @@ describe("membership gating — message handler", () => {
 
   test("unsynced ref: processed as today (runner called)", async () => {
     const ref = createAgentSlackMembershipRef();
-    const { runner, say } = await invokeDM(ref, async () => undefined);
+    const { runner, client } = await invokeDM(ref, async () => undefined);
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=false: processed as today (runner called)", async () => {
     const ref = createAgentSlackMembershipRef();
     ref.set({ restrict: false, emails: [] });
-    const { runner, say } = await invokeDM(ref, async () => undefined);
+    const { runner, client } = await invokeDM(ref, async () => undefined);
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=true + matching email: processed as today", async () => {
     const ref = createAgentSlackMembershipRef();
     ref.set({ restrict: true, emails: ["member@example.com"] });
-    const { runner, say } = await invokeDM(
+    const { runner, client } = await invokeDM(
       ref,
       async () => "member@example.com",
     );
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=true + non-member email: runner not called, no reply posted", async () => {
@@ -337,28 +340,28 @@ describe("membership gating — app_mention handler", () => {
 
   test("unsynced ref: processed as today (runner called)", async () => {
     const ref = createAgentSlackMembershipRef();
-    const { runner, say } = await invokeMention(ref, async () => undefined);
+    const { runner, client } = await invokeMention(ref, async () => undefined);
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=false: processed as today (runner called)", async () => {
     const ref = createAgentSlackMembershipRef();
     ref.set({ restrict: false, emails: [] });
-    const { runner, say } = await invokeMention(ref, async () => undefined);
+    const { runner, client } = await invokeMention(ref, async () => undefined);
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=true + matching email: processed as today", async () => {
     const ref = createAgentSlackMembershipRef();
     ref.set({ restrict: true, emails: ["member@example.com"] });
-    const { runner, say } = await invokeMention(
+    const { runner, client } = await invokeMention(
       ref,
       async () => "MEMBER@example.com",
     );
     expect(runner).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalled();
+    expect(client.chat.appendStream).toHaveBeenCalled();
   });
 
   test("restrict=true + non-member email: runner not called, no reply posted", async () => {
@@ -381,13 +384,15 @@ describe("membership gating — app_mention handler", () => {
   });
 });
 
-// ─── Per-thread status refcounting (SSF-1.1) ───────────────────────────────
-// A burst of overlapping message-handler invocations on the same thread must
-// result in exactly one setStatus("processing") and one setStatus("active")
-// call, with "active" firing only after the LAST queued run completes — not
-// the first. This exercises the ThreadStatusTracker wired into createSlackApp
-// via the same MockApp/mock-client harness used by the membership-gating
-// suite above.
+// ─── Per-thread Thinking Steps refcounting (SSF-1.1, streaming per STS2-1.1) ─
+// A burst of overlapping message-handler invocations on the same thread each
+// get their own independent chat.startStream/stopStream lifecycle — the
+// ThreadStatusTracker refcount only selects the seed card's title
+// ("Queued…" vs "Thinking…") and the session_status stopStream closes with
+// ("processing" while other messages are still in flight, "active" only for
+// the genuine last one). This exercises the tracker wired into
+// createSlackApp via the same MockApp/mock-client harness used by the
+// membership-gating suite above.
 
 // Flushes pending microtask hops (getSessionFn / shouldRejectSlackSender's
 // resolveUserEmailFn awaits, etc.) that run before a handler reaches
@@ -397,8 +402,27 @@ function flushMicrotasks(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-describe("per-thread status refcounting — message handler burst", () => {
-  test("2 overlapping runs on the same thread: one processing, one active (after the last)", async () => {
+function seedTitles(client: ReturnType<typeof makeMockClient>): string[] {
+  return client.chat.appendStream.mock.calls
+    .map(
+      (c) =>
+        (c[0] as { chunks: Array<Record<string, unknown>> }).chunks.find(
+          (chunk) => chunk.type === "task_update",
+        )?.title,
+    )
+    .filter((t): t is string => typeof t === "string" && t.endsWith("…"));
+}
+
+function stopStreamStatuses(
+  client: ReturnType<typeof makeMockClient>,
+): string[] {
+  return client.chat.stopStream.mock.calls.map(
+    (c: unknown[]) => (c[0] as { session_status: string }).session_status,
+  );
+}
+
+describe("per-thread Thinking Steps refcounting — message handler burst", () => {
+  test("2 overlapping runs on the same thread: 'Thinking…' then 'Queued…' seeds, 'processing' then 'active' stops", async () => {
     // Deferred promises let the test control exactly when each runner()
     // invocation resolves. Keyed by the prompt text (which embeds the
     // message body) rather than call order — resolveUserFn's await means the
@@ -459,36 +483,32 @@ describe("per-thread status refcounting — message handler burst", () => {
 
     await flushMicrotasks();
 
-    // Only "processing" should have been set so far — the thread is now at
-    // refcount 2, so neither handler has reached its finally block yet.
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(1);
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "processing" }),
-    );
+    // Both messages have already opened their own stream by now — the first
+    // seeded "Thinking…" (0->1 transition), the second "Queued…" (still 1
+    // in flight) — and neither handler has reached its finally block yet.
+    expect(client.chat.startStream).toHaveBeenCalledTimes(2);
+    expect(seedTitles(client)).toEqual(["Thinking…", "Queued…"]);
+    expect(client.chat.stopStream).not.toHaveBeenCalled();
 
     // Resolve the FIRST run — since a second run is still in flight, this
-    // must NOT flip status to "active" (the false "done" signal this fix
-    // prevents).
+    // must close with session_status "processing", not "active" (the false
+    // "done" signal this refcount prevents).
     resolveFirst({ result: "first done", sessionId: "sess-1" });
     await firstHandlerCall;
 
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(1);
-    expect(client.agents.sessions.setStatus).not.toHaveBeenCalledWith(
-      expect.objectContaining({ status: "active" }),
-    );
+    expect(client.chat.stopStream).toHaveBeenCalledTimes(1);
+    expect(stopStreamStatuses(client)).toEqual(["processing"]);
 
-    // Resolve the SECOND (last) run — only now should "active" fire.
+    // Resolve the SECOND (last) run — only now should stopStream close with
+    // "active".
     resolveSecond({ result: "second done", sessionId: "sess-1" });
     await secondHandlerCall;
 
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(2);
-    const calls = client.agents.sessions.setStatus.mock.calls.map(
-      (c: unknown[]) => (c[0] as { status: string }).status,
-    );
-    expect(calls).toEqual(["processing", "active"]);
+    expect(client.chat.stopStream).toHaveBeenCalledTimes(2);
+    expect(stopStreamStatuses(client)).toEqual(["processing", "active"]);
   });
 
-  test("bursts on different threads do not interfere with each other's status", async () => {
+  test("bursts on different threads do not interfere with each other's seed titles or stop statuses", async () => {
     let resolveA!: (value: { result: string; sessionId?: string }) => void;
     let resolveB!: (value: { result: string; sessionId?: string }) => void;
     const doneA = new Promise<{ result: string; sessionId?: string }>(
@@ -541,22 +561,21 @@ describe("per-thread status refcounting — message handler burst", () => {
 
     await flushMicrotasks();
 
-    // Two independent threads, both starting — two "processing" calls.
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(2);
+    // Two independent threads, both starting fresh — both seed "Thinking…",
+    // neither "Queued…" (each is the first/only run on its own thread).
+    expect(client.chat.startStream).toHaveBeenCalledTimes(2);
+    expect(seedTitles(client)).toEqual(["Thinking…", "Thinking…"]);
 
     resolveA({ result: "a done", sessionId: "sess-a" });
     await callA;
     resolveB({ result: "b done", sessionId: "sess-b" });
     await callB;
 
-    // Each thread's single run completing should independently flip its own
-    // status to "active" — total 4 calls (2 processing + 2 active).
-    expect(client.agents.sessions.setStatus).toHaveBeenCalledTimes(4);
-    const statuses = client.agents.sessions.setStatus.mock.calls.map(
-      (c: unknown[]) => (c[0] as { status: string }).status,
-    );
-    expect(statuses.filter((s) => s === "processing")).toHaveLength(2);
-    expect(statuses.filter((s) => s === "active")).toHaveLength(2);
+    // Each thread's single run completing should independently close with
+    // session_status "active" (never "processing" — neither thread ever had
+    // a second overlapping run).
+    expect(client.chat.stopStream).toHaveBeenCalledTimes(2);
+    expect(stopStreamStatuses(client)).toEqual(["active", "active"]);
   });
 });
 
@@ -669,7 +688,6 @@ describe("agent_session_stopped handler", () => {
       userId: string,
       client: unknown,
     ) => Promise<string | undefined>;
-    thinkingStepsEnabled?: boolean;
   }) {
     const runner = mock(
       (_msg: string, _key?: string) =>
@@ -696,7 +714,6 @@ describe("agent_session_stopped handler", () => {
       undefined,
       overrides.resolveUserEmailFn,
       overrides.membershipRef,
-      overrides.thinkingStepsEnabled ?? true,
     );
 
     const client = makeStreamingClient();

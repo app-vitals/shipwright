@@ -287,12 +287,30 @@ describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
     expect(content).toContain("/tasks/");
   });
 
-  it("surfaces claimedBy, hitl, reviewState, patchCycles, and taskId from the task-store record", () => {
+  it("surfaces claimedBy, hitl, reviewState, patchCycles from the task-store PR record (not taskId)", () => {
     expect(content).toContain("claimedBy");
     expect(content).toContain("hitl");
     expect(content).toContain("reviewState");
     expect(content).toContain("patchCycles");
-    expect(content).toContain("taskId");
+    // taskId should NOT be in the diagnostic print — it's being removed from the schema
+    expect(content.match(/jq '.*taskId.*'/)).toBeNull();
+  });
+
+  it("queries task-store GET /tasks?repo=&pr= to resolve task ids for a PR (live lookup, not stored .taskId fallback)", () => {
+    const hasLiveTaskLookup =
+      content.includes("/tasks?repo=") &&
+      content.includes("&pr=") &&
+      !content.match(/\.taskId\s*\/\/\s*empty/); // Should NOT fall back to stored .taskId
+    expect(hasLiveTaskLookup).toBe(true);
+  });
+
+  it("does not gate the PR-reference task lookup on PR_RECORD_JSON being non-empty", () => {
+    // PR_RECORD_JSON only reflects whether the task-store's PullRequest record
+    // exists (created on first review/patch/deploy claim), not whether ITEM_ARG
+    // is a PR reference. A freshly-opened, not-yet-claimed PR has no
+    // PullRequest record yet but real Task records already exist — gating on
+    // PR_RECORD_JSON would silently skip the live lookup for that case.
+    expect(content).not.toContain('elif [ -n "$PR_RECORD_JSON" ]');
   });
 
   it("queries live GitHub state via gh pr view with mergeStateStatus/headRefOid", () => {
