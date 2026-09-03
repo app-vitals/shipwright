@@ -5941,6 +5941,91 @@ describe("admin UI — create agent with author allowlist", () => {
   });
 });
 
+describe("admin UI — create agent with patch author allowlist", () => {
+  let cookie: string;
+
+  beforeAll(async () => {
+    cookie = await makeSessionCookie();
+  });
+
+  it("POST /admin/agents with valid patchAuthorAllowlist creates agent and redirects to detail page", async () => {
+    let capturedAllowlist: string[] | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      updateFields: async (
+        id: string,
+        input: { patchAuthorAllowlist?: string[] },
+      ) => {
+        capturedAllowlist = input.patchAuthorAllowlist;
+        return {
+          id,
+          name: "Test Agent",
+          slackId: null,
+          selfHosted: true,
+          typeName: "coding",
+          createdAt: new Date("2024-01-01"),
+          updatedAt: new Date("2024-01-01"),
+          repos: [],
+          authorAllowlist: [],
+          reviewAuthorAllowlist: [],
+          patchAuthorAllowlist: capturedAllowlist ?? [],
+          restrictSlackToMembers: false,
+          missingRequiredEnv: [],
+        };
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "Test Agent",
+      type: "coding",
+      patchAuthorAllowlist: "octocat\nanother-user\noctocat",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(`/admin/agents/${AGENT_ID}`);
+    // Deduped — "octocat" only appears once even though submitted twice.
+    expect(capturedAllowlist).toEqual(["octocat", "another-user"]);
+  });
+
+  it("POST /admin/agents with invalid patchAuthorAllowlist entries deletes the created agent and redirects with error", async () => {
+    let deletedId: string | undefined;
+    const deps = makeMockDeps();
+    deps.agentService = {
+      ...deps.agentService,
+      delete: async (id: string) => {
+        deletedId = id;
+      },
+    };
+    const app = createAdminUIApp(deps);
+    const body = new URLSearchParams({
+      name: "Test Agent",
+      type: "coding",
+      patchAuthorAllowlist: "octocat\nnot a valid login!",
+    });
+    const res = await app.request("/admin/agents", {
+      method: "POST",
+      body: body.toString(),
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: `admin_session=${cookie}`,
+      },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      "/admin/agents/new?error=invalid_author_allowlist_format",
+    );
+    expect(deletedId).toBe(AGENT_ID);
+  });
+});
+
 describe("admin UI — repos mutation routes", () => {
   let cookie: string;
 
