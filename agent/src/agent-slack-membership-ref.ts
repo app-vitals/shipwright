@@ -6,7 +6,7 @@
  * specific members + the list of allowed member email addresses), so
  * downstream consumers can read a live view without closing over a single
  * syncConfig() tick. Kept pure and zero-I/O so it's unit-testable in
- * isolation — mirrors agent-author-allowlist-ref.ts's style.
+ * isolation — mirrors review-author-allowlist-ref.ts's style.
  */
 
 export interface SlackMembershipConfig {
