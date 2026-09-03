@@ -27,6 +27,11 @@
  * to pr.createdAt rather than disqualifying the PR.
  */
 
+import {
+  hasUnaddressedFindings,
+  isAddressedByAuthorReply,
+  isSelfCleanApprove,
+} from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
 import { agentReposRef } from "./agent-repos-ref.ts";
 import type { CommitInfo, LinkedTaskInfo } from "./check-helpers.ts";
 import {
@@ -43,10 +48,9 @@ import {
   splitOrgRepo,
 } from "./check-helpers.ts";
 import {
-  hasUnaddressedFindings,
-  isAddressedByAuthorReply,
-  isSelfCleanApprove,
-} from "../../plugins/shipwright/scripts/compute-unaddressed-findings.ts";
+  type PatchAuthorAllowlistRef,
+  patchAuthorAllowlistRef,
+} from "./patch-author-allowlist-ref.ts";
 import type { WorkPrCandidate } from "./work-selector.ts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -58,6 +62,19 @@ export interface OwnPr {
   headRefOid: string;
   repo: string;
   createdAt?: string;
+  /**
+   * The PR's actual author login (DBR-1.4). Populated by
+   * `listAllowlistedOpenPrs` from the allowlisted `login` it queried with;
+   * deliberately left undefined by `listOwnOpenPrs`, whose PRs are by
+   * definition authored by the authenticated user, so `currentUser` is already
+   * the correct author there. Consumed by `getPatchCandidates` to thread a
+   * real `prAuthor` into the review-findings checks — without it,
+   * `isAddressedByAuthorReply`/`isThreadAddressedByAuthorReply` would compare
+   * an allowlisted PR's replies against the agent's own login (RAS-1.1's
+   * `prAuthor ?? currentUser` default), never recognizing a genuine author
+   * reply and never releasing the PR from patch candidacy.
+   */
+  author?: string;
 }
 
 export interface ReviewNode {
@@ -106,6 +123,17 @@ export interface PrReviewData {
    * both default an absent value to `[]`.
    */
   findings?: PrFinding[];
+  /**
+   * The PR's actual author login (RAS-1.1), mirroring the identical optional
+   * field on compute-unaddressed-findings.ts's own PrReviewData. Absent for
+   * self-authored PRs, where `currentUser` IS the author — both
+   * `hasUnaddressedFindings` and `hasMergeOnlyStaleFindings` resolve it as
+   * `data.prAuthor ?? currentUser`. Populated by `getPatchCandidates` from
+   * `OwnPr.author` for allowlisted (non-self) PRs (DBR-1.4), which broke the
+   * "patch only ever acts on the authenticated user's own open PRs"
+   * precondition that default relied on.
+   */
+  prAuthor?: string;
 }
 
 export interface CiCheckStatus {
@@ -175,6 +203,20 @@ export interface PrRecord {
 
 export interface CheckPatchDeps {
   listOwnOpenPrs: (repo: string) => Promise<OwnPr[]>;
+  /**
+   * Open PRs authored by any login in patchAuthorAllowlistRef (DBR-1.4).
+   * Contrast with check-review.ts's isAuthorAllowed: review's allowlist is a
+   * FILTER applied to an already-broad candidate pool (fail-open — empty
+   * allowlist means unfiltered). Patch's allowlist is instead an ADDITIVE
+   * SOURCE — it contributes MORE candidates on top of the existing
+   * self-authored-only list from listOwnOpenPrs, merged and deduplicated by
+   * (repo, PR number) in getPatchCandidates below. Optional, and expected to
+   * return [] (or simply not be called) when the allowlist is empty, so
+   * pre-DBR-1.4 self-authored-only behavior is preserved exactly by default —
+   * unlike review, there is no fail-open here: an empty patch allowlist means
+   * self-authored-only, not "allow everyone."
+   */
+  listAllowlistedOpenPrs?: (repo: string) => Promise<OwnPr[]>;
   fetchPrReviews: (
     org: string,
     repo: string,
@@ -336,7 +378,12 @@ export function findCancelledRuns<
  *
  * A stale review's non-empty body is also excluded when there are no
  * unresolved threads AND the PR author has replied after the review (see
- * isAddressedByAuthorReply, CPF-2.3).
+ * isAddressedByAuthorReply, CPF-2.3). The PR author's identity for that check
+ * is `data.prAuthor`, defaulting to `currentUser` when absent — mirroring
+ * hasUnaddressedFindings's identical `data.prAuthor ?? currentUser`
+ * resolution (RAS-1.1) so the two gates never disagree about who the author
+ * is. Note this is deliberately NOT applied to isSelfCleanApprove below,
+ * which asks whether the AGENT authored the review, not who authored the PR.
  */
 async function hasMergeOnlyStaleFindings(
   prNumber: number,
@@ -346,6 +393,7 @@ async function hasMergeOnlyStaleFindings(
   currentUser: string,
 ): Promise<boolean> {
   const { headRefOid, reviews, reviewThreads, comments } = data;
+  const prAuthor = data.prAuthor ?? currentUser;
 
   const staleReviews = reviews.nodes.filter(
     (r) =>
@@ -362,7 +410,7 @@ async function hasMergeOnlyStaleFindings(
     staleReviews.some(
       (r) =>
         r.body.trim().length > 0 &&
-        !isAddressedByAuthorReply(r, comments.nodes, currentUser),
+        !isAddressedByAuthorReply(r, comments.nodes, prAuthor),
     );
 
   if (!hasFindings) return false;
@@ -394,9 +442,24 @@ export async function getPatchCandidates(
   const scopeSynced = deps.hasScopeSynced();
   const scopedRepos = new Set(deps.getScopedRepos());
   const allOwnPrs = await deps.listOwnOpenPrs("default");
+  // Additive allowlisted-author source (DBR-1.4) — merged with allOwnPrs and
+  // deduplicated by (repo, PR number) via candidateId before scope-filtering.
+  // deps.listAllowlistedOpenPrs is optional (undefined for callers/fixtures
+  // that predate DBR-1.4) and, per its own contract, returns [] when the
+  // allowlist itself is empty — either way this defaults to [], preserving
+  // exact self-authored-only behavior when no allowlist is configured.
+  const allowlistedPrs = (await deps.listAllowlistedOpenPrs?.("default")) ?? [];
+  const seen = new Set<string>();
+  const mergedPrs: OwnPr[] = [];
+  for (const pr of [...allOwnPrs, ...allowlistedPrs]) {
+    const id = candidateId(pr.repo, pr.number);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    mergedPrs.push(pr);
+  }
   const prs = scopeSynced
-    ? allOwnPrs.filter((pr) => scopedRepos.has(pr.repo))
-    : allOwnPrs;
+    ? mergedPrs.filter((pr) => scopedRepos.has(pr.repo))
+    : mergedPrs;
   if (prs.length === 0) return [];
 
   const candidates: WorkPrCandidate[] = [];
@@ -453,9 +516,18 @@ export async function getPatchCandidates(
       // passed to hasUnaddressedFindings/hasMergeOnlyStaleFindings, so
       // isResolvedByLedger has real data to check against — fetchPrReviews's
       // GraphQL query has no ledger access of its own.
+      // Also thread the PR's real author (DBR-1.4). `pr.author` is only set
+      // for allowlisted (non-self) PRs; for self-authored PRs it's undefined
+      // and this resolves to `currentUser`, exactly the pre-DBR-1.4 behavior.
+      // Without it, RAS-1.1's `prAuthor ?? currentUser` default silently
+      // compares an allowlisted PR's replies against the AGENT's login —
+      // never recognizing a real author reply (PR stuck as a permanent patch
+      // candidate) and misreading the agent's own comments as author replies
+      // (genuine findings wrongly suppressed).
       const reviewData: PrReviewData = {
         ...fetchedReviewData,
         findings: record?.findings,
+        prAuthor: pr.author ?? currentUser,
       };
       if (hasUnaddressedFindings(reviewData, currentUser)) {
         needsPatch = true;
@@ -565,10 +637,21 @@ export async function buildProductionDeps(opts: {
   fetchFn?: typeof fetch;
   getScopedRepos?: () => string[];
   hasScopeSynced?: () => boolean;
+  /**
+   * Optional override for which PatchAuthorAllowlistRef instance
+   * listAllowlistedOpenPrs reads from (DBR-1.4). Defaults to the
+   * process-wide patchAuthorAllowlistRef singleton so config-sync changes
+   * take effect on the next call without rebuilding deps — mirrors
+   * check-review.ts's authorAllowlistRef override, kept here mainly so tests
+   * can inject a fresh, independent ref rather than mutating the shared
+   * singleton.
+   */
+  patchAuthorAllowlistRef?: PatchAuthorAllowlistRef;
 }): Promise<CheckPatchDeps> {
   const workspacePath = resolveWorkspacePath();
   const allRepos = resolveAllRepos(workspacePath);
   const { ghJson, ghGraphql, getCurrentUser: getUser } = opts;
+  const allowlistRef = opts.patchAuthorAllowlistRef ?? patchAuthorAllowlistRef;
 
   return {
     getScopedRepos: opts.getScopedRepos ?? agentReposRef.get,
@@ -589,6 +672,39 @@ export async function buildProductionDeps(opts: {
           "number,title,headRefName,headRefOid,createdAt",
         ]);
         return items.map((item) => ({ ...item, repo }));
+      });
+    },
+    // DBR-1.4: additive source, not a filter (see CheckPatchDeps's field
+    // doc). Skipped entirely — no gh calls at all — when the allowlist is
+    // empty, so an unconfigured allowlist has zero effect (no fail-open,
+    // unlike review's isAuthorAllowed).
+    listAllowlistedOpenPrs: async (_repo: string) => {
+      const logins = allowlistRef.get();
+      if (logins.length === 0) return [];
+      return mapReposTolerant(allRepos, "check-patch", async (repo) => {
+        const results: OwnPr[] = [];
+        for (const login of logins) {
+          const items = await ghJson<GhPrListItem[]>([
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--repo",
+            repo,
+            "--author",
+            login,
+            "--json",
+            "number,title,headRefName,headRefOid,createdAt",
+          ]);
+          // Attach the login we queried with as the PR's author — the `gh pr
+          // list --author {login}` filter guarantees it, and
+          // getPatchCandidates needs it to thread a real `prAuthor` into the
+          // review-findings checks (see OwnPr.author).
+          results.push(
+            ...items.map((item) => ({ ...item, repo, author: login })),
+          );
+        }
+        return results;
       });
     },
     fetchPrReviews: async (org: string, repo: string, pr: number) => {
