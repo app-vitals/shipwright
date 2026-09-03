@@ -36,20 +36,15 @@ export interface ReviewAuthorAllowlistRef {
 
 /**
  * Resolves the config-bundle's review-author-allowlist before it's handed to
- * reviewAuthorAllowlistRef.set(). Prefers the newer `reviewAuthorAllowlist`
- * field, falling back to the legacy `authorAllowlist` field only when the
- * new one is absent (null/undefined) — safe whether the config bundle comes
- * from an admin API that has rolled out DBR-2.1's dual-write column or an
- * older one that hasn't. An explicitly empty `reviewAuthorAllowlist` ([]) is
- * respected as-is and does not trigger the fallback. Either field resolving
- * to null/undefined (observed in production, see Sentry issue 7633628941)
- * defaults to [] so downstream consumers never see a nullish value.
+ * reviewAuthorAllowlistRef.set(). DBR-2.4 removed the legacy
+ * `authorAllowlist` field and its fallback — `reviewAuthorAllowlist` is now
+ * the sole source. A nullish value (observed in production, see Sentry issue
+ * 7633628941) defaults to [] so downstream consumers never see it.
  */
 export function resolveReviewAuthorAllowlist(
   reviewAuthorAllowlist: string[] | null | undefined,
-  authorAllowlist: string[] | null | undefined,
 ): string[] {
-  return (reviewAuthorAllowlist ?? authorAllowlist) ?? [];
+  return reviewAuthorAllowlist ?? [];
 }
 
 /** Creates a new, independent review-author-allowlist ref defaulting to an empty list. */

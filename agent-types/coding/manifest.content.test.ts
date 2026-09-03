@@ -88,12 +88,12 @@ describe("agent-types/coding/manifest.yaml — required top-level sections", () 
   });
 });
 
-// ─── Acceptance criterion 2 — exactly 13 cron entries ──────────────────────
+// ─── Acceptance criterion 2 — exactly 12 cron entries ──────────────────────
 
 describe("agent-types/coding/manifest.yaml — cron count", () => {
-  it("has exactly 13 cron entries", () => {
+  it("has exactly 12 cron entries", () => {
     const manifest = parseAgentTypeManifest(rawContent);
-    expect(manifest.crons).toHaveLength(13);
+    expect(manifest.crons).toHaveLength(12);
   });
 });
 

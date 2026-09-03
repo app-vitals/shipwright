@@ -310,7 +310,6 @@ test("crons section documents the default scheduled jobs", async ({
     "test-readiness",
     "docs-freshness",
     "learn-dream",
-    "dependency-bot-triage",
     "entropy-patrol",
   ]) {
     await expect(
@@ -319,7 +318,7 @@ test("crons section documents the default scheduled jobs", async ({
   }
   // Exactly three run on by default; the rest are opt-in.
   await expect(section.getByText("On", { exact: true })).toHaveCount(3);
-  await expect(section.getByText("Opt-in", { exact: true })).toHaveCount(6);
+  await expect(section.getByText("Opt-in", { exact: true })).toHaveCount(5);
 });
 
 // SWW-2.2: Body sections (problem / how-it-works / differentiators / demo / social proof).

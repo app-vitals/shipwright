@@ -462,116 +462,9 @@ describeOrSkip("admin CRUD API (integration)", () => {
     expect(getBody.repos).toEqual(["my-org/my-repo"]);
   });
 
-  // ─── authorAllowlist field round-trip ──────────────────────────────────────────
+  // ─── reviewAuthorAllowlist field round-trip ────────────────────────────────
 
-  it("PATCH /agents/:id with authorAllowlist sets the field; GET /agents/:id returns it", async () => {
-    // PATCH to set authorAllowlist
-    const patchRes = await app.request(`/agents/${agentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ authorAllowlist: ["octocat"] }),
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: `admin_session=${cookie}`,
-      },
-    });
-    expect(patchRes.status).toBe(200);
-    const patchBody = await patchRes.json();
-    expect(patchBody.authorAllowlist).toEqual(["octocat"]);
-
-    // GET to confirm persisted value
-    const getRes = await app.request(`/agents/${agentId}`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(getRes.status).toBe(200);
-    const getBody = await getRes.json();
-    expect(getBody.authorAllowlist).toEqual(["octocat"]);
-  });
-
-  // ─── reviewAuthorAllowlist migration backfill + dual-write/dual-read (DBR-2.1) ──
-  //
-  // reviewAuthorAllowlist is a rename-in-progress twin of authorAllowlist:
-  // the 20260903120000_add_agent_review_author_allowlist migration adds the
-  // column and backfills it from every existing row's authorAllowlist value
-  // in the same migration transaction. Since beforeEach only truncates rows
-  // (it never re-runs migrations mid-suite, matching the typeName precedent
-  // above), the backfill is exercised directly here by seeding a row through
-  // a raw SQL UPDATE that mimics the pre-migration state (authorAllowlist
-  // set, reviewAuthorAllowlist left at its column default) and then applying
-  // the migration's own backfill statement to confirm it correctly copies
-  // the existing data rather than leaving/defaulting to an empty array.
-
-  it("migration backfill: reviewAuthorAllowlist is copied from an existing row's authorAllowlist value", async () => {
-    const preExisting = await prisma.agent.create({
-      data: { name: "Pre-Existing Agent", authorAllowlist: ["octocat", "hubot"] },
-    });
-
-    // Simulate the pre-migration state directly: reviewAuthorAllowlist reset
-    // to empty (its column default before any backfill runs), independent of
-    // authorAllowlist's already-populated value.
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Agent" SET "reviewAuthorAllowlist" = '{}' WHERE "id" = $1`,
-      preExisting.id,
-    );
-
-    // Apply the same backfill statement the migration runs after ADD COLUMN.
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Agent" SET "reviewAuthorAllowlist" = "authorAllowlist" WHERE "id" = $1`,
-      preExisting.id,
-    );
-
-    const rawAgent = await prisma.agent.findUniqueOrThrow({
-      where: { id: preExisting.id },
-    });
-    expect(rawAgent.reviewAuthorAllowlist).toEqual(["octocat", "hubot"]);
-    expect(rawAgent.reviewAuthorAllowlist).toEqual(rawAgent.authorAllowlist);
-  });
-
-  it("migration backfill: an existing row with an empty authorAllowlist backfills to an empty reviewAuthorAllowlist (not left null)", async () => {
-    const preExisting = await prisma.agent.create({
-      data: { name: "Pre-Existing Agent With No Allowlist" },
-    });
-
-    await prisma.$executeRawUnsafe(
-      `UPDATE "Agent" SET "reviewAuthorAllowlist" = "authorAllowlist" WHERE "id" = $1`,
-      preExisting.id,
-    );
-
-    const rawAgent = await prisma.agent.findUniqueOrThrow({
-      where: { id: preExisting.id },
-    });
-    expect(rawAgent.reviewAuthorAllowlist).toEqual([]);
-  });
-
-  it("PATCH /agents/:id with authorAllowlist also syncs reviewAuthorAllowlist; GET returns both as identical arrays", async () => {
-    const patchRes = await app.request(`/agents/${agentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ authorAllowlist: ["octocat"] }),
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: `admin_session=${cookie}`,
-      },
-    });
-    expect(patchRes.status).toBe(200);
-    const patchBody = await patchRes.json();
-    expect(patchBody.authorAllowlist).toEqual(["octocat"]);
-    expect(patchBody.reviewAuthorAllowlist).toEqual(["octocat"]);
-
-    const getRes = await app.request(`/agents/${agentId}`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(getRes.status).toBe(200);
-    const getBody = await getRes.json();
-    expect(getBody.authorAllowlist).toEqual(["octocat"]);
-    expect(getBody.reviewAuthorAllowlist).toEqual(["octocat"]);
-
-    const rawAgent = await prisma.agent.findUniqueOrThrow({
-      where: { id: agentId },
-    });
-    expect(rawAgent.authorAllowlist).toEqual(["octocat"]);
-    expect(rawAgent.reviewAuthorAllowlist).toEqual(["octocat"]);
-  });
-
-  it("PATCH /agents/:id with reviewAuthorAllowlist also syncs authorAllowlist; GET returns both as identical arrays", async () => {
+  it("PATCH /agents/:id with reviewAuthorAllowlist sets the field; GET /agents/:id returns it", async () => {
     const patchRes = await app.request(`/agents/${agentId}`, {
       method: "PATCH",
       body: JSON.stringify({ reviewAuthorAllowlist: ["octocat"] }),
@@ -582,38 +475,30 @@ describeOrSkip("admin CRUD API (integration)", () => {
     });
     expect(patchRes.status).toBe(200);
     const patchBody = await patchRes.json();
-    expect(patchBody.authorAllowlist).toEqual(["octocat"]);
     expect(patchBody.reviewAuthorAllowlist).toEqual(["octocat"]);
+
+    // GET to confirm persisted value
+    const getRes = await app.request(`/agents/${agentId}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody.reviewAuthorAllowlist).toEqual(["octocat"]);
 
     const rawAgent = await prisma.agent.findUniqueOrThrow({
       where: { id: agentId },
     });
-    expect(rawAgent.authorAllowlist).toEqual(["octocat"]);
     expect(rawAgent.reviewAuthorAllowlist).toEqual(["octocat"]);
   });
 
-  it("PATCH /agents/:id with both authorAllowlist and reviewAuthorAllowlist supplying different values persists reviewAuthorAllowlist's value to both columns", async () => {
-    const patchRes = await app.request(`/agents/${agentId}`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        authorAllowlist: ["stale-value"],
-        reviewAuthorAllowlist: ["octocat"],
-      }),
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: `admin_session=${cookie}`,
-      },
+  // DBR-2.4 regression: the legacy authorAllowlist column is gone for good.
+  it("GET /agents/:id response does not include the removed authorAllowlist field", async () => {
+    const getRes = await app.request(`/agents/${agentId}`, {
+      headers: { Cookie: `admin_session=${cookie}` },
     });
-    expect(patchRes.status).toBe(200);
-    const patchBody = await patchRes.json();
-    expect(patchBody.authorAllowlist).toEqual(["octocat"]);
-    expect(patchBody.reviewAuthorAllowlist).toEqual(["octocat"]);
-
-    const rawAgent = await prisma.agent.findUniqueOrThrow({
-      where: { id: agentId },
-    });
-    expect(rawAgent.authorAllowlist).toEqual(["octocat"]);
-    expect(rawAgent.reviewAuthorAllowlist).toEqual(["octocat"]);
+    expect(getRes.status).toBe(200);
+    const getBody = await getRes.json();
+    expect(getBody).not.toHaveProperty("authorAllowlist");
   });
 
   // ─── restrictSlackToMembers field round-trip ───────────────────────────────────

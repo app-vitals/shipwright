@@ -50,7 +50,7 @@ test("cross-links to the commands reference page are present", async ({
   expect(await link.count()).toBeGreaterThan(0);
 });
 
-// Every one of the 27 skills under plugins/shipwright/skills/ must be
+// Every one of the 25 skills under plugins/shipwright/skills/ must be
 // catalogued on this page.
 const allSkillNames = [
   "agent-admin",
@@ -78,11 +78,9 @@ const allSkillNames = [
   "test-migration",
   "test-readiness",
   "test-roadmap",
-  "triage-dependency-bot-pr",
-  "triage-dependency-bot-prs",
 ];
 
-test("all 27 skill names appear on the agent-skills page", async ({
+test("all 25 skill names appear on the agent-skills page", async ({
   page,
 }) => {
   await page.goto("/docs/agent-skills");

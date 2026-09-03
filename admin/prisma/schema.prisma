@@ -26,11 +26,11 @@ model Agent {
   anthropicApiKey        String?  // AES-256-GCM encrypted at the service layer
   selfHosted             Boolean  @default(false)
   repos                  String[] @default([])
-  authorAllowlist        String[] @default([])
-  // DBR-2.1: rename-in-progress twin of authorAllowlist. Dual-written and
-  // dual-read during the transitional phase — see admin/src/agents.ts and
-  // admin/src/agents-api.ts for the sync logic. Backfilled from
-  // authorAllowlist in the same migration that adds this column.
+  // DBR-2.1→2.4: renamed from authorAllowlist. DBR-2.1 added this column as
+  // a dual-written/dual-read twin of the old authorAllowlist column and
+  // backfilled it; DBR-2.2/2.3 migrated the admin UI and the agent's
+  // runtime read path onto this field exclusively; DBR-2.4 dropped the old
+  // authorAllowlist column now that nothing reads or writes it.
   reviewAuthorAllowlist  String[] @default([])
   patchAuthorAllowlist   String[] @default([])
   restrictSlackToMembers Boolean  @default(false)

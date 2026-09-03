@@ -4,6 +4,46 @@ Durable notes for breaking changes and the steps needed to migrate across versio
 
 ---
 
+## Breaking: `Agent.authorAllowlist` field removed _(DBR-2.4)_
+
+**Version**: next (DBR-2.4)
+
+The `Agent.authorAllowlist` column has been removed from the admin schema, the API, and the
+generated OpenAPI/admin-types artifacts. It is the *remove* step of an add-migrate-remove
+rename sequence: DBR-2.1 added `reviewAuthorAllowlist` alongside the old column and
+dual-wrote/dual-read both; DBR-2.2 migrated the admin UI to write only
+`reviewAuthorAllowlist`; DBR-2.3 migrated the agent's runtime config-sync read path onto
+`reviewAuthorAllowlist`, falling back to `authorAllowlist` only when absent. `reviewAuthorAllowlist`
+is now the sole field — same shape, same validation (GitHub login strings).
+
+**What changed**:
+- The column is dropped from `admin/prisma/schema.prisma` by migration
+  `20260903150000_drop_agent_author_allowlist`.
+- `POST /agents` and `PATCH /agents/:id` no longer accept an `authorAllowlist` body field —
+  use `reviewAuthorAllowlist`.
+- `authorAllowlist` is gone from the `GetAgentResult` / `AgentConfigResponse` response
+  schemas returned by `GET|PATCH /agents/:id` and `GET /agents/:id/config`.
+- `agent/src/index.ts`'s config-sync no longer falls back to `bundle.authorAllowlist`; it
+  reads `bundle.reviewAuthorAllowlist` only. `resolveReviewAuthorAllowlist()` in
+  `agent/src/review-author-allowlist-ref.ts` dropped its `authorAllowlist` fallback
+  parameter accordingly.
+- `scripts/hitl.ts` now PATCHes `reviewAuthorAllowlist` (previously `authorAllowlist`) to
+  keep the local dev `hitl` agent record's review-trigger allowlist in sync.
+
+**Migration**:
+- **For existing records**: No action required. Every row's `reviewAuthorAllowlist` was
+  already backfilled from `authorAllowlist` by DBR-2.1's migration, so the dropped column
+  carried no data that isn't already preserved.
+- **For API consumers**: Send `reviewAuthorAllowlist` instead of `authorAllowlist` on
+  `POST /agents` / `PATCH /agents/:id`, and read `reviewAuthorAllowlist` from responses. A
+  stale client sending `authorAllowlist` gets its request silently ignored for that field
+  (unknown body keys are dropped, not rejected) rather than a hard failure.
+- **Deploy order**: this is the *remove* step of an add-migrate-remove sequence. Deploy it
+  only after DBR-2.2 → DBR-2.3 (the consumer migrations to `reviewAuthorAllowlist`) are
+  live — both are confirmed deployed on `main` as of this change.
+
+---
+
 ## Breaking: `PullRequest.taskId` field removed _(PTL-3.1)_
 
 **Version**: next (PTL-3.1)

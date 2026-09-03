@@ -23,7 +23,7 @@
  *   SHIPWRIGHT_HITL_HOME          — root dir (default: ~/.shipwright)
  *   SHIPWRIGHT_HITL_HOST          — hostname for service URLs (default: "localhost")
  *   SHIPWRIGHT_HITL_REPOS         — comma-separated org/repo list for the hitl agent (default: none)
- *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered). hitl.ts's local equivalent of the agent's authorAllowlist config field, kept in sync on the persisted hitl agent record via PATCH.
+ *   SHIPWRIGHT_HITL_AUTHORS       — comma-separated GitHub usernames; when set, restricts review candidates to PRs authored by one of these logins (default: none, unfiltered). hitl.ts's local equivalent of the agent's reviewAuthorAllowlist config field, kept in sync on the persisted hitl agent record via PATCH.
  *   SHIPWRIGHT_HITL_POLL_INTERVAL — seconds between empty-queue polls (default: 60)
  *   SHIPWRIGHT_HITL_LOG_FILE      — path to tee console output to (default: ~/.shipwright/hitl.log)
  */
@@ -121,10 +121,10 @@ export function parseHitlRepos(raw: string | undefined): string[] {
 /**
  * Parses the comma-separated SHIPWRIGHT_HITL_AUTHORS env value into a list of
  * GitHub usernames, trimming whitespace and dropping empty entries. Mirrors
- * parseHitlRepos() exactly. authorAllowlist is a real per-agent config field
- * (see admin's AgentRecord); hitl.ts is one particular caller that sources
- * its value from this env var, wires it into getReviewCandidates() via
- * CheckReviewDeps.isAuthorAllowed in runLoop(), and mirrors it onto the
+ * parseHitlRepos() exactly. reviewAuthorAllowlist is a real per-agent config
+ * field (see admin's AgentRecord); hitl.ts is one particular caller that
+ * sources its value from this env var, wires it into getReviewCandidates()
+ * via CheckReviewDeps.isAuthorAllowed in runLoop(), and mirrors it onto the
  * persisted hitl agent record via ensureHitlAgent()'s PATCH.
  */
 export function parseHitlAuthors(raw: string | undefined): string[] {
@@ -812,30 +812,30 @@ interface AgentSummary {
   selfHosted: boolean;
 }
 
-/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos` and `authorAllowlist`. */
+/** POST /agents and GET/PATCH /agents/:id full-record shape — includes `repos` and `reviewAuthorAllowlist`. */
 interface AgentRecord {
   id: string;
   name: string;
   repos: string[];
-  authorAllowlist: string[];
+  reviewAuthorAllowlist: string[];
 }
 
 /** Injectable fetch type so tests can supply a double instead of real network calls. */
 type FetchLike = typeof fetch;
 
-/** Order-independent array-equality check — same semantics for repos and authorAllowlist. */
+/** Order-independent array-equality check — same semantics for repos and reviewAuthorAllowlist. */
 function sameMembers(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
 
 /**
- * PATCHes whichever of `repos`/`authorAllowlist` are provided onto the hitl
- * agent record in a single request (PATCH /agents/:id accepts a partial
- * body — omitted fields are left unchanged).
+ * PATCHes whichever of `repos`/`reviewAuthorAllowlist` are provided onto the
+ * hitl agent record in a single request (PATCH /agents/:id accepts a
+ * partial body — omitted fields are left unchanged).
  */
 async function patchHitlAgent(
   agentId: string,
-  fields: { repos?: string[]; authorAllowlist?: string[] },
+  fields: { repos?: string[]; reviewAuthorAllowlist?: string[] },
   fetchImpl: FetchLike,
   headers: Record<string, string>,
 ): Promise<void> {
@@ -848,9 +848,9 @@ async function patchHitlAgent(
     if (fields.repos !== undefined) {
       log(`updated hitl agent repos: ${fields.repos.join(", ")}`);
     }
-    if (fields.authorAllowlist !== undefined) {
+    if (fields.reviewAuthorAllowlist !== undefined) {
       log(
-        `updated hitl agent authorAllowlist: ${fields.authorAllowlist.join(", ")}`,
+        `updated hitl agent reviewAuthorAllowlist: ${fields.reviewAuthorAllowlist.join(", ")}`,
       );
     }
   } else {
@@ -876,8 +876,8 @@ export async function ensureHitlAgent(
   const existingSummary = agents.find((a) => a.name === HITL_AGENT_NAME);
 
   if (existingSummary) {
-    // The list response has no `repos`/`authorAllowlist` fields — fetch the
-    // full record so we can compare against the desired values.
+    // The list response has no `repos`/`reviewAuthorAllowlist` fields —
+    // fetch the full record so we can compare against the desired values.
     const getRes = await fetchImpl(
       `${ADMIN_URL}/agents/${existingSummary.id}`,
       {
@@ -893,18 +893,24 @@ export async function ensureHitlAgent(
     const existing: AgentRecord = await getRes.json();
 
     const reposMatch = sameMembers(existing.repos, repos);
-    const authorsMatch = sameMembers(existing.authorAllowlist ?? [], authors);
+    const authorsMatch = sameMembers(
+      existing.reviewAuthorAllowlist ?? [],
+      authors,
+    );
 
-    const patchFields: { repos?: string[]; authorAllowlist?: string[] } = {};
+    const patchFields: {
+      repos?: string[];
+      reviewAuthorAllowlist?: string[];
+    } = {};
     if (!reposMatch && repos.length > 0) patchFields.repos = repos;
     if (!authorsMatch && authors.length > 0)
-      patchFields.authorAllowlist = authors;
+      patchFields.reviewAuthorAllowlist = authors;
 
     if (Object.keys(patchFields).length > 0) {
       await patchHitlAgent(existing.id, patchFields, fetchImpl, headers);
     } else {
       log(
-        `hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"}, authorAllowlist: ${(existing.authorAllowlist ?? []).join(", ") || "none"})`,
+        `hitl agent exists (id: ${existing.id}, repos: ${existing.repos.join(", ") || "none"}, reviewAuthorAllowlist: ${(existing.reviewAuthorAllowlist ?? []).join(", ") || "none"})`,
       );
     }
     return existing.id;
@@ -921,17 +927,20 @@ export async function ensureHitlAgent(
 
   if (createRes.ok) {
     const created: AgentRecord = await createRes.json();
-    // CreateAgentBodySchema doesn't accept `repos`/`authorAllowlist` —
+    // CreateAgentBodySchema doesn't accept `repos`/`reviewAuthorAllowlist` —
     // persist them via a follow-up PATCH (mirrors the existing-agent-mismatch
     // branch above).
-    const patchFields: { repos?: string[]; authorAllowlist?: string[] } = {};
+    const patchFields: {
+      repos?: string[];
+      reviewAuthorAllowlist?: string[];
+    } = {};
     if (repos.length > 0) patchFields.repos = repos;
-    if (authors.length > 0) patchFields.authorAllowlist = authors;
+    if (authors.length > 0) patchFields.reviewAuthorAllowlist = authors;
     if (Object.keys(patchFields).length > 0) {
       await patchHitlAgent(created.id, patchFields, fetchImpl, headers);
     }
     log(
-      `created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"}, authorAllowlist: ${authors.join(", ") || "none"})`,
+      `created hitl agent (id: ${created.id}, repos: ${repos.join(", ") || "none"}, reviewAuthorAllowlist: ${authors.join(", ") || "none"})`,
     );
     return created.id;
   }

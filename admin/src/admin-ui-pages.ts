@@ -748,6 +748,17 @@ export function renderNewLocalAgentPage(
           ></textarea>
           <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
         </div>
+        <div class="form-group">
+          <label class="form-label" for="patchAuthorAllowlist">Patch author allowlist (optional, one GitHub login per line)</label>
+          <textarea
+            id="patchAuthorAllowlist"
+            name="patchAuthorAllowlist"
+            class="form-input"
+            rows="4"
+            placeholder="octocat&#10;another-user"
+          ></textarea>
+          <p style="font-size:12px;color:#6b7280;margin-top:4px">GitHub login, one per line</p>
+        </div>
         <div id="restrict-slack-group" style="display:${runtimeSectionsDisplay}">
           <div class="form-group" style="display:flex;align-items:center;gap:6px">
             <input
@@ -1497,6 +1508,47 @@ export function renderAgentDetailPage(
             <td class="mono">${escapeHtml(login)}</td>
             <td>
               <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/review-author-allowlist/delete" style="display:inline">
+                <input type="hidden" name="login" value="${escapeHtml(login)}" />
+                <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
+              </form>
+            </td>
+          </tr>`,
+                    )
+                    .join("\n")
+            }
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Author allowlist (patch)</div>
+      <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/patch-author-allowlist/add" style="margin-bottom:16px">
+        <div class="form-row">
+          <div class="form-group" style="flex:1">
+            <input name="login" type="text" class="form-input" placeholder="octocat" required />
+          </div>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+      <div class="data-table-wrapper">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>GitHub login</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${
+              (agent.patchAuthorAllowlist ?? []).length === 0
+                ? `<tr><td colspan="2" class="empty-state">No patch author allowlist entries configured.</td></tr>`
+                : (agent.patchAuthorAllowlist ?? [])
+                    .map(
+                      (login) => `<tr>
+            <td class="mono">${escapeHtml(login)}</td>
+            <td>
+              <form method="POST" action="/admin/agents/${escapeHtml(agent.id)}/patch-author-allowlist/delete" style="display:inline">
                 <input type="hidden" name="login" value="${escapeHtml(login)}" />
                 <button type="submit" class="btn btn-danger" style="font-size:11px;padding:3px 8px">Remove</button>
               </form>

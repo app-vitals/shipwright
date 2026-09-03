@@ -1625,7 +1625,7 @@ export interface components {
              *       "octocat"
              *     ]
              */
-            authorAllowlist?: string[];
+            reviewAuthorAllowlist?: string[];
             /**
              * @example [
              *       "octocat"
@@ -1660,7 +1660,6 @@ export interface components {
             slackId?: string | null;
             selfHosted: boolean;
             repos: string[];
-            authorAllowlist: string[];
             reviewAuthorAllowlist: string[];
             patchAuthorAllowlist: string[];
             restrictSlackToMembers: boolean;
@@ -1683,12 +1682,6 @@ export interface components {
              *     ]
              */
             repos?: string[];
-            /**
-             * @example [
-             *       "octocat"
-             *     ]
-             */
-            authorAllowlist?: string[];
             /**
              * @example [
              *       "octocat"
@@ -2326,12 +2319,6 @@ export interface components {
              *     ]
              */
             repos: string[];
-            /**
-             * @example [
-             *       "octocat"
-             *     ]
-             */
-            authorAllowlist: string[];
             /**
              * @example [
              *       "octocat"

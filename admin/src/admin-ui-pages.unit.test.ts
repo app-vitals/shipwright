@@ -770,6 +770,18 @@ describe("renderNewLocalAgentPage", () => {
     );
   });
 
+  test("renders a patchAuthorAllowlist textarea", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toMatch(/<textarea[^>]*name="patchAuthorAllowlist"[^>]*>/);
+  });
+
+  test("patch author allowlist label reads 'Patch author allowlist'", () => {
+    const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
+    expect(html).toContain(
+      '<label class="form-label" for="patchAuthorAllowlist">Patch author allowlist (optional, one GitHub login per line)</label>',
+    );
+  });
+
   test("renders a restrictSlackToMembers checkbox", () => {
     const html = renderNewLocalAgentPage(USER_NAME, [CODING_TYPE]);
     expect(html).toMatch(
@@ -2409,6 +2421,66 @@ describe("renderAgentDetailPage — author allowlist", () => {
   });
 
   test("Author allowlist table is wrapped in .data-table-wrapper", () => {
+    const html = render(["octocat"]);
+    expect(html).toMatch(
+      /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,
+    );
+  });
+});
+
+// ─── renderAgentDetailPage — patch author allowlist section ──────────────────
+
+describe("renderAgentDetailPage — patch author allowlist", () => {
+  function render(patchAuthorAllowlist: string[]): string {
+    const agent: AgentDetail = { ...AGENT, patchAuthorAllowlist };
+    return renderAgentDetailPage(
+      agent,
+      {},
+      [],
+      [],
+      [],
+      [],
+      [],
+      USER_NAME,
+      true,
+      { timezone: "UTC" },
+    );
+  }
+
+  test("renders empty patch author allowlist state", () => {
+    const html = render([]);
+    expect(html).toContain("No patch author allowlist entries configured.");
+  });
+
+  test("renders patch author allowlist list", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain("octocat");
+  });
+
+  test("card title reads 'Author allowlist (patch)'", () => {
+    const html = render([]);
+    expect(html).toContain(
+      '<div class="card-title">Author allowlist (patch)</div>',
+    );
+  });
+
+  test("patch author allowlist section has add form", () => {
+    const html = render([]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/patch-author-allowlist/add"`,
+    );
+    expect(html).toContain('name="login"');
+  });
+
+  test("patch author allowlist section has remove button for existing login", () => {
+    const html = render(["octocat"]);
+    expect(html).toContain(
+      `action="/admin/agents/${AGENT.id}/patch-author-allowlist/delete"`,
+    );
+    expect(html).toContain('value="octocat"');
+  });
+
+  test("patch author allowlist table is wrapped in .data-table-wrapper", () => {
     const html = render(["octocat"]);
     expect(html).toMatch(
       /<div class="data-table-wrapper">\s*<table class="data-table">\s*<thead>\s*<tr>\s*<th>GitHub login<\/th>/,

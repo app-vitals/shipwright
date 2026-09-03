@@ -122,15 +122,6 @@ const GOLDEN_CODING_CRONS: GoldenCron[] = [
     parentCron: null,
   },
   {
-    name: "dependency-bot-triage",
-    schedule: "0 8 * * *",
-    prompt: "/shipwright:triage-dependency-bot-prs",
-    silent: true,
-    preCheck: null,
-    enabled: false,
-    parentCron: null,
-  },
-  {
     name: "entropy-patrol-maintenance",
     schedule: "0 4 * * 1",
     prompt:
