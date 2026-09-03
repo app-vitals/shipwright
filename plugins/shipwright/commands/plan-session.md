@@ -2,7 +2,7 @@
 description: Engineer planning pass — reads the product spec, explores the codebase, flags complexity, and produces a task queue
 arguments:
   - name: repo
-    description: The repo to plan work for (e.g., shipwright)
+    description: The repo to plan work for, in org/repo format (e.g., app-vitals/shipwright)
     required: true
   - name: session
     description: A short slug for this planning session (e.g., may-billing-refactor). Used to group tasks and PRs.
@@ -18,14 +18,15 @@ Parse `$ARGUMENTS` to extract:
 - **session**: second argument
 
 **If only one argument is provided**, treat it as `session` and auto-detect `repo`:
-1. `git remote get-url origin` → parse owner/repo, strip trailing `.git`. Use the bare repo name.
-2. Fallback: `basename $(git rev-parse --show-toplevel)`
+1. `git remote get-url origin` → parse the `org/repo` value, stripping trailing `.git`. Preserve the full owner/repo value — do not strip it down to just the repo segment. This is the `repo` value used for the task-store `repo` field.
+2. Fallback (only when the remote parse fails): `basename $(git rev-parse --show-toplevel)`. In this fallback case there is no owner segment, so `repo` and `repo-slug` end up the same bare value.
+3. Derive `repo-slug` from `repo`: the last path segment, lowercased — e.g. `app-vitals/shipwright` → `shipwright`. Use `repo-slug` for all local filesystem path references.
 
 Then print:
 ```
 ⚠ Auto-detected repo: {repo}
 This will be written to every task in the task store and used by /dev-task to
-locate the source tree (~/src/{repo}). Confirm it is correct before proceeding.
+locate the source tree (~/src/{repo-slug}). Confirm it is correct before proceeding.
 ```
 Wait for user confirmation before continuing to Step 1.
 
@@ -38,7 +39,7 @@ This is the engineering planning pass. The product spec (what and why) is alread
 
 ## Step 1: Load Context
 
-1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `~/src/{repo}/`
+1. Read `CLAUDE.md` in the repo worktree if available, otherwise read from `~/src/{repo-slug}/`
 2. Glob the repo structure to understand the codebase layout
 3. Check for any existing tasks in this session to avoid duplicates:
    ```bash
