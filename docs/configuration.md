@@ -76,6 +76,8 @@ Slack vars are env-var-only (secrets); the agent does not function as a Slack bo
 | `SLACK_ADMIN_TOKEN` | `string` | — | Optional admin-level token for privileged Slack operations. |
 | `SLACK_ALERT_CHANNEL` | `string` | — | Slack channel ID to post system alerts (e.g. startup errors). |
 | `SLACK_OWNER_USER` | `string` | — | Slack user ID of the agent owner, used for DM fallback. |
+| `SLACK_CHANNEL_ID` | `string` | — | Slack channel to post into for the current run. Not user-configured — injected per run by the agent runtime alongside `SLACK_BOT_TOKEN` above, not persisted config. Slack-triggered runs get this var set; cron runs also get it set (to the configured alert/report channel) but do not get `SLACK_THREAD_TS`. Read by `plugins/shipwright/scripts/slack-say.ts` (`bun run ${CLAUDE_PLUGIN_ROOT}/scripts/slack-say.ts [--channel C] [--thread T] "text"`) to let any skill post a one-line progress message; a `--channel` flag overrides this var. When neither is set, `slack-say.ts` falls back to printing the text to stdout instead of calling the Slack API. |
+| `SLACK_THREAD_TS` | `string` | — | Slack thread timestamp to reply into for the current run. Not user-configured — injected per run by the agent runtime, same as `SLACK_CHANNEL_ID` above, but **only for Slack-triggered runs** (DMs/@mentions); cron runs never get this var since they have no originating thread. Read by `slack-say.ts`; a `--thread` flag overrides it, and when neither resolves, the posted message omits `thread_ts` (posts to the channel directly rather than a thread). |
 
 ### GitHub
 
