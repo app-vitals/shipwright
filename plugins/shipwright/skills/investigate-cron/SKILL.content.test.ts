@@ -322,6 +322,15 @@ describe("SKILL.md — Step 2: ground-truth snapshot (IC-1.2)", () => {
     expect(hasLoopOrMany).toBe(true);
   });
 
+  it("does not gate the PR-reference task lookup on PR_RECORD_JSON being non-empty", () => {
+    // PR_RECORD_JSON only reflects whether the task-store's PullRequest record
+    // exists (created on first review/patch/deploy claim), not whether ITEM_ARG
+    // is a PR reference. A freshly-opened, not-yet-claimed PR has no
+    // PullRequest record yet but real Task records already exist — gating on
+    // PR_RECORD_JSON would silently skip the live lookup for that case.
+    expect(content).not.toContain('elif [ -n "$PR_RECORD_JSON" ]');
+  });
+
   it("surfaces the readyFor*At fields from the task-store record", () => {
     const hasReadyForFields =
       content.includes("readyForReviewAt") ||

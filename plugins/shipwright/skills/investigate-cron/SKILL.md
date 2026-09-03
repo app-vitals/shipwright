@@ -306,8 +306,12 @@ if [[ "$ITEM_ARG" =~ ^[A-Z]+-[0-9]+\.[0-9]+$ ]]; then
   else
     echo "$TASK_JSON" | jq '{id, status, hitl, dependencies}'
   fi
-elif [ -n "$PR_RECORD_JSON" ]; then
-  # ITEM_ARG is a PR reference — fetch associated tasks via live lookup
+else
+  # ITEM_ARG is a PR reference — fetch associated tasks via live lookup.
+  # Gated on ITEM_ARG's shape, not on PR_RECORD_JSON being non-empty: a
+  # freshly-opened PR not yet claimed by review/patch/deploy has no
+  # PullRequest record yet, but real Task records (Task.repo/Task.pr) can
+  # already exist — the live lookup below must still run for it.
   TASKS_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
     "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}" 2>/dev/null)
   if [ -z "$TASKS_JSON" ]; then
