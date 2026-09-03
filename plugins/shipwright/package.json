@@ -1,13 +1,17 @@
 {
   "name": "@shipwright/plugin",
-  "version": "1.230.0",
+  "version": "1.231.0",
   "private": true,
   "description": "Shipwright Claude Code plugin — spec → plan → execute → review → deploy",
   "scripts": {
     "test": "NODE_ENV=test bun test",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "js-yaml": "^4.3.1"
+  },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "bun-types": "*",
     "typescript": "*"
   }
