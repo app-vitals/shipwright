@@ -60,7 +60,7 @@ in behavior when the new checks find nothing to flag.
 |----|-------|-----------|--------|-------|-------|------------|-------|------|
 | RDQ-1.1 | Add cross-cutting concerns checklist to gap analysis | — | `feat/rdq-1-1-cross-cutting-checklist` | CLI | 3 | 3 | sonnet | |
 | RDQ-1.2 | Add canonical-source-duplication and mechanism-honesty quality checks | — | `feat/rdq-1-2-canonical-duplication-check` | CLI | 4 | 4 | sonnet | |
-| RDQ-1.3 | Add doc size governance with split proposal | — | `feat/rdq-1-3-size-governance` | CLI | 2.5 | 3 | sonnet | |
+| RDQ-1.3 | Add doc size governance with split proposal | RDQ-1.2 | `feat/rdq-1-3-size-governance` | CLI | 2.5 | 3 | sonnet | |
 
 ### RDQ-1.1 — Add cross-cutting concerns checklist to gap analysis
 
@@ -139,8 +139,9 @@ rather than growing an ever-larger single file.
 **Interactive mode:** the split is proposed (which sections move where) and requires
 confirmation before any new file is created — never automatic.
 
-**Auto mode:** folds into RDQ-1.2's Step A5.5 pass — after Step A5 rewrites a doc, check
-its resulting line count; over the hard threshold files a task-store task
+**Auto mode:** folds into RDQ-1.2's Step A5.5 pass — this task cannot ship until RDQ-1.2 has
+merged and Step A5.5 exists. After Step A5 rewrites a doc, check its resulting line count;
+over the hard threshold files a task-store task
 (`"Split {doc} — exceeds {N} lines"`) with a best-effort section-grouping suggestion in the
 description, same `/tasks/bulk` mechanism, `session: "docs-freshness-cron"`. Step A9's
 summary gets a new `Split proposals tasked: N` line.
@@ -161,22 +162,24 @@ summary gets a new `Split proposals tasked: N` line.
 ```
 [START]
   ├─ RDQ-1.1: Add cross-cutting concerns checklist (no deps)
-  ├─ RDQ-1.2: Add canonical-source-duplication + honesty checks (no deps)
-  └─ RDQ-1.3: Add doc size governance (no deps)
+  └─ RDQ-1.2: Add canonical-source-duplication + honesty checks (no deps)
+        └─ RDQ-1.3: Add doc size governance (depends on RDQ-1.2's Step A5.5)
 ```
 
 ```
-Task     | Depends on | Blocks | HITL
-RDQ-1.1  | —          | —      |
-RDQ-1.2  | —          | —      |
-RDQ-1.3  | —          | —      |
+Task     | Depends on | Blocks   | HITL
+RDQ-1.1  | —          | —        |
+RDQ-1.2  | —          | RDQ-1.3  |
+RDQ-1.3  | RDQ-1.2    | —        |
 ```
 
-All three touch the same two files but are independently shippable — each is additive to a
-different section of `research-docs.md` (Step 3 / Step A7 for RDQ-1.1; a new Step 5/6
-quality pass + new Step A5.5 for RDQ-1.2 and RDQ-1.3) and none depends on another's content
-existing first. Sequential `dev-task` execution against current `main` handles any adjacent
-edits to the same file.
+RDQ-1.1 and RDQ-1.2 touch the same two files but are independently shippable relative to
+each other — each is additive to a different section of `research-docs.md` (Step 3 / Step
+A7 for RDQ-1.1; a new Step 5/6 quality pass for RDQ-1.2) and neither depends on the other's
+content existing first. RDQ-1.3, however, depends on RDQ-1.2's content: its auto-mode design
+folds into Step A5.5, which RDQ-1.2 is the one that introduces — RDQ-1.3 cannot ship until
+RDQ-1.2 has merged and Step A5.5 exists in `research-docs.md`. Sequential `dev-task`
+execution against current `main` handles any adjacent edits to the same file.
 
 ## HITL scan
 
