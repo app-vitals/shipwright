@@ -2133,17 +2133,14 @@ export function renderTasksPage(
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
   };
 
-  // The URL the user is currently viewing. Since makePageUrl always carries
+  // The URL the user is currently viewing. makePageUrl always carries
   // ?view=table forward (TBF-1.1 — bare /admin/tasks now defaults to the
-  // board per AXR-1.3), this never collapses back to the bare-default case;
+  // board per AXR-1.3), so this is never the bare "/admin/tasks" default;
   // row links into the Task Detail and Session Detail pages always carry it
   // as `?from=` so their "← Tasks" back link returns to this table view
   // (with its filters) instead of falling through to the board.
   const currentListUrl = makePageUrl(page);
-  const detailHrefSuffix =
-    currentListUrl === "/admin/tasks"
-      ? ""
-      : `?from=${encodeURIComponent(currentListUrl)}`;
+  const detailHrefSuffix = `?from=${encodeURIComponent(currentListUrl)}`;
 
   const rows =
     tasks.length === 0
