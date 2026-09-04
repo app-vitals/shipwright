@@ -334,6 +334,39 @@ export async function handleCronRequest(
 
   console.log(`[agent:cron] running job "${jobId}"`);
 
+  // Resolve SLACK_CHANNEL_ID for the runner's extraEnv (STC-1.3), so
+  // slack-say inside the run knows which channel to address. A channel job
+  // uses its channel directly. A DM job resolves (and caches) the DM channel
+  // here, before the run, so the post-run delivery step below can reuse the
+  // same id instead of opening the DM twice. Resolution is best-effort — a
+  // missing channel id or a conversations.open rejection is logged and
+  // swallowed, never allowed to block the run. A silent job (job-level
+  // `silent`, not the [silent] response marker, which isn't known yet) never
+  // delivers, so DM resolution is skipped for it entirely. SLACK_THREAD_TS is
+  // never set here — cron runs have no parent thread to reply into.
+  let extraEnv: Record<string, string> | undefined;
+  let resolvedDmChannel: string | undefined;
+  if (channel) {
+    extraEnv = { SLACK_CHANNEL_ID: channel };
+  } else if (user && slack && !silent) {
+    try {
+      const dmResult = await slack.conversations.open({ users: user });
+      const dmChannel = dmResult.channel?.id;
+      if (dmChannel) {
+        resolvedDmChannel = dmChannel;
+        extraEnv = { SLACK_CHANNEL_ID: dmChannel };
+      } else {
+        console.warn(
+          `[agent:cron] job "${jobId}" could not resolve a DM channel id for user ${user} — running without SLACK_CHANNEL_ID`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        `[agent:cron] job "${jobId}" failed to open DM for user ${user}: ${String(err)} — running without SLACK_CHANNEL_ID`,
+      );
+    }
+  }
+
   // ── Runner scope ─────────────────────────────────────────────────────────
   // Errors here record a genuine failure and re-throw so the caller sees them.
   let usage: TokenUsage | undefined;
@@ -373,7 +406,7 @@ export async function handleCronRequest(
   };
 
   try {
-    const runResult = await runner(message, onProgress);
+    const runResult = await runner(message, onProgress, extraEnv);
     if (runResult.streamIncomplete) {
       // Clean process exit, but the stream never emitted a terminal `result`
       // event — treat this the same as a genuine failure rather than letting
@@ -526,8 +559,13 @@ export async function handleCronRequest(
     // before rethrowing so index.ts's outer catch doesn't create a duplicate
     // "failed" row for a tick that already completed successfully.
     try {
-      const dmResult = await slack.conversations.open({ users: user });
-      const dmChannel = dmResult.channel?.id;
+      // Reuse the DM channel resolved before the run (STC-1.3) so the DM is
+      // opened at most once per dispatch. If pre-resolution didn't happen or
+      // failed (silent job, no slack client, or conversations.open error),
+      // fall back to opening it here, same as before.
+      const dmChannel =
+        resolvedDmChannel ??
+        (await slack.conversations.open({ users: user })).channel?.id;
       if (!dmChannel) {
         throw new Error(`[agent:cron] could not open DM for user ${user}`);
       }

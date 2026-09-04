@@ -244,6 +244,11 @@ describe("handleCronRequest — user DM delivery", () => {
   });
 
   test("throws when conversations.open returns no channel id", async () => {
+    // Pre-run resolution (STC-1.3) also calls conversations.open before the
+    // run — queue a null response for both that pre-run attempt and the
+    // post-run fallback so DM delivery still fails end-to-end.
+    // biome-ignore lint/suspicious/noExplicitAny: test mock — intentionally null channel
+    mockConversationsOpen.mockResolvedValueOnce({ channel: null } as any);
     // biome-ignore lint/suspicious/noExplicitAny: test mock — intentionally null channel
     mockConversationsOpen.mockResolvedValueOnce({ channel: null } as any);
 
@@ -1070,6 +1075,11 @@ describe("handleCronRequest — CronRunReporter", () => {
         cache_creation_input_tokens: 0,
       },
     });
+    // Pre-run resolution (STC-1.3) also calls conversations.open before the
+    // run — queue a null response for both that pre-run attempt and the
+    // post-run fallback so DM delivery still fails end-to-end.
+    // biome-ignore lint/suspicious/noExplicitAny: test mock — intentionally null channel
+    mockConversationsOpen.mockResolvedValueOnce({ channel: null } as any);
     // biome-ignore lint/suspicious/noExplicitAny: test mock — intentionally null channel
     mockConversationsOpen.mockResolvedValueOnce({ channel: null } as any);
 
