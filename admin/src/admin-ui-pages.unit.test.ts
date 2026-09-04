@@ -2607,6 +2607,42 @@ describe("renderTasksPage — org/repo multiselect filters", () => {
     expect(html).toContain('<option value="app-vitals/repo-b">');
   });
 
+  test("Org and Repo multiselects carry the new scope-select pill/tag styling class (AXR-1.1)", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain(
+      '<select name="org" multiple class="form-input scope-select"',
+    );
+    expect(html).toContain(
+      '<select name="repo" multiple class="form-input scope-select"',
+    );
+  });
+
+  test("Org and Repo stay independent multiselect fields, not merged into one combined scope pill", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      "user@test.com",
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    const selectCount = (html.match(/<select /g) ?? []).length;
+    expect(selectCount).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
   test("marks currently-active repo filter values as selected (array)", () => {
     const html = renderTasksPage(
       [],
@@ -4505,6 +4541,42 @@ describe("renderPrsPage — org/repo multiselect filters", () => {
     );
     expect(html).toContain('<option value="org/repo-a">');
     expect(html).toContain('<option value="org/repo-b">');
+  });
+
+  test("Org and Repo multiselects carry the new scope-select pill/tag styling class (AXR-1.1)", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    expect(html).toContain(
+      '<select name="org" multiple class="form-input scope-select"',
+    );
+    expect(html).toContain(
+      '<select name="repo" multiple class="form-input scope-select"',
+    );
+  });
+
+  test("Org and Repo stay independent multiselect fields, not merged into one combined scope pill", () => {
+    const html = renderPrsPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] },
+    );
+    const selectCount = (html.match(/<select /g) ?? []).length;
+    expect(selectCount).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
   });
 
   test("marks currently-active repo filter values as selected (array)", () => {
