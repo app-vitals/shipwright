@@ -52,7 +52,8 @@ interface ListPrsCall {
   state: string;
   limit: number;
   offset: number;
-  updatedSince: string;
+  /** Optional as of RPS-1.1 — reconcilePrState's scan no longer passes a cutoff. */
+  updatedSince?: string;
 }
 
 interface ListTasksCall {
@@ -161,7 +162,7 @@ function makeDeps({
       repo: string,
       limit: number,
       offset: number,
-      updatedSince: string,
+      updatedSince?: string,
     ) => {
       listCalls.push({ repo, state: "open", limit, offset, updatedSince });
       const all = openRecords[repo] ?? [];
@@ -297,7 +298,7 @@ describe("reconcilePrState", () => {
     expect(patchCalls).toHaveLength(0);
   });
 
-  test("listOpenPrRecords is called with updatedSince computed as now-6h via the injected now() (PSR-1.1, widened per review)", async () => {
+  test("listOpenPrRecords is called with NO updatedSince — the open-PR-record scan is no longer recency-filtered (RPS-1.1)", async () => {
     const record = makeRecord({ id: "pr-1", prNumber: 1 });
     const { deps, listCalls } = makeDeps({
       openRecords: { "acme/example-repo": [record] },
@@ -315,7 +316,105 @@ describe("reconcilePrState", () => {
       state: "open",
       limit: 50,
       offset: 0,
-      updatedSince: "2026-07-19T17:15:00.000Z",
+      updatedSince: undefined,
+    });
+  });
+
+  // ─── RPS-1.1: drop the recency filter from the open-PR-record scan ────────
+  //
+  // The fakes above (`makeDeps`'s `listOpenPrRecords`) don't actually
+  // implement server-side recency filtering — they always return whatever
+  // `openRecords` configures, regardless of any `updatedSince` passed in. The
+  // two tests below build a bespoke fake that DOES model the task-store's
+  // real `updatedSince` `gte` filtering behavior, so they can demonstrate the
+  // actual regression: a record whose `updatedAt` predates the old 6h
+  // `RECONCILER_UPDATED_SINCE_WINDOW_MS` cutoff — the exact shape confirmed
+  // live on app-vitals/shipwright#2542 and #2570, both genuinely MERGED on
+  // GitHub since 2026-08-11 but stuck at state:"open" for three-plus weeks —
+  // is still returned and reconciled now that no cutoff is ever sent.
+  describe("stale record outside the old 6h recency window (regression for shipwright#2542/#2570)", () => {
+    const STALE_RECORD_UPDATED_AT = "2026-06-01T00:00:00.000Z"; // far older than any 6h window before FAKE_NOW
+
+    /**
+     * Builds a `PrStateReconcilerDeps` whose `listOpenPrRecords` mirrors the
+     * real task-store's `updatedSince` `gte` semantics: when a cutoff is
+     * passed, a record older than it is excluded — proving the old
+     * PSR-1.1-era behavior would have dropped this record forever, and the
+     * new RPS-1.1 behavior (never passing a cutoff) does not.
+     */
+    function makeStaleRecordDeps(ghResult: GhPrView): {
+      deps: PrStateReconcilerDeps;
+      listCalls: Array<{ updatedSince?: string }>;
+      patchCalls: PatchCall[];
+    } {
+      const record = makeRecord({ id: "pr-stale", prNumber: 2542 });
+      const listCalls: Array<{ updatedSince?: string }> = [];
+      const patchCalls: PatchCall[] = [];
+
+      const deps: PrStateReconcilerDeps = {
+        repos: ["acme/example-repo"],
+        getScopedRepos: () => ["acme/example-repo"],
+        listOpenPrRecords: async (
+          _repo: string,
+          _limit: number,
+          offset: number,
+          updatedSince?: string,
+        ) => {
+          listCalls.push({ updatedSince });
+          if (offset > 0) return [];
+          if (
+            updatedSince !== undefined &&
+            STALE_RECORD_UPDATED_AT < updatedSince
+          ) {
+            return []; // would have been excluded by the old recency filter
+          }
+          return [record];
+        },
+        patchPrRecord: async (id: string, fields: Record<string, unknown>) => {
+          patchCalls.push({ id, fields });
+        },
+        ghViewPr: async () => ghResult,
+        listPrOpenTasks: async () => [],
+        updateTaskStatus: async () => {},
+        ghListMergedPrsForBranch: async () => [],
+        now: () => FAKE_NOW,
+        listAllTasksForBranch: async () => [
+          { id: "single-task-stand-in", repo: "acme/example-repo" },
+        ],
+        delay: async () => {},
+        isCleanupMergedWorktreesEnabled: () => false,
+        removeWorktree: async () => {},
+      };
+
+      return { deps, listCalls, patchCalls };
+    }
+
+    test("merged long ago on GitHub, no recent record update — still returned and reconciled", async () => {
+      const { deps, listCalls, patchCalls } = makeStaleRecordDeps({
+        state: "MERGED",
+        mergedAt: "2026-08-11T00:00:00.000Z",
+      });
+
+      await reconcilePrState(deps);
+
+      // No cutoff was ever sent, so the stale-simulating fake never excludes it.
+      expect(listCalls[0]?.updatedSince).toBeUndefined();
+      expect(patchCalls).toHaveLength(1);
+      expect(patchCalls[0].id).toBe("pr-stale");
+      expect(patchCalls[0].fields.state).toBe("merged");
+      expect(patchCalls[0].fields.mergedAt).toBe("2026-08-11T00:00:00.000Z");
+    });
+
+    test("still open on GitHub -> no-op behavior is unchanged for an old record too", async () => {
+      const { deps, listCalls, patchCalls } = makeStaleRecordDeps({
+        state: "OPEN",
+        mergedAt: null,
+      });
+
+      await reconcilePrState(deps);
+
+      expect(listCalls[0]?.updatedSince).toBeUndefined();
+      expect(patchCalls).toHaveLength(0);
     });
   });
 
@@ -3048,7 +3147,7 @@ describe("reconcile delay throttling (PSR-1.2)", () => {
 
 // ─── updatedSince filtering (PSR-1.1) ───────────────────────────────────────────
 
-describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
+describe("buildProductionDeps — updatedSince filtering (PSR-1.1 / RPS-1.1)", () => {
   /**
    * Fake fetchFn for GET /prs?... that records every request's full query
    * params, mirroring `makeFakeTaskStoreFetch`'s pattern above but for the
@@ -3115,7 +3214,7 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
     }
   });
 
-  test("listOpenPrRecords passes updatedSince computed as now-6h via the injected now()", async () => {
+  test("listOpenPrRecords omits updatedSince from the querystring entirely when not passed (RPS-1.1)", async () => {
     const { fetchFn, calls } = makeFakePrsFetch();
     const deps = buildProductionDeps({
       ghJson: () => Promise.reject(new Error("not used in this test")),
@@ -3123,14 +3222,29 @@ describe("buildProductionDeps — updatedSince filtering (PSR-1.1)", () => {
       getScopedRepos: () => [],
       workspacePath: "/nonexistent/workspace-for-unit-test",
     });
-    // Override the injected now() with a fixed, deterministic value — matches
-    // this suite's "never Date.now()/new Date() directly" isolation contract.
-    (deps as { now: () => string }).now = () => "2026-07-19T23:00:00.000Z";
 
-    const updatedSince = new Date(
-      new Date(deps.now()).getTime() - 6 * 60 * 60 * 1000,
-    ).toISOString();
-    await deps.listOpenPrRecords("acme/example-repo", 50, 0, updatedSince);
+    await deps.listOpenPrRecords("acme/example-repo", 50, 0);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].updatedSince).toBeUndefined();
+    expect("updatedSince" in calls[0]).toBe(false);
+  });
+
+  test("listOpenPrRecords still includes updatedSince when explicitly passed — param kept optional, not removed (RPS-1.1)", async () => {
+    const { fetchFn, calls } = makeFakePrsFetch();
+    const deps = buildProductionDeps({
+      ghJson: () => Promise.reject(new Error("not used in this test")),
+      fetchFn,
+      getScopedRepos: () => [],
+      workspacePath: "/nonexistent/workspace-for-unit-test",
+    });
+
+    await deps.listOpenPrRecords(
+      "acme/example-repo",
+      50,
+      0,
+      "2026-07-19T17:00:00.000Z",
+    );
 
     expect(calls).toHaveLength(1);
     expect(calls[0].updatedSince).toBe("2026-07-19T17:00:00.000Z");
