@@ -5074,6 +5074,58 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain("Tasks");
   });
 
+  it("GET /admin/tasks with no ?view= defaults to the board layout (AXR-1.3)", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('class="board"');
+    expect(html).not.toContain('<table class="data-table">');
+  });
+
+  it("GET /admin/tasks?view=table renders the pre-redesign dense table (AXR-1.3)", async () => {
+    const mockTasks = [
+      {
+        id: "task-1",
+        title: "Build auth module",
+        status: "pending",
+        session: "session-abc",
+        repo: "example-org/example-repo",
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks?view=table", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('<table class="data-table">');
+    expect(html).toContain("<th>ID</th>");
+    expect(html).toContain("Build auth module");
+  });
+
   it("GET /admin/tasks includes joined PR blocked/blockedReason/claimedBy/claimedAt/heartbeatAt for a task with an open PR (AXR-1.2)", async () => {
     const mockTasks = [
       {

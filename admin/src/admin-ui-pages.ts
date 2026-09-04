@@ -2056,6 +2056,16 @@ export function renderRepoOrgFilterFields(
 
 // ─── Tasks page ──────────────────────────────────────────────────────────────
 
+// Shared by both the board (default) and table (?view=table) layouts.
+const TASKS_PAGE_EXTRA_STYLES = `
+    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
+    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
+    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
+    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
+    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
+    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+  `;
+
 export function renderTasksPage(
   tasks: TaskItem[],
   filters: {
@@ -2090,6 +2100,15 @@ export function renderTasksPage(
   // undefined/empty by GET /public/tasks so the read-only board never
   // performs or renders the join (AC3).
   prsByTaskId: Record<string, PrListItem> = {},
+  // Which layout to render. "table" is the pre-redesign dense table (the
+  // function's default, so every pre-AXR-1.3 caller — including the large
+  // existing unit-test suite that calls this positionally without a `view`
+  // argument — keeps producing byte-identical output with zero changes).
+  // GET /admin/tasks (admin-ui.ts) is the only caller that overrides this:
+  // it defaults the *page* a user sees to "board" and only passes "table"
+  // through when the request carries ?view=table (AXR-1.3 AC4). GET
+  // /public/tasks never passes a view, so it stays on the table renderer.
+  view: "board" | "table" = "table",
 ): string {
   const errorHtml = opts?.error
     ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
@@ -2119,6 +2138,23 @@ export function renderTasksPage(
       })
       .join("");
   };
+
+  if (view === "board") {
+    return renderTasksBoard({
+      tasks,
+      filters,
+      userName,
+      agentNames,
+      suggestions,
+      readOnly,
+      prsByTaskId,
+      errorHtml,
+      degradedHtml,
+      agentFilterHtml,
+      renderBlockerBadges,
+      page: pagination.page,
+    });
+  }
 
   // Pagination (hoisted above the row loop so row links can carry the current
   // list view as a `from` back-link param — see makePageUrl usage below).
@@ -2306,14 +2342,7 @@ export function renderTasksPage(
 
   return renderAdminPage({
     title: "Tasks — Shipwright",
-    extraStyles: `
-    .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
-    .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
-    .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
-    .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
-    .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
-    .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
-  `,
+    extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
   <div class="vos-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
@@ -2396,6 +2425,272 @@ export function renderTasksPage(
           target = target.parentElement;
         }
         window.location.href = row.getAttribute("data-href");
+      });
+    });
+  </script>`,
+  });
+}
+
+/**
+ * Renders the AXR-1.3 board layout for GET /admin/tasks — 5 columns
+ * (Queued/Claimed/In Progress/Blocked-HITL/Done, per TASK_BOARD_COLUMNS)
+ * bucketed via bucketTaskColumn using each task's status/hitl/blockedBy
+ * plus its joined PR's blocked flag (AXR-1.2's prsByTaskId). The default
+ * filter row shows only the Org and Repo multiselects (renderRepoOrgFilterFields,
+ * restyled with AXR-1.1's scope-select class) — the remaining status/HITL/
+ * session/source/agent filters are collapsed under a <details
+ * class="more-filters"> disclosure (AC1). Org and Repo stay two
+ * independent <select multiple> controls, exactly as on the table view —
+ * this function never merges them into one combined scope-pill selector,
+ * so selecting an org with no repo continues to match every repo under
+ * that org (AC2).
+ *
+ * Split out of renderTasksPage (rather than inlined behind an `if`) so the
+ * pre-redesign table branch above stays textually untouched — nothing here
+ * is shared by reference with that branch beyond the plain helpers passed
+ * in, so a change here can't accidentally perturb ?view=table's output.
+ */
+function renderTasksBoard(args: {
+  tasks: TaskItem[];
+  filters: {
+    status?: string;
+    state?: "ready" | "in_progress" | "blocked" | "closed";
+    session?: string;
+    repo?: string | string[];
+    org?: string | string[];
+    source?: string;
+    agent?: string;
+    hitl?: "true" | "false";
+  };
+  userName: string;
+  agentNames: Record<string, string>;
+  suggestions?: {
+    sessions?: string[];
+    repos?: string[];
+    orgs?: string[];
+    agents?: string[];
+  };
+  readOnly: boolean;
+  prsByTaskId: Record<string, PrListItem>;
+  errorHtml: string;
+  degradedHtml: string;
+  agentFilterHtml: string;
+  renderBlockerBadges: (
+    blockedBy: BlockedByEntry[] | null | undefined,
+  ) => string;
+  page: number;
+}): string {
+  const {
+    tasks,
+    filters,
+    userName,
+    agentNames,
+    suggestions,
+    readOnly,
+    prsByTaskId,
+    errorHtml,
+    degradedHtml,
+    agentFilterHtml,
+    renderBlockerBadges,
+    page,
+  } = args;
+
+  const statusOptions = [
+    "",
+    "pending",
+    "in_progress",
+    "pr_open",
+    "approved",
+    "merged",
+    "done",
+    "deploying",
+    "deployed",
+    "blocked",
+    "cancelled",
+  ]
+    .map(
+      (s) =>
+        `<option value="${escapeHtml(s)}" ${filters.status === s ? "selected" : ""}>${s === "" ? "Any status" : escapeHtml(s)}</option>`,
+    )
+    .join("");
+
+  const hitlOptions = [
+    { value: "", label: "Any" },
+    { value: "true", label: "Yes" },
+    { value: "false", label: "No" },
+  ]
+    .map(
+      (o) =>
+        `<option value="${o.value}" ${filters.hitl === o.value ? "selected" : ""}>${o.label}</option>`,
+    )
+    .join("");
+
+  // Query string for the current filter selection, mirroring the table
+  // view's makePageUrl param order/semantics (status/state, session, repo,
+  // org, source, agent, hitl, page) so a URL built here round-trips
+  // identically whether the request landed on the board or the table. The
+  // board doesn't render its own state-tab or pagination controls (its 5
+  // columns replace the Ready/In Progress/Blocked/Closed tabs, and it
+  // shows every fetched task rather than paging through them), but a
+  // bookmarked/back-linked URL carrying `state` or `page` still needs to
+  // reproduce faithfully in the task/session detail "from" back-link.
+  const currentBoardUrl = (() => {
+    const params = new URLSearchParams();
+    if (filters.status) params.set("status", filters.status);
+    else if (filters.state) params.set("state", filters.state);
+    if (filters.session) params.set("session", filters.session);
+    for (const r of toFilterArray(filters.repo)) params.append("repo", r);
+    for (const o of toFilterArray(filters.org)) params.append("org", o);
+    if (filters.source) params.set("source", filters.source);
+    if (filters.agent) params.set("agent", filters.agent);
+    if (filters.hitl) params.set("hitl", filters.hitl);
+    if (page > 1) params.set("page", String(page));
+    const qs = params.toString();
+    return `/admin/tasks${qs ? `?${qs}` : ""}`;
+  })();
+  const detailHrefSuffix =
+    currentBoardUrl === "/admin/tasks"
+      ? ""
+      : `?from=${encodeURIComponent(currentBoardUrl)}`;
+  const tableViewHref = `${currentBoardUrl}${currentBoardUrl.includes("?") ? "&" : "?"}view=table`;
+
+  const renderCard = (t: TaskItem): string => {
+    const agentId = t.claimedBy ?? t.assignee;
+    const agentCell = agentId
+      ? readOnly
+        ? escapeHtml(agentNames[agentId] ?? agentId)
+        : agentLink(agentId, agentNames[agentId] ?? agentId)
+      : "";
+    const blockerBadges = renderBlockerBadges(t.blockedBy);
+    // Same joined-PR attributes as the table row (AXR-1.2's prsByTaskId) —
+    // rendered on the card itself so the blocked/HITL state is visible
+    // inline, with no click-through required (AC3).
+    const joinedPr = prsByTaskId[t.id];
+    const prJoinAttrs = joinedPr
+      ? ` data-pr-blocked="${joinedPr.blocked === true ? "true" : "false"}" data-pr-blocked-reason="${escapeHtml(joinedPr.blockedReason ?? "")}" data-pr-claimed-by="${escapeHtml(joinedPr.claimedBy ?? "")}" data-pr-claimed-at="${escapeHtml(joinedPr.claimedAt ?? "")}" data-pr-heartbeat-at="${escapeHtml(joinedPr.heartbeatAt ?? "")}"`
+      : "";
+    const prBadge =
+      joinedPr?.blocked === true
+        ? `<span class="badge badge-hitl" style="font-size:10px;margin-left:6px">PR Blocked${joinedPr.blockedReason ? `: ${escapeHtml(joinedPr.blockedReason)}` : ""}</span>`
+        : "";
+    const prLink =
+      t.pr && t.repo
+        ? `<a href="https://github.com/${escapeHtml(t.repo)}/pull/${t.pr}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr}</a>`
+        : t.prUrl
+          ? `<a href="${escapeHtml(t.prUrl)}" style="color:#6366f1;text-decoration:none" title="View PR">#${t.pr ?? "PR"}</a>`
+          : "";
+    const sessionLink = t.session
+      ? readOnly
+        ? escapeHtml(t.session)
+        : `<a href="/admin/sessions/${encodeURIComponent(t.session)}${detailHrefSuffix}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.session)}</a>`
+      : "";
+    const detailHref = `/admin/tasks/${escapeHtml(t.id)}${detailHrefSuffix}`;
+    const releaseForm =
+      readOnly || t.status !== "in_progress"
+        ? ""
+        : `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline;margin-top:6px">
+        <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
+      </form>`;
+
+    return `<div class="card"${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="font-size:13px;font-weight:600">${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}</div>
+          <span class="badge ${statusBadgeClass(t.status)}" style="font-size:10px;white-space:nowrap">${escapeHtml(t.status)}</span>
+        </div>
+        <div class="mono" style="font-size:11px;color:#9ca3af;margin-top:2px">${readOnly ? escapeHtml(t.id) : `<a href="${detailHref}" style="color:#6366f1;text-decoration:none">${escapeHtml(t.id)}</a>`}</div>
+        <div style="font-size:11px;color:#6b7280;margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          ${t.repo ? `<span class="mono">${escapeHtml(t.repo)}</span>` : ""}
+          ${agentCell}
+          ${sessionLink}
+          ${prLink}
+        </div>
+        ${blockerBadges}${prBadge}
+        ${releaseForm}
+      </div>`;
+  };
+
+  const columnsHtml = TASK_BOARD_COLUMNS.map(({ key, label }) => {
+    const colTasks = tasks.filter(
+      (t) => bucketTaskColumn(t, prsByTaskId[t.id]?.blocked ?? null) === key,
+    );
+    const cards =
+      colTasks.length === 0
+        ? `<div class="empty-state" style="font-size:11px">No tasks</div>`
+        : colTasks.map(renderCard).join("\n");
+    return `<div class="column" data-column="${key}">
+        <div class="column-header"><span>${label}</span><span class="column-count">${colTasks.length}</span></div>
+        ${cards}
+      </div>`;
+  }).join("\n");
+
+  const filterFormHtml = readOnly
+    ? ""
+    : `<div class="card" style="margin-bottom:16px">
+      <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        ${renderRepoOrgFilterFields(
+          { org: filters.org, repo: filters.repo },
+          { orgs: suggestions?.orgs, repos: suggestions?.repos },
+        )}
+        <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
+        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
+        <details class="more-filters">
+          <summary>More filters</summary>
+          <div class="more-filters-panel">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Status</label>
+              <select name="status" class="form-input" style="font-size:12px;padding:4px 8px">${statusOptions}</select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">HITL</label>
+              <select name="hitl" class="form-input" style="font-size:12px;padding:4px 8px">${hitlOptions}</select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Session</label>
+              <input name="session" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.session ?? "")}" placeholder="session-id"${suggestions?.sessions?.length ? ' list="sessions-list"' : ""} />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Source</label>
+              <input name="source" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.source ?? "")}" placeholder="source" />
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:11px">Agent</label>
+              <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
+            </div>
+          </div>
+        </details>
+        ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
+        ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
+      </form>
+    </div>`;
+
+  return renderAdminPage({
+    title: "Tasks — Shipwright",
+    extraStyles: TASKS_PAGE_EXTRA_STYLES,
+    body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
+  <div class="vos-page">
+    <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between">
+      <h1 class="page-title" style="margin:0">Tasks</h1>
+      ${readOnly ? "" : `<a href="${tableViewHref}" class="btn btn-secondary" style="font-size:12px">Table view</a>`}
+    </div>
+    ${errorHtml}
+    ${degradedHtml}
+    ${agentFilterHtml}
+    ${filterFormHtml}
+    <div class="board">
+      ${columnsHtml}
+    </div>
+  </div>`,
+    bodyEnd: readOnly
+      ? ""
+      : `<script>
+    document.querySelectorAll(".column .card[data-href]").forEach(function(card) {
+      card.addEventListener("click", function(e) {
+        var target = e.target;
+        while (target && target !== card) {
+          if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
+          target = target.parentElement;
+        }
+        window.location.href = card.getAttribute("data-href");
       });
     });
   </script>`,

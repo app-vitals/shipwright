@@ -2831,6 +2831,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/tasks", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    // AXR-1.3: the board is the default layout; ?view=table opts back into
+    // the pre-redesign dense table (any other/absent value falls back to
+    // the board, matching AC1's "defaults to board" requirement).
+    const view: "board" | "table" =
+      c.req.query("view") === "table" ? "table" : "board";
     const status = c.req.query("status") ?? undefined;
     const stateRaw = c.req.query("state");
     const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
@@ -3002,6 +3007,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         false,
         timezone,
         prsByTaskId,
+        view,
       ),
     );
   });

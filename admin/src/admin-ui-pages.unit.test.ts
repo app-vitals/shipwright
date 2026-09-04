@@ -3528,6 +3528,376 @@ describe("renderTasksPage — 4-state toggle", () => {
   });
 });
 
+// ─── renderTasksPage — board view (AXR-1.3) ──────────────────────────────────
+
+describe("renderTasksPage — board view (AXR-1.3)", () => {
+  const BOARD_PAGINATION = { total: 0, limit: 50, page: 1 };
+
+  function renderBoard(
+    tasks: TaskItem[],
+    filters: Parameters<typeof renderTasksPage>[1] = {},
+    suggestions: Parameters<typeof renderTasksPage>[7] = undefined,
+    prsByTaskId: Parameters<typeof renderTasksPage>[10] = {},
+  ): string {
+    return renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      {},
+      { total: tasks.length, limit: 50, page: 1 },
+      undefined,
+      suggestions,
+      false,
+      "America/Los_Angeles",
+      prsByTaskId,
+      "board",
+    );
+  }
+
+  test("renders all 5 board columns: Queued, Claimed, In Progress, Blocked-HITL, Done", () => {
+    const html = renderBoard([]);
+    expect(html).toContain('class="board"');
+    expect(html).toContain("Queued");
+    expect(html).toContain("Claimed");
+    expect(html).toContain("In Progress");
+    expect(html).toContain("Blocked-HITL");
+    expect(html).toContain("Done");
+    // Exactly 5 column containers
+    expect((html.match(/class="column"/g) ?? []).length).toBe(5);
+  });
+
+  function extractColumn(html: string, key: string): string {
+    const marker = `<div class="column" data-column="${key}">`;
+    const start = html.indexOf(marker);
+    if (start === -1) return "";
+    const nextMarkerIndex = html.indexOf(
+      '<div class="column" data-column="',
+      start + marker.length,
+    );
+    const end = nextMarkerIndex === -1 ? html.length : nextMarkerIndex;
+    return html.slice(start, end);
+  }
+
+  test("buckets a pending unclaimed task into Queued", () => {
+    const task: TaskItem = {
+      id: "T-QUEUED",
+      title: "Queued task title",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "queued")).toContain("Queued task title");
+    expect(extractColumn(html, "claimed")).not.toContain("Queued task title");
+  });
+
+  test("buckets a pending claimed task into Claimed", () => {
+    const task: TaskItem = {
+      id: "T-CLAIMED",
+      title: "Claimed task title",
+      status: "pending",
+      claimedBy: "agent-1",
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "claimed")).toContain("Claimed task title");
+    expect(extractColumn(html, "queued")).not.toContain("Claimed task title");
+  });
+
+  test("buckets an in_progress task into In Progress", () => {
+    const task: TaskItem = {
+      id: "T-INPROG",
+      title: "In progress task title",
+      status: "in_progress",
+      claimedBy: "agent-1",
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "in_progress")).toContain(
+      "In progress task title",
+    );
+  });
+
+  test("buckets a blocked task into Blocked-HITL", () => {
+    const task: TaskItem = {
+      id: "T-BLOCKED",
+      title: "Blocked task title",
+      status: "blocked",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "blocked_hitl")).toContain(
+      "Blocked task title",
+    );
+  });
+
+  test("buckets a hitl:true task into Blocked-HITL even when in_progress", () => {
+    const task: TaskItem = {
+      id: "T-HITL",
+      title: "HITL task title",
+      status: "in_progress",
+      hitl: true,
+      claimedBy: "agent-1",
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "blocked_hitl")).toContain("HITL task title");
+    expect(extractColumn(html, "in_progress")).not.toContain(
+      "HITL task title",
+    );
+  });
+
+  test("buckets a done task into Done", () => {
+    const task: TaskItem = {
+      id: "T-DONE",
+      title: "Done task title",
+      status: "deployed",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(extractColumn(html, "done")).toContain("Done task title");
+  });
+
+  test("a task with a blocked joined PR lands in Blocked-HITL, matching bucketTaskColumn", () => {
+    const task: TaskItem = {
+      id: "T-PR-BLOCKED",
+      title: "PR blocked task title",
+      status: "in_progress",
+      claimedBy: "agent-1",
+      assignee: null,
+      repo: "org/repo",
+      pr: 5,
+    };
+    const pr: PrListItem = {
+      id: "pr-1",
+      repo: "org/repo",
+      prNumber: 5,
+      staged: false,
+      state: "open",
+      reviewState: "pending",
+      patchCycles: 0,
+      reviewCycles: 0,
+      blocked: true,
+      blockedReason: "Waiting on CI",
+    };
+    const html = renderBoard([task], {}, undefined, { [task.id]: pr });
+    expect(extractColumn(html, "blocked_hitl")).toContain(
+      "PR blocked task title",
+    );
+  });
+
+  test("card shows the linked PR's blocked/HITL state inline, without a page navigation", () => {
+    const task: TaskItem = {
+      id: "T-PR-INLINE",
+      title: "Inline PR badge task",
+      status: "in_progress",
+      claimedBy: "agent-1",
+      assignee: null,
+      repo: "org/repo",
+      pr: 7,
+    };
+    const pr: PrListItem = {
+      id: "pr-2",
+      repo: "org/repo",
+      prNumber: 7,
+      staged: false,
+      state: "open",
+      reviewState: "pending",
+      patchCycles: 0,
+      reviewCycles: 0,
+      blocked: true,
+      blockedReason: "Needs human review",
+    };
+    const html = renderBoard([task], {}, undefined, { [task.id]: pr });
+    // The badge/reason is rendered directly in the card's HTML (no separate
+    // fetch or navigation required to see the blocked/HITL state).
+    expect(html).toContain("Needs human review");
+    expect(html).toContain('data-pr-blocked="true"');
+  });
+
+  test("default board filter row shows only Org and Repo selects — status/hitl/session/source/agent are collapsed under a <details> more-filters disclosure", () => {
+    const html = renderBoard([], {}, { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] });
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+    expect(html).toContain('<details class="more-filters">');
+
+    const detailsMatch = html.match(
+      /<details class="more-filters">([\s\S]*?)<\/details>/,
+    );
+    expect(detailsMatch).not.toBeNull();
+    const detailsHtml = detailsMatch ? detailsMatch[1] : "";
+    expect(detailsHtml).toContain('name="status"');
+    expect(detailsHtml).toContain('name="hitl"');
+    expect(detailsHtml).toContain('name="session"');
+    expect(detailsHtml).toContain('name="source"');
+    expect(detailsHtml).toContain('name="agent"');
+
+    // Org/Repo selects are not nested inside the disclosure — they render
+    // ahead of it, in the always-visible filter row.
+    const detailsIndex = html.indexOf('<details class="more-filters">');
+    const orgIndex = html.indexOf('<select name="org" multiple');
+    const repoIndex = html.indexOf('<select name="repo" multiple');
+    expect(orgIndex).toBeGreaterThanOrEqual(0);
+    expect(repoIndex).toBeGreaterThanOrEqual(0);
+    expect(orgIndex).toBeLessThan(detailsIndex);
+    expect(repoIndex).toBeLessThan(detailsIndex);
+  });
+
+  test("Org and Repo remain two independent multiselects on the board, not merged into one combined scope-pill selector", () => {
+    const html = renderBoard([], {}, { orgs: ["app-vitals"], repos: ["app-vitals/repo-a"] });
+    const selectCount = (html.match(/<select /g) ?? []).length;
+    // org, repo, plus status + hitl inside <details> == 4 total <select>s
+    expect(selectCount).toBeGreaterThanOrEqual(2);
+    expect(html).toContain('<select name="org" multiple');
+    expect(html).toContain('<select name="repo" multiple');
+  });
+
+  test("selecting an org with no repo selected renders all repo options unfiltered (org and repo stay independent dimensions)", () => {
+    const html = renderBoard(
+      [],
+      { org: ["app-vitals"] },
+      {
+        orgs: ["app-vitals", "other-org"],
+        repos: [
+          "app-vitals/repo-a",
+          "app-vitals/repo-b",
+          "other-org/repo-c",
+        ],
+      },
+    );
+    // Org is selected...
+    expect(html).toContain(
+      '<option value="app-vitals" selected>app-vitals</option>',
+    );
+    // ...but the Repo select still lists every repo, including ones under
+    // other orgs, and none of them are pre-selected — selecting an org does
+    // not narrow or auto-select repo options.
+    expect(html).toContain('<option value="app-vitals/repo-a">');
+    expect(html).toContain('<option value="app-vitals/repo-b">');
+    expect(html).toContain('<option value="other-org/repo-c">');
+    const repoSelectMatch = html.match(
+      /<select name="repo" multiple[^>]*>([\s\S]*?)<\/select>/,
+    );
+    expect(repoSelectMatch).not.toBeNull();
+    expect(repoSelectMatch ? repoSelectMatch[1] : "").not.toContain(
+      "selected",
+    );
+  });
+
+  test("view: 'board' is reachable via a link back to the table view (?view=table)", () => {
+    const html = renderBoard([]);
+    expect(html).toContain("view=table");
+  });
+});
+
+// ─── renderTasksPage — ?view=table toggle (AXR-1.3) ──────────────────────────
+
+describe("renderTasksPage — ?view=table toggle (AXR-1.3)", () => {
+  test("view: 'table' produces identical output to the default (omitted) view — the pre-redesign table renderer is preserved and reachable, not deleted", () => {
+    const tasks: TaskItem[] = [
+      {
+        id: "T-1",
+        title: "Some task",
+        status: "in_progress",
+        session: "s-1",
+        repo: "org/repo",
+        assignee: null,
+        claimedBy: "agent-1",
+        pr: 9,
+      },
+    ];
+    const filters: Parameters<typeof renderTasksPage>[1] = {
+      status: "in_progress",
+    };
+    const agentNames = { "agent-1": "Agent One" };
+    const pagination = { total: 1, limit: 50, page: 1 };
+    const suggestions = { orgs: ["org"], repos: ["org/repo"] };
+    const prsByTaskId: Record<string, PrListItem> = {};
+
+    const withoutView = renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      agentNames,
+      pagination,
+      undefined,
+      suggestions,
+      false,
+      "America/Los_Angeles",
+      prsByTaskId,
+    );
+    const withExplicitTable = renderTasksPage(
+      tasks,
+      filters,
+      false,
+      USER_NAME,
+      agentNames,
+      pagination,
+      undefined,
+      suggestions,
+      false,
+      "America/Los_Angeles",
+      prsByTaskId,
+      "table",
+    );
+
+    expect(withExplicitTable).toEqual(withoutView);
+    // Sanity: this is genuinely the dense table markup, not the board.
+    expect(withExplicitTable).toContain('<table class="data-table">');
+    expect(withExplicitTable).toContain("<th>ID</th>");
+    expect(withExplicitTable).toContain("<th>PR</th>");
+  });
+
+  test("view: 'board' output is structurally different from view: 'table' output for the same data", () => {
+    const tasks: TaskItem[] = [
+      {
+        id: "T-2",
+        title: "Another task",
+        status: "pending",
+        claimedBy: null,
+        assignee: null,
+      },
+    ];
+    const pagination = { total: 1, limit: 50, page: 1 };
+    const table = renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "table",
+    );
+    const board = renderTasksPage(
+      tasks,
+      {},
+      false,
+      USER_NAME,
+      {},
+      pagination,
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    expect(table).not.toEqual(board);
+    expect(table).toContain('<table class="data-table">');
+    expect(board).not.toContain('<table class="data-table">');
+    expect(board).toContain('class="board"');
+  });
+});
+
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
