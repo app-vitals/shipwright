@@ -1415,6 +1415,25 @@ describe("admin UI — authenticated pages", () => {
   it("authenticated GET /admin/agents/:id/queue-activity renders populated runs in the Past section", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
+        // AXR-3.2: only shipwright-loop crons stay visible in the primary
+        // table by default — override the cron list so this run's owning
+        // cron classifies as visible instead of collapsing into a <details>.
+        agentCronJobService: {
+          list: async () => [{ ...MOCK_CRON, name: "shipwright-loop" }],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, name: "shipwright-loop", lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async () => ({
+            created: 0,
+            updated: 0,
+            deleted: 0,
+          }),
+        },
         agentCronRunService: {
           listForAgent: async () => ({
             items: [makeCronRun()],
