@@ -24,6 +24,7 @@ import {
   type ToolItem,
   type WorkQueueItem,
   type WorkQueueSnapshotItem,
+  bucketTaskColumn,
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
@@ -7039,6 +7040,118 @@ describe("classifyTaskState", () => {
   test("pending status with no blockedBy classifies as ready", () => {
     const task: TaskItem = { ...BASE, status: "pending", blockedBy: [] };
     expect(classifyTaskState(task)).toBe("ready");
+  });
+});
+
+// ─── bucketTaskColumn (AXR-1.2) ──────────────────────────────────────────────
+// Single source of truth for the 5-column task board (Queued / Claimed /
+// In Progress / Blocked-HITL / Done), consumed later by AXR-1.3's board UI.
+// Every task must resolve to exactly one column — including the edge case
+// where both the task itself (status/hitl/blockedBy) and its joined PR
+// (pr.blocked) are separately blocked.
+
+describe("bucketTaskColumn", () => {
+  const BASE: TaskItem = {
+    id: "TASK-1",
+    title: "Some task",
+    status: "pending",
+  };
+
+  test.each(["merged", "deployed", "done", "deploying", "cancelled"] as const)(
+    "status %s buckets as done",
+    (status) => {
+      expect(bucketTaskColumn({ ...BASE, status })).toBe("done");
+    },
+  );
+
+  test("status done wins over hitl:true (done takes precedence)", () => {
+    const task: TaskItem = { ...BASE, status: "done", hitl: true };
+    expect(bucketTaskColumn(task)).toBe("done");
+  });
+
+  test("status done wins over a blocked joined PR (done takes precedence)", () => {
+    const task: TaskItem = { ...BASE, status: "done" };
+    expect(bucketTaskColumn(task, true)).toBe("done");
+  });
+
+  test("explicit status blocked buckets as blocked_hitl", () => {
+    const task: TaskItem = { ...BASE, status: "blocked" };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("hitl:true and not yet done buckets as blocked_hitl", () => {
+    const task: TaskItem = { ...BASE, status: "in_progress", hitl: true };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("joined PR blocked:true buckets as blocked_hitl even when the task itself is not blocked", () => {
+    const task: TaskItem = { ...BASE, status: "in_progress" };
+    expect(bucketTaskColumn(task, true)).toBe("blocked_hitl");
+  });
+
+  test("non-empty blockedBy (unresolved dependency) buckets as blocked_hitl even with status pending", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "pending",
+      blockedBy: [{ type: "dependency", id: "REL-2.2", status: "pending" }],
+    };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("non-empty blockedBy (hitl wait) buckets as blocked_hitl even with status in_progress", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "in_progress",
+      blockedBy: [{ type: "hitl" }],
+    };
+    expect(bucketTaskColumn(task)).toBe("blocked_hitl");
+  });
+
+  test("empty blockedBy does not force blocked_hitl", () => {
+    const task: TaskItem = { ...BASE, status: "pending", blockedBy: [] };
+    expect(bucketTaskColumn(task)).toBe("queued");
+  });
+
+  test("both task-level blocked (status) AND PR-level blocked resolve to the single blocked_hitl bucket", () => {
+    const task: TaskItem = { ...BASE, status: "blocked" };
+    expect(bucketTaskColumn(task, true)).toBe("blocked_hitl");
+  });
+
+  test("both task-level blocked (hitl) AND PR-level blocked resolve to the single blocked_hitl bucket", () => {
+    const task: TaskItem = { ...BASE, status: "in_progress", hitl: true };
+    expect(bucketTaskColumn(task, true)).toBe("blocked_hitl");
+  });
+
+  test.each(["in_progress", "pr_open", "approved"] as const)(
+    "status %s with no blockers buckets as in_progress",
+    (status) => {
+      const task: TaskItem = { ...BASE, status };
+      expect(bucketTaskColumn(task)).toBe("in_progress");
+    },
+  );
+
+  test("pending status with a claimedBy buckets as claimed", () => {
+    const task: TaskItem = {
+      ...BASE,
+      status: "pending",
+      claimedBy: "agent-1",
+    };
+    expect(bucketTaskColumn(task)).toBe("claimed");
+  });
+
+  test("pending status with no claimedBy buckets as queued", () => {
+    const task: TaskItem = { ...BASE, status: "pending", claimedBy: null };
+    expect(bucketTaskColumn(task)).toBe("queued");
+  });
+
+  test("pending status with claimedBy undefined buckets as queued", () => {
+    const task: TaskItem = { ...BASE, status: "pending" };
+    expect(bucketTaskColumn(task)).toBe("queued");
+  });
+
+  test("prBlocked false does not force blocked_hitl for an otherwise-in_progress task", () => {
+    const task: TaskItem = { ...BASE, status: "in_progress" };
+    expect(bucketTaskColumn(task, false)).toBe("in_progress");
   });
 });
 

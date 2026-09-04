@@ -5093,6 +5093,133 @@ describe("admin UI — tasks page", () => {
     expect(html).toContain("Tasks");
   });
 
+  it("GET /admin/tasks includes joined PR blocked/blockedReason/claimedBy/claimedAt/heartbeatAt for a task with an open PR (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-join-1",
+        title: "Task with an open PR",
+        status: "in_progress",
+        session: "session-abc",
+        repo: "org/repo",
+        pr: 200,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const MOCK_JOINED_PR: PrListItem = {
+      id: "pr-join-1",
+      repo: "org/repo",
+      prNumber: 200,
+      staged: false,
+      state: "open",
+      reviewState: "pending",
+      patchCycles: 0,
+      reviewCycles: 0,
+      blocked: true,
+      blockedReason: "Waiting on CI",
+      claimedBy: "agent-join",
+      claimedAt: "2026-01-01T00:00:00.000Z",
+      heartbeatAt: "2026-01-01T00:05:00.000Z",
+    };
+    let capturedParams: URLSearchParams | null = null;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async (params: URLSearchParams) => {
+          capturedParams = params;
+          return { prs: [MOCK_JOINED_PR], total: 1, limit: 50, offset: 0 };
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('data-pr-blocked="true"');
+    expect(html).toContain('data-pr-blocked-reason="Waiting on CI"');
+    expect(html).toContain('data-pr-claimed-by="agent-join"');
+    expect(html).toContain('data-pr-claimed-at="2026-01-01T00:00:00.000Z"');
+    expect(html).toContain('data-pr-heartbeat-at="2026-01-01T00:05:00.000Z"');
+    expect(capturedParams).not.toBeNull();
+    const captured = capturedParams as unknown as URLSearchParams;
+    expect(captured.get("repo")).toBe("org/repo");
+    expect(captured.get("prNumber")).toBe("200");
+  });
+
+  it("GET /admin/tasks renders without PR join data when the task has no repo/pr set (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-no-pr",
+        title: "Task without a PR",
+        status: "pending",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          throw new Error("should not be called for a task with no repo/pr");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).not.toContain("data-pr-blocked");
+  });
+
+  it("GET /admin/tasks renders without PR join data when fetchTaskStorePrs throws (degrade, don't fail the page) (AXR-1.2)", async () => {
+    const mockTasks = [
+      {
+        id: "task-join-err",
+        title: "Task whose PR lookup fails",
+        status: "in_progress",
+        session: null,
+        repo: "org/repo",
+        pr: 201,
+        assignee: null,
+        claimedBy: null,
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          throw new Error("task store unavailable");
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Task whose PR lookup fails");
+    expect(html).not.toContain("data-pr-blocked");
+  });
+
   it("GET /admin/tasks renders degraded notice when taskStoreUrl is absent", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
@@ -7791,6 +7918,70 @@ describe("admin UI — public task board", () => {
     expect(html).toContain("Blocked:");
     expect(html).toContain("agent-pub");
     expect(html).not.toContain("/admin/");
+  });
+
+  it("GET /public/tasks never includes the joined PR fields, even for a task with repo+pr set and fetchTaskStorePrs wired (AXR-1.2)", async () => {
+    let fetchTaskStorePrsCalled = false;
+    const app = createAdminUIApp(
+      makeMockDeps({
+        publicRepo: PUBLIC_REPO,
+        fetchTaskStoreTasks: async () => ({
+          tasks: [
+            {
+              id: "pub-task-4",
+              title: "Public task delta",
+              status: "in_progress",
+              session: "sess-pub",
+              repo: PUBLIC_REPO,
+              pr: 300,
+              assignee: null,
+              claimedBy: "agent-pub",
+            },
+          ],
+          total: 1,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStorePrs: async () => {
+          fetchTaskStorePrsCalled = true;
+          return {
+            prs: [
+              {
+                id: "pr-pub-1",
+                repo: PUBLIC_REPO,
+                prNumber: 300,
+                staged: false,
+                state: "open",
+                reviewState: "pending",
+                patchCycles: 0,
+                reviewCycles: 0,
+                blocked: true,
+                blockedReason: "Waiting on CI",
+                claimedBy: "agent-pub",
+                claimedAt: "2026-01-01T00:00:00.000Z",
+                heartbeatAt: "2026-01-01T00:05:00.000Z",
+              },
+            ],
+            total: 1,
+            limit: 50,
+            offset: 0,
+          };
+        },
+      }),
+    );
+    const res = await app.request("/public/tasks");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Public task delta");
+    // The public route never calls the PR-join fetcher and never renders the
+    // joined fields — this is the read-only board, join data stays admin-only.
+    expect(fetchTaskStorePrsCalled).toBe(false);
+    expect(html).not.toContain("data-pr-blocked");
+    expect(html).not.toContain("data-pr-blocked-reason");
+    expect(html).not.toContain("data-pr-claimed-by");
+    expect(html).not.toContain("data-pr-claimed-at");
+    expect(html).not.toContain("data-pr-heartbeat-at");
+    expect(html).not.toContain("Waiting on CI");
   });
 
   it("GET /public/tasks renders 200 even when no publicRepo configured (degraded mode)", async () => {
