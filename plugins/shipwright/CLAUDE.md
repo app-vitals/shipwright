@@ -62,7 +62,9 @@ always names a specific PR (`org/repo#number`); there is no self-scan/queue-buil
 Any PR is serviceable when named this way, regardless of author — it is not limited to PRs
 authored by the authenticated user. `patch` and `deploy` are scoped to the authenticated
 user's own open PRs (matching by PR author), because they take write actions (pushing fixes,
-merging) that should only be performed on PRs the agent owns.
+merging) that should only be performed on PRs the agent owns. `patch`'s scope is additionally
+config-driven: a PR authored by an entry in the agent's configured `patchAuthorAllowlist` is
+also in scope, on top of (not instead of) the agent's own PRs.
 
 Applies to: **review**, **patch**, **deploy**
 
