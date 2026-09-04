@@ -41,6 +41,23 @@ stripped from the visible message before posting.
 | `[react:emoji1,emoji2,...]` | Add emoji reactions to your own posted reply. Use plain names (e.g. `eyes`, `white_check_mark`), no colons. Comma-separated for multiple. |
 | `[speak:text]` | Synthesize speech and upload as audio. |
 
+### Run Context
+
+Every invocation receives two injected Slack env vars (set by the agent runtime):
+
+| Var | Availability | Purpose |
+|---|---|---|
+| `SLACK_CHANNEL_ID` | Slack-triggered runs + cron runs | Slack channel ID to post into. Cron runs get this set to the configured alert/report channel. |
+| `SLACK_THREAD_TS` | Slack-triggered runs only | Slack thread timestamp for replying into a thread. Cron runs never receive this since they have no originating Slack thread. |
+
+Use the `slack-say` skill to post a one-line progress message mid-run without ending your turn:
+
+```bash
+bun run ${CLAUDE_PLUGIN_ROOT}/scripts/slack-say.ts [--channel C] [--thread T] "progress text"
+```
+
+When neither `--channel` nor `--thread` flags are passed, `slack-say` reads `SLACK_CHANNEL_ID` and `SLACK_THREAD_TS` from the environment. If no channel resolves, the text prints to stdout instead.
+
 @VOICE.md
 
 ## Workspace
@@ -168,16 +185,36 @@ time the wakeup fires, the CLI has to replay the entire prior transcript at full
 price to reconstruct context — for a long-running session, that can be
 expensive and slow.
 
-Worse, resume failure is silent. In `agent/src/claude.ts`'s `_runClaude`, any
-error other than a `ClaudeTimeoutError` on a resume attempt causes the stored
-session id to be cleared and the message to be retried as a brand-new,
-context-free session — no `-r` flag, no prior transcript. There's no signal in
-the response that this happened; the caller can't distinguish "resumed cleanly"
-from "silently lost all context and started over."
+If a resumed session fails, `agent/src/claude.ts`'s `_runClaude` retries the *same*
+session exactly once (same `-r <sessionId>` args). If the retry succeeds, the result
+is returned with `recoveredFromError: true` — no context loss. If the retry also fails,
+the original error is rethrown and the stored session mapping is left intact (never
+cleared or replaced with a context-free session start). `ClaudeTimeoutError` and
+`ClaudeAbortedError` are not retried — they propagate immediately to avoid spawning
+duplicate processes on hung or user-cancelled sessions.
+
+For waits that genuinely exceed the ~10-minute Bash ceiling (e.g. a long-running
+build job, a deployment pipeline, an external service's async processing), the
+recommended pattern is:
+
+1. Submit the job and capture its id (e.g. a GitHub Actions run ID, a CI job URL,
+   a cloud service's request/build ID).
+2. Persist the job id to a state file (e.g. under `state/`).
+3. End the turn with a short status line reporting what was submitted.
+4. Set up a recurring cron with a `preCheck` script (see `plugins/shipwright/references/user-guide.md`'s
+   cron `preCheck` section and `agent/src/cron-handler.ts` for implementation details).
+   The `preCheck` polls for job completion; when it detects completion, its stdout
+   becomes the prompt for the next Claude invocation, allowing your work to resume
+   where it left off.
+
+This pattern avoids the cache-freshness and retry-on-error tradeoffs of `ScheduleWakeup`
+and keeps your work session and context across the long external wait.
+
+For waits that stay within the ~10-minute ceiling, default to blocking, in-Bash waits
+(the `until <condition>; do sleep 30; done` pattern described above) or several
+sequential Bash calls within the same turn. This keeps the work inside a single
+`claude -p` invocation and its context intact.
 
 There is currently no known legitimate use case for `ScheduleWakeup` in this
 repo's own skills or commands — `plugins/shipwright/` has zero references to
-it. Default to blocking, in-Bash waits for anything that needs to wait on a
-timescale below the Bash ceiling; only consider `ScheduleWakeup` for waits that
-genuinely exceed ~10 minutes, and go in with eyes open about the cache-freshness
-and silent-fallback tradeoffs above.
+it.
