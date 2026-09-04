@@ -190,6 +190,32 @@ describe("computeUnresolvedCommentCheck", () => {
     });
   });
 
+  test("excludes an unresolved inline thread whose first comment is from the PR AUTHOR (self-authored, no reply)", () => {
+    const input = makeInput({
+      currentUser: "the-agent",
+      prAuthor: "pr-author",
+      reviewThreads: {
+        nodes: [
+          {
+            isResolved: false,
+            comments: {
+              nodes: [
+                {
+                  author: { login: "pr-author" },
+                  body: "Leaving this here as a note on my own diff.",
+                  createdAt: "2026-05-26T10:00:00Z",
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(computeUnresolvedCommentCheck(input)).toEqual({
+      hasSubstantiveUnresolvedFeedback: false,
+    });
+  });
+
   // ─── Trivial-acknowledgement exclusion ─────────────────────────────────
 
   test.each(["LGTM", "+1", "thanks", "approved", "lgtm", "Thanks"])(

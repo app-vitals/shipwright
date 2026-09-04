@@ -136,7 +136,8 @@ function isTrivialAcknowledgement(body: string): boolean {
  *   it (`isAddressedByAuthorReply`, keyed on the comment's own `createdAt`
  *   rather than a review's `submittedAt`).
  * - An unresolved inline review thread (`isResolved === false`) whose first
- *   comment's author is not `currentUser` and not a bot/CI account —
+ *   comment's author is not `currentUser`, not the PR author, and not a
+ *   bot/CI account —
  *   gated on `isResolved`, not recency, since that is the authoritative
  *   "still needs a response" signal for inline threads — unless the PR
  *   author has since replied within that same thread
@@ -183,6 +184,7 @@ export function computeUnresolvedCommentCheck(
     return (
       !t.isResolved &&
       first.author.login !== currentUser &&
+      first.author.login !== prAuthor &&
       !isBotOrCiAuthor(first.author.login) &&
       !isThreadAddressedByAuthorReply(t, prAuthor)
     );
