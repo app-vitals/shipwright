@@ -45,6 +45,10 @@ describe("buildAgentAppManifest", () => {
     it("does not add hook_attributes (no webhook receiver exists)", () => {
       expect(manifest).not.toHaveProperty("hook_attributes");
     });
+
+    it("sets url to the agent app homepage URL", () => {
+      expect(manifest.url).toBe("https://shipwrightharness.com");
+    });
   });
 
   describe("provisioning (with redirectUri and setupUrl)", () => {
@@ -73,6 +77,10 @@ describe("buildAgentAppManifest", () => {
     it("still sets public: false", () => {
       expect(manifest.public).toBe(false);
     });
+
+    it("sets url to the agent app homepage URL", () => {
+      expect(manifest.url).toBe("https://shipwrightharness.com");
+    });
   });
 
   describe("provisioning with only redirectUri", () => {
@@ -84,6 +92,10 @@ describe("buildAgentAppManifest", () => {
 
     it("omits setup_url", () => {
       expect(manifest.setup_url).toBeUndefined();
+    });
+
+    it("sets url to the agent app homepage URL", () => {
+      expect(manifest.url).toBe("https://shipwrightharness.com");
     });
   });
 });
