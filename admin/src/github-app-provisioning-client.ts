@@ -17,6 +17,12 @@
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/**
+ * GitHub's manifest flow requires a top-level `url` (the app's homepage) —
+ * every agent/org gets the same value, no per-agent plumbing needed.
+ */
+const AGENT_APP_HOMEPAGE_URL = "https://shipwrightharness.com";
+
 export interface GithubAppManifest {
   name: string;
   public: boolean;
@@ -26,6 +32,7 @@ export interface GithubAppManifest {
     actions: "read";
     workflows: "write";
   };
+  url: string;
   redirect_url?: string;
   setup_url?: string;
 }
@@ -74,6 +81,7 @@ export function buildAgentAppManifest(
       actions: "read",
       workflows: "write",
     },
+    url: AGENT_APP_HOMEPAGE_URL,
     ...(opts?.redirectUri !== undefined
       ? { redirect_url: opts.redirectUri }
       : {}),

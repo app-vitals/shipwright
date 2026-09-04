@@ -143,12 +143,14 @@ describe("plan-session.md — repo auto-detect preserves org/repo format (PRF-1.
 
   it("uses {repo-slug} for local filesystem paths, not {repo}", () => {
     const section = extractArgsAndAutoDetectSection(content);
-    expect(section).toContain("~/src/{repo-slug}");
+    expect(section).toContain("${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}");
     expect(section).not.toContain("~/src/{repo}/");
   });
 
   it("Step 1's CLAUDE.md fallback read path uses {repo-slug}", () => {
-    expect(content).toContain("otherwise read from `~/src/{repo-slug}/`");
+    expect(content).toContain(
+      "otherwise read from `${SHIPWRIGHT_REPO_DIR:-$HOME/src}/{repo-slug}/`",
+    );
   });
 
   it("Step 6b task JSON template still writes the full org/repo value into repo", () => {

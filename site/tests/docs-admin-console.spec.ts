@@ -33,13 +33,11 @@ test("admin-console sidebar is present", async ({ page }) => {
 // coverage for — sourced from admin-ui.ts / admin-ui-pages.ts routes.
 const MAJOR_SECTIONS: Array<[string, RegExp]> = [
   ["Agents", /agents/i],
-  ["Cron Logs", /cron/i],
-  ["Work Queue", /work queue/i],
+  ["Queue & Activity", /queue\s*&\s*activity/i],
   ["Provisioning", /provision/i],
   ["Tasks", /tasks/i],
   ["PRs", /prs|pull requests/i],
   ["Chat", /chat/i],
-  ["Tokens", /tokens/i],
 ];
 
 for (const [label, pattern] of MAJOR_SECTIONS) {

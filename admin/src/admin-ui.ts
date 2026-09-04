@@ -35,14 +35,12 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
-  type TaskStoreTokenItem,
   type WorkQueueItem,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
   renderChatPage,
   renderChatThreadPage,
-  renderCronLogsPage,
   renderGithubAppInstallPage,
   renderGithubAppInstalledPage,
   renderGithubAppManifestRedirectPage,
@@ -52,11 +50,10 @@ import {
   renderProvisionCompletePage,
   renderProvisionXappTokenPage,
   renderPrsPage,
+  renderQueueActivityPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
-  renderTokensPage,
-  renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import type { AgentCronJobService } from "./agent-cron-jobs.ts";
 import type { AgentCronRunService } from "./agent-cron-runs.ts";
@@ -411,29 +408,6 @@ export interface AdminUIDeps {
    */
   fetchTaskStorePrById?: (id: string) => Promise<PrListItem | null>;
   /**
-   * List all tokens from the task-store service (admin token required).
-   * If absent, the tokens page renders in degraded mode.
-   */
-  adminListTokens?: () => Promise<TaskStoreTokenItem[]>;
-  /**
-   * Create a new token in the task-store service (admin token required).
-   * Returns the token record plus the rawToken — shown once, never stored.
-   */
-  adminCreateToken?: (
-    label?: string,
-    agentId?: string,
-  ) => Promise<TaskStoreTokenItem & { rawToken: string }>;
-  /**
-   * Revoke a token by ID via the task-store service (admin token required).
-   */
-  adminRevokeToken?: (id: string) => Promise<void>;
-  /**
-   * Base URL of the task-store service. When provided, the mint-success banner
-   * renders a ready-to-paste env block with SHIPWRIGHT_TASK_STORE_URL and
-   * SHIPWRIGHT_TASK_STORE_TOKEN so operators can copy-paste into their shell.
-   */
-  taskStoreBaseUrl?: string;
-  /**
    * Public repo slug (SHIPWRIGHT_ADMIN_PUBLIC_REPO) for the read-only task board.
    * When set, GET /public/tasks renders the task list filtered to this repo
    * without requiring authentication. When absent, /public/tasks renders in
@@ -649,10 +623,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     timezone = "America/Los_Angeles",
     fetchTaskStorePrs,
     fetchTaskStorePrById,
-    adminListTokens,
-    adminCreateToken,
-    adminRevokeToken,
-    taskStoreBaseUrl,
     publicRepo,
     chatClient,
     pwaAssetsDir = PWA_ASSETS_DIR,
@@ -1641,7 +1611,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     );
   });
 
-  app.get("/admin/agents/:id/cron-logs", requireAuth, async (c) => {
+  app.get("/admin/agents/:id/queue-activity", requireAuth, async (c) => {
     const agentId = c.req.param("id");
     const agent = await agentService.getDetail(agentId);
     if (!agent) {
@@ -1658,7 +1628,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const limit = 20;
     const offset = (page - 1) * limit;
 
-    const [crons, runResult] = await Promise.all([
+    const [snapshot, crons, runResult] = await Promise.all([
+      agentWorkQueueService.get(agentId),
       agentCronJobService.list(agentId),
       agentCronRunService.listForAgent(agentId, {
         cronId,
@@ -1669,8 +1640,14 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     ]);
 
     return html(
-      renderCronLogsPage({
+      renderQueueActivityPage({
         agent: { id: agent.id, name: agent.name },
+        snapshot: snapshot
+          ? {
+              computedAt: snapshot.computedAt,
+              items: snapshot.items as unknown as WorkQueueItem[],
+            }
+          : null,
         crons: crons.map((cr) => ({
           id: cr.id,
           name: cr.name,
@@ -1681,32 +1658,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         pagination: { total: runResult.total, limit, page },
         userName: c.var.userEmail,
         timezone,
-      }),
-    );
-  });
-
-  app.get("/admin/agents/:id/work-queue", requireAuth, async (c) => {
-    const agentId = c.req.param("id");
-    const agent = await agentService.getDetail(agentId);
-    if (!agent) {
-      return new Response("Agent not found", { status: 404 });
-    }
-    if (!(await assertAgentAccess(agentId, c.var.userEmail, c.var.isAdmin))) {
-      return new Response("Forbidden", { status: 403 });
-    }
-
-    const snapshot = await agentWorkQueueService.get(agentId);
-
-    return html(
-      renderWorkQueuePage({
-        agent: { id: agent.id, name: agent.name },
-        snapshot: snapshot
-          ? {
-              computedAt: snapshot.computedAt,
-              items: snapshot.items as unknown as WorkQueueItem[],
-            }
-          : null,
-        userName: c.var.userEmail,
       }),
     );
   });
@@ -2851,6 +2802,11 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
 
   app.get("/admin/tasks", requireAuth, async (c) => {
     if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
+    // AXR-1.3: the board is the default layout; ?view=table opts back into
+    // the pre-redesign dense table (any other/absent value falls back to
+    // the board, matching AC1's "defaults to board" requirement).
+    const view: "board" | "table" =
+      c.req.query("view") === "table" ? "table" : "board";
     const status = c.req.query("status") ?? undefined;
     const stateRaw = c.req.query("state");
     const state: "ready" | "in_progress" | "blocked" | "closed" | undefined =
@@ -2952,6 +2908,48 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       for (const a of agents) agentNames[a.id] = a.name;
     }
 
+    // Resolve each task's linked PR via a live GET /prs?repo=&prNumber=
+    // lookup, one request per distinct (repo, pr) pair on this page of
+    // tasks, run in parallel to avoid an N+1 sequential-await chain — same
+    // pattern as GET /admin/prs's linkedTasksByPr join, and the single-task
+    // version at GET /admin/tasks/:id, just batched (AXR-1.2). Falls back to
+    // no PR data per row if the fetcher is absent, a task has no repo/pr, or
+    // a lookup throws — a failed join never breaks the page.
+    const prsByTaskId: Record<string, PrListItem> = {};
+    if (fetchTaskStorePrs && tasks.length > 0) {
+      const distinctPairs = new Map<string, { repo: string; pr: number }>();
+      for (const t of tasks) {
+        if (t.repo && t.pr) {
+          distinctPairs.set(`${t.repo}#${t.pr}`, { repo: t.repo, pr: t.pr });
+        }
+      }
+      if (distinctPairs.size > 0) {
+        const pairResults = await Promise.all(
+          [...distinctPairs.entries()].map(
+            async ([key, { repo: r, pr: p }]): Promise<
+              [string, PrListItem | undefined]
+            > => {
+              try {
+                const result = await fetchTaskStorePrs(
+                  new URLSearchParams({ repo: r, prNumber: String(p) }),
+                );
+                return [key, result.prs[0]];
+              } catch {
+                return [key, undefined];
+              }
+            },
+          ),
+        );
+        const prsByPairKey = new Map(pairResults);
+        for (const t of tasks) {
+          if (t.repo && t.pr) {
+            const pr = prsByPairKey.get(`${t.repo}#${t.pr}`);
+            if (pr) prsByTaskId[t.id] = pr;
+          }
+        }
+      }
+    }
+
     // Build suggestions for autocomplete datalists only when task-store integration is active.
     // Skip the DB query entirely when fetchDistinctTaskValues is not configured.
     const suggestions =
@@ -2979,6 +2977,8 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         suggestions,
         false,
         timezone,
+        prsByTaskId,
+        view,
       ),
     );
   });
@@ -3816,98 +3816,6 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
       preview: body.preview ?? null,
     });
     return c.json({ ok: true, ...result });
-  });
-
-  // ─── Task-store token proxy routes ────────────────────────────────────────
-
-  app.get("/admin/tokens", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    const error = c.req.query("error") ?? undefined;
-    const selectedAgentId = c.req.query("agentId") ?? undefined;
-    let tokens: TaskStoreTokenItem[] = [];
-    let degraded = false;
-    if (!adminListTokens) {
-      degraded = true;
-    } else {
-      try {
-        tokens = await adminListTokens();
-      } catch {
-        degraded = true;
-      }
-    }
-    const agents = await agentService.listOptions();
-    return html(
-      renderTokensPage(
-        tokens,
-        degraded,
-        c.var.userEmail,
-        c.req.path,
-        undefined,
-        timezone,
-        error,
-        agents,
-        selectedAgentId,
-      ),
-    );
-  });
-
-  app.post("/admin/tokens", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    if (!adminCreateToken)
-      return new Response("Token store not configured", { status: 503 });
-    const form = await c.req.formData();
-    const label = form.get("label")?.toString()?.trim() || undefined;
-    if (!label) return c.redirect("/admin/tokens?error=Label+is+required", 302);
-    const agentId = form.get("agentId")?.toString() || undefined;
-    let result: (TaskStoreTokenItem & { rawToken: string }) | undefined;
-    try {
-      result = await adminCreateToken(label, agentId);
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? encodeURIComponent(err.message)
-          : "create_failed";
-      return c.redirect(`/admin/tokens?error=${msg}`, 302);
-    }
-    // Render inline — never redirect with the raw token in the URL.
-    let tokens: TaskStoreTokenItem[] = [];
-    try {
-      if (adminListTokens) tokens = await adminListTokens();
-    } catch {
-      // best-effort refresh; show the new token even if list fails
-    }
-    const agents = await agentService.listOptions();
-    return html(
-      renderTokensPage(
-        tokens,
-        false,
-        c.var.userEmail,
-        "/admin/tokens",
-        result.rawToken,
-        timezone,
-        undefined,
-        agents,
-        agentId,
-        taskStoreBaseUrl,
-      ),
-    );
-  });
-
-  app.post("/admin/tokens/:id/revoke", requireAuth, async (c) => {
-    if (!c.var.isAdmin) return new Response("Forbidden", { status: 403 });
-    if (!adminRevokeToken)
-      return new Response("Token store not configured", { status: 503 });
-    const tokenId = c.req.param("id");
-    try {
-      await adminRevokeToken(tokenId);
-    } catch (err) {
-      const msg =
-        err instanceof Error
-          ? encodeURIComponent(err.message)
-          : "revoke_failed";
-      return c.redirect(`/admin/tokens?error=${msg}`, 302);
-    }
-    return c.redirect("/admin/tokens", 302);
   });
 
   // ─── Agent delete (danger zone) ───────────────────────────────────────────

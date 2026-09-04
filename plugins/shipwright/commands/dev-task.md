@@ -760,7 +760,7 @@ You are refreshing docs for the current branch.
 
 Branch:    {branch}
 Base ref:  main
-Worktree:  ~/worktrees/{repo-slug}-{branch-slug}
+Worktree:  ${SHIPWRIGHT_WORKTREE_DIR:-$HOME/worktrees}/{repo-slug}-{branch-slug}
 
 Follow your agent instructions exactly. Pre-filter docs by diff overlap, run the
 staleness recipe on candidates, edit only stale sections, commit as
