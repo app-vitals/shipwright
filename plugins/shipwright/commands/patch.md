@@ -68,15 +68,23 @@ server-side candidate provider already applies when building patch candidates, a
 
 ```bash
 PATCH_AUTHOR_ALLOWLIST=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_AGENT_API_KEY" \
-  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -r '.patchAuthorAllowlist // [] | join(",")')
+  "$SHIPWRIGHT_API_URL/agents/$SHIPWRIGHT_AGENT_ID/config" | jq -c '.patchAuthorAllowlist // []')
+PATCH_AUTHOR_ALLOWLIST=${PATCH_AUTHOR_ALLOWLIST:-[]}
 ```
 
+Keep `PATCH_AUTHOR_ALLOWLIST` as a **JSON array**, not a comma-joined string. Step 2's scope
+check gates a write-action command, so it must test exact membership; a flattened string
+invites a substring test (`[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`), which would
+match `bot` against an allowlist entry of `dependabot`, or `renovate` against an author of
+`not-renovate-bot`. The array form keeps `jq`'s element-wise equality available — see Step 2.
+
 **Fail-closed, not fail-open.** On any curl failure, or when `.patchAuthorAllowlist` is
-absent or an empty array, `PATCH_AUTHOR_ALLOWLIST` ends up empty — Step 2's scope check then
-falls back to exactly today's `CURRENT_USER`-only behavior. An unreachable config endpoint or
-an unsynced allowlist must never be read as "allow everyone"; it must be read as "no
-additional authors beyond `CURRENT_USER`," identical to `patchAuthorAllowlistRef`'s own
-fail-closed default on the server side.
+absent or an empty array, `PATCH_AUTHOR_ALLOWLIST` ends up as the empty JSON array `[]` (the
+`${...:-[]}` default covers the curl-failure case, where the pipeline emits nothing) — Step
+2's scope check then falls back to exactly today's `CURRENT_USER`-only behavior. An
+unreachable config endpoint or an unsynced allowlist must never be read as "allow everyone";
+it must be read as "no additional authors beyond `CURRENT_USER`," identical to
+`patchAuthorAllowlistRef`'s own fail-closed default on the server side.
 
 ---
 
@@ -101,10 +109,33 @@ on the same JSON) — reused unchanged at Step 5a.7's author-reply detection bel
 a self-authored PR, `PR_AUTHOR` naturally equals `CURRENT_USER`; for an allowlisted PR it's
 that PR's own real author.
 
-- **Not found, or `state != "OPEN"`, or (`author.login != CURRENT_USER` AND `author.login` is
-  not in `PATCH_AUTHOR_ALLOWLIST`)**: this PR is not workable by patch (per the Independence
-  Principles' "own PRs only" scope, widened by PAS-1.1 to include any agent-configured
-  `patchAuthorAllowlist` entry from Step 1). Print
+Then evaluate the in-scope test with an **exact** membership check — never a substring one:
+
+```bash
+# In scope iff PR_AUTHOR is CURRENT_USER, or equals an allowlist entry exactly.
+# `jq -e` exits 0 only when some element is character-for-character equal to
+# $PR_AUTHOR, and exits non-zero on `false` OR on malformed/empty input — so a
+# failed config fetch in Step 1 fails closed here rather than widening scope.
+if [ "$PR_AUTHOR" = "$CURRENT_USER" ] || \
+   printf '%s' "$PATCH_AUTHOR_ALLOWLIST" \
+     | jq -e --arg a "$PR_AUTHOR" 'any(.[]; . == $a)' >/dev/null 2>&1; then
+  IN_SCOPE=true
+else
+  IN_SCOPE=false
+fi
+```
+
+Do **not** substitute a substring form such as `[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`.
+Patch takes write actions (pushing commits, merging), so a false positive — `bot` matching an
+allowlisted `dependabot`, or `renovate` matching an author `not-renovate-bot` — would let
+patch act on an out-of-scope PR. This mirrors `check-patch.ts`'s server-side
+`listAllowlistedOpenPrs`, which queries `gh pr list --author {login}` once per allowlist
+entry and is therefore exact by construction.
+
+- **Not found, or `state != "OPEN"`, or `IN_SCOPE` is false (i.e. `author.login != CURRENT_USER`
+  AND `author.login` is not exactly equal to any entry in `PATCH_AUTHOR_ALLOWLIST`)**: this PR
+  is not workable by patch (per the Independence Principles' "own PRs only" scope, widened by
+  PAS-1.1 to include any agent-configured `patchAuthorAllowlist` entry from Step 1). Print
   `⚠ PR {org}/{repo}#{number} not found among own open PRs.` and stop.
 - **Match found**: use it as the sole entry in the unified PR list and proceed directly to
   Step 2.5.

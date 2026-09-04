@@ -85,6 +85,30 @@ describe("patch.md — patch-author allowlist (PAS-1.1)", () => {
     expect(step2Section).toContain("PATCH_AUTHOR_ALLOWLIST");
   });
 
+  it("Step 1 keeps the allowlist as a JSON array (jq -c), not a comma-joined string, so Step 2 can test exact membership", () => {
+    const step1Idx = content.indexOf("## Step 1: Get Own GH Login");
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step1Section = content.slice(step1Idx, step2Idx);
+    expect(step1Section).toContain("jq -c '.patchAuthorAllowlist // []'");
+    // A comma-joined string is exactly what invites a substring match downstream.
+    expect(step1Section).not.toContain('join(",")');
+  });
+
+  it("Step 2 shows a concrete exact-membership jq snippet and explicitly warns off the substring form", () => {
+    const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
+    const step2_5Idx = content.indexOf("## Step 2.5:");
+    const step2Section = content.slice(step2Idx, step2_5Idx);
+    // The mechanical check must be shown, not just described in prose.
+    expect(step2Section).toContain(
+      `jq -e --arg a "$PR_AUTHOR" 'any(.[]; . == $a)'`,
+    );
+    // And the unsafe substring alternative must be called out as forbidden.
+    expect(step2Section).toContain(
+      `[[ "$PATCH_AUTHOR_ALLOWLIST" == *"$PR_AUTHOR"* ]]`,
+    );
+    expect(step2Section).toMatch(/never a substring|not a substring|Do \*\*not\*\*/);
+  });
+
   it("Step 2 captures PR_AUTHOR from the gh pr view result for reuse at Step 5a.7", () => {
     const step2Idx = content.indexOf("## Step 2: Resolve Target PR");
     const step2_5Idx = content.indexOf("## Step 2.5:");
