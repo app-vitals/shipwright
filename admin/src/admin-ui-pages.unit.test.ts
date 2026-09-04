@@ -3727,6 +3727,181 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     const html = renderBoard([]);
     expect(html).toContain("view=table");
   });
+
+  // ─── Task board card slide-over drawer (AXR-1.4) ───────────────────────────────
+  // Each card opens a drawer showing full task + joined PR detail via a checkbox-driven
+  // off-canvas pattern, reusing the existing chat-drawer mechanics.
+
+  test("each board card renders a hidden checkbox with id=task-drawer-toggle-{taskId}", () => {
+    const task: TaskItem = {
+      id: "DRAWER-TEST",
+      title: "Drawer test task",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(html).toContain('id="task-drawer-toggle-DRAWER-TEST"');
+    expect(html).toContain('class="task-drawer-toggle"');
+    expect(html).toContain('aria-hidden="true"');
+  });
+
+  // aria-hidden only removes the checkbox from the accessibility tree, not the
+  // tab order — without tabindex="-1" a keyboard user can Tab to the hidden
+  // per-card checkbox and Space-check it directly, bypassing the card's click
+  // handler (the only place that closes any other already-open drawer) and
+  // ending up with two stacked .task-drawer panels.
+  test("hidden drawer checkbox is removed from tab order via tabindex=-1", () => {
+    const task: TaskItem = {
+      id: "TABINDEX-TEST",
+      title: "Tabindex test task",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(html).toContain('id="task-drawer-toggle-TABINDEX-TEST"');
+    expect(html).toContain('tabindex="-1"');
+  });
+
+  test("drawer checkbox appears before the drawer panel in DOM order", () => {
+    const task: TaskItem = {
+      id: "DOM-ORDER-TEST",
+      title: "DOM order test",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    const checkboxIndex = html.indexOf('id="task-drawer-toggle-DOM-ORDER-TEST"');
+    const drawerPanelIndex = html.indexOf('class="task-drawer"');
+    expect(checkboxIndex).toBeGreaterThanOrEqual(0);
+    expect(drawerPanelIndex).toBeGreaterThanOrEqual(0);
+    expect(checkboxIndex).toBeLessThan(drawerPanelIndex);
+  });
+
+  test("drawer renders a scrim label bound to the drawer toggle", () => {
+    const task: TaskItem = {
+      id: "SCRIM-TEST",
+      title: "Scrim test task",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(html).toContain('class="task-drawer-scrim"');
+    expect(html).toContain('for="task-drawer-toggle-SCRIM-TEST"');
+  });
+
+  test("drawer panel renders the task title and id", () => {
+    const task: TaskItem = {
+      id: "TITLE-ID-TEST",
+      title: "My task title",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    const drawerPanel = html.match(
+      /class="task-drawer"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/,
+    );
+    expect(drawerPanel).not.toBeNull();
+    if (drawerPanel) {
+      expect(drawerPanel[1]).toContain("My task title");
+      expect(drawerPanel[1]).toContain("TITLE-ID-TEST");
+    }
+  });
+
+  test("drawer panel includes PR state and reviewState when a joined PR exists", () => {
+    const task: TaskItem = {
+      id: "PR-STATE-TEST",
+      title: "PR state test",
+      status: "in_progress",
+      claimedBy: "agent-1",
+      assignee: null,
+      repo: "org/repo",
+      pr: 42,
+    };
+    const pr: PrListItem = {
+      id: "pr-1",
+      repo: "org/repo",
+      prNumber: 42,
+      staged: false,
+      state: "open",
+      reviewState: "approved",
+      patchCycles: 1,
+      reviewCycles: 2,
+      blocked: false,
+    };
+    const html = renderBoard([task], {}, undefined, { [task.id]: pr });
+    const drawerPanel = html.match(
+      /class="task-drawer"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/,
+    );
+    expect(drawerPanel).not.toBeNull();
+    if (drawerPanel) {
+      // The drawer should show the PR state and review state
+      expect(drawerPanel[1]).toContain("open");
+      expect(drawerPanel[1]).toContain("approved");
+    }
+  });
+
+  test("multiple cards each get unique drawer checkbox ids", () => {
+    const tasks: TaskItem[] = [
+      { id: "TASK-1", title: "Task 1", status: "pending", claimedBy: null, assignee: null },
+      { id: "TASK-2", title: "Task 2", status: "pending", claimedBy: null, assignee: null },
+      { id: "TASK-3", title: "Task 3", status: "pending", claimedBy: null, assignee: null },
+    ];
+    const html = renderBoard(tasks);
+    expect(html).toContain('id="task-drawer-toggle-TASK-1"');
+    expect(html).toContain('id="task-drawer-toggle-TASK-2"');
+    expect(html).toContain('id="task-drawer-toggle-TASK-3"');
+    // Verify no duplicate ids
+    const idMatches = html.match(/id="task-drawer-toggle-[^"]+"/g) ?? [];
+    expect(idMatches.length).toBe(3);
+    expect(new Set(idMatches).size).toBe(3);
+  });
+
+  test("readOnly board rendering does not render drawer toggles or scrims", () => {
+    const task: TaskItem = {
+      id: "READONLY-TEST",
+      title: "Readonly task",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderTasksPage(
+      [task],
+      {},
+      false,
+      USER_NAME,
+      {},
+      BOARD_PAGINATION,
+      undefined,
+      undefined,
+      true, // readOnly = true
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    // Check that the HTML elements are not rendered (the class definitions in CSS are OK)
+    expect(html).not.toContain('id="task-drawer-toggle-');
+    expect(html).not.toContain('class="task-drawer-scrim"');
+    expect(html).not.toContain('class="task-drawer"');
+    expect(html).not.toContain('data-drawer-toggle=');
+  });
+
+  // Opening a card's drawer must close any other drawer already open — two
+  // .task-drawer panels are both position:fixed at the same spot, so leaving
+  // a prior toggle checked would stack an invisible-but-still-checked drawer
+  // behind the new one instead of a clean single-drawer UX.
+  test("click handler closes any other open drawer before opening the clicked card's", () => {
+    const html = renderBoard([
+      { id: "T-A", title: "A", status: "pending", claimedBy: null, assignee: null },
+      { id: "T-B", title: "B", status: "pending", claimedBy: null, assignee: null },
+    ]);
+    expect(html).toContain('.task-drawer-toggle:checked").forEach(function(openToggle)');
+    expect(html).toContain("if (openToggle.id !== toggleId) openToggle.checked = false;");
+  });
 });
 
 // ─── renderTasksPage — ?view=table toggle (AXR-1.3) ──────────────────────────

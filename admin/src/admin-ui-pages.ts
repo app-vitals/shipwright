@@ -1995,6 +1995,25 @@ const TASKS_PAGE_EXTRA_STYLES = `
     .badge-hitl { background:#fff7ed;color:#c2410c;border:1px solid #fed7aa; }
     .badge-dep { background:#fefce8;color:#a16207;border:1px solid #fde047; }
     .alert-warning { background:#fefce8;color:#854d0e;border:1px solid #fde047;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:13px; }
+    /* ─── Task board card slide-over drawer (AXR-1.4) ────────────────────── */
+    .task-drawer-toggle { position:absolute;opacity:0;width:1px;height:1px;pointer-events:none }
+    .task-drawer-scrim {
+      display:none;position:fixed;inset:0;z-index:55;
+      background:rgba(0,0,0,0.4);cursor:pointer;
+    }
+    .task-drawer-toggle:checked ~ .task-drawer-scrim { display:block }
+    .task-drawer {
+      position:fixed;top:0;right:0;bottom:0;z-index:60;
+      width:100%;max-width:400px;min-width:300px;
+      background:#fff;border-left:1px solid #e8e8ee;
+      overflow-y:auto;
+      transform:translateX(100%);
+      transition:transform 0.2s ease;
+    }
+    .task-drawer-toggle:checked ~ .task-drawer { transform:translateX(0) }
+    @media (prefers-reduced-motion: reduce) {
+      .task-drawer { transition:none }
+    }
   `;
 
 export function renderTasksPage(
@@ -2523,7 +2542,7 @@ function renderTasksBoard(args: {
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`;
 
-    return `<div class="card"${readOnly ? "" : ` data-href="${detailHref}" style="cursor:pointer"`}${prJoinAttrs}>
+    const cardMarkup = `<div class="card"${readOnly ? "" : ` data-drawer-toggle="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer"`}${prJoinAttrs}>
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="font-size:13px;font-weight:600">${readOnly ? escapeHtml(t.title) : `<a href="${detailHref}" style="color:inherit;text-decoration:none">${escapeHtml(t.title)}</a>`}</div>
           <span class="badge ${statusBadgeClass(t.status)}" style="font-size:10px;white-space:nowrap">${escapeHtml(t.status)}</span>
@@ -2538,6 +2557,47 @@ function renderTasksBoard(args: {
         ${blockerBadges}${prBadge}
         ${releaseForm}
       </div>`;
+
+    // For readOnly, render the card without drawer wrapper
+    if (readOnly) {
+      return cardMarkup;
+    }
+
+    // For non-readOnly, wrap card with drawer markup
+    const drawerContent = `
+      <div style="padding:20px 24px">
+        <div style="display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:16px">
+          <div>
+            <h2 style="font-size:16px;font-weight:600;margin-bottom:4px">${escapeHtml(t.title)}</h2>
+            <div class="mono" style="font-size:12px;color:#9ca3af">${escapeHtml(t.id)}</div>
+          </div>
+          <label for="task-drawer-toggle-${escapeHtml(t.id)}" style="cursor:pointer;color:#6b7280;font-size:20px;line-height:1">×</label>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <span class="badge ${statusBadgeClass(t.status)}">${escapeHtml(t.status)}</span>
+        </div>
+        ${t.repo ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Repo:</strong> ${escapeHtml(t.repo)}</div>` : ""}
+        ${t.session ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px"><strong>Session:</strong> ${escapeHtml(t.session)}</div>` : ""}
+        ${agentId ? `<div style="font-size:12px;color:#6b7280;margin-bottom:16px"><strong>Agent:</strong> ${escapeHtml(agentNames[agentId] ?? agentId)}</div>` : ""}
+        ${t.description ? `<div style="font-size:13px;color:#374151;line-height:1.6;margin-bottom:16px">${renderMarkdown(t.description)}</div>` : ""}
+        ${joinedPr ? `
+          <div style="border-top:1px solid #e8e8ee;padding-top:16px">
+            <h3 style="font-size:13px;font-weight:600;margin-bottom:8px">Pull Request</h3>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Number:</strong> <a href="https://github.com/${escapeHtml(joinedPr.repo)}/pull/${joinedPr.prNumber}" style="color:#6366f1;text-decoration:none">#${joinedPr.prNumber}</a></div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>State:</strong> ${escapeHtml(joinedPr.state)}</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:4px"><strong>Review State:</strong> ${escapeHtml(joinedPr.reviewState)}</div>
+            ${joinedPr.blocked ? `<div style="font-size:12px;color:#dc2626"><strong>Blocked:</strong> ${escapeHtml(joinedPr.blockedReason ?? "Yes")}</div>` : ""}
+          </div>
+        ` : ""}
+      </div>
+    `;
+
+    return `<div class="task-card-wrap">
+      <input type="checkbox" id="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-toggle" aria-hidden="true" tabindex="-1">
+      ${cardMarkup}
+      <label for="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-scrim" aria-label="Close task detail"></label>
+      <div class="task-drawer">${drawerContent}</div>
+    </div>`;
   };
 
   const columnsHtml = TASK_BOARD_COLUMNS.map(({ key, label }) => {
@@ -2614,15 +2674,31 @@ function renderTasksBoard(args: {
     bodyEnd: readOnly
       ? ""
       : `<script>
-    document.querySelectorAll(".column .card[data-href]").forEach(function(card) {
+    document.querySelectorAll(".column .card[data-drawer-toggle]").forEach(function(card) {
       card.addEventListener("click", function(e) {
         var target = e.target;
         while (target && target !== card) {
           if (target.tagName === "A" || target.tagName === "BUTTON" || target.tagName === "FORM" || target.tagName === "INPUT") return;
           target = target.parentElement;
         }
-        window.location.href = card.getAttribute("data-href");
+        var toggleId = card.getAttribute("data-drawer-toggle");
+        document.querySelectorAll(".task-drawer-toggle:checked").forEach(function(openToggle) {
+          if (openToggle.id !== toggleId) openToggle.checked = false;
+        });
+        var checkbox = document.getElementById(toggleId);
+        if (checkbox) {
+          checkbox.checked = true;
+          checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       });
+    });
+    document.addEventListener("keydown", function(e) {
+      if ((e.key === "Escape" || e.key === "Esc") && document.querySelector(".task-drawer-toggle:checked")) {
+        document.querySelectorAll(".task-drawer-toggle:checked").forEach(function(toggle) {
+          toggle.checked = false;
+          toggle.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      }
     });
   </script>`,
   });
