@@ -3540,7 +3540,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   }
 
-  test("renders all 5 board columns: Queued, Claimed, In Progress, Blocked-HITL, Done", () => {
+  test("renders all 5 board columns in order: Queued, In Progress, Blocked-HITL, Claimed, Done", () => {
     const html = renderBoard([]);
     expect(html).toContain('class="board"');
     expect(html).toContain("Queued");
@@ -3550,6 +3550,9 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).toContain("Done");
     // Exactly 5 column containers
     expect((html.match(/class="column"/g) ?? []).length).toBe(5);
+    // Columns must render left-to-right in this exact order.
+    const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
+    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl", "claimed", "done"]);
   });
 
   function extractColumn(html: string, key: string): string {

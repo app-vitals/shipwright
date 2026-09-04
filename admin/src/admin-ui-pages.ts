@@ -3092,9 +3092,9 @@ export type TaskBoardColumn =
 
 export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
   { key: "queued", label: "Queued" },
-  { key: "claimed", label: "Claimed" },
   { key: "in_progress", label: "In Progress" },
   { key: "blocked_hitl", label: "Blocked-HITL" },
+  { key: "claimed", label: "Claimed" },
   { key: "done", label: "Done" },
 ];
 
