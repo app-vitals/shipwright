@@ -3011,6 +3011,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         timezone,
         prsByTaskId,
         view,
+        new Date(),
       ),
     );
   });
