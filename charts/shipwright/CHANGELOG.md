@@ -10,6 +10,12 @@ independent of `appVersion`. CI enforces this with
 `ct lint --check-version-increment`. Each release here must mirror the
 `artifacthub.io/changes` annotation in `Chart.yaml`.
 
+## [1.19.99] - 2026-09-04
+
+### Fixed
+
+- Raise admin readinessProbe successThreshold to 2 to prevent premature Ready flip during pod initialization. Single successful DB-aware probes no longer allow still-stabilizing pods to enter Ready state, preventing traffic routing before Cloud SQL proxy sidecar connection stabilizes (prevents transient 500s bursts observed via Sentry during admin restarts).
+
 ## [1.19.98] - 2026-09-04
 
 ### Changed

@@ -9,7 +9,7 @@ type: application
 # Chart version (SemVer). Bump on every chart change, independent of appVersion.
 # See CHANGELOG.md and the README "Versioning" section — CI enforces this bump
 # via `ct lint --check-version-increment`.
-version: 1.19.98
+version: 1.19.99
 # Version of the Shipwright application this chart deploys by default.
 appVersion: "0.1.0"
 home: https://shipwrightharness.com
@@ -29,8 +29,8 @@ annotations:
   # Artifact Hub change log for this release. Must mirror the matching version
   # entry in CHANGELOG.md (keep the two in sync on every bump).
   artifacthub.io/changes: |
-    - kind: changed
-      description: "auto-bump to chart v1.19.98 triggered by release tag agent-v1.249.0"
+    - kind: fixed
+      description: "Raise admin readinessProbe successThreshold to 2 to prevent premature Ready flip during pod initialization. Single successful DB-aware probes no longer allow still-stabilizing pods to enter Ready state, preventing traffic routing before Cloud SQL proxy sidecar connection stabilizes (prevents transient 500s bursts observed via Sentry during admin restarts)."
 dependencies:
   # Bitnami PostgreSQL subchart. Pinned to a chart version whose default image tag
   # is concrete (NOT `latest`), because Bitnami's 2025 catalog change moved newer
