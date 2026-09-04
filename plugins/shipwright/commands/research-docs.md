@@ -93,6 +93,32 @@ For each stale candidate, apply `references/doc-refresh-recipe.md` Part 2 (Secti
 
 Use the `Edit` tool for section-level changes; fall back to `Write` only for the `docs/testing.md` re-digest case.
 
+### Step A5.5: Auto Mode Quality Pass
+
+Run immediately after Step A5, against each doc Step A5 just touched (stale candidates that were rewritten — not the full candidate set, and never a doc Step A5 left untouched).
+
+Apply the same three checks defined in Interactive Mode Step 6.5 (Quality Pass) — 6.5a Canonical-Source Duplication, 6.5b Literal/Prose Mismatch, 6.5c Mechanism-Honesty — to each rewritten doc. Auto mode never edits based on a hit: file a task instead. Never an auto-edit.
+
+For each hit, file **one** task-store task via the same `/tasks/bulk` mechanism Step A7 already uses (the same endpoint, same auth header — do not invent a second endpoint):
+
+```bash
+curl -sf -X POST \
+  -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" \
+  -H "Content-Type: application/json" \
+  "$SHIPWRIGHT_TASK_STORE_URL/tasks/bulk" \
+  --data-binary @/tmp/quality-pass-tasks.json | jq .
+```
+
+Task titles, one shape per check:
+
+- 6.5a hit → `title: "Review {doc} for canonical-source duplication"`
+- 6.5b hit → `title: "Review {doc} for literal/prose mismatch"`
+- 6.5c hit → `title: "Review {doc} for convention missing named mechanism"`
+
+Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`.
+
+Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
+
 ### Step A6: Update CLAUDE.md References
 
 Check if `CLAUDE.md` has a reference or docs section (patterns: `@docs/`, `docs/`, or a "Reference" heading).
@@ -148,6 +174,7 @@ Repos processed: {N}
   Skipped (current): {list, or "none"}
   CLAUDE.md: {updated | unchanged}
   Tasks created: {N missing-doc tasks, or "none"}
+  Quality flags tasked: {N}
   Sync anchor: {HEAD SHA} → state/docs-last-synced.json
 
 {org/repo-2}: skipped (no docs/ directory)
@@ -421,6 +448,78 @@ For each stale doc the user approved, follow the procedure in `references/doc-re
 - How to report per-doc changes
 
 Use the `Edit` tool for focused section-level changes; only fall back to `Write` for the `docs/testing.md` re-digest case.
+
+---
+
+## Step 6.5: Quality Pass
+
+Run this pass against every doc drafted in Step 5 or updated in Step 6 — not against docs left untouched by this run. This is a distinct concern from the staleness checks in `references/doc-refresh-recipe.md`: staleness catches a *broken* reference; this pass catches content that is technically accurate today but structurally doomed to drift, or too vague to verify at all.
+
+Three checks, run in order:
+
+### 6.5a: Canonical-Source Duplication
+
+Scan the doc for an enumeration whose single source of truth lives elsewhere in the repo — the doc has effectively forked a copy of it. Shapes to look for:
+
+- A route/endpoint table that duplicates an OpenAPI/API spec file
+- A DB entity/migration list that duplicates the `migrations/` directory
+- An env-var table that duplicates `.env.example`
+- A codegen'd identifier list (generated types, generated clients) that duplicates its codegen source
+
+For each candidate, locate the canonical source in the repo (`Glob`/`Grep` for the spec file, migrations directory, `.env.example`, or codegen source). **If no canonical source is locatable, skip the flag — it isn't actionable.** If found, propose replacing the enumeration with a short pointer to the canonical source, keeping only the content the canonical source doesn't carry (gotchas, non-obvious wiring, why-not-what).
+
+```
+⚠ docs/api-billing.md — "API Endpoints" table (18 rows) duplicates openapi/billing.yaml
+  Proposed: replace table with a pointer to openapi/billing.yaml + keep the
+  2 gotcha notes (idempotency-key header requirement, webhook retry backoff)
+  that aren't in the spec.
+```
+
+### 6.5b: Literal/Prose Mismatch
+
+Scan the doc for a concrete literal value — a cron expression, pool size, timeout, percentage, count — that also has a prose paraphrase elsewhere in the *same* doc, and check whether the two agree. **The flag must cite the specific line/location of both the literal and the mismatched prose.**
+
+```
+⚠ docs/architecture.md:42 — states pool size `max: 10`
+  docs/architecture.md:58 — prose says "the pool scales up to 25 connections
+  under load"
+  These don't agree — confirm which is current before either is trusted.
+```
+
+### 6.5c: Mechanism-Honesty
+
+Scan the doc for a convention described only as a principle — "services validate input at the boundary," "all jobs are idempotent" — with no concrete mechanism named: the specific annotation, helper function, CLI command, or config key that actually implements it. Flag these explicitly as **low-confidence** — the doc may be accurate, but there's nothing in it a reader could verify or reuse.
+
+```
+◇ docs/development.md — "Handlers validate input at the boundary" (low-confidence)
+  No named mechanism — no schema helper, decorator, or middleware referenced.
+  Confirm the actual validation path (e.g. a `validateBody()` helper, a Zod
+  schema import) and name it, or drop the claim.
+```
+
+### Presenting flags
+
+These are **proposals for user confirmation — never automatic rewrites.** Present all hits from 6.5a-6.5c together, grouped by doc:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUALITY PASS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/api-billing.md:
+  ⚠ "API Endpoints" table duplicates openapi/billing.yaml — proposed pointer replacement
+
+docs/architecture.md:
+  ⚠ line 42 vs line 58 — pool size literal (10) vs prose paraphrase (25) disagree
+
+docs/development.md:
+  ◇ "Handlers validate input at the boundary" — no named mechanism (low-confidence)
+
+Proceed? (Apply proposed fixes / Pick specific / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+Wait for user confirmation before applying any `Edit`. A skipped or declined flag is left as-is — do not silently apply it anyway.
 
 ---
 
