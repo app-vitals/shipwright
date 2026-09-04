@@ -2823,6 +2823,176 @@ describe("admin UI — member access control", () => {
   });
 });
 
+// ─── Default-agent queue-activity redirect (AXR-3.3) ─────────────────────────
+
+describe("admin UI — GET /admin/queue-activity (default-agent redirect)", () => {
+  it("unauthenticated GET /admin/queue-activity redirects to /admin/login", async () => {
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/queue-activity");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/login");
+  });
+
+  it("admin is redirected to the first agent's queue-activity page (full fleet)", async () => {
+    const adminCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-admin",
+      "admin@example.com",
+      true,
+    );
+    const app = createAdminUIApp(makeMockDeps());
+    const res = await app.request("/admin/queue-activity", {
+      headers: { Cookie: `admin_session=${adminCookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}/queue-activity`,
+    );
+  });
+
+  it("non-admin AgentMember is redirected to their first accessible agent's queue-activity page", async () => {
+    const MEMBER_EMAIL = "member@example.com";
+    const OTHER_AGENT_ID = "agent-other-456";
+    const memberCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-member",
+      MEMBER_EMAIL,
+      false,
+    );
+    const deps = makeMockDeps({
+      agentMemberService: {
+        listByEmail: async (email: string) =>
+          email === MEMBER_EMAIL
+            ? [
+                {
+                  id: "m1",
+                  agentId: AGENT_ID,
+                  email: MEMBER_EMAIL,
+                  createdAt: new Date(),
+                },
+              ]
+            : [],
+        exists: async () => false,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: MEMBER_EMAIL,
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+        listByAgentId: async () => [],
+      },
+      agentService: {
+        listAll: async () => [
+          {
+            id: AGENT_ID,
+            name: "My Agent",
+            slackId: "U1",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+          {
+            id: OTHER_AGENT_ID,
+            name: "Other Agent",
+            slackId: "U2",
+            selfHosted: false,
+            typeName: "coding",
+            createdAt: new Date("2024-01-01"),
+            updatedAt: new Date("2024-01-01"),
+          },
+        ],
+        listByIds: async (ids: string[]) =>
+          [
+            {
+              id: AGENT_ID,
+              name: "My Agent",
+              slackId: "U1",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+            {
+              id: OTHER_AGENT_ID,
+              name: "Other Agent",
+              slackId: "U2",
+              selfHosted: false,
+              typeName: "coding",
+              createdAt: new Date("2024-01-01"),
+              updatedAt: new Date("2024-01-01"),
+            },
+          ].filter((a) => ids.includes(a.id)),
+        searchByName: async () => [],
+        listOptions: async () => [
+          { id: AGENT_ID, name: "My Agent" },
+          { id: OTHER_AGENT_ID, name: "Other Agent" },
+        ],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/queue-activity", {
+      headers: { Cookie: `admin_session=${memberCookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/agents/${AGENT_ID}/queue-activity`,
+    );
+  });
+
+  it("non-admin with zero accessible agents is redirected to /admin/agents instead of a queue-activity page", async () => {
+    const outsiderCookie = await makeSessionCookie(
+      SESSION_SECRET,
+      "google-sub-outsider",
+      "outsider@example.com",
+      false,
+    );
+    const deps = makeMockDeps({
+      agentMemberService: {
+        listByEmail: async () => [],
+        exists: async () => false,
+        add: async () => ({
+          id: "m1",
+          agentId: AGENT_ID,
+          email: "member@example.com",
+          createdAt: new Date(),
+        }),
+        remove: async () => {},
+        listByAgentId: async () => [],
+      },
+      agentService: {
+        listAll: async () => [],
+        listByIds: async () => [],
+        searchByName: async () => [],
+        listOptions: async () => [],
+        create: async () => {
+          throw new Error("not implemented");
+        },
+        delete: async () => {},
+        getDetail: async () => null,
+        updateFields: async () => {
+          throw new Error("not implemented");
+        },
+      },
+    });
+    const app = createAdminUIApp(deps);
+    const res = await app.request("/admin/queue-activity", {
+      headers: { Cookie: `admin_session=${outsiderCookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/agents");
+  });
+});
+
 // ─── Agent delete route ───────────────────────────────────────────────────────
 
 describe("admin UI — agent delete route", () => {
