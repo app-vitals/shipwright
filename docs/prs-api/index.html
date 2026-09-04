@@ -46,7 +46,7 @@
 </tr>
 </tbody>
 </table>
-<p>A task typically has one associated PR record once it reaches <code>pr_open</code>. The link is optional — either resource can exist without the other — but the <code>taskId</code> field on the PR record makes the association explicit.</p>
+<p>A task typically has one associated PR record once it reaches <code>pr_open</code>. The link is optional — either resource can exist without the other. There is no <code>taskId</code> field on the PR record — the association is resolved live by matching <code>(Task.repo, Task.pr)</code>, the same pairing <code>GET /tasks?repo=&amp;pr=</code> exposes.</p>
 <p>Multiple review rounds on the same PR are represented by <code>reviewCycles</code> (how many times a review was posted) and <code>patchCycles</code> (how many times the PR was patched and re-queued).</p>
 <h2 id="authentication">Authentication</h2>
 <p>All requests require a Bearer token in the <code>Authorization</code> header:</p>
@@ -172,11 +172,6 @@
 <td>Filter by PR number (use with <code>repo</code> to get a specific record)</td>
 </tr>
 <tr>
-<td><code>taskId</code></td>
-<td>string</td>
-<td>Filter by linked task ID</td>
-</tr>
-<tr>
 <td><code>state</code></td>
 <td>string</td>
 <td>Filter by PR state: <code>open</code>, <code>merged</code>, <code>closed</code></td>
@@ -247,12 +242,6 @@
 <td>admin tokens only</td>
 <td>Agent ID to claim as; agent tokens use the token’s own agent ID</td>
 </tr>
-<tr>
-<td><code>taskId</code></td>
-<td>string</td>
-<td>no</td>
-<td>Associated task ID</td>
-</tr>
 </tbody>
 </table>
 <p><strong>Claim semantics:</strong></p>
@@ -278,7 +267,7 @@
 <span class="line"><span style="color:var(--astro-code-token-string-expression)">  &quot;$SHIPWRIGHT_TASK_STORE_URL/prs/clx1234abc&quot;</span><span style="color:var(--astro-code-token-keyword)"> |</span><span style="color:var(--astro-code-token-function)"> jq</span><span style="color:var(--astro-code-token-string)"> .</span></span></code></pre>
 <h3 id="patch-prsid">PATCH /prs/:id</h3>
 <p>Partial update — only the provided fields are changed. Returns the updated record.</p>
-<p><strong>Updatable fields:</strong> <code>staged</code>, <code>commitSha</code>, <code>taskId</code>, <code>agentId</code>, <code>state</code>, <code>mergedAt</code>, <code>reviewState</code></p>
+<p><strong>Updatable fields:</strong> <code>staged</code>, <code>commitSha</code>, <code>agentId</code>, <code>state</code>, <code>mergedAt</code>, <code>reviewState</code></p>
 <pre class="astro-code css-variables" style="background-color:var(--astro-code-background);color:var(--astro-code-foreground);overflow-x:auto" tabindex="0" data-language="bash"><code><span class="line"><span style="color:var(--astro-code-token-comment)"># Mark review as staged (written but not yet posted)</span></span>
 <span class="line"><span style="color:var(--astro-code-token-function)">curl</span><span style="color:var(--astro-code-token-string)"> -sf</span><span style="color:var(--astro-code-token-string)"> -X</span><span style="color:var(--astro-code-token-string)"> PATCH</span><span style="color:var(--astro-code-foreground)"> \</span></span>
 <span class="line"><span style="color:var(--astro-code-token-string)">  -H</span><span style="color:var(--astro-code-token-string-expression)"> &quot;Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN&quot;</span><span style="color:var(--astro-code-foreground)"> \</span></span>
@@ -364,11 +353,6 @@
 <td><code>prNumber</code></td>
 <td>int</td>
 <td>GitHub PR number; unique together with <code>repo</code></td>
-</tr>
-<tr>
-<td><code>taskId</code></td>
-<td>string?</td>
-<td>Optional link to a task store task</td>
 </tr>
 <tr>
 <td><code>agentId</code></td>
