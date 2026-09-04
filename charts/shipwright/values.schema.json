@@ -222,7 +222,6 @@
               }
             },
             "appBaseUrl": { "type": "string" },
-            "taskStorePublicUrl": { "type": "string" },
             "extraEnv": {
               "type": "array",
               "items": {

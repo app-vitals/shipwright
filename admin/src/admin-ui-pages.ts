@@ -344,18 +344,6 @@ export interface TaskItem {
   lastSkippedAt?: string | null;
 }
 
-// Token shape returned by the task-store /tokens endpoint (admin token only).
-// Mirrors TaskToken fields relevant to the admin UI; avoids cross-package coupling.
-export interface TaskStoreTokenItem {
-  id: string;
-  label: string | null;
-  agentId: string | null;
-  token: string;
-  createdAt: Date | string;
-  revokedAt: Date | string | null;
-  rawToken?: string;
-}
-
 // ─── Inline markdown renderer ─────────────────────────────────────────────────
 
 /**
@@ -1715,20 +1703,6 @@ export function renderAgentDetailPage(
       </div>
     </div>
 
-    ${
-      agent.selfHosted
-        ? `<div class="card">
-      <div class="card-title">Local CLI Access</div>
-      <p style="font-size:13px;color:#6b7280;margin-bottom:12px">
-        This agent runs locally. Use an API token to authenticate the local agent process with the admin service.
-      </p>
-      <a href="/admin/tokens?agentId=${escapeHtml(agent.id)}" class="btn btn-secondary" style="font-size:13px">
-        Manage Tokens →
-      </a>
-    </div>`
-        : ""
-    }
-
     <div class="card">
       <div class="card-title">Plugins</div>
       <div class="data-table-wrapper">
@@ -1940,50 +1914,6 @@ export function renderProvisionXappTokenPage(
           />
         </div>
         <button type="submit" class="btn btn-primary">Save Token →</button>
-      </form>
-    </div>
-  </div>`,
-  });
-}
-
-// Paste form shown after OAuth callback — user enters SLACK_APP_ID and SLACK_SIGNING_SECRET
-// from the Slack App Credentials page (signing secret is not returned by Slack's OAuth API).
-export function renderProvisionPasteForm(
-  userName: string,
-  opts?: { agentId?: string; error?: string },
-): string {
-  const errorHtml = opts?.error
-    ? `<div class="alert alert-error">${escapeHtml(opts.error)}</div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Complete Provisioning — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, "/admin/provision")}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Provision Agent</h1>
-    </div>
-    <div class="provision-steps">
-      <span class="provision-step">1. Create Slack App</span>
-      <span class="provision-step">2. Authorize</span>
-      <span class="provision-step active">3. Paste Credentials</span>
-    </div>
-    <div class="card">
-      <p style="font-size:14px;margin-bottom:16px;color:#6b7280">
-        Open your Slack App's <strong>Basic Information</strong> page and paste the credentials below.
-      </p>
-      ${errorHtml}
-      <form method="POST" action="/admin/provision/complete">
-        <input type="hidden" name="agentId" value="${escapeHtml(opts?.agentId ?? "")}" />
-        <div class="form-group">
-          <label class="form-label" for="appId">App ID</label>
-          <input id="appId" name="appId" type="text" class="form-input" placeholder="AXXXXXXXXXX" required />
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="signingSecret">Signing Secret</label>
-          <input id="signingSecret" name="signingSecret" type="password" class="form-input" placeholder="Paste from App Credentials" required />
-        </div>
-        <button type="submit" class="btn btn-primary">Save Credentials →</button>
       </form>
     </div>
   </div>`,
@@ -3883,6 +3813,40 @@ export function renderPrDetailPage(
   });
 }
 
+// ─── Cron grouping for activity display ────────────────────────────────────
+
+export interface CronGroupingInput {
+  id: string;
+  name: string | null;
+  schedule: string;
+}
+
+/**
+ * Partitions an agent's crons into the always-visible shipwright-loop cron
+ * and every other cron, which collapses by default in the Past section.
+ *
+ * Used by renderQueueActivityPage to separate runs: shipwright-loop runs
+ * stay in the primary visible table, while runs from other crons are grouped
+ * under collapsed <details> disclosure blocks.
+ */
+export function partitionCronsForActivityDisplay(crons: CronGroupingInput[]): {
+  visibleCronIds: Set<string>;
+  collapsedCronIds: Set<string>;
+} {
+  const visibleCronIds = new Set<string>();
+  const collapsedCronIds = new Set<string>();
+
+  for (const c of crons) {
+    if (c.name === "shipwright-loop") {
+      visibleCronIds.add(c.id);
+    } else {
+      collapsedCronIds.add(c.id);
+    }
+  }
+
+  return { visibleCronIds, collapsedCronIds };
+}
+
 // Inline CSS for the work-queue "Phase" column badge, keyed by the raw
 // phase value (dev-task/review/patch/deploy) — a single neutral palette
 // distinct from the outcome-style badges elsewhere on the queue & activity
@@ -3894,6 +3858,22 @@ const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
   deploy: "background:#dcfce7;color:#166534",
 };
 const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
+
+// Shared column header row for the Past-section cron-run table — reused by
+// both the primary (shipwright-loop) table and each collapsed non-loop
+// cron's <details> table so the two stay in lockstep.
+const CRON_RUN_TABLE_HEAD = `<tr>
+  <th>Outcome</th>
+  <th>Cron</th>
+  <th>Started</th>
+  <th>Duration</th>
+  <th class="col-tokens">Tokens</th>
+  <th class="col-model">Model</th>
+  <th>Phase</th>
+  <th>Item</th>
+  <th>Session</th>
+  <th>Detail</th>
+</tr>`;
 
 // Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
 // the zod schema itself — keeps this file's dependency surface to pure
@@ -4107,10 +4087,74 @@ export function renderQueueActivityPage(opts: {
     </tr>`;
   }
 
+  // Partition crons into visible (shipwright-loop) and collapsed (all others).
+  // When filters.cronId narrows `runs` server-side to a single cron, the
+  // visible/collapsed split is skipped entirely — every run already belongs
+  // to the one cron the user asked to see, so splitting it into a collapsed
+  // group would falsely report the primary table as empty even though the
+  // matching runs exist (just tucked inside a closed <details> block).
+  const { visibleCronIds, collapsedCronIds } =
+    partitionCronsForActivityDisplay(crons);
+
+  const isCronFiltered = Boolean(filters.cronId);
+
+  // Separate runs into visible (primary table) and grouped (collapsed details blocks)
+  const visibleRuns = isCronFiltered
+    ? runs
+    : runs.filter((r) => !r.cron || visibleCronIds.has(r.cron.id));
+
+  // Group collapsed runs by cron ID, preserving insertion order of each cron
+  const collapsedGroups = new Map<string, CronRunItem[]>();
+  const collapsedCronOrder: string[] = [];
+  if (!isCronFiltered) {
+    for (const r of runs) {
+      if (r.cron && collapsedCronIds.has(r.cron.id)) {
+        if (!collapsedGroups.has(r.cron.id)) {
+          collapsedCronOrder.push(r.cron.id);
+          collapsedGroups.set(r.cron.id, []);
+        }
+        const group = collapsedGroups.get(r.cron.id);
+        if (group) {
+          group.push(r);
+        }
+      }
+    }
+  }
+
   const bodyRows =
-    runs.length === 0
+    visibleRuns.length === 0
       ? `<tr><td colspan="10" class="empty-state">No runs match the selected filters.</td></tr>`
-      : runs.map(row).join("\n");
+      : visibleRuns.map(row).join("\n");
+
+  // Build collapsed detail blocks for non-loop crons
+  const collapsedGroupsHtml = collapsedCronOrder
+    .map((cronId) => {
+      const groupRuns = collapsedGroups.get(cronId);
+      if (!groupRuns) return "";
+      const cron = crons.find((c) => c.id === cronId);
+      if (!cron) return "";
+
+      const cronLabel = cron.name ?? cron.schedule;
+      const escapedLabel = escapeHtml(cronLabel);
+      const groupBodyRows = groupRuns.map(row).join("\n");
+
+      return `<details class="more-filters" style="margin-top:12px">
+      <summary>${escapedLabel} (${groupRuns.length} run${groupRuns.length === 1 ? "" : "s"})</summary>
+      <div class="card" style="margin-top:8px">
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              ${CRON_RUN_TABLE_HEAD}
+            </thead>
+            <tbody>
+              ${groupBodyRows}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </details>`;
+    })
+    .join("\n");
 
   // Filter form
   const cronOptions = crons
@@ -4194,18 +4238,7 @@ export function renderQueueActivityPage(opts: {
       <div class="data-table-wrapper">
         <table class="data-table">
           <thead>
-            <tr>
-              <th>Outcome</th>
-              <th>Cron</th>
-              <th>Started</th>
-              <th>Duration</th>
-              <th class="col-tokens">Tokens</th>
-              <th class="col-model">Model</th>
-              <th>Phase</th>
-              <th>Item</th>
-              <th>Session</th>
-              <th>Detail</th>
-            </tr>
+            ${CRON_RUN_TABLE_HEAD}
           </thead>
           <tbody>
             ${bodyRows}
@@ -4213,6 +4246,7 @@ export function renderQueueActivityPage(opts: {
         </table>
       </div>
       ${paginationHtml}
+      ${collapsedGroupsHtml}
     </div>
   </div>`,
   });
@@ -4255,138 +4289,6 @@ export function renderProvisionCompletePage(
     <div class="card">
       ${bodyHtml}
     </div>
-  </div>`,
-  });
-}
-
-// ─── Task-store tokens page ────────────────────────────────────────────────────
-
-export function renderTokensPage(
-  tokens: TaskStoreTokenItem[],
-  degraded: boolean,
-  userName: string,
-  activePath = "/admin/tokens",
-  rawToken?: string,
-  timezone?: string,
-  error?: string,
-  agents?: Array<{ id: string; name: string }>,
-  selectedAgentId?: string,
-  taskStoreBaseUrl?: string,
-): string {
-  const tz = timezone ?? "America/Los_Angeles";
-  const fmt = (d: Date | string | null | undefined) => {
-    if (!d) return "—";
-    const date = d instanceof Date ? d : new Date(d);
-    return date.toLocaleString("en-US", {
-      timeZone: tz,
-      dateStyle: "medium",
-      timeStyle: "short",
-    });
-  };
-
-  const degradedBanner = degraded
-    ? `<div class="alert alert-warning">Token store unavailable — configure SHIPWRIGHT_TASK_STORE_URL and SHIPWRIGHT_TASK_STORE_ADMIN_TOKEN.</div>`
-    : "";
-
-  const errorBanner = error
-    ? `<div class="alert alert-danger" style="margin-bottom:16px">${escapeHtml(error)}</div>`
-    : "";
-
-  const envBlock =
-    rawToken && taskStoreBaseUrl
-      ? `<pre style="background:#f3f4f6;border-radius:4px;padding:12px;margin-top:12px;font-size:12px;font-family:monospace;overflow-x:auto">export SHIPWRIGHT_TASK_STORE_URL=${escapeHtml(taskStoreBaseUrl)}
-export SHIPWRIGHT_TASK_STORE_TOKEN=${escapeHtml(rawToken)}</pre>`
-      : "";
-
-  const rawTokenBanner = rawToken
-    ? `<div class="alert alert-success" style="margin-bottom:16px">
-        <strong>Token created.</strong> Copy it now — it will not be shown again.<br>
-        <code id="raw-token" style="display:block;margin-top:8px;font-size:13px;word-break:break-all">${escapeHtml(rawToken)}</code>
-        <button type="button" class="btn btn-sm btn-secondary" style="margin-top:8px"
-          onclick="navigator.clipboard.writeText(document.getElementById('raw-token').textContent)">
-          Copy
-        </button>
-        ${envBlock}
-      </div>`
-    : "";
-
-  const rows =
-    tokens.length === 0
-      ? `<tr><td colspan="6" class="empty-state">No tokens found.</td></tr>`
-      : tokens
-          .map(
-            (t) => `<tr>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${escapeHtml(t.id)}</td>
-          <td>${escapeHtml(t.label ?? "—")}</td>
-          <td style="font-size:12px;color:#6b7280;font-family:monospace">${t.agentId ? agentLink(t.agentId) : "(admin)"}</td>
-          <td>${fmt(t.createdAt)}</td>
-          <td>${t.revokedAt ? `<span style="color:#dc2626">Revoked ${fmt(t.revokedAt)}</span>` : '<span style="color:#16a34a">Active</span>'}</td>
-          <td>
-            ${
-              t.revokedAt
-                ? ""
-                : `<form method="POST" action="/admin/tokens/${encodeURIComponent(t.id)}/revoke" style="margin:0" onsubmit="return confirm('Revoke this token?')">
-                    <button type="submit" class="btn btn-sm btn-danger">Revoke</button>
-                  </form>`
-            }
-          </td>
-        </tr>`,
-          )
-          .join("");
-
-  const agentOptions = [
-    `<option value="">— admin token —</option>`,
-    ...(agents ?? []).map(
-      (a) =>
-        `<option value="${escapeHtml(a.id)}"${a.id === selectedAgentId ? " selected" : ""}>${escapeHtml(a.name)}</option>`,
-    ),
-  ].join("");
-
-  const createForm = !degraded
-    ? `<div class="card" style="margin-top:24px">
-        <h2 style="font-size:15px;font-weight:600;margin-bottom:12px">Create token</h2>
-        <form method="POST" action="/admin/tokens" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Label <span style="color:#dc2626">*</span></label>
-            <input type="text" name="label" placeholder="e.g. ci-pipeline" class="form-input" style="width:220px" required>
-          </div>
-          <div>
-            <label style="display:block;font-size:12px;color:#6b7280;margin-bottom:4px">Agent (optional — blank for admin token)</label>
-            <select name="agentId" class="form-input" style="width:220px">${agentOptions}</select>
-          </div>
-          <button type="submit" class="btn btn-primary">Create</button>
-        </form>
-      </div>`
-    : "";
-
-  return renderAdminPage({
-    title: "Task Store Tokens — Shipwright Admin",
-    body: `${renderAdminToolbar(userName, activePath)}
-  <div class="vos-page">
-    <div class="page-header">
-      <h1 class="page-title">Task Store Tokens</h1>
-    </div>
-    ${degradedBanner}
-    ${errorBanner}
-    ${rawTokenBanner}
-    <div class="card" style="overflow:auto">
-      <div class="data-table-wrapper">
-        <table class="data-table" style="width:100%">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Label</th>
-              <th>Agent</th>
-              <th>Created</th>
-              <th>Status</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-    </div>
-    ${createForm}
   </div>`,
   });
 }

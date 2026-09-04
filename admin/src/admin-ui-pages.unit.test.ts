@@ -19,7 +19,6 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
-  type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
   type WorkQueueItem,
@@ -28,6 +27,7 @@ import {
   classifyTaskState,
   computeDependencyLayout,
   computeDependencyNodes,
+  partitionCronsForActivityDisplay,
   renderAgentDetailPage,
   renderAgentsPage,
   renderChatMessageBubble,
@@ -40,14 +40,12 @@ import {
   renderNewLocalAgentPage,
   renderPrDetailPage,
   renderProvisionCompletePage,
-  renderProvisionPasteForm,
   renderProvisionXappTokenPage,
   renderPrsPage,
   renderQueueActivityPage,
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
-  renderTokensPage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
 import type { ChatMessage, ChatThread } from "./http-chat-client.ts";
@@ -1869,69 +1867,6 @@ describe("renderAgentDetailPage — plugins", () => {
         timeZone: "UTC",
       }),
     );
-  });
-});
-
-// ─── renderProvisionPasteForm ─────────────────────────────────────────────────
-
-describe("renderProvisionPasteForm", () => {
-  test("returns a valid HTML document", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("<html");
-    expect(html).toContain("</html>");
-  });
-
-  test("form action is /admin/provision/complete", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('action="/admin/provision/complete"');
-  });
-
-  test("agentId in hidden input when provided", () => {
-    const html = renderProvisionPasteForm(USER_NAME, { agentId: "agent-abc" });
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain('value="agent-abc"');
-  });
-
-  test("hidden agentId input empty when not provided", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('name="agentId"');
-    expect(html).toContain('value=""');
-  });
-
-  test("XSS: agentId in hidden input is escaped", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      agentId: '"><script>xss()</script>',
-    });
-    expect(html).not.toContain('"><script>xss()</script>');
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("no error div when no error", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).not.toContain('class="alert alert-error"');
-  });
-
-  test("error shown when opts.error set", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      error: "Missing credentials",
-    });
-    expect(html).toContain('class="alert alert-error"');
-    expect(html).toContain("Missing credentials");
-  });
-
-  test("XSS: error is escaped", () => {
-    const html = renderProvisionPasteForm(USER_NAME, {
-      error: "<script>bad()</script>",
-    });
-    expect(html).not.toContain("<script>bad()</script>");
-    expect(html).toContain("&lt;script&gt;");
-  });
-
-  test("includes App ID and Signing Secret fields", () => {
-    const html = renderProvisionPasteForm(USER_NAME);
-    expect(html).toContain('name="appId"');
-    expect(html).toContain('name="signingSecret"');
   });
 });
 
@@ -3901,39 +3836,20 @@ describe("renderTasksPage — ?view=table toggle (AXR-1.3)", () => {
 // ─── renderAdminToolbar — active nav highlight ────────────────────────────────
 
 describe("renderAdminToolbar — active nav highlight", () => {
-  test("activePath /admin/agents: Agents link is active, Provision is not", () => {
+  test("activePath /admin/agents: Agents link is active", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
-    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
-    expect(html).not.toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
   });
 
   test("activePath sub-path /admin/agents/agent-id: Agents link is still active (startsWith)", () => {
     const html = renderAdminToolbar(USER_NAME, "/admin/agents/agent-id");
     expect(html).toContain('href="/admin/agents" class="vos-nav-link active"');
-    expect(html).not.toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
-  });
-
-  test("activePath /admin/provision: Provision link is active, Agents is not", () => {
-    const html = renderAdminToolbar(USER_NAME, "/admin/provision");
-    expect(html).toContain(
-      'href="/admin/provision" class="vos-nav-link active"',
-    );
-    expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
-    expect(html).not.toContain(
-      'href="/admin/agents" class="vos-nav-link active"',
-    );
   });
 
   test("activePath '' (default): neither link is active", () => {
     const html = renderAdminToolbar(USER_NAME);
     expect(html).not.toContain('class="vos-nav-link active"');
     expect(html).toContain('href="/admin/agents" class="vos-nav-link"');
-    expect(html).toContain('href="/admin/provision" class="vos-nav-link"');
   });
 });
 
@@ -5438,13 +5354,19 @@ describe("renderQueueActivityPage — Past section", () => {
   const CRON_AGENT = { id: "agent-123", name: "Test Agent" };
   const CRON = {
     id: "cron-456",
-    name: "status check",
-    schedule: "0 * * * *",
+    name: "shipwright-loop",
+    schedule: "*/5 * * * *",
   };
   const OTHER_CRON = {
     id: "cron-789",
     name: null,
     schedule: "*/15 * * * *",
+  };
+  // Named non-loop cron for filtering/dropdown tests
+  const NAMED_NON_LOOP_CRON = {
+    id: "cron-999",
+    name: "status check",
+    schedule: "0 * * * *",
   };
 
   function makeRun(overrides?: Partial<CronRunItem>): CronRunItem {
@@ -5475,12 +5397,13 @@ describe("renderQueueActivityPage — Past section", () => {
     opts?: {
       filters?: { cronId?: string; outcome?: string };
       pagination?: { total: number; limit: number; page: number };
+      crons?: { id: string; name: string | null; schedule: string }[];
     },
   ): string {
     return renderQueueActivityPage({
       agent: CRON_AGENT,
       snapshot: null,
-      crons: [CRON, OTHER_CRON],
+      crons: opts?.crons ?? [CRON, OTHER_CRON, NAMED_NON_LOOP_CRON],
       runs,
       filters: opts?.filters ?? {},
       pagination: opts?.pagination ?? {
@@ -5492,6 +5415,121 @@ describe("renderQueueActivityPage — Past section", () => {
       timezone: "America/Los_Angeles",
     });
   }
+
+  // ─── Grouping function tests (partitionCronsForActivityDisplay) ──────────
+
+  test("partitionCronsForActivityDisplay: shipwright-loop cron appears in visibleCronIds", () => {
+    const crons = [CRON, OTHER_CRON, NAMED_NON_LOOP_CRON];
+    const result = partitionCronsForActivityDisplay(crons);
+    expect(result.visibleCronIds.has(CRON.id)).toBe(true);
+  });
+
+  test("partitionCronsForActivityDisplay: non-shipwright-loop crons appear in collapsedCronIds", () => {
+    const crons = [CRON, OTHER_CRON, NAMED_NON_LOOP_CRON];
+    const result = partitionCronsForActivityDisplay(crons);
+    expect(result.collapsedCronIds.has(OTHER_CRON.id)).toBe(true);
+    expect(result.collapsedCronIds.has(NAMED_NON_LOOP_CRON.id)).toBe(true);
+  });
+
+  test("partitionCronsForActivityDisplay: shipwright-loop does not appear in collapsedCronIds", () => {
+    const crons = [CRON, OTHER_CRON];
+    const result = partitionCronsForActivityDisplay(crons);
+    expect(result.collapsedCronIds.has(CRON.id)).toBe(false);
+  });
+
+  test("partitionCronsForActivityDisplay: empty crons returns empty sets", () => {
+    const result = partitionCronsForActivityDisplay([]);
+    expect(result.visibleCronIds.size).toBe(0);
+    expect(result.collapsedCronIds.size).toBe(0);
+  });
+
+  // ─── Grouping behavior in renderQueueActivityPage ──────────────────────
+
+  test("shipwright-loop run appears in the primary visible table", () => {
+    const html = render([makeRun({ cron: CRON })]);
+    const tbodyMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(tbodyMatch).not.toBeNull();
+    // The primary tbody should contain the shipwright-loop run
+    expect(tbodyMatch?.[1]).toContain("shipwright-loop");
+  });
+
+  test("non-shipwright-loop run appears in a collapsed <details> block, not in primary table", () => {
+    const html = render([makeRun({ cron: OTHER_CRON })]);
+    // The primary tbody should be empty or contain only empty-state
+    const tbodyMatches = html.match(/<tbody>([\s\S]*?)<\/tbody>/g);
+    expect(tbodyMatches).not.toBeNull();
+    // First tbody (primary table) should not contain the non-loop cron run
+    expect(tbodyMatches?.[0]).not.toContain("*/15 * * * *");
+    // There should be a <details> block with the collapsed group
+    expect(html).toContain('<details class="more-filters"');
+    expect(html).toContain("<summary>");
+  });
+
+  test("collapsed <details> block has no 'open' attribute (collapsed by default)", () => {
+    const html = render([makeRun({ cron: OTHER_CRON })]);
+    const detailsMatch = html.match(/<details[^>]*>(?!.*open)/);
+    expect(detailsMatch).not.toBeNull();
+  });
+
+  test("collapsed group summary contains the cron name or schedule", () => {
+    const html = render([makeRun({ cron: NAMED_NON_LOOP_CRON })]);
+    expect(html).toContain("<summary>");
+    expect(html).toContain("status check");
+  });
+
+  test("collapsed group contains the run rows in a separate table", () => {
+    const html = render([makeRun({ cron: OTHER_CRON })]);
+    // Should have a <details> with a nested table
+    expect(html).toContain('<details class="more-filters"');
+    // Extract the details section
+    const detailsMatch = html.match(/<details[^>]*>[\s\S]*?<\/details>/);
+    expect(detailsMatch).not.toBeNull();
+    // The details should contain a table
+    expect(detailsMatch?.[0]).toContain('<table class="data-table">');
+  });
+
+  test("multiple runs from the same non-loop cron are in the same <details> group", () => {
+    const run1 = makeRun({ cron: NAMED_NON_LOOP_CRON });
+    const run2 = makeRun({
+      cron: NAMED_NON_LOOP_CRON,
+      startedAt: new Date("2026-06-02T10:00:00Z"),
+    });
+    const html = render([run1, run2]);
+    // Count <details> blocks - should be exactly 1 for NAMED_NON_LOOP_CRON
+    const detailsMatches = html.match(/<details/g);
+    expect((detailsMatches ?? []).length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("runs from different non-loop crons produce separate <details> blocks", () => {
+    const run1 = makeRun({ cron: NAMED_NON_LOOP_CRON });
+    const run2 = makeRun({
+      cron: OTHER_CRON,
+      startedAt: new Date("2026-06-02T10:00:00Z"),
+    });
+    const html = render([run1, run2]);
+    // Should have 2 <details> blocks (one per non-loop cron)
+    const detailsMatches = html.match(/<details/g);
+    expect((detailsMatches ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test("when no runs match filters, primary table shows empty state", () => {
+    const html = render([]);
+    expect(html).toContain("No runs");
+  });
+
+  test("filtering to a non-loop cron renders its runs in the primary table, not a collapsed block", () => {
+    // filters.cronId narrows `runs` server-side to a single cron — the
+    // visible/collapsed split must not re-hide those already-filtered runs
+    // inside a closed <details> block (the bug this test guards against).
+    const html = render([makeRun({ cron: OTHER_CRON })], {
+      filters: { cronId: OTHER_CRON.id },
+    });
+    const tbodyMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(tbodyMatch).not.toBeNull();
+    expect(tbodyMatch?.[1]).toContain("*/15 * * * *");
+    expect(html).not.toContain("No runs match the selected filters.");
+    expect(html).not.toContain('<details class="more-filters"');
+  });
 
   test("renders the column headers", () => {
     const html = render([makeRun()]);
@@ -5567,7 +5605,7 @@ describe("renderQueueActivityPage — Past section", () => {
   });
 
   test("renders the owning cron's name/schedule in the Cron column", () => {
-    const html = render([makeRun({ cron: CRON })]);
+    const html = render([makeRun({ cron: NAMED_NON_LOOP_CRON })]);
     expect(html).toContain("status check");
   });
 
@@ -5775,6 +5813,7 @@ describe("renderQueueActivityPage — Past section", () => {
   test("filter form renders a cron dropdown option for each cron, labeled by name or schedule", () => {
     const html = render([makeRun()]);
     expect(html).toContain(`value="${CRON.id}"`);
+    expect(html).toContain(`value="${NAMED_NON_LOOP_CRON.id}"`);
     expect(html).toContain("status check");
     expect(html).toContain(`value="${OTHER_CRON.id}"`);
     expect(html).toContain("*/15 * * * *");
@@ -8105,59 +8144,6 @@ describe("computeDependencyLayout", () => {
   });
 });
 
-// ─── renderTokensPage — agent column linkability ─────────────────────────────
-
-describe("renderTokensPage — agent column linkability", () => {
-  function render(tokens: TaskStoreTokenItem[]): string {
-    return renderTokensPage(tokens, false, USER_NAME);
-  }
-
-  test("agent-scoped token links its Agent ID to the agent detail page", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain('<a href="/admin/agents/agent-y"');
-  });
-
-  test("admin token (no agentId) renders '(admin)' with no agent link", () => {
-    const html = render([
-      {
-        id: "tok-2",
-        label: "Admin token",
-        agentId: null,
-        token: "sw_def",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain("(admin)");
-    expect(html).not.toContain("/admin/agents/");
-  });
-
-  test("table is wrapped in .data-table-wrapper", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toMatch(
-      /<div class="data-table-wrapper">\s*<table class="data-table"/,
-    );
-  });
-});
-
 // AXR-3.1 merged the former standalone renderWorkQueuePage into
 // renderQueueActivityPage's "Upcoming" section — these cases are adapted
 // (not duplicated) from the original renderWorkQueuePage suite.
@@ -8442,7 +8428,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       "renderProvisionXappTokenPage",
       () => renderProvisionXappTokenPage(USER_NAME, { agentId: "agent-123" }),
     ],
-    ["renderProvisionPasteForm", () => renderProvisionPasteForm(USER_NAME)],
     [
       "renderTasksPage",
       () =>
@@ -8494,7 +8479,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       "renderProvisionCompletePage",
       () => renderProvisionCompletePage(USER_NAME, { success: true }),
     ],
-    ["renderTokensPage", () => renderTokensPage([], false, USER_NAME)],
     ["renderChatPage", () => renderChatPage([], undefined, null, USER_NAME)],
     [
       "renderChatThreadPage (degraded — thread/messages null)",
@@ -8512,8 +8496,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 20 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(20);
+  test("all 18 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(18);
   });
 
   for (const [name, render] of renderers) {

@@ -1415,6 +1415,25 @@ describe("admin UI — authenticated pages", () => {
   it("authenticated GET /admin/agents/:id/queue-activity renders populated runs in the Past section", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
+        // AXR-3.2: only shipwright-loop crons stay visible in the primary
+        // table by default — override the cron list so this run's owning
+        // cron classifies as visible instead of collapsing into a <details>.
+        agentCronJobService: {
+          list: async () => [{ ...MOCK_CRON, name: "shipwright-loop" }],
+          listWithRunSummary: async () => [
+            { ...MOCK_CRON, name: "shipwright-loop", lastRun: null, runCountToday: 0 },
+          ],
+          get: async () => MOCK_CRON,
+          create: async () => MOCK_CRON,
+          setEnabled: async () => MOCK_CRON,
+          update: async () => MOCK_CRON,
+          delete: async () => {},
+          reconcileSystemCrons: async () => ({
+            created: 0,
+            updated: 0,
+            deleted: 0,
+          }),
+        },
         agentCronRunService: {
           listForAgent: async () => ({
             items: [makeCronRun()],
@@ -1827,16 +1846,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain("Bash(git:*)");
     });
 
-    it("managed agent (selfHosted=false) does NOT show Local CLI access card", async () => {
-      const app = createAdminUIApp(makeMockDeps());
-      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).not.toContain("Local CLI");
-    });
-
     it("self-hosted agent (selfHosted=true) does NOT show Slack info in header", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
@@ -2010,40 +2019,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain('<div class="card-title">Tools</div>');
       // Tools should be rendered
       expect(html).toContain("Bash(git:*)");
-    });
-
-    it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
-      const app = createAdminUIApp(
-        makeMockDeps({
-          agentService: {
-            ...makeMockDeps().agentService,
-            getDetail: async () => ({
-              id: SELFHOSTED_AGENT_ID,
-              name: "Self-Hosted Agent",
-              slackId: null,
-              selfHosted: true,
-              typeName: "coding",
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-              reviewAuthorAllowlist: [],
-              patchAuthorAllowlist: [],
-              restrictSlackToMembers: false,
-              missingRequiredEnv: [],
-            }),
-          },
-        }),
-      );
-      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      // Local CLI card should be present
-      expect(html).toContain("Local CLI");
-      expect(html).toContain("Manage Tokens");
-      // Link should include the agent ID
-      expect(html).toContain(`/admin/tokens?agentId=${SELFHOSTED_AGENT_ID}`);
     });
   });
 });
