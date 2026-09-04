@@ -3862,27 +3862,36 @@ export function renderQueueActivityPage(opts: {
     </tr>`;
   }
 
-  // Partition crons into visible (shipwright-loop) and collapsed (all others)
+  // Partition crons into visible (shipwright-loop) and collapsed (all others).
+  // When filters.cronId narrows `runs` server-side to a single cron, the
+  // visible/collapsed split is skipped entirely — every run already belongs
+  // to the one cron the user asked to see, so splitting it into a collapsed
+  // group would falsely report the primary table as empty even though the
+  // matching runs exist (just tucked inside a closed <details> block).
   const { visibleCronIds, collapsedCronIds } =
     partitionCronsForActivityDisplay(crons);
 
+  const isCronFiltered = Boolean(filters.cronId);
+
   // Separate runs into visible (primary table) and grouped (collapsed details blocks)
-  const visibleRuns = runs.filter(
-    (r) => !r.cron || visibleCronIds.has(r.cron.id),
-  );
+  const visibleRuns = isCronFiltered
+    ? runs
+    : runs.filter((r) => !r.cron || visibleCronIds.has(r.cron.id));
 
   // Group collapsed runs by cron ID, preserving insertion order of each cron
   const collapsedGroups = new Map<string, CronRunItem[]>();
   const collapsedCronOrder: string[] = [];
-  for (const r of runs) {
-    if (r.cron && collapsedCronIds.has(r.cron.id)) {
-      if (!collapsedGroups.has(r.cron.id)) {
-        collapsedCronOrder.push(r.cron.id);
-        collapsedGroups.set(r.cron.id, []);
-      }
-      const group = collapsedGroups.get(r.cron.id);
-      if (group) {
-        group.push(r);
+  if (!isCronFiltered) {
+    for (const r of runs) {
+      if (r.cron && collapsedCronIds.has(r.cron.id)) {
+        if (!collapsedGroups.has(r.cron.id)) {
+          collapsedCronOrder.push(r.cron.id);
+          collapsedGroups.set(r.cron.id, []);
+        }
+        const group = collapsedGroups.get(r.cron.id);
+        if (group) {
+          group.push(r);
+        }
       }
     }
   }

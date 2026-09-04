@@ -5232,6 +5232,20 @@ describe("renderQueueActivityPage — Past section", () => {
     expect(html).toContain("No runs");
   });
 
+  test("filtering to a non-loop cron renders its runs in the primary table, not a collapsed block", () => {
+    // filters.cronId narrows `runs` server-side to a single cron — the
+    // visible/collapsed split must not re-hide those already-filtered runs
+    // inside a closed <details> block (the bug this test guards against).
+    const html = render([makeRun({ cron: OTHER_CRON })], {
+      filters: { cronId: OTHER_CRON.id },
+    });
+    const tbodyMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/);
+    expect(tbodyMatch).not.toBeNull();
+    expect(tbodyMatch?.[1]).toContain("*/15 * * * *");
+    expect(html).not.toContain("No runs match the selected filters.");
+    expect(html).not.toContain('<details class="more-filters"');
+  });
+
   test("renders the column headers", () => {
     const html = render([makeRun()]);
     expect(html).toContain("Outcome");
