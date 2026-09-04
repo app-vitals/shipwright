@@ -2124,15 +2124,21 @@ export function renderTasksPage(
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (p > 1) params.set("page", String(p));
+    // Keep self-referential links inside this view — bare /admin/tasks now
+    // defaults to the board (AXR-1.3), so every link generated in this
+    // table-view branch must carry ?view=table forward or it silently
+    // bounces the user back to the board (TBF-1.1).
+    params.set("view", "table");
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
   };
 
-  // The URL the user is currently viewing. When it differs from the bare
-  // /admin/tasks default (any filter, state, or page > 1 active), row links
-  // into the Task Detail and Session Detail pages carry it as `?from=` so
-  // their "← Tasks" back link can return here instead of the cleared default
-  // view.
+  // The URL the user is currently viewing. Since makePageUrl always carries
+  // ?view=table forward (TBF-1.1 — bare /admin/tasks now defaults to the
+  // board per AXR-1.3), this never collapses back to the bare-default case;
+  // row links into the Task Detail and Session Detail pages always carry it
+  // as `?from=` so their "← Tasks" back link returns to this table view
+  // (with its filters) instead of falling through to the board.
   const currentListUrl = makePageUrl(page);
   const detailHrefSuffix =
     currentListUrl === "/admin/tasks"
@@ -2203,7 +2209,7 @@ export function renderTasksPage(
         ? ""
         : `<td>${
             t.status === "in_progress"
-              ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
+              ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release?from=${encodeURIComponent(currentListUrl)}" style="display:inline">
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`
               : ""
@@ -2223,6 +2229,9 @@ export function renderTasksPage(
     if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
+    // See makePageUrl above (TBF-1.1) — state-tab links must stay in table
+    // view too, or clicking a tab bounces the user to the board.
+    p.set("view", "table");
     const qs = p.toString();
     return qs ? `?${qs}` : "";
   };
@@ -2307,6 +2316,7 @@ export function renderTasksPage(
         ? ""
         : `<div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <input type="hidden" name="view" value="table" />
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Status</label>
@@ -2333,7 +2343,7 @@ export function renderTasksPage(
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
-        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
+        <a href="/admin/tasks?view=table" class="btn btn-secondary" style="font-size:12px">Reset</a>
         ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>

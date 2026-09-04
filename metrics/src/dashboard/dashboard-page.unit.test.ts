@@ -432,7 +432,8 @@ describe("renderDashboardPage — adminBaseUrl cross-origin nav (local stack)", 
       adminBaseUrl: "http://localhost:3001",
     });
     expect(html).toContain('href="http://localhost:3001/admin/agents"');
-    expect(html).toContain('href="http://localhost:3001/admin/tasks?state=ready"');
+    // TBF-1.1: the Tasks nav link no longer hardcodes ?state=ready.
+    expect(html).toContain('href="http://localhost:3001/admin/tasks"');
     expect(html).toContain('href="http://localhost:3001/admin/prs"');
   });
 

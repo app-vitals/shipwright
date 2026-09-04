@@ -3074,8 +3074,23 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     } catch {
       return c.redirect("/admin/tasks?error=release_failed", 302);
     }
+    // TBF-1.1: the table row's Release button carries the list view it was
+    // clicked from (e.g. ?view=table&...) as `from`, so the Task Detail page
+    // we land on can hand it straight back to its own "← Tasks" link via
+    // resolveTaskDetailBackHref — otherwise that link falls back to bare
+    // /admin/tasks, which is the board (AXR-1.3), bouncing the user off the
+    // table view they released the task from. Reuse the same allowlist
+    // pattern so an unlisted `from` value can't become an open redirect.
+    const fromParam = c.req.query("from");
+    const validFrom =
+      fromParam && TASK_LIST_BACK_HREF_PATTERN.test(fromParam)
+        ? fromParam
+        : undefined;
+    if (!fetchTaskStoreTask) return c.redirect("/admin/tasks", 302);
     return c.redirect(
-      fetchTaskStoreTask ? `/admin/tasks/${taskId}` : "/admin/tasks",
+      validFrom
+        ? `/admin/tasks/${taskId}?from=${encodeURIComponent(validFrom)}`
+        : `/admin/tasks/${taskId}`,
       302,
     );
   });

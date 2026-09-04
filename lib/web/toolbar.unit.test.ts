@@ -30,6 +30,15 @@ describe("renderShipwrightToolbar", () => {
       expect(html).toContain("Metrics");
     });
 
+    // TBF-1.1: the navbar Tasks link must not hardcode a state filter — doing
+    // so silently pre-filtered every navbar-driven visit to ready-only tasks
+    // and (post-AXR-1.3) bounced the user off the default board view. The
+    // link must land on bare /admin/tasks.
+    test("Tasks link has no hardcoded ?state=ready filter", () => {
+      expect(html).not.toContain("/admin/tasks?state=ready");
+      expect(html).toContain('href="/admin/tasks" class="vos-nav-link');
+    });
+
     test("does not render an /admin/provision link (removed dead nav shortcut)", () => {
       expect(html).not.toContain('href="/admin/provision"');
     });
