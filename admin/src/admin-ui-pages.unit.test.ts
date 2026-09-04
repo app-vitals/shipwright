@@ -19,7 +19,6 @@ import {
   type PrListItem,
   type PullRequestItem,
   type TaskItem,
-  type TaskStoreTokenItem,
   type TokenItem,
   type ToolItem,
   type WorkQueueItem,
@@ -46,7 +45,6 @@ import {
   renderSessionDetailPage,
   renderTaskDetailPage,
   renderTasksPage,
-  renderTokensPage,
   renderWorkQueuePage,
 } from "./admin-ui-pages.ts";
 import { renderAdminToolbar } from "./admin-ui-styles.ts";
@@ -7544,59 +7542,6 @@ describe("computeDependencyLayout", () => {
   });
 });
 
-// ─── renderTokensPage — agent column linkability ─────────────────────────────
-
-describe("renderTokensPage — agent column linkability", () => {
-  function render(tokens: TaskStoreTokenItem[]): string {
-    return renderTokensPage(tokens, false, USER_NAME);
-  }
-
-  test("agent-scoped token links its Agent ID to the agent detail page", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain('<a href="/admin/agents/agent-y"');
-  });
-
-  test("admin token (no agentId) renders '(admin)' with no agent link", () => {
-    const html = render([
-      {
-        id: "tok-2",
-        label: "Admin token",
-        agentId: null,
-        token: "sw_def",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toContain("(admin)");
-    expect(html).not.toContain("/admin/agents/");
-  });
-
-  test("table is wrapped in .data-table-wrapper", () => {
-    const html = render([
-      {
-        id: "tok-1",
-        label: "CI token",
-        agentId: "agent-y",
-        token: "sw_abc",
-        createdAt: "2026-06-01T10:00:00Z",
-        revokedAt: null,
-      },
-    ]);
-    expect(html).toMatch(
-      /<div class="data-table-wrapper">\s*<table class="data-table"/,
-    );
-  });
-});
-
 describe("renderWorkQueuePage", () => {
   const QUEUE_AGENT = { id: "agent-123", name: "Test Agent" };
 
@@ -7702,7 +7647,7 @@ describe("renderWorkQueuePage", () => {
 //
 // Every render*Page-style function in this file builds its <!DOCTYPE html>
 // head via the shared admin-ui-layout.ts#renderAdminPage() helper. This loop
-// calls each of the 21 render sites (20 functions — renderChatThreadPage has
+// calls each of the 20 render sites (19 functions — renderChatThreadPage has
 // two distinct DOCTYPE blocks: its degraded early-return and its main return)
 // with minimal valid fixtures and asserts each output has exactly one
 // DOCTYPE and exactly one viewport meta tag, guarding against any call site
@@ -7863,7 +7808,6 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
       "renderProvisionCompletePage",
       () => renderProvisionCompletePage(USER_NAME, { success: true }),
     ],
-    ["renderTokensPage", () => renderTokensPage([], false, USER_NAME)],
     ["renderChatPage", () => renderChatPage([], undefined, null, USER_NAME)],
     [
       "renderChatThreadPage (degraded — thread/messages null)",
@@ -7881,8 +7825,8 @@ describe("all page renderers — single DOCTYPE and viewport meta (CFB-1.2)", ()
     ],
   ];
 
-  test("all 21 render sites are covered by this loop", () => {
-    expect(renderers.length).toBe(21);
+  test("all 20 render sites are covered by this loop", () => {
+    expect(renderers.length).toBe(20);
   });
 
   for (const [name, render] of renderers) {

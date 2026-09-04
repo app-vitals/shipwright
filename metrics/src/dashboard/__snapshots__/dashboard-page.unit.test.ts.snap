@@ -167,7 +167,6 @@ exports[`renderDashboardPage — snapshot renders full page for a regular user 1
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
-      <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -660,7 +659,6 @@ exports[`renderDashboardPage — snapshot renders full page for an owner 1`] = `
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
-      <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -1153,7 +1151,6 @@ exports[`renderDashboardPage — MG-1.2 clickable metric graphs snapshot matches
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
-      <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">
@@ -1646,7 +1643,6 @@ exports[`renderDashboardPage — TK-1.2 token trends chart snapshot matches afte
       <a href="/admin/tasks?state=ready" class="vos-nav-link">Tasks</a>
       <a href="/admin/prs" class="vos-nav-link">PRs</a>
       <a href="/admin/chat" class="vos-nav-link">Chat</a>
-      <a href="/admin/tokens" class="vos-nav-link">Task Store Tokens</a>
       <a href="/dashboard" class="vos-nav-link active">Metrics</a>
     </div>
     <div class="vos-user">

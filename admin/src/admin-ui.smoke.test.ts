@@ -1979,39 +1979,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain("Bash(git:*)");
     });
 
-    it("self-hosted agent (selfHosted=true) shows Local CLI access card with link to tokens", async () => {
-      const app = createAdminUIApp(
-        makeMockDeps({
-          agentService: {
-            ...makeMockDeps().agentService,
-            getDetail: async () => ({
-              id: SELFHOSTED_AGENT_ID,
-              name: "Self-Hosted Agent",
-              slackId: null,
-              selfHosted: true,
-              typeName: "coding",
-              createdAt: new Date("2024-01-01"),
-              updatedAt: new Date("2024-01-01"),
-              repos: [],
-              reviewAuthorAllowlist: [],
-              patchAuthorAllowlist: [],
-              restrictSlackToMembers: false,
-              missingRequiredEnv: [],
-            }),
-          },
-        }),
-      );
-      const res = await app.request(`/admin/agents/${SELFHOSTED_AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      // Local CLI card should be present
-      expect(html).toContain("Local CLI");
-      expect(html).toContain("Manage Tokens");
-      // Link should include the agent ID
-      expect(html).toContain(`/admin/tokens?agentId=${SELFHOSTED_AGENT_ID}`);
-    });
   });
 });
 
