@@ -1978,7 +1978,6 @@ describe("admin UI — authenticated pages", () => {
       // Tools should be rendered
       expect(html).toContain("Bash(git:*)");
     });
-
   });
 });
 
