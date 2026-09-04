@@ -2592,7 +2592,7 @@ function renderTasksBoard(args: {
     `;
 
     return `<div class="task-card-wrap">
-      <input type="checkbox" id="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-toggle" aria-hidden="true">
+      <input type="checkbox" id="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-toggle" aria-hidden="true" tabindex="-1">
       ${cardMarkup}
       <label for="task-drawer-toggle-${escapeHtml(t.id)}" class="task-drawer-scrim" aria-label="Close task detail"></label>
       <div class="task-drawer">${drawerContent}</div>

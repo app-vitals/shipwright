@@ -3745,6 +3745,24 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).toContain('aria-hidden="true"');
   });
 
+  // aria-hidden only removes the checkbox from the accessibility tree, not the
+  // tab order — without tabindex="-1" a keyboard user can Tab to the hidden
+  // per-card checkbox and Space-check it directly, bypassing the card's click
+  // handler (the only place that closes any other already-open drawer) and
+  // ending up with two stacked .task-drawer panels.
+  test("hidden drawer checkbox is removed from tab order via tabindex=-1", () => {
+    const task: TaskItem = {
+      id: "TABINDEX-TEST",
+      title: "Tabindex test task",
+      status: "pending",
+      claimedBy: null,
+      assignee: null,
+    };
+    const html = renderBoard([task]);
+    expect(html).toContain('id="task-drawer-toggle-TABINDEX-TEST"');
+    expect(html).toContain('tabindex="-1"');
+  });
+
   test("drawer checkbox appears before the drawer panel in DOM order", () => {
     const task: TaskItem = {
       id: "DOM-ORDER-TEST",
