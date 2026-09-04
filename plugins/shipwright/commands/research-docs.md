@@ -119,6 +119,16 @@ Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
+After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold and section-grouping logic rather than re-deriving it here.
+
+Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint). Auto mode never creates a split file — only a task:
+
+- `title: "Split {doc} — exceeds {N} lines"`
+- `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
+- `layer: "CLI"`, `session: "docs-freshness-cron"`
+
+Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
+
 ### Step A6: Update CLAUDE.md References
 
 Check if `CLAUDE.md` has a reference or docs section (patterns: `@docs/`, `docs/`, or a "Reference" heading).
@@ -177,6 +187,7 @@ Repos processed: {N}
   CLAUDE.md: {updated | unchanged}
   Tasks created: {N missing-doc tasks, or "none"}
   Quality flags tasked: {N}
+  Split proposals tasked: {N}
   Sync anchor: {HEAD SHA} → state/docs-last-synced.json
 
 {org/repo-2}: skipped (no docs/ directory)
@@ -543,6 +554,48 @@ Proceed? (Apply proposed fixes / Pick specific / Skip)
 ```
 
 Wait for user confirmation before applying any `Edit`. A skipped or declined flag is left as-is — do not silently apply it anyway.
+
+---
+
+## Step 6.6: Size Governance
+
+Run this pass against every doc **updated in Step 6** — not docs drafted fresh in Step 5, and not docs left untouched by this run. Run it after Step 6.5's proposed fixes have been applied or declined, so the line count reflects the doc's actual final state for this run, not an intermediate one.
+
+**Thresholds:** soft target **150 lines**, hard threshold **200 lines**, for a single generated doc. The goal is a doc that can be fully read when consulted, not a doc that keeps growing forever.
+
+Count the doc's current line count (`wc -l` or equivalent) after Step 6.5.
+
+**Under 200 lines: this step is a no-op.** The doc behaves exactly as before this step existed — no split proposal, no prompt, nothing further to do. This is the common case and requires no output beyond noting the doc is fine.
+
+**Over 200 lines: propose a split — never automatic.** Identify which `##`/`###` sections would move to one or more new sub-topic doc(s), grouped by topic (e.g. all sections about one sub-area move together). For each proposed new doc, propose a filename following the naming pattern detected in Step 4 (`{topic}.md`, `{service}-api.md`, etc. — whatever this project's existing convention is). Present the proposal and wait for confirmation before creating anything:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIZE GOVERNANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/architecture.md is now 238 lines (hard threshold: 200)
+
+Proposed split:
+  Keep in docs/architecture.md:
+    ## Overview
+    ## System Diagram
+    ## Core Modules
+
+  Move to docs/architecture-deployment.md (new):
+    ## Deployment Topology
+    ## Scaling Notes
+    ## Infra Dependencies
+
+docs/architecture.md would keep a pointer to the new doc under its own
+"## Deployment" heading.
+
+Proceed? (Create split / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+- **If confirmed:** create the new sub-topic doc(s) via `Write` (moving the identified sections' content verbatim, or lightly re-headed to stand alone), then trim the original doc via `Edit` to keep only the remaining sections plus a short pointer to the new doc(s).
+- **If declined or skipped:** leave the doc as-is, oversized. It is not retried automatically on a later run — it will surface again next time this doc is updated and re-checked by this step.
 
 ---
 
