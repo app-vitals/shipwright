@@ -47,7 +47,7 @@ today.
 Look up the task via the task store:
 
 ```bash
-TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?pr={pr}" | jq .)
+TASK_JSON=$(curl -sf -H "Authorization: Bearer $SHIPWRIGHT_TASK_STORE_TOKEN" "$SHIPWRIGHT_TASK_STORE_URL/tasks?repo={org}/{repo}&pr={pr}" | jq .)
 TASK_ID=$(echo "$TASK_JSON" | jq -r '.tasks[0].id // empty')
 TASK_TITLE=$(echo "$TASK_JSON" | jq -r '.tasks[0].title // empty')
 TASK_STATUS=$(echo "$TASK_JSON" | jq -r '.tasks[0].status // empty')
