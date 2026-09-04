@@ -317,3 +317,104 @@ describe("research-docs.md — quality pass", () => {
     expect(stepA9Section).toContain("Quality flags tasked");
   });
 });
+
+describe("research-docs.md — size governance", () => {
+  it("Step 6.6 exists between Step 6.5 and Step 7", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    expect(step6_5Idx).toBeGreaterThan(-1);
+    expect(step6_6Idx).toBeGreaterThan(-1);
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step6_6Idx).toBeGreaterThan(step6_5Idx);
+    expect(step6_6Idx).toBeLessThan(step7Idx);
+  });
+
+  it("Step 6.6 runs against docs updated in Step 6, after Step 6.5's edits are applied", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("Step 6");
+    expect(section).toContain("Step 6.5");
+  });
+
+  it("Step 6.6 defines concrete soft (150) and hard (200) line thresholds", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("150");
+    expect(section).toContain("200");
+  });
+
+  it("Step 6.6 documents the under-threshold case as a no-op — behaves as today", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    const hasNoOpLanguage =
+      section.toLowerCase().includes("no-op") ||
+      section.toLowerCase().includes("no action") ||
+      section.toLowerCase().includes("behaves as before") ||
+      section.toLowerCase().includes("behaves exactly as before");
+    expect(hasNoOpLanguage).toBe(true);
+  });
+
+  it("Step 6.6 documents the over-threshold split proposal — never automatic, gated on confirmation", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section.toLowerCase()).toContain("split");
+    expect(section.toLowerCase()).toContain("sub-topic");
+    expect(section.toLowerCase()).toContain("never automatic");
+    expect(section).toContain("Proceed?");
+    expect(section.toLowerCase()).toContain("wait for confirmation");
+  });
+
+  it("Step 6.6 reuses Step 4's detected naming pattern for the new sub-topic doc filename", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("Step 4");
+  });
+
+  it("Step A5.5 also checks resulting line count against Step 6.6's hard threshold", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section.toLowerCase()).toContain("line count");
+    const referencesStep6_6 =
+      section.includes("Step 6.6") || section.includes("Size Governance");
+    expect(referencesStep6_6).toBe(true);
+  });
+
+  it("Step A5.5 files a Split proposal task via /tasks/bulk, never creates a file", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section).toContain("Split {doc} — exceeds");
+    expect(section).toContain("/tasks/bulk");
+    expect(section).toContain('layer: "CLI"');
+    expect(section).toContain('session: "docs-freshness-cron"');
+
+    // Still exactly one distinct bulk-like endpoint in the whole file
+    const bulkEndpointMatches = content.match(/\/tasks\/[a-zA-Z-]+/g) ?? [];
+    const uniqueBulkEndpoints = new Set(
+      bulkEndpointMatches.filter((m) => m.includes("bulk")),
+    );
+    expect(uniqueBulkEndpoints.size).toBe(1);
+    expect(uniqueBulkEndpoints.has("/tasks/bulk")).toBe(true);
+  });
+
+  it("Step A9's summary template includes a Split proposals tasked line, after Quality flags tasked", () => {
+    const stepA9Idx = content.indexOf("### Step A9");
+    expect(stepA9Idx).toBeGreaterThan(-1);
+    const stepA9Section = content.slice(stepA9Idx, stepA9Idx + 2000);
+    expect(stepA9Section).toContain("Split proposals tasked");
+
+    const qualityIdx = stepA9Section.indexOf("Quality flags tasked");
+    const splitIdx = stepA9Section.indexOf("Split proposals tasked");
+    expect(qualityIdx).toBeGreaterThan(-1);
+    expect(splitIdx).toBeGreaterThan(qualityIdx);
+  });
+});
