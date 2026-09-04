@@ -1981,23 +1981,35 @@ describe("renderTasksPage — row click navigation", () => {
     );
   }
 
+  // TBF-1.1: this describe block's render() defaults to the table view (no
+  // explicit `view` opt threads through to a "board"), so — matching
+  // makePageUrl always carrying ?view=table forward — every row's `from`
+  // link now carries the table view even with no other filters active.
+  const TABLE_VIEW_FROM = encodeURIComponent("/admin/tasks?view=table");
+
   // AC1: clicking anywhere on a task row navigates to the task detail page
   test("each task row has a data-href that navigates to the task detail URL", () => {
     const html = render([TASK_ITEM]);
-    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${TABLE_VIEW_FROM}"`,
+    );
   });
 
   test("data-href URL uses the escaped task id", () => {
     const xssTask: TaskItem = { ...TASK_ITEM, id: "TASK-XSS" };
     const html = render([xssTask]);
-    expect(html).toContain(`data-href="/admin/tasks/TASK-XSS"`);
+    expect(html).toContain(
+      `data-href="/admin/tasks/TASK-XSS?from=${TABLE_VIEW_FROM}"`,
+    );
   });
 
   test("data-href URL escapes single quotes in task id", () => {
     const singleQuoteTask: TaskItem = { ...TASK_ITEM, id: "TASK-IT'S" };
     const html = render([singleQuoteTask]);
     // Single quote must be encoded as &#39; — raw ' in the attribute would break HTML parsing
-    expect(html).toContain(`data-href="/admin/tasks/TASK-IT&#39;S"`);
+    expect(html).toContain(
+      `data-href="/admin/tasks/TASK-IT&#39;S?from=${TABLE_VIEW_FROM}"`,
+    );
     expect(html).not.toContain(`data-href="/admin/tasks/TASK-IT'S"`);
   });
 
@@ -2020,13 +2032,19 @@ describe("renderTasksPage — row click navigation", () => {
   test("Release button is still present for in_progress tasks", () => {
     const html = render([TASK_ITEM]);
     expect(html).toContain("Release");
-    expect(html).toContain(`/admin/tasks/${TASK_ITEM.id}/release`);
+    // TBF-1.1: the release form's `from` carries the current table-view list
+    // URL so the Task Detail page's back link returns to this view.
+    expect(html).toContain(
+      `action="/admin/tasks/${TASK_ITEM.id}/release?from=${TABLE_VIEW_FROM}"`,
+    );
   });
 
   test("no Release button for non-in_progress tasks, but row is still navigable", () => {
     const html = render([TASK_ITEM_PENDING]);
     expect(html).not.toContain("Release");
-    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM_PENDING.id}?from=${TABLE_VIEW_FROM}"`,
+    );
   });
 
   test("empty task list renders no clickable rows", () => {
@@ -2037,17 +2055,24 @@ describe("renderTasksPage — row click navigation", () => {
 
   test("multiple tasks each get their own data-href pointing to their detail URL", () => {
     const html = render([TASK_ITEM, TASK_ITEM_PENDING]);
-    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
-    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM_PENDING.id}"`);
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${TABLE_VIEW_FROM}"`,
+    );
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM_PENDING.id}?from=${TABLE_VIEW_FROM}"`,
+    );
   });
 });
 
 // ─── renderTasksPage — back-link context (TBL-1.1) ───────────────────────────
 
 describe("renderTasksPage — back-link context (TBL-1.1)", () => {
-  // AC1: default list view (no filters, page 1) keeps emitting bare links —
-  // this guards the exact-match assertions in the describe block above.
-  test("default list view (no filters, page 1) omits ?from= from row links", () => {
+  // AC1 (TBF-1.1 update): bare /admin/tasks now defaults to the board
+  // (AXR-1.3), so even the "default" table-view case (no filters, page 1)
+  // can no longer omit ?from= — falling back to a bare link would bounce
+  // the user off the table view. Row links always carry ?from=<current
+  // table-view URL>, which is at minimum `/admin/tasks?view=table`.
+  test("default list view (no filters, page 1) still carries ?from= to preserve table view", () => {
     const html = renderTasksPage(
       [TASK_ITEM],
       {},
@@ -2058,8 +2083,10 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       undefined,
       undefined,
     );
-    expect(html).toContain(`data-href="/admin/tasks/${TASK_ITEM.id}"`);
-    expect(html).not.toContain("from=");
+    const expectedFrom = encodeURIComponent("/admin/tasks?view=table");
+    expect(html).toContain(
+      `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
+    );
   });
 
   // AC1: a non-default filter (status) causes row links to carry ?from=<current list URL>
@@ -2074,7 +2101,9 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?status=in_progress");
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?status=in_progress&view=table",
+    );
     expect(html).toContain(
       `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
     );
@@ -2095,7 +2124,9 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?state=blocked");
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?state=blocked&view=table",
+    );
     expect(html).toContain(
       `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
     );
@@ -2113,7 +2144,7 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?page=2");
+    const expectedFrom = encodeURIComponent("/admin/tasks?page=2&view=table");
     expect(html).toContain(
       `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
     );
@@ -2131,7 +2162,9 @@ describe("renderTasksPage — back-link context (TBL-1.1)", () => {
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?repo=org%2Frepo");
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?repo=org%2Frepo&view=table",
+    );
     expect(html).toContain(
       `<a href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}" style="color:inherit;text-decoration:none">${TASK_ITEM.title}</a>`,
     );
@@ -2217,7 +2250,7 @@ describe("renderTasksPage — hitl filter", () => {
       undefined,
       undefined,
     );
-    expect(html).toContain('href="/admin/tasks?hitl=true&page=2"');
+    expect(html).toContain('href="/admin/tasks?hitl=true&page=2&view=table"');
   });
 
   test("makeStateParams preserves hitl filter in state-tab links", () => {
@@ -2231,10 +2264,18 @@ describe("renderTasksPage — hitl filter", () => {
       undefined,
       undefined,
     );
-    expect(html).toContain('href="/admin/tasks?state=ready&hitl=true"');
-    expect(html).toContain('href="/admin/tasks?state=in_progress&hitl=true"');
-    expect(html).toContain('href="/admin/tasks?state=blocked&hitl=true"');
-    expect(html).toContain('href="/admin/tasks?state=closed&hitl=true"');
+    expect(html).toContain(
+      'href="/admin/tasks?state=ready&hitl=true&view=table"',
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=in_progress&hitl=true&view=table"',
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=blocked&hitl=true&view=table"',
+    );
+    expect(html).toContain(
+      'href="/admin/tasks?state=closed&hitl=true&view=table"',
+    );
   });
 
   test("row links carry ?from= including hitl when a hitl filter is active", () => {
@@ -2248,7 +2289,9 @@ describe("renderTasksPage — hitl filter", () => {
       undefined,
       undefined,
     );
-    const expectedFrom = encodeURIComponent("/admin/tasks?hitl=true");
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?hitl=true&view=table",
+    );
     expect(html).toContain(
       `data-href="/admin/tasks/${TASK_ITEM.id}?from=${expectedFrom}"`,
     );
@@ -3085,7 +3128,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      `href="/admin/tasks?state=in_progress&source=entropy-fix"`,
+      `href="/admin/tasks?state=in_progress&source=entropy-fix&view=table"`,
     );
   });
 
@@ -3101,7 +3144,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&page=2"',
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&page=2&view=table"',
     );
     expect(html).not.toContain("app-vitals/repo-a,app-vitals/repo-b");
   });
@@ -3118,7 +3161,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?org=app-vitals&org=other-org&page=2"',
+      'href="/admin/tasks?org=app-vitals&org=other-org&page=2&view=table"',
     );
   });
 
@@ -3134,7 +3177,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?state=in_progress&repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b"',
+      'href="/admin/tasks?state=in_progress&repo=app-vitals%2Frepo-a&repo=app-vitals%2Frepo-b&view=table"',
     );
   });
 
@@ -3150,7 +3193,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?state=in_progress&org=app-vitals&org=other-org"',
+      'href="/admin/tasks?state=in_progress&org=app-vitals&org=other-org&view=table"',
     );
   });
 
@@ -3166,7 +3209,7 @@ describe("renderTasksPage — source filter", () => {
       undefined,
     );
     expect(html).toContain(
-      'href="/admin/tasks?repo=app-vitals%2Frepo-a&page=2"',
+      'href="/admin/tasks?repo=app-vitals%2Frepo-a&page=2&view=table"',
     );
   });
 });
@@ -3331,7 +3374,10 @@ describe("renderTasksPage — 4-state toggle", () => {
     expect(html).toContain("Closed");
   });
 
-  test("Reset button links to /admin/tasks with no params", () => {
+  // TBF-1.1: Reset must stay in table view — a bare /admin/tasks link would
+  // land on the board (AXR-1.3) instead of clearing filters within the
+  // current table view.
+  test("Reset button links to /admin/tasks?view=table with no other params", () => {
     const html = renderTasksPage(
       [],
       {},
@@ -3342,8 +3388,9 @@ describe("renderTasksPage — 4-state toggle", () => {
       undefined,
       undefined,
     );
-    expect(html).toContain('href="/admin/tasks"');
-    expect(html).toContain("Reset");
+    expect(html).toContain(
+      '<a href="/admin/tasks?view=table" class="btn btn-secondary" style="font-size:12px">Reset</a>',
+    );
   });
 
   test("In Progress tab is active when state=in_progress", () => {
@@ -3418,8 +3465,10 @@ describe("renderTasksPage — 4-state toggle", () => {
     );
     // Ready tab has active (indigo) styling
     expect(html).toContain("background:#6366f1;color:#fff");
-    // Ready tab href contains state=ready
-    expect(html).toMatch(/href="\/admin\/tasks\?state=ready"[^>]*>Ready</);
+    // Ready tab href contains state=ready and stays in table view
+    expect(html).toMatch(
+      /href="\/admin\/tasks\?state=ready&view=table"[^>]*>Ready</,
+    );
     // Other tabs are not active
     expect(html).toMatch(/background:#fff;color:#374151[^>]*>In Progress/);
     expect(html).toMatch(/background:#fff;color:#374151[^>]*>Blocked/);
@@ -3491,7 +3540,7 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     );
   }
 
-  test("renders all 5 board columns: Queued, Claimed, In Progress, Blocked-HITL, Done", () => {
+  test("renders all 5 board columns in order: Queued, In Progress, Blocked-HITL, Claimed, Done", () => {
     const html = renderBoard([]);
     expect(html).toContain('class="board"');
     expect(html).toContain("Queued");
@@ -3501,6 +3550,9 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).toContain("Done");
     // Exactly 5 column containers
     expect((html.match(/class="column"/g) ?? []).length).toBe(5);
+    // Columns must render left-to-right in this exact order.
+    const dataColumnSequence = [...html.matchAll(/data-column="([^"]+)"/g)].map((m) => m[1]);
+    expect(dataColumnSequence).toEqual(["queued", "in_progress", "blocked_hitl", "claimed", "done"]);
   });
 
   function extractColumn(html: string, key: string): string {
@@ -3901,6 +3953,53 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     ]);
     expect(html).toContain('.task-drawer-toggle:checked").forEach(function(openToggle)');
     expect(html).toContain("if (openToggle.id !== toggleId) openToggle.checked = false;");
+  });
+});
+
+// ─── renderTasksPage — board full page width (TBF-1.2) ──────────────────────
+// The board (default view) should stretch past the shared 960px .vos-page
+// cap; table view must stay untouched. Mirrors the .vos-page inline-style
+// assertion pattern at ~line 7236.
+
+describe("renderTasksPage — board full page width (TBF-1.2)", () => {
+  test("board view's .vos-page wrapper carries the tasks-board-page modifier class", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    const match = html.match(/<div class="vos-page[^"]*">/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("tasks-board-page");
+  });
+
+  test("table view's .vos-page wrapper does not carry the tasks-board-page modifier class", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "table",
+    );
+    const match = html.match(/<div class="vos-page[^"]*">/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("tasks-board-page");
   });
 });
 
@@ -6559,8 +6658,11 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       {},
       { total: 1, limit: 50, page: 1 },
     );
+    // TBF-1.1: carries ?from=/admin/tasks?view=table so the Session Detail
+    // back link returns to the table view instead of the board.
+    const from = encodeURIComponent("/admin/tasks?view=table");
     expect(html).toContain(
-      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}"`,
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${from}"`,
     );
   });
 
@@ -6588,15 +6690,17 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       {},
       { total: 1, limit: 50, page: 2 },
     );
-    const from = "/admin/tasks?status=in_progress&page=2";
+    const from = "/admin/tasks?status=in_progress&page=2&view=table";
     expect(html).toContain(
       `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${encodeURIComponent(from)}"`,
     );
   });
 
-  // AC4: bare default list view (no filters, page 1) does not add a redundant
-  // ?from=/admin/tasks — mirrors the existing detailHrefSuffix special-case.
-  test("session cell omits ?from= when the list view is the bare default", () => {
+  // TBF-1.1 (was AC4's "bare default omits ?from="): bare /admin/tasks now
+  // defaults to the board (AXR-1.3), so even the default table-view case (no
+  // filters, page 1) must still carry ?from=/admin/tasks?view=table — a bare
+  // link would bounce the user off the table view.
+  test("session cell still carries ?from= for the default table view (no filters, page 1)", () => {
     const html = renderTasksPage(
       [TASK_ITEM],
       {},
@@ -6605,8 +6709,9 @@ describe("renderTasksPage — session links to /admin/sessions/{session}", () =>
       {},
       { total: 1, limit: 50, page: 1 },
     );
+    const from = encodeURIComponent("/admin/tasks?view=table");
     expect(html).toContain(
-      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}" style="color:#6366f1;text-decoration:none">`,
+      `<a href="/admin/sessions/${encodeURIComponent(TASK_ITEM.session as string)}?from=${from}" style="color:#6366f1;text-decoration:none">`,
     );
   });
 });

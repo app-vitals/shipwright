@@ -1989,6 +1989,14 @@ export function renderRepoOrgFilterFields(
 
 // Shared by both the board (default) and table (?view=table) layouts.
 const TASKS_PAGE_EXTRA_STYLES = `
+    /* Same precedent as .chat-thread-page: .tasks-board-page has equal
+       specificity to .vos-page's own max-width:960px rule, but wins the
+       cascade tie because extraStyles renders after baseStyles() — so only
+       the board (AXR-1.3's 5-column Kanban) stretches full width; table
+       view and every other admin page stay capped. The
+       @media (max-width:640px) padding rule for .vos-page (lib/web/toolbar.ts)
+       is untouched and still applies here. */
+    .tasks-board-page { max-width:none;width:100% }
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
@@ -2124,20 +2132,23 @@ export function renderTasksPage(
     if (filters.agent) params.set("agent", filters.agent);
     if (filters.hitl) params.set("hitl", filters.hitl);
     if (p > 1) params.set("page", String(p));
+    // Keep self-referential links inside this view — bare /admin/tasks now
+    // defaults to the board (AXR-1.3), so every link generated in this
+    // table-view branch must carry ?view=table forward or it silently
+    // bounces the user back to the board (TBF-1.1).
+    params.set("view", "table");
     const qs = params.toString();
     return `/admin/tasks${qs ? `?${qs}` : ""}`;
   };
 
-  // The URL the user is currently viewing. When it differs from the bare
-  // /admin/tasks default (any filter, state, or page > 1 active), row links
-  // into the Task Detail and Session Detail pages carry it as `?from=` so
-  // their "← Tasks" back link can return here instead of the cleared default
-  // view.
+  // The URL the user is currently viewing. makePageUrl always carries
+  // ?view=table forward (TBF-1.1 — bare /admin/tasks now defaults to the
+  // board per AXR-1.3), so this is never the bare "/admin/tasks" default;
+  // row links into the Task Detail and Session Detail pages always carry it
+  // as `?from=` so their "← Tasks" back link returns to this table view
+  // (with its filters) instead of falling through to the board.
   const currentListUrl = makePageUrl(page);
-  const detailHrefSuffix =
-    currentListUrl === "/admin/tasks"
-      ? ""
-      : `?from=${encodeURIComponent(currentListUrl)}`;
+  const detailHrefSuffix = `?from=${encodeURIComponent(currentListUrl)}`;
 
   const rows =
     tasks.length === 0
@@ -2203,7 +2214,7 @@ export function renderTasksPage(
         ? ""
         : `<td>${
             t.status === "in_progress"
-              ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release" style="display:inline">
+              ? `<form method="POST" action="/admin/tasks/${escapeHtml(t.id)}/release?from=${encodeURIComponent(currentListUrl)}" style="display:inline">
         <button type="submit" class="btn btn-secondary" style="font-size:11px;padding:3px 8px">Release</button>
       </form>`
               : ""
@@ -2223,6 +2234,9 @@ export function renderTasksPage(
     if (filters.source) p.set("source", filters.source);
     if (filters.agent) p.set("agent", filters.agent);
     if (filters.hitl) p.set("hitl", filters.hitl);
+    // See makePageUrl above (TBF-1.1) — state-tab links must stay in table
+    // view too, or clicking a tab bounces the user to the board.
+    p.set("view", "table");
     const qs = p.toString();
     return qs ? `?${qs}` : "";
   };
@@ -2307,6 +2321,7 @@ export function renderTasksPage(
         ? ""
         : `<div class="card" style="margin-bottom:16px">
       <form method="GET" action="/admin/tasks" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+        <input type="hidden" name="view" value="table" />
         ${filters.state && !filters.status ? `<input type="hidden" name="state" value="${escapeHtml(filters.state)}" />` : ""}
         <div class="form-group" style="margin-bottom:0">
           <label class="form-label" style="font-size:11px">Status</label>
@@ -2333,7 +2348,7 @@ export function renderTasksPage(
           <input name="agent" type="text" class="form-input" style="font-size:12px;padding:4px 8px" value="${escapeHtml(filters.agent ?? "")}" placeholder="agent name"${suggestions?.agents?.length ? ' list="agents-list"' : ""} />
         </div>
         <button type="submit" class="btn btn-secondary" style="font-size:12px">Filter</button>
-        <a href="/admin/tasks" class="btn btn-secondary" style="font-size:12px">Reset</a>
+        <a href="/admin/tasks?view=table" class="btn btn-secondary" style="font-size:12px">Reset</a>
         ${suggestions?.sessions?.length ? `<datalist id="sessions-list">${suggestions.sessions.map((s) => `<option value="${escapeHtml(s)}">`).join("")}</datalist>` : ""}
         ${suggestions?.agents?.length ? `<datalist id="agents-list">${suggestions.agents.map((a) => `<option value="${escapeHtml(a)}">`).join("")}</datalist>` : ""}
       </form>
@@ -2658,7 +2673,7 @@ function renderTasksBoard(args: {
     title: "Tasks — Shipwright",
     extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page">
+  <div class="vos-page tasks-board-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between">
       <h1 class="page-title" style="margin:0">Tasks</h1>
       ${readOnly ? "" : `<a href="${tableViewHref}" class="btn btn-secondary" style="font-size:12px">Table view</a>`}
@@ -3077,9 +3092,9 @@ export type TaskBoardColumn =
 
 export const TASK_BOARD_COLUMNS: { key: TaskBoardColumn; label: string }[] = [
   { key: "queued", label: "Queued" },
-  { key: "claimed", label: "Claimed" },
   { key: "in_progress", label: "In Progress" },
   { key: "blocked_hitl", label: "Blocked-HITL" },
+  { key: "claimed", label: "Claimed" },
   { key: "done", label: "Done" },
 ];
 

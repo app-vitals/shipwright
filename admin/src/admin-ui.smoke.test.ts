@@ -5525,6 +5525,46 @@ describe("admin UI — tasks page", () => {
     expect(html).not.toContain("/admin/tasks/task-1/release");
   });
 
+  // TBF-1.1: the table row's Release button must carry the current table-view
+  // list URL as `from` so the redirect back to Task Detail can hand it to
+  // that page's "← Tasks" link — otherwise it falls back to bare
+  // /admin/tasks, which is the board (AXR-1.3), not the table view the user
+  // released the task from.
+  it("GET /admin/tasks?view=table row Release form carries ?from=<current table-view URL>", async () => {
+    const mockTasks = [
+      {
+        id: "task-2",
+        title: "In progress task",
+        status: "in_progress",
+        session: null,
+        repo: null,
+        assignee: null,
+        claimedBy: "agent-123",
+      },
+    ];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: mockTasks,
+          total: mockTasks.length,
+          limit: 50,
+          offset: 0,
+        }),
+      }),
+    );
+    const res = await app.request("/admin/tasks?view=table&status=in_progress", {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const expectedFrom = encodeURIComponent(
+      "/admin/tasks?status=in_progress&view=table",
+    );
+    expect(html).toContain(
+      `action="/admin/tasks/task-2/release?from=${expectedFrom}"`,
+    );
+  });
+
   it("GET /admin/tasks?agent= filters by agent name (case-insensitive)", async () => {
     // makeMockDeps prisma.agent.findMany returns the agent with id AGENT_ID, name "Test Agent"
     const mockTasks = [
@@ -5662,6 +5702,104 @@ describe("admin UI — tasks page", () => {
     expect(res.headers.get("Location")).toBe(
       "/admin/tasks?error=release_failed",
     );
+  });
+
+  // TBF-1.1: a valid `from` on the release POST is forwarded onto the
+  // redirect target so the Task Detail page's "← Tasks" link can send the
+  // user back to the table view they released the task from.
+  it("POST /admin/tasks/:id/release?from=<valid list URL> forwards it onto the redirect target", async () => {
+    const released: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStoreTask: async () => null,
+        releaseTask: async (id: string) => {
+          released.push(id);
+        },
+      }),
+    );
+    const from = "/admin/tasks?status=in_progress&view=table";
+    const res = await app.request(
+      `/admin/tasks/task-2/release?from=${encodeURIComponent(from)}`,
+      {
+        method: "POST",
+        headers: { Cookie: `admin_session=${cookie}` },
+      },
+    );
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe(
+      `/admin/tasks/task-2?from=${encodeURIComponent(from)}`,
+    );
+    expect(released).toEqual(["task-2"]);
+  });
+
+  // Reuses the same TASK_LIST_BACK_HREF_PATTERN allowlist as the Task
+  // Detail page's own back-link resolver — an unlisted `from` value on the
+  // release POST must not become an open redirect off the admin domain.
+  it.each([
+    ["https://evil.com", "absolute URL"],
+    ["//evil.com", "protocol-relative URL"],
+    ["javascript:alert(1)", "javascript: URI"],
+    ["/admin/other", "different admin path"],
+  ])(
+    "POST /admin/tasks/:id/release?from=<malicious %s (%s)> is rejected, not forwarded",
+    async (maliciousFrom) => {
+      const released: string[] = [];
+      const app = createAdminUIApp(
+        makeMockDeps({
+          fetchTaskStoreTasks: async () => ({
+            tasks: [],
+            total: 0,
+            limit: 50,
+            offset: 0,
+          }),
+          fetchTaskStoreTask: async () => null,
+          releaseTask: async (id: string) => {
+            released.push(id);
+          },
+        }),
+      );
+      const res = await app.request(
+        `/admin/tasks/task-2/release?from=${encodeURIComponent(maliciousFrom)}`,
+        {
+          method: "POST",
+          headers: { Cookie: `admin_session=${cookie}` },
+        },
+      );
+      expect(res.status).toBe(302);
+      expect(res.headers.get("Location")).toBe("/admin/tasks/task-2");
+      expect(released).toEqual(["task-2"]);
+    },
+  );
+
+  it("POST /admin/tasks/:id/release with no ?from= redirects exactly as before (no from param)", async () => {
+    const released: string[] = [];
+    const app = createAdminUIApp(
+      makeMockDeps({
+        fetchTaskStoreTasks: async () => ({
+          tasks: [],
+          total: 0,
+          limit: 50,
+          offset: 0,
+        }),
+        fetchTaskStoreTask: async () => null,
+        releaseTask: async (id: string) => {
+          released.push(id);
+        },
+      }),
+    );
+    const res = await app.request("/admin/tasks/task-2/release", {
+      method: "POST",
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get("Location")).toBe("/admin/tasks/task-2");
+    expect(released).toEqual(["task-2"]);
   });
 
   it("GET /admin/tasks/:id renders task detail page", async () => {

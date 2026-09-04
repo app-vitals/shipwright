@@ -220,7 +220,7 @@ export function renderShipwrightToolbar(
     <a href="${adminBase}/admin/agents" class="vos-wordmark">Shipwright</a>
     <div id="vos-nav-content" class="vos-nav">
       <a href="${adminBase}/admin/agents" class="vos-nav-link${isQueueActivity ? "" : active("/admin/agents")}">Agents</a>
-      <a href="${adminBase}/admin/tasks?state=ready" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
+      <a href="${adminBase}/admin/tasks" class="vos-nav-link${active("/admin/tasks")}">Tasks</a>
       <a href="${adminBase}/admin/prs" class="vos-nav-link${active("/admin/prs")}">PRs</a>
       <a href="${adminBase}/admin/chat" class="vos-nav-link${active("/admin/chat")}">Chat</a>
       <a href="${adminBase}/admin/queue-activity" class="vos-nav-link${isQueueActivity ? " active" : ""}">Queue &amp; Activity</a>

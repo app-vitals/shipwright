@@ -58,7 +58,8 @@ describe("dashboardDevAuth — /dashboard", () => {
     const res = await app.request("/dashboard");
     const body = await res.text();
     expect(body).toContain('href="http://localhost:3001/admin/agents"');
-    expect(body).toContain('href="http://localhost:3001/admin/tasks?state=ready"');
+    // TBF-1.1: the Tasks nav link no longer hardcodes ?state=ready.
+    expect(body).toContain('href="http://localhost:3001/admin/tasks"');
     expect(body).toContain('href="http://localhost:3001/admin/prs"');
   });
 
