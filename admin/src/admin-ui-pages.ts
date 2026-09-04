@@ -2681,6 +2681,9 @@ function renderTasksBoard(args: {
           target = target.parentElement;
         }
         var toggleId = card.getAttribute("data-drawer-toggle");
+        document.querySelectorAll(".task-drawer-toggle:checked").forEach(function(openToggle) {
+          if (openToggle.id !== toggleId) openToggle.checked = false;
+        });
         var checkbox = document.getElementById(toggleId);
         if (checkbox) {
           checkbox.checked = true;

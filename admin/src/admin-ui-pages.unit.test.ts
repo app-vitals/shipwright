@@ -3870,6 +3870,19 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
     expect(html).not.toContain('class="task-drawer"');
     expect(html).not.toContain('data-drawer-toggle=');
   });
+
+  // Opening a card's drawer must close any other drawer already open — two
+  // .task-drawer panels are both position:fixed at the same spot, so leaving
+  // a prior toggle checked would stack an invisible-but-still-checked drawer
+  // behind the new one instead of a clean single-drawer UX.
+  test("click handler closes any other open drawer before opening the clicked card's", () => {
+    const html = renderBoard([
+      { id: "T-A", title: "A", status: "pending", claimedBy: null, assignee: null },
+      { id: "T-B", title: "B", status: "pending", claimedBy: null, assignee: null },
+    ]);
+    expect(html).toContain('.task-drawer-toggle:checked").forEach(function(openToggle)');
+    expect(html).toContain("if (openToggle.id !== toggleId) openToggle.checked = false;");
+  });
 });
 
 // ─── renderTasksPage — ?view=table toggle (AXR-1.3) ──────────────────────────
