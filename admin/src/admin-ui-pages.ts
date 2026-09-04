@@ -1989,6 +1989,14 @@ export function renderRepoOrgFilterFields(
 
 // Shared by both the board (default) and table (?view=table) layouts.
 const TASKS_PAGE_EXTRA_STYLES = `
+    /* Same precedent as .chat-thread-page: .tasks-board-page has equal
+       specificity to .vos-page's own max-width:960px rule, but wins the
+       cascade tie because extraStyles renders after baseStyles() — so only
+       the board (AXR-1.3's 5-column Kanban) stretches full width; table
+       view and every other admin page stay capped. The
+       @media (max-width:640px) padding rule for .vos-page (lib/web/toolbar.ts)
+       is untouched and still applies here. */
+    .tasks-board-page { max-width:none;width:100% }
     .badge-blue { background:#dbeafe;color:#1d4ed8;border:1px solid #bfdbfe; }
     .badge-green { background:#dcfce7;color:#166534;border:1px solid #bbf7d0; }
     .badge-red { background:#fee2e2;color:#991b1b;border:1px solid #fecaca; }
@@ -2665,7 +2673,7 @@ function renderTasksBoard(args: {
     title: "Tasks — Shipwright",
     extraStyles: TASKS_PAGE_EXTRA_STYLES,
     body: `${readOnly ? "" : renderAdminToolbar(userName, "/admin/tasks")}
-  <div class="vos-page">
+  <div class="vos-page tasks-board-page">
     <div class="page-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;justify-content:space-between">
       <h1 class="page-title" style="margin:0">Tasks</h1>
       ${readOnly ? "" : `<a href="${tableViewHref}" class="btn btn-secondary" style="font-size:12px">Table view</a>`}

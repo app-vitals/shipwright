@@ -3953,6 +3953,53 @@ describe("renderTasksPage — board view (AXR-1.3)", () => {
   });
 });
 
+// ─── renderTasksPage — board full page width (TBF-1.2) ──────────────────────
+// The board (default view) should stretch past the shared 960px .vos-page
+// cap; table view must stay untouched. Mirrors the .vos-page inline-style
+// assertion pattern at ~line 7236.
+
+describe("renderTasksPage — board full page width (TBF-1.2)", () => {
+  test("board view's .vos-page wrapper carries the tasks-board-page modifier class", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "board",
+    );
+    const match = html.match(/<div class="vos-page[^"]*">/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).toContain("tasks-board-page");
+  });
+
+  test("table view's .vos-page wrapper does not carry the tasks-board-page modifier class", () => {
+    const html = renderTasksPage(
+      [],
+      {},
+      false,
+      USER_NAME,
+      {},
+      { total: 0, limit: 50, page: 1 },
+      undefined,
+      undefined,
+      false,
+      "America/Los_Angeles",
+      {},
+      "table",
+    );
+    const match = html.match(/<div class="vos-page[^"]*">/);
+    expect(match).not.toBeNull();
+    expect(match?.[0]).not.toContain("tasks-board-page");
+  });
+});
+
 // ─── renderTasksPage — ?view=table toggle (AXR-1.3) ──────────────────────────
 
 describe("renderTasksPage — ?view=table toggle (AXR-1.3)", () => {
