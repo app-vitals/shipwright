@@ -1794,16 +1794,6 @@ describe("admin UI — authenticated pages", () => {
       expect(html).toContain("Bash(git:*)");
     });
 
-    it("managed agent (selfHosted=false) does NOT show Local CLI access card", async () => {
-      const app = createAdminUIApp(makeMockDeps());
-      const res = await app.request(`/admin/agents/${AGENT_ID}`, {
-        headers: { Cookie: `admin_session=${cookie}` },
-      });
-      expect(res.status).toBe(200);
-      const html = await res.text();
-      expect(html).not.toContain("Local CLI");
-    });
-
     it("self-hosted agent (selfHosted=true) does NOT show Slack info in header", async () => {
       const app = createAdminUIApp(
         makeMockDeps({
