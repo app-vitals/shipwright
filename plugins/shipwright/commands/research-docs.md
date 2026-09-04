@@ -119,6 +119,8 @@ curl -sf -X POST \
 
 Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`.
 
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"` — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
+
 ### Step A8: Write Sync Anchor
 
 After all updates complete for this repo, write that repo's own sync anchor (relative to its working directory — see Step A0):
@@ -238,6 +240,22 @@ Categorize each module/topic:
 
 If `$ARGUMENTS` was provided, filter to only the specified module/topic.
 
+### Step 3a: Cross-Cutting Concerns Checklist
+
+Structural gap analysis (above) only catches what shows up as a directory, route, or schema file. Some domains cut across many modules and are easy to miss that way — a newcomer reading the code module-by-module wouldn't necessarily recognize them without someone pointing them out. Check for exactly these seven categories, no others:
+
+1. **business-domain/state-model** — the core entities and their lifecycle (status fields, state machines, transition rules)
+2. **authorization/access-control** — who can do what (middleware, decorators, role/permission checks)
+3. **error-handling conventions** — how failures are represented and propagated (error classes, error codes, response shapes)
+4. **sensitive-data handling** — PII, financial data, or other data requiring special handling (redaction, encryption-at-rest, access logging)
+5. **secrets/credential rotation** — how secrets are stored, injected, and rotated
+6. **logging/tracing/observability wiring** — structured logging, tracing SDKs, error reporting integrations
+7. **internal/third-party service dependencies** — external services the code talks to that aren't obvious from public docs alone
+
+For each category, **verify it is materially present before proposing it** — read the actual relevant config or module and confirm real content exists to write about (e.g. an authz middleware/decorator for access-control, a dedicated error class hierarchy for error-handling, a logging SDK init for observability wiring). This is not a blind checklist dump: never propose a category with no real content to write. A category with no material presence in the codebase (e.g. no sensitive-data handling in a project that doesn't touch PII) is simply skipped — do not list it, do not stub it out.
+
+Categories that pass verification become **concern candidates**, each with a suggested doc topic and a one-line note on what was found (e.g. "authorization/access-control — `requireAuth` middleware + role checks in `src/middleware/auth.ts`").
+
 Present the audit summary:
 
 ```
@@ -256,12 +274,17 @@ STALE:
 MISSING:
   ✗ {suggested filename} — {module/topic} has {N endpoints / N models / etc.}, no doc
 
+CONCERNS:
+  ✗ {suggested filename} — {concern category} verified present ({what was found}), no doc
+
 TEST-READINESS:
   ◆ docs/test-readiness/{filename} — {role} (read-only; source for docs/testing.md)
 
 Proceed? (Generate missing + update stale / Pick specific / Skip)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+`CONCERNS:` is a distinct block from `MISSING:` — `MISSING:` lists structural modules/topics with no doc (Step 3); `CONCERNS:` lists verified-present cross-cutting concerns with no doc (Step 3a). Both flow into the same `Proceed?` gate and are generated the same way in Step 5 once approved. Omit the `CONCERNS:` block entirely if no concern category verified as materially present.
 
 Omit the TEST-READINESS section if `docs/test-readiness/` does not exist. Files listed there are reported for transparency only — `/research-docs` does not edit them.
 
