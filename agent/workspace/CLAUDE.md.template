@@ -208,12 +208,8 @@ recommended pattern is:
    where it left off.
 
 This pattern avoids the cache-freshness and retry-on-error tradeoffs of `ScheduleWakeup`
-and keeps your work session and context across the long external wait.
-
-For waits that stay within the ~10-minute ceiling, default to blocking, in-Bash waits
-(the `until <condition>; do sleep 30; done` pattern described above) or several
-sequential Bash calls within the same turn. This keeps the work inside a single
-`claude -p` invocation and its context intact.
+and keeps your work session and context across the long external wait. For waits that
+stay within the ~10-minute ceiling, keep using the blocking in-Bash loop guidance above.
 
 There is currently no known legitimate use case for `ScheduleWakeup` in this
 repo's own skills or commands — `plugins/shipwright/` has zero references to
