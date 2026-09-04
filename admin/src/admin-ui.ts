@@ -1658,7 +1658,7 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
     const limit = 20;
     const offset = (page - 1) * limit;
 
-    const [snapshot, crons, runResult] = await Promise.all([
+    const [snapshot, crons, runResult, accessibleAgents] = await Promise.all([
       agentWorkQueueService.get(agentId),
       agentCronJobService.list(agentId),
       agentCronRunService.listForAgent(agentId, {
@@ -1667,11 +1667,13 @@ export function createAdminUIApp(deps: AdminUIDeps): Hono<AdminUIEnv> {
         limit,
         offset,
       }),
+      resolveAccessibleAgents(c.var.userEmail, c.var.isAdmin),
     ]);
 
     return html(
       renderQueueActivityPage({
         agent: { id: agent.id, name: agent.name },
+        agents: accessibleAgents.map((a) => ({ id: a.id, name: a.name })),
         snapshot: snapshot
           ? {
               computedAt: snapshot.computedAt,
