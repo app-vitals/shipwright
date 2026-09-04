@@ -475,7 +475,12 @@ bot identity across many humans makes attribution ambiguous.</p>
 <tr>
 <td><code>reviewAuthorAllowlist</code></td>
 <td>empty (anyone)</td>
-<td>A list of GitHub logins whose pull requests the agent will act on. An empty allowlist means any authenticated GitHub user’s PRs are eligible</td>
+<td>A list of GitHub logins whose pull requests the agent will review. An empty allowlist means any authenticated GitHub user’s PRs are eligible for review</td>
+</tr>
+<tr>
+<td><code>patchAuthorAllowlist</code></td>
+<td>empty (self-authored only)</td>
+<td>A list of GitHub logins naming additional authors whose PRs this agent will treat as patch candidates. Patch work normally only touches the agent’s own PRs; this allowlist adds other authors to the candidate pool. An empty allowlist means only self-authored PRs are eligible for patching</td>
 </tr>
 </tbody>
 </table>
