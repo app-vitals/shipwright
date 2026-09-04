@@ -204,3 +204,116 @@ describe("research-docs.md — interactive mode preservation", () => {
     expect(content).toContain("audit the entire project");
   });
 });
+
+describe("research-docs.md — quality pass", () => {
+  it("Step 6.5 exists between Step 6 and Step 7 and documents canonical-source duplication (6.5a)", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    expect(step6_5Idx).toBeGreaterThan(-1);
+    const step6Idx = content.indexOf("## Step 6: Update Stale Docs");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    expect(step6Idx).toBeGreaterThan(-1);
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step6_5Idx).toBeGreaterThan(step6Idx);
+    expect(step6_5Idx).toBeLessThan(step7Idx);
+
+    const section = content.slice(step6_5Idx, step7Idx);
+    expect(section).toContain("6.5a");
+    expect(section.toLowerCase()).toContain("canonical");
+    expect(section.toLowerCase()).toContain("pointer");
+  });
+
+  it("Step 6.5b documents literal/prose mismatch flagged with the specific line", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_5Idx, step7Idx);
+    expect(section).toContain("6.5b");
+    expect(section.toLowerCase()).toContain("literal");
+    expect(section.toLowerCase()).toContain("prose");
+    expect(section.toLowerCase()).toContain("mismatch");
+    expect(section.toLowerCase()).toContain("line");
+  });
+
+  it("Step 6.5c documents mechanism-honesty check flagged as low-confidence", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_5Idx, step7Idx);
+    expect(section).toContain("6.5c");
+    expect(section.toLowerCase()).toContain("mechanism");
+    expect(section.toLowerCase()).toContain("low-confidence");
+  });
+
+  it("interactive quality pass gates on user confirmation — never automatic rewrites", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_5Idx, step7Idx);
+    const hasNeverAutomaticLanguage =
+      section.toLowerCase().includes("never automatic") ||
+      section.toLowerCase().includes("proposal");
+    expect(hasNeverAutomaticLanguage).toBe(true);
+    expect(section).toContain("Proceed?");
+  });
+
+  it("Step 6.5 only runs against docs drafted in Step 5 or updated in Step 6, not untouched docs", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_5Idx, step7Idx);
+    expect(section).toContain("Step 5");
+    expect(section).toContain("Step 6");
+    expect(section.toLowerCase()).toContain("untouched");
+  });
+
+  it("Step A5.5 exists immediately after Step A5 and before Step A6", () => {
+    const stepA5Idx = content.indexOf("### Step A5: Update Stale Docs");
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    expect(stepA5Idx).toBeGreaterThan(-1);
+    expect(stepA5_5Idx).toBeGreaterThan(-1);
+    expect(stepA6Idx).toBeGreaterThan(-1);
+    expect(stepA5_5Idx).toBeGreaterThan(stepA5Idx);
+    expect(stepA5_5Idx).toBeLessThan(stepA6Idx);
+  });
+
+  it("Step A5.5 files task-store tasks per hit (not edits) via the existing /tasks/bulk mechanism", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section).toContain("/tasks/bulk");
+    expect(section.toLowerCase()).toContain("session");
+    expect(section).toContain("docs-freshness-cron");
+    expect(section.toLowerCase()).toContain("never an auto-edit");
+
+    // Must reuse the same endpoint Step A7 documents — not invent a new one
+    const stepA7Idx = content.indexOf("### Step A7: Task Out Missing Docs");
+    const stepA7End = content.indexOf("### Step A8: Write Sync Anchor");
+    const stepA7Section = content.slice(stepA7Idx, stepA7End);
+    expect(stepA7Section).toContain("/tasks/bulk");
+
+    // No second/different bulk-like endpoint introduced
+    const bulkEndpointMatches = content.match(/\/tasks\/[a-zA-Z-]+/g) ?? [];
+    const uniqueBulkEndpoints = new Set(
+      bulkEndpointMatches.filter((m) => m.includes("bulk")),
+    );
+    expect(uniqueBulkEndpoints.size).toBe(1);
+    expect(uniqueBulkEndpoints.has("/tasks/bulk")).toBe(true);
+  });
+
+  it("Step A5.5 documents the three quality-flag task titles", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section).toContain("canonical-source duplication");
+    expect(section).toContain("literal/prose mismatch");
+    expect(section).toContain("convention missing named mechanism");
+    expect(section).toContain('layer: "CLI"');
+    expect(section).toContain('session: "docs-freshness-cron"');
+  });
+
+  it("Step A9's summary template includes a Quality flags tasked line", () => {
+    const stepA9Idx = content.indexOf("### Step A9");
+    expect(stepA9Idx).toBeGreaterThan(-1);
+    const stepA9Section = content.slice(stepA9Idx, stepA9Idx + 2000);
+    expect(stepA9Section).toContain("Quality flags tasked");
+  });
+});
