@@ -38,7 +38,6 @@ const MAJOR_SECTIONS: Array<[string, RegExp]> = [
   ["Tasks", /tasks/i],
   ["PRs", /prs|pull requests/i],
   ["Chat", /chat/i],
-  ["Tokens", /tokens/i],
 ];
 
 for (const [label, pattern] of MAJOR_SECTIONS) {
