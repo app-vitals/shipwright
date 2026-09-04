@@ -3544,6 +3544,22 @@ const WORK_QUEUE_PHASE_BADGE_STYLE: Record<string, string> = {
 };
 const WORK_QUEUE_PHASE_BADGE_STYLE_DEFAULT = "background:#f3f4f6;color:#6b7280";
 
+// Shared column header row for the Past-section cron-run table — reused by
+// both the primary (shipwright-loop) table and each collapsed non-loop
+// cron's <details> table so the two stay in lockstep.
+const CRON_RUN_TABLE_HEAD = `<tr>
+  <th>Outcome</th>
+  <th>Cron</th>
+  <th>Started</th>
+  <th>Duration</th>
+  <th class="col-tokens">Tokens</th>
+  <th class="col-model">Model</th>
+  <th>Phase</th>
+  <th>Item</th>
+  <th>Session</th>
+  <th>Detail</th>
+</tr>`;
+
 // Inline type mirroring RankedWorkItem (openapi-schemas.ts) without importing
 // the zod schema itself — keeps this file's dependency surface to pure
 // string-rendering inputs.
@@ -3804,18 +3820,7 @@ export function renderQueueActivityPage(opts: {
         <div class="data-table-wrapper">
           <table class="data-table">
             <thead>
-              <tr>
-                <th>Outcome</th>
-                <th>Cron</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th class="col-tokens">Tokens</th>
-                <th class="col-model">Model</th>
-                <th>Phase</th>
-                <th>Item</th>
-                <th>Session</th>
-                <th>Detail</th>
-              </tr>
+              ${CRON_RUN_TABLE_HEAD}
             </thead>
             <tbody>
               ${groupBodyRows}
@@ -3909,18 +3914,7 @@ export function renderQueueActivityPage(opts: {
       <div class="data-table-wrapper">
         <table class="data-table">
           <thead>
-            <tr>
-              <th>Outcome</th>
-              <th>Cron</th>
-              <th>Started</th>
-              <th>Duration</th>
-              <th class="col-tokens">Tokens</th>
-              <th class="col-model">Model</th>
-              <th>Phase</th>
-              <th>Item</th>
-              <th>Session</th>
-              <th>Detail</th>
-            </tr>
+            ${CRON_RUN_TABLE_HEAD}
           </thead>
           <tbody>
             ${bodyRows}
