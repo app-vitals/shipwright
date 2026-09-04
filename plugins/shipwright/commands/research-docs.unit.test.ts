@@ -205,6 +205,74 @@ describe("research-docs.md — interactive mode preservation", () => {
   });
 });
 
+describe("research-docs.md — cross-cutting concerns checklist", () => {
+  const CONCERN_CATEGORIES = [
+    "business-domain/state-model",
+    "authorization/access-control",
+    "error-handling conventions",
+    "sensitive-data handling",
+    "secrets/credential rotation",
+    "logging/tracing/observability wiring",
+    "internal/third-party service dependencies",
+  ];
+
+  it("names all seven cross-cutting concern categories", () => {
+    for (const category of CONCERN_CATEGORIES) {
+      expect(content).toContain(category);
+    }
+  });
+
+  it("requires verifying a concern is materially present before proposing it", () => {
+    expect(content.toLowerCase()).toContain("materially present");
+    // Must describe checking real content, not a blind checklist dump
+    const hasRealContentLanguage =
+      content.includes("authz middleware") ||
+      content.includes("error class hierarchy") ||
+      content.includes("logging SDK init");
+    expect(hasRealContentLanguage).toBe(true);
+  });
+
+  it("skips a concern category with no real content instead of proposing it blindly", () => {
+    const hasSkipLanguage =
+      content.includes("never propose a category with no real content") ||
+      content.includes("no real content to write") ||
+      content.includes("not proposed") ||
+      content.includes("do not propose");
+    expect(hasSkipLanguage).toBe(true);
+  });
+
+  it("adds a CONCERNS: block to the DOCS AUDIT template, distinct from MISSING:", () => {
+    const auditIdx = content.indexOf("DOCS AUDIT");
+    expect(auditIdx).toBeGreaterThan(-1);
+    const proceedIdx = content.indexOf("Proceed?", auditIdx);
+    expect(proceedIdx).toBeGreaterThan(auditIdx);
+    const auditSection = content.slice(auditIdx, proceedIdx);
+    expect(auditSection).toContain("MISSING:");
+    expect(auditSection).toContain("CONCERNS:");
+    // CONCERNS: must be a distinct block, not a rename/merge of MISSING:
+    expect(auditSection.indexOf("MISSING:")).not.toBe(
+      auditSection.indexOf("CONCERNS:"),
+    );
+    // Both blocks flow into the same Proceed? gate
+    expect(auditSection.indexOf("CONCERNS:")).toBeLessThan(proceedIdx);
+  });
+
+  it("Step A7 unions a verified concern into the same missing-docs task payload, titled 'Document {concern} conventions'", () => {
+    const stepA7Idx = content.indexOf("### Step A7");
+    expect(stepA7Idx).toBeGreaterThan(-1);
+    const nextStepIdx = content.indexOf("### Step A8");
+    expect(nextStepIdx).toBeGreaterThan(stepA7Idx);
+    const stepA7Section = content.slice(stepA7Idx, nextStepIdx);
+    expect(stepA7Section).toContain("Document {concern} conventions");
+    expect(stepA7Section).toContain("docs-freshness-cron");
+    const hasUnionLanguage =
+      stepA7Section.includes("union") || stepA7Section.includes("unioned");
+    expect(hasUnionLanguage).toBe(true);
+    // Scoped to CHANGED_FILES, same as A7's existing structural check
+    expect(stepA7Section).toContain("CHANGED_FILES");
+  });
+});
+
 describe("research-docs.md — quality pass", () => {
   it("Step 6.5 exists between Step 6 and Step 7 and documents canonical-source duplication (6.5a)", () => {
     const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
@@ -315,5 +383,106 @@ describe("research-docs.md — quality pass", () => {
     expect(stepA9Idx).toBeGreaterThan(-1);
     const stepA9Section = content.slice(stepA9Idx, stepA9Idx + 2000);
     expect(stepA9Section).toContain("Quality flags tasked");
+  });
+});
+
+describe("research-docs.md — size governance", () => {
+  it("Step 6.6 exists between Step 6.5 and Step 7", () => {
+    const step6_5Idx = content.indexOf("## Step 6.5: Quality Pass");
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    expect(step6_5Idx).toBeGreaterThan(-1);
+    expect(step6_6Idx).toBeGreaterThan(-1);
+    expect(step7Idx).toBeGreaterThan(-1);
+    expect(step6_6Idx).toBeGreaterThan(step6_5Idx);
+    expect(step6_6Idx).toBeLessThan(step7Idx);
+  });
+
+  it("Step 6.6 runs against docs updated in Step 6, after Step 6.5's edits are applied", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("Step 6");
+    expect(section).toContain("Step 6.5");
+  });
+
+  it("Step 6.6 defines concrete soft (150) and hard (200) line thresholds", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("150");
+    expect(section).toContain("200");
+  });
+
+  it("Step 6.6 documents the under-threshold case as a no-op — behaves as today", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    const hasNoOpLanguage =
+      section.toLowerCase().includes("no-op") ||
+      section.toLowerCase().includes("no action") ||
+      section.toLowerCase().includes("behaves as before") ||
+      section.toLowerCase().includes("behaves exactly as before");
+    expect(hasNoOpLanguage).toBe(true);
+  });
+
+  it("Step 6.6 documents the over-threshold split proposal — never automatic, gated on confirmation", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section.toLowerCase()).toContain("split");
+    expect(section.toLowerCase()).toContain("sub-topic");
+    expect(section.toLowerCase()).toContain("never automatic");
+    expect(section).toContain("Proceed?");
+    expect(section.toLowerCase()).toContain("wait for confirmation");
+  });
+
+  it("Step 6.6 reuses Step 4's detected naming pattern for the new sub-topic doc filename", () => {
+    const step6_6Idx = content.indexOf("## Step 6.6: Size Governance");
+    const step7Idx = content.indexOf("## Step 7: Update CLAUDE.md Reference");
+    const section = content.slice(step6_6Idx, step7Idx);
+    expect(section).toContain("Step 4");
+  });
+
+  it("Step A5.5 also checks resulting line count against Step 6.6's hard threshold", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section.toLowerCase()).toContain("line count");
+    const referencesStep6_6 =
+      section.includes("Step 6.6") || section.includes("Size Governance");
+    expect(referencesStep6_6).toBe(true);
+  });
+
+  it("Step A5.5 files a Split proposal task via /tasks/bulk, never creates a file", () => {
+    const stepA5_5Idx = content.indexOf("### Step A5.5: Auto Mode Quality Pass");
+    const stepA6Idx = content.indexOf("### Step A6: Update CLAUDE.md References");
+    const section = content.slice(stepA5_5Idx, stepA6Idx);
+
+    expect(section).toContain("Split {doc} — exceeds");
+    expect(section).toContain("/tasks/bulk");
+    expect(section).toContain('layer: "CLI"');
+    expect(section).toContain('session: "docs-freshness-cron"');
+
+    // Still exactly one distinct bulk-like endpoint in the whole file
+    const bulkEndpointMatches = content.match(/\/tasks\/[a-zA-Z-]+/g) ?? [];
+    const uniqueBulkEndpoints = new Set(
+      bulkEndpointMatches.filter((m) => m.includes("bulk")),
+    );
+    expect(uniqueBulkEndpoints.size).toBe(1);
+    expect(uniqueBulkEndpoints.has("/tasks/bulk")).toBe(true);
+  });
+
+  it("Step A9's summary template includes a Split proposals tasked line, after Quality flags tasked", () => {
+    const stepA9Idx = content.indexOf("### Step A9");
+    expect(stepA9Idx).toBeGreaterThan(-1);
+    const stepA9Section = content.slice(stepA9Idx, stepA9Idx + 2000);
+    expect(stepA9Section).toContain("Split proposals tasked");
+
+    const qualityIdx = stepA9Section.indexOf("Quality flags tasked");
+    const splitIdx = stepA9Section.indexOf("Split proposals tasked");
+    expect(qualityIdx).toBeGreaterThan(-1);
+    expect(splitIdx).toBeGreaterThan(qualityIdx);
   });
 });

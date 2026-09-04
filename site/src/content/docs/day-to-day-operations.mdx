@@ -37,14 +37,15 @@ Once you have console access, work through this list before leaving the agent un
    the `shipwright-loop` orchestrator are the ones that drive autonomous work — confirm the set you
    expect is turned on. A standalone phase cron with `shipwright-loop` disabled is inert, so if
    nothing seems to be happening, that's the first thing to check.
-3. **Read the first cron logs.** Open `/admin/agents/:id/cron-logs` to see the run history for
-   every cron the agent owns — each run shows an outcome (`completed`, `failed`, or `skipped`),
-   start time, duration, and (when the run dispatched work) the task or PR it acted on. Filter by
-   `?cronId=` or `?outcome=` to narrow the view.
-4. **Check the work queue.** `/admin/agents/:id/work-queue` shows the agent's latest self-reported
-   ranked queue — the tasks and PRs it sees as pending work, oldest first, across the dev-task,
-   review, patch, and deploy phases. An empty queue with no snapshot yet usually means the agent
-   hasn't ticked since this feature shipped, or `shipwright-loop` isn't enabled.
+3. **Read the first cron logs.** Open `/admin/agents/:id/queue-activity` — its **Past** section is
+   the run history for every cron the agent owns, and each run shows an outcome (`completed`,
+   `failed`, or `skipped`), start time, duration, and (when the run dispatched work) the task or PR
+   it acted on. Filter by `?cronId=` or `?outcome=` to narrow the view.
+4. **Check the work queue.** The **Upcoming** section of the same
+   `/admin/agents/:id/queue-activity` page shows the agent's latest self-reported ranked queue —
+   the tasks and PRs it sees as pending work, oldest first, across the dev-task, review, patch, and
+   deploy phases. An empty queue with no snapshot yet usually means the agent hasn't ticked since
+   this feature shipped, or `shipwright-loop` isn't enabled.
 5. **Look at open PRs.** `/admin/prs` lists PRs the agent has opened or is tracking, filterable by
    `?state=`, `?reviewState=`, `?repo=`, and `?taskId=`. Skim it so you know what's in flight.
 6. **Look at tasks with an HITL gate.** `/admin/tasks?hitl=true` filters the task list to tasks
@@ -62,8 +63,8 @@ three things: cron health, the open-PR queue, and HITL escalations.
 
 ### Reading cron health
 
-`/admin/agents/:id/cron-logs` is the single place to check whether the agent's crons are actually
-running and doing useful work. Each row is one cron run, with:
+The **Past** section of `/admin/agents/:id/queue-activity` is the single place to check whether the
+agent's crons are actually running and doing useful work. Each row is one cron run, with:
 
 - **Outcome** — `completed` (the run finished normally), `failed` (the run errored — hover the
   badge for the error message), or `skipped` (the run didn't execute — hover the badge for the
@@ -85,8 +86,8 @@ to scope to a specific repository or task. Opening a PR row (`/admin/prs/:id`) s
 useful for checking whether a PR has been sitting in the same review state longer than expected,
 or whether it's linked back to the task that produced it.
 
-The work-queue view (`/admin/agents/:id/work-queue`) complements this: it's the agent's own
-ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
+The **Upcoming** section of `/admin/agents/:id/queue-activity` complements this: it's the agent's
+own ranked view of what it intends to work on next, oldest first, across all four pipeline phases —
 handy for confirming the agent agrees with what you see in the PR list.
 
 ### Noticing and responding to a HITL escalation

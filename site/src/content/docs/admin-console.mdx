@@ -49,7 +49,7 @@ set for admins, or only agents the user is a member of otherwise:
 | Name | Links to the agent's detail page |
 | Slack ID | The agent's Slack user ID, or `—` if unset |
 | Created | Creation date |
-| (actions) | **Manage**, **Cron Logs**, **Work Queue** buttons |
+| (actions) | **Manage**, **Queue & Activity** buttons |
 
 Admins see a single **+ New agent** button above the table (→ `/admin/agents/new`), which handles
 agent creation and offers inline options to connect Slack/GitHub afterward. After a successful agent
@@ -131,25 +131,27 @@ confirmed via a JS `confirm()` dialog) that runs the full teardown: Kubernetes w
 chat-service tokens/threads, and (if configured) the Slack app, before deleting the `Agent` row itself
 — only once every automatable step has succeeded.
 
-### Cron Logs — `GET /admin/agents/:id/cron-logs`
+### Queue & Activity — `GET /admin/agents/:id/queue-activity`
 
-Reached via the agent list's **Cron Logs** button, the agent detail page's per-cron **Logs** links, or
-directly. Shows every run across every cron the agent owns, filterable by **Cron** (dropdown) and
+Reached via the agent list's **Queue & Activity** button, the agent detail page's per-cron **Logs**
+links (which pre-select that cron via `?cronId=`), or directly. This is a single per-agent page — it
+always requires a concrete `:id` and has no "all agents" scope control. It renders two sections:
+
+**Upcoming** — the agent's self-reported ranked work queue: the ordered list of tasks/PRs it intends
+to work next across the dev-task/review/patch/deploy phases, as last pushed by the agent itself. If
+no snapshot has ever been reported, the section shows a plain empty-state message instead of
+erroring. When a snapshot exists, it shows "Last computed: `<relative time>`" and a table with
+columns #, Type (Task/PR badge), Phase (dev-task/review/patch/deploy badge), Item (linked id +
+title), and Age (relative time, title-hover shows the ISO timestamp).
+
+**Past** — every cron run across every cron the agent owns, filterable by **Cron** (dropdown) and
 **Outcome** (`posted` / `dm` / `silent` / `skipped` / `error`), paginated 20 per page. Table columns:
-Outcome (badge), Cron (name/schedule, links back into this same page filtered to that cron), Started
-(localized timestamp), Duration, Tokens (input/output token counts summed across models), Model
-(per-model badges with per-model USD cost), Phase (the child phase cron this run dispatched, e.g.
-"dev-task", or `—`), and Item (a Task/PR badge linking to the dispatched work item, or `—` for a tick
-with no dispatch).
-
-### Work Queue — `GET /admin/agents/:id/work-queue`
-
-Reached via the agent list's **Work Queue** button. Shows the agent's self-reported ranked work queue
-— the ordered list of tasks/PRs it intends to work next across the dev-task/review/patch/deploy
-phases — as last pushed by the agent itself. If no snapshot has ever been reported, the page shows a
-plain empty-state message instead of erroring. When a snapshot exists, it shows "Last computed:
-`<relative time>`" and a table with columns #, Type (Task/PR badge), Phase (dev-task/review/patch/
-deploy badge), Item (linked id + title), and Age (relative time, title-hover shows the ISO timestamp).
+Outcome (badge — hover shows the skip reason for a skipped run, or the error message for a failed
+one), Cron (name/schedule, links back into this same page filtered to that cron), Started (localized
+timestamp), Duration, Tokens (input/output token counts summed across models), Model (per-model
+badges with per-model USD cost), Phase (the child phase cron this run dispatched, e.g. "dev-task",
+or `—`), Item (a Task/PR badge linking to the dispatched work item, or `—` for a tick with no
+dispatch), Session, and Detail.
 
 ## Provisioning
 

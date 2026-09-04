@@ -467,9 +467,9 @@ describe("admin UI — unauthenticated redirects", () => {
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
 
-  it("unauthenticated GET /admin/agents/:id/cron-logs redirects to /admin/login", async () => {
+  it("unauthenticated GET /admin/agents/:id/queue-activity redirects to /admin/login", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`);
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`);
     expect(res.status).toBe(302);
     expect(res.headers.get("Location")).toBe("/admin/login");
   });
@@ -878,7 +878,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Test Agent");
   });
 
-  it("authenticated GET /admin/agents includes a Work Queue link with the correct href for a rendered agent row", async () => {
+  it("authenticated GET /admin/agents includes a Queue & Activity link with the correct href for a rendered agent row", async () => {
     const app = createAdminUIApp(makeMockDeps());
     const res = await app.request("/admin/agents", {
       headers: { Cookie: `admin_session=${cookie}` },
@@ -886,8 +886,9 @@ describe("admin UI — authenticated pages", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain(
-      `<a href="/admin/agents/${AGENT_ID}/work-queue" class="btn btn-secondary"`,
+      `<a href="/admin/agents/${AGENT_ID}/queue-activity" class="btn btn-secondary"`,
     );
+    expect(html).toContain("Queue &amp; Activity</a>");
   });
 
   it("authenticated GET /admin/agents shows the session user's email in the navbar", async () => {
@@ -1298,9 +1299,9 @@ describe("admin UI — authenticated pages", () => {
     );
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs returns 200 with empty state", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity returns 200 with empty Upcoming and Past state", async () => {
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1308,8 +1309,52 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("Outcome");
     expect(html).toContain("Started");
     expect(html).toContain("Duration");
-    // empty state by default in the base mock
+    // empty states by default in the base mock — no snapshot pushed, no runs
     expect(html).toContain("No runs");
+    expect(html).toContain("No work queue snapshot");
+    expect(html).not.toContain("Last computed");
+  });
+
+  it("authenticated GET /admin/agents/:id/queue-activity renders the Upcoming section above the Past section", async () => {
+    const app = createAdminUIApp(
+      makeMockDeps({
+        agentWorkQueueService: {
+          get: async () => ({
+            id: "snap-1",
+            agentId: AGENT_ID,
+            computedAt: new Date("2026-06-01T10:00:00Z"),
+            items: [
+              {
+                type: "task",
+                id: "WLS-2.2",
+                title: "Add work queue snapshot endpoints",
+                phase: "dev-task",
+                age: "2026-06-01T09:00:00Z",
+              },
+            ],
+            createdAt: new Date("2026-06-01T10:00:00Z"),
+          }),
+        },
+        agentCronRunService: {
+          listForAgent: async () => ({
+            items: [makeCronRun()],
+            total: 1,
+            limit: 20,
+            offset: 0,
+          }),
+        },
+      }),
+    );
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
+      headers: { Cookie: `admin_session=${cookie}` },
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const upcomingIndex = html.indexOf("WLS-2.2");
+    const pastIndex = html.indexOf("posted");
+    expect(upcomingIndex).toBeGreaterThan(-1);
+    expect(pastIndex).toBeGreaterThan(-1);
+    expect(upcomingIndex).toBeLessThan(pastIndex);
   });
 
   function makeCronRun(
@@ -1367,7 +1412,7 @@ describe("admin UI — authenticated pages", () => {
     };
   }
 
-  it("authenticated GET /admin/agents/:id/cron-logs renders populated runs", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity renders populated runs in the Past section", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentCronRunService: {
@@ -1380,7 +1425,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1389,19 +1434,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).not.toContain("No runs");
   });
 
-  it("authenticated GET /admin/agents/:id/work-queue returns 200 with empty state", async () => {
-    const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
-      headers: { Cookie: `admin_session=${cookie}` },
-    });
-    expect(res.status).toBe(200);
-    const html = await res.text();
-    // empty state by default in the base mock — no snapshot pushed yet
-    expect(html).toContain("No work queue snapshot");
-    expect(html).not.toContain("Last computed");
-  });
-
-  it("authenticated GET /admin/agents/:id/work-queue renders populated snapshot", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity renders populated Upcoming snapshot", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentWorkQueueService: {
@@ -1430,7 +1463,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1446,7 +1479,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain('<a href="/admin/tasks/WLS-2.2"');
   });
 
-  it("work queue PR item links out to GitHub using the repo#prNumber id", async () => {
+  it("queue-activity Upcoming PR item links out to GitHub using the repo#prNumber id", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentWorkQueueService: {
@@ -1468,7 +1501,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/work-queue`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(200);
@@ -1478,7 +1511,7 @@ describe("admin UI — authenticated pages", () => {
     );
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?cronId=... filters by cronId", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?cronId=... filters the Past section by cronId", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1496,7 +1529,7 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?cronId=${CRON_ID}`,
+      `/admin/agents/${AGENT_ID}/queue-activity?cronId=${CRON_ID}`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
@@ -1510,7 +1543,7 @@ describe("admin UI — authenticated pages", () => {
     expect(optionMatch?.[0]).toContain("selected");
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?outcome=... filters by outcome", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?outcome=... filters the Past section by outcome", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1528,14 +1561,14 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?outcome=error`,
+      `/admin/agents/${AGENT_ID}/queue-activity?outcome=error`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
     expect(capturedOpts).toMatchObject({ outcome: "error" });
   });
 
-  it("authenticated GET /admin/agents/:id/cron-logs?outcome=skipped passes the skipped special-case outcome through", async () => {
+  it("authenticated GET /admin/agents/:id/queue-activity?outcome=skipped passes the skipped special-case outcome through", async () => {
     let capturedOpts: unknown;
     const app = createAdminUIApp(
       makeMockDeps({
@@ -1559,7 +1592,7 @@ describe("admin UI — authenticated pages", () => {
       }),
     );
     const res = await app.request(
-      `/admin/agents/${AGENT_ID}/cron-logs?outcome=skipped`,
+      `/admin/agents/${AGENT_ID}/queue-activity?outcome=skipped`,
       { headers: { Cookie: `admin_session=${cookie}` } },
     );
     expect(res.status).toBe(200);
@@ -1568,7 +1601,7 @@ describe("admin UI — authenticated pages", () => {
     expect(html).toContain("skipped");
   });
 
-  it("non-admin non-member gets 403 on GET /admin/agents/:id/cron-logs", async () => {
+  it("non-admin non-member gets 403 on GET /admin/agents/:id/queue-activity", async () => {
     const outsiderCookie = await makeSessionCookie(
       SESSION_SECRET,
       "google-sub-outsider",
@@ -1576,13 +1609,13 @@ describe("admin UI — authenticated pages", () => {
       false,
     );
     const app = createAdminUIApp(makeMockDeps());
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${outsiderCookie}` },
     });
     expect(res.status).toBe(403);
   });
 
-  it("GET /admin/agents/:id/cron-logs returns 404 when agent not found", async () => {
+  it("GET /admin/agents/:id/queue-activity returns 404 when agent not found", async () => {
     const app = createAdminUIApp(
       makeMockDeps({
         agentService: {
@@ -1591,7 +1624,7 @@ describe("admin UI — authenticated pages", () => {
         },
       }),
     );
-    const res = await app.request(`/admin/agents/${AGENT_ID}/cron-logs`, {
+    const res = await app.request(`/admin/agents/${AGENT_ID}/queue-activity`, {
       headers: { Cookie: `admin_session=${cookie}` },
     });
     expect(res.status).toBe(404);

@@ -119,6 +119,16 @@ Each task: `layer: "CLI"`, `session: "docs-freshness-cron"`.
 
 Track a running count of tasks filed this way for the current repo — this becomes the `Quality flags tasked` figure in Step A9's per-repo summary.
 
+After the quality-pass checks above, also check the doc's resulting **line count** against the hard threshold defined in Interactive Mode Step 6.6 (Size Governance) — 200 lines. Reuse that step's threshold and section-grouping logic rather than re-deriving it here.
+
+Over 200 lines: file **one** task-store task via the same `/tasks/bulk` mechanism used above (same endpoint, same auth header — no second endpoint). Auto mode never creates a split file — only a task:
+
+- `title: "Split {doc} — exceeds {N} lines"`
+- `description`: a best-effort section-grouping suggestion — which `##`/`###` sections would move to a new sub-topic doc, grouped by topic, following the same grouping approach as Step 6.6
+- `layer: "CLI"`, `session: "docs-freshness-cron"`
+
+Track a running count of split-proposal tasks filed this way for the current repo — this becomes the `Split proposals tasked` figure in Step A9's per-repo summary.
+
 ### Step A6: Update CLAUDE.md References
 
 Check if `CLAUDE.md` has a reference or docs section (patterns: `@docs/`, `docs/`, or a "Reference" heading).
@@ -144,6 +154,8 @@ curl -sf -X POST \
 ```
 
 Each missing module produces one task with: `title: "Document {module} module"`, `layer: "CLI"`, `session: "docs-freshness-cron"`.
+
+Additionally, run the Step 3a cross-cutting concerns checklist (same seven categories, same material-presence verification procedure), scoped to `CHANGED_FILES` — the same scoping A7's structural check above already uses. For each concern category verified materially present in `CHANGED_FILES` with no matching doc, union one more task into the same `/tmp/missing-docs-tasks.json` payload before it's posted: `title: "Document {concern} conventions"`, `layer: "CLI"`, `session: "docs-freshness-cron"` — same session as the structural tasks above, so both are queryable together by downstream tooling. The `"Document {concern} conventions"` title distinguishes concern-based tasks from the structural `"Document {module} module"` tasks in the same payload. If no concern qualifies, the payload is unchanged from the structural-only set.
 
 ### Step A8: Write Sync Anchor
 
@@ -175,6 +187,7 @@ Repos processed: {N}
   CLAUDE.md: {updated | unchanged}
   Tasks created: {N missing-doc tasks, or "none"}
   Quality flags tasked: {N}
+  Split proposals tasked: {N}
   Sync anchor: {HEAD SHA} → state/docs-last-synced.json
 
 {org/repo-2}: skipped (no docs/ directory)
@@ -265,6 +278,22 @@ Categorize each module/topic:
 
 If `$ARGUMENTS` was provided, filter to only the specified module/topic.
 
+### Step 3a: Cross-Cutting Concerns Checklist
+
+Structural gap analysis (above) only catches what shows up as a directory, route, or schema file. Some domains cut across many modules and are easy to miss that way — a newcomer reading the code module-by-module wouldn't necessarily recognize them without someone pointing them out. Check for exactly these seven categories, no others:
+
+1. **business-domain/state-model** — the core entities and their lifecycle (status fields, state machines, transition rules)
+2. **authorization/access-control** — who can do what (middleware, decorators, role/permission checks)
+3. **error-handling conventions** — how failures are represented and propagated (error classes, error codes, response shapes)
+4. **sensitive-data handling** — PII, financial data, or other data requiring special handling (redaction, encryption-at-rest, access logging)
+5. **secrets/credential rotation** — how secrets are stored, injected, and rotated
+6. **logging/tracing/observability wiring** — structured logging, tracing SDKs, error reporting integrations
+7. **internal/third-party service dependencies** — external services the code talks to that aren't obvious from public docs alone
+
+For each category, **verify it is materially present before proposing it** — read the actual relevant config or module and confirm real content exists to write about (e.g. an authz middleware/decorator for access-control, a dedicated error class hierarchy for error-handling, a logging SDK init for observability wiring). This is not a blind checklist dump: never propose a category with no real content to write. A category with no material presence in the codebase (e.g. no sensitive-data handling in a project that doesn't touch PII) is simply skipped — do not list it, do not stub it out.
+
+Categories that pass verification become **concern candidates**, each with a suggested doc topic and a one-line note on what was found (e.g. "authorization/access-control — `requireAuth` middleware + role checks in `src/middleware/auth.ts`").
+
 Present the audit summary:
 
 ```
@@ -283,12 +312,17 @@ STALE:
 MISSING:
   ✗ {suggested filename} — {module/topic} has {N endpoints / N models / etc.}, no doc
 
+CONCERNS:
+  ✗ {suggested filename} — {concern category} verified present ({what was found}), no doc
+
 TEST-READINESS:
   ◆ docs/test-readiness/{filename} — {role} (read-only; source for docs/testing.md)
 
 Proceed? (Generate missing + update stale / Pick specific / Skip)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
+
+`CONCERNS:` is a distinct block from `MISSING:` — `MISSING:` lists structural modules/topics with no doc (Step 3); `CONCERNS:` lists verified-present cross-cutting concerns with no doc (Step 3a). Both flow into the same `Proceed?` gate and are generated the same way in Step 5 once approved. Omit the `CONCERNS:` block entirely if no concern category verified as materially present.
 
 Omit the TEST-READINESS section if `docs/test-readiness/` does not exist. Files listed there are reported for transparency only — `/research-docs` does not edit them.
 
@@ -520,6 +554,48 @@ Proceed? (Apply proposed fixes / Pick specific / Skip)
 ```
 
 Wait for user confirmation before applying any `Edit`. A skipped or declined flag is left as-is — do not silently apply it anyway.
+
+---
+
+## Step 6.6: Size Governance
+
+Run this pass against every doc **updated in Step 6** — not docs drafted fresh in Step 5, and not docs left untouched by this run. Run it after Step 6.5's proposed fixes have been applied or declined, so the line count reflects the doc's actual final state for this run, not an intermediate one.
+
+**Thresholds:** soft target **150 lines**, hard threshold **200 lines**, for a single generated doc. The goal is a doc that can be fully read when consulted, not a doc that keeps growing forever.
+
+Count the doc's current line count (`wc -l` or equivalent) after Step 6.5.
+
+**Under 200 lines: this step is a no-op.** The doc behaves exactly as before this step existed — no split proposal, no prompt, nothing further to do. This is the common case and requires no output beyond noting the doc is fine.
+
+**Over 200 lines: propose a split — never automatic.** Identify which `##`/`###` sections would move to one or more new sub-topic doc(s), grouped by topic (e.g. all sections about one sub-area move together). For each proposed new doc, propose a filename following the naming pattern detected in Step 4 (`{topic}.md`, `{service}-api.md`, etc. — whatever this project's existing convention is). Present the proposal and wait for confirmation before creating anything:
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SIZE GOVERNANCE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+docs/architecture.md is now 238 lines (hard threshold: 200)
+
+Proposed split:
+  Keep in docs/architecture.md:
+    ## Overview
+    ## System Diagram
+    ## Core Modules
+
+  Move to docs/architecture-deployment.md (new):
+    ## Deployment Topology
+    ## Scaling Notes
+    ## Infra Dependencies
+
+docs/architecture.md would keep a pointer to the new doc under its own
+"## Deployment" heading.
+
+Proceed? (Create split / Skip)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+- **If confirmed:** create the new sub-topic doc(s) via `Write` (moving the identified sections' content verbatim, or lightly re-headed to stand alone), then trim the original doc via `Edit` to keep only the remaining sections plus a short pointer to the new doc(s).
+- **If declined or skipped:** leave the doc as-is, oversized. It is not retried automatically on a later run — it will surface again next time this doc is updated and re-checked by this step.
 
 ---
 

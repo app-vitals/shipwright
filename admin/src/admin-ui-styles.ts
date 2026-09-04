@@ -223,6 +223,170 @@ export function baseStyles(): string {
       color: #92400e;
     }
 
+    /* ─── Scope pills (filter chips) ────────────────────── */
+    .scope-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #e5e7eb;
+    }
+    .scope-pill.active {
+      background: #eef2ff;
+      color: #4338ca;
+      border-color: #c7d2fe;
+    }
+    .scope-pill-remove {
+      cursor: pointer;
+      color: #9ca3af;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .scope-pill-remove:hover { color: #374151; }
+
+    /* Org/Repo multiselect filters (renderRepoOrgFilterFields) restyled as
+       pill/tag-style fields (AXR-1.1). These stay two independent
+       <select multiple> controls -- not merged into one combined pill. */
+    .scope-select-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .scope-select {
+      border-radius: 10px;
+      background: #f9fafb;
+    }
+    .scope-select option:checked {
+      background: #eef2ff;
+      color: #4338ca;
+    }
+
+    /* ─── Board / column / card layout ──────────────────── */
+    .board {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      overflow-x: auto;
+      padding-bottom: 8px;
+    }
+    .column {
+      flex: 0 0 280px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #f9fafb;
+      border: 1px solid #e8e8ee;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .column-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+    .column-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: #9ca3af;
+      background: #fff;
+      border: 1px solid #e8e8ee;
+      border-radius: 9999px;
+      padding: 1px 8px;
+    }
+    /* Individual board items reuse .card for the panel look; this modifier
+       tightens padding/margins for the denser board context. */
+    .column .card {
+      margin-bottom: 0;
+      padding: 12px 14px;
+    }
+
+    /* ─── Additional badge variants (beyond badge-hitl/badge-dep) ───────── */
+    .badge-purple {
+      background: #ede9fe;
+      color: #5b21b6;
+    }
+    .badge-teal {
+      background: #ccfbf1;
+      color: #0f766e;
+    }
+
+    /* ─── Header tooltip (hover, data-tip attribute) ────── */
+    .header-tooltip {
+      position: relative;
+      cursor: help;
+      border-bottom: 1px dotted #9ca3af;
+    }
+    .header-tooltip[data-tip]:hover::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 125%;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      background: #1a1a2e;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 4px 8px;
+      border-radius: 6px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    /* ─── Heartbeat status dots (fresh/aging/stale) ─────── */
+    .heartbeat-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background: #d1d5db;
+    }
+    .heartbeat-dot.fresh { background: #22c55e; }
+    .heartbeat-dot.aging { background: #f59e0b; }
+    .heartbeat-dot.stale { background: #ef4444; }
+
+    /* ─── More filters disclosure ───────────────────────── */
+    .more-filters {
+      margin-top: 8px;
+    }
+    .more-filters summary {
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      color: #6b7280;
+      list-style: none;
+    }
+    .more-filters summary::-webkit-details-marker { display: none; }
+    .more-filters summary::before {
+      content: "▸";
+      display: inline-block;
+      margin-right: 4px;
+      transition: transform 0.15s ease;
+    }
+    .more-filters[open] summary::before {
+      transform: rotate(90deg);
+    }
+    .more-filters[open] summary {
+      color: #1a1a2e;
+    }
+    .more-filters-panel {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
     /* ─── Provision page ────────────────────────────────── */
     .provision-steps {
       display: flex;
